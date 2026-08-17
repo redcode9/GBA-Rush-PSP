@@ -3506,7 +3506,6 @@ static s32 load_gamepak_raw(char *name)
 s32 load_gamepak(char *name)
 {
   char *dot_position = strrchr(name, '.');
-  char cheats_filename[MAX_FILE];
 
   s32 file_size = -1;
   gamepak_file_large = -1;
@@ -3570,8 +3569,8 @@ s32 load_gamepak(char *name)
     change_ext(gamepak_filename, backup_filename, ".sav");
     load_backup(backup_filename);
 
-    change_ext(gamepak_filename, cheats_filename, ".cht");
-    add_cheats(cheats_filename);
+    /* Cheat lists are selected explicitly from the cheat menu. */
+    clear_cheats();
   }
 
   set_cpu_clock(PSP_CLOCK_222);
@@ -3833,4 +3832,3 @@ static void memory_write_mem_savestate(SceUID savestate_file)
 {
   MEMORY_SAVESTATE_BODY(WRITE_MEM);
 }
-

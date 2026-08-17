@@ -3338,6 +3338,16 @@ static inline u32 is_smc_gate(u32 pc)
     block_data.type[block_data_position].update_cycles = 0;                   \
     block_data_position++;                                                    \
                                                                               \
+    /* CodeBreaker master codes execute before the Thumb instruction at the  \
+     * hook PC. End the preceding block at that boundary so control always   \
+     * enters through the generated hook callback. */                        \
+    if((type##_instruction_width == thumb_instruction_width) &&               \
+     cheat_hook_configured(block_end_pc))                                     \
+    {                                                                         \
+      translation_gate_required = 1;                                         \
+      continue_block = 0;                                                     \
+    }                                                                         \
+                                                                              \
     if ((block_data_position == MAX_BLOCK_SIZE) ||                            \
         ((block_end_pc & 0xFF03FFFF) == 0x0203FFF0) ||                        \
         ((block_end_pc & 0xFF007FFF) == 0x03007F00))                          \
@@ -3550,6 +3560,13 @@ static u8 *translate_block_##type(u32 pc)                                     \
   while (pc != block_end_pc)                                                  \
   {                                                                           \
     block_data.type[block_data_position].block_offset = translation_ptr;      \
+                                                                              \
+    if((type##_instruction_width == thumb_instruction_width) &&               \
+     cheat_hook_configured(pc))                                               \
+    {                                                                         \
+      generate_load_pc(reg_a0, pc);                                           \
+      generate_function_call(execute_cheat_hook);                             \
+    }                                                                         \
                                                                               \
     translate_##type##_instruction();                                         \
     block_data_position++;                                                    \
@@ -4100,5 +4117,4 @@ void cpu_write_mem_savestate(SceUID savestate_file)
 {
   CPU_SAVESTATE_BODY(WRITE_MEM);
 }
-
 

@@ -392,10 +392,10 @@
   "作弊選項",
 
   // MSG_CHEAT_MENU_NON_LOAD
-  "%2d: ------------------------",
+  "未載入作弊檔",
 
   // MSG_CHEAT_MENU_0
-  "%%s %2d: %s",
+  "%03d: %-24.24s  %%s",
 
   // MSG_CHEAT_MENU_1
   "載入作弊檔   " FONT_L_TRIGGER_GBK,

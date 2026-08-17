@@ -2862,18 +2862,79 @@ static void menu_passive_ram_dynarec_policy(void)
    Cheat menu page refresh -- file scope to avoid GCC nested-function
    trampoline crash when used as a menu passive_function callback.
    ------------------------------------------------------------------ */
-static char cheat_format_str[MAX_CHEATS][25*4];
+static char cheat_format_str[MAX_CHEATS][CHEAT_NAME_LENGTH + 16];
+static char cheat_page_format_str[64];
+static u32 inactive_cheat_dummy = 0;
 static MenuOptionType *cheats_misc_options_ptr = NULL;
+
+static void menu_passive_cheat_toggle(void)
+{
+    rebuild_active_cheat_indexes();
+}
+
+static void refresh_cheat_format_strings(void)
+{
+    u32 i;
+
+    for (i = 0; i < num_cheats; i++)
+        snprintf(cheat_format_str[i], sizeof(cheat_format_str[i]),
+                 MSG[MSG_CHEAT_MENU_0], (int)(i + 1),
+                 cheats[i].cheat_name);
+}
 
 static void reload_cheats_page(void)
 {
     u32 i;
+    u32 page_count = (num_cheats + 9) / 10;
+    const char *page_format = MSG[MSG_CHEAT_MENU_3];
+    const char *page_value = strstr(page_format, "%d");
+
+    if (page_count == 0)
+        page_count = 1;
+    if (menu_cheat_page >= page_count)
+        menu_cheat_page = page_count - 1;
+
     for (i = 0; i < 10; i++)
     {
         u32 idx = (10 * menu_cheat_page) + i;
-        cheats_misc_options_ptr[i].display_string = cheat_format_str[idx];
-        cheats_misc_options_ptr[i].current_option = &(cheats[idx].cheat_active);
+
+        if (idx < num_cheats)
+        {
+            cheats_misc_options_ptr[i].display_string = cheat_format_str[idx];
+            cheats_misc_options_ptr[i].options = enable_disable_options;
+            cheats_misc_options_ptr[i].current_option =
+                &(cheats[idx].cheat_active);
+            cheats_misc_options_ptr[i].num_options = 2;
+            cheats_misc_options_ptr[i].passive_function =
+                menu_passive_cheat_toggle;
+            cheats_misc_options_ptr[i].option_type = STRING_SELECTION_OPTION;
+        }
+        else
+        {
+            cheats_misc_options_ptr[i].display_string =
+                (num_cheats == 0 && i == 0) ?
+                MSG[MSG_CHEAT_MENU_NON_LOAD] : "";
+            cheats_misc_options_ptr[i].options = NULL;
+            cheats_misc_options_ptr[i].current_option = &inactive_cheat_dummy;
+            cheats_misc_options_ptr[i].num_options = 0;
+            cheats_misc_options_ptr[i].passive_function = NULL;
+            cheats_misc_options_ptr[i].option_type = ACTION_OPTION;
+        }
     }
+
+    if (page_value != NULL)
+        snprintf(cheat_page_format_str, sizeof(cheat_page_format_str),
+                 "%.*s%lu/%lu", (int)(page_value - page_format), page_format,
+                 (unsigned long)(menu_cheat_page + 1),
+                 (unsigned long)page_count);
+    else
+        snprintf(cheat_page_format_str, sizeof(cheat_page_format_str),
+                 "%s %lu/%lu", page_format,
+                 (unsigned long)(menu_cheat_page + 1),
+                 (unsigned long)page_count);
+
+    cheats_misc_options_ptr[10].display_string = cheat_page_format_str;
+    cheats_misc_options_ptr[10].num_options = page_count;
 }
 
 /* Global array of all menus — populated once inside menu(),
@@ -3122,6 +3183,12 @@ static void menu_refresh_language(void)
             if (opt->display_msg != 0)
                 opt->display_string = MSG[opt->display_msg];
         }
+    }
+
+    if (cheats_misc_options_ptr != NULL)
+    {
+        refresh_cheat_format_strings();
+        reload_cheats_page();
     }
 }
 
@@ -3705,35 +3772,98 @@ u32 menu(void)
   {
     const char *file_ext[] = { ".cht", NULL };
     char load_filename[MAX_FILE];
+    char load_directory[MAX_PATH];
+    char load_path[MAX_PATH];
+    char status_message[256];
 
-    if(load_file(file_ext, load_filename, dir_cheat, 0) != -1)
+    if(load_file(file_ext, load_filename, dir_cheat, 0) == 0)
     {
+      CHEAT_LOAD_RESULT load_result;
+      u32 error_line = 0;
 
-	  u32 i,j;
-      for(j = 0; j < MAX_CHEATS; j++)
+      if(getcwd(load_directory, sizeof(load_directory)) == NULL)
+        load_result = CHEAT_LOAD_ERROR_OPEN;
+      else
       {
-        cheats[j].cheat_active = 0;
-        cheats[j].cheat_name[0] = '\0';
+        snprintf(load_path, sizeof(load_path), "%s/%s",
+                 load_directory, load_filename);
+        load_result = load_cheats(load_path, &error_line);
       }
 
-      add_cheats(load_filename);
-      for(i = 0; i < MAX_CHEATS; i++)
+      if(load_result == CHEAT_LOAD_OK)
       {
+        menu_cheat_page = 0;
+        refresh_cheat_format_strings();
+        reload_cheats_page();
 
-        if(i >= num_cheats)
+        if(option_language == 4)
+          snprintf(status_message, sizeof(status_message), "%s\n%lu trucchi caricati",
+                   loaded_cheat_filename, (unsigned long)num_cheats);
+        else
+          snprintf(status_message, sizeof(status_message), "%s\n%lu cheats loaded",
+                   loaded_cheat_filename, (unsigned long)num_cheats);
+      }
+      else
+      {
+        const char *reason;
+
+        if(option_language == 4)
         {
-          sprintf(cheat_format_str[i], MSG[MSG_CHEAT_MENU_NON_LOAD], i);
+          switch(load_result)
+          {
+            case CHEAT_LOAD_ERROR_OPEN:
+              reason = "file non accessibile";
+              break;
+            case CHEAT_LOAD_ERROR_CAPACITY:
+              reason = "lista oltre la capacita supportata";
+              break;
+            case CHEAT_LOAD_ERROR_EMPTY:
+              reason = "file vuoto";
+              break;
+            default:
+              reason = "formato non valido";
+              break;
+          }
+
+          if(error_line)
+            snprintf(status_message, sizeof(status_message),
+                     "Caricamento trucchi fallito alla riga %lu:\n%s",
+                     (unsigned long)error_line, reason);
+          else
+            snprintf(status_message, sizeof(status_message),
+                     "Caricamento trucchi fallito:\n%s", reason);
         }
         else
         {
-          sprintf(cheat_format_str[i], MSG[MSG_CHEAT_MENU_0], i, cheats[i].cheat_name);
+          switch(load_result)
+          {
+            case CHEAT_LOAD_ERROR_OPEN:
+              reason = "file is not accessible";
+              break;
+            case CHEAT_LOAD_ERROR_CAPACITY:
+              reason = "list exceeds supported capacity";
+              break;
+            case CHEAT_LOAD_ERROR_EMPTY:
+              reason = "file is empty";
+              break;
+            default:
+              reason = "invalid format";
+              break;
+          }
+
+          if(error_line)
+            snprintf(status_message, sizeof(status_message),
+                     "Cheat load failed at line %lu:\n%s",
+                     (unsigned long)error_line, reason);
+          else
+            snprintf(status_message, sizeof(status_message),
+                     "Cheat load failed:\n%s", reason);
         }
+
+        reload_cheats_page();
       }
-	  //menu_cheat_page = 0;
-      choose_menu(current_menu);
-    }
-    else
-    {
+
+      error_msg(status_message, CONFIRMATION_CONT);
       choose_menu(current_menu);
     }
   }
@@ -3785,6 +3915,16 @@ u32 menu(void)
   void submenu_cheats_misc(void)
   {
     DRAW_TITLE_PSP_GBK(MSG_CHEAT_MENU_TITLE);
+
+    if(num_cheats != 0)
+    {
+      char cheat_header[64];
+
+      snprintf(cheat_header, sizeof(cheat_header), "%s (%lu)",
+               loaded_cheat_filename, (unsigned long)num_cheats);
+      print_menu_line_clipped(cheat_header, 250, 2, color_help_text,
+                              BG_NO_FILL, 27);
+    }
   }
 
   void submenu_gamepad(void)
@@ -4394,18 +4534,7 @@ u32 menu(void)
   }
 
 
-  for(i = 0; i < MAX_CHEATS; i++)
-  {
-    if(i >= num_cheats)
-    {
-      sprintf(cheat_format_str[i], MSG[MSG_CHEAT_MENU_NON_LOAD], i);
-    }
-    else
-    {
-      sprintf(cheat_format_str[i], MSG[MSG_CHEAT_MENU_0], i, cheats[i].cheat_name);
-    }
-  }
-  //menu_cheat_page = 0;
+  refresh_cheat_format_strings();
   reload_cheats_page();
 
   video_resolution_large();
@@ -5167,13 +5296,6 @@ s32 load_game_config_file(void)
 
       if (option_frameskip_value > 9)
         option_frameskip_value = 9;
-
-	  u32 j;
-      for(j = 0; j < MAX_CHEATS; j++)
-      {
-        cheats[j].cheat_active = 0;
-        cheats[j].cheat_name[0] = '\0';
-      }
 
       FILE_CLOSE(game_config_file);
 

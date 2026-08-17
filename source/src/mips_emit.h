@@ -37,6 +37,7 @@ void mips_indirect_branch_dual_no_update_gba(u32 address);
 u32 execute_read_cpsr(void);
 u32 execute_read_spsr(void);
 void execute_swi(u32 pc);
+void execute_cheat_hook(u32 pc);
 
 u32 execute_spsr_restore(u32 address);
 void execute_store_cpsr(u32 new_cpsr, u32 store_mask);

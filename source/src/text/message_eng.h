@@ -392,10 +392,10 @@
   "Cheats options",
 
   // MSG_CHEAT_MENU_NON_LOAD
-  "%2d: ------------------------",
+  "No cheat file loaded",
 
   // MSG_CHEAT_MENU_0
-  "%%s %2d: %s",
+  "%03d: %-24.24s  %%s",
 
   // MSG_CHEAT_MENU_1
   "Load cheat file   " FONT_L_TRIGGER_GBK,

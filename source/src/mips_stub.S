@@ -41,6 +41,7 @@
 .global execute_read_spsr
 
 .global execute_swi
+.global execute_cheat_hook
 .global execute_spsr_restore
 .global execute_store_cpsr
 .global execute_store_spsr
@@ -65,6 +66,7 @@
 .global reg
 
 .extern spsr
+.extern process_cheats_at_hook
 
 # MIPS register layout:
 
@@ -3200,6 +3202,27 @@ execute_read_spsr:
   lw $2, %lo(spsr)($2)            # $2 = spsr[cpu_mode] (delay slot)
 
 
+# Execute CodeBreaker codes at a timed master-code PC. The dynarec keeps most
+# emulated ARM registers in caller-saved MIPS registers, so a direct C call
+# would corrupt guest state. Spill and restore the complete mapped register set
+# around the callback.
+# $4: Current GBA PC
+
+execute_cheat_hook:
+  addiu $sp, $sp, -16
+  sw $ra, 0($sp)
+
+  save_registers_0
+  jal process_cheats_at_hook
+  save_registers_1
+
+  lw $ra, 0($sp)
+  restore_registers_0
+  addiu $sp, $sp, 16
+  jr $ra
+  restore_registers_1
+
+
 # Switch into SWI, has to collapse flags
 # $4: Current pc
 
@@ -3665,4 +3688,3 @@ reg:
 
 memory_map_write:
   .space 0x8000
-

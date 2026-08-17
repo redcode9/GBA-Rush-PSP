@@ -392,10 +392,10 @@
   "チート設定",
 
   // MSG_CHEAT_MENU_NON_LOAD
-  "%2d: ------------------------",
+  "チートファイル未読込",
 
   // MSG_CHEAT_MENU_0
-  "%%s %2d: %s",
+  "%03d: %-24.24s  %%s",
 
   // MSG_CHEAT_MENU_1
   "チートファイルを読み込む   " FONT_L_TRIGGER_GBK,

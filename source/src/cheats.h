@@ -22,8 +22,9 @@
 #define CHEATS_H
 
 #define CHEAT_NAME_LENGTH (25)//(24*5)
-#define MAX_CHEATS_PAGE 4
+#define MAX_CHEATS_PAGE 64
 #define MAX_CHEATS (MAX_CHEATS_PAGE * 10)
+#define MAX_CHEAT_HOOKS MAX_CHEATS
 
 typedef enum
 {
@@ -31,6 +32,7 @@ typedef enum
   CHEAT_TYPE_GAMESHARK_V3,
   CHEAT_TYPE_DIRECT_V1,
   CHEAT_TYPE_DIRECT_V3,
+  CHEAT_TYPE_CODEBREAKER,
   CHEAT_TYPE_INVALID
 } CHEAT_VARIANT_ENUM;
 
@@ -43,14 +45,28 @@ typedef struct
   CHEAT_VARIANT_ENUM cheat_variant;
 } CHEAT_TYPE;
 
-// ÉOÉçÅ[ÉoÉãïœêîêÈåæ
+typedef enum
+{
+  CHEAT_LOAD_OK,
+  CHEAT_LOAD_ERROR_OPEN,
+  CHEAT_LOAD_ERROR_FORMAT,
+  CHEAT_LOAD_ERROR_CAPACITY,
+  CHEAT_LOAD_ERROR_EMPTY
+} CHEAT_LOAD_RESULT;
+
+// „Ç∞„É≠„Éº„Éê„É´Â§âÊï∞ÂÆ£Ë®Ä
 
 extern CHEAT_TYPE cheats[MAX_CHEATS];
 extern u32 num_cheats;
+extern char loaded_cheat_filename[MAX_FILE];
 
-// ä÷êîêÈåæ
+// Èñ¢Êï∞ÂÆ£Ë®Ä
 
 void process_cheats(void);
-void add_cheats(char *cheats_filename);
+u32 cheat_hook_configured(u32 pc);
+void process_cheats_at_hook(u32 pc);
+void clear_cheats(void);
+void rebuild_active_cheat_indexes(void);
+CHEAT_LOAD_RESULT load_cheats(const char *cheats_path, u32 *error_line);
 
 #endif /* CHEATS_H */

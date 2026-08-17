@@ -392,10 +392,10 @@
   "Opzioni trucchi",
 
   // MSG_CHEAT_MENU_NON_LOAD
-  "%2d: ------------------------",
+  "Nessun file trucchi caricato",
 
   // MSG_CHEAT_MENU_0
-  "%%s %2d: %s",
+  "%03d: %-24.24s  %%s",
 
   // MSG_CHEAT_MENU_1
   "Carica file trucchi   " FONT_L_TRIGGER_GBK,
