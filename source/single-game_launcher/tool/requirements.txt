@@ -1,0 +1,5 @@
+customtkinter==6.0.0
+pillow==12.3.0
+yt-dlp==2026.6.9
+requests==2.31.0
+miniaudio==1.71

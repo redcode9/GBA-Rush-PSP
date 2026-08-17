@@ -1,0 +1,14 @@
+#define update_scanline update_scanline_new
+#define video_read_savestate video_read_savestate_new
+#define video_write_mem_savestate video_write_mem_savestate_new
+#define video_reload_counters video_reload_counters_new
+#define update_screen update_screen_new
+#define screen_texture screen_texture_new
+#define obj_priority_list obj_priority_list_new
+#define obj_priority_count obj_priority_count_new
+#define obj_alpha_count obj_alpha_count_new
+#define layer_order layer_order_new
+#define layer_count layer_count_new
+#define active_layers active_layers_new
+
+#include "video_cc.cc"

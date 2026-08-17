@@ -1,0 +1,3 @@
+# Build dependencies for TempGBA4PSP-mod Builder
+# Install alongside requirements.txt when building executable
+pyinstaller==6.21.0

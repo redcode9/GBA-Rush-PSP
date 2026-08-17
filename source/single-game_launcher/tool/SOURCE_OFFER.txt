@@ -1,0 +1,18 @@
+================================================================================
+SOURCE CODE OFFER
+================================================================================
+
+This executable was built with PyInstaller (https://pyinstaller.org/).
+
+The PyInstaller bootloader and runtime components embedded in this executable
+are licensed under the GNU General Public License v2.0 or later (GPL-2.0+).
+
+In accordance with the GPL, the complete corresponding source code for
+PyInstaller is available at:
+
+    https://github.com/pyinstaller/pyinstaller
+
+You may obtain the source code by visiting the URL above or by contacting
+the distributor of this software.
+
+================================================================================

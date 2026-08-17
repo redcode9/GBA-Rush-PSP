@@ -1,0 +1,17 @@
+#define update_scanline update_scanline_old
+#define video_read_savestate video_read_savestate_old
+#define video_write_mem_savestate video_write_mem_savestate_old
+#define video_reload_counters video_reload_counters_old
+#define update_screen update_screen_old
+#define screen_texture screen_texture_old
+#define map_widths map_widths_old
+#define obj_width_table obj_width_table_old
+#define obj_height_table obj_height_table_old
+#define obj_priority_list obj_priority_list_old
+#define obj_priority_count obj_priority_count_old
+#define obj_alpha_count obj_alpha_count_old
+#define layer_order layer_order_old
+#define layer_count layer_count_old
+#define active_layers active_layers_old
+
+#include "video.c"
