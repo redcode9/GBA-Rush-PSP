@@ -2,7 +2,7 @@
 
 PspDebugRegBlock exception_regs;
 
-extern SceModule module_info;
+extern SceModuleInfo module_info;
 extern int _ftext;
 
 static const char *codeTxt[32] =
@@ -106,4 +106,3 @@ void initExceptionHandler(void)
       sceKernelStartModule(modid, 8, args, &fd, NULL);
    }
 }
-

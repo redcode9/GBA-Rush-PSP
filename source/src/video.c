@@ -124,7 +124,9 @@ static void fill_line_alpha(u16 color, render_scanline_dest_alpha *dest_ptr, u32
 static void fill_line_color16(u16 color, render_scanline_dest_color16 *dest_ptr, u32 start, u32 end);
 static void fill_line_color32(u16 color, render_scanline_dest_color32 *dest_ptr, u32 start, u32 end);
 static void expand_blend(u32 *screen_src_ptr, u16 *screen_dest_ptr, u32 start, u32 end, u16 bldcnt);
+#ifndef __mips__
 static void expand_blend_c(u32 *screen_src_ptr, u16 *screen_dest_ptr, u32 start, u32 end, u16 bldcnt);
+#endif
 static void expand_darken(u16 *screen_src_ptr, u16 *screen_dest_ptr, u32 start, u32 end, u16 bldcnt);
 static void expand_brighten(u16 *screen_src_ptr, u16 *screen_dest_ptr, u32 start, u32 end, u16 bldcnt);
 static void expand_darken_partial_alpha(u32 *screen_src_ptr, u16 *screen_dest_ptr, u32 start, u32 end, u16 bldcnt);
@@ -1873,6 +1875,7 @@ BitmapLayerRenderStruct bitmap_mode_renderers[3] =
 #define render_scanline_obj_extra_variables_partial_alpha(map_space)          \
   render_scanline_obj_extra_variables_color();                                \
   u16 bldcnt  = pIO_REG(REG_BLDCNT);                                          \
+  (void)bldcnt;                                                               \
   u32 base_pixel_combine = pixel_combine                                      \
 
 #define render_scanline_obj_extra_variables_copy(type)                        \
@@ -2344,7 +2347,9 @@ static void expand_blend(u32 *screen_src_ptr, u16 *screen_dest_ptr, u32 start, u
 #endif
 }
 
-static void expand_blend_c(u32 *screen_src_ptr, u16 *screen_dest_ptr, u32 start, u32 end, u16 bldcnt)
+#ifndef __mips__
+static void expand_blend_c(u32 *screen_src_ptr, u16 *screen_dest_ptr,
+ u32 start, u32 end, u16 bldcnt)
 {
   u32 pixel_pair;
   u32 pixel_top, pixel_bottom;
@@ -2367,6 +2372,7 @@ static void expand_blend_c(u32 *screen_src_ptr, u16 *screen_dest_ptr, u32 start,
     expand_loop(blend, effect_condition_alpha, pixel_pair);
   }
 }
+#endif
 
 // Blend scanline with white.
 
@@ -3175,5 +3181,3 @@ void video_write_mem_savestate(SceUID savestate_file)
 {
   VIDEO_SAVESTATE_BODY(WRITE_MEM);
 }
-
-

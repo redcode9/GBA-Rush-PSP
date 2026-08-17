@@ -16,19 +16,19 @@ PSP_LARGE_MEMORY = 1
 
 PSP_EBOOT_ICON = res/ICON0.png
 PSP_EBOOT_PIC1 = res/PIC1.png
-PSP_EBOOT_TITLE = TempGBA4PSP-mod (20260807)
+PSP_EBOOT_TITLE = TempGBA4PSP
 
 EXTRA_TARGETS = EBOOT.PBP
 
 COMMON_FILE = \
- common.h \
+ common.h codebreaker.h \
  cpu.h memory.h video.h psp_video.h input.h sound.h main.h message.h mh_print.h gui.h zip.h png.h \
  ku_bridge.h exception.h ch_print.h
 
 MAINOBJS = \
  cpu.o memory.o video_dispatch.o video_cc_wrap.o video_old_wrap.o psp_video.o input.o sound.o main.o message.o mh_print.o gui.o zip.o png.o \
  mips_stub.o video_blend_mips.o \
- ku_bridge.o exception.o cheats.o ch_print.o \
+ ku_bridge.o exception.o cheats.o codebreaker.o ch_print.o \
  boxart.o
 
 OBJZ = adler32.o crc32.o deflate.o infback.o inffast.o inflate.o inftrees.o trees.o zutil.o
@@ -45,12 +45,16 @@ CFLAGS = \
  -march=allegrex -mfp32 -mgp32 -mlong32 -mabi=eabi \
  -fomit-frame-pointer -fstrict-aliasing \
  -falign-functions=32 -falign-loops -falign-labels -falign-jumps \
- -Wall -Wundef -Wpointer-arith -Wbad-function-cast -Wwrite-strings -Wmissing-prototypes -Wsign-compare \
+ -Wall -Wundef -Wpointer-arith -Wwrite-strings -Wsign-compare \
  -DZLIB_CONST -flto
 
-CXXFLAGS = ${CFLAGS}
+CXXFLAGS =
 
 ASFLAGS = ${CFLAGS}
+
+C_ONLY_OBJS = $(filter-out video_cc_wrap.o mips_stub.o video_blend_mips.o ku_bridge.o,$(OBJS))
+$(C_ONLY_OBJS): CFLAGS += -Wbad-function-cast -Wmissing-prototypes
+$(OBJZ) $(OBJG): CFLAGS += -Wno-old-style-definition
 
 INCDIR = SDK/include src src/zlib src/libpower
 LIBDIR = SDK/lib

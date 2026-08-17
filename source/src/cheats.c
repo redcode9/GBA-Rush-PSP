@@ -19,6 +19,7 @@
  */
 
 #include "common.h"
+#include "codebreaker.h"
 
 CHEAT_TYPE ALIGN_DATA cheats[MAX_CHEATS];
 u32 num_cheats = 0;
@@ -42,183 +43,29 @@ static u32 codebreaker_hook_address(u32 op1);
 static u32 codebreaker_entry_hook(const CHEAT_TYPE *cheat);
 static u32 codebreaker_operation_lines(const CHEAT_TYPE *cheat, u32 line);
 
-typedef struct
+u16 codebreaker_memory_read16(u32 address)
 {
-  u32 master;
-  u32 seeds[4];
-  u32 rng_state;
-  u8 table[48];
-} CODEBREAKER_STATE;
-
-static u32 codebreaker_rand(CODEBREAKER_STATE *state)
-{
-  u32 roll = state->rng_state * 0x41C64E6D + 0x3039;
-  u32 roll2 = roll * 0x41C64E6D + 0x3039;
-  u32 roll3 = roll2 * 0x41C64E6D + 0x3039;
-  u32 mix = (roll << 14) & 0xC0000000;
-
-  mix |= (roll2 >> 1) & 0x3FFF8000;
-  mix |= (roll3 >> 16) & 0x7FFF;
-  state->rng_state = roll3;
-  return mix;
+  return read_memory16(address);
 }
 
-static u32 codebreaker_swap_index(CODEBREAKER_STATE *state)
+u32 codebreaker_memory_read32(u32 address)
 {
-  u32 roll = codebreaker_rand(state);
-  u32 count = sizeof(state->table);
-  u32 bit = 1;
-  u32 mask;
-
-  if(roll == count)
-    roll = 0;
-
-  if(roll < count)
-    return roll;
-
-  while((count < 0x10000000) && (count < roll))
-  {
-    count <<= 4;
-    bit <<= 4;
-  }
-
-  while((count < 0x80000000) && (count < roll))
-  {
-    count <<= 1;
-    bit <<= 1;
-  }
-
-  while(1)
-  {
-    mask = 0;
-    if(roll >= count)
-      roll -= count;
-    if(roll >= (count >> 1))
-    {
-      roll -= count >> 1;
-      mask |= (bit >> 1) | (bit << 31);
-    }
-    if(roll >= (count >> 2))
-    {
-      roll -= count >> 2;
-      mask |= (bit >> 2) | (bit << 30);
-    }
-    if(roll >= (count >> 3))
-    {
-      roll -= count >> 3;
-      mask |= (bit >> 3) | (bit << 29);
-    }
-    if((roll == 0) || ((bit >> 4) == 0))
-      break;
-    bit >>= 4;
-    count >>= 4;
-  }
-
-  mask &= 0xE0000000;
-  if((mask == 0) || ((bit & 7) == 0))
-    return roll;
-
-  if(mask & ((bit >> 3) | (bit << 29)))
-    roll += count >> 3;
-  if(mask & ((bit >> 2) | (bit << 30)))
-    roll += count >> 2;
-  if(mask & ((bit >> 1) | (bit << 31)))
-    roll += count >> 1;
-
-  return roll;
+  return read_memory32(address);
 }
 
-static void codebreaker_reseed(CODEBREAKER_STATE *state, u32 op1, u16 op2)
+void codebreaker_memory_write8(u32 address, u8 value)
 {
-  u32 i;
-
-  state->rng_state = (op2 & 0xFF) ^ 0x1111;
-  for(i = 0; i < sizeof(state->table); i++)
-    state->table[i] = i;
-
-  for(i = 0; i < 0x50; i++)
-  {
-    u32 x = codebreaker_swap_index(state);
-    u32 y = codebreaker_swap_index(state);
-    u8 swap = state->table[x];
-    state->table[x] = state->table[y];
-    state->table[y] = swap;
-  }
-
-  state->rng_state = 0x4EFAD1C3;
-  for(i = 0; i < ((op1 >> 24) & 0xF); i++)
-    state->rng_state = codebreaker_rand(state);
-
-  state->seeds[2] = codebreaker_rand(state);
-  state->seeds[3] = codebreaker_rand(state);
-
-  state->rng_state = (op2 >> 8) ^ 0xF254;
-  for(i = 0; i < (op2 >> 8); i++)
-    state->rng_state = codebreaker_rand(state);
-
-  state->seeds[0] = codebreaker_rand(state);
-  state->seeds[1] = codebreaker_rand(state);
-  state->master = op1;
+  write_memory8(address, value);
 }
 
-static void codebreaker_load_bytes(u8 *buffer, u32 op1, u16 op2)
+void codebreaker_memory_write16(u32 address, u16 value)
 {
-  buffer[0] = op1 >> 24;
-  buffer[1] = op1 >> 16;
-  buffer[2] = op1 >> 8;
-  buffer[3] = op1;
-  buffer[4] = op2 >> 8;
-  buffer[5] = op2;
+  write_memory16(address, value);
 }
 
-static void codebreaker_store_bytes(u8 *buffer, u32 *op1, u16 *op2)
+void codebreaker_memory_write32(u32 address, u32 value)
 {
-  *op1 = ((u32)buffer[0] << 24) | ((u32)buffer[1] << 16) |
-   ((u32)buffer[2] << 8) | buffer[3];
-  *op2 = ((u16)buffer[4] << 8) | buffer[5];
-}
-
-static void codebreaker_decrypt(CODEBREAKER_STATE *state, u32 *op1, u16 *op2)
-{
-  u8 buffer[6];
-  s32 i;
-  u32 master;
-
-  codebreaker_load_bytes(buffer, *op1, *op2);
-  for(i = sizeof(state->table) - 1; i >= 0; i--)
-  {
-    u32 offset_x = i >> 3;
-    u32 offset_y = state->table[i] >> 3;
-    u32 bit_x = i & 7;
-    u32 bit_y = state->table[i] & 7;
-    u8 x = (buffer[offset_x] >> bit_x) & 1;
-    u8 y = (buffer[offset_y] >> bit_y) & 1;
-
-    buffer[offset_x] &= ~(1 << bit_x);
-    if(y)
-      buffer[offset_x] |= 1 << bit_x;
-    buffer[offset_y] &= ~(1 << bit_y);
-    if(x)
-      buffer[offset_y] |= 1 << bit_y;
-  }
-  codebreaker_store_bytes(buffer, op1, op2);
-
-  *op1 ^= state->seeds[0];
-  *op2 ^= state->seeds[1];
-
-  codebreaker_load_bytes(buffer, *op1, *op2);
-  master = state->master;
-  for(i = 0; i < 5; i++)
-    buffer[i] ^= (master >> 8) ^ buffer[i + 1];
-  buffer[5] ^= master >> 8;
-
-  for(i = 5; i > 0; i--)
-    buffer[i] ^= master ^ buffer[i - 1];
-  buffer[0] ^= master;
-  codebreaker_store_bytes(buffer, op1, op2);
-
-  *op1 ^= state->seeds[2];
-  *op2 ^= state->seeds[3];
+  write_memory32(address, value);
 }
 
 static u32 hook_address_present(const u32 *addresses, u32 count, u32 address)
@@ -469,7 +316,7 @@ static CHEAT_LOAD_RESULT parse_cheats_file(FILE *cheats_file, u32 store,
   u32 line_number = 0;
   CODEBREAKER_STATE codebreaker_state;
 
-  memset(&codebreaker_state, 0, sizeof(codebreaker_state));
+  codebreaker_state_reset(&codebreaker_state);
 
   while(fgets(current_line, sizeof(current_line), cheats_file))
   {
@@ -595,11 +442,9 @@ static CHEAT_LOAD_RESULT parse_cheats_file(FILE *cheats_file, u32 store,
         {
           u32 opcode = cb_address >> 28;
 
-          if(opcode == 0x4)
-            pending_codebreaker_data = 1;
-          else if(opcode == 0x5)
-            pending_codebreaker_data = (cb_value + 2) / 3;
-          else if((opcode == 0xD) &&
+          pending_codebreaker_data = codebreaker_payload_lines(cb_address,
+           cb_value);
+          if((opcode == 0xD) &&
            ((cb_address & 0x0FFFFFFF) != 0x20))
           {
             if(error_line)
@@ -921,17 +766,13 @@ static void process_cheat_gs3(CHEAT_TYPE *cheat)
 
 static u32 codebreaker_operation_lines(const CHEAT_TYPE *cheat, u32 line)
 {
-  u32 opcode;
   u32 lines = 1;
 
   if(line >= cheat->num_cheat_lines)
     return 0;
 
-  opcode = cheat->cheat_codes[line * 2] >> 28;
-  if(opcode == 0x4)
-    lines = 2;
-  else if(opcode == 0x5)
-    lines += (cheat->cheat_codes[(line * 2) + 1] + 2) / 3;
+  lines += codebreaker_payload_lines(cheat->cheat_codes[line * 2],
+   cheat->cheat_codes[(line * 2) + 1]);
 
   if(lines > (cheat->num_cheat_lines - line))
     lines = cheat->num_cheat_lines - line;
@@ -940,140 +781,7 @@ static u32 codebreaker_operation_lines(const CHEAT_TYPE *cheat, u32 line)
 
 static void process_cheat_codebreaker(CHEAT_TYPE *cheat)
 {
-  u32 i;
-
-  for(i = 0; i < cheat->num_cheat_lines; i++)
-  {
-    u32 op1 = cheat->cheat_codes[i * 2];
-    u16 op2 = cheat->cheat_codes[(i * 2) + 1];
-    u32 opcode = op1 >> 28;
-    u32 address = op1 & 0x0FFFFFFF;
-    u32 condition = 1;
-    u32 is_condition = 0;
-
-    switch(opcode)
-    {
-      case 0x0: /* Game ID */
-      case 0x1: /* Timed hook, handled by the dynarec callback */
-      case 0x9: /* Encryption seed, decoded while loading the file */
-        break;
-
-      case 0x2:
-        address &= ~1u;
-        write_memory16(address, read_memory16(address) | op2);
-        break;
-
-      case 0x3:
-        write_memory8(address, op2);
-        break;
-
-      case 0x4:
-        if((i + 1) < cheat->num_cheat_lines)
-        {
-          u32 parameters = cheat->cheat_codes[(i + 1) * 2];
-          u16 address_offset = cheat->cheat_codes[((i + 1) * 2) + 1];
-          u32 repeat = parameters & 0xFFFF;
-          u16 operand = op2;
-          u16 operand_offset = parameters >> 16;
-          u32 j;
-
-          address &= ~1u;
-          for(j = 0; j < repeat; j++)
-          {
-            write_memory16(address, operand);
-            address += address_offset;
-            operand += operand_offset;
-          }
-          i++;
-        }
-        break;
-
-      case 0x5:
-      {
-        u32 remaining = (u32)op2 * 2;
-        u32 next_line = i + 1;
-
-        while(remaining && (next_line < cheat->num_cheat_lines))
-        {
-          u32 values = cheat->cheat_codes[next_line * 2];
-          u16 value3 = cheat->cheat_codes[(next_line * 2) + 1];
-          u8 bytes[6];
-          u32 byte;
-
-          codebreaker_load_bytes(bytes, values, value3);
-          for(byte = 0; (byte < sizeof(bytes)) && remaining; byte++)
-          {
-            write_memory8(address++, bytes[byte]);
-            remaining--;
-          }
-          next_line++;
-        }
-        i = next_line - 1;
-        break;
-      }
-
-      case 0x6:
-        address &= ~1u;
-        write_memory16(address, read_memory16(address) & op2);
-        break;
-
-      case 0x7:
-        address &= ~1u;
-        condition = read_memory16(address) == op2;
-        is_condition = 1;
-        break;
-
-      case 0x8:
-        address &= ~1u;
-        write_memory16(address, op2);
-        break;
-
-      case 0xA:
-        address &= ~1u;
-        condition = read_memory16(address) != op2;
-        is_condition = 1;
-        break;
-
-      case 0xB:
-        address &= ~1u;
-        condition = read_memory16(address) > op2;
-        is_condition = 1;
-        break;
-
-      case 0xC:
-        address &= ~1u;
-        condition = read_memory16(address) < op2;
-        is_condition = 1;
-        break;
-
-      case 0xD:
-        condition = (address == 0x20) &&
-         ((read_memory16(0x04000130) & op2) == 0);
-        is_condition = 1;
-        break;
-
-      case 0xE:
-        if(address & 1)
-        {
-          address &= ~1u;
-          write_memory32(address, read_memory32(address) + (s32)(s16)op2);
-        }
-        else
-        {
-          write_memory16(address, read_memory16(address) + op2);
-        }
-        break;
-
-      case 0xF:
-        address &= ~1u;
-        condition = (read_memory16(address) & op2) != 0;
-        is_condition = 1;
-        break;
-    }
-
-    if(is_condition && !condition && ((i + 1) < cheat->num_cheat_lines))
-      i += codebreaker_operation_lines(cheat, i + 1);
-  }
+  codebreaker_execute(cheat->cheat_codes, cheat->num_cheat_lines);
 }
 
 static u32 codebreaker_hook_address(u32 op1)

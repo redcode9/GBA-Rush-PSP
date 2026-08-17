@@ -88,7 +88,7 @@ static u16 get_preset_color(u32 theme, u32 item_index)
     return 0;
 }
 
-void apply_theme(u32 theme)
+static void apply_theme(u32 theme)
 {
     if (theme >= 9) theme = 0;
 
@@ -555,7 +555,6 @@ static void draw_status_bar(void);
 void menu_reset_single_color(u32 idx);
 
 /* Forward declarations for theme and color picker */
-void apply_theme(u32 theme);
 void menu_pick_color(void);
 
 /* Forward declarations for savestate slot helpers */
@@ -1431,8 +1430,6 @@ static void get_timestamp_string(char *buffer, u16 msg_id, ScePspDateTime *msg_t
 static void get_savestate_info(char *filename, u16 *snapshot, char *timestamp);
 static void get_savestate_filename(u32 slot, char *name_buffer);
 
-static void get_snapshot_filename(char *name, const char *ext);
-static void save_bmp(const char *path, u16 *screen_image);
 
 /* ========================================================================
  * Savestate preview extraction for file browser
@@ -1861,36 +1858,38 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
           update_file_scroll(file_hash);
       }
 
-		if (option_language == 0)
-			print_string(current_dir_short, 6, 2, color_help_text, BG_NO_FILL);
-		else
-			print_string_gbk(current_dir_short, 6, 2, color_help_text, BG_NO_FILL);
-      if ((counter % 30) == 0)
-	  {
-	    if (option_language == 0)
-        update_status_string(time_str, batt_str, &color_batt_life);
-		else
-        update_status_string_gbk(time_str, batt_str, &color_batt_life);
-	  }
-      counter++;
-	  if (option_language == 0)
-	  print_string(time_str, TIME_STATUS_POS_X, 2, color_help_text, BG_NO_FILL);
-	  else
-	  print_string_gbk(time_str, TIME_STATUS_POS_X, 2, color_help_text, BG_NO_FILL);
- 
       if (option_language == 0)
-		print_string(batt_str, BATT_STATUS_POS_X, 2, color_batt_life, BG_NO_FILL);
-	  else
-		print_string_gbk(batt_str, BATT_STATUS_POS_X, 2, color_batt_life, BG_NO_FILL);
-
-		/* At root, Square/Back does nothing — show simplified hint */
-		{
-      char *root_check = strstr(current_dir_name, ":/");
-      if (root_check != NULL && strlen(root_check) == 2)
-        print_swap_aware(MSG[MSG_BROWSER_HELP_ROOT], 30, 258, color_help_text, BG_NO_FILL);
+        print_string(current_dir_short, 6, 2, color_help_text, BG_NO_FILL);
       else
-        print_swap_aware(MSG[MSG_BROWSER_HELP], 30, 258, color_help_text, BG_NO_FILL);
-    }
+        print_string_gbk(current_dir_short, 6, 2, color_help_text, BG_NO_FILL);
+      if ((counter % 30) == 0)
+      {
+        if (option_language == 0)
+          update_status_string(time_str, batt_str, &color_batt_life);
+        else
+          update_status_string_gbk(time_str, batt_str, &color_batt_life);
+      }
+      counter++;
+      if (option_language == 0)
+        print_string(time_str, TIME_STATUS_POS_X, 2, color_help_text, BG_NO_FILL);
+      else
+        print_string_gbk(time_str, TIME_STATUS_POS_X, 2, color_help_text, BG_NO_FILL);
+
+      if (option_language == 0)
+        print_string(batt_str, BATT_STATUS_POS_X, 2, color_batt_life, BG_NO_FILL);
+      else
+        print_string_gbk(batt_str, BATT_STATUS_POS_X, 2, color_batt_life, BG_NO_FILL);
+
+      /* At root, Square/Back does nothing — show simplified hint. */
+      {
+        char *root_check = strstr(current_dir_name, ":/");
+        if (root_check != NULL && strlen(root_check) == 2)
+          print_swap_aware(MSG[MSG_BROWSER_HELP_ROOT], 30, 258,
+           color_help_text, BG_NO_FILL);
+        else
+          print_swap_aware(MSG[MSG_BROWSER_HELP], 30, 258,
+           color_help_text, BG_NO_FILL);
+      }
 /*
       char str_buffer_size[32];
       sprintf(str_buffer_size, MSG[MSG_BUFFER], gamepak_ram_buffer_size >> 20);
@@ -3019,61 +3018,9 @@ static void print_menu_line_clipped(const char *str, s16 x, s16 y, u16 fg, s16 b
     print_menu_line(buf, x, y, fg, bg);
 }
 
-static void format_menu_option_line(char *dst, u32 dst_size, const MenuOptionType *opt)
-{
-    const char *fmt;
-
-    if (dst == NULL || dst_size == 0 || opt == NULL)
-        return;
-
-    fmt = opt->display_string;
-    if (fmt == NULL)
-    {
-        dst[0] = '\0';
-        return;
-    }
-
-    if (opt->option_type & NUMBER_SELECTION_OPTION)
-    {
-        sprintf(dst, fmt, *(opt->current_option));
-        return;
-    }
-
-    if (opt->option_type & STRING_SELECTION_OPTION)
-    {
-        const char **choices = (const char **)opt->options;
-        u32 idx = *(opt->current_option);
-        const char *value = "";
-        const char *spec;
-
-        if (choices != NULL && idx < opt->num_options && choices[idx] != NULL)
-            value = choices[idx];
-
-        spec = strstr(fmt, "%s");
-        if (spec != NULL)
-        {
-            u32 prefix_len = (u32)(spec - fmt);
-
-            if (prefix_len >= dst_size)
-                prefix_len = dst_size - 1;
-            memcpy(dst, fmt, prefix_len);
-            dst[prefix_len] = '\0';
-            strncat(dst, value, dst_size - (u32)strlen(dst) - 1);
-            return;
-        }
-
-        strncpy(dst, fmt, dst_size - 1);
-        dst[dst_size - 1] = '\0';
-        return;
-    }
-
-    strncpy(dst, fmt, dst_size - 1);
-    dst[dst_size - 1] = '\0';
-}
-
 /* Print a menu option by splitting the format string at %s or %d.
    Label is printed fixed. Value is printed with scroll/clip.
-   This avoids format_menu_option_line() which merges them into one string. */
+   This keeps long values independently scrollable. */
 static void print_menu_option_split(const MenuOptionType *opt, s16 x, s16 y, u16 fg, u16 bg, u32 max_chars, s32 scroll_offset)
 {
     const char *fmt = opt->display_string;
@@ -3126,7 +3073,7 @@ static void print_menu_option_split(const MenuOptionType *opt, s16 x, s16 y, u16
 
     if (is_numeric) {
         /* %d — format the numeric value */
-        sprintf(value_buf, "%d", *(opt->current_option));
+        sprintf(value_buf, "%lu", *(opt->current_option));
         value = value_buf;
         value_len = strlen(value);
     } else {
@@ -3195,7 +3142,6 @@ static void menu_refresh_language(void)
 
 u32 menu(void)
 {
-	int id_language;
 
   /* A held speed button must not leave the audio worker suspended while the
    * emulator is in the menu. Gameplay input will restore the hold state when
@@ -4650,7 +4596,7 @@ u32 menu(void)
                 /* Numeric option — format the number */
                 label_chars = (u32)(spec_d - fmt);
                 char num_buf[16];
-                sprintf(num_buf, "%d", *(display_option->current_option));
+                sprintf(num_buf, "%lu", *(display_option->current_option));
                 value_len = strlen(num_buf);
             } else {
                 /* No format spec — use full string */
@@ -5924,78 +5870,4 @@ s32 load_dir_cfg(char *file_name)
   strcpy(dir_boxart_folders, main_path);
   apply_theme(option_theme);
   return -1;
-}
-
-
-/*-----------------------------------------------------------------------------
-  Screen Capture
------------------------------------------------------------------------------*/
-
-static void get_snapshot_filename(char *name, const char *ext)
-{
-  char filename[MAX_FILE];
-  char timestamp[80];
-
-  ScePspDateTime current_time = { 0 };
-
-  change_ext(gamepak_filename, filename, "_");
-
-  sceRtcGetCurrentClockLocalTime(&current_time);
-  get_timestamp_string(timestamp, MSG_SS_DATE_FMT_0, &current_time, 7);
-
-  sprintf(name, "%s%s%s.%s", dir_snap, filename, timestamp, ext);
-}
-
-static void save_bmp(const char *path, u16 *screen_image)
-{
-  const u8 ALIGN_DATA header[] =
-  {
-     'B',  'M', 0x36, 0xC2, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00, 0x28, 0x00,
-    0x00, 0x00,  240, 0x00, 0x00, 0x00,  160, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0xC2, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-  };
-
-  SceUID ss;
-
-  u32 x, y;
-  u16 color;
-  u16 *src_ptr;
-  u8  *bmp_data, *dest_ptr;
-
-  bmp_data = (u8 *)malloc(GBA_SCREEN_WIDTH * GBA_SCREEN_HEIGHT * 3);
-
-  if (bmp_data == NULL)
-  {
-    clear_screen(COLOR32_BLACK);
-    error_msg(MSG[MSG_ERR_MALLOC], CONFIRMATION_CONT);
-    return;
-  }
-
-  dest_ptr = bmp_data;
-
-  for (y = 0; y < GBA_SCREEN_HEIGHT; y++)
-  {
-    src_ptr = &screen_image[(GBA_SCREEN_HEIGHT - y - 1) * GBA_SCREEN_WIDTH];
-
-    for (x = 0; x < GBA_SCREEN_WIDTH; x++)
-    {
-      color = src_ptr[x];
-
-      *dest_ptr++ = (u8)COL15_GET_B8(color);
-      *dest_ptr++ = (u8)COL15_GET_G8(color);
-      *dest_ptr++ = (u8)COL15_GET_R8(color);
-    }
-  }
-
-  FILE_OPEN(ss, path, WRITE);
-
-  if (FILE_CHECK_VALID(ss))
-  {
-    FILE_WRITE_VARIABLE(ss, header);
-    FILE_WRITE(ss, bmp_data, GBA_SCREEN_WIDTH * GBA_SCREEN_HEIGHT * 3);
-    FILE_CLOSE(ss);
-  }
-
-  free(bmp_data);
 }

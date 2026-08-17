@@ -1893,7 +1893,7 @@ static void order_layers(u32 layer_flags, u32 vcnt)
     for(lnum = 3; lnum >= 0; lnum--)
     {
       if(((layer_flags >> lnum) & 1) &&
-         ((read_ioreg(REG_BGxCNT(lnum)) & 0x03) == priority))
+         ((read_ioreg(REG_BGxCNT(lnum)) & 0x03) == (u32)priority))
       {
         layer_order[layer_count++] = lnum;
       }
@@ -2644,4 +2644,3 @@ void video_write_mem_savestate(SceUID savestate_file)
 {
   VIDEO_SAVESTATE_BODY(WRITE_MEM);
 }
-

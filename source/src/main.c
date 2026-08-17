@@ -139,7 +139,6 @@ static void init_main(void);
 static void setup_main(const char *eboot_path);
 static void load_setting_cfg(void);
 static void load_bios_file(void);
-static int load_ku_bridge_prx(int devkit_version);
 
 static void setup_callbacks(void);
 static int exit_callback(int arg1, int arg2, void *common);
@@ -762,40 +761,6 @@ static void init_main(void)
 }
 
 
-static int load_ku_bridge_prx(int devkit_version)
-{
-  SceUID mod;
-  char prx_path[MAX_PATH];
-
-  sprintf(prx_path, "%sku_bridge.prx", main_path);
-
-  if ((mod = kuKernelLoadModule(prx_path, 0, NULL)) >= 0)
-  {
-    int status;
-
-    if (sceKernelStartModule(mod, 0, 0, &status, NULL) < 0)
-    {
-      sceKernelUnloadModule(mod);
-
-      print_string("Could not start ku_bridge.prx", 6, 6, COLOR15_WHITE, COLOR15_BLACK);
-      flip_screen(1);
-      sceKernelDelayThread(5 * 1000 * 1000);
-      quit();
-    }
-
-    init_ku_bridge(devkit_version);
-    init_input_kernel();
-
-    if (devkit_version >= 0x03050210)
-      __draw_volume_status = draw_volume_status;
-
-    return 0;
-  }
-
-  return -1;
-}
-
-
 static void load_setting_cfg(void)
 {
   char filename[MAX_FILE];
@@ -884,11 +849,7 @@ static void setup_main(const char *eboot_path)
 
   sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_DATE_FORMAT, &date_format);
 
-  // Kernel-mode controls disabled for PPSSPP compatibility
-  // if ((load_ku_bridge_prx(devkit_version) < 0) && (devkit_version < 0x06000010))
-  //   enable_home_menu = 0;
-  // else
-  //   enable_home_menu = 1;
+  /* Kernel-mode controls are disabled for PPSSPP compatibility. */
   enable_home_menu = 1;
 
   load_config_file();

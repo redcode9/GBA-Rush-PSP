@@ -144,26 +144,6 @@ static u32 png_be32(const u8 *p)
     return ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | p[3];
 }
 
-/* Fast CRC-32 table (nibble-based) for PNG chunk validation.
- * We don't actually verify CRCs for speed — this is here for completeness. */
-static u32 png_crc32(const u8 *buf, u32 len)
-{
-    static const u32 crc_table[16] = {
-        0x00000000,0x1db71064,0x3b6e20c8,0x26d930ac,
-        0x76dc4190,0x6b6b51f4,0x4db26158,0x5005713c,
-        0xedb88320,0xf00f9344,0xd6d6a3e8,0xcb61b38c,
-        0x9b64c2b0,0x86d3d2d4,0xa00ae278,0xbdbdf21c
-    };
-    u32 c = ~0U;
-    u32 i;
-    for (i = 0; i < len; i++) {
-        c ^= buf[i];
-        c = (c >> 4) ^ crc_table[c & 0xF];
-        c = (c >> 4) ^ crc_table[c & 0xF];
-    }
-    return ~c;
-}
-
 /* zlib inflate wrapper.
  * Uses the project's existing zlib linkage — no extra dependencies. */
 #include <zlib.h>
