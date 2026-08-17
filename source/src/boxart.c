@@ -1,5 +1,5 @@
 /* ============================================================================
- * TempGBA4PSP-mod — Boxart module with transparent on-device cache + Carousel
+ * TempGBA4PSP — Boxart module with transparent on-device cache + Carousel
  * ============================================================================
  *
  * Problem:

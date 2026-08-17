@@ -63,7 +63,7 @@ class InfoTabMixin:
         self.rom_prefix.set("ms0:/")
 
         self.rom_path = ctk.CTkEntry(rom_frame,
-                                      placeholder_text="PSP/GAME/tempgba4psp-mod/roms/SampleGame.gba")
+                                      placeholder_text="PSP/GAME/TempGBA4PSP/roms/SampleGame.gba")
         self.rom_path.pack(side="left", padx=(5, 0), fill="x", expand=True)
         self.rom_path.bind("<KeyRelease>", self._on_any_change)
 
@@ -82,7 +82,7 @@ class InfoTabMixin:
         self.emu_prefix.set("ms0:/")
 
         self.emu_path = ctk.CTkEntry(emu_frame,
-                                      placeholder_text="PSP/GAME/tempgba4psp-mod/")
+                                      placeholder_text="PSP/GAME/TempGBA4PSP/")
         self.emu_path.pack(side="left", padx=(5, 0), fill="x", expand=True)
         self.emu_path.bind("<KeyRelease>", self._on_any_change)
 
@@ -213,7 +213,7 @@ class InfoTabMixin:
         self.info_box.insert("end", "The output folder will contain:\n")
         self.info_box.insert("end", "  - EBOOT.PBP (launcher with custom assets)\n")
         self.info_box.insert("end", "  - rom_path.txt (points to your ROM)\n")
-        self.info_box.insert("end", "  - emulator_path.txt (points to TempGBA4PSP-mod)\n")
+        self.info_box.insert("end", "  - emulator_path.txt (points to TempGBA4PSP)\n")
         self.info_box.insert("end", "  - assets/ (converted PNG/AT3 files)\n")
         self.info_box.insert("end", "  - readme.txt (installation instructions)\n")
         self.info_box.configure(state="disabled")

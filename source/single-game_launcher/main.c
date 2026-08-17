@@ -1,4 +1,4 @@
-/* TempGBA-mod Single-Game Launcher
+/* TempGBA4PSP Single-Game Launcher
  *
  * Reads rom_path.txt        (required)  -> ROM path to auto-load
  * Reads emulator_path.txt   (optional)  -> override emulator directory
@@ -19,7 +19,7 @@
 
 #include "systemctrl.h"
 
-PSP_MODULE_INFO("TempGBA-mod Single-Game Launcher", PSP_MODULE_USER, 1, 1);
+PSP_MODULE_INFO("TempGBA4PSP Launcher", PSP_MODULE_USER, 1, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 
 #define MAX_PATH 512
@@ -28,7 +28,7 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 
 /* Default emulator folder and boot file names.
  * Change these if your emulator uses different naming. */
-#define DEFAULT_EMU_FOLDER   "tempgba4psp-mod"
+#define DEFAULT_EMU_FOLDER   "TempGBA4PSP"
 #define DEFAULT_BOOT_FILE    "EBOOT.PBP"
 
 /* Show a simple error screen and wait for any button press.
@@ -41,7 +41,7 @@ static void error_screen(const char *line1, const char *line2, const char *path)
 
     pspDebugScreenClear();
     pspDebugScreenPrintf("\n\n");
-    pspDebugScreenPrintf("  TempGBA-mod Single-Game Launcher\n");
+    pspDebugScreenPrintf("  TempGBA4PSP Single-Game Launcher\n");
     pspDebugScreenPrintf("  =============================\n\n");
     pspDebugScreenPrintf("  ERROR: %s\n\n", line1);
 
@@ -114,8 +114,8 @@ static void find_my_dir(char *out, const char *argv0)
 
 /* Go one folder up from my_dir, append DEFAULT_EMU_FOLDER + "/"
  *
- * Example: ms0:/PSP/GAME/tempgba4psp-mod_single-game/
- *      ->  ms0:/PSP/GAME/tempgba4psp-mod/
+ * Example: ms0:/PSP/GAME/SampleGame/
+ *      ->  ms0:/PSP/GAME/TempGBA4PSP/
  */
 static void derive_emulator_dir(char *out, const char *my_dir)
 {

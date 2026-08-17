@@ -350,15 +350,15 @@ class SingleGameBuilder:
         Write rom_path.txt and emulator_path.txt to the output folder.
 
         These text files tell the launcher stub where to find the GBA ROM
-        and the TempGBA4PSP-mod emulator on the PSP.
+        and the TempGBA4PSP emulator on the PSP.
         """
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # --- rom_path.txt ---
         rom_lines = [
-            "# TempGBA4PSP-mod Single-Game Launcher",
+            "# TempGBA4PSP Single-Game Launcher",
             "# This file MUST contain the full path to your GBA ROM on the PSP.",
-            "# Example: ms0:/PSP/GAME/tempgba4psp-mod/roms/MyGame.gba",
+            "# Example: ms0:/PSP/GAME/TempGBA4PSP/roms/MyGame.gba",
             "#",
         ]
         if rom_path:
@@ -382,12 +382,12 @@ class SingleGameBuilder:
                 emu_path += "/"
 
         emu_lines = [
-            "# TempGBA4PSP-mod Single-Game Launcher",
-            "# This file is OPTIONAL if your TempGBA4PSP-mod emulator folder is named",
-            '# "tempgba4psp-mod" and is in the same parent folder as this launcher folder.',
+            "# TempGBA4PSP Single-Game Launcher",
+            "# This file is OPTIONAL if your TempGBA4PSP emulator folder is named",
+            '# "TempGBA4PSP" and is in the same parent folder as this launcher folder.',
             "# It is ONLY required if the emulator folder or eboot file have a different name or are in a different parent folder.",
-            "# Example: ms0:/PSP/GAME/tempgba4psp-mod/",
-            "# Example: ms0:/PSP/GAME/tempgba4psp-mod/EBOOT.PBP",
+            "# Example: ms0:/PSP/GAME/TempGBA4PSP/",
+            "# Example: ms0:/PSP/GAME/TempGBA4PSP/EBOOT.PBP",
             "#",
         ]
         if emu_path:
@@ -404,7 +404,7 @@ class SingleGameBuilder:
 
     def write_readme(self, rom_path: str, emu_path: str, title: str):
         """Write a human-readable readme.txt with installation instructions."""
-        text = f"""TempGBA4PSP-mod Single-Game Launcher Package
+        text = f"""TempGBA4PSP Single-Game Launcher Package
 =====================================
 Game: {title}
 
@@ -416,18 +416,18 @@ This file MUST contain the full path to your GBA ROM on the PSP.
 The launcher cannot work without it.
 
 Example:
-  ms0:/PSP/GAME/tempgba4psp-mod/roms/MyGame.gba
+  ms0:/PSP/GAME/TempGBA4PSP/roms/MyGame.gba
 
 --- emulator_path.txt ---
-This file is OPTIONAL if your TempGBA4PSP-mod emulator is installed in the
-same parent folder with the default folder name "TempGBA4PSP-mod".
+This file is OPTIONAL if your TempGBA4PSP emulator is installed in the
+same parent folder with the default folder name "TempGBA4PSP".
 It is ONLY required if:
   - The emulator folder has a different name
   - The emulator eboot has a different name
   - The emulator is in a different parent folder than this launcher folder.
 
 Example (when required):
-  ms0:/PSP/GAME/tempgba4psp-mod/EBOOT.PBP
+  ms0:/PSP/GAME/TempGBA4PSP/EBOOT.PBP
 
 """
         with open(self.output_dir / "readme.txt", "w") as f:

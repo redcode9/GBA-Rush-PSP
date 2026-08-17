@@ -1,7 +1,7 @@
 # Third-Party Components
 
 This document lists all third-party software bundled with or required by
-**TempGBA4PSP-mod Single-Game Launcher Builder**, along with their licenses
+**TempGBA4PSP Single-Game Launcher Builder**, along with their licenses
 and source code availability.
 
 > This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
@@ -55,7 +55,7 @@ Bundled in the PyInstaller release via `--add-binary`.
 | **Legal Info** | [ffmpeg.org/legal.html](https://ffmpeg.org/legal.html) |
 
 > **Note:** Bundled Windows binary is **ffmpeg 7.1.1 essentials** from
-> [GyanD/codexffmpeg](https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip)
+> [Gyan.dev FFmpeg builds](https://www.gyan.dev/ffmpeg/builds/)
 > (www.gyan.dev). Run `ffmpeg -version` to confirm. Matching sources are available from
 > [ffmpeg.org](https://ffmpeg.org/download.html#source). This essentials build is GPL-configured.
 

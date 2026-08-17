@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Asset conversion for TempGBA4PSP-mod Single-Game Launcher Builder.
+Asset conversion for TempGBA4PSP Single-Game Launcher Builder.
 
 Handles:
   - Image resizing and format conversion (ICON0, PIC0, PIC1)

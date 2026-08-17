@@ -1,288 +1,163 @@
 <p align="center">
-  <img src="source/res/ICON0.png" alt="TempGBA" width="360">
+  <img src="source/res/ICON0.png" alt="TempGBA4PSP" width="360">
 </p>
 
-<h1 align="center">TempGBA4PSP-mod</h1>
+<h1 align="center">TempGBA4PSP</h1>
 
 <p align="center">
-  <strong>A modernized Game Boy Advance emulator for PlayStation Portable</strong><br>
-  Built on TempGBA / gpSP, with ongoing accuracy, performance, UI, and compatibility work.
+  A performance-focused Game Boy Advance emulator for PlayStation Portable,
+  based on TempGBA and gpSP.
 </p>
-
-<p align="center">
-  <a href="https://github.com/andymcca/TempGBA4PSP-mod">GitHub</a> ·
-  <a href="BUILD-DOCKER.md">Docker build</a> ·
-  <a href="https://github.com/GrabowskiDev/TempGBA4PSP-Single-game">Single-game fork compatibility</a>
-</p>
-
----
 
 ## About
 
-**TempGBA4PSP-mod** is a maintained PSP port of TempGBA (itself based on [phoe-nix’s TempGBA lineage](https://github.com/phoe-nix/TempGBA4PSP-mod) and the classic gpSP dynarec core). This tree focuses on real-hardware PSP usability: better menus, stronger game compatibility, dynarec/video accuracy fixes pulled from upstream libretro/gpSP work, and performance options tuned for Allegrex.
+TempGBA4PSP is a homebrew GBA emulator designed for real PSP hardware. This
+fork adds a safer and more complete cheat runtime, timed CodeBreaker hooks, a
+configurable hold-to-fast-forward action, and release-quality regression
+checks while retaining the performance and compatibility work from its
+TempGBA4PSP-mod base.
 
-It remains a homebrew GBA emulator — you need a legal BIOS dump (`gba_bios.bin`) and your own ROMs.
-
----
+You must provide your own legally obtained GBA BIOS and ROM dumps. They are not
+part of this repository or its release packages.
 
 ## Highlights
 
-| Area | What’s new |
-|------|------------|
-| **UI** | Themes, custom colors, multi-language menus, X/O confirm swap, Graphics Options submenu |
-| **Video** | Dual renderer (classic + PR258/`video.cc`), 16:9 fullscreen, OAM hijack toggle, optional PSP VSync |
-| **Performance** | LTO builds, Allegrex blend opts, sticky ROM paging, SWI HLE, EWRAM stack fast paths, RAM JIT reuse modes |
-| **Accuracy** | Dynarec flag fixes, sound I/O masks, OAM/affine/HBlank IRQ fixes, `game_config` SMC gates |
-| **Install** | Custom XMB icon/splash, drop-in single-game (`roms/game.gba`) auto-detect, **included GUI builder tool** for custom XMB bubbles |
-| **Compat** | Fixes for titles that previously failed or glitched (see below) |
+- Plaintext and encrypted CodeBreaker codes, including timed master hooks.
+- Existing GameShark, Pro Action Replay, and direct-write formats.
+- Manual, transactional `.cht` loading with clear filename, count, entry names,
+  and `ON`/`OFF` state.
+- Up to 640 cheat entries with active-entry and sorted-hook indexes that avoid
+  scanning inactive lists in hot paths.
+- Configurable hold-to-fast-forward, with unthrottled emulation, paced display
+  updates, and audio queue recovery on release.
+- Old and new video renderers, multiple scale modes, themes, box art, recent
+  ROMs, configurable dynarec policies, and multilingual menus.
+- Japanese, English, Simplified Chinese, Traditional Chinese, and Italian UI.
+- Optional source-based single-game launcher builder.
 
----
+## Installation
 
-## Features in detail
+Copy the release folder to `PSP/GAME/TempGBA4PSP/`, add your own
+`gba_bios.bin`, and start the emulator from the PSP Game menu.
 
-### Interface & usability
-
-- **UI overhaul (PR #20)** — redesigned menus with clearer Graphics / Emulator options layout.
-- **Theme system** — nine presets (Original, Dark, Light, Blue, Green, Red, Purple, High Contrast, Retro), plus a **custom color picker** (background, active/inactive items, help text, scroll bar, battery colors, and more). Themes can be saved independently of global config.
-- **Boxart display** — Show 141×141 cover art next to the ROM list in the file browser. Place PNG images in the directory set by `boxart_directory` in `dir.ini`. The PNG filename must match the ROM filename (e.g., `SampleGame.png` for `SampleGame.gba`). On first load the PNG is decoded and a `.raw` cache is written for instant loading afterward — you can delete the PNG after the cache is created if you want to save space.
-- **Carousel mode** — Alternative 3D-style ROM browser with boxart and savestate screenshot previews. Folders can also display boxart using the separate `folder_boxart_directory` setting in `dir.ini`. Toggle between list view and carousel view in the file browser.
-- **Recent ROMs** — Up to 5 recently played games appear at the top of the file browser for quick re-launch. Saved automatically between sessions.
-- **Internationalization** — menu strings in **Japanese, English, Simplified Chinese, Traditional Chinese, and Italian**.
-- **Confirm button swap** — choose **O confirms** or **X confirms** (PSP-region style). Older `tempgba.cfg` files written before these slots were added still load correctly.
-- **Savestates** — 10 manual slots plus an automatic slot that saves when you exit the emulator, put the PSP to sleep, load a new ROM, or load a different savestate. 
-- **Savestate UX** — details save/load fixes; leaving the menu after state operations behaves more predictably.
-- **Menu polish** — fixed `%s` label formatting, restored cursor repeat speed, and earlier crash/text issues between game ↔ menu transitions.
-
-### Display & graphics
-
-- **16:9 fullscreen** scale mode (GU path) alongside classic 1× / 1.5× GU / 1.5× software / user scale.
-- **Dual video renderer dispatch** — Old vs New (see [Video renderers](#video-renderers) below).
-- **OAM hijack support** — optional toggle for the New renderer when titles rewrite OAM mid-frame.
-- **PSP VSync** — optional wait-for-vblank on present (Graphics menu).
-- **MIPS blend path** — uses Allegrex `ins` and `maddu` in `expand_blend_mips` for fewer instructions per blended pixel.
-- **HBlank IRQ scanline window** — tunable start/end lines (see [HBlank IRQ range](#hblank-irq-range) below).
-- **Affine / BG fixes** — corrected affine background reference updates (including BG3) and related old-renderer bugs.
-
-### Performance & dynarec
-
-- **Link-time optimization (LTO)** enabled in the PSP build for better cross-unit inlining and code layout.
-- **Thumb ROM PC-pool loads** — same-page `LDR rd,[pc,#imm]` folded into immediates in the dynarec where safe.
-- **Sticky ROM page cache** — reduces gamepak paging thrash on large ROMs under memory pressure.
-- **Gamepak buffer allocation** — improved sizing, with 1 MiB step-down after a failed 16 MiB attempt so more PSP configs can still run big carts.
-- **Shared ROM load stubs** across mirrored gamepak regions `0x08`–`0x0B`.
-- **BIOS SWI vector** precompiled and pinned for direct block linking.
-- **Inline HLE** for `Div` / `DivArm` SWIs to avoid BIOS trap overhead on hot paths.
-- **EWRAM fast path** for SP-relative `LDM`/`STM` stack traffic.
-- **RAM dynarec modes** — Full flush / Partial no reuse / Partial + reuse (see [Dynarec modes](#dynarec-modes) below).
-- **IRQ delay cycle accounting** fixes for more stable timing-sensitive titles.
-
-### Accuracy & game_config
-
-- **ADCS / SBCS / RSCS flag codegen** — MIPS dynarec fix ported from [libretro/gpsp](https://github.com/libretro/gpsp) (`88454e9`) so carry-with-borrow instructions set C/V correctly.
-- **Sound I/O write masks** — unused bits masked on sound control registers (matching hardware / libretro), which helps accuracy checks in ROM hacks.
-- **OAM sorting / visibility fixes** from libretro-gpsp applied to the old renderer.
-- **`game_config.txt` improvements**
-  - Multiple `idle_loop_eliminate_target` and `smc_cutpoint` lines per game (see [Compatibility notes](#game_configtxt--idle-loops--smc-cutpoints)).
-  - Optional **`filename_match`** when multiple ROMs share the same header.
-  - M4A / IWRAM SMC gates for problematic audio engines.
-- **`REG_MOSAIC`** correctly represented in the I/O register enum.
-
-### Branding & packaging
-
-- Custom **XMB icon** (`ICON0` / `icon.png`) and **background splash** (`PIC1` / `icon_big.png`) embedded in `EBOOT.PBP`.
-- Makefile wired for current PSP SDK / Docker `pspdev` images.
-
-### Single-game installs
-
-Run individual GBA games as standalone PSP XMB bubbles — each appears on your PSP home screen as its own "game" with custom icon, background, and menu music.
-
-**Two different approaches are supported.**
-
----
-
-**Approach A: Launcher Stub (recommended, this repo's method)**
-
-A **separate tiny launcher EBOOT** boots your game and then hands off to the main emulator.
-
-How it works:
-1. The launcher is a small `EBOOT.PBP` that lives in its own PSP folder (e.g., `PSP/GAME/MyGame/`)
-2. It reads `rom_path.txt` — a text file containing the path to your GBA ROM (e.g., `ms0:/roms/game.gba`)
-3. It reads `emulator_path.txt` (optional) — the path to the main TempGBA4PSP-mod EBOOT. If omitted, it auto-detects by looking one folder up for `tempgba4psp-mod/EBOOT.PBP`
-4. The launcher loads the main emulator and passes the ROM path to it
-5. The game boots straight into gameplay — no ROM browser
-
-**Why use this:** Each game gets its own XMB bubble with custom icon, background, and menu audio. The main emulator stays in one place and is shared by all launcher bubbles.
-
-**Builder tool included:** A Python GUI in `source/single-game_launcher/tool/` generates the launcher folder, text files, and custom assets for you. See the [tool README](source/single-game_launcher/tool/README.md).
-
-**Approach B: Compatible with GrabowskiDev single-game** — This build also auto-detects [GrabowskiDev/TempGBA4PSP-Single-game](https://github.com/GrabowskiDev/TempGBA4PSP-Single-game) folder layouts. If `roms/game.gba` exists, the emulator loads it on startup with **no ROM browser**. Multi-ROM installs are unchanged when `game.gba` is absent.
-
-To upgrade an existing single-game folder, copy these from a fresh build (keep your custom `PBOOT.PBP`, `roms/game.gba`, and saves):
-
-- `EBOOT.PBP`
-- `DATA.PSP`
-- `TempGBA.prx`
-- `exception.prx`
-- `ku_bridge.prx` (if present)
-- `gba_bios.bin`
-
-| Path | Purpose |
-|------|---------|
-| `roms/game.gba` | ROM (unzipped) |
-| `save/game.sav` | Battery save |
-| `state/game_*.svs` | Save states |
-| `cfg/game.cfg` | Per-game settings |
-| `dir.ini` | Directory paths (`rom_directory = roms`, etc.) |
-
----
-
-## Advanced tuning
-
-These options live under **Graphics Options** (video) and **Emulator Options** (dynarec / HBlank). Defaults are chosen for broad compatibility; per-game tweaks can reclaim a lot of speed on real PSP hardware.
-
-### HBlank IRQ range
-
-GBA games can raise an **HBlank IRQ** on every scanline. That is required for some raster effects (status bars, warped backgrounds, mid-frame palette/OAM tricks), but firing IRQs on every line is expensive on PSP.
-
-TempGBA exposes a **start** and **end** scanline window. HBlank IRQs are only raised when the current line falls inside that inclusive range.
-
-| Setting | Behavior |
-|---------|----------|
-| **Either start or end = `0`** | Window is **off**. HBlank IRQs are allowed on all lines (closest to unrestricted hardware behavior). Required for some games to display graphics and text correctly e.g. Advance Wars |
-| **`1`–`160`** (default `1`–`160`) | IRQs only during the **visible** screen area. |
-| **`1`–`161`** | Practical **gpSP-kai-style** window: visible lines plus the first post-visible line. A good balanced preset when you want kai-like timing without hand-tuning. e.g. gives better performance in Penny Racers without messing up graphics |
-| **`1`–`1`** | Effectively **disables almost all HBlank IRQs** (only line 1 can fire). Often makes games run **noticeably faster**, but mid-frame visual effects that depend on HBlank may glitch, disappear, or tear. Useful for better game performance at the expense of missing effects. |
-| **End in `161`–`227`** | Extends the window into **vblank-region** lines when a game still needs IRQs there. |
-
-**Tips**
-
-- Start with the default (`1`–`160`) or the kai-like (`1`–`161`) preset.
-- If a title is slow but looks fine without fancy scanline effects, try `1`–`1` as a speed hack.
-- If effects break (wrong HUD, missing warps, palette flicker), widen the window or set one value to `0` to turn the limiter off.
-- Settings are saved with other options and can differ per game via per-game config.
-
-### Dynarec modes
-
-Under Emulator Options, **Block checksum reuse** (RAM dynarec policy) controls how the JIT treats code that lives in writable RAM (IWRAM / EWRAM / VRAM code).
-
-| Mode | What it does | Best for |
-|------|----------------|----------|
-| **Partial + reuse** (default) | On RAM writes, clear only the affected metadata; if the same block bytes reappear later, **reuse** the already-compiled native code. Fastest when games self-modify or reload similar code often. | SMC-heavy and RAM-code titles |
-| **Partial no reuse** | Partial invalidation only — changed blocks are recompiled, but prior native code is **not** reused even if bytes match. Middle ground. | Cases where reuse causes odd glitches but full flush is too slow |
-| **Full flush** | Any relevant RAM change **flushes the whole writable translation cache**. Safer for games that depend on **block linking** into RAM targets, at the cost of more recompiles. | **Castlevania** and similar titles that rely on stable linked blocks into RAM |
-
-**Tips**
-
-- Leave **Partial + reuse** on unless you see wrong code execution, random crashes after SMC, or “works once then breaks” behavior.
-- Switch to **Full flush** when a game needs correct branch linking into RAM and the partial modes misbehave.
-- This is independent of ROM-side dynarec; it only changes writable-RAM JIT policy.
-
-### Video renderers
-
-Graphics Options → **Video renderer** selects the scanline engine. **OAM hijack** applies only to the **New** renderer.
-
-| Option | Strengths | Trade-offs |
-|--------|-----------|------------|
-| **Old** | Generally **quicker** on PSP. Classic TempGBA path with OAM/affine fixes backported from libretro/gpSP. | Less accurate blending / object edge cases; a few remaining visual bugs vs hardware. |
-| **New** | **More compatible** — rewritten path aligned with libretro gpsp / PR258 `video.cc` (better blend and OBJ handling). | Heavier than Old on some titles. |
-| **New + OAM hijack ON** | Closest practical option to **hardware-like** video when games rewrite OAM mid-frame or otherwise confuse sprite sorting. | Extra work on top of New; only useful when the game actually needs it. |
-
-**Tips**
-
-- Prefer **Old** when chasing framerate and the game already looks correct.
-- Prefer **New** as the compatibility default (and it is the build default).
-- Turn on **OAM hijack** only if sprites / windows still glitch under New; leave it off otherwise.
-
----
-
-## Compatibility notes
-
-### Games improved or fixed in this line
-
-Titles that previously failed to boot, crashed, glitched, or were unusable and now run much better include:
-
-- NBA Jam 2002
-- Colin McRae Rally
-- Banjo-Kazooie: Grunty’s Revenge
-- Starsky & Hutch
-- [Balatro (GBA port)](https://github.com/cellos51/balatro-gba)
-- ROM hacks with sound-register accuracy checks now see hardware-compatible unused-bit behavior.
-- **Kingdom Hearts: Chain of Memories** — intro / opening sequence no longer breaks (dynarec flag accuracy and related timing work)
-- …and other edge cases addressed via IRQ, SMC, affine, and sound I/O fixes
-
-### `game_config.txt` — idle loops & SMC cutpoints
-
-Ship `game_config.txt` next to the EBOOT (same folder as a classic TempGBA install). Recent work extended the loader so entries can use **multiple** `idle_loop_eliminate_target` lines, **`smc_cutpoint`** gates, and optional **`filename_match`** when several ROMs share the same header.
-
-| Directive | Purpose |
-|-----------|---------|
-| `idle_loop_eliminate_target` | Marks a PC as an idle spin so the dynarec can skip ahead and sync hardware — big speed wins on wait loops |
-| `smc_cutpoint` | Forces a JIT block boundary at an IWRAM/EWRAM address so self-modifying audio/code engines (e.g. M4A mixers) invalidate cleanly under partial dynarec |
-| `filename_match` | Disambiguates ROMs that reuse the same `game_name` / `game_code` / `vender_code` (match is against the ROM filename) |
-
-**Examples added or expanded in this tree:**
-
-| Title | What the entry does |
-|-------|---------------------|
-| **M4A-based ROM hacks** | M4A-oriented `smc_cutpoint` lists keep IWRAM mixer regions stable under partial + reuse |
-| **Games with shared headers** | `filename_match` disambiguates configuration entries and allows independent idle-loop and SMC settings |
-| **Geometry Advance (`GD_ADV`)** | Multiple idle-loop targets and `smc_cutpoint`s for a title that otherwise thrashes the JIT |
-| **Final Fantasy VI Advance — SNES Audio Restoration** | `smc_cutpoint` gates for the restored audio engine’s IWRAM code |
-| **Sega Arcade Gallery** | Multiple idle-loop targets and `smc_cutpoint`s for smoother multi-game collection performance |
-
-Copy an updated `game_config.txt` when upgrading an install; per-game menu settings (renderer, HBlank window, dynarec mode) still live in `cfg/` / `tempgba.cfg` and complement these database entries.
-
-### PPSSPP
-
-On PPSSPP, use **software rendering**. Hardware rendering is not a supported path for this build.
-
-### BIOS
-
-Place a valid `gba_bios.bin` next to the EBOOT (or as configured in your install). Boot-from-BIOS remains available in Emulator options when you want the real boot sequence.
-
----
-
-## Building
-
-On Windows, use **Docker Desktop** and the official PSPDev image. Full commands and notes: **[BUILD-DOCKER.md](BUILD-DOCKER.md)**.
-
-```powershell
-docker run --rm `
-  -v "C:/path/to/TempGBA-2025/source:/build" `
-  -w /build `
-  pspdev/pspdev:latest `
-  make
+```text
+PSP/GAME/TempGBA4PSP/
+├── EBOOT.PBP
+├── exception.prx
+└── gba_bios.bin       user supplied
 ```
 
-Artifacts (`EBOOT.PBP`, `TempGBA.prx`, etc.) are written under `source/` on the host.
+See [Installation and upgrade notes](docs/INSTALL.md) for configuration,
+fast-forward, and update guidance.
 
----
+## Cheats
+
+Open **Cheats options**, choose **Load cheat file**, and select a `.cht` file.
+Lists are selected manually so the user always knows which region and revision
+they are applying.
+
+For a timed CodeBreaker list, enable its master entry and then enable the
+ordinary entries you want. Multiple ordinary entries can run together. If
+masters with different hook addresses conflict, the most recently enabled
+master takes ownership and incompatible master entries are disabled.
+
+CodeBreaker codes remain dependent on the exact game region and revision.
+Device-specific extensions that cannot be interpreted safely are not accepted.
+The complete syntax and compatibility notes are in
+[Cheat files](docs/CHEATS.md).
+
+## Fast-forward
+
+Fast-forward is active only while its configured physical button is held. The
+default mapping is **Triangle**. Reassign **Fast forward** from the button
+configuration menu to use any supported digital or analog direction.
+
+The emulator bypasses normal throttling while held, targets roughly 30 visible
+frames per second, and discards queued audio instead of allowing a backlog to
+stall emulation. Releasing the button immediately restores the selected
+frameskip and audio behavior.
+
+## Build
+
+The PSP build requires a current [PSPDev](https://pspdev.github.io/) toolchain
+with `psp-config` available in `PATH`.
+
+```sh
+make check
+make psp-build
+```
+
+The equivalent direct command is:
+
+```sh
+make -C source
+```
+
+Docker users can follow [BUILD-DOCKER.md](BUILD-DOCKER.md). Build outputs are
+created under `source/` and are ignored by Git.
+
+### Host tests
+
+`make check` builds the production CodeBreaker module with the host C compiler
+and runs deterministic regression vectors for encryption, operation decoding,
+conditions, multiline skips, and memory writes. It also verifies that private
+runtime data and generated executables are not tracked.
+
+### Release candidate package
+
+After a successful PSP build:
+
+```sh
+make package VERSION=20260817-rc1
+```
+
+This creates a clean ZIP and SHA-256 checksum in `dist/`. The package contains
+only `EBOOT.PBP`, `exception.prx`, installation notes, changelog, and license.
+It excludes BIOS files, ROMs, saves, local settings, and cheat databases.
+
+### Single-game launcher
+
+The launcher and graphical builder remain available as source. Generate the
+launcher template before running the builder:
+
+```sh
+make launcher-stub
+python3 -m pip install -r source/single-game_launcher/tool/requirements.txt
+python3 source/single-game_launcher/tool/gui.py
+```
+
+External audio tools are not committed to the repository. See the
+[builder documentation](source/single-game_launcher/tool/README.md) for its
+requirements and third-party notices.
 
 ## Repository layout
 
-| Path | Role |
-|------|------|
-| `source/` | Emulator sources, Makefile, assets, build output |
-| `source/single-game_launcher/tool/` | Python GUI builder for custom single-game PSP XMB bubbles |
-| `BUILD-DOCKER.md` | Docker / PSPDev build instructions |
-| `game_config.txt` | Optional per-game idle-loop / SMC / timing tweaks |
-| `docs/` | Investigation notes (performance, video, etc.) |
+| Path | Purpose |
+|---|---|
+| `source/` | Emulator source, PSP Makefile, assets, and inherited SDK imports |
+| `source/src/codebreaker.c` | CodeBreaker decoder and operation interpreter |
+| `tests/` | Host regression tests |
+| `docs/CHEATS.md` | Cheat format and master-code behavior |
+| `source/single-game_launcher/` | Optional PSP launcher and desktop builder |
+| `scripts/` | Source checks and deterministic release packaging |
 
----
+## Lineage and credits
 
-## Credits & lineage
+- gpSP by Exophase and its contributors.
+- gameplaySP kai by takka and contributors.
+- TempGBA by Nebuleon, Normmatt, BassAceGold, and the TempGBA community.
+- TempGBA4PSP-mod and its contributors.
+- libretro/gpsp and other upstream emulator projects whose fixes are credited
+  in the inherited source and history.
 
-- **gpSP** — Exophase / notaz and contributors
-- **TempGBA** — Nebuleon and the TempGBA community
-- **PSP ports / prior mods** — phoe-nix lineage and earlier TempGBA4PSP work
-- **libretro/gpsp** — upstream accuracy and renderer fixes ported into this tree
-- **UI themes / i18n / X/O swap** — contributors to PR #20
-- **Single-game layout** — compatible with [GrabowskiDev/TempGBA4PSP-Single-game](https://github.com/GrabowskiDev/TempGBA4PSP-Single-game)
-- **This mod** — [andymcca/TempGBA4PSP-mod](https://github.com/andymcca/TempGBA4PSP-mod)
-- **Contributions** — [JxPv2](https://github.com/JxPv2) (single-game launcher builder tool and launcher stub, GUI improvements, boxart and recent ROMs)
-
----
+Detailed historical and asset attribution is retained in
+[`source/copyright`](source/copyright). Component licensing is summarized in
+[NOTICE.md](NOTICE.md).
 
 ## License
 
-Follow the licenses of the upstream gpSP / TempGBA sources included in this repository. Homebrew use only; dump your own BIOS and use legally obtained ROMs.
+The emulator is distributed under GPL-2.0-or-later. See [LICENSE](LICENSE).
+The optional desktop launcher builder is GPL-3.0-or-later and carries its own
+license and third-party notices.
+
+This project is not affiliated with Nintendo, Sony, or CodeBreaker.

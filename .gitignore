@@ -7,6 +7,12 @@ source/PARAM.SFO
 source/prx/**/prx/*.o
 source/prx/**/prx/*.elf
 source/prx/**/prx/*.prx
+source/single-game_launcher/*.o
+source/single-game_launcher/*.elf
+source/single-game_launcher/*.prx
+source/single-game_launcher/*.PBP
+source/single-game_launcher/PARAM.SFO
+source/single-game_launcher/tool/assets/EBOOT.PBP
 
 # Release output
 build/

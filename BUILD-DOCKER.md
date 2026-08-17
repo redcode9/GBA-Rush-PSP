@@ -1,46 +1,64 @@
-# Building with Docker Desktop (PSP)
+# Building with PSPDev in Docker
 
-This repo is built on the maintainer’s machine using **Docker Desktop** and the official **PSPDev** toolchain image. Use this instead of installing `psp-config` / Allegrex locally on Windows.
+The emulator can be built with the official `pspdev/pspdev` container instead
+of a locally installed Allegrex toolchain.
 
-## Image
+## Build the emulator
 
-```text
-pspdev/pspdev:latest
+From the repository root on macOS or Linux:
+
+```sh
+docker run --rm \
+  -v "$PWD:/workspace" \
+  -w /workspace/source \
+  pspdev/pspdev:latest \
+  make
 ```
 
-Pull once if needed: `docker pull pspdev/pspdev:latest`
-
-## Where to build
-
-The `Makefile` and `SDK/` layout live under **`source/`**. Run `make` with the container working directory set to that folder.
-
-## PowerShell (from repo root)
-
-Replace the host path if your clone lives elsewhere.
+From PowerShell:
 
 ```powershell
 docker run --rm `
-  -v "C:/Users/Owner/OneDrive/Documents/TempGBA-2025/source:/build" `
-  -w /build `
+  -v "${PWD}:/workspace" `
+  -w /workspace/source `
   pspdev/pspdev:latest `
   make
 ```
 
-## One-liner using current directory
+The main outputs are `source/EBOOT.PBP` and `source/exception.prx`.
 
-From `source/`:
+## Run host checks
 
-```powershell
-docker run --rm -v "${PWD}:/build" -w /build pspdev/pspdev:latest make
+The CodeBreaker tests use the host compiler rather than the PSP container:
+
+```sh
+make check
 ```
 
-(`$PWD` should resolve to the `source` folder.)
+## Build the single-game launcher template
 
-## Output
+```sh
+docker run --rm \
+  -v "$PWD:/workspace" \
+  -w /workspace/source/single-game_launcher \
+  pspdev/pspdev:latest \
+  make
 
-Artifacts (e.g. `EBOOT.PBP`, `TempGBA.prx`) are written under `source/` on the host.
+cp source/single-game_launcher/EBOOT.PBP \
+  source/single-game_launcher/tool/assets/EBOOT.PBP
+```
 
-## Notes
+The generated template is intentionally ignored by Git.
 
-- If bind mounts fail under OneDrive, try moving the repo to a non-synced path or enable the appropriate Docker Desktop file-sharing settings.
-- For interactive shells: `docker run -it --rm -v "...:/build" -w /build pspdev/pspdev:latest bash`
+## Clean
+
+```sh
+docker run --rm \
+  -v "$PWD:/workspace" \
+  -w /workspace/source \
+  pspdev/pspdev:latest \
+  make clean
+```
+
+If Docker Desktop rejects the bind mount, move the checkout outside a synced
+folder or allow the parent directory in Docker Desktop's file-sharing settings.

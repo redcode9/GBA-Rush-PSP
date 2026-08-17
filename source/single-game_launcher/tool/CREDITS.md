@@ -2,7 +2,7 @@
 
 # Credits & Attribution
 
-## TempGBA4PSP-mod Single-Game Launcher Builder
+## TempGBA4PSP Single-Game Launcher Builder
 
 Made with care by [**JxPv2**](https://github.com/JxPv2) for the PSP homebrew community.
 

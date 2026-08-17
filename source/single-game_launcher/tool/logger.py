@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Invisible logging for TempGBA4PSP-mod Builder.
+Logging for TempGBA4PSP Builder.
 
 One log file per session, timestamped, with automatic cleanup.
 Logs go to a user-hidden directory so normal users aren't bothered,
@@ -18,9 +18,9 @@ from pathlib import Path
 def _get_log_dir() -> Path:
     """Return a user-hidden log directory appropriate for the platform."""
     if sys.platform == "win32":
-        base = Path.home() / "AppData" / "Local" / "TempGBA4PSP-mod Builder"
+        base = Path.home() / "AppData" / "Local" / "TempGBA4PSP Builder"
     elif sys.platform == "darwin":
-        base = Path.home() / "Library" / "Logs" / "TempGBA4PSP-mod Builder"
+        base = Path.home() / "Library" / "Logs" / "TempGBA4PSP Builder"
     else:
         base = Path.home() / ".cache" / "tempgba4psp-builder"
 

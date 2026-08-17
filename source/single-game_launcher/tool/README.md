@@ -1,6 +1,7 @@
-# TempGBA4PSP-mod Single-Game Launcher
+# TempGBA4PSP Single-Game Launcher
 
-Build custom PSP XMB bubbles that launch a single GBA game via [TempGBA4PSP-mod](https://github.com/andymcca/TempGBA4PSP-mod).
+Build custom PSP XMB bubbles that launch a single GBA game through
+TempGBA4PSP.
 
 ---
 
@@ -24,7 +25,7 @@ This tool creates ready-to-install `EBOOT.PBP` packages for your PSP. Each packa
 - **Windows 10/11**, **Linux**, or **macOS**
 - Python 3.10+ (if running from source)
 
-The following tools must be available (bundled in the PyInstaller release):
+The following tools must be available in `PATH` or beside `build_exe.py`:
 
 | Tool | Purpose |
 |------|---------|
@@ -36,28 +37,29 @@ The following tools must be available (bundled in the PyInstaller release):
 
 ## Quick Start
 
-### Option A: Download Release (Recommended)
-
-1. Download the latest release from the [Releases](https://github.com/andymcca/TempGBA4PSP-mod/releases) page
-2. Extract and run `TempGBA4PSP-mod Single-Game Launcher Builder.exe` (Windows)
-
-### Option B: Run from Source
+First build the PSP launcher template from the repository root with a PSPDev
+toolchain:
 
 ```bash
-git clone https://github.com/andymcca/TempGBA4PSP-mod.git
+make launcher-stub
+```
+
+Then run the desktop tool from source:
+
+```bash
 cd source/single-game_launcher/tool
-pip install -r requirements.txt
-python gui.py
+python3 -m pip install -r requirements.txt
+python3 gui.py
 ```
 
-### Option C: Build Standalone Executable
+### Build a standalone executable
 
 ```bash
-pip install -r requirements.txt -r requirements-build.txt
-python build_exe.py
+python3 -m pip install -r requirements.txt -r requirements-build.txt
+python3 build_exe.py
 ```
 
-Output: `build_exe_output/dist/TempGBA4PSP-mod Single-Game Launcher Builder.exe`
+Output: `build_exe_output/dist/TempGBA4PSP Single-Game Launcher Builder.exe`
 
 ---
 
@@ -69,7 +71,7 @@ Output: `build_exe_output/dist/TempGBA4PSP-mod Single-Game Launcher Builder.exe`
 |-------|---------------|
 | **Game Title** | Name shown on PSP XMB. Max 127 UTF-8 bytes. |
 | **ROM PSP Path** | Full path to your `.gba` file on PSP. Use `ms0:/` for Memory Stick or `ef0:/` for PSP Go internal storage. |
-| **Emulator PSP Path** | Where TempGBA4PSP-mod is installed on your PSP. Optional if using default folder name in parent directory. |
+| **Emulator PSP Path** | Where TempGBA4PSP is installed on your PSP. Optional if using the default folder name in the parent directory. |
 | **Output Folder** | Where the finished package is saved on your PC. Auto-updates based on Game Title. |
 
 > **Tip:** The Output Folder auto-updates when you type a Game Title. Browse to change the base directory.
@@ -120,7 +122,7 @@ The output folder contains:
 YourGameFolder/
 ├── EBOOT.PBP          ← Custom launcher with your assets injected
 ├── rom_path.txt       ← Points to your GBA ROM on the PSP
-├── emulator_path.txt  ← Points to TempGBA4PSP-mod on the PSP
+├── emulator_path.txt  ← Points to TempGBA4PSP on the PSP
 ├── assets/
 │   ├── ICON0.PNG
 │   ├── PIC0.PNG
@@ -144,8 +146,8 @@ PSP/GAME/YourGameFolder/
 
 | Device | Prefix | Example |
 |--------|--------|---------|
-| PSP (Memory Stick) | `ms0:/` | `ms0:/PSP/GAME/tempgba4psp-mod/roms/SampleGame.gba` |
-| PSP Go (Internal) | `ef0:/` | `ef0:/PSP/GAME/tempgba4psp-mod/roms/SampleGame.gba` |
+| PSP (Memory Stick) | `ms0:/` | `ms0:/PSP/GAME/TempGBA4PSP/roms/SampleGame.gba` |
+| PSP Go (Internal) | `ef0:/` | `ef0:/PSP/GAME/TempGBA4PSP/roms/SampleGame.gba` |
 
 ---
 
@@ -158,7 +160,7 @@ PSP/GAME/YourGameFolder/
 | "YouTube download failed" | Check internet connection. Some videos are geo-blocked or require cookies. |
 | Preview doesn't update | Click **Refresh Preview** or switch tabs to force a redraw. |
 | Build button grayed out | Fix the highlighted validation error and try again. |
-| Need to report a bug | Attach the log file from `%LOCALAPPDATA%\TempGBA4PSP-mod Builder\logs\tempgba-builder.log` (Windows), `~/Library/Logs/TempGBA4PSP-mod Builder/` (macOS), or `~/.cache/tempgba4psp-builder/logs/` (Linux). |
+| Need to report a bug | Attach the log file from `%LOCALAPPDATA%\TempGBA4PSP Builder\logs\tempgba-builder.log` (Windows), `~/Library/Logs/TempGBA4PSP Builder/` (macOS), or `~/.cache/tempgba4psp-builder/logs/` (Linux). |
 
 ---
 
@@ -166,13 +168,13 @@ PSP/GAME/YourGameFolder/
 
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 
 # Run the GUI
-python gui.py
+python3 gui.py
 
 # Build standalone executable
-python build_exe.py
+python3 build_exe.py
 ```
 
 Make sure `ffmpeg`, `atracdenc`, and `yt-dlp` binaries are in the project root or in your system PATH before running `build_exe.py`.
@@ -185,6 +187,6 @@ See [CREDITS.md](CREDITS.md) for full attribution of the emulator lineage, third
 
 ## License
 
-TempGBA4PSP-mod Single-Game Launcher Builder is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
+TempGBA4PSP Single-Game Launcher Builder is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
 
 See [LICENSE](LICENSE) for the full legal text. Third-party components and their licenses are documented in [THIRD_PARTY.md](THIRD_PARTY.md).

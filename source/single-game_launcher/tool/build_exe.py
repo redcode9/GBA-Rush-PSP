@@ -6,16 +6,16 @@ PyInstaller build script for creating a standalone Windows executable.
 
 Output layout:
     build_exe_output/
-        TempGBA4PSP-mod Single-Game Launcher Builder.spec
+        TempGBA4PSP Single-Game Launcher Builder.spec
         dist/
-            TempGBA4PSP-mod Single-Game Launcher Builder.exe
+            TempGBA4PSP Single-Game Launcher Builder.exe
             LICENSE.txt
             README.md
             SOURCE_OFFER.txt
             THIRD_PARTY.md
             LICENSES/
         build/
-            TempGBA4PSP-mod Single-Game Launcher Builder/   ← PyInstaller intermediates
+            TempGBA4PSP Single-Game Launcher Builder/   ← PyInstaller intermediates
 """
 
 import os
@@ -26,7 +26,7 @@ from pathlib import Path
 import constants as C
 
 
-APP_NAME = "TempGBA4PSP-mod Single-Game Launcher Builder"
+APP_NAME = "TempGBA4PSP Single-Game Launcher Builder"
 
 
 def main():
@@ -36,12 +36,13 @@ def main():
     # Ensure output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Auto-install PyInstaller if missing
+    # Keep dependency installation explicit and reproducible.
     try:
         import PyInstaller
     except ImportError:
-        print("Installing PyInstaller...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
+        print("ERROR: PyInstaller is not installed.")
+        print("  Run: python -m pip install -r requirements-build.txt")
+        sys.exit(1)
 
     # Determine binary extensions per platform
     if sys.platform == "win32":
@@ -52,6 +53,18 @@ def main():
         ffmpeg_bin = "ffmpeg"
         atracdenc_bin = "atracdenc"
         ytdlp_bin = "yt-dlp"
+
+    tool_names = [ffmpeg_bin, atracdenc_bin, ytdlp_bin]
+    tool_paths = {}
+    for tool in tool_names:
+        local_path = here / tool
+        resolved = str(local_path) if local_path.is_file() else shutil.which(tool)
+        if not resolved:
+            print(f"ERROR: Required tool not found: {tool}")
+            print("  Install ffmpeg, atracdenc, and yt-dlp in PATH or place")
+            print("  their executables beside build_exe.py.")
+            sys.exit(1)
+        tool_paths[tool] = resolved
 
     separator = os.pathsep
 
@@ -72,9 +85,9 @@ def main():
         "--add-data", f"{here / 'assets'}{separator}assets",
         "--add-data", f"{here / 'LICENSES'}{separator}LICENSES",
         "--add-data", f"{here / 'CREDITS.md'}{separator}.",
-        "--add-binary", f"{here / ffmpeg_bin}{separator}.",
-        "--add-binary", f"{here / atracdenc_bin}{separator}.",
-        "--add-binary", f"{here / ytdlp_bin}{separator}.",
+        "--add-binary", f"{tool_paths[ffmpeg_bin]}{separator}.",
+        "--add-binary", f"{tool_paths[atracdenc_bin]}{separator}.",
+        "--add-binary", f"{tool_paths[ytdlp_bin]}{separator}.",
         str(here / "gui.py")
     ]
 
@@ -92,27 +105,19 @@ def main():
 
     # --- Pre-flight checks ---
 
-    # Verify required binaries exist
-    for tool in [ffmpeg_bin, atracdenc_bin, ytdlp_bin]:
-        if not (here / tool).exists():
-            print(f"ERROR: Required binary not found: {tool}")
-            print(f"  Expected at: {here / tool}")
-            print("  Place ffmpeg, atracdenc, and yt-dlp in the project root.")
-            sys.exit(1)
-
     # Verify assets folder exists
     assets_dir = here / "assets"
     if not assets_dir.exists():
         print("ERROR: Required folder not found: assets/")
         print(f"  Expected at: {assets_dir}")
-        print("  Place EBOOT.PBP, default images, and icon files in this folder.")
+        print("  Run `make launcher-stub` from the repository root, then retry.")
         sys.exit(1)
 
     eboot_stub = assets_dir / "EBOOT.PBP"
     if not eboot_stub.exists():
         print("ERROR: Required file not found: assets/EBOOT.PBP")
         print(f"  Expected at: {eboot_stub}")
-        print("  This is the launcher stub required for all builds.")
+        print("  Run `make launcher-stub` from the repository root, then retry.")
         sys.exit(1)
 
     # Verify critical preview assets
