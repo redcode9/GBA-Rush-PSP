@@ -1178,7 +1178,7 @@ typedef struct _MenuType MenuType;
 #define GAMEPAD_CONFIG_OPTION(display_string, number, display_msg)      \
 {                                                                       \
   NULL,                                                                 \
-  NULL,                                                                 \
+  rebuild_fast_forward_button_mask,                                     \
   NULL,                                                                 \
   display_string,                                                       \
   gamepad_config_buttons,                                               \
@@ -1194,7 +1194,7 @@ typedef struct _MenuType MenuType;
 #define ANALOG_CONFIG_OPTION(display_string, number, display_msg)       \
 {                                                                       \
   NULL,                                                                 \
-  NULL,                                                                 \
+  rebuild_fast_forward_button_mask,                                     \
   NULL,                                                                 \
   display_string,                                                       \
   gamepad_config_buttons,                                               \
@@ -3196,6 +3196,13 @@ static void menu_refresh_language(void)
 u32 menu(void)
 {
 	int id_language;
+
+  /* A held speed button must not leave the audio worker suspended while the
+   * emulator is in the menu. Gameplay input will restore the hold state when
+   * execution resumes. */
+  synchronize_flag = 1;
+  sound_set_fast_forward(0);
+
   init_choice_arrays();
   u32 i;
 
@@ -3747,6 +3754,7 @@ u32 menu(void)
     gamepad_config_map[5]  = BUTTON_ID_R;           /* PSP R trigger   → GBA R */
     gamepad_config_map[11] = BUTTON_ID_START;       /* PSP Start       → GBA Start */
     gamepad_config_map[10] = BUTTON_ID_SELECT;      /* PSP Select      → GBA Select */ 
+    rebuild_fast_forward_button_mask();
   }
 
   void menu_analog_default(void)
@@ -3758,6 +3766,7 @@ u32 menu(void)
     gamepad_config_map[13] = BUTTON_ID_DOWN;     /* Analog Down */
     gamepad_config_map[14] = BUTTON_ID_LEFT;     /* Analog Left */
     gamepad_config_map[15] = BUTTON_ID_RIGHT;    /* Analog Right */
+    rebuild_fast_forward_button_mask();
   }
   
   void menu_theme_settings_default(void)

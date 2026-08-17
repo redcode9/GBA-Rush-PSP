@@ -63,6 +63,7 @@ void set_sound_volume(void);
 int psp_sound_frequency(u16 sample_count, u16 freq);
 
 void synchronize_sound(void);
+void sound_set_fast_forward(u32 enabled);
 
 void sound_write_mem_savestate(SceUID savestate_file);
 void sound_read_savestate(SceUID savestate_file);

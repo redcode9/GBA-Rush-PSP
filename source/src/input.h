@@ -86,6 +86,7 @@ void init_input(void);
 void init_input_kernel(void);
 
 u32 update_input(void);
+void rebuild_fast_forward_button_mask(void);
 
 u32 get_pad_input(u32 mask);
 

@@ -83,6 +83,20 @@ const u32 ALIGN_DATA button_psp_mask_to_config[] =
   PSP_CTRL_ANALOG_RIGHT	//15
 };
 
+static u32 fast_forward_button_mask = PSP_CTRL_TRIANGLE;
+
+void rebuild_fast_forward_button_mask(void)
+{
+  u32 i;
+
+  fast_forward_button_mask = 0;
+  for(i = 0; i < 16; i++)
+  {
+    if(gamepad_config_map[i] == BUTTON_ID_FASTFORWARD)
+      fast_forward_button_mask |= button_psp_mask_to_config[i];
+  }
+}
+
 const u32 ALIGN_DATA button_id_to_gba_mask[] =
 {
   BUTTON_UP,
@@ -336,6 +350,11 @@ u32 update_input(void)
   non_repeat_buttons = (last_buttons ^ buttons) & buttons;
   last_buttons = buttons;
 
+  /* Fast-forward is a hold action; the configured physical mask is rebuilt
+   * only when mappings change, not on every input poll. */
+  synchronize_flag = ((buttons & fast_forward_button_mask) == 0);
+  sound_set_fast_forward(synchronize_flag == 0);
+
   if ((enable_home_menu != 0) && ((non_repeat_buttons & PSP_CTRL_HOME) != 0))
     return menu();
 
@@ -357,8 +376,7 @@ u32 update_input(void)
           return 0;
 
         case BUTTON_ID_FASTFORWARD:
-          synchronize_flag ^= 1;
-          return 0;
+          break;
 
         case BUTTON_ID_FPS:
           psp_fps_debug ^= 1;
@@ -408,6 +426,8 @@ void init_input(void)
   sceCtrlSetSamplingCycle(0);
   sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
 
+  rebuild_fast_forward_button_mask();
+
   __sceCtrlPeekBufferPositive = sceCtrlPeekBufferPositive;
   __sceCtrlReadBufferPositive = sceCtrlReadBufferPositive;
 }
@@ -437,4 +457,3 @@ void input_write_mem_savestate(SceUID savestate_file)
 {
   INPUT_SAVESTATE_BODY(WRITE_MEM);
 }
-

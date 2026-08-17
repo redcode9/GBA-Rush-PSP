@@ -560,6 +560,10 @@ static void synchronize(void)
 {
   static s32 fps = 60;
   static s32 frames_drawn = 60;
+  static u32 turbo_active = 0;
+  static u32 turbo_next_render = 0;
+
+  #define TURBO_RENDER_INTERVAL_US 33333
 
   u32 used_frameskip_type  = option_frameskip_type;
   u32 used_frameskip_value = option_frameskip_value;
@@ -568,7 +572,7 @@ static void synchronize(void)
 
   if (frames == 60)
   {
-    fps = 3600 / vblank_count;
+    fps = vblank_count ? (3600 / vblank_count) : 0;
     frames_drawn = 60 - interval_skipped_frames;
 
     vblank_count = 0;
@@ -618,8 +622,47 @@ static void synchronize(void)
       else
         print_string_gbk(MSG[MSG_TURBO], 0, 0, COLOR15_WHITE, COLOR15_BLACK);
     }
-    used_frameskip_type = FRAMESKIP_MANUAL;
-    used_frameskip_value = 4;
+  }
+
+  if(!synchronize_flag)
+  {
+    u32 now = sceKernelGetSystemTimeLow();
+
+    if(!turbo_active)
+    {
+      turbo_active = 1;
+      turbo_next_render = now + TURBO_RENDER_INTERVAL_US;
+      real_frame_count = 0;
+      virtual_frame_count = 0;
+      num_skipped_frames = 0;
+      frameskip_counter = 0;
+    }
+
+    if((s32)(now - turbo_next_render) >= 0)
+    {
+      skip_next_frame = 0;
+      turbo_next_render += TURBO_RENDER_INTERVAL_US;
+      if((s32)(now - turbo_next_render) >=
+       (s32)(TURBO_RENDER_INTERVAL_US * 4))
+        turbo_next_render = now + TURBO_RENDER_INTERVAL_US;
+    }
+    else
+    {
+      skip_next_frame = 1;
+    }
+
+    interval_skipped_frames += skip_next_frame;
+    return;
+  }
+
+  if(turbo_active)
+  {
+    turbo_active = 0;
+    skip_next_frame = 0;
+    real_frame_count = 0;
+    virtual_frame_count = 0;
+    num_skipped_frames = 0;
+    frameskip_counter = 0;
   }
 
   skip_next_frame = 0;
@@ -663,6 +706,8 @@ static void synchronize(void)
   }
 
   interval_skipped_frames += skip_next_frame;
+
+  #undef TURBO_RENDER_INTERVAL_US
 }
 
 
@@ -847,6 +892,7 @@ static void setup_main(const char *eboot_path)
   enable_home_menu = 1;
 
   load_config_file();
+  rebuild_fast_forward_button_mask();
   load_theme_config();
   load_recent_roms();
 
@@ -1304,4 +1350,3 @@ void main_write_mem_savestate(SceUID savestate_file)
 {
   MAIN_SAVESTATE_BODY(WRITE_MEM);
 }
-

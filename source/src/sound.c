@@ -111,10 +111,11 @@ static int start_sound_thread(void);
 static int psp_sound_release(void);
 
 volatile int sound_active = 0;
+static volatile u32 sound_fast_forward = 0;
 static void fill_sound_buffer(s16 *stream, u16 length);
 static int sound_update_thread(SceSize args, void *argp);
 
-u8 sound_sleep = 0;
+static volatile u8 sound_sleep = 0;
 static void sound_thread_wakeup(void);
 
 u32 sound_buffer_base = 0;
@@ -776,8 +777,27 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
 #define SOUND_BUFFER_LENGTH                                                   \
   buffer_length(gbc_sound_buffer_index, sound_buffer_base, RING_BUFFER_SIZE)  \
 
+void sound_set_fast_forward(u32 enabled)
+{
+  enabled = enabled != 0;
+  if(sound_fast_forward == enabled)
+    return;
+
+  sound_fast_forward = enabled;
+  sound_buffer_base = gbc_sound_buffer_index;
+
+  if(!enabled && (sound_thread >= 0) && (sound_sleep != 0))
+    sceKernelWakeupThread(sound_thread);
+}
+
 void synchronize_sound(void)
 {
+  if(sound_fast_forward)
+  {
+    sound_buffer_base = gbc_sound_buffer_index;
+    return;
+  }
+
   if (synchronize_flag != 0)
   {
     if (SOUND_BUFFER_LENGTH > (SOUND_BUFFER_SIZE * 4))
@@ -982,7 +1002,8 @@ static void fill_sound_buffer(s16 *stream, u16 length)
 
 static void sound_thread_wakeup(void)
 {
-  if (sound_sleep != 0)
+  if((sound_sleep != 0) &&
+   ((sound_fast_forward == 0) || (sound_active == 0)))
     sceKernelWakeupThread(sound_thread);
 }
 
@@ -1000,6 +1021,16 @@ static int sound_update_thread(SceSize args, void *argp)
         sceKernelDelayThread(500 * 1000);
       }
       while (sleep_flag != 0);
+    }
+
+    if(sound_fast_forward)
+    {
+      sound_buffer_base = gbc_sound_buffer_index;
+      sound_sleep = 1;
+      if(sound_fast_forward)
+        sceKernelSleepThread();
+      sound_sleep = 0;
+      continue;
     }
 
     if (SOUND_BUFFER_LENGTH < SOUND_BUFFER_SIZE)
@@ -1228,4 +1259,3 @@ void sound_write_mem_savestate(SceUID savestate_file)
 {
   SOUND_SAVESTATE_BODY(WRITE_MEM);
 }
-

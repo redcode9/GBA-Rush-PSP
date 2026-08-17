@@ -3564,6 +3564,7 @@ s32 load_gamepak(char *name)
 	//load_backup_id();//up order to fix no game_code
     load_game_config(game_title, game_code, maker_code);
     load_game_config_file();
+    rebuild_fast_forward_button_mask();
 
 	load_backup_id();
     change_ext(gamepak_filename, backup_filename, ".sav");
