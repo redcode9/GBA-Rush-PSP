@@ -2,7 +2,9 @@ HOST_CC ?= cc
 HOST_BUILD_DIR ?= build/host
 HOST_TEST_CODEBREAKER = $(HOST_BUILD_DIR)/test_codebreaker
 HOST_TEST_GBA_SIO = $(HOST_BUILD_DIR)/test_gba_sio
-HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO)
+HOST_TEST_LINK_PROTOCOL = $(HOST_BUILD_DIR)/test_link_protocol
+HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
+ $(HOST_TEST_LINK_PROTOCOL)
 
 .PHONY: all check test tree-check psp-build launcher-stub package clean
 
@@ -13,6 +15,7 @@ check: test tree-check
 test: $(HOST_TESTS)
 	$(HOST_TEST_CODEBREAKER)
 	$(HOST_TEST_GBA_SIO)
+	$(HOST_TEST_LINK_PROTOCOL)
 
 $(HOST_TEST_CODEBREAKER): tests/test_codebreaker.c source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_BUILD_DIR)
@@ -23,6 +26,13 @@ $(HOST_TEST_GBA_SIO): tests/test_gba_sio.c source/src/gba_sio.c source/src/gba_s
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_gba_sio.c source/src/gba_sio.c -o $(HOST_TEST_GBA_SIO)
+
+$(HOST_TEST_LINK_PROTOCOL): tests/test_link_protocol.c \
+ source/src/link_protocol.c source/src/link_protocol.h source/src/zlib/zlib.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -DZLIB_CONST -Isource/src \
+	 tests/test_link_protocol.c source/src/link_protocol.c -lz \
+	 -o $(HOST_TEST_LINK_PROTOCOL)
 
 tree-check:
 	sh scripts/check-tree.sh
