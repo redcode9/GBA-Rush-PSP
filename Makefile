@@ -1,6 +1,8 @@
 HOST_CC ?= cc
 HOST_BUILD_DIR ?= build/host
-HOST_TEST = $(HOST_BUILD_DIR)/test_codebreaker
+HOST_TEST_CODEBREAKER = $(HOST_BUILD_DIR)/test_codebreaker
+HOST_TEST_GBA_SIO = $(HOST_BUILD_DIR)/test_gba_sio
+HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO)
 
 .PHONY: all check test tree-check psp-build launcher-stub package clean
 
@@ -8,13 +10,19 @@ all: check
 
 check: test tree-check
 
-test: $(HOST_TEST)
-	$(HOST_TEST)
+test: $(HOST_TESTS)
+	$(HOST_TEST_CODEBREAKER)
+	$(HOST_TEST_GBA_SIO)
 
-$(HOST_TEST): tests/test_codebreaker.c source/src/codebreaker.c source/src/codebreaker.h
+$(HOST_TEST_CODEBREAKER): tests/test_codebreaker.c source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
-	 tests/test_codebreaker.c source/src/codebreaker.c -o $(HOST_TEST)
+	 tests/test_codebreaker.c source/src/codebreaker.c -o $(HOST_TEST_CODEBREAKER)
+
+$(HOST_TEST_GBA_SIO): tests/test_gba_sio.c source/src/gba_sio.c source/src/gba_sio.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_gba_sio.c source/src/gba_sio.c -o $(HOST_TEST_GBA_SIO)
 
 tree-check:
 	sh scripts/check-tree.sh
@@ -36,5 +44,5 @@ clean:
 	$(MAKE) -C source clean
 	$(MAKE) -C source/single-game_launcher clean
 	$(RM) source/single-game_launcher/tool/assets/EBOOT.PBP
-	$(RM) $(HOST_TEST)
+	$(RM) $(HOST_TESTS)
 	-rmdir $(HOST_BUILD_DIR) build 2>/dev/null

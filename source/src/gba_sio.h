@@ -1,0 +1,138 @@
+/*
+ * GBA Rush PSP
+ *
+ * Copyright (C) 2026 Piero Carrieri
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ */
+
+#ifndef GBA_SIO_H
+#define GBA_SIO_H
+
+#include <stdint.h>
+
+#define GBA_SIO_REGISTER_BYTES 0x400u
+#define GBA_SIO_NO_EVENT       UINT32_MAX
+
+enum
+{
+  GBA_SIO_REG_DATA32_L = 0x120,
+  GBA_SIO_REG_MULTI0   = 0x120,
+  GBA_SIO_REG_DATA32_H = 0x122,
+  GBA_SIO_REG_MULTI1   = 0x122,
+  GBA_SIO_REG_MULTI2   = 0x124,
+  GBA_SIO_REG_MULTI3   = 0x126,
+  GBA_SIO_REG_CONTROL  = 0x128,
+  GBA_SIO_REG_SEND     = 0x12A,
+  GBA_SIO_REG_RCNT     = 0x134
+};
+
+typedef enum
+{
+  GBA_SIO_MODE_NORMAL_8,
+  GBA_SIO_MODE_NORMAL_32,
+  GBA_SIO_MODE_MULTIPLAYER,
+  GBA_SIO_MODE_UART,
+  GBA_SIO_MODE_GPIO,
+  GBA_SIO_MODE_JOYBUS
+} GbaSioMode;
+
+typedef enum
+{
+  GBA_SIO_EVENT_NONE        = 0,
+  GBA_SIO_EVENT_START       = 1u << 0,
+  GBA_SIO_EVENT_SERIAL_IRQ  = 1u << 1,
+  GBA_SIO_EVENT_MODE_CHANGE = 1u << 2
+} GbaSioEvent;
+
+typedef struct
+{
+  GbaSioMode mode;
+  uint8_t player_id;
+  uint8_t player_count;
+  uint8_t setting;
+  uint8_t internal_clock;
+  uint32_t outgoing;
+} GbaSioTransfer;
+
+typedef struct
+{
+  uint32_t data[4];
+  uint8_t player_count;
+  uint8_t error;
+} GbaSioResult;
+
+#define GBA_SIO_SNAPSHOT_MAGIC   0x53494F31u
+#define GBA_SIO_SNAPSHOT_VERSION 1u
+
+typedef struct
+{
+  uint32_t magic;
+  uint16_t version;
+  uint16_t size;
+  uint8_t mode;
+  uint8_t pending_start;
+  uint8_t waiting;
+  uint8_t active;
+  uint8_t transfer_error;
+  uint8_t completion_error;
+  uint8_t transfer_mode;
+  uint8_t transfer_setting;
+  uint8_t transfer_players;
+  uint8_t reserved[3];
+  uint32_t cycles_remaining;
+  uint32_t outgoing;
+  uint32_t incoming[4];
+} GbaSioSnapshot;
+
+typedef struct
+{
+  uint16_t *registers;
+  GbaSioMode mode;
+  uint8_t player_id;
+  uint8_t player_count;
+  uint8_t pending_start;
+  uint8_t waiting;
+  uint8_t active;
+  uint8_t transfer_error;
+  uint8_t completion_error;
+  GbaSioMode transfer_mode;
+  uint8_t transfer_setting;
+  uint8_t transfer_players;
+  uint32_t cycles_remaining;
+  uint32_t outgoing;
+  uint32_t incoming[4];
+} GbaSio;
+
+void gba_sio_init(GbaSio *sio, uint16_t *registers);
+void gba_sio_reset(GbaSio *sio);
+
+GbaSioMode gba_sio_mode(const GbaSio *sio);
+void gba_sio_set_connection(GbaSio *sio, uint8_t player_id,
+ uint8_t player_count);
+GbaSioEvent gba_sio_disconnect(GbaSio *sio);
+
+GbaSioEvent gba_sio_write16(GbaSio *sio, uint32_t address,
+ uint16_t value);
+GbaSioEvent gba_sio_write32(GbaSio *sio, uint32_t address,
+ uint32_t value);
+
+int gba_sio_take_start(GbaSio *sio, GbaSioTransfer *transfer);
+int gba_sio_latch_remote_start(GbaSio *sio, GbaSioMode mode,
+ uint8_t setting, GbaSioTransfer *transfer);
+int gba_sio_commit(GbaSio *sio, const GbaSioResult *result);
+GbaSioEvent gba_sio_abort(GbaSio *sio);
+GbaSioEvent gba_sio_advance(GbaSio *sio, uint32_t cycles);
+uint32_t gba_sio_next_event(const GbaSio *sio);
+int gba_sio_is_waiting(const GbaSio *sio);
+
+uint32_t gba_sio_transfer_cycles(GbaSioMode mode, uint8_t setting,
+ uint8_t player_count);
+
+void gba_sio_save_snapshot(const GbaSio *sio, GbaSioSnapshot *snapshot);
+int gba_sio_load_snapshot(GbaSio *sio, const GbaSioSnapshot *snapshot);
+
+#endif /* GBA_SIO_H */
