@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Logging for TempGBA4PSP Builder.
+Logging for GBA Rush PSP Builder.
 
 One log file per session, timestamped, with automatic cleanup.
 Logs go to a user-hidden directory so normal users aren't bothered,
@@ -18,11 +18,11 @@ from pathlib import Path
 def _get_log_dir() -> Path:
     """Return a user-hidden log directory appropriate for the platform."""
     if sys.platform == "win32":
-        base = Path.home() / "AppData" / "Local" / "TempGBA4PSP Builder"
+        base = Path.home() / "AppData" / "Local" / "GBA Rush PSP Builder"
     elif sys.platform == "darwin":
-        base = Path.home() / "Library" / "Logs" / "TempGBA4PSP Builder"
+        base = Path.home() / "Library" / "Logs" / "GBA Rush PSP Builder"
     else:
-        base = Path.home() / ".cache" / "tempgba4psp-builder"
+        base = Path.home() / ".cache" / "gba-rush-psp-builder"
 
     log_dir = base / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -71,7 +71,7 @@ def setup_logging() -> logging.Logger:
     """
     global _current_log_path
 
-    logger = logging.getLogger("tempgba_builder")
+    logger = logging.getLogger("gba_rush_psp_builder")
     logger.setLevel(logging.DEBUG)
 
     if logger.handlers:
@@ -80,9 +80,9 @@ def setup_logging() -> logging.Logger:
     log_dir = _get_log_dir()
     _cleanup_old_logs(log_dir)
 
-    # One file per session: tempgba-builder_YYYY-MM-DD_HH-MM-SS.log
+    # One file per session: gba-rush-psp-builder_YYYY-MM-DD_HH-MM-SS.log
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_file = log_dir / f"tempgba-builder_{timestamp}.log"
+    log_file = log_dir / f"gba-rush-psp-builder_{timestamp}.log"
     _current_log_path = log_file
 
     # File handler: everything DEBUG and up

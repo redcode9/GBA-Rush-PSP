@@ -24,9 +24,9 @@ do
   fi
 done
 
-release_name="TempGBA4PSP-$version"
+release_name="GBA-Rush-PSP-$version"
 release_root="dist/$release_name"
-install_root="$release_root/TempGBA4PSP"
+install_root="$release_root/GBARushPSP"
 archive="dist/$release_name.zip"
 checksum="$archive.sha256"
 
@@ -43,9 +43,9 @@ cp LICENSE "$release_root/LICENSE"
 (cd dist && zip -q -r "$release_name.zip" "$release_name")
 
 if command -v shasum >/dev/null 2>&1; then
-  shasum -a 256 "$archive" > "$checksum"
+  (cd dist && shasum -a 256 "$release_name.zip") > "$checksum"
 else
-  sha256sum "$archive" > "$checksum"
+  (cd dist && sha256sum "$release_name.zip") > "$checksum"
 fi
 
 echo "Created $archive"

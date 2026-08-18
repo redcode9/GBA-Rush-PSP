@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-TempGBA4PSP Single-Game Launcher Builder — Main GUI Application
+GBA Rush PSP Single-Game Launcher Builder — Main GUI Application
 
 This is the entry point for the builder application. It creates the main window,
 assembles all tabs (Game Info, Images, Audio, Build), and manages global state
@@ -69,7 +69,7 @@ class BuilderApp(InfoTabMixin, ImagesTabMixin, AudioTabMixin,
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("dark-blue")
 
-        self.title("TempGBA4PSP Single-Game Launcher Builder")
+        self.title("GBA Rush PSP Single-Game Launcher Builder")
         self.geometry(f"{C.WINDOW_W}x{C.WINDOW_H}")
         self.minsize(C.WINDOW_W, C.WINDOW_H)
         self._center_window()
@@ -162,7 +162,7 @@ class BuilderApp(InfoTabMixin, ImagesTabMixin, AudioTabMixin,
     def _build_ui(self):
         """Construct the main window layout: header, tabview, footer."""
         # --- Header ---
-        header = ctk.CTkLabel(self, text="TempGBA4PSP Single-Game Launcher Builder",
+        header = ctk.CTkLabel(self, text="GBA Rush PSP Single-Game Launcher Builder",
                               font=ctk.CTkFont(size=24, weight="bold"))
         header.pack(pady=(15, 5))
 

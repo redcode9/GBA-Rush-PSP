@@ -195,7 +195,7 @@ class BuildTabMixin:
         if emu_path_text:
             self._summary_row("Emulator Path", emu)
         else:
-            self._summary_row("Emulator Path", "(not set)", warning="Optional — looks for TempGBA4PSP in parent folder")
+            self._summary_row("Emulator Path", "(not set)", warning="Optional — looks for GBARushPSP in parent folder")
         # Output Folder
         self._summary_row("Output Folder", out)
         # ICON0
@@ -271,7 +271,7 @@ class BuildTabMixin:
 
         emu_path_raw = _strip_quotes(self.emu_path.get().strip())
         if not emu_path_raw:
-            issues.append(("info", "Emulator PSP Path not set. Launcher will auto-detect if folder is named 'TempGBA4PSP' in the parent directory."))
+            issues.append(("info", "Emulator PSP Path not set. Launcher will auto-detect if folder is named 'GBARushPSP' in the parent directory."))
 
         # Check stub exists
         if not self.stub_path or not self.stub_path.exists():
@@ -512,7 +512,7 @@ class BuildTabMixin:
                 "1. Open the output folder\n"
                 "2. Edit rom_path.txt\n"
                 "3. Add the full path to your GBA ROM\n\n"
-                "Example: ms0:/PSP/GAME/TempGBA4PSP/roms/MyGame.gba\n\n"
+                "Example: ms0:/PSP/GAME/GBARushPSP/roms/MyGame.gba\n\n"
                 "You can also rebuild the package after filling in the ROM path.",
                 warning_mode=True
             ))

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Shared constants for TempGBA4PSP Builder.
+Shared constants for GBA Rush PSP Builder.
 
 Single source of truth for PSP dimensions, asset limits, mode strings,
 and UI theming. Import from here — never hardcode elsewhere.

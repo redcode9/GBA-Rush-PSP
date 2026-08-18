@@ -296,7 +296,7 @@ int save_png(const char *path, u16 *screen_image)
 
   if ((fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT, 0777)) >= 0)
   {
-    if ((res = png_add_text("Software", "TempGBA")))
+    if ((res = png_add_text("Software", "GBA Rush PSP")))
     {
       if ((res = png_add_text("System", "PSP")))
       {

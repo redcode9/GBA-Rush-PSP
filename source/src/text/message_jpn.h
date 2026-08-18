@@ -60,7 +60,7 @@
   "スリープモード",
 
   // MSG_MAIN_MENU_11
-  "TempGBAを終了",
+  "GBA Rush PSPを終了",
 
   // MSG_MAIN_MENU_HELP_0
   FONT_BTN_CIRCLE_GBK ":読み込み   " FONT_CURSOR_LEFT_GBK FONT_CURSOR_RIGHT_GBK ":スロットを変更",
@@ -692,7 +692,7 @@
   "エミュレータのオプション",
 
   // MSG_PREVIEW_TITLE
-  "TempGBA",
+  "GBA Rush PSP",
 
   // MSG_PREVIEW_ITEM_0
   "ロード状態",

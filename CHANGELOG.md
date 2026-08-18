@@ -13,13 +13,15 @@
 
 ### Changed
 
+- Rebranded the independent fork as GBA Rush PSP with a new PSP-native visual
+  identity and clearer upstream attribution.
 - Cheat loading is manual, transactional, and reports precise errors.
 - Cheat pages show stable entry numbers, names, states, filename, and count.
 - Runtime cheat work scales with active entries and configured hooks.
 - Fast-forward drops queued audio and restores normal pacing immediately when
   released.
 - PSP build flags now distinguish C, C++, assembler, and vendored zlib sources.
-- The EBOOT uses a stable `TempGBA4PSP` title.
+- The EBOOT uses the stable `GBA Rush PSP` title.
 
 ### Fixed
 

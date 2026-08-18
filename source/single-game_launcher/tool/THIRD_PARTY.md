@@ -1,7 +1,7 @@
 # Third-Party Components
 
 This document lists all third-party software bundled with or required by
-**TempGBA4PSP Single-Game Launcher Builder**, along with their licenses
+**GBA Rush PSP Single-Game Launcher Builder**, along with their licenses
 and source code availability.
 
 > This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.

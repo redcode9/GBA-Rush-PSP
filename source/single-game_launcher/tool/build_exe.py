@@ -6,16 +6,16 @@ PyInstaller build script for creating a standalone Windows executable.
 
 Output layout:
     build_exe_output/
-        TempGBA4PSP Single-Game Launcher Builder.spec
+        GBA Rush PSP Single-Game Launcher Builder.spec
         dist/
-            TempGBA4PSP Single-Game Launcher Builder.exe
+            GBA Rush PSP Single-Game Launcher Builder.exe
             LICENSE.txt
             README.md
             SOURCE_OFFER.txt
             THIRD_PARTY.md
             LICENSES/
         build/
-            TempGBA4PSP Single-Game Launcher Builder/   ← PyInstaller intermediates
+            GBA Rush PSP Single-Game Launcher Builder/  ← PyInstaller intermediates
 """
 
 import os
@@ -26,7 +26,7 @@ from pathlib import Path
 import constants as C
 
 
-APP_NAME = "TempGBA4PSP Single-Game Launcher Builder"
+APP_NAME = "GBA Rush PSP Single-Game Launcher Builder"
 
 
 def main():

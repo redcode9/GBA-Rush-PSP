@@ -1,21 +1,32 @@
 <p align="center">
-  <img src="source/res/ICON0.png" alt="TempGBA4PSP" width="360">
+  <img src="source/res/PIC1.png" alt="GBA Rush PSP" width="720">
 </p>
 
-<h1 align="center">TempGBA4PSP</h1>
+<h1 align="center">GBA Rush PSP</h1>
 
 <p align="center">
-  A performance-focused Game Boy Advance emulator for PlayStation Portable,
-  based on TempGBA and gpSP.
+  A performance-focused Game Boy Advance emulator for PlayStation Portable.
 </p>
 
-## About
+> [!IMPORTANT]
+> **GBA Rush PSP is an independent fork of
+> [andymcca/TempGBA4PSP-mod](https://github.com/andymcca/TempGBA4PSP-mod).**
+> It exists because of the emulator work maintained there and throughout the
+> gpSP, gpSP Kai, TempGBA, and TempGBA4PSP-mod projects. Please credit and
+> support the original authors and contributors.
 
-TempGBA4PSP is a homebrew GBA emulator designed for real PSP hardware. This
-fork adds a safer and more complete cheat runtime, timed CodeBreaker hooks, a
-configurable hold-to-fast-forward action, and release-quality regression
-checks while retaining the performance and compatibility work from its
-TempGBA4PSP-mod base.
+## About this fork
+
+GBA Rush PSP continues the real-hardware PSP work from TempGBA4PSP-mod under a
+distinct name and identity. It retains the upstream emulator core, interface,
+renderers, compatibility work, and single-game launcher while adding a safer
+cheat runtime, timed CodeBreaker hooks, configurable hold-to-fast-forward, and
+repeatable release checks.
+
+This repository is independently maintained. It is not the original
+TempGBA4PSP-mod project, and its authors do not imply endorsement by upstream
+maintainers. See [Project lineage and acknowledgements](docs/LINEAGE.md) for
+the full development path and links.
 
 You must provide your own legally obtained GBA BIOS and ROM dumps. They are not
 part of this repository or its release packages.
@@ -28,8 +39,8 @@ part of this repository or its release packages.
   and `ON`/`OFF` state.
 - Up to 640 cheat entries with active-entry and sorted-hook indexes that avoid
   scanning inactive lists in hot paths.
-- Configurable hold-to-fast-forward, with unthrottled emulation, paced display
-  updates, and audio queue recovery on release.
+- Configurable hold-to-fast-forward with unthrottled emulation, paced display
+  updates, and immediate audio recovery.
 - Old and new video renderers, multiple scale modes, themes, box art, recent
   ROMs, configurable dynarec policies, and multilingual menus.
 - Japanese, English, Simplified Chinese, Traditional Chinese, and Italian UI.
@@ -37,18 +48,18 @@ part of this repository or its release packages.
 
 ## Installation
 
-Copy the release folder to `PSP/GAME/TempGBA4PSP/`, add your own
-`gba_bios.bin`, and start the emulator from the PSP Game menu.
+Copy the release folder to `PSP/GAME/GBARushPSP/`, add your own
+`gba_bios.bin`, and start **GBA Rush PSP** from the PSP Game menu.
 
 ```text
-PSP/GAME/TempGBA4PSP/
+PSP/GAME/GBARushPSP/
 ├── EBOOT.PBP
 ├── exception.prx
 └── gba_bios.bin       user supplied
 ```
 
 See [Installation and upgrade notes](docs/INSTALL.md) for configuration,
-fast-forward, and update guidance.
+fast-forward, legacy-folder, and update guidance.
 
 ## Cheats
 
@@ -74,8 +85,8 @@ configuration menu to use any supported digital or analog direction.
 
 The emulator bypasses normal throttling while held, targets roughly 30 visible
 frames per second, and discards queued audio instead of allowing a backlog to
-stall emulation. Releasing the button immediately restores the selected
-frameskip and audio behavior.
+stall emulation. Releasing the button restores the selected frameskip and audio
+behavior immediately.
 
 ## Build
 
@@ -87,14 +98,8 @@ make check
 make psp-build
 ```
 
-The equivalent direct command is:
-
-```sh
-make -C source
-```
-
 Docker users can follow [BUILD-DOCKER.md](BUILD-DOCKER.md). Build outputs are
-created under `source/` and are ignored by Git.
+created under `source/` and ignored by Git.
 
 ### Host tests
 
@@ -103,17 +108,18 @@ and runs deterministic regression vectors for encryption, operation decoding,
 conditions, multiline skips, and memory writes. It also verifies that private
 runtime data and generated executables are not tracked.
 
-### Release candidate package
+### Release package
 
 After a successful PSP build:
 
 ```sh
-make package VERSION=20260817-rc1
+make package VERSION=1.0.0
 ```
 
-This creates a clean ZIP and SHA-256 checksum in `dist/`. The package contains
-only `EBOOT.PBP`, `exception.prx`, installation notes, changelog, and license.
-It excludes BIOS files, ROMs, saves, local settings, and cheat databases.
+This creates `GBA-Rush-PSP-1.0.0.zip` and its SHA-256 checksum in `dist/`.
+The package contains only `EBOOT.PBP`, `exception.prx`, installation notes,
+changelog, and license. It excludes BIOS files, ROMs, saves, local settings,
+and cheat databases.
 
 ### Single-game launcher
 
@@ -138,21 +144,31 @@ requirements and third-party notices.
 | `source/src/codebreaker.c` | CodeBreaker decoder and operation interpreter |
 | `tests/` | Host regression tests |
 | `docs/CHEATS.md` | Cheat format and master-code behavior |
+| `docs/LINEAGE.md` | Upstream history, links, and acknowledgements |
+| `docs/BRAND.md` | Naming, visual identity, and attribution rules |
 | `source/single-game_launcher/` | Optional PSP launcher and desktop builder |
-| `scripts/` | Source checks and deterministic release packaging |
+| `scripts/` | Source checks and repeatable release packaging |
 
-## Lineage and credits
+## Thanks and lineage
 
-- gpSP by Exophase and its contributors.
-- gameplaySP kai by takka and contributors.
-- TempGBA by Nebuleon, Normmatt, BassAceGold, and the TempGBA community.
-- TempGBA4PSP-mod and its contributors.
-- libretro/gpsp and other upstream emulator projects whose fixes are credited
-  in the inherited source and history.
+GBA Rush PSP stands on work by:
 
-Detailed historical and asset attribution is retained in
-[`source/copyright`](source/copyright). Component licensing is summarized in
-[NOTICE.md](NOTICE.md).
+- [Exophase](https://github.com/Exophase) and gpSP contributors;
+- [notaz](https://github.com/notaz) and the wider gpSP community;
+- Takka and the gpSP Kai contributors;
+- Nebuleon, Normmatt, BassAceGold, and the TempGBA community;
+- [Phoe-nix](https://github.com/phoe-nix) and earlier TempGBA4PSP-mod
+  contributors;
+- [andymcca](https://github.com/andymcca),
+  [JxPv2](https://github.com/JxPv2), and everyone who contributed to the
+  [direct upstream repository](https://github.com/andymcca/TempGBA4PSP-mod);
+- [libretro/gpsp](https://github.com/libretro/gpsp) contributors whose fixes
+  are credited in the inherited source and history.
+
+Thank you to every developer and tester who kept this emulator lineage useful
+on real PSP hardware. Detailed historical and asset attribution remains in
+[`source/copyright`](source/copyright), [NOTICE.md](NOTICE.md), and
+[docs/LINEAGE.md](docs/LINEAGE.md).
 
 ## License
 
@@ -160,4 +176,5 @@ The emulator is distributed under GPL-2.0-or-later. See [LICENSE](LICENSE).
 The optional desktop launcher builder is GPL-3.0-or-later and carries its own
 license and third-party notices.
 
-This project is not affiliated with Nintendo, Sony, or CodeBreaker.
+This project is not affiliated with or endorsed by Nintendo, Sony, CodeBreaker,
+or the maintainers of the upstream projects.

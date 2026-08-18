@@ -4806,7 +4806,7 @@ u32 menu(void)
                   case 17: // Sleep Mode
                     menu_suspend();
                     break;
-                  case 18: // Exit TempGBA
+                  case 18: // Exit GBA Rush PSP
                     if (!first_load)
                       action_savestate_slot(10);
                     quit();

@@ -1,6 +1,6 @@
 # Cheat files
 
-TempGBA4PSP loads cheat lists manually from the **Cheats options** menu. A
+GBA Rush PSP loads cheat lists manually from the **Cheats options** menu. A
 successful load shows the selected filename, the number of entries, and each
 entry's name and `ON`/`OFF` state.
 
@@ -54,7 +54,7 @@ seed from the entries that follow it.
 Timed master codes run from a dynamic-recompiler hook. Enable the master entry
 required by the list, then enable the ordinary entries you want. Several
 ordinary entries can be active together. If masters for different hook
-addresses are enabled, TempGBA4PSP keeps the most recently enabled master and
+addresses are enabled, GBA Rush PSP keeps the most recently enabled master and
 turns off the conflicting master entries to prevent duplicate execution.
 
 The CodeBreaker button condition supports the standard keypad test form. Other

@@ -1,5 +1,5 @@
 /* ============================================================================
- * TempGBA4PSP — Boxart module with transparent on-device cache + Carousel
+ * GBA Rush PSP — Boxart module with transparent on-device cache + Carousel
  * ============================================================================
  *
  * Problem:

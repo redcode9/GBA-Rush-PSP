@@ -1,21 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="144" height="80" viewBox="0 0 144 80">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#07111f"/>
-      <stop offset="0.58" stop-color="#17244a"/>
-      <stop offset="1" stop-color="#332071"/>
-    </linearGradient>
-    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#28d7ff"/>
-      <stop offset="1" stop-color="#8a67ff"/>
-    </linearGradient>
-  </defs>
-  <rect width="144" height="80" rx="13" fill="url(#bg)"/>
-  <rect x="2" y="2" width="140" height="76" rx="11" fill="none" stroke="#ffffff" stroke-opacity=".12"/>
-  <path d="M17 40h20M27 30v20" stroke="#dbe9ff" stroke-width="6" stroke-linecap="round"/>
-  <circle cx="119" cy="34" r="5" fill="#ffcb4a"/>
-  <circle cx="108" cy="45" r="5" fill="#28d7ff"/>
-  <text x="72" y="38" text-anchor="middle" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="800" font-style="italic">TGBA</text>
-  <rect x="49" y="45" width="46" height="3" rx="1.5" fill="url(#accent)"/>
-  <text x="72" y="60" text-anchor="middle" fill="#b8c8e8" font-family="Arial, Helvetica, sans-serif" font-size="8" font-weight="700" letter-spacing="2">FOR PSP</text>
+  <rect width="144" height="80" fill="#071426"/>
+
+  <g aria-label="Rush mark">
+    <path fill="#26d9e8" d="M8 14h15l26 26-26 26H8l26-26z"/>
+    <path fill="#e73c91" d="M27 14h18l26 26-26 26H27l26-26z"/>
+  </g>
+
+  <g fill="#f5f3ea" font-family="Arial Black, Arial, Helvetica, sans-serif"
+     font-style="italic" font-weight="900">
+    <text x="58" y="32" font-size="17" letter-spacing=".4">GBA</text>
+    <text x="56" y="56" font-size="21" letter-spacing="-1">RUSH</text>
+  </g>
+
+  <g aria-label="PSP label">
+    <path fill="#f2c94c" d="M108 18h28l-4 14h-28z"/>
+    <text x="120" y="28" text-anchor="middle" fill="#071426"
+          font-family="Arial Black, Arial, Helvetica, sans-serif"
+          font-size="8" font-style="italic" font-weight="900">PSP</text>
+  </g>
 </svg>

@@ -1,4 +1,4 @@
-# TempGBA4PSP installation
+# GBA Rush PSP installation
 
 This package contains the emulator executable and its exception handler. It
 does not include a Game Boy Advance BIOS, ROMs, saves, configuration files, or
@@ -6,16 +6,16 @@ cheat databases.
 
 ## Install on PSP
 
-1. Copy the `TempGBA4PSP` folder to `PSP/GAME/` on the Memory Stick or PSP Go
+1. Copy the `GBARushPSP` folder to `PSP/GAME/` on the Memory Stick or PSP Go
    internal storage.
 2. Add your own legally obtained `gba_bios.bin` to that folder.
-3. Start **TempGBA4PSP** from the PSP Game menu.
+3. Start **GBA Rush PSP** from the PSP Game menu.
 4. Use the file browser to select your ROM.
 
 The minimum layout is:
 
 ```text
-PSP/GAME/TempGBA4PSP/
+PSP/GAME/GBARushPSP/
 ├── EBOOT.PBP
 ├── exception.prx
 └── gba_bios.bin       user supplied
@@ -46,5 +46,11 @@ setting.
 Replace `EBOOT.PBP` and `exception.prx`. Keep your BIOS, ROMs, saves, states,
 cheat lists, and configuration files. Back up save data before upgrading.
 
-This is an independent homebrew project and is not affiliated with Nintendo,
-Sony, or CodeBreaker.
+The emulator itself can run from a legacy folder named `TempGBA4PSP`. The
+single-game launcher now looks for `GBARushPSP` by default; set an explicit
+path in `emulator_path.txt` when a launcher should use a legacy installation.
+
+GBA Rush PSP is an independent fork of
+[andymcca/TempGBA4PSP-mod](https://github.com/andymcca/TempGBA4PSP-mod). It is
+not affiliated with or endorsed by Nintendo, Sony, CodeBreaker, or the upstream
+maintainers.

@@ -1,13 +1,23 @@
 # License and attribution notice
 
+GBA Rush PSP is an independent fork of
+[andymcca/TempGBA4PSP-mod](https://github.com/andymcca/TempGBA4PSP-mod). The
+fork retains substantial emulator, interface, renderer, translation,
+compatibility, and launcher work from that repository and its own upstream
+lineage. Upstream names and notices are attribution, not an endorsement of this
+fork.
+
 The emulator core is distributed under the GNU General Public License, version
 2 or any later version. The complete license is in `LICENSE`; historical
-copyright and asset attribution is retained in `source/copyright` and in the
-source file headers.
+copyright and asset attribution is retained in `source/copyright` and source
+file headers. The development path and acknowledgements are documented in
+`docs/LINEAGE.md`.
 
-The project descends from gpSP, gameplaySP kai, TempGBA, and later
-TempGBA4PSP work. Upstream names and notices remain attribution to their
-respective authors, not an endorsement of this fork.
+The project descends from gpSP by Exophase, subsequent gpSP work by notaz and
+contributors, gpSP Kai by Takka and contributors, TempGBA by Nebuleon,
+Normmatt, BassAceGold, and contributors, and TempGBA4PSP-mod by Phoe-nix and
+later maintainers including andymcca and JxPv2. We thank all of those authors
+and communities for the work that made this fork possible.
 
 The optional single-game launcher builder under
 `source/single-game_launcher/tool/` is distributed under GPL-3.0-or-later and
@@ -19,5 +29,5 @@ Vendored zlib source retains its original notices. PSP SDK import libraries in
 build dependencies from the upstream source snapshot.
 
 Game Boy Advance, PlayStation Portable, Nintendo, Sony, and CodeBreaker names
-may be trademarks of their respective owners. This project is not affiliated
-with or endorsed by those owners.
+may be trademarks of their respective owners. GBA Rush PSP is not affiliated
+with or endorsed by those owners or by the upstream maintainers.
