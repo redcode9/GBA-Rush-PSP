@@ -872,4 +872,109 @@
   // MSG_BROWSER_ALL_GAMES
   "--- 所有遊戲 ---",
 
+  // MSG_MAIN_MENU_LINK
+  "連線線纜",
+
+  // MSG_MAIN_MENU_HELP_LINK
+  "連接兩台 PSP",
+
+  // MSG_LINK_MENU_TITLE
+  "連線線纜",
+
+  // MSG_LINK_MENU_STATUS
+  "狀態",
+
+  // MSG_LINK_MENU_PEER
+  "對方",
+
+  // MSG_LINK_MENU_CREATE
+  "建立連線",
+
+  // MSG_LINK_MENU_JOIN
+  "加入連線",
+
+  // MSG_LINK_MENU_DISCONNECT
+  "中斷連線",
+
+  // MSG_LINK_MENU_HELP_STATUS
+  "目前的連線狀態",
+
+  // MSG_LINK_MENU_HELP_CREATE
+  "以玩家 1 等待第二台 PSP",
+
+  // MSG_LINK_MENU_HELP_JOIN
+  "尋找玩家 1 並以玩家 2 連接",
+
+  // MSG_LINK_MENU_HELP_DISCONNECT
+  "關閉目前的連線",
+
+  // MSG_LINK_STATUS_NO_GAME
+  "尚未載入遊戲",
+
+  // MSG_LINK_STATUS_WLAN_OFF
+  "WLAN 開關已關閉",
+
+  // MSG_LINK_STATUS_STOPPED
+  "未連接",
+
+  // MSG_LINK_STATUS_STARTING
+  "正在啟動網路",
+
+  // MSG_LINK_STATUS_HOSTING
+  "正在等待玩家 2",
+
+  // MSG_LINK_STATUS_SEARCHING
+  "正在尋找玩家 1",
+
+  // MSG_LINK_STATUS_CONNECTING
+  "正在連接",
+
+  // MSG_LINK_STATUS_NEGOTIATING
+  "正在檢查連線協定",
+
+  // MSG_LINK_STATUS_CONNECTED_P1
+  "已以玩家 1 連接",
+
+  // MSG_LINK_STATUS_CONNECTED_P2
+  "已以玩家 2 連接",
+
+  // MSG_LINK_STATUS_DISCONNECTED
+  "已中斷連線",
+
+  // MSG_LINK_STATUS_ERROR
+  "連線錯誤",
+
+  // MSG_LINK_PEER_NONE
+  "未連接",
+
+  // MSG_LINK_SAVESTATE_BLOCKED
+  "連線時無法使用即時存檔",
+
+  // MSG_LINK_REASON_TIMEOUT
+  "連線逾時",
+
+  // MSG_LINK_REASON_TRANSPORT
+  "網路錯誤",
+
+  // MSG_LINK_REASON_PROTOCOL
+  "協定錯誤",
+
+  // MSG_LINK_REASON_INCOMPATIBLE
+  "協定不相容",
+
+  // MSG_LINK_REASON_MODE_MISMATCH
+  "序列模式不相符",
+
+  // MSG_LINK_REASON_QUEUE_FULL
+  "網路佇列已滿",
+
+  // MSG_LINK_REASON_PEER_CLOSED
+  "對方已關閉連線",
+
+  // MSG_LINK_REASON_SUSPEND
+  "PSP 已休眠",
+
+  // MSG_LINK_REASON_ROM_CHANGE
+  "遊戲已變更",
+
 },

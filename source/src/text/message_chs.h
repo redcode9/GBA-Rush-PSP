@@ -871,4 +871,109 @@
   // MSG_BROWSER_ALL_GAMES
   "--- 所有游戏 ---",
 
+  // MSG_MAIN_MENU_LINK
+  "联机线",
+
+  // MSG_MAIN_MENU_HELP_LINK
+  "连接两台 PSP",
+
+  // MSG_LINK_MENU_TITLE
+  "联机线",
+
+  // MSG_LINK_MENU_STATUS
+  "状态",
+
+  // MSG_LINK_MENU_PEER
+  "对方",
+
+  // MSG_LINK_MENU_CREATE
+  "创建会话",
+
+  // MSG_LINK_MENU_JOIN
+  "加入会话",
+
+  // MSG_LINK_MENU_DISCONNECT
+  "断开连接",
+
+  // MSG_LINK_MENU_HELP_STATUS
+  "当前联机状态",
+
+  // MSG_LINK_MENU_HELP_CREATE
+  "作为玩家 1 等待第二台 PSP",
+
+  // MSG_LINK_MENU_HELP_JOIN
+  "查找玩家 1 并作为玩家 2 连接",
+
+  // MSG_LINK_MENU_HELP_DISCONNECT
+  "关闭当前联机会话",
+
+  // MSG_LINK_STATUS_NO_GAME
+  "未加载游戏",
+
+  // MSG_LINK_STATUS_WLAN_OFF
+  "WLAN 开关已关闭",
+
+  // MSG_LINK_STATUS_STOPPED
+  "未连接",
+
+  // MSG_LINK_STATUS_STARTING
+  "正在启动网络",
+
+  // MSG_LINK_STATUS_HOSTING
+  "正在等待玩家 2",
+
+  // MSG_LINK_STATUS_SEARCHING
+  "正在查找玩家 1",
+
+  // MSG_LINK_STATUS_CONNECTING
+  "正在连接",
+
+  // MSG_LINK_STATUS_NEGOTIATING
+  "正在检查联机协议",
+
+  // MSG_LINK_STATUS_CONNECTED_P1
+  "已作为玩家 1 连接",
+
+  // MSG_LINK_STATUS_CONNECTED_P2
+  "已作为玩家 2 连接",
+
+  // MSG_LINK_STATUS_DISCONNECTED
+  "已断开连接",
+
+  // MSG_LINK_STATUS_ERROR
+  "连接错误",
+
+  // MSG_LINK_PEER_NONE
+  "未连接",
+
+  // MSG_LINK_SAVESTATE_BLOCKED
+  "联机时无法使用即时存档",
+
+  // MSG_LINK_REASON_TIMEOUT
+  "连接超时",
+
+  // MSG_LINK_REASON_TRANSPORT
+  "网络错误",
+
+  // MSG_LINK_REASON_PROTOCOL
+  "协议错误",
+
+  // MSG_LINK_REASON_INCOMPATIBLE
+  "协议不兼容",
+
+  // MSG_LINK_REASON_MODE_MISMATCH
+  "串行模式不匹配",
+
+  // MSG_LINK_REASON_QUEUE_FULL
+  "网络队列已满",
+
+  // MSG_LINK_REASON_PEER_CLOSED
+  "对方已关闭连接",
+
+  // MSG_LINK_REASON_SUSPEND
+  "PSP 已休眠",
+
+  // MSG_LINK_REASON_ROM_CHANGE
+  "游戏已更改",
+
 },

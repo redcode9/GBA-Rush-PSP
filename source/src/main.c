@@ -20,6 +20,7 @@
 
 
 #include "common.h"
+#include "psp_adhoc.h"
 
 /* Forward declarations for recent ROMs functions (defined in gui.c) */
 extern void load_recent_roms(void);
@@ -150,6 +151,7 @@ static void vblank_interrupt_handler(u32 sub, u32 *parg);
 
 static void synchronize(void);
 static void psp_sleep_loop(void);
+static void main_link_publish_sio(void);
 
 #define scePowerSetClockFrequency371  scePower_EBD177D6
 static int (*__scePowerSetClockFrequency)(int pllfreq, int cpufreq, int busfreq);
@@ -328,6 +330,149 @@ static void main_link_apply_events(u32 events)
     gba_sio_state_dirty = 1;
 }
 
+static int main_link_session_open(void)
+{
+  LinkSessionState state = link_session_state(&gba_link_session);
+
+  return state != LINK_SESSION_IDLE &&
+   state != LINK_SESSION_DISCONNECTED && state != LINK_SESSION_ERROR;
+}
+
+int main_link_active(void)
+{
+  return main_link_session_open();
+}
+
+int main_link_connected(void)
+{
+  return link_session_is_connected(&gba_link_session);
+}
+
+int main_link_pending(void)
+{
+  LinkSessionState state = link_session_state(&gba_link_session);
+
+  return state == LINK_SESSION_HOSTING || state == LINK_SESSION_JOINING ||
+   state == LINK_SESSION_NEGOTIATING || state == LINK_SESSION_WAIT_READY ||
+   state == LINK_SESSION_WAIT_READY_ACK;
+}
+
+static u32 main_link_rom_crc32(void)
+{
+  u8 buffer[8192];
+  uLong crc = crc32(0L, Z_NULL, 0);
+  u32 remaining = gamepak_file_size;
+  SceUID file;
+
+  if(gamepak_file_size <= gamepak_ram_buffer_size)
+    return (u32)crc32(crc, gamepak_rom, gamepak_file_size);
+
+  FILE_OPEN(file, gamepak_filename_raw, READ);
+  if(!FILE_CHECK_VALID(file))
+    return (u32)crc32(crc, gamepak_rom,
+     gamepak_file_size < 0x100u ? gamepak_file_size : 0x100u);
+
+  while(remaining != 0)
+  {
+    u32 wanted = remaining < sizeof(buffer) ? remaining : sizeof(buffer);
+    s32 received = FILE_READ(file, buffer, wanted);
+
+    if(received <= 0)
+      break;
+    crc = crc32(crc, buffer, (u32)received);
+    remaining -= (u32)received;
+  }
+  FILE_CLOSE(file);
+  return (u32)crc;
+}
+
+static void main_link_hello(LinkHello *hello)
+{
+  memset(hello, 0, sizeof(*hello));
+  hello->capabilities = LINK_SESSION_REQUIRED_CAPABILITIES;
+  hello->rom_crc32 = main_link_rom_crc32();
+  hello->rom_size = gamepak_file_size;
+  memcpy(hello->title, gamepak_rom + 0xA0, sizeof(hello->title));
+  memcpy(hello->game_code, gamepak_rom + 0xAC,
+   sizeof(hello->game_code));
+  hello->revision = gamepak_rom[0xBC];
+  hello->max_players = 2;
+}
+
+static int main_link_start(int host)
+{
+  LinkHello hello;
+  u64 now;
+  u32 session_id;
+
+  if(gamepak_filename[0] == '\0' || gamepak_file_size < 0xC0u)
+    return 0;
+  if(!psp_adhoc_wlan_enabled())
+    return 0;
+
+  if(main_link_session_open())
+    main_link_disconnect(LINK_REASON_USER);
+  else
+    psp_adhoc_stop();
+
+  main_link_hello(&hello);
+  link_session_init(&gba_link_session, &gba_sio, psp_adhoc_transport(),
+   &hello);
+  if(!psp_adhoc_start())
+    return 0;
+
+  if(!host)
+  {
+    if(link_session_join(&gba_link_session))
+      return 1;
+    psp_adhoc_stop();
+    return 0;
+  }
+
+  now = sceKernelGetSystemTimeWide();
+  session_id = (u32)(now ^ (now >> 32) ^ hello.rom_crc32 ^
+   hello.rom_size);
+  if(session_id == 0)
+    session_id = 1;
+  if(link_session_host(&gba_link_session, session_id))
+    return 1;
+
+  psp_adhoc_stop();
+  return 0;
+}
+
+int main_link_host(void)
+{
+  return main_link_start(1);
+}
+
+int main_link_join(void)
+{
+  return main_link_start(0);
+}
+
+void main_link_disconnect(LinkSessionReason reason)
+{
+  if(link_session_state(&gba_link_session) != LINK_SESSION_IDLE)
+    main_link_apply_events(link_session_disconnect(&gba_link_session,
+     reason));
+  psp_adhoc_stop();
+}
+
+void main_link_pump(void)
+{
+  LinkSessionState state;
+
+  if(!main_link_session_open())
+    return;
+
+  main_link_apply_events(link_session_pump(&gba_link_session));
+  main_link_publish_sio();
+  state = link_session_state(&gba_link_session);
+  if(state == LINK_SESSION_DISCONNECTED || state == LINK_SESSION_ERROR)
+    psp_adhoc_stop();
+}
+
 static void main_link_publish_sio(void)
 {
   LinkSioState state;
@@ -359,6 +504,12 @@ static void main_link_service(void)
   events = link_session_pump(&gba_link_session);
   main_link_apply_events(events);
   main_link_publish_sio();
+
+  if(!main_link_session_open())
+  {
+    psp_adhoc_stop();
+    return;
+  }
 
   events = link_session_begin_transfer(&gba_link_session);
   main_link_apply_events(events);
@@ -980,6 +1131,7 @@ int user_main(int argc, char *argv[])
   setup_main((argc > 0 && argv[0] != NULL) ? argv[0] : NULL);
 
   gamepak_filename[0] = 0;
+  gamepak_file_size = 0;
 
   /* Priority 1: launcher or file manager passed a ROM path */
   if (argc > 1)
@@ -1059,10 +1211,7 @@ int main(int argc, char *argv[])
 
 void quit(void)
 {
-  if(link_session_state(&gba_link_session) != LINK_SESSION_IDLE &&
-     link_session_state(&gba_link_session) != LINK_SESSION_DISCONNECTED)
-    main_link_apply_events(link_session_disconnect(&gba_link_session,
-     LINK_REASON_USER));
+  main_link_disconnect(LINK_REASON_USER);
 
   update_backup_immediately();
   save_config_file();
@@ -1083,20 +1232,22 @@ void quit(void)
 
 void reset_gba(void)
 {
-  if(link_session_state(&gba_link_session) != LINK_SESSION_IDLE &&
-     link_session_state(&gba_link_session) != LINK_SESSION_DISCONNECTED)
-    main_link_apply_events(link_session_disconnect(&gba_link_session,
-     LINK_REASON_ROM_CHANGE));
+  main_link_disconnect(LINK_REASON_ROM_CHANGE);
 
   clear_texture(0x7FFF);
   init_memory();
   init_main();
+  link_session_init(&gba_link_session, &gba_sio, psp_adhoc_transport(),
+   NULL);
   reset_sound();
 }
 
 
 static void psp_sleep_loop(void)
 {
+  if(main_link_session_open())
+    main_link_disconnect(LINK_REASON_SUSPEND);
+
   if (!sleep_auto_saved && gamepak_filename[0] != '\0')
   {
     auto_savestate_sleep();
@@ -1152,7 +1303,8 @@ static int power_callback(int unknown, int powerInfo, void *arg)
   if ((powerInfo & PSP_POWER_CB_SUSPENDING) != 0)
   {
     sleep_flag = 1;
-    if (!sleep_auto_saved && gamepak_filename[0] != '\0')
+    if (!sleep_auto_saved && gamepak_filename[0] != '\0' &&
+        !main_link_active())
     {
       auto_savestate_sleep();
       sleep_auto_saved = 1;

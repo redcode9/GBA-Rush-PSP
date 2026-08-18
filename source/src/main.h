@@ -105,6 +105,14 @@ CPU_ALERT_TYPE timer_control_high(u8 timer_number, u32 value);
 extern u32 dma_cycle_count;
 extern LinkSession gba_link_session;
 
+int main_link_host(void);
+int main_link_join(void);
+void main_link_disconnect(LinkSessionReason reason);
+void main_link_pump(void);
+int main_link_active(void);
+int main_link_connected(void);
+int main_link_pending(void);
+
 u32 update_gba(void);
 
 void reset_gba(void);

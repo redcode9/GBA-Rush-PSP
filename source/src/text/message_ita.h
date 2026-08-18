@@ -871,4 +871,109 @@
   // MSG_BROWSER_ALL_GAMES
   "--- Tutti i Giochi ---",
 
+  // MSG_MAIN_MENU_LINK
+  "Cavo link",
+
+  // MSG_MAIN_MENU_HELP_LINK
+  "Collega due console PSP",
+
+  // MSG_LINK_MENU_TITLE
+  "Cavo link",
+
+  // MSG_LINK_MENU_STATUS
+  "Stato",
+
+  // MSG_LINK_MENU_PEER
+  "Altra PSP",
+
+  // MSG_LINK_MENU_CREATE
+  "Crea sessione",
+
+  // MSG_LINK_MENU_JOIN
+  "Partecipa alla sessione",
+
+  // MSG_LINK_MENU_DISCONNECT
+  "Disconnetti",
+
+  // MSG_LINK_MENU_HELP_STATUS
+  "Stato attuale del cavo link",
+
+  // MSG_LINK_MENU_HELP_CREATE
+  "Attendi la seconda PSP come Giocatore 1",
+
+  // MSG_LINK_MENU_HELP_JOIN
+  "Trova il Giocatore 1 e collegati come Giocatore 2",
+
+  // MSG_LINK_MENU_HELP_DISCONNECT
+  "Chiudi la sessione link attuale",
+
+  // MSG_LINK_STATUS_NO_GAME
+  "Nessun gioco caricato",
+
+  // MSG_LINK_STATUS_WLAN_OFF
+  "Interruttore WLAN spento",
+
+  // MSG_LINK_STATUS_STOPPED
+  "Disconnesso",
+
+  // MSG_LINK_STATUS_STARTING
+  "Avvio della rete",
+
+  // MSG_LINK_STATUS_HOSTING
+  "In attesa del Giocatore 2",
+
+  // MSG_LINK_STATUS_SEARCHING
+  "Ricerca del Giocatore 1",
+
+  // MSG_LINK_STATUS_CONNECTING
+  "Connessione",
+
+  // MSG_LINK_STATUS_NEGOTIATING
+  "Verifica del protocollo link",
+
+  // MSG_LINK_STATUS_CONNECTED_P1
+  "Connesso come Giocatore 1",
+
+  // MSG_LINK_STATUS_CONNECTED_P2
+  "Connesso come Giocatore 2",
+
+  // MSG_LINK_STATUS_DISCONNECTED
+  "Disconnesso",
+
+  // MSG_LINK_STATUS_ERROR
+  "Errore di connessione",
+
+  // MSG_LINK_PEER_NONE
+  "Non connesso",
+
+  // MSG_LINK_SAVESTATE_BLOCKED
+  "Stati di salvataggio disattivati durante il link",
+
+  // MSG_LINK_REASON_TIMEOUT
+  "Tempo scaduto",
+
+  // MSG_LINK_REASON_TRANSPORT
+  "Errore di rete",
+
+  // MSG_LINK_REASON_PROTOCOL
+  "Errore di protocollo",
+
+  // MSG_LINK_REASON_INCOMPATIBLE
+  "Protocollo incompatibile",
+
+  // MSG_LINK_REASON_MODE_MISMATCH
+  "Modalita seriale diversa",
+
+  // MSG_LINK_REASON_QUEUE_FULL
+  "Coda di rete piena",
+
+  // MSG_LINK_REASON_PEER_CLOSED
+  "L'altra PSP ha chiuso la connessione",
+
+  // MSG_LINK_REASON_SUSPEND
+  "PSP sospesa",
+
+  // MSG_LINK_REASON_ROM_CHANGE
+  "Gioco cambiato",
+
 },

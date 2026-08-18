@@ -871,4 +871,109 @@
   // MSG_BROWSER_ALL_GAMES
   "--- すべてのゲーム ---",
 
+  // MSG_MAIN_MENU_LINK
+  "通信ケーブル",
+
+  // MSG_MAIN_MENU_HELP_LINK
+  "2台のPSPを接続します",
+
+  // MSG_LINK_MENU_TITLE
+  "通信ケーブル",
+
+  // MSG_LINK_MENU_STATUS
+  "状態",
+
+  // MSG_LINK_MENU_PEER
+  "相手",
+
+  // MSG_LINK_MENU_CREATE
+  "セッションを作成",
+
+  // MSG_LINK_MENU_JOIN
+  "セッションに参加",
+
+  // MSG_LINK_MENU_DISCONNECT
+  "切断",
+
+  // MSG_LINK_MENU_HELP_STATUS
+  "現在の通信状態",
+
+  // MSG_LINK_MENU_HELP_CREATE
+  "プレイヤー1として2台目のPSPを待ちます",
+
+  // MSG_LINK_MENU_HELP_JOIN
+  "プレイヤー1を検索して接続します",
+
+  // MSG_LINK_MENU_HELP_DISCONNECT
+  "現在の通信を終了します",
+
+  // MSG_LINK_STATUS_NO_GAME
+  "ゲームが読み込まれていません",
+
+  // MSG_LINK_STATUS_WLAN_OFF
+  "WLANスイッチがオフです",
+
+  // MSG_LINK_STATUS_STOPPED
+  "未接続",
+
+  // MSG_LINK_STATUS_STARTING
+  "ネットワークを開始中",
+
+  // MSG_LINK_STATUS_HOSTING
+  "プレイヤー2を待っています",
+
+  // MSG_LINK_STATUS_SEARCHING
+  "プレイヤー1を検索中",
+
+  // MSG_LINK_STATUS_CONNECTING
+  "接続中",
+
+  // MSG_LINK_STATUS_NEGOTIATING
+  "通信プロトコルを確認中",
+
+  // MSG_LINK_STATUS_CONNECTED_P1
+  "プレイヤー1として接続",
+
+  // MSG_LINK_STATUS_CONNECTED_P2
+  "プレイヤー2として接続",
+
+  // MSG_LINK_STATUS_DISCONNECTED
+  "切断されました",
+
+  // MSG_LINK_STATUS_ERROR
+  "接続エラー",
+
+  // MSG_LINK_PEER_NONE
+  "未接続",
+
+  // MSG_LINK_SAVESTATE_BLOCKED
+  "通信中はステートセーブを使用できません",
+
+  // MSG_LINK_REASON_TIMEOUT
+  "タイムアウト",
+
+  // MSG_LINK_REASON_TRANSPORT
+  "ネットワークエラー",
+
+  // MSG_LINK_REASON_PROTOCOL
+  "プロトコルエラー",
+
+  // MSG_LINK_REASON_INCOMPATIBLE
+  "互換性のないプロトコル",
+
+  // MSG_LINK_REASON_MODE_MISMATCH
+  "シリアルモードが一致しません",
+
+  // MSG_LINK_REASON_QUEUE_FULL
+  "ネットワークキューが満杯です",
+
+  // MSG_LINK_REASON_PEER_CLOSED
+  "相手が接続を終了しました",
+
+  // MSG_LINK_REASON_SUSPEND
+  "PSPがスリープしました",
+
+  // MSG_LINK_REASON_ROM_CHANGE
+  "ゲームが変更されました",
+
 },

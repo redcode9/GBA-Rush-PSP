@@ -352,7 +352,8 @@ u32 update_input(void)
 
   /* Fast-forward is a hold action; the configured physical mask is rebuilt
    * only when mappings change, not on every input poll. */
-  synchronize_flag = ((buttons & fast_forward_button_mask) == 0);
+  synchronize_flag = main_link_active() ||
+   ((buttons & fast_forward_button_mask) == 0);
   sound_set_fast_forward(synchronize_flag == 0);
 
   if ((enable_home_menu != 0) && ((non_repeat_buttons & PSP_CTRL_HOME) != 0))

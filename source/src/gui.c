@@ -20,6 +20,7 @@
 
 #include "common.h"
 #include "boxart.h"   // carousel / boxart support
+#include "psp_adhoc.h"
 
 extern u32 option_swap_confirm_buttons;
 
@@ -2938,9 +2939,32 @@ static void reload_cheats_page(void)
 
 /* Global array of all menus — populated once inside menu(),
    then used by file-scope refresh to avoid nested functions. */
-#define MAX_MENUS 9
+#define MAX_MENUS 10
 static MenuType *all_menus[MAX_MENUS];
 static u32 num_all_menus = 0;
+
+static void menu_link_host_action(void)
+{
+    if (gamepak_filename[0] != '\0')
+        main_link_host();
+}
+
+static void menu_link_join_action(void)
+{
+    if (gamepak_filename[0] != '\0')
+        main_link_join();
+}
+
+static void menu_link_disconnect_action(void)
+{
+    main_link_disconnect(LINK_REASON_USER);
+}
+
+static void menu_link_back_action(void)
+{
+    if (main_link_pending())
+        main_link_disconnect(LINK_REASON_USER);
+}
 
 static int menu_string_has_gbk(const char *str)
 {
@@ -3027,8 +3051,8 @@ static void print_menu_option_split(const MenuOptionType *opt, s16 x, s16 y, u16
     if (fmt == NULL) return;
 
     /* Check for %s or %d in format string */
-    const char *spec_s = strstr(fmt, "%s");
-    const char *spec_d = strstr(fmt, "%d");
+    const char *spec_s = opt->current_option != NULL ? strstr(fmt, "%s") : NULL;
+    const char *spec_d = opt->current_option != NULL ? strstr(fmt, "%d") : NULL;
     const char *spec = NULL;
     u32 is_numeric = 0;
 
@@ -3177,6 +3201,8 @@ u32 menu(void)
   char filename_buffer[MAX_PATH];
 
   char line_buffer[80];
+  char link_status_line[96];
+  char link_peer_line[96];
 
 
   MenuType *current_menu;
@@ -3223,6 +3249,7 @@ u32 menu(void)
   auto void submenu_main(void);
   auto void submenu_theme(void);
   auto void submenu_custom_colors(void);
+  auto void submenu_link(void);
   auto void menu_passive_theme(void);
   auto void menu_theme_default(void);
 
@@ -3273,6 +3300,7 @@ u32 menu(void)
 
     if (!first_load)
     {
+      main_link_disconnect(LINK_REASON_SUSPEND);
       update_backup_immediately();
       auto_savestate_sleep();
     }
@@ -3289,6 +3317,7 @@ u32 menu(void)
 
     if (!first_load)
     {
+      main_link_disconnect(LINK_REASON_ROM_CHANGE);
       update_backup_immediately();
       /* Auto-save current game to slot 10 before loading new ROM */
       action_savestate_slot(10);
@@ -3415,6 +3444,12 @@ u32 menu(void)
     u32 same_rom = 0;
     u32 slot_parsed = 0;
     u32 file_browser_repeat = 1;
+
+    if(main_link_active())
+    {
+      error_msg(MSG[MSG_LINK_SAVESTATE_BLOCKED], CONFIRMATION_CONT);
+      return;
+    }
 
     while (file_browser_repeat)
     {
@@ -4008,6 +4043,7 @@ u32 menu(void)
   void gamepak_file_none(void)
   {
     gamepak_filename[0] = 0;
+    gamepak_file_size = 0;
     game_title[0] = 0;
 
     first_load = 1;
@@ -4237,6 +4273,120 @@ u32 menu(void)
     DRAW_TITLE_OPT_GBK(MSG_OPTION_MENU_CUSTOM_COLORS);
   }
 
+  void submenu_link(void)
+  {
+    const char *status;
+    const char *reason = NULL;
+    LinkSessionState state = link_session_state(&gba_link_session);
+    char peer_title[13];
+    char peer_code[5];
+
+    DRAW_TITLE_PSP_GBK(MSG_LINK_MENU_TITLE);
+
+    if(first_load)
+      status = MSG[MSG_LINK_STATUS_NO_GAME];
+    else if(!psp_adhoc_wlan_enabled() &&
+            state != LINK_SESSION_CONNECTED && !main_link_connected())
+      status = MSG[MSG_LINK_STATUS_WLAN_OFF];
+    else
+    {
+      switch(state)
+      {
+        case LINK_SESSION_HOSTING:
+          status = psp_adhoc_state() == PSP_ADHOC_STARTING ?
+           MSG[MSG_LINK_STATUS_STARTING] : MSG[MSG_LINK_STATUS_HOSTING];
+          break;
+
+        case LINK_SESSION_JOINING:
+          if(psp_adhoc_state() == PSP_ADHOC_STARTING)
+            status = MSG[MSG_LINK_STATUS_STARTING];
+          else if(psp_adhoc_state() == PSP_ADHOC_CONNECTING)
+            status = MSG[MSG_LINK_STATUS_CONNECTING];
+          else
+            status = MSG[MSG_LINK_STATUS_SEARCHING];
+          break;
+
+        case LINK_SESSION_NEGOTIATING:
+        case LINK_SESSION_WAIT_READY:
+        case LINK_SESSION_WAIT_READY_ACK:
+          status = MSG[MSG_LINK_STATUS_NEGOTIATING];
+          break;
+
+        case LINK_SESSION_CONNECTED:
+        case LINK_SESSION_WAIT_PREPARE:
+        case LINK_SESSION_WAIT_ACCEPT:
+        case LINK_SESSION_WAIT_COMMIT:
+          status = MSG[gba_link_session.role == LINK_ROLE_HOST ?
+           MSG_LINK_STATUS_CONNECTED_P1 : MSG_LINK_STATUS_CONNECTED_P2];
+          break;
+
+        case LINK_SESSION_DISCONNECTED:
+        case LINK_SESSION_ERROR:
+          status = state == LINK_SESSION_ERROR ?
+           MSG[MSG_LINK_STATUS_ERROR] : MSG[MSG_LINK_STATUS_DISCONNECTED];
+          switch(gba_link_session.reason)
+          {
+            case LINK_REASON_TIMEOUT:
+              reason = MSG[MSG_LINK_REASON_TIMEOUT];
+              break;
+            case LINK_REASON_TRANSPORT:
+              reason = MSG[MSG_LINK_REASON_TRANSPORT];
+              break;
+            case LINK_REASON_PROTOCOL:
+              reason = MSG[MSG_LINK_REASON_PROTOCOL];
+              break;
+            case LINK_REASON_INCOMPATIBLE:
+              reason = MSG[MSG_LINK_REASON_INCOMPATIBLE];
+              break;
+            case LINK_REASON_MODE_MISMATCH:
+              reason = MSG[MSG_LINK_REASON_MODE_MISMATCH];
+              break;
+            case LINK_REASON_QUEUE_FULL:
+              reason = MSG[MSG_LINK_REASON_QUEUE_FULL];
+              break;
+            case LINK_REASON_PEER_CLOSED:
+              reason = MSG[MSG_LINK_REASON_PEER_CLOSED];
+              break;
+            case LINK_REASON_SUSPEND:
+              reason = MSG[MSG_LINK_REASON_SUSPEND];
+              break;
+            case LINK_REASON_ROM_CHANGE:
+              reason = MSG[MSG_LINK_REASON_ROM_CHANGE];
+              break;
+            default:
+              break;
+          }
+          break;
+
+        default:
+          status = MSG[MSG_LINK_STATUS_STOPPED];
+          break;
+      }
+    }
+
+    if(reason != NULL)
+      snprintf(link_status_line, sizeof(link_status_line), "%s: %s - %s",
+       MSG[MSG_LINK_MENU_STATUS], status, reason);
+    else
+      snprintf(link_status_line, sizeof(link_status_line), "%s: %s",
+       MSG[MSG_LINK_MENU_STATUS], status);
+
+    if(main_link_connected())
+    {
+      memcpy(peer_title, gba_link_session.peer_hello.title, 12);
+      memcpy(peer_code, gba_link_session.peer_hello.game_code, 4);
+      peer_title[12] = '\0';
+      peer_code[4] = '\0';
+      snprintf(link_peer_line, sizeof(link_peer_line), "%s: %s [%s]",
+       MSG[MSG_LINK_MENU_PEER], peer_title, peer_code);
+    }
+    else
+    {
+      snprintf(link_peer_line, sizeof(link_peer_line), "%s: %s",
+       MSG[MSG_LINK_MENU_PEER], MSG[MSG_LINK_PEER_NONE]);
+    }
+  }
+
   void menu_passive_theme(void)
   {
     apply_theme(option_theme);
@@ -4411,6 +4561,20 @@ u32 menu(void)
 
   MAKE_MENU(analog_config, NULL, NULL);
 
+  MenuOptionType link_options[] =
+  {
+    ACTION_OPTION(NULL, NULL, link_status_line, MSG_LINK_MENU_HELP_STATUS, 0, 0),
+    ACTION_OPTION(NULL, NULL, link_peer_line, MSG_LINK_MENU_HELP_STATUS, 1, 0),
+
+    ACTION_OPTION(menu_link_host_action, NULL, MSG[MSG_LINK_MENU_CREATE], MSG_LINK_MENU_HELP_CREATE, 3, MSG_LINK_MENU_CREATE),
+    ACTION_OPTION(menu_link_join_action, NULL, MSG[MSG_LINK_MENU_JOIN], MSG_LINK_MENU_HELP_JOIN, 4, MSG_LINK_MENU_JOIN),
+    ACTION_OPTION(menu_link_disconnect_action, NULL, MSG[MSG_LINK_MENU_DISCONNECT], MSG_LINK_MENU_HELP_DISCONNECT, 6, MSG_LINK_MENU_DISCONNECT),
+
+    ACTION_SUBMENU_OPTION(NULL, menu_link_back_action, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 8, MSG_OPTION_MENU_11)
+  };
+
+  MAKE_MENU(link, NULL, NULL);
+
   MenuOptionType main_options[] =
   {
     NUMERIC_SELECTION_ACTION_OPTION(NULL, NULL, MSG[MSG_MAIN_MENU_0], &savestate_slot, 10, MSG_MAIN_MENU_HELP_0, 0, MSG_MAIN_MENU_0),
@@ -4424,6 +4588,7 @@ u32 menu(void)
     SUBMENU_OPTION(&theme_menu, MSG[MSG_MAIN_MENU_EMULATOR], MSG_MAIN_MENU_HELP_EMULATOR, 8, MSG_MAIN_MENU_EMULATOR),
     ACTION_OPTION(menu_show_game_txt_debug, NULL, MSG[MSG_MAIN_MENU_GAMECONFIG], MSG_MAIN_MENU_HELP_GAMECONFIG, 9, MSG_MAIN_MENU_GAMECONFIG),
     SUBMENU_OPTION(&cheats_misc_menu, MSG[MSG_MAIN_MENU_CHEAT], MSG_MAIN_MENU_HELP_CHEAT, 10, MSG_MAIN_MENU_CHEAT),
+    SUBMENU_OPTION(&link_menu, MSG[MSG_MAIN_MENU_LINK], MSG_MAIN_MENU_HELP_LINK, 11, MSG_MAIN_MENU_LINK),
 
     ACTION_OPTION(NULL, NULL, MSG[MSG_MAIN_MENU_7], MSG_MAIN_MENU_HELP_7, 12, MSG_MAIN_MENU_7),
     ACTION_OPTION(NULL, NULL, MSG[MSG_MAIN_MENU_8], MSG_MAIN_MENU_HELP_8, 13, MSG_MAIN_MENU_8),
@@ -4447,6 +4612,7 @@ u32 menu(void)
   all_menus[6] = &custom_colors_menu;
   all_menus[7] = &savestate_menu;
   all_menus[8] = &cheats_misc_menu;
+  all_menus[9] = &link_menu;
   num_all_menus = MAX_MENUS;
 
   menu_refresh_language();
@@ -4550,6 +4716,8 @@ u32 menu(void)
       current_menu->init_function();
     }
 
+    main_link_pump();
+
     if (current_menu == &savestate_menu)
       submenu_savestate();
     if (current_menu == &graphics_menu)
@@ -4566,6 +4734,8 @@ u32 menu(void)
       submenu_analog();
     if (current_menu == &cheats_misc_menu)
       submenu_cheats_misc();
+    if (current_menu == &link_menu)
+      submenu_link();
     if (current_menu == &main_menu)
       submenu_main();
 
@@ -4580,8 +4750,8 @@ u32 menu(void)
         if (display_option == current_option) {
             /* Compute scroll offset based on VALUE length, not label+value */
             const char *fmt = display_option->display_string;
-            const char *spec_s = (fmt != NULL) ? strstr(fmt, "%s") : NULL;
-            const char *spec_d = (fmt != NULL) ? strstr(fmt, "%d") : NULL;
+            const char *spec_s = (fmt != NULL && display_option->current_option != NULL) ? strstr(fmt, "%s") : NULL;
+            const char *spec_d = (fmt != NULL && display_option->current_option != NULL) ? strstr(fmt, "%d") : NULL;
             u32 value_len = 0;
             u32 label_chars = 0;
 
@@ -4743,6 +4913,12 @@ u32 menu(void)
           menu_init();
           choose_menu(&theme_menu);
         }
+        else if (current_menu == &link_menu)
+        {
+          menu_link_back_action();
+          menu_init();
+          choose_menu(&main_menu);
+        }
         else
         {
           menu_init();
@@ -4807,6 +4983,7 @@ u32 menu(void)
                     menu_suspend();
                     break;
                   case 18: // Exit GBA Rush PSP
+                    main_link_disconnect(LINK_REASON_USER);
                     if (!first_load)
                       action_savestate_slot(10);
                     quit();

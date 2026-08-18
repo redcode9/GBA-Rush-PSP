@@ -89,6 +89,7 @@ const ALIGN_DATA s32 dma_addr_control[4] = { 2, -2, 0, 2 };
 // Keeps us knowing how much we have left.
 u8 *gamepak_rom;
 u32 gamepak_size;
+u32 gamepak_file_size;
 
 // Picks a page to evict
 u32 page_time = 0;
@@ -3500,6 +3501,7 @@ s32 load_gamepak(char *name)
 
   if (file_size > 0)
   {
+    gamepak_file_size = (u32)file_size;
     gamepak_size = (file_size + 0x7FFF) & ~0x7FFF;
 
     char *p = strrchr(name, '/');
@@ -3602,6 +3604,12 @@ u32 load_state(char *savestate_filename)
   u32 prev_sound_pause = sound_pause;
   u32 result = 0;
 
+  if(main_link_active())
+  {
+    error_msg(MSG[MSG_LINK_SAVESTATE_BLOCKED], CONFIRMATION_CONT);
+    return 0;
+  }
+
   if (savestate_slot == 10)
     sprintf(confirm_text, MSG[MSG_LOAD_STATE_AUTO]);
   else
@@ -3649,6 +3657,9 @@ u32 load_state_silent(char *savestate_filename)
   u32 prev_sound_pause = sound_pause;
   u32 result = 0;
 
+  if(main_link_active())
+    return 0;
+
   sound_pause = 1;
 
   sprintf(savestate_path, "%s%s", dir_state, savestate_filename);
@@ -3688,6 +3699,12 @@ u32 save_state(char *savestate_filename, u16 *screen_capture)
   u32 prev_sound_pause = sound_pause;
   u32 result = 0;
   u8 *savestate_write_buffer;
+
+  if(main_link_active())
+  {
+    error_msg(MSG[MSG_LINK_SAVESTATE_BLOCKED], CONFIRMATION_CONT);
+    return 0;
+  }
 
   if (savestate_slot == 10)
     sprintf(confirm_text, MSG[MSG_SAVE_STATE_AUTO]);
@@ -3741,6 +3758,9 @@ u32 save_state_silent(char *savestate_filename, u16 *screen_capture)
   u32 prev_sound_pause = sound_pause;
   u32 result = 0;
   u8 *savestate_write_buffer;
+
+  if(main_link_active())
+    return 0;
 
   sound_pause = 1;
 

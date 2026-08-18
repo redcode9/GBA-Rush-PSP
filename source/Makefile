@@ -5,6 +5,8 @@
 
 # Global definitions
 
+.DEFAULT_GOAL := all
+
 PSPSDK = ${shell psp-config --pspsdk-path}
 PREFIX = ${shell psp-config --psp-prefix}
 
@@ -24,6 +26,10 @@ COMMON_FILE = \
  common.h codebreaker.h gba_sio.h link_protocol.h link_session.h link_transport.h psp_adhoc.h \
  cpu.h memory.h video.h psp_video.h input.h sound.h main.h message.h mh_print.h gui.h zip.h png.h \
  ku_bridge.h exception.h ch_print.h
+
+MESSAGE_FILE = \
+ src/text/message_jpn.h src/text/message_eng.h src/text/message_chs.h \
+ src/text/message_cht.h src/text/message_ita.h
 
 MAINOBJS = \
  cpu.o memory.o video_dispatch.o video_cc_wrap.o video_old_wrap.o psp_video.o input.o sound.o main.o message.o mh_print.o gui.o zip.o png.o \
@@ -55,6 +61,8 @@ ASFLAGS = ${CFLAGS}
 C_ONLY_OBJS = $(filter-out video_cc_wrap.o mips_stub.o video_blend_mips.o ku_bridge.o,$(OBJS))
 $(C_ONLY_OBJS): CFLAGS += -Wbad-function-cast -Wmissing-prototypes
 $(OBJZ) $(OBJG): CFLAGS += -Wno-old-style-definition
+$(MAINOBJS): $(COMMON_FILE)
+message.o: $(MESSAGE_FILE)
 
 INCDIR = SDK/include src src/zlib src/libpower
 LIBDIR = SDK/lib

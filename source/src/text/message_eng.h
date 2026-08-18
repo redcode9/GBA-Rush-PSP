@@ -871,4 +871,109 @@
   // MSG_BROWSER_ALL_GAMES
   "--- All Games ---",
 
+  // MSG_MAIN_MENU_LINK
+  "Link cable",
+
+  // MSG_MAIN_MENU_HELP_LINK
+  "Connect two PSP systems",
+
+  // MSG_LINK_MENU_TITLE
+  "Link cable",
+
+  // MSG_LINK_MENU_STATUS
+  "Status",
+
+  // MSG_LINK_MENU_PEER
+  "Peer",
+
+  // MSG_LINK_MENU_CREATE
+  "Create session",
+
+  // MSG_LINK_MENU_JOIN
+  "Join session",
+
+  // MSG_LINK_MENU_DISCONNECT
+  "Disconnect",
+
+  // MSG_LINK_MENU_HELP_STATUS
+  "Current link cable state",
+
+  // MSG_LINK_MENU_HELP_CREATE
+  "Wait for the second PSP as Player 1",
+
+  // MSG_LINK_MENU_HELP_JOIN
+  "Find Player 1 and connect as Player 2",
+
+  // MSG_LINK_MENU_HELP_DISCONNECT
+  "Close the current link session",
+
+  // MSG_LINK_STATUS_NO_GAME
+  "No game loaded",
+
+  // MSG_LINK_STATUS_WLAN_OFF
+  "WLAN switch is off",
+
+  // MSG_LINK_STATUS_STOPPED
+  "Disconnected",
+
+  // MSG_LINK_STATUS_STARTING
+  "Starting network",
+
+  // MSG_LINK_STATUS_HOSTING
+  "Waiting for Player 2",
+
+  // MSG_LINK_STATUS_SEARCHING
+  "Searching for Player 1",
+
+  // MSG_LINK_STATUS_CONNECTING
+  "Connecting",
+
+  // MSG_LINK_STATUS_NEGOTIATING
+  "Checking link protocol",
+
+  // MSG_LINK_STATUS_CONNECTED_P1
+  "Connected as Player 1",
+
+  // MSG_LINK_STATUS_CONNECTED_P2
+  "Connected as Player 2",
+
+  // MSG_LINK_STATUS_DISCONNECTED
+  "Disconnected",
+
+  // MSG_LINK_STATUS_ERROR
+  "Connection error",
+
+  // MSG_LINK_PEER_NONE
+  "Not connected",
+
+  // MSG_LINK_SAVESTATE_BLOCKED
+  "Savestates are disabled during link play",
+
+  // MSG_LINK_REASON_TIMEOUT
+  "Timeout",
+
+  // MSG_LINK_REASON_TRANSPORT
+  "Network error",
+
+  // MSG_LINK_REASON_PROTOCOL
+  "Protocol error",
+
+  // MSG_LINK_REASON_INCOMPATIBLE
+  "Incompatible protocol",
+
+  // MSG_LINK_REASON_MODE_MISMATCH
+  "Serial mode mismatch",
+
+  // MSG_LINK_REASON_QUEUE_FULL
+  "Network queue full",
+
+  // MSG_LINK_REASON_PEER_CLOSED
+  "Peer closed the connection",
+
+  // MSG_LINK_REASON_SUSPEND
+  "PSP suspended",
+
+  // MSG_LINK_REASON_ROM_CHANGE
+  "Game changed",
+
 },
