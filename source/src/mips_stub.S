@@ -3032,11 +3032,12 @@ store_ignore:
 # bit2 - HALT
 # bit3 - timer counter change.
 # bit4 - DMA transfers
+# bit5 - synchronized serial transfer
 
 write_io_epilogue:
   andi $4, $2, 0x01
   bne $4, $0, io_smc_write        # is it an SMC alert?
-  andi $4, $2, 0x1e
+  andi $4, $2, 0x3e
 
 #  blez $17, io_update_gba         # if cycle counter <= 0
   blez $17, io_alert              # if cycle counter <= 0

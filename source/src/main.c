@@ -114,6 +114,7 @@ const u8 ALIGN_DATA prescale_table[] = { 0, 6, 8, 10 };
 TimerType ALIGN_DATA timer[4];
 
 u32 dma_cycle_count = 0;
+LinkSession gba_link_session;
 
 u32 cpu_ticks = 0;
 s32 video_count = 272;
@@ -313,10 +314,80 @@ static void cpu_interrupt(void)
     dma_transfer(dma + channel);                                              \
   }                                                                           \
 
+static void main_link_apply_events(u32 events)
+{
+  if((events & LINK_SESSION_EVENT_SERIAL_IRQ) != 0)
+    pIO_REG(REG_IF) |= IRQ_SERIAL;
+
+  if((events & (LINK_SESSION_EVENT_BARRIER_BEGIN |
+                LINK_SESSION_EVENT_BARRIER_END)) != 0)
+    gba_sio_state_dirty = 1;
+
+  if((events & LINK_SESSION_EVENT_STATE_CHANGE) != 0 &&
+     link_session_state(&gba_link_session) == LINK_SESSION_CONNECTED)
+    gba_sio_state_dirty = 1;
+}
+
+static void main_link_publish_sio(void)
+{
+  LinkSioState state;
+  u32 events;
+
+  if(!gba_sio_state_dirty ||
+     link_session_state(&gba_link_session) != LINK_SESSION_CONNECTED)
+    return;
+
+  memset(&state, 0, sizeof(state));
+  state.mode = (u8)gba_sio.mode;
+  state.player_id = gba_sio.player_id;
+  state.player_count = gba_sio.player_count;
+  state.flags = (u8)(gba_sio.pending_start | (gba_sio.waiting << 1) |
+   (gba_sio.active << 2));
+  state.control = pIO_REG(REG_SIOCNT);
+  state.rcnt = pIO_REG(REG_RCNT);
+
+  events = link_session_publish_sio_state(&gba_link_session, &state);
+  main_link_apply_events(events);
+  if(link_session_state(&gba_link_session) == LINK_SESSION_CONNECTED)
+    gba_sio_state_dirty = 0;
+}
+
+static void main_link_service(void)
+{
+  u32 events;
+
+  events = link_session_pump(&gba_link_session);
+  main_link_apply_events(events);
+  main_link_publish_sio();
+
+  events = link_session_begin_transfer(&gba_link_session);
+  main_link_apply_events(events);
+
+  if(!link_session_in_barrier(&gba_link_session))
+    return;
+
+  sound_link_wait_begin();
+  while(link_session_in_barrier(&gba_link_session))
+  {
+    if(sleep_flag != 0)
+      events = link_session_disconnect(&gba_link_session,
+       LINK_REASON_SUSPEND);
+    else
+      events = link_session_pump(&gba_link_session);
+
+    main_link_apply_events(events);
+    if(link_session_in_barrier(&gba_link_session))
+      sceKernelDelayThread(1000);
+  }
+  sound_link_wait_end(cpu_ticks);
+  main_link_publish_sio();
+}
+
 u32 update_gba(void)
 {
   s32 i;
   IRQ_TYPE irq_raised = IRQ_NONE;
+  GbaSioEvent sio_event;
 
   do
   {
@@ -328,6 +399,15 @@ u32 update_gba(void)
       psp_sleep_loop();
 
     cpu_ticks += reg[EXECUTE_CYCLES];
+
+    if(gba_sio.active)
+    {
+      sio_event = gba_sio_advance(&gba_sio, reg[EXECUTE_CYCLES]);
+      if((sio_event & GBA_SIO_EVENT_SERIAL_IRQ) != 0)
+        irq_raised |= IRQ_SERIAL;
+      if(!gba_sio.active)
+        gba_sio_state_dirty = 1;
+    }
 
     if (gbc_sound_update != 0)
     {
@@ -485,12 +565,20 @@ u32 update_gba(void)
       pIO_REG(REG_DISPSTAT) = dispstat;
     }
 
+    if(gba_link_session.state != LINK_SESSION_IDLE &&
+       gba_link_session.state != LINK_SESSION_DISCONNECTED &&
+       gba_link_session.state != LINK_SESSION_ERROR)
+      main_link_service();
+
     reg[EXECUTE_CYCLES] = video_count;
 
     for (i = 0; i < 4; i++)
     {
       CHECK_TIMER(i);
     }
+
+    if(gba_sio.active)
+      CHECK_COUNT(gba_sio.cycles_remaining);
 
     if (dma_cycle_count != 0)
     {
@@ -971,6 +1059,11 @@ int main(int argc, char *argv[])
 
 void quit(void)
 {
+  if(link_session_state(&gba_link_session) != LINK_SESSION_IDLE &&
+     link_session_state(&gba_link_session) != LINK_SESSION_DISCONNECTED)
+    main_link_apply_events(link_session_disconnect(&gba_link_session,
+     LINK_REASON_USER));
+
   update_backup_immediately();
   save_config_file();
 
@@ -990,6 +1083,11 @@ void quit(void)
 
 void reset_gba(void)
 {
+  if(link_session_state(&gba_link_session) != LINK_SESSION_IDLE &&
+     link_session_state(&gba_link_session) != LINK_SESSION_DISCONNECTED)
+    main_link_apply_events(link_session_disconnect(&gba_link_session,
+     LINK_REASON_ROM_CHANGE));
+
   clear_texture(0x7FFF);
   init_memory();
   init_main();

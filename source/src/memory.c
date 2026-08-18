@@ -55,6 +55,8 @@ u8 ALIGN_DATA fetch_waitstate_s[2][16] =
 u16 palette_ram   [  0x200]; // Palette RAM             (05000000h)      1 KiB
 u16 oam_ram       [  0x200]; // Object Attribute Memory (07000000h)      1 KiB
 u16 io_registers  [  0x400]; // I/O Registers           (04000000h)      1 KiB + 1KiB (io_readable)
+GbaSio gba_sio;
+u32 gba_sio_state_dirty = 1;
 u8  ewram         [0x40000]; // External Working RAM    (02000000h)    256 KiB
 u8  iwram         [ 0x8000]; // Internal Working RAM    (03000000h)     32 KiB
 u8  vram          [0x18000]; // Video RAM               (06000000h)     96 KiB
@@ -250,20 +252,6 @@ u32 eeprom_counter = 0;
 u8 ALIGN_DATA eeprom_buffer[8];
 
 
-// SIO
-typedef enum
-{
-  NORMAL8,
-  NORMAL32,
-  MULTIPLAYER,
-  UART,
-  GP,
-  JOYBUS
-} SIO_MODE_TYPE;
-
-static SIO_MODE_TYPE sio_mode(u16 reg_sio_cnt, u16 reg_rcnt);
-static CPU_ALERT_TYPE sio_control(u32 value);
-
 static void waitstate_control(u32 value);
 
 static s32 load_game_config(char *gamepak_title, char *gamepak_code, char *gamepak_maker);
@@ -285,9 +273,15 @@ static u32 save_backup(char *name);
 static u32 encode_bcd(u8 value);
 
 #define SAVESTATE_SIZE  0x80000 // 512K Byte (524288 Byte)
+#define SAVESTATE_SIO_OFFSET (SAVESTATE_SIZE - sizeof(GbaSioSnapshot))
 u8 *write_mem_ptr;
 static void memory_write_mem_savestate(SceUID savestate_file);
 static void memory_read_savestate(SceUID savestate_file);
+static void read_gba_sio_snapshot(SceUID savestate_file);
+static int write_gba_sio_snapshot(u8 *savestate_buffer);
+
+typedef char GbaSioSnapshotMustFit[
+ sizeof(GbaSioSnapshot) < SAVESTATE_SIZE ? 1 : -1];
 
 
 u8 *read_rom_block = NULL;
@@ -1082,65 +1076,20 @@ static CPU_ALERT_TYPE write_null(u32 address, u32 value)
 
 // write io registers
 
-static SIO_MODE_TYPE sio_mode(u16 reg_sio_cnt, u16 reg_rcnt)
+static CPU_ALERT_TYPE gba_sio_alert(GbaSioEvent event)
 {
-  if ((reg_rcnt & 0x8000) == 0x0000)
-  {
-    switch (reg_sio_cnt & 0x3000)
-    {
-      case 0x0000:
-        return NORMAL8;
-
-      case 0x1000:
-        return NORMAL32;
-
-      case 0x2000:
-        return MULTIPLAYER;
-
-      case 0x3000:
-        return UART;
-    }
-  }
-
-  if ((reg_rcnt & 0x4000) != 0)
-    return JOYBUS;
-
-  return GP;
-}
-
-static CPU_ALERT_TYPE sio_control(u32 value)
-{
-  SIO_MODE_TYPE mode = sio_mode(value, pIO_REG(REG_RCNT));
   CPU_ALERT_TYPE alert = CPU_ALERT_NONE;
 
-  switch (mode)
+  if((event & GBA_SIO_EVENT_SERIAL_IRQ) != 0)
   {
-    case NORMAL8:
-    case NORMAL32:
-      if ((value & 0x80) != 0)
-      {
-        value &= 0xFF7F;
-
-        if ((value & 0x4001) == 0x4001)
-        {
-          pIO_REG(REG_IF) |= IRQ_SERIAL;
-          alert = CPU_ALERT_IRQ;
-        }
-      }
-      break;
-
-    case MULTIPLAYER:
-      value &= 0xFF83;
-      value |= 0x0C;
-      break;
-
-    case UART:
-    case JOYBUS:
-    case GP:
-      break;
+    pIO_REG(REG_IF) |= IRQ_SERIAL;
+    alert = (CPU_ALERT_TYPE)(alert | CPU_ALERT_IRQ);
   }
-
-  pIO_REG(REG_SIOCNT) = value;
+  if((event & (GBA_SIO_EVENT_START | GBA_SIO_EVENT_MODE_CHANGE)) != 0)
+  {
+    gba_sio_state_dirty = 1;
+    alert = (CPU_ALERT_TYPE)(alert | CPU_ALERT_LINK);
+  }
 
   return alert;
 }
@@ -1734,9 +1683,15 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       ADDRESS16(io_registers, 0x10e) = value;
       return timer_control_high(3, value);
 
-    // SIOCNT
+    // GBA serial registers
+    case 0x120: case 0x122: case 0x124: case 0x126:
     case 0x128:
-      return sio_control(value);
+    case 0x12A:
+    case 0x134:
+      if(address == GBA_SIO_REG_CONTROL || address == GBA_SIO_REG_RCNT)
+        gba_sio_state_dirty = 1;
+      return gba_sio_alert(gba_sio_write16(&gba_sio, address,
+       (u16)value));
 
     // P1
     case 0x130:
@@ -1843,8 +1798,10 @@ CPU_ALERT_TYPE write_io_register32(u32 address, u32 value)
       ADDRESS32(io_registers, address) = value & 0x0FFFFFFF;
       break;
 
-    // SIO Data (Normal-32bit Mode)
+    // GBA serial data
     case 0x120:
+      return gba_sio_alert(gba_sio_write32(&gba_sio, address, value));
+
     // SIO JOY Bus
     case 0x150: case 0x154:
       ADDRESS32(io_registers, address) = value;
@@ -2819,10 +2776,10 @@ void init_memory(void)
   io_registers[REG_BG2PD]     = 0x0100;
   io_registers[REG_BG3PA]     = 0x0100;
   io_registers[REG_BG3PD]     = 0x0100;
-  io_registers[REG_RCNT]      = 0x800F;//0x8000
   io_registers[REG_SOUNDBIAS] = 0x0200;
 
-  sio_control(0x0004);//add
+  gba_sio_init(&gba_sio, io_registers);
+  gba_sio_state_dirty = 1;
   waitstate_control(0x0000);
 
   obj_address = 0x10000;
@@ -3608,6 +3565,35 @@ s32 load_bios(char *name)
   sound_##type##_savestate(savestate_file);                                   \
   video_##type##_savestate(savestate_file);                                   \
 
+static void read_gba_sio_snapshot(SceUID savestate_file)
+{
+  GbaSioSnapshot snapshot;
+  s32 bytes_read;
+
+  memset(&snapshot, 0, sizeof(snapshot));
+  FILE_SEEK(savestate_file, SAVESTATE_SIO_OFFSET, SEEK_SET);
+  bytes_read = FILE_READ(savestate_file, &snapshot, sizeof(snapshot));
+  if(bytes_read != (s32)sizeof(snapshot))
+    memset(&snapshot, 0, sizeof(snapshot));
+
+  gba_sio_load_snapshot(&gba_sio, &snapshot);
+  gba_sio_state_dirty = 1;
+}
+
+static int write_gba_sio_snapshot(u8 *savestate_buffer)
+{
+  GbaSioSnapshot snapshot;
+  size_t used = (size_t)(write_mem_ptr - savestate_buffer);
+
+  if(used > SAVESTATE_SIO_OFFSET)
+    return 0;
+
+  gba_sio_save_snapshot(&gba_sio, &snapshot);
+  memcpy(savestate_buffer + SAVESTATE_SIO_OFFSET, &snapshot,
+   sizeof(snapshot));
+  return 1;
+}
+
 u32 load_state(char *savestate_filename)
 {
   SceUID savestate_file;
@@ -3639,6 +3625,7 @@ u32 load_state(char *savestate_filename)
     FILE_SEEK(savestate_file, GBA_SCREEN_SIZE + sizeof(u64), SEEK_SET);
 
     SAVESTATE_BLOCK(read);
+    read_gba_sio_snapshot(savestate_file);
     FILE_CLOSE(savestate_file);
 
     clear_metadata_area(METADATA_AREA_EWRAM, CLEAR_REASON_LOADING_STATE);
@@ -3675,6 +3662,7 @@ u32 load_state_silent(char *savestate_filename)
     FILE_SEEK(savestate_file, GBA_SCREEN_SIZE + sizeof(u64), SEEK_SET);
 
     SAVESTATE_BLOCK(read);
+    read_gba_sio_snapshot(savestate_file);
     FILE_CLOSE(savestate_file);
 
     clear_metadata_area(METADATA_AREA_EWRAM, CLEAR_REASON_LOADING_STATE);
@@ -3732,9 +3720,12 @@ u32 save_state(char *savestate_filename, u16 *screen_capture)
     FILE_WRITE_MEM_VARIABLE(savestate_file, current_time);
 
     SAVESTATE_BLOCK(write_mem);
-    FILE_WRITE(savestate_file, savestate_write_buffer, SAVESTATE_SIZE);
+    if(write_gba_sio_snapshot(savestate_write_buffer))
+    {
+      FILE_WRITE(savestate_file, savestate_write_buffer, SAVESTATE_SIZE);
+      result = 1;
+    }
     FILE_CLOSE(savestate_file);
-    result = 1;
   }
 
   scePowerUnlock(0);
@@ -3772,9 +3763,12 @@ u32 save_state_silent(char *savestate_filename, u16 *screen_capture)
     FILE_WRITE_MEM_VARIABLE(savestate_file, current_time);
 
     SAVESTATE_BLOCK(write_mem);
-    FILE_WRITE(savestate_file, savestate_write_buffer, SAVESTATE_SIZE);
+    if(write_gba_sio_snapshot(savestate_write_buffer))
+    {
+      FILE_WRITE(savestate_file, savestate_write_buffer, SAVESTATE_SIZE);
+      result = 1;
+    }
     FILE_CLOSE(savestate_file);
-    result = 1;
   }
 
   scePowerUnlock(0);

@@ -21,6 +21,8 @@
 #ifndef MEMORY_H
 #define MEMORY_H
 
+#include "gba_sio.h"
+
 
 typedef enum
 {
@@ -170,6 +172,8 @@ struct BiosData
 extern u16 palette_ram   [  0x200];
 extern u16 oam_ram       [  0x200];
 extern u16 io_registers  [  0x400];
+extern GbaSio gba_sio;
+extern u32 gba_sio_state_dirty;
 extern u8  ewram         [0x40000];
 extern u8  iwram         [ 0x8000];
 extern u8  vram          [0x18000];

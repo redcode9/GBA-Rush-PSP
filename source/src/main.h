@@ -21,6 +21,7 @@
 #ifndef MAIN_H
 #define MAIN_H
 
+#include "link_session.h"
 
 // video scale type
 #define SCALED_NONE    0
@@ -102,6 +103,7 @@ void timer_control_low(u8 timer_number, u32 value);
 CPU_ALERT_TYPE timer_control_high(u8 timer_number, u32 value);
 
 extern u32 dma_cycle_count;
+extern LinkSession gba_link_session;
 
 u32 update_gba(void);
 

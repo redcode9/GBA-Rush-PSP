@@ -42,7 +42,8 @@ typedef enum
   CPU_ALERT_SMC_IRQ = 3,
   CPU_ALERT_HALT    = 4,  // bit2 - HALT
   CPU_ALERT_TIMER   = 8,  // bit3 - timer counter change.
-  CPU_ALERT_DMA     = 16  // bit4 - DMA transfers
+  CPU_ALERT_DMA     = 16, // bit4 - DMA transfers
+  CPU_ALERT_LINK    = 32  // bit5 - synchronized serial transfer
 } CPU_ALERT_TYPE;
 
 typedef enum
