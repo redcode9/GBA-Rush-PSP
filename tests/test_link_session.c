@@ -524,6 +524,21 @@ static void test_restart_while_waiting(void)
    LINK_SESSION_EVENT_SESSION_CLOSED);
 }
 
+static void test_disconnect_with_pending_start(void)
+{
+  LinkPair pair;
+  uint32_t events;
+
+  open_pair(&pair, 0);
+  configure_multiplayer(&pair, 0x1234, 0x5678, 3);
+  events = link_session_disconnect(&pair.session[0], LINK_REASON_USER);
+  CHECK((events & LINK_SESSION_EVENT_SERIAL_IRQ) != 0);
+  CHECK((events & LINK_SESSION_EVENT_SESSION_CLOSED) != 0);
+  CHECK((pair_reg(&pair, 0, GBA_SIO_REG_CONTROL) & 0x0080) == 0);
+  CHECK((pair_reg(&pair, 0, GBA_SIO_REG_CONTROL) & 0x0040) != 0);
+  CHECK(pair.sio[0].player_count == 0);
+}
+
 static void test_heartbeat_stability(void)
 {
   LinkPair pair;
@@ -631,6 +646,7 @@ int main(void)
   test_transport_loss();
   test_invalid_disconnect_reason();
   test_restart_while_waiting();
+  test_disconnect_with_pending_start();
   test_heartbeat_stability();
   test_queue_full_aborts_transfer();
   test_disconnect_reconnect();

@@ -239,6 +239,7 @@ static uint32_t link_session_fail(LinkSession *session,
  LinkSessionReason reason, uint16_t detail, int notify_peer)
 {
   uint32_t events = LINK_SESSION_EVENT_NONE;
+  GbaSioEvent sio_event;
 
   if(session->state == LINK_SESSION_ERROR)
     return events;
@@ -252,6 +253,9 @@ static uint32_t link_session_fail(LinkSession *session,
   }
 
   events |= link_session_end_barrier(session, 1);
+  sio_event = gba_sio_disconnect(session->sio);
+  if((sio_event & GBA_SIO_EVENT_SERIAL_IRQ) != 0)
+    events |= LINK_SESSION_EVENT_SERIAL_IRQ;
   session->reason = reason;
   session->reason_detail = detail;
   session->transport_connected = 0;
@@ -265,6 +269,7 @@ uint32_t link_session_disconnect(LinkSession *session,
  LinkSessionReason reason)
 {
   uint32_t events;
+  GbaSioEvent sio_event;
 
   if(session == NULL || !link_session_transport_valid(session))
     return LINK_SESSION_EVENT_NONE;
@@ -273,11 +278,13 @@ uint32_t link_session_disconnect(LinkSession *session,
     link_session_send_reason(session, LINK_MESSAGE_DISCONNECT, reason, 0);
 
   events = link_session_end_barrier(session, 1);
+  sio_event = gba_sio_disconnect(session->sio);
+  if((sio_event & GBA_SIO_EVENT_SERIAL_IRQ) != 0)
+    events |= LINK_SESSION_EVENT_SERIAL_IRQ;
   session->reason = reason;
   session->reason_detail = 0;
   session->transport_connected = 0;
   session->transport.ops->disconnect(session->transport.context);
-  gba_sio_set_connection(session->sio, 0, 0);
   events |= link_session_set_state(session, LINK_SESSION_DISCONNECTED);
   events |= LINK_SESSION_EVENT_SESSION_CLOSED;
   return events;
@@ -710,6 +717,7 @@ static uint32_t link_session_handle_disconnect(LinkSession *session,
 {
   LinkReason reason;
   uint32_t events;
+  GbaSioEvent sio_event;
 
   if(!link_session_sequence_is_current(session, packet->sequence) ||
      link_protocol_read_reason(packet, &reason) != LINK_PROTOCOL_OK ||
@@ -717,11 +725,13 @@ static uint32_t link_session_handle_disconnect(LinkSession *session,
     return link_session_fail(session, LINK_REASON_PROTOCOL, 0, 0);
 
   events = link_session_end_barrier(session, 1);
+  sio_event = gba_sio_disconnect(session->sio);
+  if((sio_event & GBA_SIO_EVENT_SERIAL_IRQ) != 0)
+    events |= LINK_SESSION_EVENT_SERIAL_IRQ;
   session->reason = (LinkSessionReason)reason.reason;
   session->reason_detail = reason.detail;
   session->transport_connected = 0;
   session->transport.ops->disconnect(session->transport.context);
-  gba_sio_set_connection(session->sio, 0, 0);
   events |= link_session_set_state(session, LINK_SESSION_DISCONNECTED);
   events |= LINK_SESSION_EVENT_SESSION_CLOSED;
   return events;
