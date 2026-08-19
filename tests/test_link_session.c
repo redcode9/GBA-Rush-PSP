@@ -382,6 +382,29 @@ static void test_malformed_packet(void)
   CHECK(pair.session[0].reason == LINK_REASON_PROTOCOL);
 }
 
+static void test_truncated_packet_matrix(void)
+{
+  LinkPair pair;
+  LinkPacket packet;
+  uint8_t frame[LINK_PROTOCOL_MAX_PACKET];
+  size_t frame_size = 0;
+  size_t size;
+
+  link_protocol_packet_init(&packet, LINK_MESSAGE_HEARTBEAT,
+   0x12345678, 0);
+  CHECK(link_protocol_encode(&packet, frame, sizeof(frame), &frame_size) ==
+   LINK_PROTOCOL_OK);
+
+  for(size = 0; size < frame_size; size++)
+  {
+    open_pair(&pair, 0);
+    CHECK(fake_link_network_inject(&pair.network, 0, frame, size, 0));
+    link_session_pump(&pair.session[0]);
+    CHECK(link_session_state(&pair.session[0]) == LINK_SESSION_ERROR);
+    CHECK(pair.session[0].reason == LINK_REASON_PROTOCOL);
+  }
+}
+
 static void test_stale_and_duplicate_packets(void)
 {
   LinkPair pair;
@@ -629,6 +652,107 @@ static void test_ten_consecutive_transfers(void)
   }
 }
 
+static uint32_t stress_random(uint32_t *state)
+{
+  uint32_t value = *state;
+
+  value ^= value << 13;
+  value ^= value >> 17;
+  value ^= value << 5;
+  *state = value;
+  return value;
+}
+
+static void wait_for_transfer(LinkPair *pair)
+{
+  uint32_t step;
+
+  for(step = 0; step < 200; step++)
+  {
+    pump_pair(pair, 1);
+    if(link_session_state(&pair->session[0]) == LINK_SESSION_CONNECTED &&
+       link_session_state(&pair->session[1]) == LINK_SESSION_CONNECTED &&
+       gba_sio_next_event(&pair->sio[0]) != GBA_SIO_NO_EVENT &&
+       gba_sio_next_event(&pair->sio[1]) != GBA_SIO_NO_EVENT)
+      return;
+    if(link_session_state(&pair->session[0]) == LINK_SESSION_ERROR ||
+       link_session_state(&pair->session[1]) == LINK_SESSION_ERROR)
+      break;
+    fake_link_network_advance(&pair->network, 1000);
+  }
+
+  CHECK(0 && "link transfer did not complete");
+}
+
+static void test_transfer_stress(void)
+{
+  LinkPair pair;
+  uint32_t random_state = 0x6A09E667u;
+  uint32_t transfer;
+
+  open_pair(&pair, 1);
+  for(transfer = 0; transfer < 5000; transfer++)
+  {
+    GbaSioMode mode = (GbaSioMode)(stress_random(&random_state) % 3u);
+    uint8_t setting = (uint8_t)(stress_random(&random_state) &
+     (mode == GBA_SIO_MODE_MULTIPLAYER ? 3u : 1u));
+    uint8_t clock_owner = mode == GBA_SIO_MODE_MULTIPLAYER ? 0 :
+     (uint8_t)(stress_random(&random_state) & 1u);
+    uint32_t first = stress_random(&random_state);
+    uint32_t second = stress_random(&random_state);
+    uint32_t expected_cycles;
+    uint32_t events;
+
+    fake_link_network_set_latency(&pair.network, 0,
+     stress_random(&random_state) % 20001u);
+    fake_link_network_set_latency(&pair.network, 1,
+     stress_random(&random_state) % 20001u);
+
+    if(mode == GBA_SIO_MODE_MULTIPLAYER)
+      configure_multiplayer(&pair, (uint16_t)first, (uint16_t)second,
+       setting);
+    else
+      configure_normal(&pair, mode, clock_owner, setting, first, second);
+
+    events = link_session_begin_transfer(&pair.session[clock_owner]);
+    CHECK((events & LINK_SESSION_EVENT_BARRIER_BEGIN) != 0);
+    wait_for_transfer(&pair);
+
+    expected_cycles = gba_sio_transfer_cycles(mode, setting, 2);
+    CHECK(gba_sio_next_event(&pair.sio[0]) == expected_cycles);
+    CHECK(gba_sio_next_event(&pair.sio[1]) == expected_cycles);
+    complete_pair_transfer(&pair);
+
+    if(mode == GBA_SIO_MODE_MULTIPLAYER)
+    {
+      CHECK(pair_reg(&pair, 0, GBA_SIO_REG_MULTI0) == (uint16_t)first);
+      CHECK(pair_reg(&pair, 0, GBA_SIO_REG_MULTI1) == (uint16_t)second);
+      CHECK(pair_reg(&pair, 1, GBA_SIO_REG_MULTI0) == (uint16_t)first);
+      CHECK(pair_reg(&pair, 1, GBA_SIO_REG_MULTI1) == (uint16_t)second);
+    }
+    else if(mode == GBA_SIO_MODE_NORMAL_32)
+    {
+      CHECK(pair_reg(&pair, 0, GBA_SIO_REG_DATA32_L) ==
+       (uint16_t)second);
+      CHECK(pair_reg(&pair, 0, GBA_SIO_REG_DATA32_H) ==
+       (uint16_t)(second >> 16));
+      CHECK(pair_reg(&pair, 1, GBA_SIO_REG_DATA32_L) == (uint16_t)first);
+      CHECK(pair_reg(&pair, 1, GBA_SIO_REG_DATA32_H) ==
+       (uint16_t)(first >> 16));
+    }
+    else
+    {
+      CHECK(pair_reg(&pair, 0, GBA_SIO_REG_SEND) ==
+       (uint16_t)(second & 0xFFu));
+      CHECK(pair_reg(&pair, 1, GBA_SIO_REG_SEND) ==
+       (uint16_t)(first & 0xFFu));
+    }
+
+    CHECK(pair.session[0].last_sequence == transfer + 1u);
+    CHECK(pair.session[1].last_sequence == transfer + 1u);
+  }
+}
+
 int main(void)
 {
   test_handshake_and_different_roms();
@@ -640,6 +764,7 @@ int main(void)
   test_mode_mismatch();
   test_wrong_session_packet();
   test_malformed_packet();
+  test_truncated_packet_matrix();
   test_stale_and_duplicate_packets();
   test_unknown_optional_sequence();
   test_incompatible_capabilities();
@@ -652,6 +777,7 @@ int main(void)
   test_disconnect_reconnect();
   test_sequence_wrap();
   test_ten_consecutive_transfers();
+  test_transfer_stress();
 
   if(failures)
   {

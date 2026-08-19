@@ -9,6 +9,7 @@ fi
 
 git diff --check
 git diff --cached --check
+sh scripts/check-messages.sh
 
 git ls-files | while IFS= read -r path
 do

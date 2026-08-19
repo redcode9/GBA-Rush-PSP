@@ -41,6 +41,8 @@ part of this repository or its release packages.
   scanning inactive lists in hot paths.
 - Configurable hold-to-fast-forward with unthrottled emulation, paced display
   updates, and immediate audio recovery.
+- Two-PSP GBA link cable emulation over local ad-hoc Wi-Fi, under development
+  for 1.1.0-beta.1.
 - Old and new video renderers, multiple scale modes, themes, box art, recent
   ROMs, configurable dynarec policies, and multilingual menus.
 - Japanese, English, Simplified Chinese, Traditional Chinese, and Italian UI.
@@ -88,6 +90,18 @@ frames per second, and discards queued audio instead of allowing a backlog to
 stall emulation. Releasing the button restores the selected frameskip and audio
 behavior immediately.
 
+## Link cable
+
+The development branch can connect two PSP systems as Player 1 and Player 2
+over local ad-hoc Wi-Fi. It implements GBA Normal 8-bit, Normal 32-bit, and
+Multiplayer 16-bit cable transfers with synchronized timing and serial
+interrupts.
+
+This work is not part of the 1.0.0 release. It remains a beta candidate until
+the two-console hardware test matrix passes. See [Link cable](docs/LINK_CABLE.md)
+for setup, supported modes, current restrictions, diagnostics, and recovery
+steps.
+
 ## Build
 
 The PSP build requires a current [PSPDev](https://pspdev.github.io/) toolchain
@@ -103,10 +117,12 @@ created under `source/` and ignored by Git.
 
 ### Host tests
 
-`make check` builds the production CodeBreaker module with the host C compiler
-and runs deterministic regression vectors for encryption, operation decoding,
-conditions, multiline skips, and memory writes. It also verifies that private
-runtime data and generated executables are not tracked.
+`make check` builds the portable production modules with the host C compiler.
+It runs deterministic regression vectors for CodeBreaker handling, GBA serial
+timing, framed link traffic, two-core session synchronization, malformed input,
+timeouts, and thousands of transfers with variable delay. It also verifies
+translation order and that private runtime data or generated executables are
+not tracked.
 
 ### Release package
 
@@ -144,6 +160,7 @@ requirements and third-party notices.
 | `source/src/codebreaker.c` | CodeBreaker decoder and operation interpreter |
 | `tests/` | Host regression tests |
 | `docs/CHEATS.md` | Cheat format and master-code behavior |
+| `docs/LINK_CABLE.md` | Two-PSP link setup, compatibility, and diagnostics |
 | `docs/LINEAGE.md` | Upstream history, links, and acknowledgements |
 | `docs/BRAND.md` | Naming, visual identity, and attribution rules |
 | `source/single-game_launcher/` | Optional PSP launcher and desktop builder |
