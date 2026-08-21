@@ -20,6 +20,7 @@
 
 #include "common.h"
 #include "boxart.h"   // carousel / boxart support
+#include "config_store.h"
 #include "menu_model.h"
 #include "psp_adhoc.h"
 
@@ -5837,6 +5838,250 @@ static void get_timestamp_string(char *buffer, u16 msg_id, ScePspDateTime *msg_t
   Save Config Files
 -----------------------------------------------------------------------------*/
 
+static int config_io_read(void *context, const char *path, uint8_t *data,
+ size_t capacity, size_t *size)
+{
+  SceUID file;
+  size_t total = 0;
+  u8 extra;
+  s32 result;
+
+  (void)context;
+  FILE_OPEN(file, path, READ);
+  if(!FILE_CHECK_VALID(file))
+    return 0;
+
+  while(total < capacity)
+  {
+    result = FILE_READ(file, data + total, capacity - total);
+    if(result < 0)
+    {
+      FILE_CLOSE(file);
+      return 0;
+    }
+    if(result == 0)
+      break;
+    total += (size_t)result;
+  }
+  result = FILE_READ(file, &extra, 1);
+  FILE_CLOSE(file);
+  if(result != 0)
+    return 0;
+  *size = total;
+  return 1;
+}
+
+static int config_io_write(void *context, const char *path,
+ const uint8_t *data, size_t size)
+{
+  SceUID file;
+  size_t total = 0;
+
+  (void)context;
+  FILE_OPEN(file, path, WRITE);
+  if(!FILE_CHECK_VALID(file))
+    return 0;
+  while(total < size)
+  {
+    s32 result = FILE_WRITE(file, data + total, size - total);
+    if(result <= 0)
+    {
+      FILE_CLOSE(file);
+      return 0;
+    }
+    total += (size_t)result;
+  }
+  FILE_CLOSE(file);
+  return 1;
+}
+
+static int config_io_flush(void *context)
+{
+  char device[8];
+  const char *separator;
+  size_t length;
+
+  (void)context;
+  separator = strchr(main_path, ':');
+  if(separator == NULL)
+    return 0;
+  length = (size_t)(separator - main_path) + 1;
+  if(length >= sizeof(device))
+    return 0;
+  memcpy(device, main_path, length);
+  device[length] = '\0';
+  return sceIoSync(device, 0) >= 0;
+}
+
+static int config_io_move(void *context, const char *source,
+ const char *target)
+{
+  (void)context;
+  return sceIoRename(source, target) >= 0;
+}
+
+static int config_io_remove(void *context, const char *path)
+{
+  SceIoStat stat;
+
+  (void)context;
+  if(sceIoGetstat(path, &stat) < 0)
+    return 1;
+  return sceIoRemove(path) >= 0;
+}
+
+static int config_io_exists(void *context, const char *path)
+{
+  SceIoStat stat;
+
+  (void)context;
+  return sceIoGetstat(path, &stat) >= 0;
+}
+
+static const ConfigStoreIo config_store_io =
+{
+  NULL,
+  config_io_read,
+  config_io_write,
+  config_io_flush,
+  config_io_move,
+  config_io_remove,
+  config_io_exists
+};
+
+static int config_paths(char *primary, char *temporary, char *recovery)
+{
+  int result;
+
+  result = snprintf(primary, MAX_PATH, "%s%s", main_path,
+   GPSP_CONFIG_FILENAME);
+  if(result < 0 || result >= MAX_PATH)
+    return 0;
+  result = snprintf(temporary, MAX_PATH, "%s.tmp", primary);
+  if(result < 0 || result >= MAX_PATH)
+    return 0;
+  result = snprintf(recovery, MAX_PATH, "%s.bak", primary);
+  return result >= 0 && result < MAX_PATH;
+}
+
+static void capture_global_config(ConfigModel *model)
+{
+  u32 i;
+
+  model->screen_scale = option_screen_scale;
+  model->screen_magnification = option_screen_mag;
+  model->screen_filter = option_screen_filter;
+  model->show_fps = psp_fps_debug;
+  model->frameskip_type = option_frameskip_type;
+  model->frameskip_value = option_frameskip_value;
+  model->clock_speed = option_clock_speed;
+  model->sound_volume = option_sound_volume;
+  model->stack_optimize = option_stack_optimize;
+  model->ram_dynarec_policy = option_ram_dynarec_policy;
+  model->video_renderer = option_video_renderer;
+  model->oam_hijacking = option_oam_hijacking_enabled;
+  model->boot_mode = option_boot_mode;
+  model->update_backup = option_update_backup;
+  model->screen_capture_format = option_screen_capture_format;
+  model->enable_analog = option_enable_analog;
+  model->analog_sensitivity = option_analog_sensitivity;
+  model->language = option_language;
+  model->hblank_window_start = option_hblank_irq_window_start;
+  model->hblank_window_end = option_hblank_irq_window_end;
+  model->psp_vsync = option_psp_vsync;
+  model->swap_confirm_buttons = option_swap_confirm_buttons;
+  model->theme = option_theme;
+  for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
+    model->gamepad[i] = gamepad_config_map[i];
+}
+
+static void apply_global_config(const ConfigModel *model)
+{
+  u32 i;
+  int has_menu_button = 0;
+
+  option_screen_scale = model->screen_scale;
+  option_screen_mag = model->screen_magnification;
+  option_screen_filter = model->screen_filter;
+  psp_fps_debug = model->show_fps;
+  option_frameskip_type = model->frameskip_type;
+  option_frameskip_value = model->frameskip_value;
+  option_clock_speed = model->clock_speed;
+  option_sound_volume = model->sound_volume;
+  option_stack_optimize = model->stack_optimize;
+  option_ram_dynarec_policy = model->ram_dynarec_policy;
+  option_video_renderer = model->video_renderer;
+  option_oam_hijacking_enabled = model->oam_hijacking;
+  option_boot_mode = model->boot_mode;
+  option_update_backup = model->update_backup;
+  option_screen_capture_format = model->screen_capture_format;
+  option_enable_analog = model->enable_analog;
+  option_analog_sensitivity = model->analog_sensitivity;
+  option_language = model->language;
+  option_hblank_irq_window_start = model->hblank_window_start;
+  option_hblank_irq_window_end = model->hblank_window_end;
+  option_psp_vsync = model->psp_vsync;
+  option_swap_confirm_buttons = model->swap_confirm_buttons;
+  option_theme = model->theme;
+  for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
+  {
+    gamepad_config_map[i] = model->gamepad[i];
+    if(gamepad_config_map[i] == BUTTON_ID_MENU)
+      has_menu_button = 1;
+  }
+  if(!enable_home_menu && !has_menu_button)
+    gamepad_config_map[0] = BUTTON_ID_MENU;
+  rebuild_fast_forward_button_mask();
+  apply_theme(option_theme);
+}
+
+static s32 save_global_config(void)
+{
+  ConfigModel model;
+  char primary[MAX_PATH];
+  char temporary[MAX_PATH];
+  char recovery[MAX_PATH];
+
+  if(!config_paths(primary, temporary, recovery))
+    return -1;
+  capture_global_config(&model);
+  return config_store_save(&config_store_io, primary, temporary, recovery,
+   &model) == CONFIG_STORE_OK ? 0 : -1;
+}
+
+static s32 load_global_config(void)
+{
+  ConfigModel model;
+  char primary[MAX_PATH];
+  char temporary[MAX_PATH];
+  char recovery[MAX_PATH];
+  int system_language;
+
+  if(config_paths(primary, temporary, recovery) &&
+     config_store_load(&config_store_io, primary, recovery, &model, NULL) ==
+      CONFIG_STORE_OK)
+  {
+    apply_global_config(&model);
+    return 0;
+  }
+
+  config_model_defaults(&model);
+  if(sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_LANGUAGE,
+                                 &system_language) >= 0)
+  {
+    if(system_language == PSP_SYSTEMPARAM_LANGUAGE_JAPANESE)
+      model.language = 0;
+    else if(system_language == PSP_SYSTEMPARAM_LANGUAGE_CHINESE_SIMPLIFIED)
+      model.language = 2;
+    else if(system_language == PSP_SYSTEMPARAM_LANGUAGE_CHINESE_TRADITIONAL)
+      model.language = 3;
+    else if(system_language == PSP_SYSTEMPARAM_LANGUAGE_ITALIAN)
+      model.language = 4;
+  }
+  apply_global_config(&model);
+  return -1;
+}
+
 static s32 save_game_config_file(void)
 {
   SceUID game_config_file;
@@ -5891,6 +6136,11 @@ s32 save_config_file(void)
   s32 ret_value = -1;
 
   save_game_config_file();
+
+  scePowerLock(0);
+  ret_value = save_global_config();
+  scePowerUnlock(0);
+  return ret_value;
 
   sprintf(config_path, "%s%s", main_path, GPSP_CONFIG_FILENAME);
 
@@ -6028,6 +6278,8 @@ s32 load_config_file(void)
 {
   SceUID config_file;
   char config_path[MAX_PATH];
+
+  return load_global_config();
 
   sprintf(config_path, "%s%s", main_path, GPSP_CONFIG_FILENAME);
 
