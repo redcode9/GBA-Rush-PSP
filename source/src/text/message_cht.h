@@ -983,4 +983,95 @@
   // MSG_LINK_REASON_ROM_CHANGE
   "遊戲已變更",
 
+
+  // MSG_CATEGORY_CONTINUE
+  "Continue",
+  // MSG_CATEGORY_SAVE_LOAD
+  "Save and Load",
+  // MSG_CATEGORY_GAME
+  "Game",
+  // MSG_CATEGORY_VIDEO
+  "Video",
+  // MSG_CATEGORY_AUDIO
+  "Audio",
+  // MSG_CATEGORY_PERFORMANCE
+  "Performance",
+  // MSG_CATEGORY_CONTROLS
+  "Controls",
+  // MSG_CATEGORY_LINK_CABLE
+  "Link Cable",
+  // MSG_CATEGORY_INTERFACE
+  "Interface",
+  // MSG_CATEGORY_DIAGNOSTICS
+  "Diagnostics",
+  // MSG_CATEGORY_EXIT
+  "Exit",
+
+  // MSG_CATEGORY_HELP_CONTINUE
+  "Return to the running game",
+  // MSG_CATEGORY_HELP_SAVE_LOAD
+  "Manage savestates and files",
+  // MSG_CATEGORY_HELP_GAME
+  "Load, reset and configure the game",
+  // MSG_CATEGORY_HELP_VIDEO
+  "Set scaling and rendering",
+  // MSG_CATEGORY_HELP_AUDIO
+  "Set sound output",
+  // MSG_CATEGORY_HELP_PERFORMANCE
+  "Set speed and compatibility",
+  // MSG_CATEGORY_HELP_CONTROLS
+  "Configure buttons and analog input",
+  // MSG_CATEGORY_HELP_LINK_CABLE
+  "Connect two PSP systems",
+  // MSG_CATEGORY_HELP_INTERFACE
+  "Set language, theme and display",
+  // MSG_CATEGORY_HELP_DIAGNOSTICS
+  "Measure and report emulator behavior",
+  // MSG_CATEGORY_HELP_EXIT
+  "Sleep or close the emulator",
+
+  // MSG_DIAGNOSTICS_TITLE
+  "Diagnostics",
+  // MSG_DIAGNOSTICS_STATUS_IDLE
+  "Status: ready",
+  // MSG_DIAGNOSTICS_STATUS_ACTIVE
+  "Status: recording",
+  // MSG_DIAGNOSTICS_STATUS_STOPPED
+  "Status: recording stopped",
+  // MSG_DIAGNOSTICS_STATUS_INVALID
+  "Status: interrupted",
+  // MSG_DIAGNOSTICS_START
+  "Start recording",
+  // MSG_DIAGNOSTICS_STOP
+  "Stop recording",
+  // MSG_DIAGNOSTICS_SAVE_REPORT
+  "Save report",
+  // MSG_DIAGNOSTICS_HELP_STATUS
+  "Current performance recording state",
+  // MSG_DIAGNOSTICS_HELP_START
+  "Clear old data and begin measurement",
+  // MSG_DIAGNOSTICS_HELP_STOP
+  "Finish the current measurement",
+  // MSG_DIAGNOSTICS_HELP_SAVE_REPORT
+  "Write a text report to benchmarks",
+  // MSG_DIAGNOSTICS_REPORT_SAVED
+  "Report saved",
+  // MSG_DIAGNOSTICS_REPORT_FAILED
+  "Report could not be saved",
+  // MSG_UNAVAILABLE_CURRENT_STATE
+  "Unavailable in the current state",
+
+  // MSG_GUIDE_SUMMARY_PREFIX
+  "Summary: ",
+  // MSG_GUIDE_RECOMMEND_DEFAULT
+  "Recommended: keep the default unless needed",
+  // MSG_GUIDE_IMPACT_VALUE
+  "Impact: changes the selected setting",
+  // MSG_GUIDE_IMPACT_ACTION
+  "Impact: runs the selected command",
+  // MSG_GUIDE_IMPACT_SUBMENU
+  "Impact: opens the selected category",
+  // MSG_GUIDE_RESTART_NONE
+  "Restart: not required",
+
 },

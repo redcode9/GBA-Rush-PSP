@@ -1149,6 +1149,7 @@ struct _MenuType
   struct _MenuOptionType *options;
   u32 num_options;
   u32 selected_option;
+  struct _MenuType *parent;
 };
 
 struct _MenuOptionType
@@ -1168,12 +1169,14 @@ struct _MenuOptionType
   int (*available_function)(void);
   int (*visible_function)(void);
   u32 unavailable_string;
+  u32 behavior_flags;
 };
 
 typedef struct _MenuOptionType MenuOptionType;
 typedef struct _MenuType MenuType;
 
 #define MAX_MENU_MODEL_ROWS 32
+#define MENU_OPTION_PASSIVE_ROW (1U << 0)
 
 static int legacy_menu_row_visible(void *context)
 {
@@ -1216,7 +1219,9 @@ static void build_legacy_menu_model(MenuModel *model, MenuRow *rows,
 
     row->id = option->display_string;
     row->label_id = option->display_msg;
-    row->flags = MENU_ROW_SELECTABLE | MENU_ROW_WRAP_VALUE;
+    row->flags = MENU_ROW_WRAP_VALUE;
+    if((option->behavior_flags & MENU_OPTION_PASSIVE_ROW) == 0)
+      row->flags |= MENU_ROW_SELECTABLE;
     row->visible = legacy_menu_row_visible;
     row->available = legacy_menu_row_available;
     row->unavailable_reason_id = option->unavailable_string;
@@ -1252,7 +1257,8 @@ static void build_legacy_menu_model(MenuModel *model, MenuRow *rows,
     passive_function,                                       \
     name##_options,                                         \
     sizeof(name##_options) / sizeof(MenuOptionType),        \
-    0                                                       \
+    0,                                                      \
+    NULL                                                    \
   }                                                         \
 
 #define GAMEPAD_CONFIG_OPTION(display_string, number, display_msg)      \
@@ -3019,9 +3025,86 @@ static void reload_cheats_page(void)
 
 /* Global array of all menus — populated once inside menu(),
    then used by file-scope refresh to avoid nested functions. */
-#define MAX_MENUS 10
+#define MAX_MENUS 15
 static MenuType *all_menus[MAX_MENUS];
 static u32 num_all_menus = 0;
+static char diagnostics_status_line[96];
+static char diagnostics_report_line[96];
+
+static int menu_game_available(void)
+{
+    return gamepak_filename[0] != '\0';
+}
+
+static int menu_diagnostics_start_available(void)
+{
+    PerfMetricsSnapshot snapshot;
+
+    main_perf_snapshot(&snapshot);
+    return menu_game_available() && snapshot.state != PERF_METRICS_ACTIVE;
+}
+
+static int menu_diagnostics_stop_available(void)
+{
+    PerfMetricsSnapshot snapshot;
+
+    main_perf_snapshot(&snapshot);
+    return snapshot.state == PERF_METRICS_ACTIVE;
+}
+
+static int menu_diagnostics_report_available(void)
+{
+    PerfMetricsSnapshot snapshot;
+
+    main_perf_snapshot(&snapshot);
+    return snapshot.state == PERF_METRICS_STOPPED ||
+           snapshot.state == PERF_METRICS_INVALIDATED;
+}
+
+static int menu_diagnostics_report_visible(void)
+{
+    return diagnostics_report_line[0] != '\0';
+}
+
+static void menu_diagnostics_start(void)
+{
+    diagnostics_report_line[0] = '\0';
+    main_perf_start();
+}
+
+static void menu_diagnostics_stop(void)
+{
+    main_perf_stop();
+}
+
+static void menu_diagnostics_write_report(void)
+{
+    char report_path[MAX_PATH];
+    const char *filename;
+
+    if(main_perf_write_report(report_path, sizeof(report_path)) != 0)
+    {
+        snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+         "%s", MSG[MSG_DIAGNOSTICS_REPORT_FAILED]);
+        return;
+    }
+
+    filename = strrchr(report_path, '/');
+    if(filename != NULL)
+        filename++;
+    else
+        filename = report_path;
+    snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+     "%s: %.56s", MSG[MSG_DIAGNOSTICS_REPORT_SAVED], filename);
+}
+
+static void menu_quit_action(void)
+{
+    main_link_disconnect(LINK_REASON_USER);
+    if(menu_game_available())
+        action_savestate_slot(10);
+    quit();
+}
 
 static void menu_link_host_action(void)
 {
@@ -3332,6 +3415,11 @@ u32 menu(void)
   auto void submenu_theme(void);
   auto void submenu_custom_colors(void);
   auto void submenu_link(void);
+  auto void submenu_game(void);
+  auto void submenu_audio(void);
+  auto void submenu_controls(void);
+  auto void submenu_diagnostics(void);
+  auto void submenu_exit(void);
   auto void menu_passive_theme(void);
   auto void menu_theme_default(void);
 
@@ -4023,6 +4111,8 @@ u32 menu(void)
 
       current_option_num = savestate_slot;
       current_option = current_menu->options + current_option_num;
+      navigation_model.selected_index = current_option_num;
+      current_menu->selected_option = current_option_num;
 
       menu_init_flag = 0;
     }
@@ -4048,15 +4138,57 @@ u32 menu(void)
     if (menu_init_flag != 0)
     {
       screen_image_ptr = current_screen;
-
-      current_option_num = menu_main_option_num;
-      current_option = current_menu->options + current_option_num;
-
       menu_init_flag = 0;
     }
 
     if (menu_main_option_num != current_option_num)
       menu_main_option_num = current_option_num;
+  }
+
+  void submenu_game(void)
+  {
+    DRAW_TITLE_GBK(MSG_CATEGORY_GAME);
+  }
+
+  void submenu_audio(void)
+  {
+    DRAW_TITLE_OPT_GBK(MSG_CATEGORY_AUDIO);
+  }
+
+  void submenu_controls(void)
+  {
+    DRAW_TITLE_PAD_GBK(MSG_CATEGORY_CONTROLS);
+  }
+
+  void submenu_diagnostics(void)
+  {
+    PerfMetricsSnapshot snapshot;
+    u32 status_message;
+
+    DRAW_TITLE_OPT_GBK(MSG_DIAGNOSTICS_TITLE);
+    main_perf_snapshot(&snapshot);
+    switch(snapshot.state)
+    {
+      case PERF_METRICS_ACTIVE:
+        status_message = MSG_DIAGNOSTICS_STATUS_ACTIVE;
+        break;
+      case PERF_METRICS_STOPPED:
+        status_message = MSG_DIAGNOSTICS_STATUS_STOPPED;
+        break;
+      case PERF_METRICS_INVALIDATED:
+        status_message = MSG_DIAGNOSTICS_STATUS_INVALID;
+        break;
+      default:
+        status_message = MSG_DIAGNOSTICS_STATUS_IDLE;
+        break;
+    }
+    snprintf(diagnostics_status_line, sizeof(diagnostics_status_line),
+     "%s", MSG[status_message]);
+  }
+
+  void submenu_exit(void)
+  {
+    DRAW_TITLE_PSP_GBK(MSG_CATEGORY_EXIT);
   }
 
   void draw_analog_pad_range(void)
@@ -4506,7 +4638,6 @@ u32 menu(void)
     SUBMENU_OPTION(&custom_colors_menu, MSG[MSG_OPTION_MENU_CUSTOM_COLORS], MSG_OPTION_MENU_HELP_CUSTOM_COLORS, 1, MSG_OPTION_MENU_CUSTOM_COLORS),
 
     STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_SWAP_BUTTONS], swap_button_options, &option_swap_confirm_buttons, 2, MSG_OPTION_MENU_HELP_SWAP_BUTTONS, 3, MSG_OPTION_MENU_SWAP_BUTTONS),
-    STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_6], sound_volume_options, &option_sound_volume, 11, MSG_OPTION_MENU_HELP_6, 4, MSG_OPTION_MENU_6),
     STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_SHOW_FPS], on_off_options, &psp_fps_debug, 2, MSG_OPTION_MENU_HELP_SHOW_FPS, 5, MSG_OPTION_MENU_SHOW_FPS),
     STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_SCREENSHOT], image_format_options, &option_screen_capture_format, 2, MSG_OPTION_MENU_HELP_7, 6, MSG_OPTION_MENU_SCREENSHOT),
     STRING_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_9], update_backup_options, &option_update_backup, 2, MSG_OPTION_MENU_HELP_9, 7, MSG_TOOLTIP_AUTO_BACKUP, MSG_OPTION_MENU_9), 
@@ -4658,29 +4789,90 @@ u32 menu(void)
 
   MAKE_MENU(link, NULL, NULL);
 
+  MenuOptionType game_options[] =
+  {
+    SUBMENU_OPTION(&cheats_misc_menu, MSG[MSG_MAIN_MENU_CHEAT], MSG_MAIN_MENU_HELP_CHEAT, 0, MSG_MAIN_MENU_CHEAT),
+    ACTION_OPTION(menu_show_game_txt_debug, NULL, MSG[MSG_MAIN_MENU_GAMECONFIG], MSG_MAIN_MENU_HELP_GAMECONFIG, 1, MSG_MAIN_MENU_GAMECONFIG),
+    ACTION_OPTION(NULL, NULL, MSG[MSG_MAIN_MENU_7], MSG_MAIN_MENU_HELP_7, 3, MSG_MAIN_MENU_7),
+    ACTION_OPTION(NULL, NULL, MSG[MSG_MAIN_MENU_8], MSG_MAIN_MENU_HELP_8, 4, MSG_MAIN_MENU_8),
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 6, MSG_OPTION_MENU_11)
+  };
+
+  MAKE_MENU(game, NULL, NULL);
+
+  MenuOptionType audio_options[] =
+  {
+    STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_6], sound_volume_options, &option_sound_volume, 11, MSG_OPTION_MENU_HELP_6, 0, MSG_OPTION_MENU_6),
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 2, MSG_OPTION_MENU_11)
+  };
+
+  MAKE_MENU(audio, NULL, NULL);
+
+  MenuOptionType controls_options[] =
+  {
+    SUBMENU_OPTION(&gamepad_config_menu, MSG[MSG_MAIN_MENU_5], MSG_MAIN_MENU_HELP_5, 0, MSG_MAIN_MENU_5),
+    SUBMENU_OPTION(&analog_config_menu, MSG[MSG_MAIN_MENU_6], MSG_MAIN_MENU_HELP_6, 1, MSG_MAIN_MENU_6),
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 3, MSG_OPTION_MENU_11)
+  };
+
+  MAKE_MENU(controls, NULL, NULL);
+
+  MenuOptionType diagnostics_options[] =
+  {
+    ACTION_OPTION(NULL, NULL, diagnostics_status_line, MSG_DIAGNOSTICS_HELP_STATUS, 0, 0),
+    ACTION_OPTION(NULL, NULL, diagnostics_report_line, MSG_DIAGNOSTICS_HELP_STATUS, 1, 0),
+    ACTION_OPTION(menu_diagnostics_start, NULL, MSG[MSG_DIAGNOSTICS_START], MSG_DIAGNOSTICS_HELP_START, 3, MSG_DIAGNOSTICS_START),
+    ACTION_OPTION(menu_diagnostics_stop, NULL, MSG[MSG_DIAGNOSTICS_STOP], MSG_DIAGNOSTICS_HELP_STOP, 4, MSG_DIAGNOSTICS_STOP),
+    ACTION_OPTION(menu_diagnostics_write_report, NULL, MSG[MSG_DIAGNOSTICS_SAVE_REPORT], MSG_DIAGNOSTICS_HELP_SAVE_REPORT, 5, MSG_DIAGNOSTICS_SAVE_REPORT),
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 7, MSG_OPTION_MENU_11)
+  };
+
+  diagnostics_options[0].behavior_flags = MENU_OPTION_PASSIVE_ROW;
+  diagnostics_options[1].behavior_flags = MENU_OPTION_PASSIVE_ROW;
+  diagnostics_options[1].visible_function = menu_diagnostics_report_visible;
+  diagnostics_options[2].available_function = menu_diagnostics_start_available;
+  diagnostics_options[3].available_function = menu_diagnostics_stop_available;
+  diagnostics_options[4].available_function = menu_diagnostics_report_available;
+  diagnostics_options[2].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[3].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[4].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+
+  MAKE_MENU(diagnostics, NULL, NULL);
+
+  MenuOptionType exit_options[] =
+  {
+    ACTION_OPTION(NULL, NULL, MSG[MSG_MAIN_MENU_10], MSG_MAIN_MENU_HELP_10, 0, MSG_MAIN_MENU_10),
+    ACTION_OPTION(menu_quit_action, NULL, MSG[MSG_MAIN_MENU_11], MSG_MAIN_MENU_HELP_11, 2, MSG_MAIN_MENU_11),
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 4, MSG_OPTION_MENU_11)
+  };
+
+  MAKE_MENU(exit, NULL, NULL);
+
   MenuOptionType main_options[] =
   {
-    NUMERIC_SELECTION_ACTION_OPTION(NULL, NULL, MSG[MSG_MAIN_MENU_0], &savestate_slot, 10, MSG_MAIN_MENU_HELP_0, 0, MSG_MAIN_MENU_0),
-    NUMERIC_SELECTION_ACTION_OPTION(NULL, NULL, MSG[MSG_MAIN_MENU_1], &savestate_slot, 10, MSG_MAIN_MENU_HELP_1, 1, MSG_MAIN_MENU_1),
-    ACTION_SUBMENU_OPTION(&savestate_menu, NULL, MSG[MSG_MAIN_MENU_2], MSG_MAIN_MENU_HELP_2, 2, MSG_MAIN_MENU_2),
-
-    SUBMENU_OPTION(&graphics_menu, MSG[MSG_MAIN_MENU_3], MSG_MAIN_MENU_HELP_3, 4, MSG_MAIN_MENU_3),
-    SUBMENU_OPTION(&emulator_menu, MSG[MSG_MAIN_MENU_4], MSG_MAIN_MENU_HELP_4, 5, MSG_MAIN_MENU_4), 
-    SUBMENU_OPTION(&gamepad_config_menu, MSG[MSG_MAIN_MENU_5], MSG_MAIN_MENU_HELP_5, 6, MSG_MAIN_MENU_5),
-    SUBMENU_OPTION(&analog_config_menu, MSG[MSG_MAIN_MENU_6], MSG_MAIN_MENU_HELP_6, 7, MSG_MAIN_MENU_6),
-    SUBMENU_OPTION(&theme_menu, MSG[MSG_MAIN_MENU_EMULATOR], MSG_MAIN_MENU_HELP_EMULATOR, 8, MSG_MAIN_MENU_EMULATOR),
-    ACTION_OPTION(menu_show_game_txt_debug, NULL, MSG[MSG_MAIN_MENU_GAMECONFIG], MSG_MAIN_MENU_HELP_GAMECONFIG, 9, MSG_MAIN_MENU_GAMECONFIG),
-    SUBMENU_OPTION(&cheats_misc_menu, MSG[MSG_MAIN_MENU_CHEAT], MSG_MAIN_MENU_HELP_CHEAT, 10, MSG_MAIN_MENU_CHEAT),
-    SUBMENU_OPTION(&link_menu, MSG[MSG_MAIN_MENU_LINK], MSG_MAIN_MENU_HELP_LINK, 11, MSG_MAIN_MENU_LINK),
-
-    ACTION_OPTION(NULL, NULL, MSG[MSG_MAIN_MENU_7], MSG_MAIN_MENU_HELP_7, 12, MSG_MAIN_MENU_7),
-    ACTION_OPTION(NULL, NULL, MSG[MSG_MAIN_MENU_8], MSG_MAIN_MENU_HELP_8, 13, MSG_MAIN_MENU_8),
-    ACTION_OPTION(NULL, NULL, MSG[MSG_MAIN_MENU_9], MSG_MAIN_MENU_HELP_9, 14, MSG_MAIN_MENU_9),
-
-    ACTION_OPTION(NULL, NULL, MSG[MSG_MAIN_MENU_10], MSG_MAIN_MENU_HELP_10, 17, MSG_MAIN_MENU_10),
-
-    ACTION_OPTION(NULL, NULL, MSG[MSG_MAIN_MENU_11], MSG_MAIN_MENU_HELP_11, 18, MSG_MAIN_MENU_11)
+    ACTION_OPTION(NULL, NULL, MSG[MSG_CATEGORY_CONTINUE], MSG_CATEGORY_HELP_CONTINUE, 0, MSG_CATEGORY_CONTINUE),
+    SUBMENU_OPTION(&savestate_menu, MSG[MSG_CATEGORY_SAVE_LOAD], MSG_CATEGORY_HELP_SAVE_LOAD, 1, MSG_CATEGORY_SAVE_LOAD),
+    SUBMENU_OPTION(&game_menu, MSG[MSG_CATEGORY_GAME], MSG_CATEGORY_HELP_GAME, 2, MSG_CATEGORY_GAME),
+    SUBMENU_OPTION(&graphics_menu, MSG[MSG_CATEGORY_VIDEO], MSG_CATEGORY_HELP_VIDEO, 3, MSG_CATEGORY_VIDEO),
+    SUBMENU_OPTION(&audio_menu, MSG[MSG_CATEGORY_AUDIO], MSG_CATEGORY_HELP_AUDIO, 4, MSG_CATEGORY_AUDIO),
+    SUBMENU_OPTION(&emulator_menu, MSG[MSG_CATEGORY_PERFORMANCE], MSG_CATEGORY_HELP_PERFORMANCE, 5, MSG_CATEGORY_PERFORMANCE),
+    SUBMENU_OPTION(&controls_menu, MSG[MSG_CATEGORY_CONTROLS], MSG_CATEGORY_HELP_CONTROLS, 6, MSG_CATEGORY_CONTROLS),
+    SUBMENU_OPTION(&link_menu, MSG[MSG_CATEGORY_LINK_CABLE], MSG_CATEGORY_HELP_LINK_CABLE, 7, MSG_CATEGORY_LINK_CABLE),
+    SUBMENU_OPTION(&theme_menu, MSG[MSG_CATEGORY_INTERFACE], MSG_CATEGORY_HELP_INTERFACE, 8, MSG_CATEGORY_INTERFACE),
+    SUBMENU_OPTION(&diagnostics_menu, MSG[MSG_CATEGORY_DIAGNOSTICS], MSG_CATEGORY_HELP_DIAGNOSTICS, 9, MSG_CATEGORY_DIAGNOSTICS),
+    SUBMENU_OPTION(&exit_menu, MSG[MSG_CATEGORY_EXIT], MSG_CATEGORY_HELP_EXIT, 10, MSG_CATEGORY_EXIT)
   };
+
+  main_options[0].available_function = menu_game_available;
+  main_options[0].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  main_options[7].available_function = menu_game_available;
+  main_options[7].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  game_options[0].available_function = menu_game_available;
+  game_options[1].available_function = menu_game_available;
+  game_options[3].available_function = menu_game_available;
+  game_options[0].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  game_options[1].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  game_options[3].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
 
 
   MAKE_MENU(main, NULL, NULL);
@@ -4696,14 +4888,35 @@ u32 menu(void)
   all_menus[7] = &savestate_menu;
   all_menus[8] = &cheats_misc_menu;
   all_menus[9] = &link_menu;
+  all_menus[10] = &game_menu;
+  all_menus[11] = &audio_menu;
+  all_menus[12] = &controls_menu;
+  all_menus[13] = &diagnostics_menu;
+  all_menus[14] = &exit_menu;
   num_all_menus = MAX_MENUS;
+
+  savestate_menu.parent = &main_menu;
+  graphics_menu.parent = &main_menu;
+  emulator_menu.parent = &main_menu;
+  game_menu.parent = &main_menu;
+  audio_menu.parent = &main_menu;
+  controls_menu.parent = &main_menu;
+  link_menu.parent = &main_menu;
+  theme_menu.parent = &main_menu;
+  diagnostics_menu.parent = &main_menu;
+  exit_menu.parent = &main_menu;
+  cheats_misc_menu.parent = &game_menu;
+  gamepad_config_menu.parent = &controls_menu;
+  analog_config_menu.parent = &controls_menu;
+  custom_colors_menu.parent = &theme_menu;
 
   menu_refresh_language();
 
   void choose_menu(MenuType *new_menu)
   {
     if (new_menu == NULL)
-      new_menu = &main_menu;
+      new_menu = current_menu != NULL && current_menu->parent != NULL ?
+       current_menu->parent : &main_menu;
 
     current_menu = new_menu;
     build_legacy_menu_model(&navigation_model, navigation_rows, new_menu);
@@ -4829,6 +5042,16 @@ u32 menu(void)
       submenu_cheats_misc();
     if (current_menu == &link_menu)
       submenu_link();
+    if (current_menu == &game_menu)
+      submenu_game();
+    if (current_menu == &audio_menu)
+      submenu_audio();
+    if (current_menu == &controls_menu)
+      submenu_controls();
+    if (current_menu == &diagnostics_menu)
+      submenu_diagnostics();
+    if (current_menu == &exit_menu)
+      submenu_exit();
     if (current_menu == &main_menu)
       submenu_main();
 
@@ -4887,28 +5110,58 @@ u32 menu(void)
       }
     }
 
-  // --- Tooltip (drawn above bottom button hints) ---
-  if (current_option->tooltip_string != 0)
   {
-    if (option_language == 0)
-      print_string(MSG[current_option->tooltip_string], MENU_LIST_POS_X, TEXT_TOOLTIP_POS_Y, color_tooltip_text, BG_NO_FILL);
+    char guide_line[192];
+    const char *summary;
+    u32 impact_message;
+    u16 summary_color = color_tooltip_text;
+
+    if(!menu_option_available(current_option) &&
+       current_option->unavailable_string != 0)
+    {
+      summary = MSG[current_option->unavailable_string];
+      summary_color = color_batt_low;
+    }
+    else if(current_option->tooltip_string != 0)
+      summary = MSG[current_option->tooltip_string];
     else
-      print_string_gbk(MSG[current_option->tooltip_string], MENU_LIST_POS_X, TEXT_TOOLTIP_POS_Y, color_tooltip_text, BG_NO_FILL);
-  }
-  // --- End tooltip ---
+      summary = MSG[current_option->help_string];
 
-  // Bottom help text — merge back-to-game hint when ROM is running
-  {
-    char bottom_buf[160];
-    const char *help_txt = MSG[current_option->help_string];
-    const char *back_txt = MSG[MSG_MAIN_MENU_HELP_RETURNTOGAME];
-
-    if (current_menu == &main_menu && first_load == 0)
-      snprintf(bottom_buf, sizeof(bottom_buf), "%s   %s", help_txt, back_txt);
+    snprintf(guide_line, sizeof(guide_line), "%s%s",
+     MSG[MSG_GUIDE_SUMMARY_PREFIX], summary);
+    if(option_language == 0)
+      print_string(guide_line, MENU_LIST_POS_X, TEXT_TOOLTIP_POS_Y,
+       summary_color, BG_NO_FILL);
     else
-      snprintf(bottom_buf, sizeof(bottom_buf), "%s", help_txt);
+      print_string_gbk(guide_line, MENU_LIST_POS_X, TEXT_TOOLTIP_POS_Y,
+       summary_color, BG_NO_FILL);
 
-    print_swap_aware(bottom_buf, 30, 258, color_help_text, BG_NO_FILL);
+    if(option_language == 0)
+      print_string(MSG[MSG_GUIDE_RECOMMEND_DEFAULT], MENU_LIST_POS_X,
+       TEXT_TOOLTIP_POS_Y + FONTHEIGHT, color_tooltip_text, BG_NO_FILL);
+    else
+      print_string_gbk(MSG[MSG_GUIDE_RECOMMEND_DEFAULT], MENU_LIST_POS_X,
+       TEXT_TOOLTIP_POS_Y + FONTHEIGHT, color_tooltip_text, BG_NO_FILL);
+
+    if((current_option->option_type & (NUMBER_SELECTION_OPTION |
+                                      STRING_SELECTION_OPTION)) != 0)
+      impact_message = MSG_GUIDE_IMPACT_VALUE;
+    else if((current_option->option_type & SUBMENU_OPTION) != 0)
+      impact_message = MSG_GUIDE_IMPACT_SUBMENU;
+    else
+      impact_message = MSG_GUIDE_IMPACT_ACTION;
+
+    snprintf(guide_line, sizeof(guide_line), "%s   %s",
+     MSG[impact_message], MSG[MSG_GUIDE_RESTART_NONE]);
+    if(option_language == 0)
+      print_string(guide_line, MENU_LIST_POS_X,
+       TEXT_TOOLTIP_POS_Y + (FONTHEIGHT * 2), color_tooltip_text, BG_NO_FILL);
+    else
+      print_string_gbk(guide_line, MENU_LIST_POS_X,
+       TEXT_TOOLTIP_POS_Y + (FONTHEIGHT * 2), color_tooltip_text, BG_NO_FILL);
+
+    print_swap_aware(MSG[current_option->help_string], 30, 258,
+     color_help_text, BG_NO_FILL);
   }
 
 /* 	if (option_language == 0)
@@ -5031,7 +5284,7 @@ u32 menu(void)
         else
         {
           menu_init();
-          choose_menu(&main_menu);
+          choose_menu(current_menu->parent);
         }
         break;
 
@@ -5064,44 +5317,20 @@ u32 menu(void)
               // Check menu context since line numbers are per-menu
               if (current_menu == &main_menu)
               {
-                switch (current_option->line_number)
-                {
-                  case 0:  // Load State
-                    if (action_loadstate() != 0)
-                    {
-                      return_value = 1;
-                      repeat = 0;
-                    }
-                    break;
-                  case 1:  // Save State
-                    if (action_savestate() != 0)
-                    {
-                      return_value = 1;
-                      repeat = 0;
-                    }
-                    break;
-                  case 12: // Load Game
-                    menu_load_file();
-                    break;
-                  case 13: // Reset ROM
-                    menu_reset();
-                    break;
-                  case 14: // Return to Game
-                    if (!first_load)
-                      repeat = 0;
-                    break;
-                  case 17: // Sleep Mode
-                    menu_suspend();
-                    break;
-                  case 18: // Exit GBA Rush PSP
-                    main_link_disconnect(LINK_REASON_USER);
-                    if (!first_load)
-                      action_savestate_slot(10);
-                    quit();
-                    break;
-                  default:
-                    break;
-                }
+                if(current_option->line_number == 0)
+                  menu_exit();
+              }
+              else if(current_menu == &game_menu)
+              {
+                if(current_option->line_number == 3)
+                  menu_load_file();
+                else if(current_option->line_number == 4)
+                  menu_reset();
+              }
+              else if(current_menu == &exit_menu)
+              {
+                if(current_option->line_number == 0)
+                  menu_suspend();
               }
               else if (current_menu == &savestate_menu)
               {
@@ -5147,6 +5376,8 @@ u32 menu(void)
             break;
 
           case SUBMENU_OPTION:
+            if(current_option->sub_menu == &savestate_menu)
+              menu_init();
             choose_menu(current_option->sub_menu);
             break;
 

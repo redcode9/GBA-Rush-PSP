@@ -982,4 +982,94 @@
   // MSG_LINK_REASON_ROM_CHANGE
   "Gioco cambiato",
 
+  // MSG_CATEGORY_CONTINUE
+  "Continua",
+  // MSG_CATEGORY_SAVE_LOAD
+  "Salva e Carica",
+  // MSG_CATEGORY_GAME
+  "Gioco",
+  // MSG_CATEGORY_VIDEO
+  "Video",
+  // MSG_CATEGORY_AUDIO
+  "Audio",
+  // MSG_CATEGORY_PERFORMANCE
+  "Prestazioni",
+  // MSG_CATEGORY_CONTROLS
+  "Controlli",
+  // MSG_CATEGORY_LINK_CABLE
+  "Cavo Link",
+  // MSG_CATEGORY_INTERFACE
+  "Interfaccia",
+  // MSG_CATEGORY_DIAGNOSTICS
+  "Diagnostica",
+  // MSG_CATEGORY_EXIT
+  "Uscita",
+
+  // MSG_CATEGORY_HELP_CONTINUE
+  "Torna al gioco in esecuzione",
+  // MSG_CATEGORY_HELP_SAVE_LOAD
+  "Gestisci stati e relativi file",
+  // MSG_CATEGORY_HELP_GAME
+  "Carica, riavvia e configura il gioco",
+  // MSG_CATEGORY_HELP_VIDEO
+  "Imposta scala e rendering",
+  // MSG_CATEGORY_HELP_AUDIO
+  "Imposta l'uscita audio",
+  // MSG_CATEGORY_HELP_PERFORMANCE
+  "Imposta velocita e compatibilita",
+  // MSG_CATEGORY_HELP_CONTROLS
+  "Configura tasti e input analogico",
+  // MSG_CATEGORY_HELP_LINK_CABLE
+  "Collega due console PSP",
+  // MSG_CATEGORY_HELP_INTERFACE
+  "Imposta lingua, tema e interfaccia",
+  // MSG_CATEGORY_HELP_DIAGNOSTICS
+  "Misura e registra il comportamento",
+  // MSG_CATEGORY_HELP_EXIT
+  "Sospendi o chiudi l'emulatore",
+
+  // MSG_DIAGNOSTICS_TITLE
+  "Diagnostica",
+  // MSG_DIAGNOSTICS_STATUS_IDLE
+  "Stato: pronto",
+  // MSG_DIAGNOSTICS_STATUS_ACTIVE
+  "Stato: registrazione",
+  // MSG_DIAGNOSTICS_STATUS_STOPPED
+  "Stato: registrazione terminata",
+  // MSG_DIAGNOSTICS_STATUS_INVALID
+  "Stato: interrotta",
+  // MSG_DIAGNOSTICS_START
+  "Avvia registrazione",
+  // MSG_DIAGNOSTICS_STOP
+  "Ferma registrazione",
+  // MSG_DIAGNOSTICS_SAVE_REPORT
+  "Salva rapporto",
+  // MSG_DIAGNOSTICS_HELP_STATUS
+  "Stato attuale della misurazione",
+  // MSG_DIAGNOSTICS_HELP_START
+  "Azzera i dati e avvia la misurazione",
+  // MSG_DIAGNOSTICS_HELP_STOP
+  "Termina la misurazione attuale",
+  // MSG_DIAGNOSTICS_HELP_SAVE_REPORT
+  "Scrive un rapporto nella cartella benchmarks",
+  // MSG_DIAGNOSTICS_REPORT_SAVED
+  "Rapporto salvato",
+  // MSG_DIAGNOSTICS_REPORT_FAILED
+  "Impossibile salvare il rapporto",
+  // MSG_UNAVAILABLE_CURRENT_STATE
+  "Non disponibile nello stato attuale",
+
+  // MSG_GUIDE_SUMMARY_PREFIX
+  "Descrizione: ",
+  // MSG_GUIDE_RECOMMEND_DEFAULT
+  "Consiglio: mantieni il valore predefinito",
+  // MSG_GUIDE_IMPACT_VALUE
+  "Effetto: modifica l'impostazione selezionata",
+  // MSG_GUIDE_IMPACT_ACTION
+  "Effetto: esegue il comando selezionato",
+  // MSG_GUIDE_IMPACT_SUBMENU
+  "Effetto: apre la categoria selezionata",
+  // MSG_GUIDE_RESTART_NONE
+  "Riavvio: non necessario",
+
 },

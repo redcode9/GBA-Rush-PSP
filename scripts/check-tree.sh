@@ -10,6 +10,7 @@ fi
 git diff --check
 git diff --cached --check
 sh scripts/check-messages.sh
+sh scripts/check-menu-layout.sh
 sh scripts/check-lifecycle.sh
 sh scripts/check-video.sh
 sh scripts/check-performance.sh
