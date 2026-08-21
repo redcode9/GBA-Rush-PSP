@@ -20,6 +20,7 @@
 
 #include "common.h"
 #include "boxart.h"   // carousel / boxart support
+#include "menu_model.h"
 #include "psp_adhoc.h"
 
 extern u32 option_swap_confirm_buttons;
@@ -1147,6 +1148,7 @@ struct _MenuType
   void (*passive_function)(void);
   struct _MenuOptionType *options;
   u32 num_options;
+  u32 selected_option;
 };
 
 struct _MenuOptionType
@@ -1163,10 +1165,85 @@ struct _MenuOptionType
   MENU_OPTION_TYPE_ENUM option_type;
   u32 tooltip_string;   // MSG index for tooltip, 0 = none
   u32 display_msg;      // MSG index for display_string, 0 = dynamic
+  int (*available_function)(void);
+  int (*visible_function)(void);
+  u32 unavailable_string;
 };
 
 typedef struct _MenuOptionType MenuOptionType;
 typedef struct _MenuType MenuType;
+
+#define MAX_MENU_MODEL_ROWS 32
+
+static int legacy_menu_row_visible(void *context)
+{
+  MenuOptionType *option = (MenuOptionType *)context;
+
+  return option->visible_function == NULL || option->visible_function();
+}
+
+static int legacy_menu_row_available(void *context)
+{
+  MenuOptionType *option = (MenuOptionType *)context;
+
+  return option->available_function == NULL || option->available_function();
+}
+
+static int menu_option_visible(const MenuOptionType *option)
+{
+  return option->visible_function == NULL || option->visible_function();
+}
+
+static int menu_option_available(const MenuOptionType *option)
+{
+  return option->available_function == NULL || option->available_function();
+}
+
+static void build_legacy_menu_model(MenuModel *model, MenuRow *rows,
+ MenuType *menu)
+{
+  u32 i;
+  u32 row_count = menu->num_options;
+
+  if(row_count > MAX_MENU_MODEL_ROWS)
+    row_count = MAX_MENU_MODEL_ROWS;
+
+  memset(rows, 0, sizeof(*rows) * row_count);
+  for(i = 0; i < row_count; i++)
+  {
+    MenuOptionType *option = &menu->options[i];
+    MenuRow *row = &rows[i];
+
+    row->id = option->display_string;
+    row->label_id = option->display_msg;
+    row->flags = MENU_ROW_SELECTABLE | MENU_ROW_WRAP_VALUE;
+    row->visible = legacy_menu_row_visible;
+    row->available = legacy_menu_row_available;
+    row->unavailable_reason_id = option->unavailable_string;
+    row->help.summary_id = option->help_string;
+    row->help.impact_id = option->tooltip_string;
+    row->value = option->current_option;
+    row->value_count = option->num_options;
+    row->context = option;
+
+    if((option->option_type & (NUMBER_SELECTION_OPTION |
+                               STRING_SELECTION_OPTION)) != 0)
+      row->kind = MENU_ROW_VALUE;
+    else if((option->option_type & SUBMENU_OPTION) != 0)
+      row->kind = MENU_ROW_SUBMENU;
+    else
+      row->kind = MENU_ROW_ACTION;
+  }
+
+  menu_model_init(model, rows, row_count);
+  if(menu->selected_option < row_count)
+  {
+    model->selected_index = menu->selected_option;
+    menu_model_reconcile(model);
+  }
+  if(model->selected_index < row_count)
+    menu->selected_option = (u32)model->selected_index;
+}
 
 #define MAKE_MENU(name, init_function, passive_function)    \
   MenuType name##_menu =                                    \
@@ -1174,7 +1251,8 @@ typedef struct _MenuType MenuType;
     init_function,                                          \
     passive_function,                                       \
     name##_options,                                         \
-    sizeof(name##_options) / sizeof(MenuOptionType)         \
+    sizeof(name##_options) / sizeof(MenuOptionType),        \
+    0                                                       \
   }                                                         \
 
 #define GAMEPAD_CONFIG_OPTION(display_string, number, display_msg)      \
@@ -3210,6 +3288,8 @@ u32 menu(void)
   MenuType *current_menu;
   MenuOptionType *current_option;
   MenuOptionType *display_option;
+  MenuModel navigation_model;
+  MenuRow navigation_rows[MAX_MENU_MODEL_ROWS];
 
   u32 menu_init_flag = 0;
 
@@ -4626,8 +4706,10 @@ u32 menu(void)
       new_menu = &main_menu;
 
     current_menu = new_menu;
-    current_option = new_menu->options;
-    current_option_num = 0;
+    build_legacy_menu_model(&navigation_model, navigation_rows, new_menu);
+    current_option_num = navigation_model.selected_index < new_menu->num_options ?
+     (u32)navigation_model.selected_index : 0;
+    current_option = new_menu->options + current_option_num;
 
     /* Enable PSP OS exit dialog only in the main menu.
        In submenus and in-game, HOME is handled by the emulator. */
@@ -4719,6 +4801,14 @@ u32 menu(void)
       current_menu->init_function();
     }
 
+    if(menu_model_reconcile(&navigation_model) &&
+       navigation_model.selected_index < current_menu->num_options)
+    {
+      current_option_num = (u32)navigation_model.selected_index;
+      current_menu->selected_option = current_option_num;
+      current_option = current_menu->options + current_option_num;
+    }
+
     main_link_pump();
 
     if (current_menu == &savestate_menu)
@@ -4750,6 +4840,13 @@ u32 menu(void)
 
       for (i = 0; i < current_menu->num_options; i++, display_option++)
       {
+        u16 option_color;
+
+        if(!menu_option_visible(display_option))
+          continue;
+
+        option_color = menu_option_available(display_option) ?
+         color_inactive_item : color_inactive_dir;
         if (display_option == current_option) {
             /* Compute scroll offset based on VALUE length, not label+value */
             const char *fmt = display_option->display_string;
@@ -4780,10 +4877,12 @@ u32 menu(void)
             s32 off = compute_scroll_offset(g_scroll.menu_tick, value_len, value_max);
             print_menu_option_split(display_option, MENU_LIST_POS_X,
                             (display_option->line_number * FONTHEIGHT) + 28,
-                            color_active_item, BG_NO_FILL, SCROLL_MENU_MAX_CHARS, off);
+                            menu_option_available(display_option) ?
+                             color_active_item : color_tooltip_text,
+                            BG_NO_FILL, SCROLL_MENU_MAX_CHARS, off);
         } else {            print_menu_option_split(display_option, MENU_LIST_POS_X,
                             (display_option->line_number * FONTHEIGHT) + 28,
-                            color_inactive_item, BG_NO_FILL, SCROLL_MENU_MAX_CHARS, -1);
+                            option_color, BG_NO_FILL, SCROLL_MENU_MAX_CHARS, -1);
         }
       }
     }
@@ -4843,21 +4942,26 @@ u32 menu(void)
     switch (gui_action)
     {
       case CURSOR_DOWN:
-        current_option_num = (current_option_num + 1) % current_menu->num_options;
-
-        current_option = current_menu->options + current_option_num;
+        if(menu_model_move(&navigation_model, 1))
+        {
+          current_option_num = (u32)navigation_model.selected_index;
+          current_menu->selected_option = current_option_num;
+          current_option = current_menu->options + current_option_num;
+        }
         break;
 
       case CURSOR_UP:
-        if (current_option_num != 0)
-          current_option_num--;
-        else
-          current_option_num = current_menu->num_options - 1;
-
-        current_option = current_menu->options + current_option_num;
+        if(menu_model_move(&navigation_model, -1))
+        {
+          current_option_num = (u32)navigation_model.selected_index;
+          current_menu->selected_option = current_option_num;
+          current_option = current_menu->options + current_option_num;
+        }
         break;
 
       case CURSOR_RIGHT:
+        if(!menu_option_available(current_option))
+          break;
         if ((current_option->option_type & (NUMBER_SELECTION_OPTION | STRING_SELECTION_OPTION)) != 0)
         {
           *(current_option->current_option) = (*current_option->current_option + 1) % current_option->num_options;
@@ -4868,6 +4972,8 @@ u32 menu(void)
         break;
 
       case CURSOR_LEFT:
+        if(!menu_option_available(current_option))
+          break;
         if ((current_option->option_type & (NUMBER_SELECTION_OPTION | STRING_SELECTION_OPTION)) != 0)
         {
           u32 current_option_val = *(current_option->current_option);
@@ -4930,6 +5036,8 @@ u32 menu(void)
         break;
 
       case CURSOR_SELECT:
+        if(!menu_option_available(current_option))
+          break;
         switch (current_option->option_type & (ACTION_OPTION | SUBMENU_OPTION))
         {
           case (ACTION_OPTION | SUBMENU_OPTION):

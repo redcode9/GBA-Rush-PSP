@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "menu_model.h"
+#include "menu_catalog.h"
 
 typedef struct
 {
@@ -150,11 +151,42 @@ static void test_no_selectable_rows(void)
   assert(menu_model_adjust(&model, 1) == MENU_MODEL_NO_SELECTION);
 }
 
+static void test_main_category_order(void)
+{
+  static const char *expected[] =
+  {
+    "continue",
+    "save-load",
+    "game",
+    "video",
+    "audio",
+    "performance",
+    "controls",
+    "link-cable",
+    "interface",
+    "diagnostics",
+    "exit"
+  };
+  size_t i;
+  size_t j;
+
+  assert(menu_main_category_count == sizeof(expected) / sizeof(expected[0]));
+  for (i = 0; i < menu_main_category_count; i++)
+  {
+    assert(menu_main_categories[i].category == (MenuMainCategory)i);
+    assert(strcmp(menu_main_categories[i].id, expected[i]) == 0);
+    for (j = i + 1; j < menu_main_category_count; j++)
+      assert(strcmp(menu_main_categories[i].id,
+                    menu_main_categories[j].id) != 0);
+  }
+}
+
 int main(void)
 {
   test_navigation_and_dispatch();
   test_bounds_and_invalid_models();
   test_no_selectable_rows();
+  test_main_category_order();
   puts("menu model tests passed");
   return 0;
 }

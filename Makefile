@@ -129,10 +129,11 @@ $(HOST_TEST_INPUT_TRACE): tests/test_input_trace.c \
 	 tests/test_input_trace.c source/src/input_trace.c -o $@
 
 $(HOST_TEST_MENU_MODEL): tests/test_menu_model.c \
- source/src/menu_model.c source/src/menu_model.h
+ source/src/menu_model.c source/src/menu_model.h \
+ source/src/menu_catalog.c source/src/menu_catalog.h
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
-	 tests/test_menu_model.c source/src/menu_model.c -o $@
+	 tests/test_menu_model.c source/src/menu_model.c source/src/menu_catalog.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_codebreaker: tests/test_codebreaker.c \
  source/src/codebreaker.c source/src/codebreaker.h
@@ -203,10 +204,12 @@ $(HOST_SANITIZE_DIR)/test_input_trace: tests/test_input_trace.c \
 	 -Isource/src tests/test_input_trace.c source/src/input_trace.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_menu_model: tests/test_menu_model.c \
- source/src/menu_model.c source/src/menu_model.h
+ source/src/menu_model.c source/src/menu_model.h \
+ source/src/menu_catalog.c source/src/menu_catalog.h
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
-	 -Isource/src tests/test_menu_model.c source/src/menu_model.c -o $@
+	 -Isource/src tests/test_menu_model.c source/src/menu_model.c \
+	 source/src/menu_catalog.c -o $@
 
 tree-check:
 	sh scripts/check-tree.sh
