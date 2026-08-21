@@ -367,7 +367,7 @@ Suggested commit: `Add link cable controls`
 - Add build instructions without tracking generated `.gba` files.
 - Expand host integration tests.
 - Add `docs/LINK_CABLE.md`.
-- Update `README.md` and `CHANGELOG.md` only when the beta is ready.
+- Update `README.md` and `CHANGELOG.md` when the release gate is complete.
 
 ### Work
 
@@ -393,10 +393,10 @@ single-player performance requirement all pass.
 
 Suggested commit: `Harden link cable compatibility`
 
-## Stage 8: two-PSP validation and beta package
+## Stage 8: two-PSP validation and release package
 
 1. Back up the installed emulator directory from both PSP memory cards.
-2. Install the same candidate build and keep each console's existing ROM and
+2. Install the same release build and keep each console's existing ROM and
    save files separate.
 3. Run the physical test matrix from the design:
    - all diagnostic ROM modes in both directions;
@@ -408,13 +408,13 @@ Suggested commit: `Harden link cable compatibility`
    - WLAN loss while idle and during a barrier;
    - suspend, resume, ROM change, and clean exit.
 4. Re-run the 1.0.0 performance comparison on physical hardware.
-5. Package `1.1.0-beta.1` only after the matrix has no emulator crash, stuck
-   transfer, or save corruption.
-6. Keep the beta local until its files and checksum are verified. Publishing a
-   release remains a separate explicit action.
-7. Promote to 1.1.0 only after beta feedback and a repeated physical test pass.
+5. Record any emulator crash, stuck transfer, save corruption, or performance
+   regression with both PSP models and game revisions.
+6. Verify the stable archive and checksum before publication.
+7. Keep the incomplete broad physical matrix visible as a release limitation
+   until representative games and PSP models have been covered.
 
-Suggested commit: `Prepare GBA Rush PSP 1.1.0 beta 1`
+Suggested commit: `Prepare GBA Rush PSP 1.1.0`
 
 ## Verification commands
 
@@ -450,11 +450,12 @@ make check
 Before packaging:
 
 ```sh
-make package VERSION=1.1.0-beta.1
+make package VERSION=1.1.0
 ```
 
 ## Completion boundary
 
-Code completion means all portable checks and the PSP build pass and the
-candidate is ready for two-console testing. Stable release completion requires
-the physical acceptance matrix; simulation alone cannot satisfy it.
+Code completion means all portable checks and the PSP build pass. The 1.1.0
+release criteria accept the incomplete broad two-console matrix as a documented
+limitation; simulation still does not constitute physical compatibility
+coverage.

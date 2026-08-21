@@ -15,7 +15,8 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_link_session \
  $(HOST_SANITIZE_DIR)/test_power_lifecycle
 
-.PHONY: all check test test-sanitize tree-check psp-build launcher-stub package clean
+.PHONY: all check test test-sanitize tree-check psp-build launcher-stub \
+ package artifact-smoke clean
 
 all: check
 
@@ -118,8 +119,14 @@ launcher-stub:
 
 package: psp-build check
 	@test -n "$(VERSION)" || \
-	 (echo "Set VERSION, for example VERSION=20260817-rc1" >&2; exit 1)
+	 (echo "Set VERSION, for example VERSION=1.1.0" >&2; exit 1)
 	sh scripts/package-release.sh "$(VERSION)"
+	sh scripts/check-package.sh "$(VERSION)"
+
+artifact-smoke:
+	@test -n "$(VERSION)" || \
+	 (echo "Set VERSION, for example VERSION=1.1.0" >&2; exit 1)
+	sh scripts/check-package.sh "$(VERSION)"
 
 clean:
 	$(MAKE) -C source clean

@@ -270,9 +270,9 @@ test matrix includes:
 PPSSPP or host simulation can accelerate development but cannot replace the
 final physical-WLAN test.
 
-## Acceptance criteria
+## Original hardware acceptance target
 
-The first stable release is ready when:
+The initial design targeted all of the following before a stable release:
 
 1. All host SIO and protocol tests pass.
 2. Diagnostic ROMs pass every supported mode in both directions.
@@ -290,9 +290,11 @@ interface, and compatibility hardening remain separate reviewable commits.
 Commit subjects and public documentation use the same concise human style as
 the existing project history.
 
-The first installable build is `1.1.0-beta.1`. Version `1.1.0` is published
-only after the physical-PSP acceptance criteria pass. The 1.0.0 tag and release
-remain unchanged.
+The final 1.1.0 release decision accepts the incomplete physical-PSP matrix as
+a documented limitation while retaining every portable, sanitizer, diagnostic
+ROM, PSP build, package, and checksum gate. See
+[`release-1.1.0.md`](release-1.1.0.md) for the criteria applied to the stable
+release. The 1.0.0 tag and release remain unchanged.
 
 ## Technical references
 

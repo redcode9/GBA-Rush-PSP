@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0-beta.1 - Unreleased
+## 1.1.0 - 2026-08-21
 
 ### Added
 
@@ -28,14 +28,18 @@
 - Pending audio, save, ROM, and link recovery is completed in the foreground
   after every suspend cycle.
 - Sound and ad-hoc worker shutdown paths no longer wait without a deadline.
+- Ad-hoc command and event queues now enforce publication order between the
+  emulator and network threads.
+- Oversized transport events are rejected instead of being emitted without a
+  payload.
 
 ### Limitations
 
-- This beta supports two PSP systems and GBA cable modes only.
+- This release supports two PSP systems and GBA cable modes only.
 - GBA Wireless Adapter, UART, General Purpose, JoyBus, GameCube link,
   multiboot, and internet relay modes are not supported.
-- Physical two-console acceptance and performance testing remain required
-  before the beta package is published.
+- Broad compatibility and performance testing across two physical PSP systems
+  and the commercial game catalog has not yet been completed.
 
 ## 1.0.0 - 2026-08-18
 

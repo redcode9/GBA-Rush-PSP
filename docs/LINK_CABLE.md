@@ -1,12 +1,11 @@
 # Link cable
 
 The link cable feature connects two PSP systems over local ad-hoc Wi-Fi and
-emulates a two-player GBA cable. It is under development for 1.1.0-beta.1 and
-does not change the 1.0.0 release.
+emulates a two-player GBA cable. It ships with GBA Rush PSP 1.1.0.
 
 ## Requirements
 
-- Two PSP systems running the same GBA Rush PSP candidate build.
+- Two PSP systems running the same GBA Rush PSP build.
 - The physical WLAN switch enabled on both systems.
 - A legally obtained GBA BIOS and ROM on each PSP.
 - Games that use a two-player GBA cable mode supported below.
@@ -41,7 +40,7 @@ The implementation synchronizes each transfer before either emulated GBA
 continues. Network delay therefore pauses GBA time during a transfer instead of
 letting the two games drift apart.
 
-The following are not supported in this beta:
+The following are not supported in this release:
 
 - three- or four-player sessions;
 - the GBA Wireless Adapter and its RFU protocol;
@@ -73,7 +72,7 @@ a trade. Do not remove a Memory Stick while either emulator is writing a save.
 | WLAN switch is off | The PSP radio is disabled. | Enable WLAN, then create or join again. |
 | Timeout | The peer stopped answering. | Return both games to an idle link screen and reconnect. |
 | Network error | Ad-hoc setup or transport failed. | Disconnect both PSPs, verify WLAN, and retry nearby. |
-| Protocol error | A damaged, stale, or invalid packet was received. | Install the same candidate build on both PSPs and reconnect. |
+| Protocol error | A damaged, stale, or invalid packet was received. | Install the same emulator build on both PSPs and reconnect. |
 | Incompatible protocol | The two emulator builds cannot negotiate the required modes. | Use the same build on both systems. |
 | Serial mode mismatch | The games requested different cable modes or settings. | Return to the same compatible multiplayer screen on both games. |
 | Network queue full | Traffic could not be queued safely. | Disconnect, close other network activity, and retry. |
@@ -89,3 +88,13 @@ Redistributable source for Normal 8, Normal 32, and Multiplayer test ROMs is in
 [`tests/link-rom`](../tests/link-rom/README.md). These programs expose sent and
 received values, raw status, player ID, interrupt count, and completion order
 without requiring a commercial game.
+
+## Validation status
+
+The serial model, protocol, session state machine, failure paths, and suspend
+integration pass deterministic host tests, ASan and UBSan, malformed-traffic
+tests, variable-delay stress tests, diagnostic-ROM builds, and a clean PSP
+build. Broad compatibility and performance testing across two physical PSP
+systems and the commercial game catalog has not yet been completed. Report a
+game result with both game revisions, PSP models, emulator version, serial mode,
+and the status shown on each system.

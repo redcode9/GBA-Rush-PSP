@@ -41,8 +41,9 @@ part of this repository or its release packages.
   scanning inactive lists in hot paths.
 - Configurable hold-to-fast-forward with unthrottled emulation, paced display
   updates, and immediate audio recovery.
-- Two-PSP GBA link cable emulation over local ad-hoc Wi-Fi, under development
-  for 1.1.0-beta.1.
+- Two-PSP GBA link cable emulation over local ad-hoc Wi-Fi.
+- Suspend and resume recovery that keeps audio, ROM access, saves, and worker
+  shutdown under foreground control.
 - Old and new video renderers, multiple scale modes, themes, box art, recent
   ROMs, configurable dynarec policies, and multilingual menus.
 - Japanese, English, Simplified Chinese, Traditional Chinese, and Italian UI.
@@ -92,15 +93,16 @@ behavior immediately.
 
 ## Link cable
 
-The development branch can connect two PSP systems as Player 1 and Player 2
-over local ad-hoc Wi-Fi. It implements GBA Normal 8-bit, Normal 32-bit, and
+GBA Rush PSP 1.1.0 can connect two PSP systems as Player 1 and Player 2 over
+local ad-hoc Wi-Fi. It implements GBA Normal 8-bit, Normal 32-bit, and
 Multiplayer 16-bit cable transfers with synchronized timing and serial
-interrupts.
+interrupts. Both systems should run the same emulator build.
 
-This work is not part of the 1.0.0 release. It remains a beta candidate until
-the two-console hardware test matrix passes. See [Link cable](docs/LINK_CABLE.md)
-for setup, supported modes, current restrictions, diagnostics, and recovery
-steps.
+The protocol and emulator paths pass deterministic host, sanitizer, malformed
+traffic, timeout, stress, diagnostic-ROM build, and PSP build checks. Broad
+testing across two physical PSP systems and the full commercial game catalog
+is not yet complete. See [Link cable](docs/LINK_CABLE.md) for setup, supported
+modes, current restrictions, diagnostics, and recovery steps.
 
 ## Build
 
@@ -129,11 +131,12 @@ not tracked.
 After a successful PSP build:
 
 ```sh
-make package VERSION=1.0.0
+make package VERSION=1.1.0
 ```
 
-This creates `GBA-Rush-PSP-1.0.0.zip` and its SHA-256 checksum in `dist/`.
-The package contains only `EBOOT.PBP`, `exception.prx`, installation notes,
+This creates `GBA-Rush-PSP-1.1.0.zip` and its SHA-256 checksum in `dist/`, then
+extracts and verifies the archive against the approved release manifest. The
+package contains only `EBOOT.PBP`, `exception.prx`, installation notes,
 changelog, and license. It excludes BIOS files, ROMs, saves, local settings,
 and cheat databases.
 

@@ -29,6 +29,27 @@ release_root="dist/$release_name"
 install_root="$release_root/GBARushPSP"
 archive="dist/$release_name.zip"
 checksum="$archive.sha256"
+release_epoch=${SOURCE_DATE_EPOCH:-$(git log -1 --format=%at)}
+
+case "$release_epoch" in
+  *[!0-9]*|'')
+    echo "Invalid release timestamp: $release_epoch" >&2
+    exit 1
+    ;;
+esac
+
+if archive_timestamp=$(date -u -r "$release_epoch" +%Y%m%d%H%M.%S \
+  2>/dev/null)
+then
+  :
+elif archive_timestamp=$(date -u -d "@$release_epoch" +%Y%m%d%H%M.%S \
+  2>/dev/null)
+then
+  :
+else
+  echo "Cannot convert release timestamp: $release_epoch" >&2
+  exit 1
+fi
 
 rm -rf "$release_root"
 rm -f "$archive" "$checksum"
@@ -40,7 +61,8 @@ cp docs/INSTALL.md "$release_root/README.md"
 cp CHANGELOG.md "$release_root/CHANGELOG.md"
 cp LICENSE "$release_root/LICENSE"
 
-(cd dist && zip -q -r "$release_name.zip" "$release_name")
+find "$release_root" -exec env TZ=UTC touch -t "$archive_timestamp" {} +
+(cd dist && TZ=UTC zip -q -X -D -r "$release_name.zip" "$release_name")
 
 if command -v shasum >/dev/null 2>&1; then
   (cd dist && shasum -a 256 "$release_name.zip") > "$checksum"

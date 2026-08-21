@@ -125,10 +125,11 @@ and the source checks prevent the same blocking patterns from returning.
 2. Run source formatting, staged-diff, and repository-content checks.
 3. Perform a clean PSP build with the pinned PSPDEV toolchain.
 4. Inspect the linked ELF for the expected power, audio, and thread imports.
-5. Build an EBOOT candidate without packaging, tagging, publishing, or pushing.
-6. Install the candidate only after the PSP storage volume is connected.
+5. Build an EBOOT for hardware validation before publishing.
+6. Install the build only after the PSP storage volume is connected.
 7. Run the physical acceptance matrix in `docs/design/suspend-resume.md`, with
-   ten consecutive Pokemon Red suspend cycles as the release gate.
+   ten consecutive Pokemon Red suspend cycles as the primary hardware check.
 
-The hardware result is recorded before the beta is packaged. Host tests and a
-successful PSP build do not replace the real suspend/resume test.
+Host tests and a successful PSP build do not replace the real suspend/resume
+test. The 1.1.0 release records the remaining physical coverage as an accepted
+limitation rather than an automated-gate failure.

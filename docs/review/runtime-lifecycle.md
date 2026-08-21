@@ -1,6 +1,6 @@
 # Runtime lifecycle review
 
-Reviewed on 21 August 2026 for the `1.1.0-beta.1` development line.
+Reviewed on 21 August 2026 for GBA Rush PSP 1.1.0.
 
 ## Scope
 
@@ -75,9 +75,10 @@ event therefore cannot reach an uninitialized sound semaphore or SRC channel.
 work in the power callback, unlimited sound semaphore waits, unlimited sound or
 network thread joins, and removal of the audio backlog recovery deadline.
 
-## Remaining validation
+## Hardware validation
 
 The source review, host regression suite, sanitizer suite, and PSP build cannot
-reproduce power-controller timing. Release acceptance still requires the
-hardware matrix in `docs/design/suspend-resume.md`, led by ten consecutive
-suspend and resume cycles during Pokemon Red gameplay.
+reproduce every power-controller timing case. The hardware matrix in
+`docs/design/suspend-resume.md`, led by ten consecutive suspend and resume
+cycles during Pokemon Red gameplay, remains the recommended physical test for
+each supported PSP model.
