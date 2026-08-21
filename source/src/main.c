@@ -702,6 +702,7 @@ u32 update_gba(void)
           video_adaptive_frame_complete(draw_this_frame == 0, 0);
 
           vcount = 0;
+          video_dispatch_frame_begin();
         }
 
         if (vcount == (dispstat >> 8))
@@ -1002,6 +1003,7 @@ static void init_main(void)
 
   video_count = option_boot_mode ? 960 : 272;
   reg[EXECUTE_CYCLES] = video_count;
+  video_dispatch_frame_begin();
 
   irq_ticks = 0;
   cpu_init_state = 0;

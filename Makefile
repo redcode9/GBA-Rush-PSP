@@ -8,6 +8,7 @@ HOST_TEST_LINK_PROTOCOL = $(HOST_BUILD_DIR)/test_link_protocol
 HOST_TEST_LINK_SESSION = $(HOST_BUILD_DIR)/test_link_session
 HOST_TEST_POWER_LIFECYCLE = $(HOST_BUILD_DIR)/test_power_lifecycle
 HOST_TEST_VIDEO_ADAPTIVE = $(HOST_BUILD_DIR)/test_video_adaptive
+HOST_TEST_VIDEO_DISPATCH = $(HOST_BUILD_DIR)/test_video_dispatch_state
 HOST_TEST_PERF_METRICS = $(HOST_BUILD_DIR)/test_perf_metrics
 HOST_TEST_PERF_REPORT = $(HOST_BUILD_DIR)/test_perf_report
 HOST_TEST_PERF_MONITOR = $(HOST_BUILD_DIR)/test_perf_monitor
@@ -18,6 +19,7 @@ HOST_TEST_CONFIG_STORE = $(HOST_BUILD_DIR)/test_config_store
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_LINK_PROTOCOL) $(HOST_TEST_LINK_SESSION) \
  $(HOST_TEST_POWER_LIFECYCLE) $(HOST_TEST_VIDEO_ADAPTIVE) \
+ $(HOST_TEST_VIDEO_DISPATCH) \
  $(HOST_TEST_PERF_METRICS) $(HOST_TEST_PERF_REPORT) \
  $(HOST_TEST_PERF_MONITOR) $(HOST_TEST_INPUT_TRACE) $(HOST_TEST_MENU_MODEL) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE)
@@ -26,6 +28,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_link_session \
  $(HOST_SANITIZE_DIR)/test_power_lifecycle \
  $(HOST_SANITIZE_DIR)/test_video_adaptive \
+ $(HOST_SANITIZE_DIR)/test_video_dispatch_state \
  $(HOST_SANITIZE_DIR)/test_perf_metrics \
  $(HOST_SANITIZE_DIR)/test_perf_report \
  $(HOST_SANITIZE_DIR)/test_perf_monitor \
@@ -48,6 +51,7 @@ test: $(HOST_TESTS)
 	$(HOST_TEST_LINK_SESSION)
 	$(HOST_TEST_POWER_LIFECYCLE)
 	$(HOST_TEST_VIDEO_ADAPTIVE)
+	$(HOST_TEST_VIDEO_DISPATCH)
 	$(HOST_TEST_PERF_METRICS)
 	$(HOST_TEST_PERF_REPORT)
 	$(HOST_TEST_PERF_MONITOR)
@@ -63,6 +67,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_link_session
 	$(HOST_SANITIZE_DIR)/test_power_lifecycle
 	$(HOST_SANITIZE_DIR)/test_video_adaptive
+	$(HOST_SANITIZE_DIR)/test_video_dispatch_state
 	$(HOST_SANITIZE_DIR)/test_perf_metrics
 	$(HOST_SANITIZE_DIR)/test_perf_report
 	$(HOST_SANITIZE_DIR)/test_perf_monitor
@@ -110,6 +115,12 @@ $(HOST_TEST_VIDEO_ADAPTIVE): tests/test_video_adaptive.c \
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_video_adaptive.c source/src/video_adaptive.c -o $@
+
+$(HOST_TEST_VIDEO_DISPATCH): tests/test_video_dispatch_state.c \
+ source/src/video_dispatch_state.c source/src/video_dispatch_state.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_video_dispatch_state.c source/src/video_dispatch_state.c -o $@
 
 $(HOST_TEST_PERF_METRICS): tests/test_perf_metrics.c \
  source/src/perf_metrics.c source/src/perf_metrics.h
@@ -199,6 +210,14 @@ $(HOST_SANITIZE_DIR)/test_video_adaptive: tests/test_video_adaptive.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_video_adaptive.c source/src/video_adaptive.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_video_dispatch_state: \
+ tests/test_video_dispatch_state.c source/src/video_dispatch_state.c \
+ source/src/video_dispatch_state.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_video_dispatch_state.c \
+	 source/src/video_dispatch_state.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_perf_metrics: tests/test_perf_metrics.c \
  source/src/perf_metrics.c source/src/perf_metrics.h

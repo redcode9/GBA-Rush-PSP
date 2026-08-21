@@ -1,4 +1,5 @@
 #include "common.h"
+#include "video_dispatch_state.h"
 
 void update_scanline_old(void);
 void update_scanline_new(void);
@@ -17,7 +18,11 @@ u16 *screen_texture = (u16 *)(0x4000000 + (PSP_FRAME_SIZE * 2));
 s32 affine_reference_x[2];
 s32 affine_reference_y[2];
 
-static u32 active_renderer = ~(u32)0;
+static VideoDispatchState renderer_state = {
+  VIDEO_DISPATCH_RENDERER_NEW,
+  VIDEO_DISPATCH_RENDERER_NEW
+};
+static void (*active_scanline)(void) = update_scanline_new;
 
 static void sync_renderer_state(void)
 {
@@ -27,29 +32,28 @@ static void sync_renderer_state(void)
   update_screen_new = update_screen;
 }
 
-static void select_renderer(void)
+void video_dispatch_frame_begin(void)
 {
-  if (active_renderer == option_video_renderer)
-    return;
+  sync_renderer_state();
+  video_dispatch_state_request(&renderer_state, option_video_renderer);
 
-  active_renderer = option_video_renderer;
+  if(video_dispatch_state_begin_frame(&renderer_state))
+  {
+    active_scanline =
+     video_dispatch_state_active(&renderer_state) == VIDEO_RENDERER_OLD ?
+      update_scanline_old : update_scanline_new;
+  }
 }
 
 void update_scanline(void)
 {
-  sync_renderer_state();
-  select_renderer();
-  if (active_renderer == VIDEO_RENDERER_OLD)
-    update_scanline_old();
-  else
-    update_scanline_new();
+  active_scanline();
 }
 
 void video_read_savestate(SceUID savestate_file)
 {
-  sync_renderer_state();
-  select_renderer();
-  if (active_renderer == VIDEO_RENDERER_OLD)
+  video_dispatch_frame_begin();
+  if (video_dispatch_state_active(&renderer_state) == VIDEO_RENDERER_OLD)
     video_read_savestate_old(savestate_file);
   else
     video_read_savestate_new(savestate_file);
@@ -57,9 +61,8 @@ void video_read_savestate(SceUID savestate_file)
 
 void video_write_mem_savestate(SceUID savestate_file)
 {
-  sync_renderer_state();
-  select_renderer();
-  if (active_renderer == VIDEO_RENDERER_OLD)
+  video_dispatch_frame_begin();
+  if (video_dispatch_state_active(&renderer_state) == VIDEO_RENDERER_OLD)
     video_write_mem_savestate_old(savestate_file);
   else
     video_write_mem_savestate_new(savestate_file);

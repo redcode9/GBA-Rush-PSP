@@ -26,4 +26,19 @@ then
   exit 1
 fi
 
+scanline_body=$(sed -n '/^void update_scanline(void)/,/^}/p' \
+  source/src/video_dispatch.c)
+if printf '%s\n' "$scanline_body" | rg -q \
+  'option_video_renderer|sync_renderer_state|video_dispatch_state_begin_frame'
+then
+  echo "Scanline path performs renderer selection work" >&2
+  exit 1
+fi
+
+if ! printf '%s\n' "$scanline_body" | rg -q 'active_scanline\(\)'
+then
+  echo "Scanline path does not use the frame-stable renderer" >&2
+  exit 1
+fi
+
 echo "Video lifecycle checks passed"

@@ -69,6 +69,7 @@
 
 
 void update_scanline(void);
+void video_dispatch_frame_begin(void);
 extern void (*update_screen)(void);
 
 extern s32 affine_reference_x[2];

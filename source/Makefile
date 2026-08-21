@@ -32,7 +32,7 @@ MESSAGE_FILE = \
  src/text/message_cht.h src/text/message_ita.h
 
 MAINOBJS = \
- cpu.o memory.o video_dispatch.o video_cc_wrap.o video_old_wrap.o psp_video.o input.o sound.o main.o message.o mh_print.o gui.o zip.o png.o \
+ cpu.o memory.o video_dispatch_state.o video_dispatch.o video_cc_wrap.o video_old_wrap.o psp_video.o input.o sound.o main.o message.o mh_print.o gui.o zip.o png.o \
  mips_stub.o video_blend_mips.o \
  ku_bridge.o exception.o cheats.o codebreaker.o ch_print.o \
  boxart.o gba_sio.o link_protocol.o link_session.o power_lifecycle.o video_adaptive.o perf_metrics.o perf_monitor.o perf_report.o menu_model.o menu_catalog.o config_model.o config_store.o psp_adhoc.o
