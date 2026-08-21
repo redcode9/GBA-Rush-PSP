@@ -12,11 +12,12 @@ HOST_TEST_PERF_METRICS = $(HOST_BUILD_DIR)/test_perf_metrics
 HOST_TEST_PERF_REPORT = $(HOST_BUILD_DIR)/test_perf_report
 HOST_TEST_PERF_MONITOR = $(HOST_BUILD_DIR)/test_perf_monitor
 HOST_TEST_INPUT_TRACE = $(HOST_BUILD_DIR)/test_input_trace
+HOST_TEST_MENU_MODEL = $(HOST_BUILD_DIR)/test_menu_model
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_LINK_PROTOCOL) $(HOST_TEST_LINK_SESSION) \
  $(HOST_TEST_POWER_LIFECYCLE) $(HOST_TEST_VIDEO_ADAPTIVE) \
  $(HOST_TEST_PERF_METRICS) $(HOST_TEST_PERF_REPORT) \
- $(HOST_TEST_PERF_MONITOR) $(HOST_TEST_INPUT_TRACE)
+ $(HOST_TEST_PERF_MONITOR) $(HOST_TEST_INPUT_TRACE) $(HOST_TEST_MENU_MODEL)
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_protocol \
  $(HOST_SANITIZE_DIR)/test_link_session \
@@ -25,7 +26,8 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_perf_metrics \
  $(HOST_SANITIZE_DIR)/test_perf_report \
  $(HOST_SANITIZE_DIR)/test_perf_monitor \
- $(HOST_SANITIZE_DIR)/test_input_trace
+ $(HOST_SANITIZE_DIR)/test_input_trace \
+ $(HOST_SANITIZE_DIR)/test_menu_model
 
 .PHONY: all check test test-sanitize tree-check psp-build launcher-stub \
  package artifact-smoke clean
@@ -45,6 +47,7 @@ test: $(HOST_TESTS)
 	$(HOST_TEST_PERF_REPORT)
 	$(HOST_TEST_PERF_MONITOR)
 	$(HOST_TEST_INPUT_TRACE)
+	$(HOST_TEST_MENU_MODEL)
 
 test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_codebreaker
@@ -57,6 +60,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_perf_report
 	$(HOST_SANITIZE_DIR)/test_perf_monitor
 	$(HOST_SANITIZE_DIR)/test_input_trace
+	$(HOST_SANITIZE_DIR)/test_menu_model
 
 $(HOST_TEST_CODEBREAKER): tests/test_codebreaker.c source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_BUILD_DIR)
@@ -123,6 +127,12 @@ $(HOST_TEST_INPUT_TRACE): tests/test_input_trace.c \
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_input_trace.c source/src/input_trace.c -o $@
+
+$(HOST_TEST_MENU_MODEL): tests/test_menu_model.c \
+ source/src/menu_model.c source/src/menu_model.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_menu_model.c source/src/menu_model.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_codebreaker: tests/test_codebreaker.c \
  source/src/codebreaker.c source/src/codebreaker.h
@@ -191,6 +201,12 @@ $(HOST_SANITIZE_DIR)/test_input_trace: tests/test_input_trace.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_input_trace.c source/src/input_trace.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_menu_model: tests/test_menu_model.c \
+ source/src/menu_model.c source/src/menu_model.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_menu_model.c source/src/menu_model.c -o $@
 
 tree-check:
 	sh scripts/check-tree.sh
