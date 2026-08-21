@@ -15,6 +15,7 @@ HOST_TEST_PERF_REPORT = $(HOST_BUILD_DIR)/test_perf_report
 HOST_TEST_PERF_MONITOR = $(HOST_BUILD_DIR)/test_perf_monitor
 HOST_TEST_INPUT_TRACE = $(HOST_BUILD_DIR)/test_input_trace
 HOST_TEST_MENU_MODEL = $(HOST_BUILD_DIR)/test_menu_model
+HOST_TEST_MENU_LAYOUT = $(HOST_BUILD_DIR)/test_menu_layout
 HOST_TEST_CONFIG_MODEL = $(HOST_BUILD_DIR)/test_config_model
 HOST_TEST_CONFIG_STORE = $(HOST_BUILD_DIR)/test_config_store
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
@@ -23,6 +24,7 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_VIDEO_DISPATCH) \
  $(HOST_TEST_PERF_METRICS) $(HOST_TEST_PERF_REPORT) \
  $(HOST_TEST_PERF_MONITOR) $(HOST_TEST_INPUT_TRACE) $(HOST_TEST_MENU_MODEL) \
+ $(HOST_TEST_MENU_LAYOUT) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE)
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_protocol \
@@ -35,6 +37,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_perf_monitor \
  $(HOST_SANITIZE_DIR)/test_input_trace \
  $(HOST_SANITIZE_DIR)/test_menu_model \
+ $(HOST_SANITIZE_DIR)/test_menu_layout \
  $(HOST_SANITIZE_DIR)/test_config_model \
  $(HOST_SANITIZE_DIR)/test_config_store
 
@@ -58,6 +61,7 @@ test: $(HOST_TESTS) test-benchmark-tool
 	$(HOST_TEST_PERF_MONITOR)
 	$(HOST_TEST_INPUT_TRACE)
 	$(HOST_TEST_MENU_MODEL)
+	$(HOST_TEST_MENU_LAYOUT)
 	$(HOST_TEST_CONFIG_MODEL)
 	$(HOST_TEST_CONFIG_STORE)
 
@@ -77,6 +81,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_perf_monitor
 	$(HOST_SANITIZE_DIR)/test_input_trace
 	$(HOST_SANITIZE_DIR)/test_menu_model
+	$(HOST_SANITIZE_DIR)/test_menu_layout
 	$(HOST_SANITIZE_DIR)/test_config_model
 	$(HOST_SANITIZE_DIR)/test_config_store
 
@@ -158,6 +163,12 @@ $(HOST_TEST_MENU_MODEL): tests/test_menu_model.c \
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_menu_model.c source/src/menu_model.c source/src/menu_catalog.c -o $@
+
+$(HOST_TEST_MENU_LAYOUT): tests/test_menu_layout.c \
+ source/src/menu_layout.c source/src/menu_layout.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_menu_layout.c source/src/menu_layout.c -o $@
 
 $(HOST_TEST_CONFIG_MODEL): tests/test_config_model.c \
  source/src/config_model.c source/src/config_model.h
@@ -256,6 +267,12 @@ $(HOST_SANITIZE_DIR)/test_menu_model: tests/test_menu_model.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_menu_model.c source/src/menu_model.c \
 	 source/src/menu_catalog.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_menu_layout: tests/test_menu_layout.c \
+ source/src/menu_layout.c source/src/menu_layout.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_menu_layout.c source/src/menu_layout.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_config_model: tests/test_config_model.c \
  source/src/config_model.c source/src/config_model.h

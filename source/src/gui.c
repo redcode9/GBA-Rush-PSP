@@ -21,6 +21,7 @@
 #include "common.h"
 #include "boxart.h"   // carousel / boxart support
 #include "config_store.h"
+#include "menu_layout.h"
 #include "menu_model.h"
 #include "psp_adhoc.h"
 
@@ -560,6 +561,9 @@ static u32 action_loadstate_slot(u32 slot);
 
 #define TEXT_TOOLTIP_POS_Y  (210)
 #define MENU_LIST_POS_X     (10) //18 default
+#define MENU_LIST_POS_Y     (28)
+#define MENU_LIST_LAST_Y    (196)
+#define MENU_LIST_LINES     (((MENU_LIST_LAST_Y - MENU_LIST_POS_Y) / FONTHEIGHT) + 1)
 
 #define SCREEN_IMAGE_POS_X  (228)
 #define SCREEN_IMAGE_POS_Y  (44)
@@ -660,15 +664,20 @@ static void draw_theme_preview(u16 editing_color_ptr_value)
 }
 
 
-/* Swap-aware print: copies src to a temp buffer while swapping GBK Circle (0xA1 0xF0)
-   and Cross (0xA1 0xC1) symbols based on option_swap_confirm_buttons. */
-void print_swap_aware(const char *src, u32 x, u32 y, u16 color, u16 bg)
+/* Copy text while applying the configured confirm/cancel button symbols. */
+static void copy_swap_aware(const char *src, char *buf, size_t size)
 {
-    char buf[256];
     char *dst = buf;
     const char *s = src;
 
-    while (*s != '\0' && dst < buf + sizeof(buf) - 3)
+    if (size < 3)
+    {
+        if (size != 0)
+            buf[0] = '\0';
+        return;
+    }
+
+    while (*s != '\0' && dst < buf + size - 3)
     {
         if ((u8)s[0] == 0xA1 && (u8)s[1] == 0xF0)
         {
@@ -688,6 +697,15 @@ void print_swap_aware(const char *src, u32 x, u32 y, u16 color, u16 bg)
         }
     }
     *dst = '\0';
+}
+
+/* Swap-aware print: copies src to a temp buffer while swapping GBK Circle
+   and Cross symbols based on option_swap_confirm_buttons. */
+void print_swap_aware(const char *src, u32 x, u32 y, u16 color, u16 bg)
+{
+    char buf[256];
+
+    copy_swap_aware(src, buf, sizeof(buf));
 
     if (option_language == 0)
         print_string(buf, x, y, color, bg);
@@ -3351,26 +3369,33 @@ static void print_menu_line_scroll(const char *str, s16 x, s16 y, u16 fg, s16 bg
 
 static void print_menu_line_clipped(const char *str, s16 x, s16 y, u16 fg, s16 bg, u32 max_chars)
 {
-    if (menu_string_has_gbk(str)) {
-        print_menu_line(str, x, y, fg, bg);
-        return;
-    }
+    size_t len = strlen(str);
+    size_t clip_len;
 
-    u32 len = strlen(str);
     if (len == 0) return;
 
-    if (len <= max_chars) {
+    clip_len = menu_text_clip_length(str, max_chars);
+    if (clip_len == len) {
         print_menu_line(str, x, y, fg, bg);
         return;
     }
 
-    if (max_chars >= 256) max_chars = 255;
+    if (clip_len >= 256) clip_len = 255;
 
     char buf[256];
-    memcpy(buf, str, max_chars);
-    buf[max_chars] = '\0';
+    memcpy(buf, str, clip_len);
+    buf[clip_len] = '\0';
 
     print_menu_line(buf, x, y, fg, bg);
+}
+
+static void print_swap_aware_clipped(const char *src, s16 x, s16 y,
+ u16 color, s16 bg, u32 max_chars)
+{
+    char buf[256];
+
+    copy_swap_aware(src, buf, sizeof(buf));
+    print_menu_line_clipped(buf, x, y, color, bg, max_chars);
 }
 
 /* Print a menu option by splitting the format string at %s or %d.
@@ -5276,6 +5301,9 @@ u32 menu(void)
 
     if (current_menu && current_menu->options)
     {
+      MenuViewport options_viewport = menu_viewport_for_selection(
+       current_option != NULL ? current_option->line_number : 0,
+       MENU_LIST_LINES);
       display_option = current_menu->options;
       u32 menu_hash = ((u32)current_menu) ^ current_option_num;
       update_menu_scroll(menu_hash);
@@ -5283,8 +5311,13 @@ u32 menu(void)
       for (i = 0; i < current_menu->num_options; i++, display_option++)
       {
         u16 option_color;
+        u32 option_y;
 
         if(!menu_option_visible(display_option))
+          continue;
+        if(!menu_viewport_baseline(&options_viewport,
+                                   display_option->line_number,
+                                   MENU_LIST_POS_Y, FONTHEIGHT, &option_y))
           continue;
 
         option_color = menu_option_available(display_option) ?
@@ -5318,12 +5351,12 @@ u32 menu(void)
             u32 value_max = (SCROLL_MENU_MAX_CHARS > label_chars) ? (SCROLL_MENU_MAX_CHARS - label_chars) : 0;
             s32 off = compute_scroll_offset(g_scroll.menu_tick, value_len, value_max);
             print_menu_option_split(display_option, MENU_LIST_POS_X,
-                            (display_option->line_number * FONTHEIGHT) + 28,
+                            (s16)option_y,
                             menu_option_available(display_option) ?
                              color_active_item : color_tooltip_text,
                             BG_NO_FILL, SCROLL_MENU_MAX_CHARS, off);
         } else {            print_menu_option_split(display_option, MENU_LIST_POS_X,
-                            (display_option->line_number * FONTHEIGHT) + 28,
+                            (s16)option_y,
                             option_color, BG_NO_FILL, SCROLL_MENU_MAX_CHARS, -1);
         }
       }
@@ -5333,6 +5366,10 @@ u32 menu(void)
     char guide_line[192];
     const char *summary;
     u32 impact_message;
+    u32 guide_max_chars = (u32)menu_layout_max_columns(
+     PSP_SCREEN_WIDTH, MENU_LIST_POS_X, FONTWIDTH);
+    u32 footer_max_chars = (u32)menu_layout_max_columns(
+     PSP_SCREEN_WIDTH, 30, FONTWIDTH);
     u16 summary_color = color_tooltip_text;
 
     if(!menu_option_available(current_option) &&
@@ -5348,19 +5385,12 @@ u32 menu(void)
 
     snprintf(guide_line, sizeof(guide_line), "%s%s",
      MSG[MSG_GUIDE_SUMMARY_PREFIX], summary);
-    if(option_language == 0)
-      print_string(guide_line, MENU_LIST_POS_X, TEXT_TOOLTIP_POS_Y,
-       summary_color, BG_NO_FILL);
-    else
-      print_string_gbk(guide_line, MENU_LIST_POS_X, TEXT_TOOLTIP_POS_Y,
-       summary_color, BG_NO_FILL);
+    print_menu_line_clipped(guide_line, MENU_LIST_POS_X,
+     TEXT_TOOLTIP_POS_Y, summary_color, BG_NO_FILL, guide_max_chars);
 
-    if(option_language == 0)
-      print_string(MSG[MSG_GUIDE_RECOMMEND_DEFAULT], MENU_LIST_POS_X,
-       TEXT_TOOLTIP_POS_Y + FONTHEIGHT, color_tooltip_text, BG_NO_FILL);
-    else
-      print_string_gbk(MSG[MSG_GUIDE_RECOMMEND_DEFAULT], MENU_LIST_POS_X,
-       TEXT_TOOLTIP_POS_Y + FONTHEIGHT, color_tooltip_text, BG_NO_FILL);
+    print_menu_line_clipped(MSG[MSG_GUIDE_RECOMMEND_DEFAULT],
+     MENU_LIST_POS_X, TEXT_TOOLTIP_POS_Y + FONTHEIGHT,
+     color_tooltip_text, BG_NO_FILL, guide_max_chars);
 
     if((current_option->option_type & (NUMBER_SELECTION_OPTION |
                                       STRING_SELECTION_OPTION)) != 0)
@@ -5372,15 +5402,12 @@ u32 menu(void)
 
     snprintf(guide_line, sizeof(guide_line), "%s   %s",
      MSG[impact_message], MSG[MSG_GUIDE_RESTART_NONE]);
-    if(option_language == 0)
-      print_string(guide_line, MENU_LIST_POS_X,
-       TEXT_TOOLTIP_POS_Y + (FONTHEIGHT * 2), color_tooltip_text, BG_NO_FILL);
-    else
-      print_string_gbk(guide_line, MENU_LIST_POS_X,
-       TEXT_TOOLTIP_POS_Y + (FONTHEIGHT * 2), color_tooltip_text, BG_NO_FILL);
+    print_menu_line_clipped(guide_line, MENU_LIST_POS_X,
+     TEXT_TOOLTIP_POS_Y + (FONTHEIGHT * 2), color_tooltip_text,
+     BG_NO_FILL, guide_max_chars);
 
-    print_swap_aware(MSG[current_option->help_string], 30, 258,
-     color_help_text, BG_NO_FILL);
+    print_swap_aware_clipped(MSG[current_option->help_string], 30, 258,
+     color_help_text, BG_NO_FILL, footer_max_chars);
   }
 
 /* 	if (option_language == 0)
