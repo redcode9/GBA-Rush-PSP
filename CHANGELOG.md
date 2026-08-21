@@ -22,6 +22,13 @@
 - ROM loading records exact size and CRC32 for peer diagnostics without
   requiring identical ROM files.
 
+### Fixed
+
+- PSP resume no longer waits for suspended audio samples to drain.
+- Pending audio, save, ROM, and link recovery is completed in the foreground
+  after every suspend cycle.
+- Sound and ad-hoc worker shutdown paths no longer wait without a deadline.
+
 ### Limitations
 
 - This beta supports two PSP systems and GBA cable modes only.

@@ -112,6 +112,8 @@ static int psp_sound_release(void);
 
 volatile int sound_active = 0;
 static volatile u32 sound_fast_forward = 0;
+static volatile u32 sound_power_suspended = 0;
+static volatile u32 sound_output_ready = 0;
 static void fill_sound_buffer(s16 *stream, u16 length);
 static int sound_update_thread(SceSize args, void *argp);
 
@@ -119,6 +121,8 @@ static volatile u8 sound_sleep = 0;
 static void sound_thread_wakeup(void);
 static u32 sound_link_wait_active = 0;
 static u32 sound_link_saved_pause = 0;
+
+#define SOUND_OPERATION_TIMEOUT 500000u
 
 u32 sound_buffer_base = 0;
 static u32 buffer_length(u32 top, u32 base, u32 length);
@@ -792,6 +796,40 @@ void sound_set_fast_forward(u32 enabled)
     sceKernelWakeupThread(sound_thread);
 }
 
+void sound_power_suspend(void)
+{
+  sound_fast_forward = 0;
+  sound_power_suspended = 1;
+  __builtin_allegrex_sync();
+}
+
+int sound_power_resume(void)
+{
+  int result;
+
+  sceAudioSRCChRelease();
+  result = sceAudioSRCChReserve(SOUND_SAMPLES, SOUND_FREQUENCY, 2);
+  sound_output_ready = result >= 0;
+  __builtin_allegrex_sync();
+  return result;
+}
+
+void sound_power_resume_finish(u32 cpu_ticks, int audio_result)
+{
+  sound_fast_forward = 0;
+  synchronize_flag = 1;
+  sound_buffer_base = gbc_sound_buffer_index;
+  gbc_sound_last_cpu_ticks = cpu_ticks;
+  memset(psp_sound_buffer, 0, sizeof(psp_sound_buffer));
+
+  if(audio_result < 0)
+    sound_output_ready = 0;
+
+  __builtin_allegrex_sync();
+  sound_power_suspended = 0;
+  sound_thread_wakeup();
+}
+
 void sound_link_wait_begin(void)
 {
   if(sound_link_wait_active)
@@ -817,6 +855,8 @@ void sound_link_wait_end(u32 cpu_ticks)
 
 void synchronize_sound(void)
 {
+  u64 started;
+
   if(sound_fast_forward)
   {
     sound_buffer_base = gbc_sound_buffer_index;
@@ -834,9 +874,17 @@ void synchronize_sound(void)
         virtual_frame_count = 0;
       }
 
+      started = sceKernelGetSystemTimeWide();
       while (SOUND_BUFFER_LENGTH > (SOUND_BUFFER_SIZE * 4))
       {
-        sceKernelDelayThread(1);
+        if(sleep_flag != 0 || sound_power_suspended ||
+           sceKernelGetSystemTimeWide() - started >=
+            SOUND_OPERATION_TIMEOUT)
+        {
+          sound_buffer_base = gbc_sound_buffer_index;
+          break;
+        }
+        sceKernelDelayThread(100);
       }
     }
   }
@@ -1039,13 +1087,17 @@ static int sound_update_thread(SceSize args, void *argp)
 
   while (sound_active != 0)
   {
-    if (sleep_flag != 0)
+    if (sleep_flag != 0 || sound_power_suspended)
     {
-      do
-      {
-        sceKernelDelayThread(500 * 1000);
-      }
-      while (sleep_flag != 0);
+      sceKernelDelayThread(10 * 1000);
+      continue;
+    }
+
+    if(!sound_output_ready)
+    {
+      sound_buffer_base = gbc_sound_buffer_index;
+      sceKernelDelayThread(10 * 1000);
+      continue;
     }
 
     if(sound_fast_forward)
@@ -1076,7 +1128,9 @@ static int sound_update_thread(SceSize args, void *argp)
     else
       memset(psp_sound_buffer[buf_idx], 0, SOUND_BUFFER_SIZE * sizeof(s16));
 
-    sceKernelWaitSema(sound_sema, 1, 0);
+    SceUInt timeout = SOUND_OPERATION_TIMEOUT;
+    if(sceKernelWaitSema(sound_sema, 1, &timeout) < 0)
+      continue;
     sceAudioSRCOutputBlocking(output_volume, psp_sound_buffer[buf_idx]);
     sceKernelSignalSema(sound_sema, 1);
 
@@ -1090,14 +1144,18 @@ static int sound_update_thread(SceSize args, void *argp)
 
 static int psp_sound_release(void)
 {
-  while (sceAudioOutput2GetRestSample() > 0)
-    sceKernelDelayThread(1);
+  u64 started = sceKernelGetSystemTimeWide();
+
+  while(sceAudioOutput2GetRestSample() > 0 &&
+        sceKernelGetSystemTimeWide() - started < SOUND_OPERATION_TIMEOUT)
+    sceKernelDelayThread(1000);
 
   return sceAudioSRCChRelease();
 }
 
 int psp_sound_frequency(u16 sample_count, u16 freq)
 {
+  SceUInt timeout = SOUND_OPERATION_TIMEOUT;
   int ret;
 
   switch (freq)
@@ -1111,7 +1169,8 @@ int psp_sound_frequency(u16 sample_count, u16 freq)
       return -1;
   }
 
-  sceKernelWaitSema(sound_sema, 1, 0);
+  if(sceKernelWaitSema(sound_sema, 1, &timeout) < 0)
+    return -1;
 
   psp_sound_release();
   ret = sceAudioSRCChReserve(sample_count, freq, 2);
@@ -1136,6 +1195,8 @@ static int start_sound_thread(void)
 
     return -1;
   }
+  sound_output_ready = 1;
+  sound_power_suspended = 0;
 
   sound_thread = sceKernelCreateThread("Sound thread",
                                        sound_update_thread,
@@ -1159,19 +1220,25 @@ static int start_sound_thread(void)
 
 void sound_term(void)
 {
+  SceUInt timeout = SOUND_OPERATION_TIMEOUT;
+
   sound_active = 0;
 
   if (sound_thread >= 0)
   {
     sound_thread_wakeup();
 
-    sceKernelWaitThreadEnd(sound_thread, NULL);
-    sceKernelDeleteThread(sound_thread);
+    if(sceKernelWaitThreadEnd(sound_thread, &timeout) < 0)
+      sceKernelTerminateDeleteThread(sound_thread);
+    else
+      sceKernelDeleteThread(sound_thread);
     sound_thread = -1;
 
     psp_sound_release();
   }
 
+  sound_output_ready = 0;
+  sound_power_suspended = 0;
   sceKernelDeleteSema(sound_sema);
 }
 

@@ -6,11 +6,14 @@ HOST_TEST_CODEBREAKER = $(HOST_BUILD_DIR)/test_codebreaker
 HOST_TEST_GBA_SIO = $(HOST_BUILD_DIR)/test_gba_sio
 HOST_TEST_LINK_PROTOCOL = $(HOST_BUILD_DIR)/test_link_protocol
 HOST_TEST_LINK_SESSION = $(HOST_BUILD_DIR)/test_link_session
+HOST_TEST_POWER_LIFECYCLE = $(HOST_BUILD_DIR)/test_power_lifecycle
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
- $(HOST_TEST_LINK_PROTOCOL) $(HOST_TEST_LINK_SESSION)
+ $(HOST_TEST_LINK_PROTOCOL) $(HOST_TEST_LINK_SESSION) \
+ $(HOST_TEST_POWER_LIFECYCLE)
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_protocol \
- $(HOST_SANITIZE_DIR)/test_link_session
+ $(HOST_SANITIZE_DIR)/test_link_session \
+ $(HOST_SANITIZE_DIR)/test_power_lifecycle
 
 .PHONY: all check test test-sanitize tree-check psp-build launcher-stub package clean
 
@@ -23,12 +26,14 @@ test: $(HOST_TESTS)
 	$(HOST_TEST_GBA_SIO)
 	$(HOST_TEST_LINK_PROTOCOL)
 	$(HOST_TEST_LINK_SESSION)
+	$(HOST_TEST_POWER_LIFECYCLE)
 
 test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_codebreaker
 	$(HOST_SANITIZE_DIR)/test_gba_sio
 	$(HOST_SANITIZE_DIR)/test_link_protocol
 	$(HOST_SANITIZE_DIR)/test_link_session
+	$(HOST_SANITIZE_DIR)/test_power_lifecycle
 
 $(HOST_TEST_CODEBREAKER): tests/test_codebreaker.c source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_BUILD_DIR)
@@ -57,6 +62,12 @@ $(HOST_TEST_LINK_SESSION): tests/test_link_session.c \
 	 -Itests tests/test_link_session.c tests/fake_link_transport.c \
 	 source/src/link_session.c source/src/link_protocol.c source/src/gba_sio.c \
 	 -lz -o $(HOST_TEST_LINK_SESSION)
+
+$(HOST_TEST_POWER_LIFECYCLE): tests/test_power_lifecycle.c \
+ source/src/power_lifecycle.c source/src/power_lifecycle.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_power_lifecycle.c source/src/power_lifecycle.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_codebreaker: tests/test_codebreaker.c \
  source/src/codebreaker.c source/src/codebreaker.h
@@ -87,6 +98,12 @@ $(HOST_SANITIZE_DIR)/test_link_session: tests/test_link_session.c \
 	 -DZLIB_CONST -Isource/src -Itests tests/test_link_session.c \
 	 tests/fake_link_transport.c source/src/link_session.c \
 	 source/src/link_protocol.c source/src/gba_sio.c -lz -o $@
+
+$(HOST_SANITIZE_DIR)/test_power_lifecycle: tests/test_power_lifecycle.c \
+ source/src/power_lifecycle.c source/src/power_lifecycle.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_power_lifecycle.c source/src/power_lifecycle.c -o $@
 
 tree-check:
 	sh scripts/check-tree.sh

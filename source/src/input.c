@@ -180,10 +180,11 @@ GUI_ACTION_TYPE get_gui_input(void)
 {
   SceCtrlData ctrl_data;
   GUI_ACTION_TYPE new_button = CURSOR_NONE;
-
   u32 new_buttons;
   u32 analog_sensitivity = 20 + (option_analog_sensitivity * 10);
   u32 inv_analog_sensitivity = 255 - analog_sensitivity;
+
+  main_power_service();
 
   sceCtrlReadBufferPositive(&ctrl_data, 1);
 

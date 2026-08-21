@@ -33,6 +33,8 @@
 #define PSP_ADHOC_SEND_TIMEOUT     500000u
 #define PSP_ADHOC_POLL_DELAY       1000u
 #define PSP_ADHOC_CONTROL_DELAY    10000u
+#define PSP_ADHOC_SHUTDOWN_TIMEOUT 1000000u
+#define PSP_ADHOC_CLOSE_TIMEOUT    250000u
 
 #define SCE_ADHOC_ERROR_SOCKET_DELETED     ((int)0x80410707u)
 #define SCE_ADHOC_ERROR_WOULD_BLOCK        ((int)0x80410709u)
@@ -78,9 +80,9 @@ typedef struct
   int net_initialized;
   int adhoc_initialized;
   int control_initialized;
-  int control_connected;
-  int listener_id;
-  int socket_id;
+  volatile int control_connected;
+  volatile int listener_id;
+  volatile int socket_id;
   PspAdhocCommandType deferred_role;
   int deferred_role_valid;
   LinkProtocolParser parser;
@@ -213,23 +215,23 @@ static int psp_adhoc_is_closed_error(int error)
 
 static void psp_adhoc_close_connection(PspAdhocContext *context)
 {
-  if(context->socket_id >= 0)
-  {
-    sceNetAdhocPtpClose(context->socket_id, 0);
-    context->socket_id = -1;
-  }
+  int socket_id = context->socket_id;
+  int listener_id = context->listener_id;
+  int control_connected = context->control_connected;
 
-  if(context->listener_id >= 0)
-  {
-    sceNetAdhocPtpClose(context->listener_id, 0);
-    context->listener_id = -1;
-  }
+  context->socket_id = -1;
+  context->listener_id = -1;
+  context->control_connected = 0;
+  psp_adhoc_memory_barrier();
 
-  if(context->control_connected)
-  {
+  if(socket_id >= 0)
+    sceNetAdhocPtpClose(socket_id, 0);
+
+  if(listener_id >= 0)
+    sceNetAdhocPtpClose(listener_id, 0);
+
+  if(control_connected)
     sceNetAdhocctlDisconnect();
-    context->control_connected = 0;
-  }
 
   link_protocol_parser_init(&context->parser);
 }
@@ -945,6 +947,9 @@ int psp_adhoc_start(void)
 void psp_adhoc_stop(void)
 {
   PspAdhocCommand command;
+  SceUInt timeout;
+  int result;
+  int terminated = 0;
 
   if(psp_adhoc.thread_id < 0)
     return;
@@ -952,11 +957,39 @@ void psp_adhoc_stop(void)
   memset(&command, 0, sizeof(command));
   command.type = PSP_ADHOC_COMMAND_STOP;
   if(!psp_adhoc_command_push(&psp_adhoc, &command))
+  {
     psp_adhoc.stop_requested = 1;
-  sceKernelWaitThreadEnd(psp_adhoc.thread_id, NULL);
-  sceKernelDeleteThread(psp_adhoc.thread_id);
+    psp_adhoc_memory_barrier();
+  }
+
+  timeout = PSP_ADHOC_SHUTDOWN_TIMEOUT;
+  result = sceKernelWaitThreadEnd(psp_adhoc.thread_id, &timeout);
+  if(result < 0)
+  {
+    psp_adhoc.stop_requested = 1;
+    psp_adhoc_memory_barrier();
+    psp_adhoc_close_connection(&psp_adhoc);
+
+    timeout = PSP_ADHOC_CLOSE_TIMEOUT;
+    result = sceKernelWaitThreadEnd(psp_adhoc.thread_id, &timeout);
+  }
+
+  if(result < 0)
+  {
+    sceKernelTerminateDeleteThread(psp_adhoc.thread_id);
+    terminated = 1;
+    psp_adhoc_network_term(&psp_adhoc);
+    psp_adhoc.last_error = PSP_ADHOC_ERROR_SHUTDOWN;
+    psp_adhoc.state = PSP_ADHOC_FAILED;
+  }
+  else
+  {
+    sceKernelDeleteThread(psp_adhoc.thread_id);
+  }
+
   psp_adhoc.thread_id = -1;
-  psp_adhoc.state = PSP_ADHOC_STOPPED;
+  if(!terminated)
+    psp_adhoc.state = PSP_ADHOC_STOPPED;
 }
 
 LinkTransport psp_adhoc_transport(void)

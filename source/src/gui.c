@@ -3303,6 +3303,7 @@ u32 menu(void)
       main_link_disconnect(LINK_REASON_SUSPEND);
       update_backup_immediately();
       auto_savestate_sleep();
+      sleep_auto_saved = 1;
     }
 
     scePowerTick(0);
