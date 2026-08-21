@@ -28,14 +28,6 @@ extern u32 option_swap_confirm_buttons;
 
 #define GPSP_THEME_FILENAME             "tempgba_theme.cfg"
 #define GPSP_CONFIG_FILENAME            "tempgba.cfg"
-#define GPSP_CONFIG_NUM_GAMEPAD         16
-#define GPSP_CONFIG_NUM_PRE_EXTRA_SLOT  (18 + GPSP_CONFIG_NUM_GAMEPAD) // 34 words: options 0-17, gamepad 18-33
-#define GPSP_CONFIG_NUM_PRE_WINDOW_END  (19 + GPSP_CONFIG_NUM_GAMEPAD) // 35 words: + slot 18 = HBLANK cap, gamepad 19-34
-#define GPSP_CONFIG_NUM_PRE_VSYNC       (20 + GPSP_CONFIG_NUM_GAMEPAD) // 36 words: slots 18-19 HBLANK win, gamepad 20-35
-#define GPSP_CONFIG_NUM_PRE_SWAP_THEME  (21 + GPSP_CONFIG_NUM_GAMEPAD) // 37 words: slot 20 VSync, gamepad 21-36 (pre swap/theme slots)
-#define GPSP_CONFIG_NUM                 (23 + GPSP_CONFIG_NUM_GAMEPAD) // 39 words: slot 20 PSP VSync, slot 21 swap buttons, slot 22 themes, gamepad 23-38
-#define GPSP_CONFIG_NUM_LEGACY          (17 + GPSP_CONFIG_NUM_GAMEPAD) // before renderer option
-#define GPSP_GAME_CONFIG_NUM            (7 + 16)
 
 /* Runtime theme colors — initialized to OG theme defaults */
 u16 color_bg            = COLOR15( 3,  5,  8);
@@ -6160,121 +6152,43 @@ static s32 load_game_config_atomic(const char *primary)
   return 0;
 }
 
+static int build_game_config_path(char *path)
+{
+  char filename[MAX_FILE];
+  int length;
+
+  if(gamepak_filename[0] == '\0')
+    return 0;
+
+  change_ext(gamepak_filename, filename, ".cfg");
+  length = snprintf(path, MAX_PATH, "%s%s", dir_cfg, filename);
+  return length >= 0 && length < MAX_PATH;
+}
+
 static s32 save_game_config_file(void)
 {
-  SceUID game_config_file;
   char game_config_path[MAX_PATH];
-  char game_config_filename[MAX_FILE];
-  s32 return_value = -1;
+  s32 return_value;
 
-  if (gamepak_filename[0] == 0)
-    return return_value;
-
-  change_ext(gamepak_filename, game_config_filename, ".cfg");
-  sprintf(game_config_path, "%s%s", dir_cfg, game_config_filename);
+  if(!build_game_config_path(game_config_path))
+    return -1;
 
   scePowerLock(0);
-
   return_value = save_game_config_atomic(game_config_path);
   scePowerUnlock(0);
-  return return_value;
-
-  FILE_OPEN(game_config_file, game_config_path, WRITE);
-
-  if (FILE_CHECK_VALID(game_config_file))
-  {
-    u32 i;
-    u32 file_options[GPSP_GAME_CONFIG_NUM];
-
-    file_options[0] = option_screen_scale;
-    file_options[1] = option_screen_mag;
-    file_options[2] = option_screen_filter;
-    file_options[3] = option_frameskip_type;
-    file_options[4] = option_frameskip_value;
-    file_options[5] = option_clock_speed;
-    file_options[6] = option_sound_volume;
-
-    for (i = 0; i < 16; i++)
-    {
-      file_options[7 + i] = gamepad_config_map[i];
-    }
-
-    FILE_WRITE_ARRAY(game_config_file, file_options);
-    FILE_CLOSE(game_config_file);
-
-    return_value = 0;
-  }
-
-  scePowerUnlock(0);
-
   return return_value;
 }
 
 s32 save_config_file(void)
 {
-  SceUID config_file;
-  char config_path[MAX_PATH];
-
-  s32 ret_value = -1;
+  s32 return_value;
 
   save_game_config_file();
 
   scePowerLock(0);
-  ret_value = save_global_config();
+  return_value = save_global_config();
   scePowerUnlock(0);
-  return ret_value;
-
-  sprintf(config_path, "%s%s", main_path, GPSP_CONFIG_FILENAME);
-
-  scePowerLock(0);
-
-  FILE_OPEN(config_file, config_path, WRITE);
-
-  if (FILE_CHECK_VALID(config_file))
-  {
-    u32 i;
-    u32 file_options[GPSP_CONFIG_NUM];
-
-    file_options[0] = option_screen_scale;
-    file_options[1] = option_screen_mag;
-    file_options[2] = option_screen_filter;
-    file_options[3] = psp_fps_debug;
-    file_options[4] = option_frameskip_type;
-    file_options[5] = option_frameskip_value;
-    file_options[6] = option_clock_speed;
-    file_options[7] = option_sound_volume;
-    file_options[8] = option_stack_optimize;
-    /* Store mode with +4 marker so old 0/1 boolean configs can be migrated. */
-    file_options[9]   = option_ram_dynarec_policy + 4;
-    file_options[10]  = option_video_renderer;
-    file_options[11]  = option_oam_hijacking_enabled;
-    file_options[12]  = option_boot_mode;
-    file_options[13]  = option_update_backup;
-    file_options[14]  = option_screen_capture_format;
-    file_options[15]  = option_enable_analog;
-    file_options[16]  = option_analog_sensitivity;
-    file_options[17]  = option_language;
-    file_options[18]  = option_hblank_irq_window_start % 228;
-    file_options[19]  = option_hblank_irq_window_end % 228;
-    file_options[20]  = option_psp_vsync % 2;
-    file_options[21]  = option_swap_confirm_buttons;
-    file_options[22]  = option_theme % 9;
-
-
-    for (i = 0; i < 16; i++)
-    {
-      file_options[23 + i] = gamepad_config_map[i];
-    }
-
-    FILE_WRITE_ARRAY(config_file, file_options);
-    FILE_CLOSE(config_file);
-
-    ret_value = 0;
-  }
-
-  scePowerUnlock(0);
-
-  return ret_value;
+  return return_value;
 }
 
 
@@ -6284,12 +6198,10 @@ s32 save_config_file(void)
 
 s32 load_game_config_file(void)
 {
-  SceUID game_config_file;
-  char game_config_filename[MAX_FILE];
   char game_config_path[MAX_PATH];
 
-  change_ext(gamepak_filename, game_config_filename, ".cfg");
-  sprintf(game_config_path, "%s%s", dir_cfg, game_config_filename);
+  if(!build_game_config_path(game_config_path))
+    return -1;
 
   if(load_game_config_atomic(game_config_path) == 0)
     return 0;
@@ -6298,521 +6210,11 @@ s32 load_game_config_file(void)
   option_frameskip_value = 9;
   option_clock_speed = PSP_CLOCK_333;
   return -1;
-
-  FILE_OPEN(game_config_file, game_config_path, READ);
-
-  if (FILE_CHECK_VALID(game_config_file))
-  {
-    u32 file_size = file_length(game_config_path);
-
-    // Sanity check: File size must be the right size
-    if (file_size == (GPSP_GAME_CONFIG_NUM * 4))
-    {
-      u32 i;
-      u32 file_options[file_size / 4];
-      s32 menu_button = -1;
-
-      FILE_READ_ARRAY(game_config_file, file_options);
-
-      option_screen_scale     = file_options[0] % SCREEN_SCALE_COUNT;
-      option_screen_mag       = file_options[1] % 201;
-      option_screen_filter    = file_options[2] % 2;
-      option_frameskip_type   = file_options[3] % 3;
-      option_frameskip_value  = file_options[4];
-      option_clock_speed      = file_options[5] % 4;
-      option_sound_volume     = file_options[6] % 11;
-
-      for (i = 0; i < 16; i++)
-      {
-        gamepad_config_map[i] = file_options[7 + i] % (BUTTON_ID_NONE + 1);
-
-        if (gamepad_config_map[i] == BUTTON_ID_MENU)
-          menu_button = i;
-      }
-
-      // hardcode triangle to main menu when home button is not enabled
-      if ((enable_home_menu == 0) && (menu_button == -1))
-        gamepad_config_map[0] = BUTTON_ID_MENU;
-
-      if (option_frameskip_value > 9)
-        option_frameskip_value = 9;
-
-      FILE_CLOSE(game_config_file);
-
-      return 0;
-    }
-  }
-
-  option_frameskip_type   = FRAMESKIP_AUTO;
-  option_frameskip_value  = 9;
-  option_clock_speed      = PSP_CLOCK_333;
-
-  return -1;
-}
-
-static void load_hblank_irq_window_from_cap(u32 cap)
-{
-  if (cap == 0)
-  {
-    option_hblank_irq_window_start  = 0;
-    option_hblank_irq_window_end    = 0;
-  }
-  else
-  {
-    option_hblank_irq_window_start  = 1;
-    option_hblank_irq_window_end    = cap % 228;
-  }
 }
 
 s32 load_config_file(void)
 {
-  SceUID config_file;
-  char config_path[MAX_PATH];
-
   return load_global_config();
-
-  sprintf(config_path, "%s%s", main_path, GPSP_CONFIG_FILENAME);
-
-  FILE_OPEN(config_file, config_path, READ);
-
-  if (FILE_CHECK_VALID(config_file))
-  {
-    u32 file_size = file_length(config_path);
-
-    if (file_size == (GPSP_CONFIG_NUM * 4))
-    {
-      u32 i;
-      u32 file_options[file_size / 4];
-      s32 menu_button = -1;
-
-      FILE_READ_ARRAY(config_file, file_options);
-
-      option_screen_scale     = file_options[0] % SCREEN_SCALE_COUNT;
-      option_screen_mag       = file_options[1] % 201;
-      option_screen_filter    = file_options[2] % 2;
-      psp_fps_debug           = file_options[3] % 2;
-      option_frameskip_type   = file_options[4] % 3;
-      option_frameskip_value  = file_options[5];
-      option_clock_speed      = file_options[6] % 4;
-      option_sound_volume     = file_options[7] % 11;
-      option_stack_optimize   = file_options[8] % 2;
-      {
-        u32 stored_ram_dynarec_policy = file_options[9];
-        if (stored_ram_dynarec_policy >= 4 && stored_ram_dynarec_policy <= 6)
-        {
-          option_ram_dynarec_policy = stored_ram_dynarec_policy - 4;
-        }
-        else if (stored_ram_dynarec_policy <= 1)
-        {
-          /* Migration path from old bool option:
-           * OFF(0)->Partial no reuse, ON(1)->Partial with reuse. */
-          option_ram_dynarec_policy = stored_ram_dynarec_policy + 1;
-        }
-        else
-        {
-          option_ram_dynarec_policy = RAM_DYNAREC_PARTIAL_WITH_REUSE;
-        }
-      }
-      option_video_renderer           = file_options[10] % 2;
-      option_oam_hijacking_enabled    = file_options[11] % 2;
-      option_boot_mode                = file_options[12] % 2;
-      option_update_backup            = file_options[13] % 2;
-      option_screen_capture_format    = file_options[14] % 2;
-      option_enable_analog            = file_options[15] % 2;
-      option_analog_sensitivity       = file_options[16] % 10;
-      option_language                 = file_options[17] % 5;
-      option_hblank_irq_window_start  = file_options[18] % 228;
-      option_hblank_irq_window_end    = file_options[19] % 228;
-      option_psp_vsync                = file_options[20] % 2;
-      option_swap_confirm_buttons     = file_options[21] % 2;
-      option_theme                    = file_options[22] % 9;
-      apply_theme(option_theme);
-
-      for (i = 0; i < 16; i++)
-      {
-        gamepad_config_map[i] = file_options[23 + i] % (BUTTON_ID_NONE + 1);
-
-        if (gamepad_config_map[i] == BUTTON_ID_MENU)
-          menu_button = i;
-      }
-
-      // hardcode triangle to main menu when home button is not enabled
-      if ((enable_home_menu == 0) && (menu_button == -1))
-        gamepad_config_map[0] = BUTTON_ID_MENU;
-
-      FILE_CLOSE(config_file);
-    }
-    else if (file_size == (GPSP_CONFIG_NUM_PRE_SWAP_THEME * 4))
-    {
-      u32 i;
-      u32 file_options[file_size / 4];
-      s32 menu_button = -1;
-
-      FILE_READ_ARRAY(config_file, file_options);
-
-      option_screen_scale     = file_options[0] % SCREEN_SCALE_COUNT;
-      option_screen_mag       = file_options[1] % 201;
-      option_screen_filter    = file_options[2] % 2;
-      psp_fps_debug           = file_options[3] % 2;
-      option_frameskip_type   = file_options[4] % 3;
-      option_frameskip_value  = file_options[5];
-      option_clock_speed      = file_options[6] % 4;
-      option_sound_volume     = file_options[7] % 11;
-      option_stack_optimize   = file_options[8] % 2;
-      {
-        u32 stored_ram_dynarec_policy = file_options[9];
-        if (stored_ram_dynarec_policy >= 4 && stored_ram_dynarec_policy <= 6)
-        {
-          option_ram_dynarec_policy = stored_ram_dynarec_policy - 4;
-        }
-        else if (stored_ram_dynarec_policy <= 1)
-        {
-          option_ram_dynarec_policy = stored_ram_dynarec_policy + 1;
-        }
-        else
-        {
-          option_ram_dynarec_policy = RAM_DYNAREC_PARTIAL_WITH_REUSE;
-        }
-      }
-      option_video_renderer           = file_options[10] % 2;
-      option_oam_hijacking_enabled    = file_options[11] % 2;
-      option_boot_mode                = file_options[12] % 2;
-      option_update_backup            = file_options[13] % 2;
-      option_screen_capture_format    = file_options[14] % 2;
-      option_enable_analog            = file_options[15] % 2;
-      option_analog_sensitivity       = file_options[16] % 10;
-      option_language                 = file_options[17] % 5;
-      option_hblank_irq_window_start  = file_options[18] % 228;
-      option_hblank_irq_window_end    = file_options[19] % 228;
-      option_psp_vsync                = file_options[20] % 2;
-      option_swap_confirm_buttons     = 0;
-      option_theme                    = 0;
-      apply_theme(option_theme);
-
-      for (i = 0; i < 16; i++)
-      {
-        gamepad_config_map[i] = file_options[21 + i] % (BUTTON_ID_NONE + 1);
-
-        if (gamepad_config_map[i] == BUTTON_ID_MENU)
-          menu_button = i;
-      }
-
-      if ((enable_home_menu == 0) && (menu_button == -1))
-        gamepad_config_map[0] = BUTTON_ID_MENU;
-
-      FILE_CLOSE(config_file);
-    }
-    else if (file_size == (GPSP_CONFIG_NUM_PRE_VSYNC * 4))
-    {
-      u32 i;
-      u32 file_options[file_size / 4];
-      s32 menu_button = -1;
-
-      FILE_READ_ARRAY(config_file, file_options);
-
-      option_screen_scale     = file_options[0] % SCREEN_SCALE_COUNT;
-      option_screen_mag       = file_options[1] % 201;
-      option_screen_filter    = file_options[2] % 2;
-      psp_fps_debug           = file_options[3] % 2;
-      option_frameskip_type   = file_options[4] % 3;
-      option_frameskip_value  = file_options[5];
-      option_clock_speed      = file_options[6] % 4;
-      option_sound_volume     = file_options[7] % 11;
-      option_stack_optimize   = file_options[8] % 2;
-      {
-        u32 stored_ram_dynarec_policy = file_options[9];
-        if (stored_ram_dynarec_policy >= 4 && stored_ram_dynarec_policy <= 6)
-        {
-          option_ram_dynarec_policy = stored_ram_dynarec_policy - 4;
-        }
-        else if (stored_ram_dynarec_policy <= 1)
-        {
-          /* Migration path from old bool option:
-           * OFF(0)->Partial no reuse, ON(1)->Partial with reuse. */
-          option_ram_dynarec_policy = stored_ram_dynarec_policy + 1;
-        }
-        else
-        {
-          option_ram_dynarec_policy = RAM_DYNAREC_PARTIAL_WITH_REUSE;
-        }
-      }
-      option_video_renderer           = file_options[10] % 2;
-      option_oam_hijacking_enabled    = file_options[11] % 2;
-      option_boot_mode                = file_options[12] % 2;
-      option_update_backup            = file_options[13] % 2;
-      option_screen_capture_format    = file_options[14] % 2;
-      option_enable_analog            = file_options[15] % 2;
-      option_analog_sensitivity       = file_options[16] % 10;
-      option_language                 = file_options[17] % 5;
-      option_hblank_irq_window_start  = file_options[18] % 228;
-      option_hblank_irq_window_end    = file_options[19] % 228;
-      option_psp_vsync                = 0;
-      option_swap_confirm_buttons     = 0;
-      option_theme                    = 0;
-      apply_theme(option_theme);
-
-      for (i = 0; i < 16; i++)
-      {
-        gamepad_config_map[i] = file_options[20 + i] % (BUTTON_ID_NONE + 1);
-
-        if (gamepad_config_map[i] == BUTTON_ID_MENU)
-          menu_button = i;
-      }
-
-      // hardcode triangle to main menu when home button is not enabled
-      if ((enable_home_menu == 0) && (menu_button == -1))
-        gamepad_config_map[0] = BUTTON_ID_MENU;
-
-      FILE_CLOSE(config_file);
-    }
-    else if (file_size == (GPSP_CONFIG_NUM_PRE_WINDOW_END * 4))
-    {
-      u32 i;
-      u32 file_options[file_size / 4];
-      s32 menu_button = -1;
-
-      FILE_READ_ARRAY(config_file, file_options);
-
-      option_screen_scale     = file_options[0] % SCREEN_SCALE_COUNT;
-      option_screen_mag       = file_options[1] % 201;
-      option_screen_filter    = file_options[2] % 2;
-      psp_fps_debug           = file_options[3] % 2;
-      option_frameskip_type   = file_options[4] % 3;
-      option_frameskip_value  = file_options[5];
-      option_clock_speed      = file_options[6] % 4;
-      option_sound_volume     = file_options[7] % 11;
-      option_stack_optimize   = file_options[8] % 2;
-      {
-        u32 stored_ram_dynarec_policy = file_options[9];
-        if (stored_ram_dynarec_policy >= 4 && stored_ram_dynarec_policy <= 6)
-        {
-          option_ram_dynarec_policy = stored_ram_dynarec_policy - 4;
-        }
-        else if (stored_ram_dynarec_policy <= 1)
-        {
-          option_ram_dynarec_policy = stored_ram_dynarec_policy + 1;
-        }
-        else
-        {
-          option_ram_dynarec_policy = RAM_DYNAREC_PARTIAL_WITH_REUSE;
-        }
-      }
-      option_video_renderer         = file_options[10] % 2;
-      option_oam_hijacking_enabled  = file_options[11] % 2;
-      option_boot_mode              = file_options[12] % 2;
-      option_update_backup          = file_options[13] % 2;
-      option_screen_capture_format  = file_options[14] % 2;
-      option_enable_analog          = file_options[15] % 2;
-      option_analog_sensitivity     = file_options[16] % 10;
-      option_language               = file_options[17] % 5;
-      load_hblank_irq_window_from_cap(file_options[18] % 228);
-
-      for (i = 0; i < 16; i++)
-      {
-        gamepad_config_map[i] = file_options[19 + i] % (BUTTON_ID_NONE + 1);
-
-        if (gamepad_config_map[i] == BUTTON_ID_MENU)
-          menu_button = i;
-      }
-
-      // hardcode triangle to main menu when home button is not enabled
-      if ((enable_home_menu == 0) && (menu_button == -1))
-        gamepad_config_map[0] = BUTTON_ID_MENU;
-
-      FILE_CLOSE(config_file);
-    }
-    else if (file_size == (GPSP_CONFIG_NUM_PRE_EXTRA_SLOT * 4))
-    {
-      u32 i;
-      u32 file_options[file_size / 4];
-      s32 menu_button = -1;
-
-      FILE_READ_ARRAY(config_file, file_options);
-
-      option_screen_scale     = file_options[0] % SCREEN_SCALE_COUNT;
-      option_screen_mag       = file_options[1] % 201;
-      option_screen_filter    = file_options[2] % 2;
-      psp_fps_debug           = file_options[3] % 2;
-      option_frameskip_type   = file_options[4] % 3;
-      option_frameskip_value  = file_options[5];
-      option_clock_speed      = file_options[6] % 4;
-      option_sound_volume     = file_options[7] % 11;
-      option_stack_optimize   = file_options[8] % 2;
-      {
-        u32 stored_ram_dynarec_policy = file_options[9];
-        if (stored_ram_dynarec_policy >= 4 && stored_ram_dynarec_policy <= 6)
-        {
-          option_ram_dynarec_policy = stored_ram_dynarec_policy - 4;
-        }
-        else if (stored_ram_dynarec_policy <= 1)
-        {
-          option_ram_dynarec_policy = stored_ram_dynarec_policy + 1;
-        }
-        else
-        {
-          option_ram_dynarec_policy = RAM_DYNAREC_PARTIAL_WITH_REUSE;
-        }
-      }
-      option_video_renderer           = file_options[10] % 2;
-      option_oam_hijacking_enabled    = file_options[11] % 2;
-      option_boot_mode                = file_options[12] % 2;
-      option_update_backup            = file_options[13] % 2;
-      option_screen_capture_format    = file_options[14] % 2;
-      option_enable_analog            = file_options[15] % 2;
-      option_analog_sensitivity       = file_options[16] % 10;
-      option_language                 = file_options[17] % 5;
-      option_hblank_irq_window_start  = 1;
-      option_hblank_irq_window_end    = 160;
-
-      for (i = 0; i < 16; i++)
-      {
-        gamepad_config_map[i] = file_options[18 + i] % (BUTTON_ID_NONE + 1);
-
-        if (gamepad_config_map[i] == BUTTON_ID_MENU)
-          menu_button = i;
-      }
-
-      // hardcode triangle to main menu when home button is not enabled
-      if ((enable_home_menu == 0) && (menu_button == -1))
-        gamepad_config_map[0] = BUTTON_ID_MENU;
-
-      FILE_CLOSE(config_file);
-    }
-    else if (file_size == (GPSP_CONFIG_NUM_LEGACY * 4))
-    {
-      u32 i;
-      u32 file_options[file_size / 4];
-      s32 menu_button = -1;
-
-      FILE_READ_ARRAY(config_file, file_options);
-
-      option_screen_scale     = file_options[0] % SCREEN_SCALE_COUNT;
-      option_screen_mag       = file_options[1] % 201;
-      option_screen_filter    = file_options[2] % 2;
-      psp_fps_debug           = file_options[3] % 2;
-      option_frameskip_type   = file_options[4] % 3;
-      option_frameskip_value  = file_options[5];
-      option_clock_speed      = file_options[6] % 4;
-      option_sound_volume     = file_options[7] % 11;
-      option_stack_optimize   = file_options[8] % 2;
-      {
-        u32 stored_ram_dynarec_policy = file_options[9];
-        if (stored_ram_dynarec_policy >= 4 && stored_ram_dynarec_policy <= 6)
-          option_ram_dynarec_policy = stored_ram_dynarec_policy - 4;
-        else if (stored_ram_dynarec_policy <= 1)
-          option_ram_dynarec_policy = stored_ram_dynarec_policy + 1;
-        else
-          option_ram_dynarec_policy = RAM_DYNAREC_PARTIAL_WITH_REUSE;
-      }
-      option_video_renderer         = VIDEO_RENDERER_NEW;
-      option_oam_hijacking_enabled  = file_options[10] % 2;
-      option_boot_mode              = file_options[11] % 2;
-      option_update_backup          = file_options[12] % 2;
-      option_screen_capture_format  = file_options[13] % 2;
-      option_enable_analog          = file_options[14] % 2;
-      option_analog_sensitivity     = file_options[15] % 10;
-      option_language               = file_options[16] % 5;
-
-      for (i = 0; i < 16; i++)
-      {
-        gamepad_config_map[i] = file_options[17 + i] % (BUTTON_ID_NONE + 1);
-
-        if (gamepad_config_map[i] == BUTTON_ID_MENU)
-          menu_button = i;
-      }
-
-      // hardcode triangle to main menu when home button is not enabled
-      if ((enable_home_menu == 0) && (menu_button == -1))
-        gamepad_config_map[0] = BUTTON_ID_MENU;
-
-      option_hblank_irq_window_start = 1;
-      option_hblank_irq_window_end   = 160;
-
-      FILE_CLOSE(config_file);
-    }
-    else if (file_size == ((16 + 16) * 4))
-    {
-      u32 i;
-      u32 file_options[file_size / 4];
-      s32 menu_button = -1;
-
-      FILE_READ_ARRAY(config_file, file_options);
-
-      option_screen_scale           = file_options[0] % SCREEN_SCALE_COUNT;
-      option_screen_mag             = file_options[1] % 201;
-      option_screen_filter          = file_options[2] % 2;
-      psp_fps_debug                 = file_options[3] % 2;
-      option_frameskip_type         = file_options[4] % 3;
-      option_frameskip_value        = file_options[5];
-      option_clock_speed            = file_options[6] % 4;
-      option_sound_volume           = file_options[7] % 11;
-      option_stack_optimize         = file_options[8] % 2;
-      option_ram_dynarec_policy     = RAM_DYNAREC_PARTIAL_WITH_REUSE;
-      option_video_renderer         = VIDEO_RENDERER_NEW;
-      option_oam_hijacking_enabled  = 0;
-      option_boot_mode              = file_options[9] % 2;
-      option_update_backup          = file_options[10] % 2;
-      option_screen_capture_format  = file_options[11] % 2;
-      option_enable_analog          = file_options[12] % 2;
-      option_analog_sensitivity     = file_options[13] % 10;
-      option_language               = file_options[14] % 5;
-
-      for (i = 0; i < 16; i++)
-      {
-        gamepad_config_map[i] = file_options[15 + i] % (BUTTON_ID_NONE + 1);
-        if (gamepad_config_map[i] == BUTTON_ID_MENU)
-          menu_button = i;
-      }
-
-      // hardcode triangle to main menu when home button is not enabled
-      if ((enable_home_menu == 0) && (menu_button == -1))
-        gamepad_config_map[0] = BUTTON_ID_MENU;
-
-      option_hblank_irq_window_start = 1;
-      option_hblank_irq_window_end   = 160;
-
-      FILE_CLOSE(config_file);
-    }
-    else
-      FILE_CLOSE(config_file);
-
-    return 0;
-  }
-
-  option_screen_scale             = SCALED_16X9_AUTO;
-  option_screen_mag               = 170;
-  option_screen_filter            = FILTER_BILINEAR;
-  psp_fps_debug                   = 0;
-  option_sound_volume             = 10;
-  option_stack_optimize           = 1;
-  option_ram_dynarec_policy       = RAM_DYNAREC_PARTIAL_WITH_REUSE;
-  option_video_renderer           = VIDEO_RENDERER_NEW;
-  option_oam_hijacking_enabled    = 0;
-  option_boot_mode                = 0;
-  option_update_backup            = 1;		//auto
-  option_screen_capture_format    = 0;
-  option_enable_analog            = 0;
-  option_analog_sensitivity       = 4;
-  option_hblank_irq_window_start  = 1;
-  option_hblank_irq_window_end    = 160;
-  option_psp_vsync                = 0;
-  option_theme                    = 0;
-  apply_theme(option_theme);
-
-  int id_language;
-  sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_LANGUAGE, &id_language);
-  if (id_language == PSP_SYSTEMPARAM_LANGUAGE_JAPANESE)
-    option_language = 0;
-  else if (id_language == PSP_SYSTEMPARAM_LANGUAGE_CHINESE_SIMPLIFIED)
-    option_language = 2;
-  else if (id_language == PSP_SYSTEMPARAM_LANGUAGE_CHINESE_TRADITIONAL)
-    option_language = 3;
-  else if (id_language == PSP_SYSTEMPARAM_LANGUAGE_ITALIAN)
-		option_language = 4;
-  else
-    option_language = 1; // english
-
-  return -1;
 }
 
 
