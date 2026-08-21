@@ -41,9 +41,16 @@ For best performance on real hardware, use the 333 MHz clock option. Keep
 automatic frameskip enabled unless a specific game behaves better with another
 setting.
 
+## Video
+
+Select **16:9 Auto** for sharp fullscreen output with automatic performance
+fallback. Existing installations keep their previous scale setting, so this
+choice must be made once after upgrading. The FPS overlay shows `SHARP` or
+`CRISP` while automatic mode is active.
+
 ## Link cable
 
-Version 1.1.0 can connect two PSP systems over local ad-hoc Wi-Fi. Enable the
+GBA Rush PSP can connect two PSP systems over local ad-hoc Wi-Fi. Enable the
 physical WLAN switch on both systems, load the intended game on each, then use
 **Main menu > Link cable** to create a session on Player 1 and join it on
 Player 2. Both systems should use the same GBA Rush PSP build. Savestates and
@@ -57,8 +64,8 @@ compatibility limits, status messages, and recovery steps.
 Replace `EBOOT.PBP` and `exception.prx`. Keep your BIOS, ROMs, saves, states,
 cheat lists, and configuration files. Back up save data before upgrading.
 
-Existing 1.0.0 settings and save files remain in place. Close any active link
-session before replacing the executable files.
+Existing settings and save files remain in place. Close any active link session
+before replacing the executable files.
 
 The emulator itself can run from a legacy folder named `TempGBA4PSP`. The
 single-game launcher now looks for `GBARushPSP` by default; set an explicit

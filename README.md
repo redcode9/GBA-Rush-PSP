@@ -41,6 +41,8 @@ part of this repository or its release packages.
   scanning inactive lists in hot paths.
 - Configurable hold-to-fast-forward with unthrottled emulation, paced display
   updates, and immediate audio recovery.
+- Adaptive sharp 16:9 output with a two-pass PSP GE path and automatic
+  performance fallback.
 - Two-PSP GBA link cable emulation over local ad-hoc Wi-Fi.
 - Suspend and resume recovery that keeps audio, ROM access, saves, and worker
   shutdown under foreground control.
@@ -91,9 +93,20 @@ frames per second, and discards queued audio instead of allowing a backlog to
 stall emulation. Releasing the button restores the selected frameskip and audio
 behavior immediately.
 
+## Video
+
+`16:9 Auto` fills the PSP display and starts with the two-pass `Sharp` path.
+After sustained timing misses it switches to single-pass `Crisp`; it returns to
+`Sharp` only after a longer stable interval. Manual sharp, nearest, bilinear,
+and aspect-correct modes remain available.
+
+Existing installations keep their saved scale mode. Select `16:9 Auto` once
+to enable it. The optional FPS overlay shows the active `SHARP` or `CRISP`
+level.
+
 ## Link cable
 
-GBA Rush PSP 1.1.0 can connect two PSP systems as Player 1 and Player 2 over
+GBA Rush PSP can connect two PSP systems as Player 1 and Player 2 over
 local ad-hoc Wi-Fi. It implements GBA Normal 8-bit, Normal 32-bit, and
 Multiplayer 16-bit cable transfers with synchronized timing and serial
 interrupts. Both systems should run the same emulator build.
@@ -131,10 +144,10 @@ not tracked.
 After a successful PSP build:
 
 ```sh
-make package VERSION=1.1.0
+make package VERSION=1.2.0
 ```
 
-This creates `GBA-Rush-PSP-1.1.0.zip` and its SHA-256 checksum in `dist/`, then
+This creates `GBA-Rush-PSP-1.2.0.zip` and its SHA-256 checksum in `dist/`, then
 extracts and verifies the archive against the approved release manifest. The
 package contains only `EBOOT.PBP`, `exception.prx`, installation notes,
 changelog, and license. It excludes BIOS files, ROMs, saves, local settings,

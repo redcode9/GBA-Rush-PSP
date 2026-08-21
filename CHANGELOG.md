@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.0 - 2026-08-21
+
+### Added
+
+- `16:9 Auto`, which starts with a sharp two-pass fullscreen renderer and
+  falls back to single-pass nearest scaling after sustained timing misses.
+- A manual `16:9 Sharp` mode and `SHARP`/`CRISP` status in the FPS overlay.
+
+### Changed
+
+- Fullscreen presentation now overlaps GE work with the remaining GBA VBlank.
+- Fullscreen paths no longer clear pixels that the next frame fully replaces.
+- New configurations default to `16:9 Auto`; existing scale values are kept.
+
+### Fixed
+
+- Video draw-buffer, viewport, texture, and filter state is rebuilt after PSP
+  resume before presentation restarts.
+
 ## 1.1.0 - 2026-08-21
 
 ### Added
