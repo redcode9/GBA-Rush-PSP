@@ -32,6 +32,22 @@ then
   exit 1
 fi
 
+if rg -q 'sceAudioOutput2' source/src/sound.c
+then
+  echo "SRC audio lifecycle calls the Output2 API family" >&2
+  exit 1
+fi
+
+audio_power_body=$(sed -n \
+  '/^void sound_power_suspend/,/^void sound_power_resume_finish/p' \
+  source/src/sound.c)
+if ! printf '%s\n' "$audio_power_body" | rg -q 'SOUND_OPERATION_TIMEOUT' || \
+   ! printf '%s\n' "$audio_power_body" | rg -q 'sceKernelWaitSema'
+then
+  echo "Audio suspend and resume are not serialized with a deadline" >&2
+  exit 1
+fi
+
 if ! sed -n '/^void synchronize_sound/,/^void update_gbc_sound/p' \
   source/src/sound.c | rg -q 'SOUND_OPERATION_TIMEOUT'
 then
