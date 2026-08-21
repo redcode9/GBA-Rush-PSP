@@ -183,6 +183,38 @@ static void test_older_binary_layouts(void)
   assert(decoded.gamepad[15] == 15);
 }
 
+static void test_game_binary_layout(void)
+{
+  uint32_t words[23] = { 0 };
+  uint8_t encoded[23 * 4];
+  ConfigModel decoded;
+  size_t i;
+
+  words[0] = 6;
+  words[1] = 190;
+  words[2] = 0;
+  words[3] = 2;
+  words[4] = 4;
+  words[5] = 2;
+  words[6] = 8;
+  for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
+    words[7 + i] = (uint32_t)(15 - i);
+  encode_legacy_words(encoded, words, 23);
+
+  assert(config_model_decode(encoded, sizeof(encoded), &decoded) ==
+         CONFIG_MODEL_DECODE_GAME_LEGACY);
+  assert(decoded.screen_scale == 6);
+  assert(decoded.screen_magnification == 190);
+  assert(decoded.screen_filter == 0);
+  assert(decoded.frameskip_type == 2);
+  assert(decoded.frameskip_value == 4);
+  assert(decoded.clock_speed == 2);
+  assert(decoded.sound_volume == 8);
+  assert(decoded.gamepad[0] == 15);
+  assert(decoded.gamepad[15] == 0);
+  assert(decoded.theme == 0);
+}
+
 static void test_rejects_unknown_or_truncated_data(void)
 {
   uint8_t bytes[CONFIG_MODEL_ENCODED_SIZE] = { 0 };
@@ -201,6 +233,7 @@ int main(void)
   test_defaults_and_versioned_round_trip();
   test_current_binary_migration_and_field_validation();
   test_older_binary_layouts();
+  test_game_binary_layout();
   test_rejects_unknown_or_truncated_data();
   puts("config model tests passed");
   return 0;

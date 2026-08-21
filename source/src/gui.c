@@ -6082,6 +6082,84 @@ static s32 load_global_config(void)
   return -1;
 }
 
+static int config_companion_paths(const char *primary, char *temporary,
+ char *recovery)
+{
+  int result;
+
+  result = snprintf(temporary, MAX_PATH, "%s.tmp", primary);
+  if(result < 0 || result >= MAX_PATH)
+    return 0;
+  result = snprintf(recovery, MAX_PATH, "%s.bak", primary);
+  return result >= 0 && result < MAX_PATH;
+}
+
+static void capture_game_config(ConfigModel *model)
+{
+  u32 i;
+
+  config_model_defaults(model);
+  model->screen_scale = option_screen_scale;
+  model->screen_magnification = option_screen_mag;
+  model->screen_filter = option_screen_filter;
+  model->frameskip_type = option_frameskip_type;
+  model->frameskip_value = option_frameskip_value;
+  model->clock_speed = option_clock_speed;
+  model->sound_volume = option_sound_volume;
+  for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
+    model->gamepad[i] = gamepad_config_map[i];
+}
+
+static void apply_game_config(const ConfigModel *model)
+{
+  u32 i;
+  int has_menu_button = 0;
+
+  option_screen_scale = model->screen_scale;
+  option_screen_mag = model->screen_magnification;
+  option_screen_filter = model->screen_filter;
+  option_frameskip_type = model->frameskip_type;
+  option_frameskip_value = model->frameskip_value;
+  option_clock_speed = model->clock_speed;
+  option_sound_volume = model->sound_volume;
+  for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
+  {
+    gamepad_config_map[i] = model->gamepad[i];
+    if(gamepad_config_map[i] == BUTTON_ID_MENU)
+      has_menu_button = 1;
+  }
+  if(!enable_home_menu && !has_menu_button)
+    gamepad_config_map[0] = BUTTON_ID_MENU;
+  rebuild_fast_forward_button_mask();
+}
+
+static s32 save_game_config_atomic(const char *primary)
+{
+  ConfigModel model;
+  char temporary[MAX_PATH];
+  char recovery[MAX_PATH];
+
+  if(!config_companion_paths(primary, temporary, recovery))
+    return -1;
+  capture_game_config(&model);
+  return config_store_save(&config_store_io, primary, temporary, recovery,
+   &model) == CONFIG_STORE_OK ? 0 : -1;
+}
+
+static s32 load_game_config_atomic(const char *primary)
+{
+  ConfigModel model;
+  char temporary[MAX_PATH];
+  char recovery[MAX_PATH];
+
+  if(!config_companion_paths(primary, temporary, recovery) ||
+     config_store_load(&config_store_io, primary, recovery, &model, NULL) !=
+      CONFIG_STORE_OK)
+    return -1;
+  apply_game_config(&model);
+  return 0;
+}
+
 static s32 save_game_config_file(void)
 {
   SceUID game_config_file;
@@ -6096,6 +6174,10 @@ static s32 save_game_config_file(void)
   sprintf(game_config_path, "%s%s", dir_cfg, game_config_filename);
 
   scePowerLock(0);
+
+  return_value = save_game_config_atomic(game_config_path);
+  scePowerUnlock(0);
+  return return_value;
 
   FILE_OPEN(game_config_file, game_config_path, WRITE);
 
@@ -6208,6 +6290,14 @@ s32 load_game_config_file(void)
 
   change_ext(gamepak_filename, game_config_filename, ".cfg");
   sprintf(game_config_path, "%s%s", dir_cfg, game_config_filename);
+
+  if(load_game_config_atomic(game_config_path) == 0)
+    return 0;
+
+  option_frameskip_type = FRAMESKIP_AUTO;
+  option_frameskip_value = 9;
+  option_clock_speed = PSP_CLOCK_333;
+  return -1;
 
   FILE_OPEN(game_config_file, game_config_path, READ);
 

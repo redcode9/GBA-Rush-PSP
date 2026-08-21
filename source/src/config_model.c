@@ -208,7 +208,7 @@ static int legacy_word_count_supported(size_t word_count)
 {
   return word_count == 39 || word_count == 37 || word_count == 36 ||
          word_count == 35 || word_count == 34 || word_count == 33 ||
-         word_count == 32;
+         word_count == 32 || word_count == 23;
 }
 
 static ConfigModelDecodeResult decode_legacy(const uint8_t *data, size_t size,
@@ -229,6 +229,22 @@ static ConfigModelDecodeResult decode_legacy(const uint8_t *data, size_t size,
 
   config_model_defaults(&decoded);
   model_to_values(&decoded, values);
+  if(word_count == 23)
+  {
+    values[0] = words[0];
+    values[1] = words[1];
+    values[2] = words[2];
+    values[4] = words[3];
+    values[5] = words[4];
+    values[6] = words[5];
+    values[7] = words[6];
+    for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
+      values[23 + i] = words[7 + i];
+    values_to_model(values, &decoded);
+    *model = decoded;
+    return CONFIG_MODEL_DECODE_GAME_LEGACY;
+  }
+
   for(i = 0; i < 9; i++)
     values[i] = words[i];
 
