@@ -499,6 +499,12 @@
   // MSG_SCN_SCALED_16X9_GU
   "16:9 GU",
 
+  // MSG_SCN_SCALED_16X9_SHARP
+  "16:9 Sharp",
+
+  // MSG_SCN_SCALED_16X9_AUTO
+  "16:9 Auto",
+
   // MSG_LANG_JAPANESE
   "日语",
 

@@ -3,6 +3,8 @@
 
 #include <psptypes.h>
 
+#include "video_adaptive.h"
+
 extern u16 *screen_texture;
 extern int (*__draw_volume_status)(int draw);
 
@@ -10,6 +12,12 @@ void init_video(int devkit_version);
 void video_term(void);
 
 void flip_screen(u32 vsync);
+void video_sync_present(void);
+u32 video_last_ge_wait_us(void);
+void video_power_suspend(void);
+void video_power_resume(void);
+void video_adaptive_frame_complete(int frame_skipped, int audio_event);
+VideoAdaptiveQuality video_active_quality(void);
 
 void video_resolution_large(void);
 void video_resolution_small(void);
@@ -42,4 +50,3 @@ int draw_volume_status(int draw);
 int draw_volume_status_null(int draw);
 
 #endif /* PSP_VIDEO_H */
-

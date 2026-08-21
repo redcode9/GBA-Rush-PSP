@@ -39,7 +39,7 @@ PSP_MAIN_THREAD_PARAMS(PRIORITY, STACK_SIZE_KB, ATTRIBUTE);
 PSP_HEAP_SIZE_KB(-800);
 
 
-u32 option_screen_scale = SCALED_X15_GU;
+u32 option_screen_scale = SCALED_16X9_AUTO;
 u32 option_screen_mag = 170;
 u32 option_screen_filter = FILTER_BILINEAR;
 u32 option_sound_volume = 10;
@@ -696,6 +696,8 @@ u32 update_gba(void)
           if (draw_this_frame != 0)
             flip_screen(option_psp_vsync);
 
+          video_adaptive_frame_complete(draw_this_frame == 0, 0);
+
           vcount = 0;
         }
 
@@ -841,8 +843,22 @@ static void synchronize(void)
     // fps
     if (psp_fps_debug != 0)
     {
-      char print_buffer[16];
-      sprintf(print_buffer, "%02ld(%02ld)", (long)fps, (long)frames_drawn);
+      char print_buffer[24];
+
+      if(option_screen_scale == SCALED_16X9_AUTO)
+      {
+        const char *quality =
+         video_active_quality() == VIDEO_ADAPTIVE_QUALITY_SHARP ?
+          "SHARP" : "CRISP";
+
+        sprintf(print_buffer, "%02ld(%02ld) %s", (long)fps,
+         (long)frames_drawn, quality);
+      }
+      else
+      {
+        sprintf(print_buffer, "%02ld(%02ld)", (long)fps,
+         (long)frames_drawn);
+      }
 //    sprintf(print_buffer, "%02d(%02d)", fps % 100, frames_drawn);
       print_string(print_buffer, 0, 0, COLOR15_WHITE, COLOR15_BLACK);
     }
@@ -1285,6 +1301,8 @@ static void main_power_reopen_gamepak(void)
 
 static void psp_sleep_loop(void)
 {
+  video_power_suspend();
+
   if(main_link_session_open())
     main_link_disconnect(LINK_REASON_SUSPEND);
 
@@ -1330,6 +1348,7 @@ void main_power_service(void)
   }
 
   main_power_reopen_gamepak();
+  video_power_resume();
   sound_power_resume_finish(cpu_ticks, audio_result);
   sleep_auto_saved = 0;
 }

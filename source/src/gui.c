@@ -169,7 +169,7 @@ static const ColorItem color_items[] = {
 /* ------------------------------------------------------------------
    Global choice arrays (mutable pointers so they refresh with language)
    ------------------------------------------------------------------ */
-static const char *scale_options[5];
+static const char *scale_options[SCREEN_SCALE_COUNT];
 static const char *frameskip_options[3];
 static const char *stack_optimize_options[2];
 static const char *update_backup_options[2];
@@ -193,6 +193,8 @@ static void init_choice_arrays(void)
     scale_options[2] = MSG[MSG_SCN_SCALED_X15_SW];
     scale_options[3] = MSG[MSG_SCN_SCALED_USER];
     scale_options[4] = MSG[MSG_SCN_SCALED_16X9_GU];
+    scale_options[5] = MSG[MSG_SCN_SCALED_16X9_SHARP];
+    scale_options[6] = MSG[MSG_SCN_SCALED_16X9_AUTO];
 
     frameskip_options[0] = MSG[MSG_AUTO];
     frameskip_options[1] = MSG[MSG_MANUAL];
@@ -3661,7 +3663,7 @@ u32 menu(void)
 
   /* void menu_default(void)
   {
-	option_screen_scale = SCALED_X15_GU;
+	option_screen_scale = SCALED_16X9_AUTO;
 	option_screen_mag = 170;
 	option_screen_filter = FILTER_BILINEAR;
 	psp_fps_debug = 0;
@@ -3700,7 +3702,7 @@ u32 menu(void)
 
   void menu_graphics_default(void)
   {
-    option_screen_scale = SCALED_X15_GU;
+    option_screen_scale = SCALED_16X9_AUTO;
     option_screen_mag = 170;
     option_screen_filter = FILTER_BILINEAR;
     option_video_renderer = VIDEO_RENDERER_NEW;
@@ -4441,7 +4443,7 @@ u32 menu(void)
 
   MenuOptionType graphics_options[] =
   {
-    STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_0], scale_options, &option_screen_scale, 5, MSG_OPTION_MENU_HELP_0, 0, MSG_OPTION_MENU_0),
+    STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_0], scale_options, &option_screen_scale, SCREEN_SCALE_COUNT, MSG_OPTION_MENU_HELP_0, 0, MSG_OPTION_MENU_0),
     NUMERIC_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_1], &option_screen_mag, 201, MSG_OPTION_MENU_HELP_1, 1,MSG_TOOLTIP_MAGNIFICATION, MSG_OPTION_MENU_1),
     STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_2], on_off_options, &option_screen_filter, 2, MSG_OPTION_MENU_HELP_2, 2, MSG_OPTION_MENU_2),
 
@@ -5407,7 +5409,7 @@ s32 load_game_config_file(void)
 
       FILE_READ_ARRAY(game_config_file, file_options);
 
-      option_screen_scale     = file_options[0] % 5;
+      option_screen_scale     = file_options[0] % SCREEN_SCALE_COUNT;
       option_screen_mag       = file_options[1] % 201;
       option_screen_filter    = file_options[2] % 2;
       option_frameskip_type   = file_options[3] % 3;
@@ -5478,7 +5480,7 @@ s32 load_config_file(void)
 
       FILE_READ_ARRAY(config_file, file_options);
 
-      option_screen_scale     = file_options[0] % 5;
+      option_screen_scale     = file_options[0] % SCREEN_SCALE_COUNT;
       option_screen_mag       = file_options[1] % 201;
       option_screen_filter    = file_options[2] % 2;
       psp_fps_debug           = file_options[3] % 2;
@@ -5541,7 +5543,7 @@ s32 load_config_file(void)
 
       FILE_READ_ARRAY(config_file, file_options);
 
-      option_screen_scale     = file_options[0] % 5;
+      option_screen_scale     = file_options[0] % SCREEN_SCALE_COUNT;
       option_screen_mag       = file_options[1] % 201;
       option_screen_filter    = file_options[2] % 2;
       psp_fps_debug           = file_options[3] % 2;
@@ -5601,7 +5603,7 @@ s32 load_config_file(void)
 
       FILE_READ_ARRAY(config_file, file_options);
 
-      option_screen_scale     = file_options[0] % 5;
+      option_screen_scale     = file_options[0] % SCREEN_SCALE_COUNT;
       option_screen_mag       = file_options[1] % 201;
       option_screen_filter    = file_options[2] % 2;
       psp_fps_debug           = file_options[3] % 2;
@@ -5664,7 +5666,7 @@ s32 load_config_file(void)
 
       FILE_READ_ARRAY(config_file, file_options);
 
-      option_screen_scale     = file_options[0] % 5;
+      option_screen_scale     = file_options[0] % SCREEN_SCALE_COUNT;
       option_screen_mag       = file_options[1] % 201;
       option_screen_filter    = file_options[2] % 2;
       psp_fps_debug           = file_options[3] % 2;
@@ -5720,7 +5722,7 @@ s32 load_config_file(void)
 
       FILE_READ_ARRAY(config_file, file_options);
 
-      option_screen_scale     = file_options[0] % 5;
+      option_screen_scale     = file_options[0] % SCREEN_SCALE_COUNT;
       option_screen_mag       = file_options[1] % 201;
       option_screen_filter    = file_options[2] % 2;
       psp_fps_debug           = file_options[3] % 2;
@@ -5777,7 +5779,7 @@ s32 load_config_file(void)
 
       FILE_READ_ARRAY(config_file, file_options);
 
-      option_screen_scale     = file_options[0] % 5;
+      option_screen_scale     = file_options[0] % SCREEN_SCALE_COUNT;
       option_screen_mag       = file_options[1] % 201;
       option_screen_filter    = file_options[2] % 2;
       psp_fps_debug           = file_options[3] % 2;
@@ -5829,7 +5831,7 @@ s32 load_config_file(void)
 
       FILE_READ_ARRAY(config_file, file_options);
 
-      option_screen_scale           = file_options[0] % 5;
+      option_screen_scale           = file_options[0] % SCREEN_SCALE_COUNT;
       option_screen_mag             = file_options[1] % 201;
       option_screen_filter          = file_options[2] % 2;
       psp_fps_debug                 = file_options[3] % 2;
@@ -5870,7 +5872,7 @@ s32 load_config_file(void)
     return 0;
   }
 
-  option_screen_scale             = SCALED_X15_GU;
+  option_screen_scale             = SCALED_16X9_AUTO;
   option_screen_mag               = 170;
   option_screen_filter            = FILTER_BILINEAR;
   psp_fps_debug                   = 0;

@@ -5,12 +5,34 @@
 #define VOLICON_OFFSET (GBA_SCREEN_HEIGHT + 32)
 #define SLICE (64)
 #define VERTEX_COUNT (2 * ((u16)(GBA_SCREEN_WIDTH / SLICE) + ((GBA_SCREEN_WIDTH % SLICE) ? 1 : 0)))
+#define GBA_TEXTURE_BACKING_BYTES (256 * 256 * 2)
+#define SHARP_TEXTURE_WIDTH 512
+#define SHARP_TEXTURE_HEIGHT 512
+#define SHARP_ACTIVE_WIDTH 480
+#define SHARP_ACTIVE_HEIGHT 320
+#define SHARP_TEXTURE_OFFSET ((PSP_FRAME_SIZE * 2) + GBA_TEXTURE_BACKING_BYTES)
+#define SHARP_TEXTURE_BYTES \
+ (SHARP_TEXTURE_WIDTH * SHARP_TEXTURE_HEIGHT * 2)
+#define PSP_EDRAM_BYTES (2 * 1024 * 1024)
+
+#if (SHARP_TEXTURE_OFFSET + SHARP_TEXTURE_BYTES) > PSP_EDRAM_BYTES
+#error Sharp video texture exceeds PSP EDRAM
+#endif
 
 static u32 ALIGN_PSPDATA display_list[512];
 static u32 ALIGN_PSPDATA display_list_0[256];
 
 static void *disp_frame;
 static void *draw_frame;
+static u32 present_pending;
+static u32 present_blocked;
+static u32 synchronous_present;
+static u32 last_ge_wait_us;
+static u32 adaptive_last_frame_time;
+static VideoAdaptiveState adaptive_video;
+
+static void *sharp_draw_frame = (void *)SHARP_TEXTURE_OFFSET;
+static u16 *sharp_texture = (u16 *)(0x04000000 + SHARP_TEXTURE_OFFSET);
 
 typedef struct
 {
@@ -31,9 +53,17 @@ typedef struct
 } VertexLineCol32;
 
 static void set_gba_resolution(void);
-static void generate_display_list(float scale_x, float scale_y);
+static void generate_display_list(float scale_x, float scale_y,
+ int clear_before_draw);
 static void bitbilt_gu(void);
+static void bitbilt_sharp(void);
 static void bitbilt_sw(void);
+static int draw_scaled_slices(u32 source_width, u32 source_height,
+ u32 destination_width, u32 destination_height, u32 slice_width);
+static void apply_adaptive_quality(void);
+static VideoAdaptiveQuality selected_manual_quality(void);
+static u32 selected_texture_filter(void);
+static void restore_gu_state(void);
 static void *psp_vram_addr(void *frame, u32 x, u32 y);
 static void load_volume_icon(int devkit_version);
 static void draw_volume(int volume);
@@ -133,6 +163,12 @@ void init_video(int devkit_version)
 {
   disp_frame = (void *)0;
   draw_frame = (void *)PSP_FRAME_SIZE;
+  present_pending = 0;
+  present_blocked = 0;
+  synchronous_present = 0;
+  last_ge_wait_us = 0;
+  adaptive_last_frame_time = 0;
+  video_adaptive_init(&adaptive_video, 0);
 
   sceGuDisplay(GU_FALSE);
 
@@ -152,6 +188,7 @@ void init_video(int devkit_version)
   sceGuTexMode(GU_PSM_5551, 0, 0, GU_FALSE);
   sceGuTexImage(0, 256, 256, GBA_LINE_SIZE, screen_texture);
   sceGuTexFlush();
+  sceGuTexWrap(GU_CLAMP, GU_CLAMP);
   sceGuEnable(GU_TEXTURE_2D);
 
   sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA, 0, 0);
@@ -163,7 +200,7 @@ void init_video(int devkit_version)
   sceDisplayWaitVblankStart();
   sceGuDisplay(GU_TRUE);
 
-  generate_display_list(1.5f, 1.5f);
+  generate_display_list(1.5f, 1.5f, 1);
   update_screen = bitbilt_gu;
 
   load_volume_icon(devkit_version);
@@ -171,12 +208,80 @@ void init_video(int devkit_version)
 
 void video_term(void)
 {
+  present_blocked = 1;
+  video_sync_present();
   sceGuDisplay(GU_FALSE);
   sceGuTerm();
 }
 
+void video_sync_present(void)
+{
+  u32 wait_start;
+
+  if(!present_pending)
+    return;
+
+  wait_start = sceKernelGetSystemTimeLow();
+  sceGuSync(0, GU_SYNC_FINISH);
+  last_ge_wait_us = sceKernelGetSystemTimeLow() - wait_start;
+  present_pending = 0;
+}
+
+u32 video_last_ge_wait_us(void)
+{
+  return last_ge_wait_us;
+}
+
+void video_power_suspend(void)
+{
+  present_blocked = 1;
+  video_sync_present();
+}
+
+void video_power_resume(void)
+{
+  video_sync_present();
+  last_ge_wait_us = 0;
+  adaptive_last_frame_time = 0;
+  video_adaptive_reset(&adaptive_video);
+  set_gba_resolution();
+  restore_gu_state();
+  synchronous_present = 1;
+  present_blocked = 0;
+}
+
+VideoAdaptiveQuality video_active_quality(void)
+{
+  return adaptive_video.quality;
+}
+
+void video_adaptive_frame_complete(int frame_skipped, int audio_event)
+{
+  u32 frame_time;
+  u32 now;
+
+  if(option_screen_scale != SCALED_16X9_AUTO)
+    return;
+
+  now = sceKernelGetSystemTimeLow();
+  if(adaptive_last_frame_time == 0)
+  {
+    adaptive_last_frame_time = now;
+    return;
+  }
+
+  frame_time = now - adaptive_last_frame_time;
+  adaptive_last_frame_time = now;
+
+  if(video_adaptive_record_frame(&adaptive_video, frame_time,
+     last_ge_wait_us, frame_skipped, audio_event))
+    apply_adaptive_quality();
+}
+
 void flip_screen(u32 vsync)
 {
+  video_sync_present();
+
   if (vsync != 0) sceDisplayWaitVblankStart();
 
   disp_frame = draw_frame;
@@ -188,7 +293,8 @@ static void *psp_vram_addr(void *frame, u32 x, u32 y)
   return (void *)(((u32)frame | 0x44000000) + ((x + (y << 9)) << 1));
 }
 
-static void generate_display_list(float scale_x, float scale_y)
+static void generate_display_list(float scale_x, float scale_y,
+ int clear_before_draw)
 {
   u32 i;
   s32 dx, dy;
@@ -203,7 +309,8 @@ static void generate_display_list(float scale_x, float scale_y)
 
   sceGuStart(GU_CALL, display_list_0);
 
-  sceGuClear(GU_COLOR_BUFFER_BIT | GU_FAST_CLEAR_BIT);
+  if(clear_before_draw)
+    sceGuClear(GU_COLOR_BUFFER_BIT | GU_FAST_CLEAR_BIT);
 
   vertices = (Vertex *)sceGuGetMemory(VERTEX_COUNT * sizeof(Vertex));
 
@@ -247,8 +354,56 @@ static void generate_display_list(float scale_x, float scale_y)
   sceGuFinish();
 }
 
+static VideoAdaptiveQuality selected_manual_quality(void)
+{
+  if(option_screen_scale == SCALED_16X9_SHARP)
+    return VIDEO_ADAPTIVE_QUALITY_SHARP;
+
+  if(option_screen_filter == FILTER_NEAREST)
+    return VIDEO_ADAPTIVE_QUALITY_CRISP;
+
+  return VIDEO_ADAPTIVE_QUALITY_SMOOTH;
+}
+
+static u32 selected_texture_filter(void)
+{
+  if(option_screen_scale == SCALED_16X9_AUTO &&
+     adaptive_video.quality == VIDEO_ADAPTIVE_QUALITY_CRISP)
+    return GU_NEAREST;
+
+  return option_screen_filter;
+}
+
+static void restore_gu_state(void)
+{
+  u32 texture_filter = selected_texture_filter();
+
+  sceGuStart(GU_DIRECT, display_list);
+  sceGuDrawBufferList(GU_PSM_5551, draw_frame, PSP_LINE_SIZE);
+  sceGuOffset(2048 - (PSP_SCREEN_WIDTH / 2),
+   2048 - (PSP_SCREEN_HEIGHT / 2));
+  sceGuViewport(2048, 2048, PSP_SCREEN_WIDTH, PSP_SCREEN_HEIGHT);
+  sceGuScissor(0, 0, PSP_SCREEN_WIDTH, PSP_SCREEN_HEIGHT);
+  sceGuEnable(GU_SCISSOR_TEST);
+  sceGuTexMode(GU_PSM_5551, 0, 0, GU_FALSE);
+  sceGuTexImage(0, 256, 256, GBA_LINE_SIZE, screen_texture);
+  sceGuTexFilter(texture_filter, texture_filter);
+  sceGuTexWrap(GU_CLAMP, GU_CLAMP);
+  sceGuTexFunc(GU_TFX_REPLACE, GU_TCC_RGBA);
+  sceGuEnable(GU_TEXTURE_2D);
+  sceGuDisable(GU_BLEND);
+  sceGuTexFlush();
+  sceGuFinish();
+  sceGuSync(0, GU_SYNC_FINISH);
+}
+
 static void bitbilt_gu(void)
 {
+  if(present_blocked)
+    return;
+
+  video_sync_present();
+  last_ge_wait_us = 0;
   sceKernelDcacheWritebackAll();
 
   sceGuStart(GU_DIRECT, display_list);
@@ -256,7 +411,117 @@ static void bitbilt_gu(void)
   sceGuCallList(display_list_0);
 
   sceGuFinish();
-  sceGuSync(0, GU_SYNC_FINISH);
+  present_pending = 1;
+
+  if(synchronous_present)
+  {
+    video_sync_present();
+    synchronous_present = 0;
+  }
+}
+
+static int draw_scaled_slices(u32 source_width, u32 source_height,
+ u32 destination_width, u32 destination_height, u32 slice_width)
+{
+  u32 source_x;
+  u32 vertex_count = 2 * ((source_width + slice_width - 1) / slice_width);
+  Vertex *vertices = (Vertex *)sceGuGetMemory(vertex_count * sizeof(Vertex));
+  Vertex *vertex = vertices;
+
+  if(vertices == NULL)
+    return 0;
+
+  memset(vertices, 0, vertex_count * sizeof(Vertex));
+
+  for(source_x = 0; source_x < source_width; source_x += slice_width)
+  {
+    u32 source_end = source_x + slice_width;
+
+    if(source_end > source_width)
+      source_end = source_width;
+
+    vertex[0].u = (u16)source_x;
+    vertex[0].v = 0;
+    vertex[0].x = (u16)((source_x * destination_width) / source_width);
+    vertex[0].y = 0;
+
+    vertex[1].u = (u16)source_end;
+    vertex[1].v = (u16)source_height;
+    vertex[1].x = (u16)((source_end * destination_width) / source_width);
+    vertex[1].y = (u16)destination_height;
+    vertex += 2;
+  }
+
+  sceGuDrawArray(GU_SPRITES,
+   GU_TEXTURE_16BIT | GU_VERTEX_16BIT | GU_TRANSFORM_2D,
+   vertex_count, 0, vertices);
+  return 1;
+}
+
+static void bitbilt_sharp(void)
+{
+  int first_pass_ok;
+  int second_pass_ok;
+
+  if(present_blocked)
+    return;
+
+  video_sync_present();
+  last_ge_wait_us = 0;
+  sceKernelDcacheWritebackAll();
+
+  sceGuStart(GU_DIRECT, display_list);
+
+  sceGuDrawBufferList(GU_PSM_5551, sharp_draw_frame, SHARP_TEXTURE_WIDTH);
+  sceGuOffset(2048 - (SHARP_ACTIVE_WIDTH / 2),
+   2048 - (SHARP_ACTIVE_HEIGHT / 2));
+  sceGuViewport(2048, 2048, SHARP_ACTIVE_WIDTH, SHARP_ACTIVE_HEIGHT);
+  sceGuScissor(0, 0, SHARP_ACTIVE_WIDTH, SHARP_ACTIVE_HEIGHT);
+  sceGuTexMode(GU_PSM_5551, 0, 0, GU_FALSE);
+  sceGuTexImage(0, 256, 256, GBA_LINE_SIZE, screen_texture);
+  sceGuTexFilter(GU_NEAREST, GU_NEAREST);
+  sceGuTexWrap(GU_CLAMP, GU_CLAMP);
+  sceGuTexFunc(GU_TFX_REPLACE, GU_TCC_RGB);
+  sceGuTexFlush();
+
+  first_pass_ok = draw_scaled_slices(GBA_SCREEN_WIDTH, GBA_SCREEN_HEIGHT,
+   SHARP_ACTIVE_WIDTH, SHARP_ACTIVE_HEIGHT, SLICE);
+
+  sceGuTexFlush();
+  sceGuDrawBufferList(GU_PSM_5551, draw_frame, PSP_LINE_SIZE);
+  sceGuOffset(2048 - (PSP_SCREEN_WIDTH / 2),
+   2048 - (PSP_SCREEN_HEIGHT / 2));
+  sceGuViewport(2048, 2048, PSP_SCREEN_WIDTH, PSP_SCREEN_HEIGHT);
+  sceGuScissor(0, 0, PSP_SCREEN_WIDTH, PSP_SCREEN_HEIGHT);
+  sceGuTexImage(0, SHARP_TEXTURE_WIDTH, SHARP_TEXTURE_HEIGHT,
+   SHARP_TEXTURE_WIDTH, sharp_texture);
+  sceGuTexFilter(GU_LINEAR, GU_LINEAR);
+
+  second_pass_ok = draw_scaled_slices(SHARP_ACTIVE_WIDTH,
+   SHARP_ACTIVE_HEIGHT, PSP_SCREEN_WIDTH, PSP_SCREEN_HEIGHT, SLICE);
+
+  sceGuTexImage(0, 256, 256, GBA_LINE_SIZE, screen_texture);
+  sceGuTexFilter(option_screen_filter, option_screen_filter);
+  sceGuTexFunc(GU_TFX_REPLACE, GU_TCC_RGBA);
+  sceGuTexFlush();
+  sceGuFinish();
+
+  if(first_pass_ok && second_pass_ok)
+  {
+    present_pending = 1;
+  }
+  else
+  {
+    sceGuSync(0, GU_SYNC_FINISH);
+    adaptive_video.quality = VIDEO_ADAPTIVE_QUALITY_CRISP;
+    apply_adaptive_quality();
+  }
+
+  if(synchronous_present && present_pending)
+  {
+    video_sync_present();
+    synchronous_present = 0;
+  }
 }
 
 #define NORMAL_BLEND(c0, c1) ((c0 & c1) + (((c0 ^ c1) & 0x7bde) >> 1))
@@ -267,6 +532,7 @@ static void bitbilt_sw(void)
   u16 *vptr, *vptr0;
   u16 *d, *d0;
 
+  video_sync_present();
   sceKernelDcacheWritebackAll();
 
   sceGuStart(GU_DIRECT, display_list);
@@ -315,14 +581,25 @@ void video_resolution_large(void)
 
 void video_resolution_small(void)
 {
+  u32 gameplay_filter = option_screen_filter;
+
+  video_sync_present();
+  adaptive_last_frame_time = 0;
+  video_adaptive_set_enabled(&adaptive_video,
+   option_screen_scale == SCALED_16X9_AUTO,
+   selected_manual_quality());
   set_gba_resolution();
+
+  if(option_screen_scale == SCALED_16X9_AUTO &&
+     adaptive_video.quality == VIDEO_ADAPTIVE_QUALITY_CRISP)
+    gameplay_filter = GU_NEAREST;
 
   sceGuStart(GU_DIRECT, display_list);
 
   sceGuClearColor(0);
   sceGuClear(GU_COLOR_BUFFER_BIT | GU_FAST_CLEAR_BIT);
 
-  sceGuTexFilter(option_screen_filter, option_screen_filter);
+  sceGuTexFilter(gameplay_filter, gameplay_filter);
 
   sceGuFinish();
   sceGuSync(0, GU_SYNC_FINISH);
@@ -333,12 +610,12 @@ static void set_gba_resolution(void)
   switch (option_screen_scale)
   {
     case SCALED_NONE:
-      generate_display_list(1.0f, 1.0f);
+      generate_display_list(1.0f, 1.0f, 1);
       update_screen = bitbilt_gu;
       break;
 
     case SCALED_X15_GU:
-      generate_display_list(1.5f, 1.5f);
+      generate_display_list(1.5f, 1.5f, 1);
       update_screen = bitbilt_gu;
       break;
 
@@ -347,15 +624,47 @@ static void set_gba_resolution(void)
       break;
 
     case SCALED_USER:
-      generate_display_list(option_screen_mag / 100.0f, option_screen_mag / 100.0f);
+      generate_display_list(option_screen_mag / 100.0f,
+       option_screen_mag / 100.0f, 1);
       update_screen = bitbilt_gu;
       break;
 
     case SCALED_16X9_GU:
       generate_display_list((float)PSP_SCREEN_WIDTH / (float)GBA_SCREEN_WIDTH,
-                            (float)PSP_SCREEN_HEIGHT / (float)GBA_SCREEN_HEIGHT);
+                            (float)PSP_SCREEN_HEIGHT / (float)GBA_SCREEN_HEIGHT,
+                            0);
       update_screen = bitbilt_gu;
       break;
+
+    case SCALED_16X9_SHARP:
+      update_screen = bitbilt_sharp;
+      break;
+
+    case SCALED_16X9_AUTO:
+      apply_adaptive_quality();
+      break;
+  }
+}
+
+static void apply_adaptive_quality(void)
+{
+  if(adaptive_video.quality == VIDEO_ADAPTIVE_QUALITY_SHARP)
+  {
+    update_screen = bitbilt_sharp;
+  }
+  else
+  {
+    generate_display_list((float)PSP_SCREEN_WIDTH /
+                           (float)GBA_SCREEN_WIDTH,
+                          (float)PSP_SCREEN_HEIGHT /
+                           (float)GBA_SCREEN_HEIGHT, 0);
+
+    video_sync_present();
+    sceGuStart(GU_DIRECT, display_list);
+    sceGuTexFilter(GU_NEAREST, GU_NEAREST);
+    sceGuFinish();
+    sceGuSync(0, GU_SYNC_FINISH);
+    update_screen = bitbilt_gu;
   }
 }
 
@@ -366,8 +675,11 @@ void clear_screen(u32 color)
   u32 b8 = (color >> 16) & 0xFF;
   u16 color16 = ((r8 >> 3) << 0) | ((g8 >> 3) << 5) | ((b8 >> 3) << 10) | 0x8000;
 
-  u16 *vram_ptr = (u16 *)((u32)draw_frame | 0x44000000);
+  u16 *vram_ptr;
   u32 pixels = PSP_LINE_SIZE * PSP_SCREEN_HEIGHT;
+
+  video_sync_present();
+  vram_ptr = (u16 *)((u32)draw_frame | 0x44000000);
 
   for (u32 i = 0; i < pixels; i++)
   {
@@ -380,6 +692,7 @@ void clear_texture(u16 color)
   u32 x, y;
   u16 *p_dest, *p_dest0;
 
+  video_sync_present();
   p_dest0 = screen_texture;
 
   for (y = 0; y < GBA_SCREEN_HEIGHT; y++)
@@ -403,6 +716,7 @@ u16 *copy_screen(void)
   // Wait for vblank and sync GPU/cache to ensure screen_texture is stable before copying
   // This prevents crashes when menu is called during active gameplay
   sceDisplayWaitVblankStart();
+  video_sync_present();
   sceGuSync(0, GU_SYNC_FINISH);
   sceKernelDcacheWritebackAll();
 
@@ -429,6 +743,7 @@ void blit_to_screen(u16 *src, u16 w, u16 h, u16 dest_x, u16 dest_y)
   u32 x, y;
   u16 *p_src, *p_dest, *p_dest0;
 
+  video_sync_present();
   p_src   = src;
   p_dest0 = (u16 *)psp_vram_addr(draw_frame, dest_x, dest_y);
 
@@ -447,6 +762,7 @@ void draw_box_line(u16 x1, u16 y1, u16 x2, u16 y2, u16 color)
 {
   VertexLineCol16 *vertices;
 
+  video_sync_present();
   sceGuStart(GU_DIRECT, display_list);
 
   sceGuDisable(GU_TEXTURE_2D);
@@ -490,6 +806,7 @@ void draw_box_fill(u16 x1, u16 y1, u16 x2, u16 y2, u16 color)
 {
   VertexLineCol16 *vertices;
 
+  video_sync_present();
   sceGuStart(GU_DIRECT, display_list);
 
   sceGuDisable(GU_TEXTURE_2D);
@@ -529,6 +846,7 @@ void draw_box_alpha(u16 x1, u16 y1, u16 x2, u16 y2, u32 color)
 {
   VertexLineCol32 *vertices;
 
+  video_sync_present();
   sceGuStart(GU_DIRECT, display_list);
 
   sceGuDisable(GU_TEXTURE_2D);
@@ -570,6 +888,7 @@ void draw_hline(u16 sx, u16 ex, u16 y, u16 color)
 {
   VertexLineCol16 *vertices;
 
+  video_sync_present();
   sceGuStart(GU_DIRECT, display_list);
 
   sceGuDisable(GU_TEXTURE_2D);
@@ -601,6 +920,7 @@ void draw_vline(u16 x, u16 sy, u16 ey, u16 color)
 {
   VertexLineCol16 *vertices;
 
+  video_sync_present();
   sceGuStart(GU_DIRECT, display_list);
 
   sceGuDisable(GU_TEXTURE_2D);
@@ -630,6 +950,7 @@ void draw_vline(u16 x, u16 sy, u16 ey, u16 color)
 
 void print_string(const char *str, s16 x, u16 y, u16 fg_color, s16 bg_color)
 {
+  video_sync_present();
   if (x < 0) x = (PSP_SCREEN_WIDTH - (strlen(str) * FONTWIDTH)) >> 1;
 
   mh_print(str, x, y, fg_color, bg_color, (u16 *)((u32)draw_frame | 0x44000000), PSP_LINE_SIZE);
@@ -644,6 +965,7 @@ void print_string_ext(const char *str, s16 x, u16 y, u16 fg_color, s16 bg_color,
 
 void print_string_gbk(const char *str, s16 x, u16 y, u16 fg_color, s16 bg_color)
 {
+  video_sync_present();
   if (x < 0) x = (PSP_SCREEN_WIDTH - (strlen(str) * FONTWIDTH)) >> 1;
 
   ch_print(str, x, y, fg_color, bg_color, (u16 *)((u32)draw_frame | 0x44000000), PSP_LINE_SIZE);
@@ -761,6 +1083,7 @@ static void draw_volume(int volume)
 {
   Vertex *vertices, *vertices_tmp;
 
+  video_sync_present();
   sceKernelDcacheWritebackAll();
 
   sceGuStart(GU_DIRECT, display_list);
@@ -907,4 +1230,3 @@ int draw_volume_status_null(int draw)
 {
   return 0;
 }
-
