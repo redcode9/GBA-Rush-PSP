@@ -35,6 +35,7 @@ gba_bios.bin
 dir.ini
 
 # Editor and operating-system files
+__pycache__/
 .DS_Store
 .idea/
 .vscode/

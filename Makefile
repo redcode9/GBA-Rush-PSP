@@ -1,4 +1,5 @@
 HOST_CC ?= cc
+PYTHON ?= python3
 HOST_BUILD_DIR ?= build/host
 HOST_SANITIZE_DIR ?= build/sanitize
 HOST_SANITIZE_FLAGS ?= -fsanitize=address,undefined -fno-omit-frame-pointer
@@ -37,14 +38,14 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_config_model \
  $(HOST_SANITIZE_DIR)/test_config_store
 
-.PHONY: all check test test-sanitize tree-check psp-build launcher-stub \
+.PHONY: all check test test-benchmark-tool test-sanitize tree-check psp-build launcher-stub \
  package artifact-smoke clean
 
 all: check
 
 check: test tree-check
 
-test: $(HOST_TESTS)
+test: $(HOST_TESTS) test-benchmark-tool
 	$(HOST_TEST_CODEBREAKER)
 	$(HOST_TEST_GBA_SIO)
 	$(HOST_TEST_LINK_PROTOCOL)
@@ -59,6 +60,9 @@ test: $(HOST_TESTS)
 	$(HOST_TEST_MENU_MODEL)
 	$(HOST_TEST_CONFIG_MODEL)
 	$(HOST_TEST_CONFIG_STORE)
+
+test-benchmark-tool:
+	$(PYTHON) -m unittest tests/test_compare_benchmarks.py
 
 test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_codebreaker

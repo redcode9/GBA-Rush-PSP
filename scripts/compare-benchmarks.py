@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+
+import argparse
+import statistics
+import sys
+
+
+MATCH_FIELDS = (
+    "psp-model",
+    "clock-mhz",
+    "renderer",
+    "scale",
+    "filter",
+    "frameskip-type",
+    "frameskip-value",
+    "sound-volume",
+    "game-code",
+    "rom-revision",
+)
+
+
+def read_report(path):
+    values = {}
+    with open(path, "r", encoding="utf-8") as report:
+        for line_number, line in enumerate(report, 1):
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            if "=" not in line:
+                raise ValueError(f"{path}:{line_number}: invalid report line")
+            key, value = line.split("=", 1)
+            if not key or key in values:
+                raise ValueError(f"{path}:{line_number}: invalid report key")
+            values[key] = value
+
+    if values.get("state") != "stopped":
+        raise ValueError(f"{path}: benchmark is not stopped")
+    return values
+
+
+def number(report, key):
+    try:
+        return int(report[key])
+    except (KeyError, ValueError) as error:
+        raise ValueError(f"missing or invalid field: {key}") from error
+
+
+def median_metric(reports, metric):
+    return float(statistics.median(metric(report) for report in reports))
+
+
+def throughput(report):
+    duration = number(report, "duration-us")
+    if duration <= 0:
+        raise ValueError("duration-us must be positive")
+    return number(report, "emulated-frames") * 1_000_000.0 / duration
+
+
+def skip_ratio(report):
+    frames = number(report, "emulated-frames")
+    if frames <= 0:
+        raise ValueError("emulated-frames must be positive")
+    return number(report, "skipped-frames") / frames
+
+
+def percent_change(baseline, candidate):
+    if baseline == 0:
+        return 0.0 if candidate == 0 else float("inf")
+    return ((candidate / baseline) - 1.0) * 100.0
+
+
+def validate_matching_runs(baseline, candidate):
+    reference = baseline[0]
+    for report in baseline[1:] + candidate:
+        for field in MATCH_FIELDS:
+            if report.get(field) != reference.get(field):
+                raise ValueError(f"benchmark field does not match: {field}")
+
+
+def compare(baseline, candidate):
+    validate_matching_runs(baseline, candidate)
+
+    baseline_throughput = median_metric(baseline, throughput)
+    candidate_throughput = median_metric(candidate, throughput)
+    baseline_frame_p95 = median_metric(
+        baseline, lambda report: number(report, "frame-time-p95-us")
+    )
+    candidate_frame_p95 = median_metric(
+        candidate, lambda report: number(report, "frame-time-p95-us")
+    )
+    baseline_ge_p95 = median_metric(
+        baseline, lambda report: number(report, "ge-wait-p95-us")
+    )
+    candidate_ge_p95 = median_metric(
+        candidate, lambda report: number(report, "ge-wait-p95-us")
+    )
+    baseline_underruns = median_metric(
+        baseline, lambda report: number(report, "audio-underruns")
+    )
+    candidate_underruns = median_metric(
+        candidate, lambda report: number(report, "audio-underruns")
+    )
+    baseline_skips = median_metric(baseline, skip_ratio)
+    candidate_skips = median_metric(candidate, skip_ratio)
+
+    throughput_change = percent_change(baseline_throughput, candidate_throughput)
+    frame_p95_change = percent_change(baseline_frame_p95, candidate_frame_p95)
+    ge_p95_change = percent_change(baseline_ge_p95, candidate_ge_p95)
+
+    failures = []
+    if throughput_change < -2.0:
+        failures.append("throughput regression exceeds 2%")
+    if frame_p95_change > 5.0:
+        failures.append("frame-time p95 regression exceeds 5%")
+    if candidate_underruns > baseline_underruns:
+        failures.append("audio underruns increased")
+    if candidate_skips > baseline_skips + 0.005:
+        failures.append("skipped-frame ratio increased by more than 0.5 points")
+
+    return {
+        "passed": not failures,
+        "failures": failures,
+        "throughput": candidate_throughput,
+        "throughput_change": throughput_change,
+        "frame_p95": candidate_frame_p95,
+        "frame_p95_change": frame_p95_change,
+        "ge_p95": candidate_ge_p95,
+        "ge_p95_change": ge_p95_change,
+        "audio_underruns": candidate_underruns,
+        "skip_ratio": candidate_skips,
+    }
+
+
+def format_result(result):
+    lines = ["PASS" if result["passed"] else "FAIL"]
+    lines.append(
+        f"throughput={result['throughput']:.2f} fps "
+        f"({result['throughput_change']:+.2f}%)"
+    )
+    lines.append(
+        f"frame-p95={result['frame_p95']:.0f} us "
+        f"({result['frame_p95_change']:+.2f}%)"
+    )
+    lines.append(
+        f"ge-p95={result['ge_p95']:.0f} us "
+        f"({result['ge_p95_change']:+.2f}%)"
+    )
+    lines.append(f"audio-underruns={result['audio_underruns']:.0f}")
+    lines.append(f"skipped-frames={result['skip_ratio'] * 100.0:.2f}%")
+    lines.extend(f"reason={failure}" for failure in result["failures"])
+    return "\n".join(lines)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Compare three PSP benchmark reports per build."
+    )
+    parser.add_argument("--baseline", nargs=3, required=True, metavar="REPORT")
+    parser.add_argument("--candidate", nargs=3, required=True, metavar="REPORT")
+    arguments = parser.parse_args(argv)
+
+    try:
+        baseline = [read_report(path) for path in arguments.baseline]
+        candidate = [read_report(path) for path in arguments.candidate]
+        result = compare(baseline, candidate)
+    except (OSError, ValueError) as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 2
+
+    print(format_result(result))
+    return 0 if result["passed"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

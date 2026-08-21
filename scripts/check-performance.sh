@@ -26,4 +26,11 @@ then
   exit 1
 fi
 
+if ! rg -q 'nargs=3' scripts/compare-benchmarks.py || \
+   ! rg -q 'MATCH_FIELDS' scripts/compare-benchmarks.py
+then
+  echo "Benchmark comparison does not enforce repeated matching runs" >&2
+  exit 1
+fi
+
 echo "Performance instrumentation checks passed"
