@@ -638,24 +638,6 @@ u32 update_gba(void)
           if (update_input() != 0)
             continue;
 
-          // ===================================================================
-          // TEST CRASH HANDLER — REMOVE AFTER TESTING
-          // ===================================================================
-          // Press L + R + SELECT simultaneously to trigger an intentional
-          // bus error. This tests that exception.prx and ExceptionHandler()
-          // are working. Remove this block once verified.
-          /* {
-              SceCtrlData test_pad;
-              sceCtrlPeekBufferPositive(&test_pad, 1);
-              if ((test_pad.Buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER | PSP_CTRL_SELECT)) ==
-                  (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER | PSP_CTRL_SELECT)) {
-                  _sw(0, 0);  // Intentional bus error — triggers crash handler
-              }
-          } */
-          // ===================================================================
-          // END TEST CRASH HANDLER
-          // ===================================================================
-
           if (!skip_next_frame)
             (*update_screen)();
 
