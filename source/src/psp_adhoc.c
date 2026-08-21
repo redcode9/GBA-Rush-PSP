@@ -110,6 +110,7 @@ static int psp_adhoc_command_push(PspAdhocContext *context,
   if(next == context->command_read)
     return 0;
 
+  psp_adhoc_memory_barrier();
   context->commands[write] = *command;
   psp_adhoc_memory_barrier();
   context->command_write = next;
@@ -124,6 +125,7 @@ static int psp_adhoc_command_pop(PspAdhocContext *context,
   if(read == context->command_write)
     return 0;
 
+  psp_adhoc_memory_barrier();
   *command = context->commands[read];
   psp_adhoc_memory_barrier();
   context->command_read = (read + 1u) % PSP_ADHOC_COMMAND_CAPACITY;
@@ -145,6 +147,7 @@ static int psp_adhoc_event_push(PspAdhocContext *context,
     return 0;
   }
 
+  psp_adhoc_memory_barrier();
   context->events[write] = *event;
   psp_adhoc_memory_barrier();
   context->event_write = next;
@@ -158,6 +161,7 @@ static int psp_adhoc_event_pop(PspAdhocContext *context,
 
   if(read != context->event_write)
   {
+    psp_adhoc_memory_barrier();
     *event = context->events[read];
     psp_adhoc_memory_barrier();
     context->event_read = (read + 1u) % PSP_ADHOC_EVENT_CAPACITY;
@@ -166,6 +170,7 @@ static int psp_adhoc_event_pop(PspAdhocContext *context,
 
   if(context->fallback_pending)
   {
+    psp_adhoc_memory_barrier();
     memset(event, 0, sizeof(*event));
     event->type = LINK_TRANSPORT_EVENT_ERROR;
     event->error = context->fallback_error;
@@ -182,10 +187,16 @@ static int psp_adhoc_emit(PspAdhocContext *context,
 {
   LinkTransportEvent event;
 
+  if(data != NULL && size > sizeof(event.data))
+  {
+    context->last_error = PSP_ADHOC_ERROR_PROTOCOL;
+    return 0;
+  }
+
   memset(&event, 0, sizeof(event));
   event.type = type;
   event.error = error;
-  if(data != NULL && size <= sizeof(event.data))
+  if(data != NULL)
   {
     event.size = (uint16_t)size;
     memcpy(event.data, data, size);

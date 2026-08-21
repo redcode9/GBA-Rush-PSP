@@ -39,4 +39,25 @@ then
   exit 1
 fi
 
+require_queue_barriers()
+{
+  function_name=$1
+  minimum=$2
+  function_body=$(sed -n "/^static int $function_name/,/^}/p" \
+    source/src/psp_adhoc.c)
+  barrier_count=$(printf '%s\n' "$function_body" | \
+    rg -c 'psp_adhoc_memory_barrier' || true)
+
+  if [ "$barrier_count" -lt "$minimum" ]
+  then
+    echo "Ad-hoc queue function lacks publication barriers: $function_name" >&2
+    exit 1
+  fi
+}
+
+require_queue_barriers psp_adhoc_command_push 2
+require_queue_barriers psp_adhoc_command_pop 2
+require_queue_barriers psp_adhoc_event_push 3
+require_queue_barriers psp_adhoc_event_pop 4
+
 echo "Runtime lifecycle checks passed"
