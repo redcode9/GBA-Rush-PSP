@@ -14,7 +14,7 @@ static void test_golden_report(void)
   static const uint8_t game_code[] = { 'B', 'P', 'R', 'E' };
   static const char expected[] =
    "gba-rush-performance-report=2\n"
-   "version=1.3.0-dev\n"
+   "version=1.3.0\n"
    "psp-model=1\n"
    "clock-mhz=333\n"
    "renderer=1\n"
@@ -63,7 +63,7 @@ static void test_golden_report(void)
   int length;
 
   memset(&metadata, 0, sizeof(metadata));
-  metadata.emulator_version = "1.3.0-dev";
+  metadata.emulator_version = "1.3.0";
   metadata.psp_model = 1;
   metadata.clock_mhz = 333;
   metadata.renderer = 1;

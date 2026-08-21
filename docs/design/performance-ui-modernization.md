@@ -1,6 +1,6 @@
 # Performance and interface modernization
 
-Status: approved design for the next GBA Rush PSP release.
+Status: shipped in GBA Rush PSP 1.3.0.
 
 ## Goal
 

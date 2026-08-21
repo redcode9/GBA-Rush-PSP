@@ -7,4 +7,4 @@ Bumped manually before each release. Imported by gui.py and anywhere else
 that needs to display the version.
 """
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"

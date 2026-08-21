@@ -1,6 +1,7 @@
 # Performance and interface modernization implementation plan
 
-Status: approved for implementation on 21 August 2026.
+Status: implemented for GBA Rush PSP 1.3.0. Remaining hardware coverage is
+recorded in the release notes.
 
 This plan implements `docs/design/performance-ui-modernization.md` on `main`
 after release 1.2.0. It preserves the public history and does not publish or

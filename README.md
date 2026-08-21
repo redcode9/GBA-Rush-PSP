@@ -46,6 +46,10 @@ part of this repository or its release packages.
 - Two-PSP GBA link cable emulation over local ad-hoc Wi-Fi.
 - Suspend and resume recovery that keeps audio, ROM access, saves, and worker
   shutdown under foreground control.
+- Task-based menus with contextual setting help and built-in performance
+  diagnostics.
+- Versioned, recoverable configuration writes that preserve existing user
+  settings.
 - Old and new video renderers, multiple scale modes, themes, box art, recent
   ROMs, configurable dynarec policies, and multilingual menus.
 - Japanese, English, Simplified Chinese, Traditional Chinese, and Italian UI.
@@ -144,10 +148,10 @@ not tracked.
 After a successful PSP build:
 
 ```sh
-make package VERSION=1.2.0
+make package VERSION=1.3.0
 ```
 
-This creates `GBA-Rush-PSP-1.2.0.zip` and its SHA-256 checksum in `dist/`, then
+This creates `GBA-Rush-PSP-1.3.0.zip` and its SHA-256 checksum in `dist/`, then
 extracts and verifies the archive against the approved release manifest. The
 package contains only `EBOOT.PBP`, `exception.prx`, installation notes,
 changelog, and license. It excludes BIOS files, ROMs, saves, local settings,

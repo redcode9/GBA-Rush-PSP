@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.3.0 - 2026-08-22
+
+### Added
+
+- A low-overhead performance monitor with live diagnostics and bounded reports.
+- Diagnostic input recording and replay for development builds.
+- Contextual help for settings and a benchmark comparison gate.
+
+### Changed
+
+- Menus are grouped by task and retain their selection when returning from a
+  child screen.
+- Renderer dispatch is selected once per frame instead of once per scanline.
+- Audio output, suspend, resume, and shutdown use a consistent PSP SRC-channel
+  lifecycle.
+- Global and per-game configurations use versioned validation and recoverable
+  writes while preserving existing settings.
+
+### Fixed
+
+- Long menus scroll within a fixed viewport instead of overlapping the guide
+  and button footer.
+- Invalid configuration fields no longer discard unrelated valid settings.
+
 ## 1.2.0 - 2026-08-21
 
 ### Added
