@@ -16,6 +16,7 @@ void video_sync_present(void);
 u32 video_last_ge_wait_us(void);
 void video_power_suspend(void);
 void video_power_resume(void);
+void video_reset_frame_timing(void);
 void video_adaptive_frame_complete(int frame_skipped, int audio_event);
 VideoAdaptiveQuality video_active_quality(void);
 

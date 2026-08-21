@@ -19,6 +19,7 @@
  */
 
 #include "common.h"
+#include "perf_monitor.h"
 
 
 #define SOUND_BUFFER_SIZE (SOUND_SAMPLES * 2)
@@ -114,6 +115,8 @@ volatile int sound_active = 0;
 static volatile u32 sound_fast_forward = 0;
 static volatile u32 sound_power_suspended = 0;
 static volatile u32 sound_output_ready = 0;
+static volatile u32 sound_perf_underrun_pending = 0;
+static volatile u32 sound_perf_recovery_pending = 0;
 static void fill_sound_buffer(s16 *stream, u16 length);
 static int sound_update_thread(SceSize args, void *argp);
 
@@ -857,6 +860,19 @@ void synchronize_sound(void)
 {
   u64 started;
 
+  __builtin_allegrex_sync();
+  if(sound_perf_underrun_pending)
+  {
+    sound_perf_underrun_pending = 0;
+    perf_monitor_record_audio_underrun();
+  }
+  if(sound_perf_recovery_pending)
+  {
+    sound_perf_recovery_pending = 0;
+    perf_monitor_record_audio_recovery();
+  }
+  __builtin_allegrex_sync();
+
   if(sound_fast_forward)
   {
     sound_buffer_base = gbc_sound_buffer_index;
@@ -882,6 +898,7 @@ void synchronize_sound(void)
             SOUND_OPERATION_TIMEOUT)
         {
           sound_buffer_base = gbc_sound_buffer_index;
+          perf_monitor_record_audio_recovery();
           break;
         }
         sceKernelDelayThread(100);
@@ -1084,6 +1101,7 @@ static int sound_update_thread(SceSize args, void *argp)
 {
   u32 buf_idx = 0;
   int output_volume = PSP_AUDIO_VOLUME_MAX;
+  int output_failed = 0;
 
   while (sound_active != 0)
   {
@@ -1131,7 +1149,19 @@ static int sound_update_thread(SceSize args, void *argp)
     SceUInt timeout = SOUND_OPERATION_TIMEOUT;
     if(sceKernelWaitSema(sound_sema, 1, &timeout) < 0)
       continue;
-    sceAudioSRCOutputBlocking(output_volume, psp_sound_buffer[buf_idx]);
+    if(sceAudioSRCOutputBlocking(output_volume,
+       psp_sound_buffer[buf_idx]) < 0)
+    {
+      sound_perf_underrun_pending = 1;
+      output_failed = 1;
+      __builtin_allegrex_sync();
+    }
+    else if(output_failed)
+    {
+      sound_perf_recovery_pending = 1;
+      output_failed = 0;
+      __builtin_allegrex_sync();
+    }
     sceKernelSignalSema(sound_sema, 1);
 
     buf_idx ^= 1;
@@ -1252,6 +1282,8 @@ void reset_sound(void)
   sound_on = 0;
   sound_link_wait_active = 0;
   sound_link_saved_pause = 0;
+  sound_perf_underrun_pending = 0;
+  sound_perf_recovery_pending = 0;
   sound_buffer_base = 0;
 
   memset(sound_buffer, 0, sizeof(sound_buffer));

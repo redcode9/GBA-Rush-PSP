@@ -151,6 +151,32 @@ int perf_metrics_active(const PerfMetrics *metrics)
   return metrics != NULL && metrics->state == PERF_METRICS_ACTIVE;
 }
 
+void perf_metrics_record_frame(PerfMetrics *metrics, uint32_t frame_time_us,
+ uint32_t ge_wait_us, int skipped, int fast_forward)
+{
+  if(!perf_metrics_active(metrics))
+    return;
+
+  metrics->emulated_frames = perf_metrics_saturating_add(
+   metrics->emulated_frames, 1);
+  if(fast_forward)
+    metrics->fast_forward_frames = perf_metrics_saturating_add(
+     metrics->fast_forward_frames, 1);
+  perf_metrics_histogram_record(&metrics->frame_time, frame_time_us);
+
+  if(skipped)
+  {
+    metrics->skipped_frames = perf_metrics_saturating_add(
+     metrics->skipped_frames, 1);
+  }
+  else
+  {
+    metrics->presented_frames = perf_metrics_saturating_add(
+     metrics->presented_frames, 1);
+    perf_metrics_histogram_record(&metrics->ge_wait, ge_wait_us);
+  }
+}
+
 void perf_metrics_record_emulated_frame(PerfMetrics *metrics,
  uint32_t frame_time_us, int fast_forward)
 {

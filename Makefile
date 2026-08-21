@@ -9,16 +9,21 @@ HOST_TEST_LINK_SESSION = $(HOST_BUILD_DIR)/test_link_session
 HOST_TEST_POWER_LIFECYCLE = $(HOST_BUILD_DIR)/test_power_lifecycle
 HOST_TEST_VIDEO_ADAPTIVE = $(HOST_BUILD_DIR)/test_video_adaptive
 HOST_TEST_PERF_METRICS = $(HOST_BUILD_DIR)/test_perf_metrics
+HOST_TEST_PERF_REPORT = $(HOST_BUILD_DIR)/test_perf_report
+HOST_TEST_PERF_MONITOR = $(HOST_BUILD_DIR)/test_perf_monitor
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_LINK_PROTOCOL) $(HOST_TEST_LINK_SESSION) \
  $(HOST_TEST_POWER_LIFECYCLE) $(HOST_TEST_VIDEO_ADAPTIVE) \
- $(HOST_TEST_PERF_METRICS)
+ $(HOST_TEST_PERF_METRICS) $(HOST_TEST_PERF_REPORT) \
+ $(HOST_TEST_PERF_MONITOR)
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_protocol \
  $(HOST_SANITIZE_DIR)/test_link_session \
  $(HOST_SANITIZE_DIR)/test_power_lifecycle \
  $(HOST_SANITIZE_DIR)/test_video_adaptive \
- $(HOST_SANITIZE_DIR)/test_perf_metrics
+ $(HOST_SANITIZE_DIR)/test_perf_metrics \
+ $(HOST_SANITIZE_DIR)/test_perf_report \
+ $(HOST_SANITIZE_DIR)/test_perf_monitor
 
 .PHONY: all check test test-sanitize tree-check psp-build launcher-stub \
  package artifact-smoke clean
@@ -35,6 +40,8 @@ test: $(HOST_TESTS)
 	$(HOST_TEST_POWER_LIFECYCLE)
 	$(HOST_TEST_VIDEO_ADAPTIVE)
 	$(HOST_TEST_PERF_METRICS)
+	$(HOST_TEST_PERF_REPORT)
+	$(HOST_TEST_PERF_MONITOR)
 
 test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_codebreaker
@@ -44,6 +51,8 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_power_lifecycle
 	$(HOST_SANITIZE_DIR)/test_video_adaptive
 	$(HOST_SANITIZE_DIR)/test_perf_metrics
+	$(HOST_SANITIZE_DIR)/test_perf_report
+	$(HOST_SANITIZE_DIR)/test_perf_monitor
 
 $(HOST_TEST_CODEBREAKER): tests/test_codebreaker.c source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_BUILD_DIR)
@@ -90,6 +99,20 @@ $(HOST_TEST_PERF_METRICS): tests/test_perf_metrics.c \
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_perf_metrics.c source/src/perf_metrics.c -o $@
+
+$(HOST_TEST_PERF_REPORT): tests/test_perf_report.c \
+ source/src/perf_report.c source/src/perf_report.h source/src/perf_metrics.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_perf_report.c source/src/perf_report.c -o $@
+
+$(HOST_TEST_PERF_MONITOR): tests/test_perf_monitor.c \
+ source/src/perf_monitor.c source/src/perf_monitor.h \
+ source/src/perf_metrics.c source/src/perf_metrics.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_perf_monitor.c source/src/perf_monitor.c \
+	 source/src/perf_metrics.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_codebreaker: tests/test_codebreaker.c \
  source/src/codebreaker.c source/src/codebreaker.h
@@ -138,6 +161,20 @@ $(HOST_SANITIZE_DIR)/test_perf_metrics: tests/test_perf_metrics.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_perf_metrics.c source/src/perf_metrics.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_perf_report: tests/test_perf_report.c \
+ source/src/perf_report.c source/src/perf_report.h source/src/perf_metrics.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_perf_report.c source/src/perf_report.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_perf_monitor: tests/test_perf_monitor.c \
+ source/src/perf_monitor.c source/src/perf_monitor.h \
+ source/src/perf_metrics.c source/src/perf_metrics.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_perf_monitor.c source/src/perf_monitor.c \
+	 source/src/perf_metrics.c -o $@
 
 tree-check:
 	sh scripts/check-tree.sh

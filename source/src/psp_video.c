@@ -1,4 +1,5 @@
 #include "common.h"
+#include "perf_monitor.h"
 #include "psp_video.h"
 #include "volume_icon.c"
 
@@ -260,9 +261,6 @@ void video_adaptive_frame_complete(int frame_skipped, int audio_event)
   u32 frame_time;
   u32 now;
 
-  if(option_screen_scale != SCALED_16X9_AUTO)
-    return;
-
   now = sceKernelGetSystemTimeLow();
   if(adaptive_last_frame_time == 0)
   {
@@ -273,9 +271,20 @@ void video_adaptive_frame_complete(int frame_skipped, int audio_event)
   frame_time = now - adaptive_last_frame_time;
   adaptive_last_frame_time = now;
 
+  perf_monitor_record_frame(frame_time, last_ge_wait_us, frame_skipped,
+   synchronize_flag == 0);
+
+  if(option_screen_scale != SCALED_16X9_AUTO)
+    return;
+
   if(video_adaptive_record_frame(&adaptive_video, frame_time,
      last_ge_wait_us, frame_skipped, audio_event))
     apply_adaptive_quality();
+}
+
+void video_reset_frame_timing(void)
+{
+  adaptive_last_frame_time = 0;
 }
 
 void flip_screen(u32 vsync)

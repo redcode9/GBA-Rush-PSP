@@ -22,6 +22,9 @@
 #define MAIN_H
 
 #include "link_session.h"
+#include "perf_metrics.h"
+
+#define GBA_RUSH_VERSION "1.3.0-dev"
 
 // video scale type
 #define SCALED_NONE    0
@@ -116,6 +119,11 @@ int main_link_active(void);
 int main_link_connected(void);
 int main_link_pending(void);
 void main_power_service(void);
+
+int main_perf_start(void);
+int main_perf_stop(void);
+void main_perf_snapshot(PerfMetricsSnapshot *snapshot);
+int main_perf_write_report(char *output_path, size_t output_path_size);
 
 u32 update_gba(void);
 

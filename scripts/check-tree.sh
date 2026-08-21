@@ -12,6 +12,7 @@ git diff --cached --check
 sh scripts/check-messages.sh
 sh scripts/check-lifecycle.sh
 sh scripts/check-video.sh
+sh scripts/check-performance.sh
 
 git ls-files | while IFS= read -r path
 do

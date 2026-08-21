@@ -87,6 +87,8 @@ int perf_metrics_start(PerfMetrics *metrics);
 int perf_metrics_stop(PerfMetrics *metrics);
 void perf_metrics_invalidate(PerfMetrics *metrics);
 int perf_metrics_active(const PerfMetrics *metrics);
+void perf_metrics_record_frame(PerfMetrics *metrics, uint32_t frame_time_us,
+ uint32_t ge_wait_us, int skipped, int fast_forward);
 void perf_metrics_record_emulated_frame(PerfMetrics *metrics,
  uint32_t frame_time_us, int fast_forward);
 void perf_metrics_record_presented_frame(PerfMetrics *metrics,

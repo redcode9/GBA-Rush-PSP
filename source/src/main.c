@@ -18,8 +18,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <pspsysmem.h>
 
 #include "common.h"
+#include "perf_monitor.h"
+#include "perf_report.h"
 #include "power_lifecycle.h"
 #include "psp_adhoc.h"
 
@@ -1098,6 +1101,7 @@ static void setup_main(const char *eboot_path)
   __draw_volume_status = draw_volume_status_null;
 
   init_input();
+  perf_monitor_init();
   init_video(devkit_version);
   video_resolution_large();
 
@@ -1253,6 +1257,7 @@ void quit(void)
 
 void reset_gba(void)
 {
+  perf_monitor_invalidate(sceKernelGetSystemTimeWide());
   main_link_disconnect(LINK_REASON_ROM_CHANGE);
 
   clear_texture(0x7FFF);
@@ -1301,6 +1306,7 @@ static void main_power_reopen_gamepak(void)
 
 static void psp_sleep_loop(void)
 {
+  perf_monitor_invalidate(sceKernelGetSystemTimeWide());
   video_power_suspend();
 
   if(main_link_session_open())
@@ -1430,6 +1436,149 @@ u64 ticker(void)
   sceRtcGetCurrentTick(&current_ticks);
 
   return current_ticks;
+}
+
+static u32 main_perf_clock_mhz(void)
+{
+  switch(option_clock_speed)
+  {
+    case PSP_CLOCK_333:
+      return 333;
+    case PSP_CLOCK_300:
+      return 300;
+    case PSP_CLOCK_266:
+      return 266;
+    default:
+      return 222;
+  }
+}
+
+int main_perf_start(void)
+{
+  if(!perf_monitor_start(sceKernelGetSystemTimeWide()))
+    return 0;
+
+  perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
+  video_reset_frame_timing();
+  return 1;
+}
+
+int main_perf_stop(void)
+{
+  if(!perf_monitor_active())
+    return 0;
+
+  perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
+  return perf_monitor_stop(sceKernelGetSystemTimeWide());
+}
+
+void main_perf_snapshot(PerfMetricsSnapshot *snapshot)
+{
+  perf_monitor_snapshot(snapshot);
+}
+
+static int main_perf_write_all(SceUID file, const char *data, u32 length)
+{
+  u32 written = 0;
+
+  while(written < length)
+  {
+    s32 result = FILE_WRITE(file, data + written, length - written);
+
+    if(result <= 0)
+      return 0;
+    written += (u32)result;
+  }
+
+  return 1;
+}
+
+int main_perf_write_report(char *output_path, size_t output_path_size)
+{
+  PerfMetricsSnapshot metrics;
+  PerfReportMetadata metadata;
+  ScePspDateTime date = { 0 };
+  SceIoStat directory_stat;
+  char directory[MAX_PATH];
+  char filename[MAX_PATH];
+  char report[2048];
+  SceUID file;
+  int formatted;
+  int report_length;
+  int model;
+
+  perf_monitor_snapshot(&metrics);
+  if(metrics.state == PERF_METRICS_IDLE ||
+     metrics.state == PERF_METRICS_ACTIVE)
+    return -1;
+
+  memset(&metadata, 0, sizeof(metadata));
+  metadata.emulator_version = GBA_RUSH_VERSION;
+  model = kuKernelGetModel();
+  metadata.psp_model = model < 0 ? UINT32_MAX : (u32)model;
+  metadata.clock_mhz = main_perf_clock_mhz();
+  metadata.renderer = option_video_renderer;
+  metadata.scale = option_screen_scale;
+  metadata.filter = option_screen_filter;
+  metadata.frameskip_type = option_frameskip_type;
+  metadata.frameskip_value = option_frameskip_value;
+  metadata.sound_volume = option_sound_volume;
+  if(gamepak_file_size >= 0xC0U)
+  {
+    metadata.rom_title = gamepak_rom + 0xA0;
+    metadata.rom_title_length = 12;
+    metadata.game_code = gamepak_rom + 0xAC;
+    metadata.game_code_length = 4;
+    metadata.rom_revision = gamepak_rom[0xBC];
+  }
+  metadata.duration_us = perf_monitor_duration_us();
+
+  report_length = perf_report_format(report, sizeof(report), &metadata,
+   &metrics);
+  if(report_length < 0)
+    return -1;
+
+  formatted = snprintf(directory, sizeof(directory), "%sbenchmarks",
+   main_path);
+  if(formatted < 0 || (size_t)formatted >= sizeof(directory))
+    return -1;
+
+  if(sceIoGetstat(directory, &directory_stat) < 0)
+  {
+    if(sceIoMkdir(directory, 0777) < 0)
+      return -1;
+  }
+  else if(!FIO_S_ISDIR(directory_stat.st_mode))
+  {
+    return -1;
+  }
+
+  sceRtcGetCurrentClockLocalTime(&date);
+  formatted = snprintf(filename, sizeof(filename),
+   "%s/perf-%04u%02u%02u-%02u%02u%02u-%06u.txt", directory,
+   date.year, date.month, date.day, date.hour, date.minute, date.second,
+   date.microsecond);
+  if(formatted < 0 || (size_t)formatted >= sizeof(filename))
+    return -1;
+
+  FILE_OPEN(file, filename, WRITE);
+  if(!FILE_CHECK_VALID(file))
+    return -1;
+
+  if(!main_perf_write_all(file, report, (u32)report_length))
+  {
+    FILE_CLOSE(file);
+    sceIoRemove(filename);
+    return -1;
+  }
+  FILE_CLOSE(file);
+
+  if(output_path != NULL && output_path_size != 0)
+  {
+    strncpy(output_path, filename, output_path_size - 1U);
+    output_path[output_path_size - 1U] = '\0';
+  }
+  return 0;
 }
 
 u32 file_length(char *filename)

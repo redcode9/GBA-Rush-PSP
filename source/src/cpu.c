@@ -23,6 +23,7 @@
 // - block memory needs psr swapping and user mode reg swapping
 
 #include "common.h"
+#include "perf_monitor.h"
 
 // Default
 s32 idle_loop_targets = 0;
@@ -3657,6 +3658,10 @@ static u8 *translate_block_##type(u32 pc)                                     \
     flush_addr += CACHE_LINE_SIZE;                                            \
   }                                                                           \
                                                                               \
+  perf_monitor_record_dynarec_compilation();                                  \
+  perf_monitor_observe_dynarec_cache(                                         \
+   (u64)(readonly_next_code - readonly_code_cache) +                          \
+   (u64)(writable_next_code - writable_code_cache));                          \
   return update_trampoline;                                                   \
 }                                                                             \
 
@@ -3962,6 +3967,9 @@ void clear_metadata_area(METADATA_AREA_TYPE metadata_area, METADATA_CLEAR_REASON
 
 void flush_translation_cache(TRANSLATION_REGION_TYPE translation_region, CACHE_FLUSH_REASON_TYPE flush_reason)
 {
+  if(flush_reason == FLUSH_REASON_FULL_CACHE)
+    perf_monitor_record_dynarec_flush();
+
   switch (translation_region)
   {
     case TRANSLATION_REGION_READONLY:
@@ -4117,4 +4125,3 @@ void cpu_write_mem_savestate(SceUID savestate_file)
 {
   CPU_SAVESTATE_BODY(WRITE_MEM);
 }
-
