@@ -344,6 +344,22 @@ static void test_error_completion_and_mode_change(void)
   CHECK((reg16(GBA_SIO_REG_CONTROL) & 0x00C0) == 0);
 }
 
+static void test_result_player_clamp(void)
+{
+  GbaSioTransfer transfer;
+  GbaSioResult result;
+
+  reset_sio();
+  select_mode(GBA_SIO_MODE_MULTIPLAYER);
+  gba_sio_set_connection(&sio, 0, 2);
+  gba_sio_write16(&sio, GBA_SIO_REG_CONTROL, 0x2080);
+  CHECK(gba_sio_take_start(&sio, &transfer) == 1);
+  memset(&result, 0, sizeof(result));
+  result.player_count = UINT8_MAX;
+  CHECK(gba_sio_commit(&sio, &result) == 1);
+  CHECK(gba_sio_next_event(&sio) == 125829);
+}
+
 static void test_repeated_start_and_reset(void)
 {
   GbaSioEvent event;
@@ -388,6 +404,10 @@ static void test_snapshot(void)
   CHECK(restored_registers[GBA_SIO_REG_DATA32_L >> 1] == 0x7788);
   CHECK(restored_registers[GBA_SIO_REG_DATA32_H >> 1] == 0x5566);
 
+  snapshot.transfer_players = 5;
+  CHECK(gba_sio_load_snapshot(&restored, &snapshot) == 0);
+  CHECK((restored_registers[GBA_SIO_REG_CONTROL >> 1] & 0x0080) == 0);
+
   memset(&snapshot, 0, sizeof(snapshot));
   restored_registers[GBA_SIO_REG_CONTROL >> 1] |= 0x0080;
   CHECK(gba_sio_load_snapshot(&restored, &snapshot) == 0);
@@ -410,6 +430,7 @@ int main(void)
   test_abort_and_disconnect();
   test_normal_abort_values();
   test_error_completion_and_mode_change();
+  test_result_player_clamp();
   test_repeated_start_and_reset();
   test_snapshot();
 

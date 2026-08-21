@@ -546,6 +546,8 @@ int gba_sio_commit(GbaSio *sio, const GbaSioResult *result)
   player_count = result->player_count;
   if(player_count == 0)
     player_count = sio->transfer_players;
+  if(player_count > 4)
+    player_count = 4;
   sio->transfer_players = player_count;
   sio->waiting = 0;
   sio->active = 1;
@@ -636,7 +638,8 @@ int gba_sio_load_snapshot(GbaSio *sio, const GbaSioSnapshot *snapshot)
      snapshot->version != GBA_SIO_SNAPSHOT_VERSION ||
      snapshot->size != sizeof(*snapshot) ||
      snapshot->mode > GBA_SIO_MODE_JOYBUS ||
-     snapshot->transfer_mode > GBA_SIO_MODE_JOYBUS)
+     snapshot->transfer_mode > GBA_SIO_MODE_JOYBUS ||
+     snapshot->transfer_players > 4)
   {
     if(sio != NULL && sio->registers != NULL)
     {
@@ -677,6 +680,7 @@ int gba_sio_load_snapshot(GbaSio *sio, const GbaSioSnapshot *snapshot)
 
   if((sio->pending_start + sio->waiting + sio->active) > 1 ||
      (sio->active != 0 && sio->cycles_remaining == 0) ||
+     (gba_sio_transfer_busy(sio) && sio->transfer_players == 0) ||
      !gba_sio_supported_mode(sio->transfer_mode))
   {
     gba_sio_clear_transient(sio);
