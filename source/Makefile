@@ -23,7 +23,7 @@ PSP_EBOOT_TITLE = GBA Rush PSP
 EXTRA_TARGETS = EBOOT.PBP
 
 COMMON_FILE = \
- common.h codebreaker.h gba_sio.h link_protocol.h link_session.h link_transport.h power_lifecycle.h video_adaptive.h perf_metrics.h perf_monitor.h perf_report.h menu_model.h menu_catalog.h psp_adhoc.h \
+ common.h codebreaker.h gba_sio.h link_protocol.h link_session.h link_transport.h power_lifecycle.h video_adaptive.h perf_metrics.h perf_monitor.h perf_report.h menu_model.h menu_catalog.h config_model.h psp_adhoc.h \
  cpu.h memory.h video.h psp_video.h input.h sound.h main.h message.h mh_print.h gui.h zip.h png.h \
  ku_bridge.h exception.h ch_print.h
 
@@ -35,7 +35,7 @@ MAINOBJS = \
  cpu.o memory.o video_dispatch.o video_cc_wrap.o video_old_wrap.o psp_video.o input.o sound.o main.o message.o mh_print.o gui.o zip.o png.o \
  mips_stub.o video_blend_mips.o \
  ku_bridge.o exception.o cheats.o codebreaker.o ch_print.o \
- boxart.o gba_sio.o link_protocol.o link_session.o power_lifecycle.o video_adaptive.o perf_metrics.o perf_monitor.o perf_report.o menu_model.o menu_catalog.o psp_adhoc.o
+ boxart.o gba_sio.o link_protocol.o link_session.o power_lifecycle.o video_adaptive.o perf_metrics.o perf_monitor.o perf_report.o menu_model.o menu_catalog.o config_model.o psp_adhoc.o
 
 ifneq ($(DIAGNOSTIC_INPUT_TRACE),)
 COMMON_FILE += input_trace.h
