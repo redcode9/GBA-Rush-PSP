@@ -37,6 +37,11 @@ MAINOBJS = \
  ku_bridge.o exception.o cheats.o codebreaker.o ch_print.o \
  boxart.o gba_sio.o link_protocol.o link_session.o power_lifecycle.o video_adaptive.o perf_metrics.o perf_monitor.o perf_report.o psp_adhoc.o
 
+ifneq ($(DIAGNOSTIC_INPUT_TRACE),)
+COMMON_FILE += input_trace.h
+MAINOBJS += input_trace.o
+endif
+
 OBJZ = adler32.o crc32.o deflate.o infback.o inffast.o inflate.o inftrees.o trees.o zutil.o
 OBJG = compress.o uncompr.o gzclose.o gzlib.o gzread.o gzwrite.o
 
@@ -53,6 +58,10 @@ CFLAGS = \
  -falign-functions=32 -falign-loops -falign-labels -falign-jumps \
  -Wall -Wundef -Wpointer-arith -Wwrite-strings -Wsign-compare \
  -DZLIB_CONST -flto
+
+ifneq ($(DIAGNOSTIC_INPUT_TRACE),)
+CFLAGS += -DENABLE_DIAGNOSTIC_INPUT_TRACE
+endif
 
 CXXFLAGS =
 

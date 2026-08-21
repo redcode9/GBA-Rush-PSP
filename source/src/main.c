@@ -1258,6 +1258,9 @@ void quit(void)
 void reset_gba(void)
 {
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  input_diagnostic_trace_cancel();
+#endif
   main_link_disconnect(LINK_REASON_ROM_CHANGE);
 
   clear_texture(0x7FFF);
@@ -1307,6 +1310,9 @@ static void main_power_reopen_gamepak(void)
 static void psp_sleep_loop(void)
 {
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  input_diagnostic_trace_cancel();
+#endif
   video_power_suspend();
 
   if(main_link_session_open())

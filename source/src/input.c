@@ -20,6 +20,15 @@
 
 #include "common.h"
 
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+#include "input_trace.h"
+#define DIAGNOSTIC_TRACE_EVENT_CAPACITY 16384U
+
+static InputTraceEvent diagnostic_trace_events[DIAGNOSTIC_TRACE_EVENT_CAPACITY];
+static InputTrace diagnostic_trace;
+static u32 diagnostic_trace_frame;
+#endif
+
 extern u32 option_swap_confirm_buttons;
 
 
@@ -413,6 +422,12 @@ u32 update_input(void)
     }
   }
 
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  new_key = input_trace_apply(&diagnostic_trace, diagnostic_trace_frame,
+   (u16)new_key);
+  diagnostic_trace_frame++;
+#endif
+
   if ((new_key | key) != key)
     trigger_key(new_key);
 
@@ -430,6 +445,12 @@ void init_input(void)
 
   rebuild_fast_forward_button_mask();
 
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  input_trace_init(&diagnostic_trace, diagnostic_trace_events,
+   DIAGNOSTIC_TRACE_EVENT_CAPACITY);
+  diagnostic_trace_frame = 0;
+#endif
+
   __sceCtrlPeekBufferPositive = sceCtrlPeekBufferPositive;
   __sceCtrlReadBufferPositive = sceCtrlReadBufferPositive;
 }
@@ -442,6 +463,65 @@ void init_input_kernel(void)
   __sceCtrlPeekBufferPositive = kuCtrlPeekBufferPositive;
   __sceCtrlReadBufferPositive = kuCtrlReadBufferPositive;
 }
+
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+int input_diagnostic_trace_begin_record(void)
+{
+  if(gamepak_file_size < 0xC0U)
+    return 0;
+
+  return input_trace_begin_record(&diagnostic_trace, diagnostic_trace_frame,
+   gamepak_rom + 0xAC, gamepak_rom[0xBC], (u16)key);
+}
+
+int input_diagnostic_trace_finish_record(void)
+{
+  return input_trace_finish_record(&diagnostic_trace,
+   diagnostic_trace_frame);
+}
+
+int input_diagnostic_trace_encode(u8 *output, size_t output_size,
+ size_t *written)
+{
+  return input_trace_encode(&diagnostic_trace, output, output_size, written);
+}
+
+int input_diagnostic_trace_begin_replay(const u8 *encoded,
+ size_t encoded_size)
+{
+  if(gamepak_file_size < 0xC0U)
+    return 0;
+
+  return input_trace_begin_replay(&diagnostic_trace, encoded, encoded_size,
+   gamepak_rom + 0xAC, gamepak_rom[0xBC], diagnostic_trace_frame);
+}
+
+void input_diagnostic_trace_cancel(void)
+{
+  input_trace_cancel(&diagnostic_trace);
+}
+
+InputTraceState input_diagnostic_trace_state(void)
+{
+  return diagnostic_trace.state;
+}
+
+InputTraceError input_diagnostic_trace_error(void)
+{
+  return diagnostic_trace.error;
+}
+
+u32 input_diagnostic_trace_event_count(void)
+{
+  return diagnostic_trace.event_count;
+}
+
+size_t input_diagnostic_trace_max_encoded_size(void)
+{
+  return INPUT_TRACE_HEADER_SIZE +
+   DIAGNOSTIC_TRACE_EVENT_CAPACITY * INPUT_TRACE_EVENT_SIZE;
+}
+#endif
 
 
 // type = READ / WRITE_MEM

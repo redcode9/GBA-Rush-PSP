@@ -21,6 +21,10 @@
 #ifndef INPUT_H
 #define INPUT_H
 
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+#include "input_trace.h"
+#endif
+
 typedef enum
 {
   BUTTON_L      = 0x200,
@@ -92,6 +96,20 @@ u32 get_pad_input(u32 mask);
 
 GUI_ACTION_TYPE get_gui_input(void);
 GUI_ACTION_TYPE get_gui_input_fs_hold(u32 button_id);
+
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+int input_diagnostic_trace_begin_record(void);
+int input_diagnostic_trace_finish_record(void);
+int input_diagnostic_trace_encode(u8 *output, size_t output_size,
+ size_t *written);
+int input_diagnostic_trace_begin_replay(const u8 *encoded,
+ size_t encoded_size);
+void input_diagnostic_trace_cancel(void);
+InputTraceState input_diagnostic_trace_state(void);
+InputTraceError input_diagnostic_trace_error(void);
+u32 input_diagnostic_trace_event_count(void);
+size_t input_diagnostic_trace_max_encoded_size(void);
+#endif
 
 void input_write_mem_savestate(SceUID savestate_file);
 void input_read_savestate(SceUID savestate_file);
