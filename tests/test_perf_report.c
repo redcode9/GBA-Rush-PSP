@@ -13,7 +13,7 @@ static void test_golden_report(void)
   };
   static const uint8_t game_code[] = { 'B', 'P', 'R', 'E' };
   static const char expected[] =
-   "gba-rush-performance-report=1\n"
+   "gba-rush-performance-report=2\n"
    "version=1.3.0-dev\n"
    "psp-model=1\n"
    "clock-mhz=333\n"
@@ -35,8 +35,14 @@ static void test_golden_report(void)
    "audio-recoveries=2\n"
    "audio-underruns=1\n"
    "dynarec-compilations=40\n"
+   "dynarec-reuse-hits=8\n"
+   "dynarec-retries=2\n"
    "dynarec-flushes=3\n"
+   "dynarec-readonly-flushes=1\n"
+   "dynarec-writable-flushes=2\n"
    "dynarec-cache-high-water=65536\n"
+   "dynarec-readonly-high-water=49152\n"
+   "dynarec-writable-high-water=16384\n"
    "memory-low-water=4194304\n"
    "memory-sampled=1\n"
    "frame-time-samples=180\n"
@@ -82,8 +88,14 @@ static void test_golden_report(void)
   metrics.audio_recoveries = 2;
   metrics.audio_underruns = 1;
   metrics.dynarec_compilations = 40;
+  metrics.dynarec_reuse_hits = 8;
+  metrics.dynarec_retries = 2;
   metrics.dynarec_flushes = 3;
+  metrics.dynarec_readonly_flushes = 1;
+  metrics.dynarec_writable_flushes = 2;
   metrics.dynarec_cache_high_water = 65536;
+  metrics.dynarec_readonly_high_water = 49152;
+  metrics.dynarec_writable_high_water = 16384;
   metrics.memory_low_water = 4194304;
   metrics.has_memory_sample = 1;
   metrics.frame_time_samples = 180;

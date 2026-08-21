@@ -17,7 +17,7 @@
 
 #include "perf_metrics.h"
 
-#define PERF_REPORT_VERSION 1U
+#define PERF_REPORT_VERSION 2U
 
 typedef struct
 {

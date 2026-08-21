@@ -176,10 +176,22 @@ int perf_report_format(char *output, size_t output_size,
    (unsigned long long)metrics->audio_underruns);
   perf_report_append(&writer, "dynarec-compilations=%llu\n",
    (unsigned long long)metrics->dynarec_compilations);
+  perf_report_append(&writer, "dynarec-reuse-hits=%llu\n",
+   (unsigned long long)metrics->dynarec_reuse_hits);
+  perf_report_append(&writer, "dynarec-retries=%llu\n",
+   (unsigned long long)metrics->dynarec_retries);
   perf_report_append(&writer, "dynarec-flushes=%llu\n",
    (unsigned long long)metrics->dynarec_flushes);
+  perf_report_append(&writer, "dynarec-readonly-flushes=%llu\n",
+   (unsigned long long)metrics->dynarec_readonly_flushes);
+  perf_report_append(&writer, "dynarec-writable-flushes=%llu\n",
+   (unsigned long long)metrics->dynarec_writable_flushes);
   perf_report_append(&writer, "dynarec-cache-high-water=%llu\n",
    (unsigned long long)metrics->dynarec_cache_high_water);
+  perf_report_append(&writer, "dynarec-readonly-high-water=%llu\n",
+   (unsigned long long)metrics->dynarec_readonly_high_water);
+  perf_report_append(&writer, "dynarec-writable-high-water=%llu\n",
+   (unsigned long long)metrics->dynarec_writable_high_water);
   perf_report_append(&writer, "memory-low-water=%llu\n",
    (unsigned long long)metrics->memory_low_water);
   perf_report_append(&writer, "memory-sampled=%d\n",

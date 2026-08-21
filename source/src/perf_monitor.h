@@ -30,8 +30,11 @@ void perf_monitor_record_frame(uint32_t frame_time_us, uint32_t ge_wait_us,
 void perf_monitor_record_audio_recovery(void);
 void perf_monitor_record_audio_underrun(void);
 void perf_monitor_record_dynarec_compilation(void);
-void perf_monitor_record_dynarec_flush(void);
-void perf_monitor_observe_dynarec_cache(uint64_t bytes);
+void perf_monitor_record_dynarec_reuse(void);
+void perf_monitor_record_dynarec_retry(void);
+void perf_monitor_record_dynarec_flush(int writable);
+void perf_monitor_observe_dynarec_cache(uint64_t readonly_bytes,
+ uint64_t writable_bytes);
 void perf_monitor_observe_memory_available(uint64_t bytes);
 
 #endif /* PERF_MONITOR_H */

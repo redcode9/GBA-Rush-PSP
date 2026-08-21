@@ -45,8 +45,14 @@ typedef struct
   uint64_t audio_recoveries;
   uint64_t audio_underruns;
   uint64_t dynarec_compilations;
+  uint64_t dynarec_reuse_hits;
+  uint64_t dynarec_retries;
   uint64_t dynarec_flushes;
+  uint64_t dynarec_readonly_flushes;
+  uint64_t dynarec_writable_flushes;
   uint64_t dynarec_cache_high_water;
+  uint64_t dynarec_readonly_high_water;
+  uint64_t dynarec_writable_high_water;
   uint64_t memory_low_water;
   int has_memory_sample;
   PerfMetricsHistogram frame_time;
@@ -63,8 +69,14 @@ typedef struct
   uint64_t audio_recoveries;
   uint64_t audio_underruns;
   uint64_t dynarec_compilations;
+  uint64_t dynarec_reuse_hits;
+  uint64_t dynarec_retries;
   uint64_t dynarec_flushes;
+  uint64_t dynarec_readonly_flushes;
+  uint64_t dynarec_writable_flushes;
   uint64_t dynarec_cache_high_water;
+  uint64_t dynarec_readonly_high_water;
+  uint64_t dynarec_writable_high_water;
   uint64_t memory_low_water;
   int has_memory_sample;
   uint64_t frame_time_samples;
@@ -97,8 +109,11 @@ void perf_metrics_record_skipped_frame(PerfMetrics *metrics);
 void perf_metrics_record_audio_recovery(PerfMetrics *metrics);
 void perf_metrics_record_audio_underrun(PerfMetrics *metrics);
 void perf_metrics_record_dynarec_compilation(PerfMetrics *metrics);
-void perf_metrics_record_dynarec_flush(PerfMetrics *metrics);
-void perf_metrics_observe_dynarec_cache(PerfMetrics *metrics, uint64_t bytes);
+void perf_metrics_record_dynarec_reuse(PerfMetrics *metrics);
+void perf_metrics_record_dynarec_retry(PerfMetrics *metrics);
+void perf_metrics_record_dynarec_flush(PerfMetrics *metrics, int writable);
+void perf_metrics_observe_dynarec_cache(PerfMetrics *metrics,
+ uint64_t readonly_bytes, uint64_t writable_bytes);
 void perf_metrics_observe_memory_available(PerfMetrics *metrics,
  uint64_t bytes);
 void perf_metrics_snapshot(const PerfMetrics *metrics,

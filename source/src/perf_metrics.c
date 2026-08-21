@@ -230,18 +230,50 @@ void perf_metrics_record_dynarec_compilation(PerfMetrics *metrics)
      metrics->dynarec_compilations, 1);
 }
 
-void perf_metrics_record_dynarec_flush(PerfMetrics *metrics)
+void perf_metrics_record_dynarec_reuse(PerfMetrics *metrics)
 {
   if(perf_metrics_active(metrics))
-    metrics->dynarec_flushes = perf_metrics_saturating_add(
-     metrics->dynarec_flushes, 1);
+    metrics->dynarec_reuse_hits = perf_metrics_saturating_add(
+     metrics->dynarec_reuse_hits, 1);
 }
 
-void perf_metrics_observe_dynarec_cache(PerfMetrics *metrics, uint64_t bytes)
+void perf_metrics_record_dynarec_retry(PerfMetrics *metrics)
 {
-  if(perf_metrics_active(metrics) &&
-     bytes > metrics->dynarec_cache_high_water)
-    metrics->dynarec_cache_high_water = bytes;
+  if(perf_metrics_active(metrics))
+    metrics->dynarec_retries = perf_metrics_saturating_add(
+     metrics->dynarec_retries, 1);
+}
+
+void perf_metrics_record_dynarec_flush(PerfMetrics *metrics, int writable)
+{
+  if(!perf_metrics_active(metrics))
+    return;
+
+  metrics->dynarec_flushes = perf_metrics_saturating_add(
+   metrics->dynarec_flushes, 1);
+  if(writable)
+    metrics->dynarec_writable_flushes = perf_metrics_saturating_add(
+     metrics->dynarec_writable_flushes, 1);
+  else
+    metrics->dynarec_readonly_flushes = perf_metrics_saturating_add(
+     metrics->dynarec_readonly_flushes, 1);
+}
+
+void perf_metrics_observe_dynarec_cache(PerfMetrics *metrics,
+ uint64_t readonly_bytes, uint64_t writable_bytes)
+{
+  uint64_t total_bytes;
+
+  if(!perf_metrics_active(metrics))
+    return;
+
+  total_bytes = perf_metrics_saturating_add(readonly_bytes, writable_bytes);
+  if(total_bytes > metrics->dynarec_cache_high_water)
+    metrics->dynarec_cache_high_water = total_bytes;
+  if(readonly_bytes > metrics->dynarec_readonly_high_water)
+    metrics->dynarec_readonly_high_water = readonly_bytes;
+  if(writable_bytes > metrics->dynarec_writable_high_water)
+    metrics->dynarec_writable_high_water = writable_bytes;
 }
 
 void perf_metrics_observe_memory_available(PerfMetrics *metrics,
@@ -273,8 +305,16 @@ void perf_metrics_snapshot(const PerfMetrics *metrics,
   snapshot->audio_recoveries = metrics->audio_recoveries;
   snapshot->audio_underruns = metrics->audio_underruns;
   snapshot->dynarec_compilations = metrics->dynarec_compilations;
+  snapshot->dynarec_reuse_hits = metrics->dynarec_reuse_hits;
+  snapshot->dynarec_retries = metrics->dynarec_retries;
   snapshot->dynarec_flushes = metrics->dynarec_flushes;
+  snapshot->dynarec_readonly_flushes = metrics->dynarec_readonly_flushes;
+  snapshot->dynarec_writable_flushes = metrics->dynarec_writable_flushes;
   snapshot->dynarec_cache_high_water = metrics->dynarec_cache_high_water;
+  snapshot->dynarec_readonly_high_water =
+   metrics->dynarec_readonly_high_water;
+  snapshot->dynarec_writable_high_water =
+   metrics->dynarec_writable_high_water;
   snapshot->memory_low_water = metrics->memory_low_water;
   snapshot->has_memory_sample = metrics->has_memory_sample;
 

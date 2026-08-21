@@ -95,14 +95,26 @@ void perf_monitor_record_dynarec_compilation(void)
   perf_metrics_record_dynarec_compilation(&perf_monitor_metrics);
 }
 
-void perf_monitor_record_dynarec_flush(void)
+void perf_monitor_record_dynarec_reuse(void)
 {
-  perf_metrics_record_dynarec_flush(&perf_monitor_metrics);
+  perf_metrics_record_dynarec_reuse(&perf_monitor_metrics);
 }
 
-void perf_monitor_observe_dynarec_cache(uint64_t bytes)
+void perf_monitor_record_dynarec_retry(void)
 {
-  perf_metrics_observe_dynarec_cache(&perf_monitor_metrics, bytes);
+  perf_metrics_record_dynarec_retry(&perf_monitor_metrics);
+}
+
+void perf_monitor_record_dynarec_flush(int writable)
+{
+  perf_metrics_record_dynarec_flush(&perf_monitor_metrics, writable);
+}
+
+void perf_monitor_observe_dynarec_cache(uint64_t readonly_bytes,
+ uint64_t writable_bytes)
+{
+  perf_metrics_observe_dynarec_cache(&perf_monitor_metrics,
+   readonly_bytes, writable_bytes);
 }
 
 void perf_monitor_observe_memory_available(uint64_t bytes)

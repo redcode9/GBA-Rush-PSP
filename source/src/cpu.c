@@ -2655,11 +2655,12 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
                                                                               \
     /* If the translation failed then pass that failure on if we're in        \
        a recursive level, or try again if we've hit the bottom. */            \
-    if (translation_result == NULL)                                           \
+      if (translation_result == NULL)                                           \
     {                                                                         \
       if (translation_recursion_level != 0)                                   \
         return NULL;                                                          \
                                                                               \
+      perf_monitor_record_dynarec_retry();                                    \
       goto redo;                                                              \
     }                                                                         \
                                                                               \
@@ -2715,6 +2716,7 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
       if (translation_recursion_level != 0)                                   \
         return NULL;                                                          \
                                                                               \
+      perf_monitor_record_dynarec_retry();                                    \
       goto redo;                                                              \
     }                                                                         \
 /*                                                                              \
@@ -2806,6 +2808,7 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
           if (translation_recursion_level != 0)                               \
             return NULL;                                                      \
                                                                               \
+          perf_monitor_record_dynarec_retry();                                \
           goto redo;                                                          \
         }                                                                     \
 /*                                                                              \
@@ -3492,6 +3495,7 @@ static u8 *translate_block_##type(u32 pc)                                     \
                                                                               \
           update_metadata_area_end(pc);                                       \
                                                                               \
+          perf_monitor_record_dynarec_reuse();                                \
           return NativeCode;                                                  \
         }                                                                     \
         /* Reuse disabled: drop this header from the chain so we do not       \
@@ -3660,7 +3664,7 @@ static u8 *translate_block_##type(u32 pc)                                     \
                                                                               \
   perf_monitor_record_dynarec_compilation();                                  \
   perf_monitor_observe_dynarec_cache(                                         \
-   (u64)(readonly_next_code - readonly_code_cache) +                          \
+   (u64)(readonly_next_code - readonly_code_cache),                           \
    (u64)(writable_next_code - writable_code_cache));                          \
   return update_trampoline;                                                   \
 }                                                                             \
@@ -3968,7 +3972,8 @@ void clear_metadata_area(METADATA_AREA_TYPE metadata_area, METADATA_CLEAR_REASON
 void flush_translation_cache(TRANSLATION_REGION_TYPE translation_region, CACHE_FLUSH_REASON_TYPE flush_reason)
 {
   if(flush_reason == FLUSH_REASON_FULL_CACHE)
-    perf_monitor_record_dynarec_flush();
+    perf_monitor_record_dynarec_flush(
+     translation_region == TRANSLATION_REGION_WRITABLE);
 
   switch (translation_region)
   {

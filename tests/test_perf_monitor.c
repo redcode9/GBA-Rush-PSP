@@ -62,8 +62,10 @@ static void test_events_and_watermarks(void)
   perf_monitor_record_audio_recovery();
   perf_monitor_record_audio_underrun();
   perf_monitor_record_dynarec_compilation();
-  perf_monitor_record_dynarec_flush();
-  perf_monitor_observe_dynarec_cache(4096);
+  perf_monitor_record_dynarec_reuse();
+  perf_monitor_record_dynarec_retry();
+  perf_monitor_record_dynarec_flush(1);
+  perf_monitor_observe_dynarec_cache(4096, 1024);
   perf_monitor_observe_memory_available(8192);
   perf_monitor_observe_memory_available(6144);
   assert(perf_monitor_stop(400));
@@ -72,8 +74,14 @@ static void test_events_and_watermarks(void)
   assert(result.audio_recoveries == 1);
   assert(result.audio_underruns == 1);
   assert(result.dynarec_compilations == 1);
+  assert(result.dynarec_reuse_hits == 1);
+  assert(result.dynarec_retries == 1);
   assert(result.dynarec_flushes == 1);
-  assert(result.dynarec_cache_high_water == 4096);
+  assert(result.dynarec_readonly_flushes == 0);
+  assert(result.dynarec_writable_flushes == 1);
+  assert(result.dynarec_cache_high_water == 5120);
+  assert(result.dynarec_readonly_high_water == 4096);
+  assert(result.dynarec_writable_high_water == 1024);
   assert(result.memory_low_water == 6144);
   assert(perf_monitor_duration_us() == 0);
 }
