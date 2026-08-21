@@ -1073,4 +1073,40 @@
   // MSG_GUIDE_RESTART_NONE
   "Restart: not required",
 
+
+  // MSG_TRACE_STATUS_FORMAT
+  "Input trace: %s (%lu events)",
+  // MSG_TRACE_STATE_IDLE
+  "idle",
+  // MSG_TRACE_STATE_RECORDING
+  "recording",
+  // MSG_TRACE_STATE_READY
+  "ready",
+  // MSG_TRACE_STATE_REPLAYING
+  "replaying",
+  // MSG_TRACE_STATE_FINISHED
+  "finished",
+  // MSG_TRACE_STATE_ERROR
+  "error",
+  // MSG_TRACE_START
+  "Start input trace",
+  // MSG_TRACE_FINISH_SAVE
+  "Finish and save trace",
+  // MSG_TRACE_REPLAY
+  "Replay saved trace",
+  // MSG_TRACE_CANCEL
+  "Cancel input trace",
+  // MSG_TRACE_HELP_START
+  "Record button changes by emulated frame",
+  // MSG_TRACE_HELP_FINISH_SAVE
+  "Stop recording and save the trace",
+  // MSG_TRACE_HELP_REPLAY
+  "Replay the saved trace for this game",
+  // MSG_TRACE_HELP_CANCEL
+  "Stop the active trace operation",
+  // MSG_TRACE_SAVED
+  "Input trace saved",
+  // MSG_TRACE_FAILED
+  "Input trace operation failed",
+
 },

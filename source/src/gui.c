@@ -3030,6 +3030,9 @@ static MenuType *all_menus[MAX_MENUS];
 static u32 num_all_menus = 0;
 static char diagnostics_status_line[96];
 static char diagnostics_report_line[96];
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+static char diagnostics_trace_status_line[96];
+#endif
 
 static int menu_game_available(void)
 {
@@ -3105,6 +3108,178 @@ static void menu_quit_action(void)
         action_savestate_slot(10);
     quit();
 }
+
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+static int menu_trace_path(char *path, size_t path_size, int create_directory)
+{
+    char directory[MAX_PATH];
+    char game_code[5];
+    SceIoStat stat;
+    size_t i;
+    int result;
+
+    if(!menu_game_available() || gamepak_file_size < 0xC0U)
+        return 0;
+
+    result = snprintf(directory, sizeof(directory), "%straces", main_path);
+    if(result < 0 || (size_t)result >= sizeof(directory))
+        return 0;
+
+    if(create_directory && sceIoGetstat(directory, &stat) < 0 &&
+       sceIoMkdir(directory, 0777) < 0)
+        return 0;
+
+    for(i = 0; i < 4; i++)
+    {
+        u8 value = gamepak_rom[0xAC + i];
+        game_code[i] = ((value >= 'A' && value <= 'Z') ||
+                        (value >= '0' && value <= '9')) ? (char)value : '_';
+    }
+    game_code[4] = '\0';
+
+    result = snprintf(path, path_size, "%s/input-%s-r%u.gbit", directory,
+     game_code, (unsigned int)gamepak_rom[0xBC]);
+    return result >= 0 && (size_t)result < path_size;
+}
+
+static int menu_trace_write_all(SceUID file, const u8 *data, size_t size)
+{
+    size_t written = 0;
+
+    while(written < size)
+    {
+        s32 result = FILE_WRITE(file, data + written, size - written);
+        if(result <= 0)
+            return 0;
+        written += (size_t)result;
+    }
+    return 1;
+}
+
+static int menu_trace_read_all(SceUID file, u8 *data, size_t size)
+{
+    size_t read = 0;
+
+    while(read < size)
+    {
+        s32 result = FILE_READ(file, data + read, size - read);
+        if(result <= 0)
+            return 0;
+        read += (size_t)result;
+    }
+    return 1;
+}
+
+static int menu_trace_start_available(void)
+{
+    InputTraceState state = input_diagnostic_trace_state();
+
+    return menu_game_available() && state != INPUT_TRACE_RECORDING &&
+           state != INPUT_TRACE_REPLAYING;
+}
+
+static int menu_trace_finish_available(void)
+{
+    return input_diagnostic_trace_state() == INPUT_TRACE_RECORDING;
+}
+
+static int menu_trace_replay_available(void)
+{
+    InputTraceState state = input_diagnostic_trace_state();
+
+    return menu_game_available() && state != INPUT_TRACE_RECORDING &&
+           state != INPUT_TRACE_REPLAYING;
+}
+
+static int menu_trace_cancel_available(void)
+{
+    return input_diagnostic_trace_state() != INPUT_TRACE_IDLE;
+}
+
+static void menu_trace_start(void)
+{
+    diagnostics_report_line[0] = '\0';
+    if(!input_diagnostic_trace_begin_record())
+        snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+         "%s", MSG[MSG_TRACE_FAILED]);
+}
+
+static void menu_trace_finish_save(void)
+{
+    u8 *encoded;
+    size_t capacity;
+    size_t written;
+    char path[MAX_PATH];
+    SceUID file;
+    int success = 0;
+
+    if(!input_diagnostic_trace_finish_record())
+        goto finish;
+
+    capacity = input_diagnostic_trace_max_encoded_size();
+    encoded = (u8 *)safe_malloc(capacity);
+    if(!input_diagnostic_trace_encode(encoded, capacity, &written) ||
+       !menu_trace_path(path, sizeof(path), 1))
+    {
+        free(encoded);
+        goto finish;
+    }
+
+    FILE_OPEN(file, path, WRITE);
+    if(FILE_CHECK_VALID(file))
+    {
+        success = menu_trace_write_all(file, encoded, written);
+        FILE_CLOSE(file);
+        if(!success)
+            sceIoRemove(path);
+    }
+    free(encoded);
+
+finish:
+    snprintf(diagnostics_report_line, sizeof(diagnostics_report_line), "%s",
+     MSG[success ? MSG_TRACE_SAVED : MSG_TRACE_FAILED]);
+}
+
+static void menu_trace_replay(void)
+{
+    char path[MAX_PATH];
+    SceIoStat stat;
+    SceUID file;
+    u8 *encoded;
+    size_t size;
+    int success = 0;
+
+    if(!menu_trace_path(path, sizeof(path), 0) ||
+       sceIoGetstat(path, &stat) < 0 || stat.st_size <= 0 ||
+       (u64)stat.st_size > input_diagnostic_trace_max_encoded_size())
+        goto finish;
+
+    size = (size_t)stat.st_size;
+    encoded = (u8 *)safe_malloc(size);
+    FILE_OPEN(file, path, READ);
+    if(FILE_CHECK_VALID(file))
+    {
+        success = menu_trace_read_all(file, encoded, size);
+        FILE_CLOSE(file);
+    }
+    if(success)
+        success = input_diagnostic_trace_begin_replay(encoded, size);
+    free(encoded);
+
+finish:
+    if(!success)
+        snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+         "%s", MSG[MSG_TRACE_FAILED]);
+    else
+        diagnostics_report_line[0] = '\0';
+}
+
+static void menu_trace_cancel(void)
+{
+    input_diagnostic_trace_cancel();
+    diagnostics_report_line[0] = '\0';
+}
+#endif
 
 static void menu_link_host_action(void)
 {
@@ -4184,6 +4359,37 @@ u32 menu(void)
     }
     snprintf(diagnostics_status_line, sizeof(diagnostics_status_line),
      "%s", MSG[status_message]);
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+    {
+      u32 trace_state_message;
+
+      switch(input_diagnostic_trace_state())
+      {
+        case INPUT_TRACE_RECORDING:
+          trace_state_message = MSG_TRACE_STATE_RECORDING;
+          break;
+        case INPUT_TRACE_READY:
+          trace_state_message = MSG_TRACE_STATE_READY;
+          break;
+        case INPUT_TRACE_REPLAYING:
+          trace_state_message = MSG_TRACE_STATE_REPLAYING;
+          break;
+        case INPUT_TRACE_FINISHED:
+          trace_state_message = MSG_TRACE_STATE_FINISHED;
+          break;
+        case INPUT_TRACE_ERROR:
+          trace_state_message = MSG_TRACE_STATE_ERROR;
+          break;
+        default:
+          trace_state_message = MSG_TRACE_STATE_IDLE;
+          break;
+      }
+      snprintf(diagnostics_trace_status_line,
+       sizeof(diagnostics_trace_status_line), MSG[MSG_TRACE_STATUS_FORMAT],
+       MSG[trace_state_message],
+       (unsigned long)input_diagnostic_trace_event_count());
+    }
+#endif
   }
 
   void submenu_exit(void)
@@ -4824,7 +5030,16 @@ u32 menu(void)
     ACTION_OPTION(menu_diagnostics_start, NULL, MSG[MSG_DIAGNOSTICS_START], MSG_DIAGNOSTICS_HELP_START, 3, MSG_DIAGNOSTICS_START),
     ACTION_OPTION(menu_diagnostics_stop, NULL, MSG[MSG_DIAGNOSTICS_STOP], MSG_DIAGNOSTICS_HELP_STOP, 4, MSG_DIAGNOSTICS_STOP),
     ACTION_OPTION(menu_diagnostics_write_report, NULL, MSG[MSG_DIAGNOSTICS_SAVE_REPORT], MSG_DIAGNOSTICS_HELP_SAVE_REPORT, 5, MSG_DIAGNOSTICS_SAVE_REPORT),
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+    ACTION_OPTION(NULL, NULL, diagnostics_trace_status_line, MSG_DIAGNOSTICS_HELP_STATUS, 8, 0),
+    ACTION_OPTION(menu_trace_start, NULL, MSG[MSG_TRACE_START], MSG_TRACE_HELP_START, 10, MSG_TRACE_START),
+    ACTION_OPTION(menu_trace_finish_save, NULL, MSG[MSG_TRACE_FINISH_SAVE], MSG_TRACE_HELP_FINISH_SAVE, 11, MSG_TRACE_FINISH_SAVE),
+    ACTION_OPTION(menu_trace_replay, NULL, MSG[MSG_TRACE_REPLAY], MSG_TRACE_HELP_REPLAY, 12, MSG_TRACE_REPLAY),
+    ACTION_OPTION(menu_trace_cancel, NULL, MSG[MSG_TRACE_CANCEL], MSG_TRACE_HELP_CANCEL, 13, MSG_TRACE_CANCEL),
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 15, MSG_OPTION_MENU_11)
+#else
     ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 7, MSG_OPTION_MENU_11)
+#endif
   };
 
   diagnostics_options[0].behavior_flags = MENU_OPTION_PASSIVE_ROW;
@@ -4836,6 +5051,17 @@ u32 menu(void)
   diagnostics_options[2].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[3].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[4].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  diagnostics_options[5].behavior_flags = MENU_OPTION_PASSIVE_ROW;
+  diagnostics_options[6].available_function = menu_trace_start_available;
+  diagnostics_options[7].available_function = menu_trace_finish_available;
+  diagnostics_options[8].available_function = menu_trace_replay_available;
+  diagnostics_options[9].available_function = menu_trace_cancel_available;
+  diagnostics_options[6].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[7].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[8].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[9].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+#endif
 
   MAKE_MENU(diagnostics, NULL, NULL);
 

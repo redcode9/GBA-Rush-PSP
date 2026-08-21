@@ -1072,4 +1072,39 @@
   // MSG_GUIDE_RESTART_NONE
   "Riavvio: non necessario",
 
+  // MSG_TRACE_STATUS_FORMAT
+  "Traccia input: %s (%lu eventi)",
+  // MSG_TRACE_STATE_IDLE
+  "inattiva",
+  // MSG_TRACE_STATE_RECORDING
+  "registrazione",
+  // MSG_TRACE_STATE_READY
+  "pronta",
+  // MSG_TRACE_STATE_REPLAYING
+  "riproduzione",
+  // MSG_TRACE_STATE_FINISHED
+  "terminata",
+  // MSG_TRACE_STATE_ERROR
+  "errore",
+  // MSG_TRACE_START
+  "Avvia traccia input",
+  // MSG_TRACE_FINISH_SAVE
+  "Termina e salva traccia",
+  // MSG_TRACE_REPLAY
+  "Riproduci traccia salvata",
+  // MSG_TRACE_CANCEL
+  "Annulla traccia input",
+  // MSG_TRACE_HELP_START
+  "Registra i cambi dei tasti per fotogramma",
+  // MSG_TRACE_HELP_FINISH_SAVE
+  "Ferma la registrazione e salva la traccia",
+  // MSG_TRACE_HELP_REPLAY
+  "Riproduce la traccia salvata per il gioco",
+  // MSG_TRACE_HELP_CANCEL
+  "Ferma l'operazione di tracciamento",
+  // MSG_TRACE_SAVED
+  "Traccia input salvata",
+  // MSG_TRACE_FAILED
+  "Operazione sulla traccia non riuscita",
+
 },
