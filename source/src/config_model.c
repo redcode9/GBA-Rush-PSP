@@ -3,7 +3,9 @@
 #include <string.h>
 
 #define CONFIG_MODEL_MAGIC "GBRC"
-#define CONFIG_MODEL_VERSION 1U
+#define CONFIG_MODEL_VERSION 2U
+#define CONFIG_MODEL_PREVIOUS_VERSION 1U
+#define CONFIG_MODEL_PREVIOUS_VALUE_COUNT 39U
 #define CONFIG_MODEL_CHECKSUM_OFFSET 8U
 
 static const uint32_t default_gamepad[CONFIG_MODEL_GAMEPAD_COUNT] =
@@ -91,6 +93,12 @@ void config_model_defaults(ConfigModel *model)
   model->language = 1;
   model->hblank_window_start = 1;
   model->hblank_window_end = 160;
+  model->fast_forward_profile = 0;
+  model->fast_forward_game_override = 0;
+  model->fast_forward_activation = 0;
+  model->fast_forward_speed = 2;
+  model->fast_forward_presentation = 1;
+  model->fast_forward_audio = 0;
   memcpy(model->gamepad, default_gamepad, sizeof(model->gamepad));
 }
 
@@ -123,6 +131,12 @@ static void model_to_values(const ConfigModel *model, uint32_t *values)
   values[22] = model->theme;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     values[23 + i] = model->gamepad[i];
+  values[39] = model->fast_forward_profile;
+  values[40] = model->fast_forward_game_override;
+  values[41] = model->fast_forward_activation;
+  values[42] = model->fast_forward_speed;
+  values[43] = model->fast_forward_presentation;
+  values[44] = model->fast_forward_audio;
 }
 
 static void values_to_model(const uint32_t *values, ConfigModel *model)
@@ -155,6 +169,12 @@ static void values_to_model(const uint32_t *values, ConfigModel *model)
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     model->gamepad[i] = valid_or_default(values[23 + i], 20,
                                          default_gamepad[i]);
+  model->fast_forward_profile = valid_or_default(values[39], 3, 0);
+  model->fast_forward_game_override = valid_or_default(values[40], 2, 0);
+  model->fast_forward_activation = valid_or_default(values[41], 2, 0);
+  model->fast_forward_speed = valid_or_default(values[42], 3, 2);
+  model->fast_forward_presentation = valid_or_default(values[43], 3, 1);
+  model->fast_forward_audio = valid_or_default(values[44], 2, 0);
 }
 
 int config_model_encode(const ConfigModel *model, uint8_t *output,
@@ -187,18 +207,28 @@ static ConfigModelDecodeResult decode_versioned(const uint8_t *data,
 {
   uint32_t values[CONFIG_MODEL_VALUE_COUNT];
   ConfigModel decoded;
+  uint16_t version;
+  uint16_t value_count;
   size_t i;
 
-  if(size != CONFIG_MODEL_ENCODED_SIZE ||
-     read_u16(data + 4) != CONFIG_MODEL_VERSION ||
-     read_u16(data + 6) != CONFIG_MODEL_VALUE_COUNT ||
-     read_u32(data + 12) != CONFIG_MODEL_VALUE_COUNT * sizeof(uint32_t) ||
+  if(size < CONFIG_MODEL_HEADER_SIZE)
+    return CONFIG_MODEL_DECODE_INVALID;
+
+  version = read_u16(data + 4);
+  value_count = read_u16(data + 6);
+  if(!((version == CONFIG_MODEL_VERSION &&
+        value_count == CONFIG_MODEL_VALUE_COUNT) ||
+       (version == CONFIG_MODEL_PREVIOUS_VERSION &&
+        value_count == CONFIG_MODEL_PREVIOUS_VALUE_COUNT)) ||
+     size != CONFIG_MODEL_HEADER_SIZE + value_count * sizeof(uint32_t) ||
+     read_u32(data + 12) != value_count * sizeof(uint32_t) ||
      read_u32(data + CONFIG_MODEL_CHECKSUM_OFFSET) != checksum(data, size))
     return CONFIG_MODEL_DECODE_INVALID;
 
-  for(i = 0; i < CONFIG_MODEL_VALUE_COUNT; i++)
-    values[i] = read_u32(data + CONFIG_MODEL_HEADER_SIZE + i * 4);
   config_model_defaults(&decoded);
+  model_to_values(&decoded, values);
+  for(i = 0; i < value_count; i++)
+    values[i] = read_u32(data + CONFIG_MODEL_HEADER_SIZE + i * 4);
   values_to_model(values, &decoded);
   *model = decoded;
   return CONFIG_MODEL_DECODE_VERSIONED;

@@ -1107,4 +1107,63 @@
   // MSG_TRACE_FAILED
   "Operazione sulla traccia non riuscita",
 
+  // MSG_FF_PROFILE_LABEL
+  "Profilo avanti veloce: %s",
+  // MSG_FF_OVERRIDE_LABEL
+  "Per questo gioco     : %s",
+  // MSG_FF_ACTIVATION_LABEL
+  "Attivazione          : %s",
+  // MSG_FF_SPEED_LABEL
+  "Velocita             : %s",
+  // MSG_FF_PRESENTATION_LABEL
+  "Visualizzazione      : %s",
+  // MSG_FF_AUDIO_LABEL
+  "Audio                : %s",
+  // MSG_FF_ADVANCED
+  "Impostazioni avanzate",
+  // MSG_FF_HELP_PROFILE
+  "Scegli il comportamento Moderno, Classico o Personale",
+  // MSG_FF_HELP_OVERRIDE
+  "Usa il predefinito o salva una configurazione per il gioco",
+  // MSG_FF_HELP_ACTIVATION
+  "Tieni premuto il tasto oppure usalo come interruttore",
+  // MSG_FF_HELP_SPEED
+  "Limita l'accelerazione o usa tutta la potenza disponibile",
+  // MSG_FF_HELP_PRESENTATION
+  "Mostra 60, 30 o 15 aggiornamenti al secondo",
+  // MSG_FF_HELP_AUDIO
+  "Disattiva l'audio o comprimilo alle velocita fisse",
+  // MSG_FF_HELP_ADVANCED
+  "Controlli di compatibilita e temporizzazione",
+  // MSG_FF_PROFILE_MODERN
+  "Moderno",
+  // MSG_FF_PROFILE_CLASSIC
+  "Classico",
+  // MSG_FF_PROFILE_CUSTOM
+  "Personale",
+  // MSG_FF_USE_GLOBAL
+  "Usa globale",
+  // MSG_FF_USE_OVERRIDE
+  "Personalizza",
+  // MSG_FF_HOLD
+  "Pressione",
+  // MSG_FF_TOGGLE
+  "Interruttore",
+  // MSG_FF_SPEED_2X
+  "2x",
+  // MSG_FF_SPEED_3X
+  "3x",
+  // MSG_FF_SPEED_MAXIMUM
+  "Massima",
+  // MSG_FF_PRESENT_SMOOTH
+  "Fluida",
+  // MSG_FF_PRESENT_BALANCED
+  "Bilanciata",
+  // MSG_FF_PRESENT_PERFORMANCE
+  "Prestazioni max",
+  // MSG_FF_AUDIO_SILENT
+  "Silenzioso",
+  // MSG_FF_AUDIO_ACCELERATED
+  "Accelerato",
+
 },

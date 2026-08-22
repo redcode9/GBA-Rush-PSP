@@ -68,6 +68,20 @@ u32 option_hblank_irq_window_start = 1;
 u32 option_hblank_irq_window_end = 160;
 u32 option_psp_vsync = 0;
 
+u32 option_fast_forward_profile = FAST_FORWARD_PROFILE_MODERN;
+u32 option_fast_forward_activation = FAST_FORWARD_ACTIVATION_HOLD;
+u32 option_fast_forward_speed = FAST_FORWARD_SPEED_MAXIMUM;
+u32 option_fast_forward_presentation = FAST_FORWARD_PRESENTATION_BALANCED;
+u32 option_fast_forward_audio = FAST_FORWARD_AUDIO_SILENT;
+
+u32 option_fast_forward_game_override = 0;
+u32 option_game_fast_forward_profile = FAST_FORWARD_PROFILE_MODERN;
+u32 option_game_fast_forward_activation = FAST_FORWARD_ACTIVATION_HOLD;
+u32 option_game_fast_forward_speed = FAST_FORWARD_SPEED_MAXIMUM;
+u32 option_game_fast_forward_presentation =
+ FAST_FORWARD_PRESENTATION_BALANCED;
+u32 option_game_fast_forward_audio = FAST_FORWARD_AUDIO_SILENT;
+
 char main_path[MAX_PATH];
 
 int date_format = 0;
@@ -396,6 +410,61 @@ int main_fast_forward_active(void)
 FastForwardSpeed main_fast_forward_speed(void)
 {
   return fast_forward_policy_speed(&fast_forward_policy);
+}
+
+const char *main_fast_forward_status(void)
+{
+  switch(fast_forward_policy_speed(&fast_forward_policy))
+  {
+    case FAST_FORWARD_SPEED_2X:
+      return "FF 2.00x";
+    case FAST_FORWARD_SPEED_3X:
+      return "FF 3.00x";
+    case FAST_FORWARD_SPEED_MAXIMUM:
+    default:
+      return "FF MAX";
+  }
+}
+
+void main_fast_forward_apply_settings(void)
+{
+  FastForwardSettings settings;
+
+  if(option_fast_forward_game_override)
+  {
+    settings.profile = (FastForwardProfile)option_game_fast_forward_profile;
+    settings.activation =
+     (FastForwardActivation)option_game_fast_forward_activation;
+    settings.speed = (FastForwardSpeed)option_game_fast_forward_speed;
+    settings.presentation =
+     (FastForwardPresentation)option_game_fast_forward_presentation;
+    settings.audio = (FastForwardAudio)option_game_fast_forward_audio;
+  }
+  else
+  {
+    settings.profile = (FastForwardProfile)option_fast_forward_profile;
+    settings.activation =
+     (FastForwardActivation)option_fast_forward_activation;
+    settings.speed = (FastForwardSpeed)option_fast_forward_speed;
+    settings.presentation =
+     (FastForwardPresentation)option_fast_forward_presentation;
+    settings.audio = (FastForwardAudio)option_fast_forward_audio;
+  }
+
+  fast_forward_policy_configure(&fast_forward_policy, &settings);
+  synchronize_flag = 1;
+  sound_set_fast_forward(0);
+}
+
+void main_fast_forward_reset_game_settings(void)
+{
+  option_fast_forward_game_override = 0;
+  option_game_fast_forward_profile = option_fast_forward_profile;
+  option_game_fast_forward_activation = option_fast_forward_activation;
+  option_game_fast_forward_speed = option_fast_forward_speed;
+  option_game_fast_forward_presentation = option_fast_forward_presentation;
+  option_game_fast_forward_audio = option_fast_forward_audio;
+  main_fast_forward_apply_settings();
 }
 
 static u32 main_link_rom_crc32(void)
@@ -886,16 +955,20 @@ static void synchronize(void)
     if (psp_fps_debug != 0)
     {
       if (option_language == 0)
-        print_string(MSG[MSG_TURBO], 0, 12, COLOR15_WHITE, COLOR15_BLACK);
+        print_string(main_fast_forward_status(), 0, 12, COLOR15_WHITE,
+         COLOR15_BLACK);
       else
-        print_string_gbk(MSG[MSG_TURBO], 0, 12, COLOR15_WHITE, COLOR15_BLACK);
+        print_string_gbk(main_fast_forward_status(), 0, 12, COLOR15_WHITE,
+         COLOR15_BLACK);
     }
     else
     {
       if (option_language == 0)
-        print_string(MSG[MSG_TURBO], 0, 0, COLOR15_WHITE, COLOR15_BLACK);
+        print_string(main_fast_forward_status(), 0, 0, COLOR15_WHITE,
+         COLOR15_BLACK);
       else
-        print_string_gbk(MSG[MSG_TURBO], 0, 0, COLOR15_WHITE, COLOR15_BLACK);
+        print_string_gbk(main_fast_forward_status(), 0, 0, COLOR15_WHITE,
+         COLOR15_BLACK);
     }
   }
 

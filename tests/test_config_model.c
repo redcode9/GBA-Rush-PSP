@@ -14,6 +14,29 @@ static void write_u32(uint8_t *output, uint32_t value)
   output[3] = (uint8_t)(value >> 24);
 }
 
+static void write_u16(uint8_t *output, uint16_t value)
+{
+  output[0] = (uint8_t)value;
+  output[1] = (uint8_t)(value >> 8);
+}
+
+static uint32_t config_checksum(const uint8_t *data, size_t size)
+{
+  uint32_t value = 2166136261U;
+  size_t i;
+
+  for(i = 0; i < size; i++)
+  {
+    uint8_t byte = data[i];
+
+    if(i >= 8 && i < 12)
+      byte = 0;
+    value ^= byte;
+    value *= 16777619U;
+  }
+  return value;
+}
+
 static void encode_legacy_words(uint8_t *output, const uint32_t *words,
  size_t word_count)
 {
@@ -45,12 +68,24 @@ static void test_defaults_and_versioned_round_trip(void)
   assert(original.ram_dynarec_policy == 2);
   assert(original.hblank_window_start == 1);
   assert(original.hblank_window_end == 160);
+  assert(original.fast_forward_profile == 0);
+  assert(original.fast_forward_game_override == 0);
+  assert(original.fast_forward_activation == 0);
+  assert(original.fast_forward_speed == 2);
+  assert(original.fast_forward_presentation == 1);
+  assert(original.fast_forward_audio == 0);
   assert(original.gamepad[0] == 11);
 
   original.screen_filter = 0;
   original.language = 4;
   original.theme = 8;
   original.gamepad[15] = 19;
+  original.fast_forward_profile = 2;
+  original.fast_forward_game_override = 1;
+  original.fast_forward_activation = 1;
+  original.fast_forward_speed = 1;
+  original.fast_forward_presentation = 2;
+  original.fast_forward_audio = 1;
 
   assert(config_model_encode(&original, encoded, sizeof(encoded), &written));
   assert(written == CONFIG_MODEL_ENCODED_SIZE);
@@ -64,6 +99,64 @@ static void test_defaults_and_versioned_round_trip(void)
   assert(config_model_decode(encoded, written, &decoded) ==
          CONFIG_MODEL_DECODE_INVALID);
   assert(decoded.screen_scale == 0xA5A5A5A5U);
+}
+
+static void test_previous_versioned_migration(void)
+{
+  enum { previous_count = 39, previous_size = 16 + previous_count * 4 };
+  uint8_t encoded[previous_size];
+  uint8_t current[CONFIG_MODEL_ENCODED_SIZE];
+  ConfigModel defaults;
+  ConfigModel decoded;
+  size_t written;
+  size_t i;
+
+  config_model_defaults(&defaults);
+  assert(config_model_encode(&defaults, current, sizeof(current), &written));
+  memset(encoded, 0, sizeof(encoded));
+  memcpy(encoded, "GBRC", 4);
+  write_u16(encoded + 4, 1);
+  write_u16(encoded + 6, previous_count);
+  write_u32(encoded + 12, previous_count * 4);
+  for(i = 0; i < previous_count; i++)
+    memcpy(encoded + 16 + i * 4, current + 16 + i * 4, 4);
+  write_u32(encoded + 8, config_checksum(encoded, sizeof(encoded)));
+
+  assert(config_model_decode(encoded, sizeof(encoded), &decoded) ==
+   CONFIG_MODEL_DECODE_VERSIONED);
+  assert(decoded.fast_forward_profile == 0);
+  assert(decoded.fast_forward_game_override == 0);
+  assert(decoded.fast_forward_activation == 0);
+  assert(decoded.fast_forward_speed == 2);
+  assert(decoded.fast_forward_presentation == 1);
+  assert(decoded.fast_forward_audio == 0);
+}
+
+static void test_fast_forward_fields_fall_back_independently(void)
+{
+  ConfigModel model;
+  ConfigModel decoded;
+  uint8_t encoded[CONFIG_MODEL_ENCODED_SIZE];
+  size_t written;
+
+  config_model_defaults(&model);
+  model.screen_scale = 5;
+  model.fast_forward_profile = 99;
+  model.fast_forward_game_override = 1;
+  model.fast_forward_activation = 99;
+  model.fast_forward_speed = 1;
+  model.fast_forward_presentation = 99;
+  model.fast_forward_audio = 1;
+  assert(config_model_encode(&model, encoded, sizeof(encoded), &written));
+  assert(config_model_decode(encoded, written, &decoded) ==
+   CONFIG_MODEL_DECODE_VERSIONED);
+  assert(decoded.screen_scale == 5);
+  assert(decoded.fast_forward_profile == 0);
+  assert(decoded.fast_forward_game_override == 1);
+  assert(decoded.fast_forward_activation == 0);
+  assert(decoded.fast_forward_speed == 1);
+  assert(decoded.fast_forward_presentation == 1);
+  assert(decoded.fast_forward_audio == 1);
 }
 
 static void test_current_binary_migration_and_field_validation(void)
@@ -231,6 +324,8 @@ static void test_rejects_unknown_or_truncated_data(void)
 int main(void)
 {
   test_defaults_and_versioned_round_trip();
+  test_previous_versioned_migration();
+  test_fast_forward_fields_fall_back_independently();
   test_current_binary_migration_and_field_validation();
   test_older_binary_layouts();
   test_game_binary_layout();

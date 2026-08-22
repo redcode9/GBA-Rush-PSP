@@ -90,6 +90,18 @@ extern u32 option_hblank_irq_window_start;
 extern u32 option_hblank_irq_window_end;
 extern u32 option_psp_vsync;
 
+extern u32 option_fast_forward_profile;
+extern u32 option_fast_forward_activation;
+extern u32 option_fast_forward_speed;
+extern u32 option_fast_forward_presentation;
+extern u32 option_fast_forward_audio;
+extern u32 option_fast_forward_game_override;
+extern u32 option_game_fast_forward_profile;
+extern u32 option_game_fast_forward_activation;
+extern u32 option_game_fast_forward_speed;
+extern u32 option_game_fast_forward_presentation;
+extern u32 option_game_fast_forward_audio;
+
 extern char main_path[MAX_PATH];
 
 extern int date_format;
@@ -125,6 +137,9 @@ void main_fast_forward_input(u32 pressed, u32 held);
 void main_fast_forward_stop(void);
 int main_fast_forward_active(void);
 FastForwardSpeed main_fast_forward_speed(void);
+const char *main_fast_forward_status(void);
+void main_fast_forward_apply_settings(void);
+void main_fast_forward_reset_game_settings(void);
 
 int main_perf_start(void);
 int main_perf_stop(void);

@@ -180,6 +180,14 @@ static const char *swap_button_options[2];
 static const char *theme_preset_options[9];
 static const char *language_option[5];
 static const char *gamepad_config_buttons[20];
+static const char *fast_forward_profile_options[FAST_FORWARD_PROFILE_COUNT];
+static const char *fast_forward_override_options[2];
+static const char *fast_forward_activation_options[
+ FAST_FORWARD_ACTIVATION_COUNT];
+static const char *fast_forward_speed_options[FAST_FORWARD_SPEED_COUNT];
+static const char *fast_forward_presentation_options[
+ FAST_FORWARD_PRESENTATION_COUNT];
+static const char *fast_forward_audio_options[FAST_FORWARD_AUDIO_COUNT];
 
 static void init_choice_arrays(void)
 {
@@ -226,6 +234,33 @@ static void init_choice_arrays(void)
     sound_volume_options[8]  = MSG[MSG_VOL_80];
     sound_volume_options[9]  = MSG[MSG_VOL_90];
     sound_volume_options[10] = MSG[MSG_VOL_100];
+
+    fast_forward_profile_options[FAST_FORWARD_PROFILE_MODERN] =
+     MSG[MSG_FF_PROFILE_MODERN];
+    fast_forward_profile_options[FAST_FORWARD_PROFILE_CLASSIC] =
+     MSG[MSG_FF_PROFILE_CLASSIC];
+    fast_forward_profile_options[FAST_FORWARD_PROFILE_CUSTOM] =
+     MSG[MSG_FF_PROFILE_CUSTOM];
+    fast_forward_override_options[0] = MSG[MSG_FF_USE_GLOBAL];
+    fast_forward_override_options[1] = MSG[MSG_FF_USE_OVERRIDE];
+    fast_forward_activation_options[FAST_FORWARD_ACTIVATION_HOLD] =
+     MSG[MSG_FF_HOLD];
+    fast_forward_activation_options[FAST_FORWARD_ACTIVATION_TOGGLE] =
+     MSG[MSG_FF_TOGGLE];
+    fast_forward_speed_options[FAST_FORWARD_SPEED_2X] = MSG[MSG_FF_SPEED_2X];
+    fast_forward_speed_options[FAST_FORWARD_SPEED_3X] = MSG[MSG_FF_SPEED_3X];
+    fast_forward_speed_options[FAST_FORWARD_SPEED_MAXIMUM] =
+     MSG[MSG_FF_SPEED_MAXIMUM];
+    fast_forward_presentation_options[FAST_FORWARD_PRESENTATION_SMOOTH] =
+     MSG[MSG_FF_PRESENT_SMOOTH];
+    fast_forward_presentation_options[FAST_FORWARD_PRESENTATION_BALANCED] =
+     MSG[MSG_FF_PRESENT_BALANCED];
+    fast_forward_presentation_options[FAST_FORWARD_PRESENTATION_PERFORMANCE] =
+     MSG[MSG_FF_PRESENT_PERFORMANCE];
+    fast_forward_audio_options[FAST_FORWARD_AUDIO_SILENT] =
+     MSG[MSG_FF_AUDIO_SILENT];
+    fast_forward_audio_options[FAST_FORWARD_AUDIO_ACCELERATED] =
+     MSG[MSG_FF_AUDIO_ACCELERATED];
 
     image_format_options[0] = MSG[MSG_FMT_PNG];
     image_format_options[1] = MSG[MSG_FMT_BMP];
@@ -1517,7 +1552,7 @@ u32 ALIGN_DATA gamepad_config_line_to_button[] =
 u32 savestate_slot = 0;
 
 
-void _flush_cache(void);
+void _flush_cache(void) __attribute__((used, externally_visible));
 
 static int sort_function(const void *dest_str_ptr, const void *src_str_ptr);
 
@@ -3036,7 +3071,7 @@ static void reload_cheats_page(void)
 
 /* Global array of all menus — populated once inside menu(),
    then used by file-scope refresh to avoid nested functions. */
-#define MAX_MENUS 15
+#define MAX_MENUS 16
 static MenuType *all_menus[MAX_MENUS];
 static u32 num_all_menus = 0;
 static char diagnostics_status_line[96];
@@ -3560,6 +3595,11 @@ u32 menu(void)
   MenuType *current_menu;
   MenuOptionType *current_option;
   MenuOptionType *display_option;
+  MenuOptionType *fast_forward_profile_option = NULL;
+  MenuOptionType *fast_forward_activation_option = NULL;
+  MenuOptionType *fast_forward_speed_option = NULL;
+  MenuOptionType *fast_forward_presentation_option = NULL;
+  MenuOptionType *fast_forward_audio_option = NULL;
   MenuModel navigation_model;
   MenuRow navigation_rows[MAX_MENU_MODEL_ROWS];
 
@@ -3596,6 +3636,11 @@ u32 menu(void)
   auto void menu_load_file(void);
 
   auto void submenu_emulator(void);
+  auto void menu_fast_forward_bind_options(void);
+  auto void menu_fast_forward_changed(void);
+  auto void menu_fast_forward_override_changed(void);
+  auto int menu_fast_forward_custom_available(void);
+  auto int menu_fast_forward_game_available(void);
   auto void submenu_graphics(void);
   auto void submenu_gamepad(void);
   auto void submenu_analog(void);
@@ -4067,6 +4112,70 @@ u32 menu(void)
     option_psp_vsync = 0;
   }
 
+  void menu_fast_forward_bind_options(void)
+  {
+    if(fast_forward_profile_option == NULL)
+      return;
+
+    if(option_fast_forward_game_override)
+    {
+      fast_forward_profile_option->current_option =
+       &option_game_fast_forward_profile;
+      fast_forward_activation_option->current_option =
+       &option_game_fast_forward_activation;
+      fast_forward_speed_option->current_option =
+       &option_game_fast_forward_speed;
+      fast_forward_presentation_option->current_option =
+       &option_game_fast_forward_presentation;
+      fast_forward_audio_option->current_option =
+       &option_game_fast_forward_audio;
+    }
+    else
+    {
+      fast_forward_profile_option->current_option =
+       &option_fast_forward_profile;
+      fast_forward_activation_option->current_option =
+       &option_fast_forward_activation;
+      fast_forward_speed_option->current_option = &option_fast_forward_speed;
+      fast_forward_presentation_option->current_option =
+       &option_fast_forward_presentation;
+      fast_forward_audio_option->current_option = &option_fast_forward_audio;
+    }
+  }
+
+  void menu_fast_forward_changed(void)
+  {
+    main_fast_forward_apply_settings();
+  }
+
+  void menu_fast_forward_override_changed(void)
+  {
+    if(option_fast_forward_game_override)
+    {
+      option_game_fast_forward_profile = option_fast_forward_profile;
+      option_game_fast_forward_activation = option_fast_forward_activation;
+      option_game_fast_forward_speed = option_fast_forward_speed;
+      option_game_fast_forward_presentation =
+       option_fast_forward_presentation;
+      option_game_fast_forward_audio = option_fast_forward_audio;
+    }
+    menu_fast_forward_bind_options();
+    main_fast_forward_apply_settings();
+  }
+
+  int menu_fast_forward_custom_available(void)
+  {
+    u32 profile = option_fast_forward_game_override ?
+     option_game_fast_forward_profile : option_fast_forward_profile;
+
+    return profile == FAST_FORWARD_PROFILE_CUSTOM;
+  }
+
+  int menu_fast_forward_game_available(void)
+  {
+    return !first_load;
+  }
+
   void menu_emulator_default(void)
   {
     option_frameskip_type = FRAMESKIP_AUTO;
@@ -4077,6 +4186,25 @@ u32 menu(void)
     option_hblank_irq_window_start = 1;
     option_hblank_irq_window_end = 160;
     option_boot_mode = 0;
+    if(option_fast_forward_game_override)
+    {
+      option_game_fast_forward_profile = FAST_FORWARD_PROFILE_MODERN;
+      option_game_fast_forward_activation = FAST_FORWARD_ACTIVATION_HOLD;
+      option_game_fast_forward_speed = FAST_FORWARD_SPEED_MAXIMUM;
+      option_game_fast_forward_presentation =
+       FAST_FORWARD_PRESENTATION_BALANCED;
+      option_game_fast_forward_audio = FAST_FORWARD_AUDIO_SILENT;
+    }
+    else
+    {
+      option_fast_forward_profile = FAST_FORWARD_PROFILE_MODERN;
+      option_fast_forward_activation = FAST_FORWARD_ACTIVATION_HOLD;
+      option_fast_forward_speed = FAST_FORWARD_SPEED_MAXIMUM;
+      option_fast_forward_presentation =
+       FAST_FORWARD_PRESENTATION_BALANCED;
+      option_fast_forward_audio = FAST_FORWARD_AUDIO_SILENT;
+    }
+    main_fast_forward_apply_settings();
     ram_dynarec_policy_menu_prev = ~(u32)0;
   }
 
@@ -4253,6 +4381,7 @@ u32 menu(void)
   void submenu_emulator(void)
   {
     ram_dynarec_policy_menu_prev = ~(u32)0;
+    menu_fast_forward_bind_options();
     DRAW_TITLE_OPT_GBK(MSG_OPTION_MENU_TITLE);
   }
 
@@ -4889,24 +5018,50 @@ u32 menu(void)
 
   MAKE_MENU(graphics, NULL, NULL);
 
+  MenuOptionType performance_advanced_options[] =
+  {
+    STRING_SELECTION_OPTION_TT(menu_passive_ram_dynarec_policy, MSG[MSG_OPTION_MENU_BLOCK_CHECKSUM_REUSE], ram_dynarec_options, &option_ram_dynarec_policy, 3, MSG_OPTION_MENU_HELP_BLOCK_CHECKSUM_REUSE, 0, MSG_TOOLTIP_RAM_DYNAREC_MODE, MSG_OPTION_MENU_BLOCK_CHECKSUM_REUSE),
+    NUMERIC_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_HBLANK_IRQ_WIN_START], &option_hblank_irq_window_start, 228, MSG_OPTION_MENU_HELP_HBLANK_IRQ_WIN_START, 1, MSG_TOOLTIP_HBLANK_WIN_START, MSG_OPTION_MENU_HBLANK_IRQ_WIN_START),
+    NUMERIC_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_HBLANK_IRQ_WIN_END], &option_hblank_irq_window_end, 228, MSG_OPTION_MENU_HELP_HBLANK_IRQ_WIN_END, 2, MSG_TOOLTIP_HBLANK_WIN_END, MSG_OPTION_MENU_HBLANK_IRQ_WIN_END),
+    STRING_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_7], stack_optimize_options, &option_stack_optimize, 2, MSG_OPTION_MENU_HELP_7, 4, MSG_TOOLTIP_STACK_OPTIMIZE, MSG_OPTION_MENU_7),
+    STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_8], yes_no_options, &option_boot_mode, 2, MSG_OPTION_MENU_HELP_8, 6, MSG_OPTION_MENU_8),
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 8, MSG_OPTION_MENU_11)
+  };
+
+  MAKE_MENU(performance_advanced, NULL, NULL);
+
   MenuOptionType emulator_options[] =
   {
-    STRING_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_3], frameskip_options, &option_frameskip_type, 3, MSG_OPTION_MENU_HELP_3, 0, MSG_TOOLTIP_FRAMESKIP_TYPE, MSG_OPTION_MENU_3),
-    NUMERIC_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_4], &option_frameskip_value, 10, MSG_OPTION_MENU_HELP_4, 1, MSG_TOOLTIP_FRAMESKIP_VALUE, MSG_OPTION_MENU_4),
-    STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_5], clock_speed_options, &option_clock_speed, 4, MSG_OPTION_MENU_HELP_5, 2, MSG_OPTION_MENU_5), 
-
-    STRING_SELECTION_OPTION_TT(menu_passive_ram_dynarec_policy, MSG[MSG_OPTION_MENU_BLOCK_CHECKSUM_REUSE], ram_dynarec_options, &option_ram_dynarec_policy, 3, MSG_OPTION_MENU_HELP_BLOCK_CHECKSUM_REUSE, 4, MSG_TOOLTIP_RAM_DYNAREC_MODE, MSG_OPTION_MENU_BLOCK_CHECKSUM_REUSE),
-    NUMERIC_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_HBLANK_IRQ_WIN_START], &option_hblank_irq_window_start, 228, MSG_OPTION_MENU_HELP_HBLANK_IRQ_WIN_START, 5, MSG_TOOLTIP_HBLANK_WIN_START, MSG_OPTION_MENU_HBLANK_IRQ_WIN_START),
-    NUMERIC_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_HBLANK_IRQ_WIN_END], &option_hblank_irq_window_end, 228, MSG_OPTION_MENU_HELP_HBLANK_IRQ_WIN_END, 6, MSG_TOOLTIP_HBLANK_WIN_END, MSG_OPTION_MENU_HBLANK_IRQ_WIN_END),
-
-    STRING_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_7], stack_optimize_options, &option_stack_optimize, 2, MSG_OPTION_MENU_HELP_7, 8, MSG_TOOLTIP_STACK_OPTIMIZE, MSG_OPTION_MENU_7),
-
-    STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_8], yes_no_options, &option_boot_mode, 2, MSG_OPTION_MENU_HELP_8, 10, MSG_OPTION_MENU_8),
-
-    ACTION_OPTION(menu_emulator_default, NULL, MSG[MSG_OPTION_MENU_DEFAULT], MSG_OPTION_MENU_HELP_DEFAULT, 12, MSG_OPTION_MENU_DEFAULT),
-
-    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 14, MSG_OPTION_MENU_11)
+    STRING_SELECTION_OPTION(menu_fast_forward_changed, MSG[MSG_FF_PROFILE_LABEL], fast_forward_profile_options, &option_fast_forward_profile, FAST_FORWARD_PROFILE_COUNT, MSG_FF_HELP_PROFILE, 0, MSG_FF_PROFILE_LABEL),
+    STRING_SELECTION_OPTION(menu_fast_forward_override_changed, MSG[MSG_FF_OVERRIDE_LABEL], fast_forward_override_options, &option_fast_forward_game_override, 2, MSG_FF_HELP_OVERRIDE, 1, MSG_FF_OVERRIDE_LABEL),
+    STRING_SELECTION_OPTION(menu_fast_forward_changed, MSG[MSG_FF_ACTIVATION_LABEL], fast_forward_activation_options, &option_fast_forward_activation, FAST_FORWARD_ACTIVATION_COUNT, MSG_FF_HELP_ACTIVATION, 2, MSG_FF_ACTIVATION_LABEL),
+    STRING_SELECTION_OPTION(menu_fast_forward_changed, MSG[MSG_FF_SPEED_LABEL], fast_forward_speed_options, &option_fast_forward_speed, FAST_FORWARD_SPEED_COUNT, MSG_FF_HELP_SPEED, 3, MSG_FF_SPEED_LABEL),
+    STRING_SELECTION_OPTION(menu_fast_forward_changed, MSG[MSG_FF_PRESENTATION_LABEL], fast_forward_presentation_options, &option_fast_forward_presentation, FAST_FORWARD_PRESENTATION_COUNT, MSG_FF_HELP_PRESENTATION, 4, MSG_FF_PRESENTATION_LABEL),
+    STRING_SELECTION_OPTION(menu_fast_forward_changed, MSG[MSG_FF_AUDIO_LABEL], fast_forward_audio_options, &option_fast_forward_audio, FAST_FORWARD_AUDIO_COUNT, MSG_FF_HELP_AUDIO, 5, MSG_FF_AUDIO_LABEL),
+    STRING_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_3], frameskip_options, &option_frameskip_type, 3, MSG_OPTION_MENU_HELP_3, 7, MSG_TOOLTIP_FRAMESKIP_TYPE, MSG_OPTION_MENU_3),
+    NUMERIC_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_4], &option_frameskip_value, 10, MSG_OPTION_MENU_HELP_4, 8, MSG_TOOLTIP_FRAMESKIP_VALUE, MSG_OPTION_MENU_4),
+    STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_5], clock_speed_options, &option_clock_speed, 4, MSG_OPTION_MENU_HELP_5, 9, MSG_OPTION_MENU_5),
+    SUBMENU_OPTION(&performance_advanced_menu, MSG[MSG_FF_ADVANCED], MSG_FF_HELP_ADVANCED, 11, MSG_FF_ADVANCED),
+    ACTION_OPTION(menu_emulator_default, NULL, MSG[MSG_OPTION_MENU_DEFAULT], MSG_OPTION_MENU_HELP_DEFAULT, 13, MSG_OPTION_MENU_DEFAULT),
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 15, MSG_OPTION_MENU_11)
   };
+
+  fast_forward_profile_option = &emulator_options[0];
+  fast_forward_activation_option = &emulator_options[2];
+  fast_forward_speed_option = &emulator_options[3];
+  fast_forward_presentation_option = &emulator_options[4];
+  fast_forward_audio_option = &emulator_options[5];
+  emulator_options[1].available_function = menu_fast_forward_game_available;
+  emulator_options[1].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  emulator_options[2].available_function = menu_fast_forward_custom_available;
+  emulator_options[3].available_function = menu_fast_forward_custom_available;
+  emulator_options[4].available_function = menu_fast_forward_custom_available;
+  emulator_options[5].available_function = menu_fast_forward_custom_available;
+  emulator_options[2].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  emulator_options[3].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  emulator_options[4].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  emulator_options[5].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  menu_fast_forward_bind_options();
 
   MAKE_MENU(emulator, NULL, NULL);
 
@@ -5133,6 +5288,7 @@ u32 menu(void)
   all_menus[12] = &controls_menu;
   all_menus[13] = &diagnostics_menu;
   all_menus[14] = &exit_menu;
+  all_menus[15] = &performance_advanced_menu;
   num_all_menus = MAX_MENUS;
 
   savestate_menu.parent = &main_menu;
@@ -5149,6 +5305,7 @@ u32 menu(void)
   gamepad_config_menu.parent = &controls_menu;
   analog_config_menu.parent = &controls_menu;
   custom_colors_menu.parent = &theme_menu;
+  performance_advanced_menu.parent = &emulator_menu;
 
   menu_refresh_language();
 
@@ -5272,7 +5429,8 @@ u32 menu(void)
       submenu_theme();
     if (current_menu == &custom_colors_menu)
       submenu_custom_colors();
-    if (current_menu == &emulator_menu)
+    if (current_menu == &emulator_menu ||
+        current_menu == &performance_advanced_menu)
       submenu_emulator();
     if (current_menu == &gamepad_config_menu)
       submenu_gamepad();
@@ -6006,6 +6164,12 @@ static void capture_global_config(ConfigModel *model)
   model->psp_vsync = option_psp_vsync;
   model->swap_confirm_buttons = option_swap_confirm_buttons;
   model->theme = option_theme;
+  model->fast_forward_profile = option_fast_forward_profile;
+  model->fast_forward_game_override = 0;
+  model->fast_forward_activation = option_fast_forward_activation;
+  model->fast_forward_speed = option_fast_forward_speed;
+  model->fast_forward_presentation = option_fast_forward_presentation;
+  model->fast_forward_audio = option_fast_forward_audio;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     model->gamepad[i] = gamepad_config_map[i];
 }
@@ -6038,6 +6202,11 @@ static void apply_global_config(const ConfigModel *model)
   option_psp_vsync = model->psp_vsync;
   option_swap_confirm_buttons = model->swap_confirm_buttons;
   option_theme = model->theme;
+  option_fast_forward_profile = model->fast_forward_profile;
+  option_fast_forward_activation = model->fast_forward_activation;
+  option_fast_forward_speed = model->fast_forward_speed;
+  option_fast_forward_presentation = model->fast_forward_presentation;
+  option_fast_forward_audio = model->fast_forward_audio;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
   {
     gamepad_config_map[i] = model->gamepad[i];
@@ -6048,6 +6217,7 @@ static void apply_global_config(const ConfigModel *model)
     gamepad_config_map[0] = BUTTON_ID_MENU;
   rebuild_fast_forward_button_mask();
   apply_theme(option_theme);
+  main_fast_forward_reset_game_settings();
 }
 
 static s32 save_global_config(void)
@@ -6121,6 +6291,12 @@ static void capture_game_config(ConfigModel *model)
   model->frameskip_value = option_frameskip_value;
   model->clock_speed = option_clock_speed;
   model->sound_volume = option_sound_volume;
+  model->fast_forward_profile = option_game_fast_forward_profile;
+  model->fast_forward_game_override = option_fast_forward_game_override;
+  model->fast_forward_activation = option_game_fast_forward_activation;
+  model->fast_forward_speed = option_game_fast_forward_speed;
+  model->fast_forward_presentation = option_game_fast_forward_presentation;
+  model->fast_forward_audio = option_game_fast_forward_audio;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     model->gamepad[i] = gamepad_config_map[i];
 }
@@ -6137,6 +6313,12 @@ static void apply_game_config(const ConfigModel *model)
   option_frameskip_value = model->frameskip_value;
   option_clock_speed = model->clock_speed;
   option_sound_volume = model->sound_volume;
+  option_fast_forward_game_override = model->fast_forward_game_override;
+  option_game_fast_forward_profile = model->fast_forward_profile;
+  option_game_fast_forward_activation = model->fast_forward_activation;
+  option_game_fast_forward_speed = model->fast_forward_speed;
+  option_game_fast_forward_presentation = model->fast_forward_presentation;
+  option_game_fast_forward_audio = model->fast_forward_audio;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
   {
     gamepad_config_map[i] = model->gamepad[i];
@@ -6146,6 +6328,7 @@ static void apply_game_config(const ConfigModel *model)
   if(!enable_home_menu && !has_menu_button)
     gamepad_config_map[0] = BUTTON_ID_MENU;
   rebuild_fast_forward_button_mask();
+  main_fast_forward_apply_settings();
 }
 
 static s32 save_game_config_atomic(const char *primary)
@@ -6232,6 +6415,7 @@ s32 load_game_config_file(void)
   option_frameskip_type = FRAMESKIP_AUTO;
   option_frameskip_value = 9;
   option_clock_speed = PSP_CLOCK_333;
+  main_fast_forward_reset_game_settings();
   return -1;
 }
 

@@ -1109,4 +1109,63 @@
   // MSG_TRACE_FAILED
   "Input trace operation failed",
 
+  // MSG_FF_PROFILE_LABEL
+  "Fast-forward profile : %s",
+  // MSG_FF_OVERRIDE_LABEL
+  "For this game        : %s",
+  // MSG_FF_ACTIVATION_LABEL
+  "Activation           : %s",
+  // MSG_FF_SPEED_LABEL
+  "Speed                : %s",
+  // MSG_FF_PRESENTATION_LABEL
+  "Presentation         : %s",
+  // MSG_FF_AUDIO_LABEL
+  "Audio                : %s",
+  // MSG_FF_ADVANCED
+  "Advanced settings",
+  // MSG_FF_HELP_PROFILE
+  "Choose Modern, Classic or Custom behavior",
+  // MSG_FF_HELP_OVERRIDE
+  "Use the default or save a complete game override",
+  // MSG_FF_HELP_ACTIVATION
+  "Hold the button or press it to toggle",
+  // MSG_FF_HELP_SPEED
+  "Limit acceleration or use available headroom",
+  // MSG_FF_HELP_PRESENTATION
+  "Target 60, 30 or 15 display updates per second",
+  // MSG_FF_HELP_AUDIO
+  "Keep turbo silent or compress fixed-speed audio",
+  // MSG_FF_HELP_ADVANCED
+  "Compatibility and timing controls",
+  // MSG_FF_PROFILE_MODERN
+  "Modern",
+  // MSG_FF_PROFILE_CLASSIC
+  "Classic",
+  // MSG_FF_PROFILE_CUSTOM
+  "Custom",
+  // MSG_FF_USE_GLOBAL
+  "Use global",
+  // MSG_FF_USE_OVERRIDE
+  "Override",
+  // MSG_FF_HOLD
+  "Hold",
+  // MSG_FF_TOGGLE
+  "Toggle",
+  // MSG_FF_SPEED_2X
+  "2x",
+  // MSG_FF_SPEED_3X
+  "3x",
+  // MSG_FF_SPEED_MAXIMUM
+  "Maximum",
+  // MSG_FF_PRESENT_SMOOTH
+  "Smooth",
+  // MSG_FF_PRESENT_BALANCED
+  "Balanced",
+  // MSG_FF_PRESENT_PERFORMANCE
+  "Max performance",
+  // MSG_FF_AUDIO_SILENT
+  "Silent",
+  // MSG_FF_AUDIO_ACCELERATED
+  "Accelerated",
+
 },
