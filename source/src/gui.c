@@ -3523,11 +3523,7 @@ static void menu_refresh_language(void)
 u32 menu(void)
 {
 
-  /* A held speed button must not leave the audio worker suspended while the
-   * emulator is in the menu. Gameplay input will restore the hold state when
-   * execution resumes. */
-  synchronize_flag = 1;
-  sound_set_fast_forward(0);
+  main_fast_forward_stop();
 
   init_choice_arrays();
   u32 i;

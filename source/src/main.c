@@ -21,6 +21,7 @@
 #include <pspsysmem.h>
 
 #include "common.h"
+#include "fast_forward_policy.h"
 #include "perf_monitor.h"
 #include "perf_report.h"
 #include "power_lifecycle.h"
@@ -121,6 +122,7 @@ TimerType ALIGN_DATA timer[4];
 u32 dma_cycle_count = 0;
 LinkSession gba_link_session;
 static PowerLifecycle psp_power_lifecycle;
+static FastForwardPolicy fast_forward_policy;
 static u32 sleep_reopen_gamepak = 0;
 
 u32 cpu_ticks = 0;
@@ -365,6 +367,37 @@ int main_link_pending(void)
    state == LINK_SESSION_WAIT_READY_ACK;
 }
 
+void main_fast_forward_input(u32 pressed, u32 held)
+{
+  if(main_link_active())
+  {
+    if(fast_forward_policy_active(&fast_forward_policy))
+      main_fast_forward_stop();
+    return;
+  }
+
+  fast_forward_policy_input(&fast_forward_policy, pressed != 0, held != 0);
+  synchronize_flag = !fast_forward_policy_active(&fast_forward_policy);
+  sound_set_fast_forward(synchronize_flag == 0);
+}
+
+void main_fast_forward_stop(void)
+{
+  fast_forward_policy_stop(&fast_forward_policy);
+  synchronize_flag = 1;
+  sound_set_fast_forward(0);
+}
+
+int main_fast_forward_active(void)
+{
+  return fast_forward_policy_active(&fast_forward_policy);
+}
+
+FastForwardSpeed main_fast_forward_speed(void)
+{
+  return fast_forward_policy_speed(&fast_forward_policy);
+}
+
 static u32 main_link_rom_crc32(void)
 {
   u8 buffer[8192];
@@ -417,6 +450,8 @@ static int main_link_start(int host)
     return 0;
   if(!psp_adhoc_wlan_enabled())
     return 0;
+
+  main_fast_forward_stop();
 
   if(main_link_session_open())
     main_link_disconnect(LINK_REASON_USER);
@@ -790,10 +825,6 @@ static void synchronize(void)
 {
   static s32 fps = 60;
   static s32 frames_drawn = 60;
-  static u32 turbo_active = 0;
-  static u32 turbo_next_render = 0;
-
-  #define TURBO_RENDER_INTERVAL_US 33333
 
   u32 used_frameskip_type  = option_frameskip_type;
   u32 used_frameskip_value = option_frameskip_value;
@@ -850,7 +881,7 @@ static void synchronize(void)
     }
   }
 
-  if (!synchronize_flag)
+  if (main_fast_forward_active())
   {
     if (psp_fps_debug != 0)
     {
@@ -868,40 +899,22 @@ static void synchronize(void)
     }
   }
 
-  if(!synchronize_flag)
+  if(main_fast_forward_active())
   {
+    FastForwardFrameDecision decision;
     u32 now = sceKernelGetSystemTimeLow();
 
-    if(!turbo_active)
-    {
-      turbo_active = 1;
-      turbo_next_render = now + TURBO_RENDER_INTERVAL_US;
-      real_frame_count = 0;
-      virtual_frame_count = 0;
-      num_skipped_frames = 0;
-      frameskip_counter = 0;
-    }
-
-    if((s32)(now - turbo_next_render) >= 0)
-    {
-      skip_next_frame = 0;
-      turbo_next_render += TURBO_RENDER_INTERVAL_US;
-      if((s32)(now - turbo_next_render) >=
-       (s32)(TURBO_RENDER_INTERVAL_US * 4))
-        turbo_next_render = now + TURBO_RENDER_INTERVAL_US;
-    }
-    else
-    {
-      skip_next_frame = 1;
-    }
+    decision = fast_forward_policy_frame(&fast_forward_policy, now);
+    skip_next_frame = !decision.present;
+    if(decision.delay_us != 0)
+      sceKernelDelayThread(decision.delay_us);
 
     interval_skipped_frames += skip_next_frame;
     return;
   }
 
-  if(turbo_active)
+  if(fast_forward_policy_take_force_present(&fast_forward_policy))
   {
-    turbo_active = 0;
     skip_next_frame = 0;
     real_frame_count = 0;
     virtual_frame_count = 0;
@@ -951,7 +964,6 @@ static void synchronize(void)
 
   interval_skipped_frames += skip_next_frame;
 
-  #undef TURBO_RENDER_INTERVAL_US
 }
 
 
@@ -1071,7 +1083,12 @@ static void find_main_path(const char *eboot_path)
 
 static void setup_main(const char *eboot_path)
 {
+  FastForwardSettings fast_forward_settings;
+
   scePowerLock(0);
+
+  fast_forward_settings_defaults(&fast_forward_settings);
+  fast_forward_policy_init(&fast_forward_policy, &fast_forward_settings);
 
   initExceptionHandler();
 
@@ -1220,6 +1237,7 @@ int main(int argc, char *argv[])
 
 void quit(void)
 {
+  main_fast_forward_stop();
   main_link_disconnect(LINK_REASON_USER);
 
   update_backup_immediately();
@@ -1241,6 +1259,7 @@ void quit(void)
 
 void reset_gba(void)
 {
+  main_fast_forward_stop();
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
   input_diagnostic_trace_cancel();
@@ -1293,6 +1312,7 @@ static void main_power_reopen_gamepak(void)
 
 static void psp_sleep_loop(void)
 {
+  main_fast_forward_stop();
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
   input_diagnostic_trace_cancel();

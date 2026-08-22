@@ -21,6 +21,7 @@
 #ifndef MAIN_H
 #define MAIN_H
 
+#include "fast_forward_policy.h"
 #include "link_session.h"
 #include "perf_metrics.h"
 
@@ -119,6 +120,11 @@ int main_link_active(void);
 int main_link_connected(void);
 int main_link_pending(void);
 void main_power_service(void);
+
+void main_fast_forward_input(u32 pressed, u32 held);
+void main_fast_forward_stop(void);
+int main_fast_forward_active(void);
+FastForwardSpeed main_fast_forward_speed(void);
 
 int main_perf_start(void);
 int main_perf_stop(void);
