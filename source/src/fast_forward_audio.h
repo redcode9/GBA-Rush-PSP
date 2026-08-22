@@ -16,7 +16,7 @@
 
 uint32_t fast_forward_audio_required_samples(uint32_t output_frames,
  uint32_t factor);
-void fast_forward_audio_compress_ring(int16_t *ring, uint32_t ring_size,
+void fast_forward_audio_compress_ring(int32_t *ring, uint32_t ring_size,
  uint32_t *base, int16_t *output, uint32_t output_frames, uint32_t factor,
  int audible);
 

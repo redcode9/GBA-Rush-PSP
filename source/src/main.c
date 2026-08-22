@@ -26,6 +26,7 @@
 #include "perf_report.h"
 #include "power_lifecycle.h"
 #include "psp_adhoc.h"
+#include "sound_math.h"
 
 /* Forward declarations for recent ROMs functions (defined in gui.c) */
 extern void load_recent_roms(void);
@@ -182,7 +183,7 @@ static int (*__scePowerSetClockFrequency)(int pllfreq, int cpufreq, int busfreq)
 
 
 #define SOUND_UPDATE_FREQUENCY_STEP                                           \
-  FLOAT_TO_FP08_24((16777216.0 / SOUND_FREQUENCY) / timer_reload)             \
+  sound_math_timer_step(timer_reload, SOUND_FREQUENCY)                        \
 
 #define CHECK_COUNT(count_var)                                                \
   if (count_var < reg[EXECUTE_CYCLES])                                        \

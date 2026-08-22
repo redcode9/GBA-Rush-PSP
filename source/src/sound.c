@@ -21,6 +21,7 @@
 #include "common.h"
 #include "fast_forward_audio.h"
 #include "perf_monitor.h"
+#include "sound_math.h"
 
 
 #define SOUND_BUFFER_SIZE (SOUND_SAMPLES * 2)
@@ -103,7 +104,8 @@ DirectSoundStruct ALIGN_DATA direct_sound_channel[2];
 GBCSoundStruct    ALIGN_DATA gbc_sound_channel[4];
 
 s16 ALIGN_DATA psp_sound_buffer[2][SOUND_BUFFER_SIZE];
-s16 ALIGN_DATA sound_buffer[RING_BUFFER_SIZE];
+// Full-scale mix bus with headroom for four PSG and two FIFO channels.
+s32 ALIGN_DATA sound_buffer[RING_BUFFER_SIZE];
 
 int sound_volume = PSP_AUDIO_VOLUME_MAX;
 
@@ -257,13 +259,13 @@ void gbc_sound_tone_control_high(u8 channel, u32 value)
   u32 rate = value & 0x7FF;
 
   gs->rate = rate;
-  gs->frequency_step = FLOAT_TO_FP08_24((131072.0 * 8.0 / SOUND_FREQUENCY) / (2048 - rate));
+  gs->frequency_step = sound_math_tone_step(rate, SOUND_FREQUENCY);
   gs->length_status = (value >> 14) & 0x01;
 
   if ((value & 0x8000) != 0)
   {
     gs->active_flag = 1;
-    gs->sample_index -= FLOAT_TO_FP08_24(1.0 / 12.0);
+    gs->sample_index -= sound_math_retrigger_offset();
     gs->envelope_ticks  = gs->envelope_initial_ticks;
     gs->envelope_volume = gs->envelope_initial_volume;
     gs->sweep_ticks = gs->sweep_initial_ticks;
@@ -322,7 +324,7 @@ void gbc_sound_tone_control_high_wave(u32 value)
   u32 rate = value & 0x7FF;
 
   gs->rate = rate;
-  gs->frequency_step = FLOAT_TO_FP08_24((2097152.0 / SOUND_FREQUENCY) / (2048 - rate));
+  gs->frequency_step = sound_math_wave_step(rate, SOUND_FREQUENCY);
   gs->length_status = (value >> 14) & 0x01;
 
   if ((value & 0x8000) != 0)
@@ -351,10 +353,8 @@ void gbc_sound_noise_control(u32 value)
   u32 dividing_ratio = value & 0x07;
   u32 frequency_shift = (value >> 4) & 0x0F;
 
-  if (dividing_ratio == 0)
-    gs->frequency_step = FLOAT_TO_FP08_24((1048576.0 / SOUND_FREQUENCY) / (2 << frequency_shift));
-  else
-    gs->frequency_step = FLOAT_TO_FP08_24((524288.0 / SOUND_FREQUENCY) / (dividing_ratio << (1 + frequency_shift)));
+  gs->frequency_step = sound_math_noise_step(dividing_ratio,
+   frequency_shift, SOUND_FREQUENCY);
 
   noise_type = (value >> 3) & 0x01;
   gs->length_status = (value >> 14) & 0x01;
@@ -497,13 +497,16 @@ static u32 buffer_length(u32 top, u32 base, u32 length)
 #define RENDER_SAMPLE_NULL()                                                  \
 
 #define RENDER_SAMPLE_RIGHT()                                                 \
-  sound_buffer[buffer_index + 1] += current_sample + FP08_24_TO_U32(((s64)next_sample - current_sample) * fifo_fractional); \
+  sound_buffer[buffer_index + 1] += sound_math_interpolate(current_sample,    \
+   next_sample, fifo_fractional);                                             \
 
 #define RENDER_SAMPLE_LEFT()                                                  \
-  sound_buffer[buffer_index + 0] += current_sample + FP08_24_TO_U32(((s64)next_sample - current_sample) * fifo_fractional); \
+  sound_buffer[buffer_index + 0] += sound_math_interpolate(current_sample,    \
+   next_sample, fifo_fractional);                                             \
 
 #define RENDER_SAMPLE_BOTH()                                                  \
-  dest_sample = current_sample + FP08_24_TO_U32(((s64)next_sample - current_sample) * fifo_fractional); \
+  dest_sample = sound_math_interpolate(current_sample, next_sample,           \
+   fifo_fractional);                                                         \
   sound_buffer[buffer_index + 0] += dest_sample;                              \
   sound_buffer[buffer_index + 1] += dest_sample;                              \
 
@@ -523,14 +526,14 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
   u32 fifo_base = ds->fifo_base;
   u32 buffer_index = ds->buffer_index;
 
-  s16 current_sample, next_sample, dest_sample;
+  s32 current_sample, next_sample, dest_sample;
 
-  current_sample = ds->fifo[fifo_base] << 4;
+  current_sample = ds->fifo[fifo_base] * 256;
 
   ds->fifo[fifo_base] = 0;
   fifo_base = (fifo_base + 1) % 32;
 
-  next_sample = ds->fifo[fifo_base] << 4;
+  next_sample = ds->fifo[fifo_base] * 256;
 
   if (sound_on == 1)
   {
@@ -613,7 +616,7 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
         break;                                                                \
       }                                                                       \
                                                                               \
-      frequency_step = FLOAT_TO_FP08_24((131072.0 * 8.0 / SOUND_FREQUENCY) / (2048 - rate)); \
+      frequency_step = sound_math_tone_step(rate, SOUND_FREQUENCY);           \
                                                                               \
       gs->frequency_step = frequency_step;                                    \
       gs->rate = rate;                                                        \
@@ -679,10 +682,12 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
   }                                                                           \
 
 #define GBC_SOUND_RENDER_SAMPLE_RIGHT()                                       \
-  sound_buffer[buffer_index + 1] += (current_sample * volume_right) >> 22;    \
+  sound_buffer[buffer_index + 1] += sound_math_scale_psg(current_sample,      \
+   volume_right);                                                            \
 
 #define GBC_SOUND_RENDER_SAMPLE_LEFT()                                        \
-  sound_buffer[buffer_index + 0] += (current_sample * volume_left ) >> 22;    \
+  sound_buffer[buffer_index + 0] += sound_math_scale_psg(current_sample,      \
+   volume_left);                                                             \
 
 #define GBC_SOUND_RENDER_SAMPLE_BOTH()                                        \
   GBC_SOUND_RENDER_SAMPLE_RIGHT();                                            \
@@ -1449,7 +1454,7 @@ void init_sound(void)
   if (start_sound_thread() < 0)
     quit();
 
-  gbc_sound_tick_step = FLOAT_TO_FP08_24(256.0 / SOUND_FREQUENCY);
+  gbc_sound_tick_step = sound_math_tick_step(SOUND_FREQUENCY);
 
   init_noise_table(noise_table15, 32767, 14);
   init_noise_table(noise_table7, 127, 6);

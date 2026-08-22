@@ -24,22 +24,25 @@ uint32_t fast_forward_audio_required_samples(uint32_t output_frames,
   return output_frames * 2U * valid_factor(factor);
 }
 
-static int16_t output_sample(int32_t sum, uint32_t factor, int audible)
+static int16_t output_sample(int64_t sum, uint32_t factor, int audible)
 {
-  int32_t sample;
+  int64_t sample;
 
   if(!audible)
     return 0;
 
-  sample = sum / (int32_t)factor;
-  if(sample > 2047)
-    sample = 2047;
-  else if(sample < -2048)
-    sample = -2048;
-  return (int16_t)(sample * 16);
+  if(sum >= 0)
+    sample = (sum + factor / 2U) / (int64_t)factor;
+  else
+    sample = (sum - factor / 2U) / (int64_t)factor;
+  if(sample > 32767)
+    sample = 32767;
+  else if(sample < -32768)
+    sample = -32768;
+  return (int16_t)sample;
 }
 
-void fast_forward_audio_compress_ring(int16_t *ring, uint32_t ring_size,
+void fast_forward_audio_compress_ring(int32_t *ring, uint32_t ring_size,
  uint32_t *base, int16_t *output, uint32_t output_frames, uint32_t factor,
  int audible)
 {
@@ -53,8 +56,8 @@ void fast_forward_audio_compress_ring(int16_t *ring, uint32_t ring_size,
   position = *base % ring_size;
   for(frame = 0; frame < output_frames; frame++)
   {
-    int32_t left = 0;
-    int32_t right = 0;
+    int64_t left = 0;
+    int64_t right = 0;
     uint32_t input_frame;
 
     for(input_frame = 0; input_frame < factor; input_frame++)
