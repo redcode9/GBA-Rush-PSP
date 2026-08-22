@@ -20,6 +20,7 @@ HOST_TEST_CONFIG_MODEL = $(HOST_BUILD_DIR)/test_config_model
 HOST_TEST_CONFIG_STORE = $(HOST_BUILD_DIR)/test_config_store
 HOST_TEST_FAST_FORWARD = $(HOST_BUILD_DIR)/test_fast_forward_policy
 HOST_TEST_FAST_FORWARD_AUDIO = $(HOST_BUILD_DIR)/test_fast_forward_audio
+HOST_TEST_VIDEO_MOSAIC = $(HOST_BUILD_DIR)/test_video_mosaic
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_LINK_PROTOCOL) $(HOST_TEST_LINK_SESSION) \
  $(HOST_TEST_POWER_LIFECYCLE) $(HOST_TEST_VIDEO_ADAPTIVE) \
@@ -28,7 +29,7 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_PERF_MONITOR) $(HOST_TEST_INPUT_TRACE) $(HOST_TEST_MENU_MODEL) \
  $(HOST_TEST_MENU_LAYOUT) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE) $(HOST_TEST_FAST_FORWARD) \
- $(HOST_TEST_FAST_FORWARD_AUDIO)
+ $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC)
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_protocol \
  $(HOST_SANITIZE_DIR)/test_link_session \
@@ -44,7 +45,8 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_config_model \
  $(HOST_SANITIZE_DIR)/test_config_store \
  $(HOST_SANITIZE_DIR)/test_fast_forward_policy \
- $(HOST_SANITIZE_DIR)/test_fast_forward_audio
+ $(HOST_SANITIZE_DIR)/test_fast_forward_audio \
+ $(HOST_SANITIZE_DIR)/test_video_mosaic
 
 .PHONY: all check test test-benchmark-tool test-sanitize tree-check psp-build launcher-stub \
  package artifact-smoke clean
@@ -71,6 +73,7 @@ test: $(HOST_TESTS) test-benchmark-tool
 	$(HOST_TEST_CONFIG_STORE)
 	$(HOST_TEST_FAST_FORWARD)
 	$(HOST_TEST_FAST_FORWARD_AUDIO)
+	$(HOST_TEST_VIDEO_MOSAIC)
 
 test-benchmark-tool:
 	$(PYTHON) -m unittest tests/test_compare_benchmarks.py
@@ -93,6 +96,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_config_store
 	$(HOST_SANITIZE_DIR)/test_fast_forward_policy
 	$(HOST_SANITIZE_DIR)/test_fast_forward_audio
+	$(HOST_SANITIZE_DIR)/test_video_mosaic
 
 $(HOST_TEST_CODEBREAKER): tests/test_codebreaker.c source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_BUILD_DIR)
@@ -204,6 +208,11 @@ $(HOST_TEST_FAST_FORWARD_AUDIO): tests/test_fast_forward_audio.c \
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_fast_forward_audio.c source/src/fast_forward_audio.c -o $@
+
+$(HOST_TEST_VIDEO_MOSAIC): tests/test_video_mosaic.c source/src/video_mosaic.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_video_mosaic.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_codebreaker: tests/test_codebreaker.c \
  source/src/codebreaker.c source/src/codebreaker.h
@@ -324,6 +333,12 @@ $(HOST_SANITIZE_DIR)/test_fast_forward_audio: \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_fast_forward_audio.c \
 	 source/src/fast_forward_audio.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_video_mosaic: tests/test_video_mosaic.c \
+ source/src/video_mosaic.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_video_mosaic.c -o $@
 
 tree-check:
 	sh scripts/check-tree.sh

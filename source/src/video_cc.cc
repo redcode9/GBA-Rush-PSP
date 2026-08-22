@@ -20,6 +20,7 @@
 
 extern "C" {
   #include "common.h"
+  #include "video_mosaic.h"
 }
 
 extern u32 option_oam_hijacking_enabled;  // Emulator option for OAM hijacking
@@ -533,10 +534,11 @@ static void render_scanline_text_mosaic(u32 layer,
 
   // Iterate pixel by pixel, loading data every N pixels to honor mosaic effect
   u8 pval = 0;
-  for (u32 i = 0; start < end; start++, i++, dest_ptr++) {
+  VideoMosaicCounter mosaic_counter = { 0 };
+  for (; start < end; start++, dest_ptr++) {
     u16 tile = eswap16(*map_ptr);
 
-    if (!(i % mosh)) {
+    if (video_mosaic_counter_take(&mosaic_counter, mosh)) {
       const u8 *tile_ptr = &tile_base[(tile & 0x3FF) * (is8bpp ? 64 : 32)];
 
       bool hflip = (tile & 0x400);
@@ -703,17 +705,18 @@ static inline void render_affine_background(
 
   // Horizontal mosaic effect.
   const u32 mosh = (mosaic ? (read_ioreg(REG_MOSAIC)) & 0xF : 0) + 1;
+  VideoMosaicCounter mosaic_counter = { 0 };
 
   if (wrap) {
     // In wrap mode the entire space is covered, since it "wraps" at the edges
     u8 pval = 0;
     if (rotate) {
-      for (u32 i = 0; cnt; i++, cnt--) {
+      for (; cnt; cnt--) {
         u32 pix_x = (u32)(source_x >> 8) & (width_height-1);
         u32 pix_y = (u32)(source_y >> 8) & (width_height-1);
 
         // Lookup pixel and draw it (only every Nth if mosaic is on)
-        if (!mosaic || !(i % mosh))
+        if (!mosaic || video_mosaic_counter_take(&mosaic_counter, mosh))
           pval = lookup_pix_8bpp(pix_x, pix_y, tile_base, map_base, map_size);
         rend_pix_8bpp<dtype, rdtype, isbase>(dst_ptr++, pval, bg_comb, px_comb, pal);
 
@@ -722,9 +725,9 @@ static inline void render_affine_background(
     } else {
       // Y coordinate stays contant across the walk.
       const u32 pix_y = (u32)(source_y >> 8) & (width_height-1);
-      for (u32 i = 0; cnt; i++, cnt--) {
+      for (; cnt; cnt--) {
         u32 pix_x = (u32)(source_x >> 8) & (width_height-1);
-        if (!mosaic || !(i % mosh))
+        if (!mosaic || video_mosaic_counter_take(&mosaic_counter, mosh))
           pval = lookup_pix_8bpp(pix_x, pix_y, tile_base, map_base, map_size);
         rend_pix_8bpp<dtype, rdtype, isbase>(dst_ptr++, pval, bg_comb, px_comb, pal);
         source_x += dx;  // Only moving in the X direction.
@@ -753,7 +756,7 @@ static inline void render_affine_background(
 
       // Draw background pixels by looking them up in the map
       u8 pval = 0;
-      for (u32 i = 0; cnt; i++, cnt--) {
+      for (; cnt; cnt--) {
         u32 pix_x = (u32)(source_x >> 8), pix_y = (u32)(source_y >> 8);
 
         // Check if we run out of background pixels, stop drawing.
@@ -761,7 +764,7 @@ static inline void render_affine_background(
           break;
 
         // Lookup pixel and draw it.
-        if (!mosaic || !(i % mosh))
+        if (!mosaic || video_mosaic_counter_take(&mosaic_counter, mosh))
           pval = lookup_pix_8bpp(pix_x, pix_y, tile_base, map_base, map_size);
         rend_pix_8bpp<dtype, rdtype, isbase>(dst_ptr++, pval, bg_comb, px_comb, pal);
 
@@ -787,12 +790,12 @@ static inline void render_affine_background(
           cnt--;
         }
         // Draw actual background
-        for (u32 i = 0; cnt; i++, cnt--) {
+        for (; cnt; cnt--) {
           u32 pix_x = (u32)(source_x >> 8);
           if (pix_x >= width_height)
             break;
 
-          if (!mosaic || !(i % mosh))
+          if (!mosaic || video_mosaic_counter_take(&mosaic_counter, mosh))
             pval = lookup_pix_8bpp(pix_x, pix_y, tile_base, map_base, map_size);
           rend_pix_8bpp<dtype, rdtype, isbase>(dst_ptr++, pval, bg_comb, px_comb, pal);
 
@@ -910,6 +913,7 @@ static inline void render_scanline_bitmap(
   u16 px_attr = color_flags(2);   // Always BG2
 
   const u32 mosh = (mosaic ? (read_ioreg(REG_MOSAIC)) & 0xF : 0) + 1;
+  VideoMosaicCounter mosaic_counter = { 0 };
 
   if (rdmode == BLIT) {
     // We just blit pixels (copy) from buffer to buffer.
@@ -926,9 +930,9 @@ static inline void render_scanline_bitmap(
     u32 pixcnt = MIN(end - start, width - pixel_x);
     pixfmt *valptr = &src_ptr[pixel_x + (pixel_y * width)];
     pixfmt val = 0;
-    for (u32 i = 0; pixcnt; i++, pixcnt--, valptr++) {
+    for (; pixcnt; pixcnt--, valptr++) {
       // Pretty much pixel copier
-      if (!mosaic || !(i % mosh))
+      if (!mosaic || video_mosaic_counter_take(&mosaic_counter, mosh))
         val = sizeof(pixfmt) == 2 ? eswap16(*valptr) : *valptr;
       bitmap_pixel_write<rdtype, dsttype, mode, pixfmt>(dst_ptr++, val, palptr, px_attr);
     }
@@ -949,12 +953,12 @@ static inline void render_scanline_bitmap(
 
     u32 cnt = end - start;
     pixfmt val = 0;
-    for (u32 i = 0; cnt; i++, cnt--) {
+    for (; cnt; cnt--) {
       u32 pixel_x = (u32)(source_x >> 8);
       if (pixel_x >= width)
         break;  // We reached the end of the bitmap
 
-      if (!mosaic || !(i % mosh)) {
+      if (!mosaic || video_mosaic_counter_take(&mosaic_counter, mosh)) {
         pixfmt *valptr = &src_ptr[pixel_x + (pixel_y * width)];
         val = sizeof(pixfmt) == 2 ? eswap16(*valptr) : *valptr;
       }
@@ -974,7 +978,7 @@ static inline void render_scanline_bitmap(
     }
 
     pixfmt val = 0;
-    for (u32 i = 0; start < end; start++) {
+    for (; start < end; start++) {
       u32 pixel_x = (u32)(source_x >> 8), pixel_y = (u32)(source_y >> 8);
 
       // Check if we run out of background pixels, stop drawing.
@@ -982,7 +986,7 @@ static inline void render_scanline_bitmap(
         break;
 
       // Lookup pixel and draw it.
-      if (!mosaic || !(i % mosh)) {
+      if (!mosaic || video_mosaic_counter_take(&mosaic_counter, mosh)) {
         pixfmt *valptr = &src_ptr[pixel_x + (pixel_y * width)];
         val = sizeof(pixfmt) == 2 ? eswap16(*valptr) : *valptr;
       }
@@ -1264,8 +1268,9 @@ static void render_object_mosaic(
   u32 px_attr = px_comb | palette | 0x100;  // Combine flags + high palette bit
 
   u8 pval = 0;
+  VideoMosaicCounter mosaic_counter = { 0 };
   for (u32 i = 0; i < cnt; i++, offx++, dst_ptr++) {
-    if (!(i % mosh)) {
+    if (video_mosaic_counter_take(&mosaic_counter, mosh)) {
       // Load tile pixel color.
       u32 tile_offset = base_tile_offset + (offx / 8) * tile_size_off;
       const u8* tile_ptr = &vram[0x10000 + (tile_offset & 0x7FFF)];
@@ -1372,6 +1377,7 @@ static void render_affine_object(
 
   // Draw sprite pixels by looking them up first. Lookup address is tricky!
   u8 pixval = 0;
+  VideoMosaicCounter mosaic_counter = { 0 };
   for (u32 i = 0; i < cnt; i++) {
     u32 pixel_x = (u32)(source_x >> 8), pixel_y = (u32)(source_y >> 8);
 
@@ -1380,7 +1386,7 @@ static void render_affine_object(
       return;
 
     // For mosaic, we "remember" the last looked up pixel.
-    if (!mosaic || !(i % mosh)) {
+    if (!mosaic || video_mosaic_counter_take(&mosaic_counter, mosh)) {
       // Lookup pixel and draw it.
       if (is8bpp) {
         // We lookup the byte directly and render it.
@@ -1881,6 +1887,12 @@ u32 layer_count;
 static void order_layers(u32 layer_flags, u32 vcnt)
 {
   bool obj_enabled = (layer_flags & 0x10);
+  const u32 layer_priority[4] = {
+    read_ioreg(REG_BGxCNT(0)) & 0x03,
+    read_ioreg(REG_BGxCNT(1)) & 0x03,
+    read_ioreg(REG_BGxCNT(2)) & 0x03,
+    read_ioreg(REG_BGxCNT(3)) & 0x03
+  };
   s32 priority;
 
   layer_count = 0;
@@ -1893,7 +1905,7 @@ static void order_layers(u32 layer_flags, u32 vcnt)
     for(lnum = 3; lnum >= 0; lnum--)
     {
       if(((layer_flags >> lnum) & 1) &&
-         ((read_ioreg(REG_BGxCNT(lnum)) & 0x03) == (u32)priority))
+         (layer_priority[lnum] == (u32)priority))
       {
         layer_order[layer_count++] = lnum;
       }

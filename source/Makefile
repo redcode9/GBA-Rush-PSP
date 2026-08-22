@@ -23,7 +23,7 @@ PSP_EBOOT_TITLE = GBA Rush PSP
 EXTRA_TARGETS = EBOOT.PBP
 
 COMMON_FILE = \
- common.h codebreaker.h fast_forward_audio.h fast_forward_policy.h gba_sio.h link_protocol.h link_session.h link_transport.h power_lifecycle.h video_adaptive.h perf_metrics.h perf_monitor.h perf_report.h menu_model.h menu_layout.h menu_catalog.h config_model.h config_store.h psp_adhoc.h \
+ common.h codebreaker.h fast_forward_audio.h fast_forward_policy.h gba_sio.h link_protocol.h link_session.h link_transport.h power_lifecycle.h video_adaptive.h video_mosaic.h perf_metrics.h perf_monitor.h perf_report.h menu_model.h menu_layout.h menu_catalog.h config_model.h config_store.h psp_adhoc.h \
  cpu.h memory.h video.h psp_video.h input.h sound.h main.h message.h mh_print.h gui.h zip.h png.h \
  ku_bridge.h exception.h ch_print.h
 
