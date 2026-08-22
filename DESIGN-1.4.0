@@ -1,0 +1,229 @@
+GBA Rush PSP 1.4.0 design
+=========================
+
+Status
+------
+
+Approved for specification on 22 August 2026. This file is a temporary
+development record. It is removed from the release branch before 1.4.0 is
+tagged; the committed revision remains available in Git history.
+
+Objective
+---------
+
+Version 1.4.0 is a quality release. It improves fast-forward behavior, ports
+individually justified gpSP corrections, raises audio quality where PSP
+performance allows it, strengthens regression coverage, and reduces public
+documentation to four Markdown files.
+
+New graphics features, overlays, advanced savestate management, a core rebase,
+new cheat formats, and wider link-cable modes are outside this release.
+
+Fast-forward policy
+-------------------
+
+A portable fast_forward_policy module owns the complete fast-forward state.
+Input, audio, video, menus, power handling, and link handling consume its
+decisions instead of changing synchronize_flag independently.
+
+The policy receives:
+
+- the selected global profile and optional per-game override;
+- button press, hold, and release events;
+- emulated-frame count and a monotonic clock;
+- menu, ROM, reset, power, exit, and link-session transitions;
+- measured presentation and emulation headroom.
+
+It returns:
+
+- active state and requested speed;
+- whether the current frame should be presented;
+- the remaining delay before the next emulation deadline for limited speeds;
+- the selected audio policy;
+- the short status text and diagnostic counters.
+
+Profiles
+--------
+
+Modern is the default and preserves the 1.3.0 interaction: hold the assigned
+button for the maximum available speed. Audio is silent. Presentation is
+time-based at 30 updates per second so rendering cannot grow with emulation
+speed.
+
+Classic is a toggle cycle: Normal, 2x, 3x, Normal. The 2x and 3x values are
+real timing targets rather than labels derived only from frameskip. Audio is
+silent. Presentation targets 60 updates per second by showing one of every two
+or three emulated frames.
+
+Custom exposes:
+
+- activation: Hold or Toggle;
+- speed: 2x, 3x, or Maximum;
+- presentation: Smooth, Balanced, or Maximum performance;
+- audio: Silent or Accelerated.
+
+Smooth, Balanced, and Maximum performance target 60, 30, and 15 presented
+frames per second respectively. Limited 2x and 3x modes use deadline pacing
+without waiting for a display VBlank on every emulated frame. Maximum remains
+unthrottled.
+
+Accelerated audio is never used by Modern or Classic. If it cannot keep pace,
+Custom falls back to silence for that fast-forward session and records the
+reason in diagnostics. Accelerated audio is available at 2x and 3x, where
+each fixed group of two or three stereo frames is averaged into one real-time
+output frame with integer arithmetic. Maximum forces silence because its speed
+is neither fixed nor stable enough for a bounded resampler.
+
+Configuration and interface
+---------------------------
+
+The global profile is stored in the versioned global configuration. Per-game
+configuration stores either Use global or a complete override. Loading a
+1.3.x configuration selects Modern without changing any existing numeric
+setting or button mapping.
+
+Invalid new fields fall back independently. An invalid per-game override
+becomes Use global and does not invalidate unrelated game settings.
+
+The Performance menu shows the profile, per-game override, and custom fields.
+Custom fields remain visible but unavailable when another profile is active.
+Contextual help states the effective activation, speed, presentation, and
+audio behavior.
+
+The normal overlay uses one compact value: FF 2.00x, FF 3.00x, or FF MAX.
+Diagnostics also show requested and measured speed, emulated FPS, presented
+FPS, transition count, and audio fallback count.
+
+Lifecycle rules
+---------------
+
+Entering a menu, changing or resetting a ROM, suspending, exiting, and opening
+a link session disable fast-forward and clear every toggle latch. Resume never
+restores a pre-suspend fast-forward state.
+
+Leaving fast-forward discards queued turbo audio, resets pacing history, and
+forces the next frame to be presented. A failed audio recovery leaves gameplay
+running silently and permits a later normal recovery attempt.
+
+Limited modes sleep only when emulation is ahead of their deadline. If a game
+cannot reach 2x or 3x, the scheduler never adds delay and diagnostics report the
+measured speed instead of displaying a false multiplier.
+
+Fast-forward performs no allocation, formatting, file access, or report write
+in an emulation, rendering, or audio hot path. Clock arithmetic is wrap-safe
+and all rate decisions can run against a deterministic test clock.
+
+Core and audio backports
+------------------------
+
+The current libretro gpSP tree is a reference, not a merge source. Each
+candidate change is classified as already equivalent, locally applicable, not
+relevant to the PSP fork, or deferred. A locally applicable change requires a
+regression test before the production edit.
+
+The first review covers:
+
+- recursive open-bus reads while executing from unmapped memory;
+- dynarec external-branch resolution and host-stack growth;
+- ARM BX PC behavior and I/O write mirroring;
+- failure to allocate a usable gamepak buffer;
+- rotated-bitmap mosaic correctness and avoidable modulo work;
+- integer-only fixed-point audio seeds and correct interpolation rounding;
+- a higher-precision audio mix bus.
+
+The higher-precision mix bus is accepted only if its memory use does not reduce
+the usable ROM buffer and its added arithmetic does not regress PSP-2000
+throughput or introduce underruns. Correct changes that cannot meet the PSP
+resource gate are documented in the 1.4.0 release notes and deferred.
+
+Performance gates
+-----------------
+
+The 1.3.0 release build is the baseline. Candidate and baseline use the same
+PSP-2000, Memory Stick, ROM, savestate, clock, renderer, and configuration.
+Each measurement uses one warm-up followed by three recorded runs; medians are
+compared.
+
+- 2x and 3x measured emulation speed stay within three percent of target.
+- Maximum is not slower than 1.3.0.
+- Normal-speed throughput does not regress by more than two percent.
+- Normal-speed 95th-percentile frame duration does not regress by more than
+  five percent.
+- Releasing fast-forward creates no audio backlog or repeated skipped-frame
+  burst.
+- Cheats, saves, suspend, and link-disabled play retain their current behavior.
+
+Metrics include emulated and presented FPS, frame-time percentiles, GE wait,
+audio underruns and recoveries, dynarec compilations and flushes, and cache
+high-water marks.
+
+Verification
+------------
+
+Portable tests cover every state transition for Hold and Toggle, every profile,
+speed limiting, clock wrap, forced shutdown events, audio fallback, and return
+to normal pacing. Configuration tests cover 1.3.x migration, global and
+per-game round trips, malformed fields, interrupted writes, and recovery.
+
+Every core backport has a focused regression case. The full host suite runs
+with warnings as errors and again under AddressSanitizer and
+UndefinedBehaviorSanitizer. Source checks protect lifecycle ownership, hot-path
+constraints, translation ordering, the release manifest, and documentation
+limits. Normal and diagnostic PSP builds use PSPDEV v20260801.
+
+Hardware acceptance on PSP-2000 with Pokemon FireRed in Italian covers cold
+start, load, save, cheats, all fast-forward profiles, menu transitions, clean
+fast-forward exit, ten suspend cycles, and normal XMB exit. PSP-1000, PSP-3000,
+PSP Go, PSP Street, a second PSP, and the wider game corpus are optional for
+the release and are reported precisely when available.
+
+Repository structure
+--------------------
+
+The 1.4.0 release branch contains exactly four tracked Markdown files:
+
+- README.md: install, upgrade, operation, cheats, link, diagnostics, and
+  concise lineage;
+- CHANGELOG.md: version history;
+- CONTRIBUTING.md: native and Docker builds, tests, style, backports, and
+  release procedure;
+- source/single-game_launcher/tool/README.md: the independent launcher tool.
+
+The docs directory, BUILD-DOCKER.md, dated design and review material, and
+per-release Markdown files are removed after their unique current information
+is consolidated. Legal notices, third-party terms, and source offers remain in
+plain-text license or notice files. Git history and GitHub releases retain the
+historical record.
+
+Automated checks require exactly four Markdown files, reject broken internal
+links and duplicate release documentation, and scan tracked content and commit
+metadata for unwanted generator attribution. This DESIGN-1.4.0 file is removed
+before the release commit.
+
+Release conditions
+------------------
+
+Version metadata remains 1.4.0-dev until all automated gates, the PSP-2000
+acceptance run, archive inspection, checksum verification, and public-content
+checks pass. The release package contains only EBOOT.PBP, exception.prx,
+installation text, changelog, and license. It contains no ROM, BIOS, save,
+savestate, cheat list, box art, benchmark report, input trace, or user
+configuration.
+
+References
+----------
+
+TempGBA4PSP-mod fast-forward discussion:
+https://github.com/andymcca/TempGBA4PSP-mod/issues/3
+
+Hold and toggle preference implemented by another retro frontend:
+https://github.com/knulli-cfw/distribution/pull/109
+
+libretro gpSP open-bus correction:
+https://github.com/libretro/gpsp/commit/6225b40c7cdc1d945766696881f6054f23cc7df5
+
+libretro gpSP bounded dynarec branch resolution:
+https://github.com/libretro/gpsp/commit/70707ce2fbaa442bd72c46026aeba6f2b63cc4e7
+
+libretro gpSP higher-precision audio mixing:
+https://github.com/libretro/gpsp/commit/3629cbea341b3b66a3eef868dbb3f68759de36b5
