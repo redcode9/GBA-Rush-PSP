@@ -1,4 +1,4 @@
-# License and attribution notice
+GBA Rush PSP - license and attribution notice
 
 GBA Rush PSP is an independent fork of
 [andymcca/TempGBA4PSP-mod](https://github.com/andymcca/TempGBA4PSP-mod). The
@@ -10,8 +10,8 @@ fork.
 The emulator core is distributed under the GNU General Public License, version
 2 or any later version. The complete license is in `LICENSE`; historical
 copyright and asset attribution is retained in `source/copyright` and source
-file headers. The development path and acknowledgements are documented in
-`docs/LINEAGE.md`.
+file headers. The development path and acknowledgements are summarized in the
+project README.
 
 The project descends from gpSP by Exophase, subsequent gpSP work by notaz and
 contributors, gpSP Kai by Takka and contributors, TempGBA by Nebuleon,
@@ -21,7 +21,7 @@ and communities for the work that made this fork possible.
 
 The optional single-game launcher builder under
 `source/single-game_launcher/tool/` is distributed under GPL-3.0-or-later and
-has its own `LICENSE`, `THIRD_PARTY.md`, `SOURCE_OFFER.txt`, and `LICENSES/`
+has its own `LICENSE`, `THIRD_PARTY`, `SOURCE_OFFER.txt`, and `LICENSES/`
 directory. Those files govern that component and its bundled source assets.
 
 Vendored zlib source retains its original notices. PSP SDK import libraries in

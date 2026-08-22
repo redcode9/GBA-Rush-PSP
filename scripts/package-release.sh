@@ -16,7 +16,7 @@ case "$version" in
 esac
 
 for required in source/EBOOT.PBP source/exception.prx LICENSE \
- docs/INSTALL.md CHANGELOG.md
+ README.md CHANGELOG.md
 do
   if [ ! -f "$required" ]; then
     echo "Missing required file: $required" >&2
@@ -57,7 +57,7 @@ mkdir -p "$install_root"
 
 cp source/EBOOT.PBP "$install_root/EBOOT.PBP"
 cp source/exception.prx "$install_root/exception.prx"
-cp docs/INSTALL.md "$release_root/README.md"
+cp README.md "$release_root/README.md"
 cp CHANGELOG.md "$release_root/CHANGELOG.md"
 cp LICENSE "$release_root/LICENSE"
 

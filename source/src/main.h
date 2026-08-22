@@ -25,7 +25,7 @@
 #include "link_session.h"
 #include "perf_metrics.h"
 
-#define GBA_RUSH_VERSION "1.3.0"
+#define GBA_RUSH_VERSION "1.4.0-dev"
 
 // video scale type
 #define SCALED_NONE    0

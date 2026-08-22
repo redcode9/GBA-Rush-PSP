@@ -4,7 +4,7 @@
 """
 Credits Dialog Mixin for BuilderApp.
 
-Renders CREDITS.md content in a scrollable modal dialog with clickable
+Renders CREDITS content in a scrollable modal dialog with clickable
 hyperlinks, bold text, and bullet formatting. All content comes from the
 file — no hardcoded text.
 """
@@ -15,7 +15,7 @@ import webbrowser
 import customtkinter as ctk
 import tkinter as tk
 
-from gui_utils import parse_credits_md
+from gui_utils import parse_credits
 import constants as C
 
 
@@ -45,7 +45,7 @@ class CreditsMixin:
         """
         Show credits / about modal with clickable hyperlinks.
 
-        Renders CREDITS.md content 1:1 — no hardcoded text.
+        Renders CREDITS content 1:1 — no hardcoded text.
         All content comes from the file, including title and subtitle.
         """
         dlg = ctk.CTkToplevel(self)
@@ -157,11 +157,11 @@ class CreditsMixin:
         def on_leave(e, t=text):
             t.config(cursor="arrow")
 
-        # --- Parse and Render CREDITS.md ---
-        credits_md = self._get_base_dir() / "CREDITS.md"
-        data = parse_credits_md(credits_md)
+        # --- Parse and Render CREDITS ---
+        credits = self._get_base_dir() / "CREDITS"
+        data = parse_credits(credits)
 
-        # Title (from CREDITS.md # header)
+        # Title (from CREDITS # header)
         if data.get("title"):
             text.insert("end", data["title"] + "\n", "h1")
 

@@ -20,7 +20,7 @@ archive="dist/$release_name.zip"
 checksum="$archive.sha256"
 
 for required in "$archive" "$checksum" source/EBOOT.PBP \
-  source/exception.prx docs/INSTALL.md CHANGELOG.md LICENSE
+  source/exception.prx README.md CHANGELOG.md LICENSE
 do
   if [ ! -f "$required" ]; then
     echo "Missing package input: $required" >&2
@@ -59,7 +59,7 @@ fi
 package_root="$temporary_root/extracted/$release_name"
 cmp source/EBOOT.PBP "$package_root/GBARushPSP/EBOOT.PBP"
 cmp source/exception.prx "$package_root/GBARushPSP/exception.prx"
-cmp docs/INSTALL.md "$package_root/README.md"
+cmp README.md "$package_root/README.md"
 cmp CHANGELOG.md "$package_root/CHANGELOG.md"
 cmp LICENSE "$package_root/LICENSE"
 

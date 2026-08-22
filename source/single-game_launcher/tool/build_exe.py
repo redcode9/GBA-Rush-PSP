@@ -12,7 +12,7 @@ Output layout:
             LICENSE.txt
             README.md
             SOURCE_OFFER.txt
-            THIRD_PARTY.md
+            THIRD_PARTY
             LICENSES/
         build/
             GBA Rush PSP Single-Game Launcher Builder/  ← PyInstaller intermediates
@@ -84,7 +84,7 @@ def main():
         "--specpath", str(output_dir),       # .spec goes here
         "--add-data", f"{here / 'assets'}{separator}assets",
         "--add-data", f"{here / 'LICENSES'}{separator}LICENSES",
-        "--add-data", f"{here / 'CREDITS.md'}{separator}.",
+        "--add-data", f"{here / 'CREDITS'}{separator}.",
         "--add-binary", f"{tool_paths[ffmpeg_bin]}{separator}.",
         "--add-binary", f"{tool_paths[atracdenc_bin]}{separator}.",
         "--add-binary", f"{tool_paths[ytdlp_bin]}{separator}.",
@@ -169,7 +169,7 @@ def main():
     files_to_ship = [
         ("README.md", here / "README.md"),
         ("LICENSE.txt", here / "LICENSE"),
-        ("THIRD_PARTY.md", here / "THIRD_PARTY.md"),
+        ("THIRD_PARTY", here / "THIRD_PARTY"),
         ("SOURCE_OFFER.txt", here / "SOURCE_OFFER.txt"),
         ("CHANGELOG.md", here / "CHANGELOG.md"),
     ]

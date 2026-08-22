@@ -6,9 +6,9 @@
 import re
 
 
-def parse_credits_md(md_path):
+def parse_credits(credits_path):
     """
-    Parse CREDITS.md into structured data for the popup.
+    Parse CREDITS into structured data for the popup.
 
     Handles multi-line paragraphs, bullet items, inline markdown links, and
     section headers.
@@ -19,10 +19,10 @@ def parse_credits_md(md_path):
         where each item is {'type': 'text'|'bullet', 'text': str}
       - 'footer': list of str
     """
-    if not md_path.exists():
+    if not credits_path.exists():
         return {"title": "", "sections": [], "footer": []}
 
-    with open(md_path, "r", encoding="utf-8") as f:
+    with open(credits_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     result = {"title": "", "sections": [], "footer": []}

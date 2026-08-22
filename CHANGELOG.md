@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.4.0 - Unreleased
+
+### Added
+
+- Modern, Classic and Custom fast-forward profiles with global defaults and
+  optional per-game overrides.
+- Hold or Toggle activation, fixed 2x/3x or maximum speed, three presentation
+  rates and optional accelerated audio for Custom mode.
+- Fast-forward speed, presentation, transition and audio-fallback measurements
+  in performance reports and the benchmark comparison gate.
+
+### Changed
+
+- Audio mixing now retains full 16-bit precision, rounds interpolation and
+  volume scaling and uses deterministic integer timing.
+- External dynarec branch targets are resolved through an iterative worklist,
+  bounding host stack use on long first-visit branch chains.
+- Mosaic rendering avoids per-pixel division and correctly advances sampling
+  in rotated bitmap paths.
+- Performance options keep common controls visible and move low-level dynarec,
+  HBlank, stack and boot settings to an advanced screen.
+- Public documentation is consolidated into four maintained Markdown files.
+
+### Fixed
+
+- Fast-forward state can no longer survive menus, reset, ROM changes, link
+  setup, suspend or exit.
+- Version 1.3 settings migrate to the Modern fast-forward profile without
+  discarding unrelated configuration.
+- Accelerated audio falls back to silence when its output buffer cannot remain
+  stable.
+
 ## 1.3.0 - 2026-08-22
 
 ### Added

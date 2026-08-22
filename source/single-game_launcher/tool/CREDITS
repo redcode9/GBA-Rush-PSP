@@ -44,11 +44,11 @@ retained in this directory.
 - The PSP homebrew community for its tools, documentation, testing, and
   long-term maintenance.
 
-See the repository's `docs/LINEAGE.md`, `NOTICE.md`, and `source/copyright` for
-the broader emulator history and preserved notices.
+See the repository's `README.md`, `NOTICE`, and `source/copyright` for the
+broader emulator history and preserved notices.
 
 ## Third-party software
 
 This tool depends on several open-source libraries and utilities. See
-[THIRD_PARTY.md](THIRD_PARTY.md) for their licenses, source locations, and
+[THIRD_PARTY](THIRD_PARTY) for their licenses, source locations, and
 complete legal attribution.

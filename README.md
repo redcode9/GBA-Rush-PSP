@@ -2,165 +2,177 @@
   <img src="source/res/PIC1.png" alt="GBA Rush PSP" width="720">
 </p>
 
-<h1 align="center">GBA Rush PSP</h1>
+# GBA Rush PSP
 
-<p align="center">
-  A performance-focused Game Boy Advance emulator for PlayStation Portable.
-</p>
+A Game Boy Advance emulator for PlayStation Portable, focused on real-hardware
+performance and a clear handheld interface.
 
-> [!IMPORTANT]
-> **GBA Rush PSP is an independent fork of
-> [andymcca/TempGBA4PSP-mod](https://github.com/andymcca/TempGBA4PSP-mod).**
-> It exists because of the emulator work maintained there and throughout the
-> gpSP, gpSP Kai, TempGBA, and TempGBA4PSP-mod projects. Please credit and
-> support the original authors and contributors.
+GBA Rush PSP is an independent fork of
+[andymcca/TempGBA4PSP-mod](https://github.com/andymcca/TempGBA4PSP-mod). It
+retains the emulator core, renderers, interface, compatibility work and
+launcher developed across gpSP, gpSP Kai, TempGBA and TempGBA4PSP-mod. The
+fork is maintained separately and does not imply upstream endorsement.
 
-## About this fork
+You must provide your own legally obtained GBA BIOS and ROM dumps. Neither is
+included in this repository or its releases.
 
-GBA Rush PSP continues the real-hardware PSP work from TempGBA4PSP-mod under a
-distinct name and identity. It retains the upstream emulator core, interface,
-renderers, compatibility work, and single-game launcher while adding a safer
-cheat runtime, timed CodeBreaker hooks, configurable hold-to-fast-forward, and
-repeatable release checks.
+## Features
 
-This repository is independently maintained. It is not the original
-TempGBA4PSP-mod project, and its authors do not imply endorsement by upstream
-maintainers. See [Project lineage and acknowledgements](docs/LINEAGE.md) for
-the full development path and links.
+- Old and new gpSP renderers with sharp, aspect-correct and adaptive 16:9
+  presentation modes.
+- Modern, Classic and Custom fast-forward profiles, global defaults and
+  optional per-game overrides.
+- Full-scale 16-bit audio mixing and optional 2x/3x accelerated audio.
+- Plaintext and encrypted CodeBreaker support, including timed master hooks.
+- Existing GameShark, Pro Action Replay and direct-write cheat formats.
+- Two-PSP GBA cable emulation over local ad-hoc Wi-Fi.
+- Suspend and resume recovery for audio, ROM access, saves and video state.
+- Box art, recent ROMs, themes, configurable controls and per-game settings.
+- Japanese, English, Simplified Chinese, Traditional Chinese and Italian UI.
+- On-device performance reports and host regression, sanitizer and package
+  checks.
 
-You must provide your own legally obtained GBA BIOS and ROM dumps. They are not
-part of this repository or its release packages.
+## Install and upgrade
 
-## Highlights
-
-- Plaintext and encrypted CodeBreaker codes, including timed master hooks.
-- Existing GameShark, Pro Action Replay, and direct-write formats.
-- Manual, transactional `.cht` loading with clear filename, count, entry names,
-  and `ON`/`OFF` state.
-- Up to 640 cheat entries with active-entry and sorted-hook indexes that avoid
-  scanning inactive lists in hot paths.
-- Configurable hold-to-fast-forward with unthrottled emulation, paced display
-  updates, and immediate audio recovery.
-- Adaptive sharp 16:9 output with a two-pass PSP GE path and automatic
-  performance fallback.
-- Two-PSP GBA link cable emulation over local ad-hoc Wi-Fi.
-- Suspend and resume recovery that keeps audio, ROM access, saves, and worker
-  shutdown under foreground control.
-- Task-based menus with contextual setting help and built-in performance
-  diagnostics.
-- Versioned, recoverable configuration writes that preserve existing user
-  settings.
-- Old and new video renderers, multiple scale modes, themes, box art, recent
-  ROMs, configurable dynarec policies, and multilingual menus.
-- Japanese, English, Simplified Chinese, Traditional Chinese, and Italian UI.
-- Optional source-based single-game launcher builder.
-
-## Installation
-
-Copy the release folder to `PSP/GAME/GBARushPSP/`, add your own
-`gba_bios.bin`, and start **GBA Rush PSP** from the PSP Game menu.
+Copy the release folder to `PSP/GAME/GBARushPSP/`, then add your own
+`gba_bios.bin`:
 
 ```text
 PSP/GAME/GBARushPSP/
 ├── EBOOT.PBP
 ├── exception.prx
-└── gba_bios.bin       user supplied
+└── gba_bios.bin
 ```
 
-See [Installation and upgrade notes](docs/INSTALL.md) for configuration,
-fast-forward, legacy-folder, and update guidance.
+Start GBA Rush PSP from the PSP Game menu and select a ROM. A `dir.ini` beside
+the EBOOT can point ROMs, saves, states, screenshots, cheats and box art to
+separate directories.
 
-## Cheats
-
-Open **Cheats options**, choose **Load cheat file**, and select a `.cht` file.
-Lists are selected manually so the user always knows which region and revision
-they are applying.
-
-For a timed CodeBreaker list, enable its master entry and then enable the
-ordinary entries you want. Multiple ordinary entries can run together. If
-masters with different hook addresses conflict, the most recently enabled
-master takes ownership and incompatible master entries are disabled.
-
-CodeBreaker codes remain dependent on the exact game region and revision.
-Device-specific extensions that cannot be interpreted safely are not accepted.
-The complete syntax and compatibility notes are in
-[Cheat files](docs/CHEATS.md).
+To upgrade, replace only `EBOOT.PBP` and `exception.prx`. Keep the BIOS, ROMs,
+saves, savestates, cheat lists and configuration files. Back up important save
+data before an update.
 
 ## Fast-forward
 
-Fast-forward is active only while its configured physical button is held. The
-default mapping is **Triangle**. Reassign **Fast forward** from the button
-configuration menu to use any supported digital or analog direction.
+Assign **Fast forward** in the controls menu. Triangle is the default.
 
-The emulator bypasses normal throttling while held, targets roughly 30 visible
-frames per second, and discards queued audio instead of allowing a backlog to
-stall emulation. Releasing the button restores the selected frameskip and audio
-behavior immediately.
+- **Modern** runs at maximum speed while the button is held, presents at a
+  steady 30 fps target and mutes audio.
+- **Classic** cycles through Normal, 2x and 3x on each press. It uses fixed
+  frame presentation and muted audio.
+- **Custom** selects Hold or Toggle, 2x, 3x or Maximum, three presentation
+  rates and Silent or Accelerated audio.
+
+Accelerated audio is available at 2x and 3x. If the PSP cannot keep its audio
+buffer fed, the current fast-forward session falls back to silence. Opening a
+menu, resetting, changing ROM, suspending, exiting or starting a link session
+always returns to normal speed.
 
 ## Video
 
-`16:9 Auto` fills the PSP display and starts with the two-pass `Sharp` path.
-After sustained timing misses it switches to single-pass `Crisp`; it returns to
-`Sharp` only after a longer stable interval. Manual sharp, nearest, bilinear,
-and aspect-correct modes remain available.
+`16:9 Auto` fills the PSP display. It starts with the two-pass Sharp path,
+falls back to the lighter Crisp path after sustained timing misses and returns
+to Sharp after a stable interval. The FPS overlay shows the active level.
 
-Existing installations keep their saved scale mode. Select `16:9 Auto` once
-to enable it. The optional FPS overlay shows the active `SHARP` or `CRISP`
-level.
+Integer and aspect-correct modes remain available when preserving GBA geometry
+is more important than filling the display.
+
+## Cheats
+
+Open **Cheats options**, choose **Load cheat file** and select a `.cht` file.
+A successful load shows the filename, entry count, names and `ON`/`OFF` state.
+Lists are selected manually because codes depend on the exact game region and
+revision.
+
+Each entry starts with its format and display name, followed by code lines and
+a blank line:
+
+```text
+codebreaker Example entry
+82000100 1234
+
+direct_v1 Example direct write
+22000104 00000001
+```
+
+Supported headers are `codebreaker`, `codebreaker_v1`, `codebreaker_v2`, `CB`,
+`gameshark_v1`, `gameshark_v2`, `gameshark_v3`, `PAR_v1`, `PAR_v2`, `PAR_v3`,
+`direct_v1`, `direct_v2` and `direct_v3`.
+
+For CodeBreaker lists with a timed master, enable the master entry before the
+ordinary entries. If enabled masters use different hook addresses, the most
+recent master takes ownership and incompatible masters are disabled. Keep a
+backup of important saves when testing cheats.
 
 ## Link cable
 
-GBA Rush PSP can connect two PSP systems as Player 1 and Player 2 over
-local ad-hoc Wi-Fi. It implements GBA Normal 8-bit, Normal 32-bit, and
-Multiplayer 16-bit cable transfers with synchronized timing and serial
-interrupts. Both systems should run the same emulator build.
+Both PSP systems should use the same emulator build with WLAN enabled. Load a
+game on each system, then open **Main menu > Link cable**. Player 1 creates the
+session and Player 2 joins it.
 
-The protocol and emulator paths pass deterministic host, sanitizer, malformed
-traffic, timeout, stress, diagnostic-ROM build, and PSP build checks. Broad
-testing across two physical PSP systems and the full commercial game catalog
-is not yet complete. See [Link cable](docs/LINK_CABLE.md) for setup, supported
-modes, current restrictions, diagnostics, and recovery steps.
+Normal 8-bit, Normal 32-bit and two-player Multiplayer 16-bit transfers are
+supported. Fast-forward and savestates are disabled while a session is open.
+Reset, ROM replacement, suspend and exit disconnect cleanly.
 
-## Build
+The GBA Wireless Adapter, three- or four-player sessions, UART, JoyBus,
+GameCube link, multiboot and internet relay are not supported. Games using the
+Wireless Adapter need a separate cable mode to work here.
 
-The PSP build requires a current [PSPDev](https://pspdev.github.io/) toolchain
-with `psp-config` available in `PATH`.
+Original diagnostic ROM sources for the supported modes are in
+`tests/link-rom/`. Build them with a configured devkitPro GBA toolchain by
+running `make` in that directory.
+
+## Build and test
+
+A current [PSPDev](https://pspdev.github.io/) toolchain must provide
+`psp-config` in `PATH`.
 
 ```sh
 make check
+make test-sanitize
 make psp-build
 ```
 
-Docker users can follow [BUILD-DOCKER.md](BUILD-DOCKER.md). Build outputs are
-created under `source/` and ignored by Git.
+`make check` covers the portable cheat, serial, link, lifecycle, menu, video,
+configuration, fast-forward, dynarec and audio modules. Generated PSP files are
+written under `source/` and ignored by Git.
 
-### Host tests
-
-`make check` builds the portable production modules with the host C compiler.
-It runs deterministic regression vectors for CodeBreaker handling, GBA serial
-timing, framed link traffic, two-core session synchronization, malformed input,
-timeouts, and thousands of transfers with variable delay. It also verifies
-translation order and that private runtime data or generated executables are
-not tracked.
-
-### Release package
-
-After a successful PSP build:
+The official PSPDev container can replace a local toolchain:
 
 ```sh
-make package VERSION=1.3.0
+docker run --rm -v "$PWD:/workspace" -w /workspace/source pspdev/pspdev:latest make
 ```
 
-This creates `GBA-Rush-PSP-1.3.0.zip` and its SHA-256 checksum in `dist/`, then
-extracts and verifies the archive against the approved release manifest. The
-package contains only `EBOOT.PBP`, `exception.prx`, installation notes,
-changelog, and license. It excludes BIOS files, ROMs, saves, local settings,
-and cheat databases.
+After a successful candidate build:
 
-### Single-game launcher
+```sh
+make package VERSION=1.4.0
+```
 
-The launcher and graphical builder remain available as source. Generate the
-launcher template before running the builder:
+The package command creates a reproducible ZIP and SHA-256 checksum under
+`dist/`, then verifies the archive manifest. It never includes BIOS files,
+ROMs, saves, settings or cheat databases.
+
+### Performance comparison
+
+On PSP, use **Diagnostics > Start measurement**, play a repeatable section,
+stop measurement and save the report. Collect three reports per build, then
+run:
+
+```sh
+python3 scripts/compare-benchmarks.py \
+  --baseline old-1.txt old-2.txt old-3.txt \
+  --candidate new-1.txt new-2.txt new-3.txt
+```
+
+The comparison checks throughput, frame-time and GE-wait tails, audio
+underruns, skipped frames and, when recorded, the measured fast-forward
+multiplier.
+
+## Single-game launcher
+
+The optional launcher creates a separate XMB bubble for one ROM. Build its PSP
+stub first, then run the desktop tool:
 
 ```sh
 make launcher-stub
@@ -168,50 +180,21 @@ python3 -m pip install -r source/single-game_launcher/tool/requirements.txt
 python3 source/single-game_launcher/tool/gui.py
 ```
 
-External audio tools are not committed to the repository. See the
-[builder documentation](source/single-game_launcher/tool/README.md) for its
-requirements and third-party notices.
+See the [launcher README](source/single-game_launcher/tool/README.md) for asset
+sizes and required external tools.
 
-## Repository layout
+## Credits and license
 
-| Path | Purpose |
-|---|---|
-| `source/` | Emulator source, PSP Makefile, assets, and inherited SDK imports |
-| `source/src/codebreaker.c` | CodeBreaker decoder and operation interpreter |
-| `tests/` | Host regression tests |
-| `docs/CHEATS.md` | Cheat format and master-code behavior |
-| `docs/LINK_CABLE.md` | Two-PSP link setup, compatibility, and diagnostics |
-| `docs/LINEAGE.md` | Upstream history, links, and acknowledgements |
-| `docs/BRAND.md` | Naming, visual identity, and attribution rules |
-| `source/single-game_launcher/` | Optional PSP launcher and desktop builder |
-| `scripts/` | Source checks and repeatable release packaging |
+GBA Rush PSP exists because of work by Exophase and gpSP contributors; notaz;
+Takka and the gpSP Kai contributors; Nebuleon, Normmatt, BassAceGold and the
+TempGBA community; Phoe-nix; andymcca; JxPv2; and every contributor to the
+[direct upstream repository](https://github.com/andymcca/TempGBA4PSP-mod).
+Relevant fixes from [libretro/gpSP](https://github.com/libretro/gpsp) are
+retained with source history and notices.
 
-## Thanks and lineage
+The emulator is GPL-2.0-or-later; see [LICENSE](LICENSE), [NOTICE](NOTICE),
+`source/copyright` and source headers. The launcher builder is
+GPL-3.0-or-later and carries separate notices in its directory.
 
-GBA Rush PSP stands on work by:
-
-- [Exophase](https://github.com/Exophase) and gpSP contributors;
-- [notaz](https://github.com/notaz) and the wider gpSP community;
-- Takka and the gpSP Kai contributors;
-- Nebuleon, Normmatt, BassAceGold, and the TempGBA community;
-- [Phoe-nix](https://github.com/phoe-nix) and earlier TempGBA4PSP-mod
-  contributors;
-- [andymcca](https://github.com/andymcca),
-  [JxPv2](https://github.com/JxPv2), and everyone who contributed to the
-  [direct upstream repository](https://github.com/andymcca/TempGBA4PSP-mod);
-- [libretro/gpsp](https://github.com/libretro/gpsp) contributors whose fixes
-  are credited in the inherited source and history.
-
-Thank you to every developer and tester who kept this emulator lineage useful
-on real PSP hardware. Detailed historical and asset attribution remains in
-[`source/copyright`](source/copyright), [NOTICE.md](NOTICE.md), and
-[docs/LINEAGE.md](docs/LINEAGE.md).
-
-## License
-
-The emulator is distributed under GPL-2.0-or-later. See [LICENSE](LICENSE).
-The optional desktop launcher builder is GPL-3.0-or-later and carries its own
-license and third-party notices.
-
-This project is not affiliated with or endorsed by Nintendo, Sony, CodeBreaker,
-or the maintainers of the upstream projects.
+GBA Rush PSP is not affiliated with or endorsed by Nintendo, Sony,
+CodeBreaker or the upstream maintainers.
