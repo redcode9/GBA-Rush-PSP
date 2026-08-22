@@ -18,6 +18,15 @@ MATCH_FIELDS = (
     "rom-revision",
 )
 
+OPTIONAL_MATCH_FIELDS = (
+    "fast-forward-game-override",
+    "fast-forward-profile",
+    "fast-forward-activation",
+    "fast-forward-speed",
+    "fast-forward-presentation",
+    "fast-forward-audio",
+)
+
 
 def read_report(path):
     values = {}
@@ -63,6 +72,14 @@ def skip_ratio(report):
     return number(report, "skipped-frames") / frames
 
 
+def fast_forward_multiplier(report):
+    duration = number(report, "fast-forward-time-us")
+    if duration <= 0:
+        raise ValueError("fast-forward-time-us must be positive")
+    frames = number(report, "fast-forward-frames")
+    return frames * 280_896_000_000.0 / (duration * 16_777_216.0)
+
+
 def percent_change(baseline, candidate):
     if baseline == 0:
         return 0.0 if candidate == 0 else float("inf")
@@ -74,6 +91,9 @@ def validate_matching_runs(baseline, candidate):
     for report in baseline[1:] + candidate:
         for field in MATCH_FIELDS:
             if report.get(field) != reference.get(field):
+                raise ValueError(f"benchmark field does not match: {field}")
+        for field in OPTIONAL_MATCH_FIELDS:
+            if field in reference and report.get(field) != reference[field]:
                 raise ValueError(f"benchmark field does not match: {field}")
 
 
@@ -102,6 +122,17 @@ def compare(baseline, candidate):
     )
     baseline_skips = median_metric(baseline, skip_ratio)
     candidate_skips = median_metric(candidate, skip_ratio)
+    baseline_fast_forward = None
+    candidate_fast_forward = None
+    if all("fast-forward-time-us" in report and
+           number(report, "fast-forward-time-us") > 0 for report in
+           baseline + candidate):
+        baseline_fast_forward = median_metric(
+            baseline, fast_forward_multiplier
+        )
+        candidate_fast_forward = median_metric(
+            candidate, fast_forward_multiplier
+        )
 
     throughput_change = percent_change(baseline_throughput, candidate_throughput)
     frame_p95_change = percent_change(baseline_frame_p95, candidate_frame_p95)
@@ -116,6 +147,13 @@ def compare(baseline, candidate):
         failures.append("audio underruns increased")
     if candidate_skips > baseline_skips + 0.005:
         failures.append("skipped-frame ratio increased by more than 0.5 points")
+    fast_forward_change = None
+    if baseline_fast_forward is not None:
+        fast_forward_change = percent_change(
+            baseline_fast_forward, candidate_fast_forward
+        )
+        if fast_forward_change < -2.0:
+            failures.append("fast-forward speed regression exceeds 2%")
 
     return {
         "passed": not failures,
@@ -128,6 +166,8 @@ def compare(baseline, candidate):
         "ge_p95_change": ge_p95_change,
         "audio_underruns": candidate_underruns,
         "skip_ratio": candidate_skips,
+        "fast_forward": candidate_fast_forward,
+        "fast_forward_change": fast_forward_change,
     }
 
 
@@ -147,6 +187,11 @@ def format_result(result):
     )
     lines.append(f"audio-underruns={result['audio_underruns']:.0f}")
     lines.append(f"skipped-frames={result['skip_ratio'] * 100.0:.2f}%")
+    if result["fast_forward"] is not None:
+        lines.append(
+            f"fast-forward={result['fast_forward']:.2f}x "
+            f"({result['fast_forward_change']:+.2f}%)"
+        )
     lines.extend(f"reason={failure}" for failure in result["failures"])
     return "\n".join(lines)
 

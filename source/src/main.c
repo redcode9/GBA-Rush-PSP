@@ -382,6 +382,45 @@ int main_link_pending(void)
    state == LINK_SESSION_WAIT_READY_ACK;
 }
 
+static FastForwardSettings main_fast_forward_settings(void)
+{
+  FastForwardSettings settings;
+
+  if(option_fast_forward_game_override)
+  {
+    settings.profile = (FastForwardProfile)option_game_fast_forward_profile;
+    settings.activation =
+     (FastForwardActivation)option_game_fast_forward_activation;
+    settings.speed = (FastForwardSpeed)option_game_fast_forward_speed;
+    settings.presentation =
+     (FastForwardPresentation)option_game_fast_forward_presentation;
+    settings.audio = (FastForwardAudio)option_game_fast_forward_audio;
+  }
+  else
+  {
+    settings.profile = (FastForwardProfile)option_fast_forward_profile;
+    settings.activation =
+     (FastForwardActivation)option_fast_forward_activation;
+    settings.speed = (FastForwardSpeed)option_fast_forward_speed;
+    settings.presentation =
+     (FastForwardPresentation)option_fast_forward_presentation;
+    settings.audio = (FastForwardAudio)option_fast_forward_audio;
+  }
+
+  fast_forward_settings_sanitize(&settings);
+  return settings;
+}
+
+static void main_fast_forward_record_change(int was_active,
+ FastForwardSpeed was_speed)
+{
+  int active = fast_forward_policy_active(&fast_forward_policy);
+
+  if(was_active != active ||
+     (active && was_speed != fast_forward_policy_speed(&fast_forward_policy)))
+    perf_monitor_record_fast_forward_transition();
+}
+
 static void main_fast_forward_update_sound(void)
 {
   if(!fast_forward_policy_active(&fast_forward_policy))
@@ -400,6 +439,9 @@ static void main_fast_forward_update_sound(void)
 
 void main_fast_forward_input(u32 pressed, u32 held)
 {
+  int was_active;
+  FastForwardSpeed was_speed;
+
   if(main_link_active())
   {
     if(fast_forward_policy_active(&fast_forward_policy))
@@ -407,14 +449,22 @@ void main_fast_forward_input(u32 pressed, u32 held)
     return;
   }
 
+  was_active = fast_forward_policy_active(&fast_forward_policy);
+  was_speed = fast_forward_policy_speed(&fast_forward_policy);
   fast_forward_policy_input(&fast_forward_policy, pressed != 0, held != 0);
+  main_fast_forward_record_change(was_active, was_speed);
   synchronize_flag = !fast_forward_policy_active(&fast_forward_policy);
   main_fast_forward_update_sound();
 }
 
 void main_fast_forward_stop(void)
 {
+  int was_active = fast_forward_policy_active(&fast_forward_policy);
+  FastForwardSpeed was_speed =
+   fast_forward_policy_speed(&fast_forward_policy);
+
   fast_forward_policy_stop(&fast_forward_policy);
+  main_fast_forward_record_change(was_active, was_speed);
   synchronize_flag = 1;
   sound_set_fast_forward(0);
 }
@@ -445,30 +495,13 @@ const char *main_fast_forward_status(void)
 
 void main_fast_forward_apply_settings(void)
 {
-  FastForwardSettings settings;
-
-  if(option_fast_forward_game_override)
-  {
-    settings.profile = (FastForwardProfile)option_game_fast_forward_profile;
-    settings.activation =
-     (FastForwardActivation)option_game_fast_forward_activation;
-    settings.speed = (FastForwardSpeed)option_game_fast_forward_speed;
-    settings.presentation =
-     (FastForwardPresentation)option_game_fast_forward_presentation;
-    settings.audio = (FastForwardAudio)option_game_fast_forward_audio;
-  }
-  else
-  {
-    settings.profile = (FastForwardProfile)option_fast_forward_profile;
-    settings.activation =
-     (FastForwardActivation)option_fast_forward_activation;
-    settings.speed = (FastForwardSpeed)option_fast_forward_speed;
-    settings.presentation =
-     (FastForwardPresentation)option_fast_forward_presentation;
-    settings.audio = (FastForwardAudio)option_fast_forward_audio;
-  }
+  FastForwardSettings settings = main_fast_forward_settings();
+  int was_active = fast_forward_policy_active(&fast_forward_policy);
+  FastForwardSpeed was_speed =
+   fast_forward_policy_speed(&fast_forward_policy);
 
   fast_forward_policy_configure(&fast_forward_policy, &settings);
+  main_fast_forward_record_change(was_active, was_speed);
   synchronize_flag = 1;
   sound_set_fast_forward(0);
 }
@@ -996,7 +1029,11 @@ static void synchronize(void)
 
     if(sound_take_fast_forward_fallback())
     {
+      u64 fallback_count = fast_forward_policy.audio_fallback_count;
+
       fast_forward_policy_audio_fallback(&fast_forward_policy);
+      if(fast_forward_policy.audio_fallback_count != fallback_count)
+        perf_monitor_record_fast_forward_audio_fallback();
       main_fast_forward_update_sound();
     }
     decision = fast_forward_policy_frame(&fast_forward_policy, now);
@@ -1600,6 +1637,7 @@ static int main_perf_write_all(SceUID file, const char *data, u32 length)
 
 int main_perf_write_report(char *output_path, size_t output_path_size)
 {
+  FastForwardSettings fast_forward_settings;
   PerfMetricsSnapshot metrics;
   PerfReportMetadata metadata;
   ScePspDateTime date = { 0 };
@@ -1628,6 +1666,13 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
   metadata.frameskip_type = option_frameskip_type;
   metadata.frameskip_value = option_frameskip_value;
   metadata.sound_volume = option_sound_volume;
+  fast_forward_settings = main_fast_forward_settings();
+  metadata.fast_forward_game_override = option_fast_forward_game_override;
+  metadata.fast_forward_profile = fast_forward_settings.profile;
+  metadata.fast_forward_activation = fast_forward_settings.activation;
+  metadata.fast_forward_speed = fast_forward_settings.speed;
+  metadata.fast_forward_presentation = fast_forward_settings.presentation;
+  metadata.fast_forward_audio = fast_forward_settings.audio;
   if(gamepak_file_size >= 0xC0U)
   {
     metadata.rom_title = gamepak_rom + 0xA0;

@@ -11,8 +11,9 @@ SPEC.loader.exec_module(MODULE)
 
 
 def report(frame_p95=17000, frames=600, duration=10_000_000,
-           underruns=0, skipped=0, clock=333):
-    return {
+           underruns=0, skipped=0, clock=333, fast_forward_time=None,
+           fast_forward_frames=0):
+    result = {
         "state": "stopped",
         "psp-model": "1",
         "clock-mhz": str(clock),
@@ -31,6 +32,10 @@ def report(frame_p95=17000, frames=600, duration=10_000_000,
         "frame-time-p95-us": str(frame_p95),
         "ge-wait-p95-us": "500",
     }
+    if fast_forward_time is not None:
+        result["fast-forward-time-us"] = str(fast_forward_time)
+        result["fast-forward-frames"] = str(fast_forward_frames)
+    return result
 
 
 class BenchmarkComparisonTests(unittest.TestCase):
@@ -62,6 +67,25 @@ class BenchmarkComparisonTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "clock-mhz"):
             MODULE.compare(baseline, candidate)
+
+    def test_fast_forward_regression_fails(self):
+        baseline = [
+            report(fast_forward_time=1_000_000, fast_forward_frames=120)
+            for _ in range(3)
+        ]
+        candidate = [
+            report(fast_forward_time=1_100_000, fast_forward_frames=120)
+            for _ in range(3)
+        ]
+
+        result = MODULE.compare(baseline, candidate)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(
+            result["failures"],
+            ["fast-forward speed regression exceeds 2%"],
+        )
+        self.assertLess(result["fast_forward_change"], -2.0)
 
     def test_parser_rejects_unstopped_report(self):
         with tempfile.TemporaryDirectory() as directory:

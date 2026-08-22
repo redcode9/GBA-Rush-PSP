@@ -13,7 +13,7 @@ static void test_golden_report(void)
   };
   static const uint8_t game_code[] = { 'B', 'P', 'R', 'E' };
   static const char expected[] =
-   "gba-rush-performance-report=2\n"
+   "gba-rush-performance-report=3\n"
    "version=1.3.0\n"
    "psp-model=1\n"
    "clock-mhz=333\n"
@@ -23,6 +23,12 @@ static void test_golden_report(void)
    "frameskip-type=0\n"
    "frameskip-value=9\n"
    "sound-volume=10\n"
+   "fast-forward-game-override=1\n"
+   "fast-forward-profile=2\n"
+   "fast-forward-activation=1\n"
+   "fast-forward-speed=1\n"
+   "fast-forward-presentation=0\n"
+   "fast-forward-audio=1\n"
    "rom-title=POKE__X_\n"
    "game-code=BPRE\n"
    "rom-revision=1\n"
@@ -32,6 +38,10 @@ static void test_golden_report(void)
    "presented-frames=175\n"
    "skipped-frames=5\n"
    "fast-forward-frames=30\n"
+   "fast-forward-presented-frames=15\n"
+   "fast-forward-time-us=250000\n"
+   "fast-forward-transitions=4\n"
+   "fast-forward-audio-fallbacks=1\n"
    "audio-recoveries=2\n"
    "audio-underruns=1\n"
    "dynarec-compilations=40\n"
@@ -72,6 +82,12 @@ static void test_golden_report(void)
   metadata.frameskip_type = 0;
   metadata.frameskip_value = 9;
   metadata.sound_volume = 10;
+  metadata.fast_forward_game_override = 1;
+  metadata.fast_forward_profile = 2;
+  metadata.fast_forward_activation = 1;
+  metadata.fast_forward_speed = 1;
+  metadata.fast_forward_presentation = 0;
+  metadata.fast_forward_audio = 1;
   metadata.rom_title = rom_title;
   metadata.rom_title_length = sizeof(rom_title);
   metadata.game_code = game_code;
@@ -85,6 +101,10 @@ static void test_golden_report(void)
   metrics.presented_frames = 175;
   metrics.skipped_frames = 5;
   metrics.fast_forward_frames = 30;
+  metrics.fast_forward_presented_frames = 15;
+  metrics.fast_forward_time_us = 250000;
+  metrics.fast_forward_transitions = 4;
+  metrics.fast_forward_audio_fallbacks = 1;
   metrics.audio_recoveries = 2;
   metrics.audio_underruns = 1;
   metrics.dynarec_compilations = 40;

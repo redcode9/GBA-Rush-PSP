@@ -17,7 +17,7 @@
 
 #include "perf_metrics.h"
 
-#define PERF_REPORT_VERSION 2U
+#define PERF_REPORT_VERSION 3U
 
 typedef struct
 {
@@ -30,6 +30,12 @@ typedef struct
   uint32_t frameskip_type;
   uint32_t frameskip_value;
   uint32_t sound_volume;
+  uint32_t fast_forward_game_override;
+  uint32_t fast_forward_profile;
+  uint32_t fast_forward_activation;
+  uint32_t fast_forward_speed;
+  uint32_t fast_forward_presentation;
+  uint32_t fast_forward_audio;
   const uint8_t *rom_title;
   size_t rom_title_length;
   const uint8_t *game_code;

@@ -157,12 +157,7 @@ void perf_metrics_record_frame(PerfMetrics *metrics, uint32_t frame_time_us,
   if(!perf_metrics_active(metrics))
     return;
 
-  metrics->emulated_frames = perf_metrics_saturating_add(
-   metrics->emulated_frames, 1);
-  if(fast_forward)
-    metrics->fast_forward_frames = perf_metrics_saturating_add(
-     metrics->fast_forward_frames, 1);
-  perf_metrics_histogram_record(&metrics->frame_time, frame_time_us);
+  perf_metrics_record_emulated_frame(metrics, frame_time_us, fast_forward);
 
   if(skipped)
   {
@@ -173,6 +168,9 @@ void perf_metrics_record_frame(PerfMetrics *metrics, uint32_t frame_time_us,
   {
     metrics->presented_frames = perf_metrics_saturating_add(
      metrics->presented_frames, 1);
+    if(fast_forward)
+      metrics->fast_forward_presented_frames = perf_metrics_saturating_add(
+       metrics->fast_forward_presented_frames, 1);
     perf_metrics_histogram_record(&metrics->ge_wait, ge_wait_us);
   }
 }
@@ -186,8 +184,12 @@ void perf_metrics_record_emulated_frame(PerfMetrics *metrics,
   metrics->emulated_frames = perf_metrics_saturating_add(
    metrics->emulated_frames, 1);
   if(fast_forward)
+  {
     metrics->fast_forward_frames = perf_metrics_saturating_add(
      metrics->fast_forward_frames, 1);
+    metrics->fast_forward_time_us = perf_metrics_saturating_add(
+     metrics->fast_forward_time_us, frame_time_us);
+  }
   perf_metrics_histogram_record(&metrics->frame_time, frame_time_us);
 }
 
@@ -221,6 +223,20 @@ void perf_metrics_record_audio_underrun(PerfMetrics *metrics)
   if(perf_metrics_active(metrics))
     metrics->audio_underruns = perf_metrics_saturating_add(
      metrics->audio_underruns, 1);
+}
+
+void perf_metrics_record_fast_forward_transition(PerfMetrics *metrics)
+{
+  if(perf_metrics_active(metrics))
+    metrics->fast_forward_transitions = perf_metrics_saturating_add(
+     metrics->fast_forward_transitions, 1);
+}
+
+void perf_metrics_record_fast_forward_audio_fallback(PerfMetrics *metrics)
+{
+  if(perf_metrics_active(metrics))
+    metrics->fast_forward_audio_fallbacks = perf_metrics_saturating_add(
+     metrics->fast_forward_audio_fallbacks, 1);
 }
 
 void perf_metrics_record_dynarec_compilation(PerfMetrics *metrics)
@@ -302,6 +318,12 @@ void perf_metrics_snapshot(const PerfMetrics *metrics,
   snapshot->presented_frames = metrics->presented_frames;
   snapshot->skipped_frames = metrics->skipped_frames;
   snapshot->fast_forward_frames = metrics->fast_forward_frames;
+  snapshot->fast_forward_presented_frames =
+   metrics->fast_forward_presented_frames;
+  snapshot->fast_forward_time_us = metrics->fast_forward_time_us;
+  snapshot->fast_forward_transitions = metrics->fast_forward_transitions;
+  snapshot->fast_forward_audio_fallbacks =
+   metrics->fast_forward_audio_fallbacks;
   snapshot->audio_recoveries = metrics->audio_recoveries;
   snapshot->audio_underruns = metrics->audio_underruns;
   snapshot->dynarec_compilations = metrics->dynarec_compilations;

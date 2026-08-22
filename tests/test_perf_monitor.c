@@ -61,6 +61,8 @@ static void test_events_and_watermarks(void)
   assert(perf_monitor_start(500));
   perf_monitor_record_audio_recovery();
   perf_monitor_record_audio_underrun();
+  perf_monitor_record_fast_forward_transition();
+  perf_monitor_record_fast_forward_audio_fallback();
   perf_monitor_record_dynarec_compilation();
   perf_monitor_record_dynarec_reuse();
   perf_monitor_record_dynarec_retry();
@@ -73,6 +75,8 @@ static void test_events_and_watermarks(void)
   result = snapshot();
   assert(result.audio_recoveries == 1);
   assert(result.audio_underruns == 1);
+  assert(result.fast_forward_transitions == 1);
+  assert(result.fast_forward_audio_fallbacks == 1);
   assert(result.dynarec_compilations == 1);
   assert(result.dynarec_reuse_hits == 1);
   assert(result.dynarec_retries == 1);

@@ -29,6 +29,8 @@ void perf_monitor_record_frame(uint32_t frame_time_us, uint32_t ge_wait_us,
  int skipped, int fast_forward);
 void perf_monitor_record_audio_recovery(void);
 void perf_monitor_record_audio_underrun(void);
+void perf_monitor_record_fast_forward_transition(void);
+void perf_monitor_record_fast_forward_audio_fallback(void);
 void perf_monitor_record_dynarec_compilation(void);
 void perf_monitor_record_dynarec_reuse(void);
 void perf_monitor_record_dynarec_retry(void);

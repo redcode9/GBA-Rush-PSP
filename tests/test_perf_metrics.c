@@ -71,11 +71,12 @@ static void test_counters_and_watermarks(void)
   perf_metrics_init(&metrics);
   assert(perf_metrics_start(&metrics));
 
-  perf_metrics_record_emulated_frame(&metrics, 16667, 1);
+  perf_metrics_record_frame(&metrics, 16667, 300, 0, 1);
   perf_metrics_record_emulated_frame(&metrics, 16668, 0);
-  perf_metrics_record_presented_frame(&metrics, 300);
   perf_metrics_record_audio_recovery(&metrics);
   perf_metrics_record_audio_underrun(&metrics);
+  perf_metrics_record_fast_forward_transition(&metrics);
+  perf_metrics_record_fast_forward_audio_fallback(&metrics);
   perf_metrics_record_dynarec_compilation(&metrics);
   perf_metrics_record_dynarec_reuse(&metrics);
   perf_metrics_record_dynarec_retry(&metrics);
@@ -91,6 +92,10 @@ static void test_counters_and_watermarks(void)
   result = snapshot(&metrics);
   assert(result.emulated_frames == 2);
   assert(result.fast_forward_frames == 1);
+  assert(result.fast_forward_presented_frames == 1);
+  assert(result.fast_forward_time_us == 16667);
+  assert(result.fast_forward_transitions == 1);
+  assert(result.fast_forward_audio_fallbacks == 1);
   assert(result.presented_frames == 1);
   assert(result.audio_recoveries == 1);
   assert(result.audio_underruns == 1);

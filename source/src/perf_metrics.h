@@ -42,6 +42,10 @@ typedef struct
   uint64_t presented_frames;
   uint64_t skipped_frames;
   uint64_t fast_forward_frames;
+  uint64_t fast_forward_presented_frames;
+  uint64_t fast_forward_time_us;
+  uint64_t fast_forward_transitions;
+  uint64_t fast_forward_audio_fallbacks;
   uint64_t audio_recoveries;
   uint64_t audio_underruns;
   uint64_t dynarec_compilations;
@@ -66,6 +70,10 @@ typedef struct
   uint64_t presented_frames;
   uint64_t skipped_frames;
   uint64_t fast_forward_frames;
+  uint64_t fast_forward_presented_frames;
+  uint64_t fast_forward_time_us;
+  uint64_t fast_forward_transitions;
+  uint64_t fast_forward_audio_fallbacks;
   uint64_t audio_recoveries;
   uint64_t audio_underruns;
   uint64_t dynarec_compilations;
@@ -108,6 +116,8 @@ void perf_metrics_record_presented_frame(PerfMetrics *metrics,
 void perf_metrics_record_skipped_frame(PerfMetrics *metrics);
 void perf_metrics_record_audio_recovery(PerfMetrics *metrics);
 void perf_metrics_record_audio_underrun(PerfMetrics *metrics);
+void perf_metrics_record_fast_forward_transition(PerfMetrics *metrics);
+void perf_metrics_record_fast_forward_audio_fallback(PerfMetrics *metrics);
 void perf_metrics_record_dynarec_compilation(PerfMetrics *metrics);
 void perf_metrics_record_dynarec_reuse(PerfMetrics *metrics);
 void perf_metrics_record_dynarec_retry(PerfMetrics *metrics);

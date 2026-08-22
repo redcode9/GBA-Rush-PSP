@@ -155,6 +155,18 @@ int perf_report_format(char *output, size_t output_size,
   perf_report_append(&writer, "frameskip-value=%u\n",
    metadata->frameskip_value);
   perf_report_append(&writer, "sound-volume=%u\n", metadata->sound_volume);
+  perf_report_append(&writer, "fast-forward-game-override=%u\n",
+   metadata->fast_forward_game_override);
+  perf_report_append(&writer, "fast-forward-profile=%u\n",
+   metadata->fast_forward_profile);
+  perf_report_append(&writer, "fast-forward-activation=%u\n",
+   metadata->fast_forward_activation);
+  perf_report_append(&writer, "fast-forward-speed=%u\n",
+   metadata->fast_forward_speed);
+  perf_report_append(&writer, "fast-forward-presentation=%u\n",
+   metadata->fast_forward_presentation);
+  perf_report_append(&writer, "fast-forward-audio=%u\n",
+   metadata->fast_forward_audio);
   perf_report_append(&writer, "rom-title=%s\n", rom_title);
   perf_report_append(&writer, "game-code=%s\n", game_code);
   perf_report_append(&writer, "rom-revision=%u\n", metadata->rom_revision);
@@ -170,6 +182,14 @@ int perf_report_format(char *output, size_t output_size,
    (unsigned long long)metrics->skipped_frames);
   perf_report_append(&writer, "fast-forward-frames=%llu\n",
    (unsigned long long)metrics->fast_forward_frames);
+  perf_report_append(&writer, "fast-forward-presented-frames=%llu\n",
+   (unsigned long long)metrics->fast_forward_presented_frames);
+  perf_report_append(&writer, "fast-forward-time-us=%llu\n",
+   (unsigned long long)metrics->fast_forward_time_us);
+  perf_report_append(&writer, "fast-forward-transitions=%llu\n",
+   (unsigned long long)metrics->fast_forward_transitions);
+  perf_report_append(&writer, "fast-forward-audio-fallbacks=%llu\n",
+   (unsigned long long)metrics->fast_forward_audio_fallbacks);
   perf_report_append(&writer, "audio-recoveries=%llu\n",
    (unsigned long long)metrics->audio_recoveries);
   perf_report_append(&writer, "audio-underruns=%llu\n",

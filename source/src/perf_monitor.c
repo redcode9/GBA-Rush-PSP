@@ -90,6 +90,16 @@ void perf_monitor_record_audio_underrun(void)
   perf_metrics_record_audio_underrun(&perf_monitor_metrics);
 }
 
+void perf_monitor_record_fast_forward_transition(void)
+{
+  perf_metrics_record_fast_forward_transition(&perf_monitor_metrics);
+}
+
+void perf_monitor_record_fast_forward_audio_fallback(void)
+{
+  perf_metrics_record_fast_forward_audio_fallback(&perf_monitor_metrics);
+}
+
 void perf_monitor_record_dynarec_compilation(void)
 {
   perf_metrics_record_dynarec_compilation(&perf_monitor_metrics);
