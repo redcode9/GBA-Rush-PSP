@@ -23,6 +23,7 @@
 // - block memory needs psr swapping and user mode reg swapping
 
 #include "common.h"
+#include "dynarec_worklist.h"
 #include "perf_monitor.h"
 
 // Default
@@ -162,6 +163,7 @@ u32 *rom_branch_hash[ROM_BRANCH_HASH_SIZE];
 ReuseHeader *writable_checksum_hash[WRITABLE_HASH_SIZE];
 
 u32 translation_recursion_level = 0;
+static DynarecWorklist deferred_exit_worklist;
 
 u8 *ewram_block_ptrs[MAX_TAG_EWRAM + 1];
 u32 ewram_block_tag_top = MIN_TAG;
@@ -241,6 +243,7 @@ static u32 InsertUniqueSorted(u32 *Array, u32 Value, s32 Size);
 static s32 BinarySearch(u32 *Array, u32 Value, s32 Size);
 
 static inline void FlushCacheLine(void *CacheLine);
+static int process_deferred_exits(void);
 
 static void partial_clear_metadata_arm(u16 *metadata, u16 *metadata_area_start, u16 *metadata_area_end);
 static void partial_clear_metadata_thumb(u16 *metadata, u16 *metadata_area_start, u16 *metadata_area_end);
@@ -2651,23 +2654,31 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
                                                                               \
     translation_recursion_level++;                                            \
     block_lookup_translate_##instruction_type();                              \
+                                                                              \
+    if (translation_result != NULL)                                           \
+    {                                                                         \
+      block_address = translation_result + block_prologue_size;               \
+      metadata_area##_block_ptrs[metadata_area##_block_tag_top] = block_address; \
+      fill_tag_##instruction_type(metadata_area);                             \
+      metadata_area##_block_tag_top++;                                        \
+                                                                              \
+      if ((translation_recursion_level == 1) && !process_deferred_exits())    \
+        translation_result = NULL;                                            \
+    }                                                                         \
+                                                                              \
     translation_recursion_level--;                                            \
                                                                               \
     /* If the translation failed then pass that failure on if we're in        \
        a recursive level, or try again if we've hit the bottom. */            \
-      if (translation_result == NULL)                                           \
+    if (translation_result == NULL)                                           \
     {                                                                         \
       if (translation_recursion_level != 0)                                   \
         return NULL;                                                          \
                                                                               \
+      dynarec_worklist_clear(&deferred_exit_worklist);                        \
       perf_monitor_record_dynarec_retry();                                    \
       goto redo;                                                              \
     }                                                                         \
-                                                                              \
-    block_address = translation_result + block_prologue_size;                 \
-    metadata_area##_block_ptrs[metadata_area##_block_tag_top] = block_address;\
-    fill_tag_##instruction_type(metadata_area);                               \
-    metadata_area##_block_tag_top++;                                          \
 /*                                                                              \
     if (translation_recursion_level == 0)                                     \
     {                                                                         \
@@ -2707,6 +2718,9 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
     fill_tag_##instruction_type(metadata_area);                               \
     metadata_area##_block_tag_top++;                                          \
     block_lookup_translate_##instruction_type();                              \
+    if ((translation_result != NULL) && (translation_recursion_level == 1) && \
+        !process_deferred_exits())                                            \
+      translation_result = NULL;                                              \
     translation_recursion_level--;                                            \
                                                                               \
     /* If the translation failed then pass that failure on if we're in        \
@@ -2716,6 +2730,7 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
       if (translation_recursion_level != 0)                                   \
         return NULL;                                                          \
                                                                               \
+      dynarec_worklist_clear(&deferred_exit_worklist);                        \
       perf_monitor_record_dynarec_retry();                                    \
       goto redo;                                                              \
     }                                                                         \
@@ -2799,6 +2814,10 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
         readonly_next_code += sizeof(u32 *) + sizeof(u32 **);                 \
         block_address = readonly_next_code + block_prologue_size;             \
         block_lookup_translate_##type();                                      \
+        if ((translation_result != NULL) &&                                   \
+            (translation_recursion_level == 1) &&                             \
+            !process_deferred_exits())                                        \
+          translation_result = NULL;                                          \
         translation_recursion_level--;                                        \
                                                                               \
         /* If the translation failed then pass that failure on if we're in    \
@@ -2808,6 +2827,7 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
           if (translation_recursion_level != 0)                               \
             return NULL;                                                      \
                                                                               \
+          dynarec_worklist_clear(&deferred_exit_worklist);                    \
           perf_monitor_record_dynarec_retry();                                \
           goto redo;                                                          \
         }                                                                     \
@@ -2964,8 +2984,7 @@ u8 *block_lookup_address_dual(u32 pc)
       break;                                                                  \
   }                                                                           \
 
-#define arm_link_block()                                                      \
-  translation_target = block_lookup_address_arm(branch_target);               \
+#define arm_deferred_exit_thumb (0)
 
 #define arm_instruction_width   (4)
 #define arm_instruction_nibbles (8)
@@ -3033,15 +3052,7 @@ u8 *block_lookup_address_dual(u32 pc)
 
 #define thumb_set_condition(_condition)                                       \
 
-#define thumb_link_block()                                                    \
-  if (branch_target != 0x00000008)                                            \
-  {                                                                           \
-    translation_target = block_lookup_address_thumb(branch_target);           \
-  }                                                                           \
-  else                                                                        \
-  {                                                                           \
-    translation_target = block_lookup_address_arm(branch_target);             \
-  }                                                                           \
+#define thumb_deferred_exit_thumb (1)
 
 #define thumb_instruction_width   (2)
 #define thumb_instruction_nibbles (4)
@@ -3374,6 +3385,30 @@ static inline void FlushCacheLine(void *CacheLine)
   __builtin_allegrex_cache(ICACHE_HIT_INVALIDATE, (int)CacheLine);
 }
 
+static int process_deferred_exits(void)
+{
+  DynarecWorkItem item;
+
+  while(dynarec_worklist_pop(&deferred_exit_worklist, &item))
+  {
+    u8 *translation_target;
+
+    if(item.branch_target == 0x00000008 || !item.thumb)
+      translation_target = block_lookup_address_arm(item.branch_target);
+    else
+      translation_target = block_lookup_address_thumb(item.branch_target);
+
+    if(translation_target == NULL)
+      return 0;
+
+    generate_branch_patch_unconditional(item.branch_source,
+     translation_target);
+    FlushCacheLine(item.branch_source);
+  }
+
+  return 1;
+}
+
 #define generate_block_vars_arm()                                             \
   u32 condition;                                                              \
 
@@ -3397,7 +3432,6 @@ static u8 *translate_block_##type(u32 pc)                                     \
   u32 block_end_pc = pc;                                                      \
   s32 block_exit_position = 0;                                                \
   s32 block_data_position = 0;                                                \
-  s32 external_block_exit_position = 0;                                       \
   u32 branch_target;                                                          \
   u32 cycle_count = 0;                                                        \
   u8 *translation_target;                                                     \
@@ -3621,11 +3655,13 @@ static u8 *translate_block_##type(u32 pc)                                     \
        * macro for more information. */                                       \
       if (BRANCH_TARGET_CAN_BE_LINKED(branch_target))                         \
       {                                                                       \
-        if (i != external_block_exit_position)                                \
+        if(!dynarec_worklist_push(&deferred_exit_worklist,                    \
+         block_exits[i].branch_source, branch_target,                         \
+         type##_deferred_exit_thumb))                                         \
         {                                                                     \
-          memcpy(&block_exits[external_block_exit_position], &block_exits[i], sizeof(BlockExitType)); \
+          flush_translation_cache(translation_region, FLUSH_REASON_FULL_CACHE); \
+          return NULL;                                                        \
         }                                                                     \
-        external_block_exit_position++;                                       \
       }                                                                       \
     }                                                                         \
   }                                                                           \
@@ -3642,16 +3678,6 @@ static u8 *translate_block_##type(u32 pc)                                     \
         translation_ptr += sizeof(u32) - ((u32)translation_ptr & (sizeof(u32) - 1)); /* Align the next block to 4 bytes */ \
       writable_next_code = translation_ptr;                                   \
       break;                                                                  \
-  }                                                                           \
-                                                                              \
-  /* Go compile all the external branches into read-only code areas. */       \
-  for (i = 0; i < external_block_exit_position; i++)                          \
-  {                                                                           \
-    branch_target = block_exits[i].branch_target;                             \
-    type##_link_block();                                                      \
-    if (translation_target == NULL)                                           \
-      return NULL;                                                            \
-    generate_branch_patch_unconditional(block_exits[i].branch_source, translation_target); \
   }                                                                           \
                                                                               \
   u8 *flush_addr;                                                             \
@@ -4082,6 +4108,8 @@ void set_cpu_mode(CPU_MODE_TYPE new_mode)
 
 void init_cpu(void)
 {
+  translation_recursion_level = 0;
+  dynarec_worklist_clear(&deferred_exit_worklist);
   memset(reg, 0, sizeof(reg));
   memset(reg_mode, 0, sizeof(reg_mode));
   memset(spsr, 0, sizeof(spsr));
