@@ -64,6 +64,8 @@ int psp_sound_frequency(u16 sample_count, u16 freq);
 
 void synchronize_sound(void);
 void sound_set_fast_forward(u32 enabled);
+void sound_set_fast_forward_audio(u32 factor);
+int sound_take_fast_forward_fallback(void);
 void sound_power_suspend(void);
 int sound_power_resume(void);
 void sound_power_resume_finish(u32 cpu_ticks, int audio_result);

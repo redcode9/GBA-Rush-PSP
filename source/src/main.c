@@ -381,6 +381,22 @@ int main_link_pending(void)
    state == LINK_SESSION_WAIT_READY_ACK;
 }
 
+static void main_fast_forward_update_sound(void)
+{
+  if(!fast_forward_policy_active(&fast_forward_policy))
+  {
+    sound_set_fast_forward(0);
+    return;
+  }
+
+  if(fast_forward_policy_audio(&fast_forward_policy) ==
+     FAST_FORWARD_AUDIO_ACCELERATED)
+    sound_set_fast_forward_audio(
+     fast_forward_policy_speed_multiplier(&fast_forward_policy));
+  else
+    sound_set_fast_forward(1);
+}
+
 void main_fast_forward_input(u32 pressed, u32 held)
 {
   if(main_link_active())
@@ -392,7 +408,7 @@ void main_fast_forward_input(u32 pressed, u32 held)
 
   fast_forward_policy_input(&fast_forward_policy, pressed != 0, held != 0);
   synchronize_flag = !fast_forward_policy_active(&fast_forward_policy);
-  sound_set_fast_forward(synchronize_flag == 0);
+  main_fast_forward_update_sound();
 }
 
 void main_fast_forward_stop(void)
@@ -977,6 +993,11 @@ static void synchronize(void)
     FastForwardFrameDecision decision;
     u32 now = sceKernelGetSystemTimeLow();
 
+    if(sound_take_fast_forward_fallback())
+    {
+      fast_forward_policy_audio_fallback(&fast_forward_policy);
+      main_fast_forward_update_sound();
+    }
     decision = fast_forward_policy_frame(&fast_forward_policy, now);
     skip_next_frame = !decision.present;
     if(decision.delay_us != 0)

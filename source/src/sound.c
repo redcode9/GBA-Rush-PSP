@@ -19,6 +19,7 @@
  */
 
 #include "common.h"
+#include "fast_forward_audio.h"
 #include "perf_monitor.h"
 
 
@@ -114,18 +115,22 @@ static int psp_sound_reserve(u16 sample_count, u16 frequency);
 
 volatile int sound_active = 0;
 static volatile u32 sound_fast_forward = 0;
+static volatile u32 sound_fast_forward_factor = 1;
+static volatile u32 sound_fast_forward_fallback_pending = 0;
 static volatile u32 sound_power_suspended = 0;
 static volatile u32 sound_output_ready = 0;
 static volatile u32 sound_perf_underrun_pending = 0;
 static volatile u32 sound_perf_recovery_pending = 0;
 static volatile u32 sound_channel_reserved = 0;
-static void fill_sound_buffer(s16 *stream, u16 length);
+static void fill_sound_buffer(s16 *stream, u16 frames, u32 factor);
 static int sound_update_thread(SceSize args, void *argp);
 
 static volatile u8 sound_sleep = 0;
 static void sound_thread_wakeup(void);
 static u32 sound_link_wait_active = 0;
 static u32 sound_link_saved_pause = 0;
+static u32 sound_fast_forward_audio_started = 0;
+static u64 sound_fast_forward_starvation_since = 0;
 
 #define SOUND_OPERATION_TIMEOUT 500000u
 #define SOUND_RECOVERY_RETRY_US 250000u
@@ -789,17 +794,48 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
 #define SOUND_BUFFER_LENGTH                                                   \
   buffer_length(gbc_sound_buffer_index, sound_buffer_base, RING_BUFFER_SIZE)  \
 
-void sound_set_fast_forward(u32 enabled)
+static void sound_set_fast_forward_mode(u32 enabled, u32 factor)
 {
   enabled = enabled != 0;
-  if(sound_fast_forward == enabled)
+  if(!enabled)
+    factor = 1;
+  else if(factor != 2 && factor != 3)
+    factor = 0;
+
+  if(sound_fast_forward == enabled &&
+     sound_fast_forward_factor == factor)
     return;
 
   sound_fast_forward = enabled;
+  sound_fast_forward_factor = factor;
+  sound_fast_forward_fallback_pending = 0;
+  sound_fast_forward_audio_started = 0;
+  sound_fast_forward_starvation_since = 0;
   sound_buffer_base = gbc_sound_buffer_index;
+  __builtin_allegrex_sync();
 
-  if(!enabled && (sound_thread >= 0) && (sound_sleep != 0))
+  if((!enabled || factor != 0) && sound_thread >= 0 && sound_sleep != 0)
     sceKernelWakeupThread(sound_thread);
+}
+
+void sound_set_fast_forward(u32 enabled)
+{
+  sound_set_fast_forward_mode(enabled, 0);
+}
+
+void sound_set_fast_forward_audio(u32 factor)
+{
+  sound_set_fast_forward_mode(1, factor);
+}
+
+int sound_take_fast_forward_fallback(void)
+{
+  if(!sound_fast_forward_fallback_pending)
+    return 0;
+
+  sound_fast_forward_fallback_pending = 0;
+  __builtin_allegrex_sync();
+  return 1;
 }
 
 void sound_power_suspend(void)
@@ -807,6 +843,10 @@ void sound_power_suspend(void)
   SceUInt timeout = SOUND_OPERATION_TIMEOUT;
 
   sound_fast_forward = 0;
+  sound_fast_forward_factor = 1;
+  sound_fast_forward_fallback_pending = 0;
+  sound_fast_forward_audio_started = 0;
+  sound_fast_forward_starvation_since = 0;
   sound_power_suspended = 1;
   __builtin_allegrex_sync();
 
@@ -834,6 +874,10 @@ int sound_power_resume(void)
 void sound_power_resume_finish(u32 cpu_ticks, int audio_result)
 {
   sound_fast_forward = 0;
+  sound_fast_forward_factor = 1;
+  sound_fast_forward_fallback_pending = 0;
+  sound_fast_forward_audio_started = 0;
+  sound_fast_forward_starvation_since = 0;
   synchronize_flag = 1;
   sound_buffer_base = gbc_sound_buffer_index;
   gbc_sound_last_cpu_ticks = cpu_ticks;
@@ -873,6 +917,8 @@ void sound_link_wait_end(u32 cpu_ticks)
 void synchronize_sound(void)
 {
   u64 started;
+  u32 factor;
+  u32 limit;
 
   __builtin_allegrex_sync();
   if(sound_perf_underrun_pending)
@@ -887,15 +933,17 @@ void synchronize_sound(void)
   }
   __builtin_allegrex_sync();
 
-  if(sound_fast_forward)
+  if(sound_fast_forward && sound_fast_forward_factor == 0)
   {
     sound_buffer_base = gbc_sound_buffer_index;
     return;
   }
 
-  if (synchronize_flag != 0)
+  factor = sound_fast_forward ? sound_fast_forward_factor : 1;
+  limit = SOUND_BUFFER_SIZE * factor * 4;
+  if (synchronize_flag != 0 || factor > 1)
   {
-    if (SOUND_BUFFER_LENGTH > (SOUND_BUFFER_SIZE * 4))
+    if (SOUND_BUFFER_LENGTH > limit)
     {
       if (option_frameskip_type == FRAMESKIP_AUTO)
       {
@@ -905,7 +953,7 @@ void synchronize_sound(void)
       }
 
       started = sceKernelGetSystemTimeWide();
-      while (SOUND_BUFFER_LENGTH > (SOUND_BUFFER_SIZE * 4))
+      while (SOUND_BUFFER_LENGTH > limit)
       {
         if(sleep_flag != 0 || sound_power_suspended ||
            sceKernelGetSystemTimeWide() - started >=
@@ -1072,42 +1120,18 @@ void set_sound_volume(void)
   sound_volume = PSP_AUDIO_VOLUME_MAX * (option_sound_volume * 10) / 100;
 }
 
-static void fill_sound_buffer(s16 *stream, u16 length)
+static void fill_sound_buffer(s16 *stream, u16 frames, u32 factor)
 {
-  u32 i;
-  s16 current_sample;
-
-  if ((option_sound_volume != 0) && (reg[CPU_HALT_STATE] != CPU_STOP))
-  {
-    for (i = 0; i < length; i++)
-    {
-      current_sample = sound_buffer[sound_buffer_base];
-
-      current_sample = LIMIT_MAX(current_sample,  2047);
-      current_sample = LIMIT_MIN(current_sample, -2048);
-
-      stream[i] = current_sample << 4;
-      sound_buffer[sound_buffer_base] = 0;
-
-      sound_buffer_base = (sound_buffer_base + 1) % RING_BUFFER_SIZE;
-    }
-  }
-  else
-  {
-    for (i = 0; i < length; i++)
-    {
-      stream[i] = 0;
-      sound_buffer[sound_buffer_base] = 0;
-
-      sound_buffer_base = (sound_buffer_base + 1) % RING_BUFFER_SIZE;
-    }
-  }
+  fast_forward_audio_compress_ring(sound_buffer, RING_BUFFER_SIZE,
+   &sound_buffer_base, stream, frames, factor,
+   option_sound_volume != 0 && reg[CPU_HALT_STATE] != CPU_STOP);
 }
 
 static void sound_thread_wakeup(void)
 {
   if((sound_sleep != 0) &&
-   ((sound_fast_forward == 0) || (sound_active == 0)))
+   ((sound_fast_forward == 0) || (sound_fast_forward_factor != 0) ||
+    (sound_active == 0)))
     sceKernelWakeupThread(sound_thread);
 }
 
@@ -1120,6 +1144,10 @@ static int sound_update_thread(SceSize args, void *argp)
 
   while (sound_active != 0)
   {
+    u32 factor;
+    u32 required_samples;
+    u32 ready_samples;
+
     if (sleep_flag != 0 || sound_power_suspended)
     {
       sceKernelDelayThread(10 * 1000);
@@ -1154,18 +1182,36 @@ static int sound_update_thread(SceSize args, void *argp)
       continue;
     }
 
-    if(sound_fast_forward)
+    factor = sound_fast_forward ? sound_fast_forward_factor : 1;
+    if(sound_fast_forward && factor == 0)
     {
       sound_buffer_base = gbc_sound_buffer_index;
       sound_sleep = 1;
-      if(sound_fast_forward)
+      if(sound_fast_forward && sound_fast_forward_factor == 0)
         sceKernelSleepThread();
       sound_sleep = 0;
       continue;
     }
 
-    if (SOUND_BUFFER_LENGTH < SOUND_BUFFER_SIZE)
+    required_samples = fast_forward_audio_required_samples(SOUND_SAMPLES,
+     factor);
+    ready_samples = required_samples;
+    if(sound_fast_forward && factor > 1 &&
+       !sound_fast_forward_audio_started)
+      ready_samples *= 2;
+
+    if (SOUND_BUFFER_LENGTH < ready_samples)
     {
+      if(sound_fast_forward && factor > 1 &&
+         sound_fast_forward_audio_started)
+      {
+        u64 now = sceKernelGetSystemTimeWide();
+
+        if(sound_fast_forward_starvation_since == 0)
+          sound_fast_forward_starvation_since = now;
+        else if(now - sound_fast_forward_starvation_since >= 100000)
+          sound_fast_forward_fallback_pending = 1;
+      }
       gbc_sound_update = 1;
       sound_sleep = 1;
       sceKernelSleepThread();
@@ -1174,11 +1220,12 @@ static int sound_update_thread(SceSize args, void *argp)
       sceKernelDelayThread(1);
       continue;
     }
+    sound_fast_forward_starvation_since = 0;
 
     if (output_volume != sound_volume) output_volume = sound_volume;
 
     if (!sound_pause)
-      fill_sound_buffer(psp_sound_buffer[buf_idx], SOUND_BUFFER_SIZE);
+      fill_sound_buffer(psp_sound_buffer[buf_idx], SOUND_SAMPLES, factor);
     else
       memset(psp_sound_buffer[buf_idx], 0, SOUND_BUFFER_SIZE * sizeof(s16));
 
@@ -1193,11 +1240,16 @@ static int sound_update_thread(SceSize args, void *argp)
       output_failed = 1;
       __builtin_allegrex_sync();
     }
-    else if(output_failed)
+    else
     {
-      sound_perf_recovery_pending = 1;
-      output_failed = 0;
-      __builtin_allegrex_sync();
+      if(output_failed)
+      {
+        sound_perf_recovery_pending = 1;
+        output_failed = 0;
+        __builtin_allegrex_sync();
+      }
+      if(sound_fast_forward && factor > 1)
+        sound_fast_forward_audio_started = 1;
     }
     sceKernelSignalSema(sound_sema, 1);
 
@@ -1343,6 +1395,11 @@ void reset_sound(void)
   sound_link_saved_pause = 0;
   sound_perf_underrun_pending = 0;
   sound_perf_recovery_pending = 0;
+  sound_fast_forward = 0;
+  sound_fast_forward_factor = 1;
+  sound_fast_forward_fallback_pending = 0;
+  sound_fast_forward_audio_started = 0;
+  sound_fast_forward_starvation_since = 0;
   sound_buffer_base = 0;
 
   memset(sound_buffer, 0, sizeof(sound_buffer));
