@@ -17,6 +17,31 @@ a three-run PSP benchmark comparison when performance may move. Test suspend,
 resume and menu transitions for changes involving threads, audio, files,
 networking or timing.
 
+## Link transport
+
+The two-PSP data path uses PDP after discovery and keeps the GBA protocol
+independent of packet loss. Datagram headers identify the session and epoch,
+carry sequence and acknowledgement state, bound the payload and protect it
+with a checksum. A fixed eight-packet transmit window and sixteen-packet
+receive ring provide ordered delivery without runtime allocation.
+
+Acknowledgements are cumulative with a selective bitmap. Duplicate packets
+are acknowledged again, gaps are retained within the receive window and
+unacknowledged packets use bounded adaptive retransmission. Link messages are
+delivered to the emulator only in sequence; critical messages remain FIFO,
+while replaceable SIO, clock and heartbeat state may be coalesced before
+transmission.
+
+Recovery first retransmits missing datagrams, then probes the peer and starts
+a new transport epoch on the existing PDP socket. The ad-hoc group is rebuilt
+only after the control API reports that it has been lost. PTP is not used as a
+fallback.
+
+Transport changes need deterministic coverage for loss, delay, reordering,
+duplication, sequence wrap, queue pressure and peer restart. Real-hardware
+checks should cover an idle gameplay session, menu transitions, suspend and
+resume, and a complete cable transfer between a PSP-1000 and PSP-2000.
+
 Do not commit ROMs, BIOS files, saves, savestates, cheat databases, generated
 executables or local configuration. Synthetic test ROM sources and test vectors
 must be original and redistributable.
