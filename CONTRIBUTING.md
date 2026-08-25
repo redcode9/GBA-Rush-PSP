@@ -33,9 +33,21 @@ while replaceable SIO, clock and heartbeat state may be coalesced before
 transmission.
 
 Recovery first retransmits missing datagrams, then probes the peer and starts
-a new transport epoch on the existing PDP socket. The ad-hoc group is rebuilt
-only after the control API reports that it has been lost. PTP is not used as a
-fallback.
+a new transport epoch on the existing PDP socket. Epoch changes use a bilateral
+begin, commit and completion barrier; the session layer is notified only after
+the final acknowledgement. The ad-hoc group is rebuilt only after the control
+API reports that it has been lost. PTP is not used as a fallback.
+
+Starting a link session must leave GBA serial I/O in a known state. If a game
+has already started a cable operation, abort that transient operation before
+negotiation and deliver its serial interrupt; do not import an unmatched
+in-flight transfer into a new session. Once connected, the game can retry it
+against the synchronized peer.
+
+No transport or transfer barrier may hold the emulation loop indefinitely.
+Every wait needs a monotonic deadline and must either resume coherently or
+abort the current transfer and return control to the game. Cover late attach,
+one-sided attach and timeout exit in the host harness.
 
 Transport changes need deterministic coverage for loss, delay, reordering,
 duplication, sequence wrap, queue pressure and peer restart. Real-hardware
