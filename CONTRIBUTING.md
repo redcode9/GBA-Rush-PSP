@@ -35,8 +35,9 @@ transmission.
 Recovery first retransmits missing datagrams, then probes the peer and starts
 a new transport epoch on the existing PDP socket. Epoch changes use a bilateral
 begin, commit and completion barrier; the session layer is notified only after
-the final acknowledgement. The ad-hoc group is rebuilt only after the control
-API reports that it has been lost. PTP is not used as a fallback.
+the final acknowledgement. Requests from an older epoch are consumed without
+restarting recovery. The ad-hoc group is rebuilt only after the control API
+reports that it has been lost. PTP is not used as a fallback.
 
 Starting a link session must leave GBA serial I/O in a known state. If a game
 has already started a cable operation, abort that transient operation before
@@ -48,6 +49,21 @@ No transport or transfer barrier may hold the emulation loop indefinitely.
 Every wait needs a monotonic deadline and must either resume coherently or
 abort the current transfer and return control to the game. Cover late attach,
 one-sided attach and timeout exit in the host harness.
+
+## Runtime diagnostics
+
+Gameplay diagnostics use fixed binary rings in RAM. Recording an event must
+not allocate, format text, take a kernel lock or access storage. Main-thread
+and network-thread writers use separate rings; files are updated only at safe
+lifecycle boundaries such as a link failure, disconnect, suspend, ROM change
+or clean exit.
+
+Keep events structural and bounded. Record state transitions, elapsed pause
+time, clock lead, queue high-water marks, heartbeat totals, transport epochs,
+recovery decisions and performance threshold crossings. Aggregate repeated
+packet and frame activity instead of logging each occurrence. Persist a
+versioned, checksummed snapshot and retain at most four sessions. Logging
+failure must never interrupt emulation.
 
 Transport changes need deterministic coverage for loss, delay, reordering,
 duplication, sequence wrap, queue pressure and peer restart. Real-hardware
