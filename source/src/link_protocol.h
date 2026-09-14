@@ -15,14 +15,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define LINK_PROTOCOL_MAJOR        1u
+#define LINK_PROTOCOL_MAJOR        3u
 #define LINK_PROTOCOL_MINOR        0u
 #define LINK_PROTOCOL_HEADER_SIZE  24u
 #define LINK_PROTOCOL_MAX_PAYLOAD  128u
+#define LINK_PROTOCOL_RESUME_PAYLOAD_SIZE 112u
 #define LINK_PROTOCOL_MAX_PACKET   \
  (LINK_PROTOCOL_HEADER_SIZE + LINK_PROTOCOL_MAX_PAYLOAD)
 
 #define LINK_PROTOCOL_FLAG_OPTIONAL 0x01u
+#define LINK_PROTOCOL_HEARTBEAT_TOKEN_SHIFT 1u
+#define LINK_PROTOCOL_HEARTBEAT_TOKEN_MASK  0x7Eu
+#define LINK_PROTOCOL_HEARTBEAT_REPLY       0x80u
 
 typedef enum
 {
@@ -35,15 +39,34 @@ typedef enum
   LINK_MESSAGE_TRANSFER_COMMIT,
   LINK_MESSAGE_TRANSFER_ABORT,
   LINK_MESSAGE_HEARTBEAT,
-  LINK_MESSAGE_DISCONNECT
+  LINK_MESSAGE_DISCONNECT,
+  LINK_MESSAGE_TRANSFER_COMMIT_ACK,
+  LINK_MESSAGE_CLOCK_SYNC,
+  LINK_MESSAGE_RESUME,
+  LINK_MESSAGE_RESUME_ACK,
+  LINK_MESSAGE_RESUME_DONE,
+  LINK_MESSAGE_TRANSFER_ABORT_ACK,
+  LINK_MESSAGE_TRANSFER_RELEASE,
+  LINK_MESSAGE_TRANSFER_RELEASE_ACK,
+  LINK_MESSAGE_TRANSFER_START,
+  LINK_MESSAGE_TRANSFER_REPLY,
+  LINK_MESSAGE_BENCHMARK_CONTROL
 } LinkMessageType;
+
+#define LINK_MESSAGE_LAST LINK_MESSAGE_BENCHMARK_CONTROL
 
 typedef enum
 {
   LINK_CAPABILITY_NORMAL_8   = 1u << 0,
   LINK_CAPABILITY_NORMAL_32  = 1u << 1,
   LINK_CAPABILITY_MULTI      = 1u << 2,
-  LINK_CAPABILITY_TWO_PLAYER = 1u << 3
+  LINK_CAPABILITY_TWO_PLAYER = 1u << 3,
+  LINK_CAPABILITY_PRESENCE   = 1u << 4,
+  LINK_CAPABILITY_CLOCK_SYNC = 1u << 5,
+  LINK_CAPABILITY_RECOVERY   = 1u << 6,
+  LINK_CAPABILITY_FAST_TRANSFER = 1u << 7,
+  LINK_CAPABILITY_TRANSACTIONAL = 1u << 8,
+  LINK_CAPABILITY_STREAM_TRANSFER = 1u << 9
 } LinkCapability;
 
 typedef enum
@@ -56,6 +79,7 @@ typedef enum
   LINK_PROTOCOL_ERROR_PAYLOAD_SIZE,
   LINK_PROTOCOL_ERROR_LENGTH,
   LINK_PROTOCOL_ERROR_TYPE,
+  LINK_PROTOCOL_ERROR_VALUE,
   LINK_PROTOCOL_ERROR_CRC
 } LinkProtocolError;
 
@@ -106,6 +130,11 @@ typedef struct
   uint16_t rcnt;
 } LinkSioState;
 
+#define LINK_SIO_FLAG_PENDING_START   (1u << 0)
+#define LINK_SIO_FLAG_WAITING         (1u << 1)
+#define LINK_SIO_FLAG_ACTIVE          (1u << 2)
+#define LINK_SIO_FLAG_GAMEPLAY_ACTIVE (1u << 3)
+
 typedef struct
 {
   uint8_t mode;
@@ -113,8 +142,112 @@ typedef struct
   uint8_t clock_owner;
   uint8_t player_count;
   uint8_t participant_mask;
+  uint32_t start_cycle;
+  uint32_t finish_cycle;
   uint32_t data[4];
 } LinkTransferData;
+
+typedef struct
+{
+  uint32_t generation;
+  uint32_t cycle;
+  uint32_t last_sequence;
+} LinkClockSync;
+
+#define LINK_STREAM_FLAG_CLOCK_OWNER (1u << 0)
+#define LINK_STREAM_FLAG_MASK LINK_STREAM_FLAG_CLOCK_OWNER
+
+typedef struct
+{
+  uint32_t generation;
+  uint32_t start_cycle;
+  uint32_t finish_cycle;
+  uint32_t clock_cycle;
+  uint32_t acknowledged_sequence;
+  uint32_t outgoing;
+  uint32_t identity;
+  uint8_t mode;
+  uint8_t setting;
+  uint8_t player_count;
+  uint8_t flags;
+} LinkStreamStart;
+
+typedef struct
+{
+  uint32_t generation;
+  uint32_t clock_cycle;
+  uint32_t acknowledged_sequence;
+  uint32_t outgoing;
+  uint32_t start_identity;
+  uint32_t start_cycle;
+  uint8_t mode;
+  uint8_t setting;
+  uint8_t player_count;
+  uint8_t flags;
+} LinkStreamReply;
+
+typedef struct
+{
+  uint32_t generation;
+  uint32_t clock_cycle;
+  uint32_t acknowledged_sequence;
+} LinkStreamHeartbeat;
+
+typedef enum
+{
+  LINK_BENCHMARK_START = 1,
+  LINK_BENCHMARK_ACK,
+  LINK_BENCHMARK_STOP
+} LinkBenchmarkAction;
+
+typedef struct
+{
+  uint32_t run_id;
+  uint32_t duration_ms;
+  uint32_t target_words_per_second;
+  uint32_t maximum_burst_us;
+  uint32_t seed;
+  uint16_t burst_words;
+  uint8_t action;
+  uint8_t flags;
+} LinkBenchmarkControl;
+
+#define LINK_RESUME_FLAG_BARRIER  (1u << 0)
+#define LINK_RESUME_FLAG_COMMITTED (1u << 1)
+#define LINK_RESUME_FLAG_ABORT     (1u << 2)
+#define LINK_RESUME_FLAG_STREAM    (1u << 3)
+
+#define LINK_STREAM_CHECKPOINT_PENDING_START (1u << 0)
+#define LINK_STREAM_CHECKPOINT_REPLY_CACHE   (1u << 1)
+
+typedef struct
+{
+  uint32_t last_sequence;
+  uint32_t active_sequence;
+  LinkTransferData transfer;
+  uint8_t phase;
+  uint8_t flags;
+  uint8_t transaction_stage;
+  uint32_t epoch;
+  uint32_t checkpoint;
+  uint32_t checkpoint_hash;
+  uint32_t journal_hash;
+  uint32_t sio_revision;
+  LinkSioState sio;
+  uint8_t journal_stage;
+  uint8_t journal_role;
+  uint8_t journal_applied;
+  uint8_t journal_irq_delivered;
+  uint8_t release_shared;
+  uint32_t stream_generation;
+  uint32_t stream_transport_generation;
+  uint32_t stream_last_committed;
+  uint32_t stream_active_sequence;
+  uint32_t stream_start_identity;
+  uint32_t stream_reply_outgoing;
+  uint32_t stream_commit_identity;
+  uint8_t stream_flags;
+} LinkResumeState;
 
 typedef struct
 {
@@ -165,6 +298,36 @@ LinkProtocolError link_protocol_write_transfer(LinkPacket *packet,
  LinkMessageType type, const LinkTransferData *transfer);
 LinkProtocolError link_protocol_read_transfer(const LinkPacket *packet,
  LinkTransferData *transfer);
+
+LinkProtocolError link_protocol_write_clock(LinkPacket *packet,
+ const LinkClockSync *clock);
+LinkProtocolError link_protocol_read_clock(const LinkPacket *packet,
+ LinkClockSync *clock);
+
+LinkProtocolError link_protocol_write_stream_start(LinkPacket *packet,
+ const LinkStreamStart *start);
+LinkProtocolError link_protocol_read_stream_start(const LinkPacket *packet,
+ LinkStreamStart *start);
+
+LinkProtocolError link_protocol_write_stream_reply(LinkPacket *packet,
+ const LinkStreamReply *reply);
+LinkProtocolError link_protocol_read_stream_reply(const LinkPacket *packet,
+ LinkStreamReply *reply);
+
+LinkProtocolError link_protocol_write_stream_heartbeat(LinkPacket *packet,
+ const LinkStreamHeartbeat *heartbeat);
+LinkProtocolError link_protocol_read_stream_heartbeat(
+ const LinkPacket *packet, LinkStreamHeartbeat *heartbeat);
+
+LinkProtocolError link_protocol_write_benchmark_control(LinkPacket *packet,
+ const LinkBenchmarkControl *control);
+LinkProtocolError link_protocol_read_benchmark_control(
+ const LinkPacket *packet, LinkBenchmarkControl *control);
+
+LinkProtocolError link_protocol_write_resume(LinkPacket *packet,
+ LinkMessageType type, const LinkResumeState *state);
+LinkProtocolError link_protocol_read_resume(const LinkPacket *packet,
+ LinkResumeState *state);
 
 LinkProtocolError link_protocol_write_reason(LinkPacket *packet,
  LinkMessageType type, const LinkReason *reason);

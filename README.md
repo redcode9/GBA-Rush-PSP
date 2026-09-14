@@ -25,7 +25,7 @@ included in this repository or its releases.
 - Full-scale 16-bit audio mixing and optional 2x/3x accelerated audio.
 - Plaintext and encrypted CodeBreaker support, including timed master hooks.
 - Existing GameShark, Pro Action Replay and direct-write cheat formats.
-- Two-PSP GBA cable emulation over local ad-hoc Wi-Fi.
+- Experimental two-PSP GBA cable emulation over local ad-hoc Wi-Fi.
 - Suspend and resume recovery for audio, ROM access, saves and video state.
 - Box art, recent ROMs, themes, configurable controls and per-game settings.
 - Japanese, English, Simplified Chinese, Traditional Chinese and Italian UI.
@@ -106,12 +106,49 @@ backup of important saves when testing cheats.
 
 ## Link cable
 
-Both PSP systems should use the same emulator build with WLAN enabled. Load a
-game on each system, then open **Main menu > Link cable**. Player 1 creates the
-session and Player 2 joins it.
+The current M8 builds are experimental and have not passed the real-PSP
+benchmark/trade acceptance gates. RC3.3 fixes reproduced guest serial-handler
+timing, lost-presence and benchmark termination defects, retaining RC3.2's
+no-ROM startup fix. A completed FireRed trade on two PSPs remains unverified;
+this is a test candidate, not a release compatibility claim.
 
-Normal 8-bit, Normal 32-bit and two-player Multiplayer 16-bit transfers are
-supported. Fast-forward and savestates are disabled while a session is open.
+Both PSP systems must use the same protocol-v3 EBOOT with WLAN enabled. A v2
+EBOOT is intentionally incompatible and fails during negotiation. Open
+**Main menu > Link cable** on both systems: Player 1 creates the session and
+Player 2 joins it.
+
+For a controlled test, turn WLAN Power Save and automatic system suspend Off;
+the physical WLAN switch must remain On. Before testing a game, connect without
+loading a ROM and run the built-in link benchmark from the host. It exercises the same v3 stream and PSP scheduler as
+gameplay for ten minutes; repeat it with the PSP-1000 and PSP-2000 roles
+reversed. A run passes only with at least 600 completed words/s, a nine-word
+burst p99 no greater than 20 ms, no full recovery, no persistent queue growth,
+no stream timeout or stale-generation event, no audio underrun, and no
+main-thread starvation over 50 ms. A failed run blocks game testing. After
+copying one `.gbrlog` from each PSP, validate their common run ID with:
+
+```sh
+python3 tools/analyze_link_benchmark.py psp1000.gbrlog psp2000.gbrlog --json
+```
+
+The offered load is 1,000 words/s, distinct from the 600 words/s acceptance
+floor. The paired analyzer, not an on-screen PASS alone, determines acceptance.
+A missing terminal summary is missing evidence, never a pass. If both logs
+contain several runs, select one explicitly with `--run-id ID`; run IDs are
+not timestamps. Start fresh emulator processes for each role assignment and
+copy logs before starting another run.
+
+For gameplay, load a game on each system before creating or joining the
+session. Two-player Multiplayer 16-bit transfers use one host `START` and one
+joiner `REPLY` per causally available word, with at most one word active.
+Duplicates are replayed from bounded state and cannot repeat a GBA register
+update or serial interrupt. The v3 multiplayer path does not send the former
+`PREPARE`, `ACCEPT`, `COMMIT`, `COMMIT_ACK`, `RELEASE`, or `RELEASE_ACK`
+sequence, nor a standalone high-frequency clock stream.
+
+Normal 8-bit, Normal 32-bit and two-player Multiplayer 16-bit transfer paths
+are implemented, but their hardware compatibility matrix is incomplete.
+Fast-forward and savestates are disabled while a session is open.
 Reset, ROM replacement, suspend and exit disconnect cleanly.
 
 The GBA Wireless Adapter, three- or four-player sessions, UART, JoyBus,
@@ -121,6 +158,22 @@ Wireless Adapter need a separate cable mode to work here.
 Original diagnostic ROM sources for the supported modes are in
 `tests/link-rom/`. Build them with a configured devkitPro GBA toolchain by
 running `make` in that directory.
+
+Runtime snapshots are kept in `logs/` beside the emulator. Up to four sessions
+are retained; gameplay recording stays in RAM and storage is touched only at
+safe transitions. `link-failure` records keep the internal domain/code separate
+from the original PSP API phase and signed/hexadecimal result. `link-timeout`
+identifies receive silence, an active transfer, ahead pacing, pressure,
+recovery, shutdown or negotiation; stream and benchmark records include RTT,
+burst, retransmission, queue, worker-wake, barrier and audio data. Decode a card
+directly with
+`python3 tools/decode_runtime_log.py /path/to/GBA_RUSH_PSP/logs`.
+
+The benchmark does not need a ROM and never creates or changes a ROM or save.
+Installing a link candidate replaces only the emulator EBOOT and exception
+module; keep existing ROMs and saves backed up and untouched. The full paired
+benchmark, repeated-trade, save/reload and disconnect procedure is maintained
+in [CONTRIBUTING.md](CONTRIBUTING.md#verification-gates).
 
 ## Build and test
 

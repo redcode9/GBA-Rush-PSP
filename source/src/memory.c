@@ -88,6 +88,7 @@ const ALIGN_DATA s32 dma_addr_control[4] = { 2, -2, 0, 2 };
 
 // Keeps us knowing how much we have left.
 u8 *gamepak_rom;
+u8 gamepak_header[GAMEPAK_HEADER_SIZE];
 u32 gamepak_size;
 u32 gamepak_file_size;
 
@@ -3503,6 +3504,7 @@ s32 load_gamepak(char *name)
   {
     gamepak_file_size = (u32)file_size;
     gamepak_size = (file_size + 0x7FFF) & ~0x7FFF;
+    memcpy(gamepak_header, gamepak_rom, sizeof(gamepak_header));
 
     char *p = strrchr(name, '/');
     if (p != NULL)
@@ -3514,9 +3516,9 @@ s32 load_gamepak(char *name)
     char game_code[5];
     char maker_code[3];
 
-    memcpy(game_title, gamepak_rom + 0xA0, 12);
-    memcpy(game_code,  gamepak_rom + 0xAC,  4);
-    memcpy(maker_code, gamepak_rom + 0xB0,  2);
+    memcpy(game_title, gamepak_header + 0xA0, 12);
+    memcpy(game_code,  gamepak_header + 0xAC,  4);
+    memcpy(maker_code, gamepak_header + 0xB0,  2);
     game_title[12] = 0;
     game_code[4] = 0;
     maker_code[2] = 0;

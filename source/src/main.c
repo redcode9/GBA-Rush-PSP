@@ -18,6 +18,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <limits.h>
+
 #include <pspsysmem.h>
 
 #include "common.h"
@@ -26,6 +28,7 @@
 #include "perf_report.h"
 #include "power_lifecycle.h"
 #include "psp_adhoc.h"
+#include "runtime_log_psp.h"
 #include "sound_math.h"
 
 /* Forward declarations for recent ROMs functions (defined in gui.c) */
@@ -41,7 +44,8 @@ extern void add_recent_rom(const char *filename);
 
 PSP_MODULE_INFO("GBA Rush PSP", PSP_MODULE_USER, 1, 0);
 PSP_MAIN_THREAD_PARAMS(PRIORITY, STACK_SIZE_KB, ATTRIBUTE);
-PSP_HEAP_SIZE_KB(-800);
+PSP_HEAP_THRESHOLD_SIZE_KB(1024);
+PSP_HEAP_SIZE_KB(-2048);
 
 
 u32 option_screen_scale = SCALED_16X9_AUTO;
@@ -136,9 +140,41 @@ TimerType ALIGN_DATA timer[4];
 
 u32 dma_cycle_count = 0;
 LinkSession gba_link_session;
+static u8 gba_link_gameplay_active = 1;
 static PowerLifecycle psp_power_lifecycle;
 static FastForwardPolicy fast_forward_policy;
 static u32 sleep_reopen_gamepak = 0;
+static u8 gba_link_terminal_logged = 0;
+static u8 runtime_log_rom_active = 0;
+static u32 runtime_log_rom_identity = 0;
+static u32 gba_link_attempt_id = 0;
+static u32 gba_link_audio_underrun_base = 0;
+static PspAdhocFailureSnapshot gba_link_benchmark_base;
+static u32 gba_link_benchmark_run_id = 0;
+static u32 gba_link_benchmark_logged_run_id = 0;
+static u32 gba_link_benchmark_audio_base = 0;
+static u64 gba_link_benchmark_barrier_base = 0;
+static u64 gba_link_benchmark_last_pump_us = 0;
+static u32 gba_link_benchmark_starvation_max_us = 0;
+static u32 gba_link_wait_count = 0;
+static u32 gba_link_wait_total_us = 0;
+static u32 gba_link_wait_max_us = 0;
+static u32 gba_link_wait_latest_lead = 0;
+static u8 gba_link_wait_flags = 0;
+static u64 gba_link_wait_window_started = 0;
+static u32 gba_link_transfer_started = 0;
+static u32 gba_link_transfer_committed = 0;
+static u32 gba_link_transfer_aborted = 0;
+static u32 gba_link_serial_irqs = 0;
+static u8 gba_link_recovery_checkpointed = 0;
+static volatile int quit_started = 0;
+static volatile int exit_requested = 0;
+static volatile int quit_cleanup_complete = 0;
+
+#define MAIN_EXIT_CALLBACK_TIMEOUT_US 2000000u
+#define MAIN_LINK_BENCHMARK_SERVICE_BUDGET_US 1000u
+#define MAIN_LINK_BENCHMARK_DRAIN_TIMEOUT_US 250000u
+#define MAIN_LINK_BENCHMARK_ROM_ID 0x42454E43u
 
 u32 cpu_ticks = 0;
 s32 video_count = 272;
@@ -177,6 +213,8 @@ static void psp_sleep_loop(void);
 static void main_power_save_if_pending(void);
 static void main_power_reopen_gamepak(void);
 static void main_link_publish_sio(void);
+static void main_link_handle_closed(void);
+static void main_link_flush_wait_log(void);
 
 #define scePowerSetClockFrequency371  scePower_EBD177D6
 static int (*__scePowerSetClockFrequency)(int pllfreq, int cpufreq, int busfreq);
@@ -341,13 +379,369 @@ static void cpu_interrupt(void)
     dma_transfer(dma + channel);                                              \
   }                                                                           \
 
+static u32 main_link_age_ms(u64 now, u64 then)
+{
+  u64 age;
+
+  if(then == 0 || now < then)
+    return 0;
+  age = (now - then) / 1000u;
+  return age > UINT_MAX ? UINT_MAX : (u32)age;
+}
+
+static u32 main_link_bounded_u64(u64 value)
+{
+  return value > UINT_MAX ? UINT_MAX : (u32)value;
+}
+
+static u32 main_link_audio_underruns(void)
+{
+  u32 current = sound_audio_underrun_count();
+
+  return current >= gba_link_audio_underrun_base ?
+   current - gba_link_audio_underrun_base : current;
+}
+
+static u32 main_link_counter_delta(u32 current, u32 base)
+{
+  return current >= base ? current - base : current;
+}
+
+static void main_link_benchmark_observe(u64 now)
+{
+  LinkBenchmarkSummary summary;
+
+  /* Run identity is cheap to observe; do not hash a summary on every pump. */
+  if(gba_link_session.benchmark.control.run_id == 0 ||
+     gba_link_session.benchmark.control.run_id == gba_link_benchmark_run_id)
+    return;
+  link_session_benchmark_summary(&gba_link_session, &summary);
+  gba_link_benchmark_run_id = summary.run_id;
+  gba_link_benchmark_logged_run_id = 0;
+  gba_link_benchmark_audio_base = sound_audio_underrun_count();
+  gba_link_benchmark_barrier_base = gba_link_session.barrier_max_us;
+  gba_link_benchmark_last_pump_us = now;
+  gba_link_benchmark_starvation_max_us = 0;
+  psp_adhoc_get_failure_snapshot(&gba_link_benchmark_base);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 0x80u,
+   summary.run_id, gba_link_session.benchmark.control.duration_ms,
+   gba_link_session.benchmark.control.target_words_per_second);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 0x81u,
+   summary.run_id, gba_link_session.benchmark.control.seed, summary.role);
+}
+
+static void main_log_link_benchmark(int wait_for_drain)
+{
+  LinkBenchmarkSummary summary;
+  PspAdhocFailureSnapshot snapshot;
+  u32 recoveries;
+  u32 barrier_max;
+  u32 audio_underruns;
+
+  if(!link_benchmark_terminal(&gba_link_session.benchmark) ||
+     gba_link_session.benchmark.control.run_id == 0 ||
+     gba_link_benchmark_logged_run_id ==
+      gba_link_session.benchmark.control.run_id)
+    return;
+  link_session_benchmark_summary(&gba_link_session, &summary);
+  psp_adhoc_get_failure_snapshot(&snapshot);
+  /* STOP/ACK may still be draining when the semantic result becomes final.
+     A single outstanding final ACK is not persistent queue growth. */
+  if(wait_for_drain && link_session_is_connected(&gba_link_session) &&
+     (snapshot.outstanding_packets != 0 || snapshot.tx_queue_depth != 0) &&
+     sceKernelGetSystemTimeWide() - gba_link_session.benchmark.finished_us <
+      MAIN_LINK_BENCHMARK_DRAIN_TIMEOUT_US)
+    return;
+  recoveries = main_link_counter_delta(snapshot.transport_resyncs,
+    gba_link_benchmark_base.transport_resyncs) +
+   main_link_counter_delta(snapshot.group_recoveries,
+    gba_link_benchmark_base.group_recoveries) +
+   main_link_counter_delta(snapshot.stack_recoveries,
+    gba_link_benchmark_base.stack_recoveries);
+  barrier_max = gba_link_session.barrier_max_us >
+    gba_link_benchmark_barrier_base ?
+   main_link_bounded_u64(gba_link_session.barrier_max_us) : 0u;
+  audio_underruns = main_link_counter_delta(sound_audio_underrun_count(),
+   gba_link_benchmark_audio_base);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 0,
+   summary.run_id, summary.status, summary.failure);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 1,
+   summary.run_id, summary.duration_ms, summary.completed_words);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 2,
+   summary.run_id, summary.words_per_second, summary.digest);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 3,
+   summary.run_id, summary.rtt_p50_us, summary.rtt_p95_us);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 4,
+   summary.run_id, summary.rtt_p99_us, summary.burst_p99_us);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 5,
+   summary.run_id, summary.burst_max_us, summary.checksum);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 6,
+   summary.run_id, summary.duplicates, summary.replays);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 7,
+   summary.run_id, summary.stale_generations, summary.timeout_count);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 8,
+   summary.run_id,
+   main_link_counter_delta(snapshot.retransmissions,
+    gba_link_benchmark_base.retransmissions),
+   main_link_counter_delta(snapshot.ack_packets,
+    gba_link_benchmark_base.ack_packets));
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 9,
+   summary.run_id, snapshot.tx_queue_high_water,
+   snapshot.hot_wake_latency_max_us);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 10,
+   summary.run_id, barrier_max, audio_underruns);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 11,
+   summary.run_id, recoveries, gba_link_benchmark_starvation_max_us);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 12,
+   summary.run_id, summary.role, gba_link_attempt_id);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_BENCHMARK, cpu_ticks, 13,
+   summary.run_id, snapshot.outstanding_packets,
+   snapshot.tx_queue_depth);
+  gba_link_benchmark_logged_run_id = summary.run_id;
+  runtime_log_psp_flush(RUNTIME_LOG_FLUSH_LINK_CHECKPOINT);
+}
+
+static void main_log_link_checkpoint(void)
+{
+  PspAdhocFailureSnapshot snapshot;
+  PspAdhocPhase failure_phase;
+  u64 now = sceKernelGetSystemTimeWide();
+  u32 main_dropped;
+  u32 network_dropped;
+  u32 critical_dropped;
+  u32 packed;
+
+  psp_adhoc_get_failure_snapshot(&snapshot);
+  failure_phase = psp_adhoc_failure_phase();
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 0,
+   (u32)gba_link_session.state, (u32)gba_link_session.reason,
+   gba_link_session.reason_detail);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 1,
+   (u32)gba_link_session.role, gba_link_session.negotiated_capabilities,
+   gba_link_session.invariant_violations);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 2,
+   gba_link_session.last_sequence, gba_link_session.active_sequence,
+   gba_link_session.applied_sequence);
+  packed = (u32)gba_link_session.transaction_stage |
+   ((u32)(gba_link_session.transaction_applied != 0) << 8) |
+   ((u32)(gba_link_session.deferred_prepare_valid != 0) << 9);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 3,
+   gba_link_session.transaction_sequence,
+   gba_link_session.transaction_hash, packed);
+  packed = (u32)gba_link_session.local_sio_latest.mode |
+   ((u32)gba_link_session.local_sio_latest.player_id << 8) |
+   ((u32)gba_link_session.local_sio_latest.player_count << 16) |
+   ((u32)gba_link_session.local_sio_latest.flags << 24);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 4,
+   packed, gba_link_session.local_sio_latest.control |
+    ((u32)(gba_link_session.local_sio_valid != 0) << 31),
+   gba_link_session.local_sio_latest.rcnt);
+  packed = (u32)gba_link_session.peer_sio.mode |
+   ((u32)gba_link_session.peer_sio.player_id << 8) |
+   ((u32)gba_link_session.peer_sio.player_count << 16) |
+   ((u32)gba_link_session.peer_sio.flags << 24);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 5,
+   packed, gba_link_session.peer_sio.control |
+    ((u32)(gba_link_session.peer_sio_valid != 0) << 31),
+   gba_link_session.peer_sio.rcnt);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 6,
+   (u32)psp_adhoc_last_error(), (u32)failure_phase,
+   (u32)snapshot.transition_phase);
+  packed = (snapshot.outstanding_packets > 0xFFFFu ? 0xFFFFu :
+   snapshot.outstanding_packets) << 16;
+  packed |= snapshot.buffered_packets > 0xFFFFu ? 0xFFFFu :
+   snapshot.buffered_packets;
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 7,
+   snapshot.transport_epoch, snapshot.last_received_sequence, packed);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 8,
+   main_link_age_ms(now, gba_link_session.state_started_us),
+   main_link_age_ms(now, gba_link_session.barrier_started_us),
+   main_link_age_ms(now, gba_link_session.last_rx_us));
+  packed = (u32)gba_sio.mode |
+   ((u32)gba_sio.player_id << 8) |
+   ((u32)gba_sio.player_count << 16) |
+   ((u32)(gba_sio.peer_active != 0) << 24) |
+   ((u32)(gba_sio.pending_start != 0) << 25) |
+   ((u32)(gba_sio.waiting != 0) << 26) |
+   ((u32)(gba_sio.active != 0) << 27) |
+   ((u32)(gba_sio.decision_locked != 0) << 28);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 9,
+   packed, pIO_REG(REG_SIOCNT), pIO_REG(REG_RCNT));
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 10,
+   gba_link_session.session_id, gba_link_session.journal.epoch,
+   gba_link_session.sio_revision);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 11,
+   gba_link_session.clock.local_cycle,
+   gba_link_session.clock.peer_cycle, gba_link_session.clock.generation);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 12,
+   snapshot.queue_sojourn_high_water_us, snapshot.rtt_estimate_us,
+   snapshot.probes);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 13,
+   snapshot.shutdown_phase, snapshot.cancellation_token,
+   (u32)psp_adhoc_last_error());
+  runtime_log_psp_get_drop_counts(&main_dropped, &network_dropped,
+   &critical_dropped);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 14,
+   main_dropped, network_dropped, critical_dropped);
+  packed = (u32)gba_link_session.transport_health |
+   (main_link_age_ms(now, gba_link_session.transport_pause_started_us) << 8);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 15,
+   (u32)gba_link_session.last_transfer_reason,
+   gba_link_session.last_transfer_detail, packed);
+  packed = (u32)gba_link_session.journal.role |
+   ((u32)gba_link_session.journal.stage << 8) |
+   ((u32)(gba_link_session.journal.applied != 0) << 16) |
+   ((u32)(gba_link_session.journal.irq_delivered != 0) << 17) |
+   ((u32)(gba_link_session.journal.release_shared != 0) << 18) |
+   ((u32)(gba_link_session.journal_valid != 0) << 19);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 16,
+   gba_link_session.journal.checkpoint,
+   gba_link_session.journal.checkpoint_hash, packed);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_CHECKPOINT, cpu_ticks, 17,
+   gba_link_session.journal.active_sequence,
+   gba_link_session.journal.transfer_hash,
+   gba_link_session.journal.epoch);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_FAILURE, cpu_ticks, 0,
+   gba_link_attempt_id, snapshot.error_domain,
+   (u32)snapshot.internal_error_code);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_FAILURE, cpu_ticks, 1,
+   gba_link_attempt_id, snapshot.api_phase, (u32)snapshot.api_error);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_FAILURE, cpu_ticks, 2,
+   gba_link_attempt_id, snapshot.internal_error_phase,
+   (u32)snapshot.recovery_terminal_error);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_TIMEOUT, cpu_ticks, 0,
+   gba_link_attempt_id,
+   gba_link_session.last_timeout_source != LINK_TIMEOUT_NONE ?
+    (u32)gba_link_session.last_timeout_source : snapshot.timeout_source,
+   (u32)gba_link_session.reason);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_STREAM_METRICS, cpu_ticks, 0,
+   gba_link_attempt_id, gba_link_session.stream_start_tx_count,
+   gba_link_session.stream_reply_tx_count);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_STREAM_METRICS, cpu_ticks, 1,
+   link_stream_apply_count(&gba_link_session.stream),
+   gba_link_session.stream.duplicate_count,
+   link_stream_replay_count(&gba_link_session.stream));
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_STREAM_METRICS, cpu_ticks, 2,
+   gba_link_session.stream.stale_generation_count,
+   snapshot.rtt_estimate_us, snapshot.rto_us);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_STREAM_METRICS, cpu_ticks, 3,
+   main_link_bounded_u64(gba_link_session.stream_burst_last_us),
+   main_link_bounded_u64(gba_link_session.stream_burst_max_us),
+   main_link_bounded_u64(gba_link_session.barrier_last_us));
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_STREAM_METRICS, cpu_ticks, 4,
+   main_link_bounded_u64(gba_link_session.barrier_max_us),
+   snapshot.hot_wake_latency_max_us,
+   main_link_audio_underruns());
+  packed = (snapshot.hot_drain_count > 0xFFFFu ? 0xFFFFu :
+   snapshot.hot_drain_count) << 16;
+  packed |= snapshot.hot_drain_high_water > 0xFFFFu ? 0xFFFFu :
+   snapshot.hot_drain_high_water;
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_STREAM_METRICS, cpu_ticks, 5,
+   snapshot.hot_drain_packets, snapshot.hot_yields, packed);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_STREAM_METRICS, cpu_ticks, 6,
+   snapshot.hot_time_ms, snapshot.cold_time_ms, snapshot.hot_wake_count);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_STREAM_METRICS, cpu_ticks, 7,
+   gba_link_session.heartbeat_request_tx_count,
+   gba_link_session.heartbeat_request_rx_count,
+   gba_link_session.heartbeat_reply_tx_count);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_STREAM_METRICS, cpu_ticks, 8,
+   gba_link_session.heartbeat_reply_rx_count,
+   gba_link_session.heartbeat_duplicate_request_count,
+   gba_link_session.heartbeat_unmatched_reply_count);
+  runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_STREAM_METRICS, cpu_ticks, 9,
+   gba_link_session.heartbeat_outstanding_token,
+   gba_link_session.heartbeat_probe_pending,
+   gba_link_session.heartbeat_last_request_token);
+}
+
+static int main_link_transfer_sample_due(u32 count)
+{
+  return count != 0 && (count <= 8u || (count & (count - 1u)) == 0);
+}
+
+static int main_link_should_log_state(u32 events)
+{
+  switch(gba_link_session.state)
+  {
+    case LINK_SESSION_WAIT_PREPARE:
+    case LINK_SESSION_WAIT_ACCEPT:
+    case LINK_SESSION_WAIT_COMMIT:
+    case LINK_SESSION_WAIT_COMMIT_ACK:
+    case LINK_SESSION_WAIT_COMMIT_RELEASE:
+      return main_link_transfer_sample_due(gba_link_transfer_started);
+
+    case LINK_SESSION_CONNECTED:
+      if((events & LINK_SESSION_EVENT_TRANSFER_COMMITTED) != 0)
+        return main_link_transfer_sample_due(gba_link_transfer_committed);
+      return 1;
+
+    default:
+      return 1;
+  }
+}
+
+static void main_link_log_transfer_sample(void)
+{
+  const LinkTransferData *transfer = &gba_link_session.applied_transfer;
+  u8 flags;
+
+  if(!main_link_transfer_sample_due(gba_link_transfer_committed))
+    return;
+  flags = transfer->mode & 0x03u;
+  flags |= (u8)((gba_link_session.role == LINK_ROLE_HOST) << 2);
+  flags |= (u8)(((gba_link_session.negotiated_capabilities &
+   LINK_CAPABILITY_FAST_TRANSFER) != 0) << 3);
+  flags |= (u8)((transfer->participant_mask & 0x0Fu) << 4);
+  if(gba_link_transfer_committed <= 8u)
+    runtime_log_psp_critical(RUNTIME_LOG_EVENT_LINK_TRANSFER_SAMPLE,
+     cpu_ticks, flags, gba_link_session.applied_sequence,
+     transfer->data[0], transfer->data[1]);
+  else
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_TRANSFER_SAMPLE,
+     cpu_ticks, flags, gba_link_session.applied_sequence,
+     transfer->data[0], transfer->data[1]);
+}
+
 static void main_link_apply_events(u32 events)
 {
   if((events & LINK_SESSION_EVENT_SERIAL_IRQ) != 0)
+  {
     pIO_REG(REG_IF) |= IRQ_SERIAL;
+    gba_link_serial_irqs++;
+  }
+
+  if((events & LINK_SESSION_EVENT_BARRIER_BEGIN) != 0)
+    gba_link_transfer_started++;
+  if((events & LINK_SESSION_EVENT_TRANSFER_COMMITTED) != 0)
+    gba_link_transfer_committed++;
+  if((events & LINK_SESSION_EVENT_TRANSFER_ABORTED) != 0)
+    gba_link_transfer_aborted++;
+
+  if((events & LINK_SESSION_EVENT_STATE_CHANGE) != 0 &&
+     main_link_should_log_state(events))
+  {
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_STATE, cpu_ticks,
+     (u8)events, (u32)gba_link_session.state,
+     (u32)gba_link_session.reason, gba_link_session.reason_detail);
+  }
+
+  if((events & LINK_SESSION_EVENT_TRANSFER_COMMITTED) != 0)
+    main_link_log_transfer_sample();
+
+  if((events & LINK_SESSION_EVENT_STATE_CHANGE) != 0 &&
+     gba_link_session.state == LINK_SESSION_RECOVERING &&
+     !gba_link_recovery_checkpointed)
+  {
+    gba_link_recovery_checkpointed = 1;
+    main_log_link_checkpoint();
+    runtime_log_psp_flush(RUNTIME_LOG_FLUSH_LINK_CHECKPOINT);
+  }
 
   if((events & (LINK_SESSION_EVENT_BARRIER_BEGIN |
                 LINK_SESSION_EVENT_BARRIER_END)) != 0)
+    gba_sio_state_dirty = 1;
+
+  if((events & LINK_SESSION_EVENT_SIO_REPUBLISH) != 0)
     gba_sio_state_dirty = 1;
 
   if((events & LINK_SESSION_EVENT_STATE_CHANGE) != 0 &&
@@ -363,9 +757,69 @@ static int main_link_session_open(void)
    state != LINK_SESSION_DISCONNECTED && state != LINK_SESSION_ERROR;
 }
 
+static u32 main_adhoc_state_value(void)
+{
+  PspAdhocState state = psp_adhoc_state();
+
+  return (u32)state;
+}
+
+static u32 main_adhoc_failure_phase_value(void)
+{
+  PspAdhocPhase phase = psp_adhoc_failure_phase();
+
+  return (u32)phase;
+}
+
+static void main_link_flush_wait_log(void)
+{
+  u32 packed;
+
+  if(gba_link_wait_count == 0)
+    return;
+  packed = (gba_link_wait_count > 0xFFFFu ? 0xFFFFu :
+   gba_link_wait_count) << 16;
+  packed |= (u32)gba_link_session.state & 0xFFFFu;
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_PAUSE_END, cpu_ticks,
+   gba_link_wait_flags | 0x80u, gba_link_wait_count,
+   gba_link_wait_total_us, gba_link_wait_max_us);
+  if(gba_link_wait_max_us >= 20000u)
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_PERFORMANCE_SLOW, cpu_ticks,
+     gba_link_wait_flags | 0x80u, gba_link_wait_max_us,
+     gba_link_wait_latest_lead, packed);
+  gba_link_wait_count = 0;
+  gba_link_wait_total_us = 0;
+  gba_link_wait_max_us = 0;
+  gba_link_wait_latest_lead = 0;
+  gba_link_wait_flags = 0;
+  gba_link_wait_window_started = 0;
+}
+
+static void main_link_record_wait(u64 duration, u8 flags, u32 clock_lead,
+ u64 now)
+{
+  u32 bounded = duration > UINT_MAX ? UINT_MAX : (u32)duration;
+  u64 total = (u64)gba_link_wait_total_us + bounded;
+
+  if(gba_link_wait_count != UINT_MAX)
+    gba_link_wait_count++;
+  gba_link_wait_total_us = total > UINT_MAX ? UINT_MAX : (u32)total;
+  if(bounded > gba_link_wait_max_us)
+    gba_link_wait_max_us = bounded;
+  gba_link_wait_latest_lead = clock_lead;
+  gba_link_wait_flags |= flags;
+  if(gba_link_wait_window_started == 0)
+    gba_link_wait_window_started = now;
+  if(duration >= 100000u || now < gba_link_wait_window_started ||
+     now - gba_link_wait_window_started >= 1000000u)
+    main_link_flush_wait_log();
+}
+
 int main_link_active(void)
 {
-  return main_link_session_open();
+  return main_link_session_open() ||
+   (psp_adhoc_shutdown_pending() &&
+    psp_adhoc_state() != PSP_ADHOC_FAILED);
 }
 
 int main_link_connected(void)
@@ -373,13 +827,70 @@ int main_link_connected(void)
   return link_session_is_connected(&gba_link_session);
 }
 
-int main_link_pending(void)
+int main_link_benchmark_available(void)
 {
-  LinkSessionState state = link_session_state(&gba_link_session);
+  return link_session_benchmark_available(&gba_link_session);
+}
 
-  return state == LINK_SESSION_HOSTING || state == LINK_SESSION_JOINING ||
-   state == LINK_SESSION_NEGOTIATING || state == LINK_SESSION_WAIT_READY ||
-   state == LINK_SESSION_WAIT_READY_ACK;
+int main_link_benchmark_active(void)
+{
+  return link_benchmark_active(&gba_link_session.benchmark);
+}
+
+int main_link_benchmark_start(void)
+{
+  LinkBenchmarkControl control;
+  u64 now;
+  u32 run_id;
+  int started;
+
+  if(!main_link_benchmark_available())
+    return 0;
+  main_log_link_benchmark(0);
+  now = sceKernelGetSystemTimeWide();
+  run_id = (u32)(now ^ (now >> 32) ^ gba_link_session.session_id ^
+   0xB34C41D7u);
+  if(run_id == 0)
+    run_id = 1u;
+  link_benchmark_default_control(&control, run_id,
+   run_id ^ gba_link_session.session_id ^ 0x9E3779B9u);
+  started = link_session_benchmark_start(&gba_link_session, &control);
+  main_link_benchmark_observe(now);
+  return started;
+}
+
+void main_link_benchmark_stop(void)
+{
+  main_link_apply_events(link_session_benchmark_stop(&gba_link_session));
+}
+
+void main_link_benchmark_summary(LinkBenchmarkSummary *summary)
+{
+  link_session_benchmark_summary(&gba_link_session, summary);
+}
+
+void main_link_set_gameplay_active(int active)
+{
+  u8 value = active != 0;
+
+  if(value)
+  {
+    main_log_link_benchmark(0);
+    link_session_benchmark_clear(&gba_link_session);
+  }
+
+  if(gba_link_gameplay_active == value)
+    return;
+  gba_link_gameplay_active = value;
+  gba_sio_state_dirty = 1;
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_MENU_PRESENCE, cpu_ticks,
+   0, value, (u32)gba_link_session.state,
+   main_adhoc_state_value());
+  if(!value)
+  {
+    main_link_flush_wait_log();
+    runtime_log_psp_flush(RUNTIME_LOG_FLUSH_MENU);
+  }
 }
 
 static FastForwardSettings main_fast_forward_settings(void)
@@ -548,15 +1059,175 @@ static u32 main_link_rom_crc32(void)
 
 static void main_link_hello(LinkHello *hello)
 {
+  static const u8 benchmark_title[12] =
+   { 'L', 'I', 'N', 'K', ' ', 'B', 'E', 'N', 'C', 'H', ' ', ' ' };
+  static const u8 benchmark_code[4] = { 'D', 'I', 'A', 'G' };
+
   memset(hello, 0, sizeof(*hello));
-  hello->capabilities = LINK_SESSION_REQUIRED_CAPABILITIES;
+  hello->capabilities = LINK_SESSION_SUPPORTED_CAPABILITIES;
+  hello->max_players = 2;
+  if(gamepak_filename[0] == '\0' || gamepak_file_size < 0xC0u)
+  {
+    hello->rom_crc32 = MAIN_LINK_BENCHMARK_ROM_ID;
+    hello->rom_size = 1u;
+    memcpy(hello->title, benchmark_title, sizeof(hello->title));
+    memcpy(hello->game_code, benchmark_code, sizeof(hello->game_code));
+    return;
+  }
   hello->rom_crc32 = main_link_rom_crc32();
   hello->rom_size = gamepak_file_size;
-  memcpy(hello->title, gamepak_rom + 0xA0, sizeof(hello->title));
-  memcpy(hello->game_code, gamepak_rom + 0xAC,
+  memcpy(hello->title, gamepak_header + 0xA0, sizeof(hello->title));
+  memcpy(hello->game_code, gamepak_header + 0xAC,
    sizeof(hello->game_code));
-  hello->revision = gamepak_rom[0xBC];
-  hello->max_players = 2;
+  hello->revision = gamepak_header[0xBC];
+}
+
+static void main_log_link_snapshot(void)
+{
+  PspAdhocFailureSnapshot snapshot;
+
+  main_link_flush_wait_log();
+  psp_adhoc_get_failure_snapshot(&snapshot);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 0,
+   snapshot.transport_resyncs, snapshot.group_recoveries,
+   snapshot.stack_recoveries);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 1,
+   snapshot.tx_datagrams, snapshot.rx_datagrams,
+   snapshot.retransmissions);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 2,
+   gba_link_session.heartbeat_tx_count,
+   gba_link_session.heartbeat_rx_count,
+   ((u32)gba_link_session.last_message_type << 24) |
+    ((u32)gba_link_session.state << 16) |
+    ((u32)gba_link_session.reason << 8) |
+    gba_link_session.reason_detail);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 3,
+   snapshot.transport_epoch, snapshot.last_received_sequence,
+   snapshot.outstanding_packets);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 4,
+   snapshot.tx_queue_depth, snapshot.tx_queue_coalesced,
+   snapshot.tx_queue_rejected);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 5,
+   snapshot.recovery_state, snapshot.resync_state,
+   (u32)snapshot.transition_phase);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 6,
+   snapshot.tx_queue_high_water, snapshot.backpressure_events,
+   snapshot.api_retries);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 7,
+   snapshot.duplicates, snapshot.out_of_window,
+   snapshot.invalid_packets);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 8,
+   snapshot.ack_packets, snapshot.probes, snapshot.rto_us);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 9,
+   snapshot.cpu_clock, snapshot.bus_clock, snapshot.tx_base_sequence);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 10,
+   snapshot.tx_base_attempts, snapshot.tx_base_message,
+   snapshot.tx_base_age_ms);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 11,
+   snapshot.next_tx_sequence, snapshot.next_rx_sequence,
+   snapshot.buffered_packets);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 12,
+   snapshot.received_data_packets, snapshot.received_ack_packets,
+   snapshot.ack_advances);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 13,
+   snapshot.ack_progress_age_ms, snapshot.sent_bytes,
+   snapshot.received_bytes);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 14,
+   gba_link_transfer_started, gba_link_transfer_committed,
+   gba_link_transfer_aborted);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 15,
+   gba_link_serial_irqs,
+   ((u32)gba_sio.mode << 28) |
+    ((u32)(gba_sio.pending_start != 0) << 27) |
+    ((u32)(gba_sio.waiting != 0) << 26) |
+    ((u32)(gba_sio.active != 0) << 25) |
+    ((u32)(gba_sio.transfer_error != 0) << 24) |
+   pIO_REG(REG_SIOCNT),
+   gba_sio.cycles_remaining);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 16,
+   snapshot.tx_sio_mailbox_depth |
+    (snapshot.tx_sio_high_water << 16),
+   snapshot.tx_sio_published, snapshot.tx_sio_coalesced);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 17,
+   snapshot.tx_heartbeat_mailbox_depth |
+    (snapshot.tx_heartbeat_high_water << 16),
+   snapshot.tx_heartbeat_published, snapshot.tx_heartbeat_coalesced);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 18,
+   snapshot.tx_clock_mailbox_depth |
+    (snapshot.tx_clock_high_water << 16),
+   snapshot.tx_clock_published, snapshot.tx_clock_coalesced);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 19,
+   snapshot.tx_critical_handoff_depth |
+    (snapshot.tx_critical_handoff_high_water << 16),
+   snapshot.tx_critical_pending_depth |
+    (snapshot.tx_critical_pending_high_water << 16),
+   snapshot.tx_critical_retry_suppressed);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 20,
+   (u32)gba_link_session.last_transfer_reason,
+   gba_link_session.last_transfer_detail,
+   (u32)gba_link_session.transport_health);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 21,
+   snapshot.backpressure_age_ms, snapshot.backpressure_streak,
+   snapshot.backpressure_episode_count);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 22,
+   snapshot.backpressure_max_age_ms,
+   snapshot.backpressure_streak_high_water,
+   (snapshot.last_blocked_kind & 0xFFFFu) |
+    ((snapshot.last_blocked_state_class & 0xFFFFu) << 16));
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 23,
+   snapshot.clock_backoff_us, snapshot.clock_next_delay_us,
+   snapshot.clock_success_streak);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 24,
+   snapshot.clock_backoff_raises, snapshot.clock_deferred,
+   snapshot.health_causes);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 25,
+   snapshot.session_recovery_requests, snapshot.session_recovery_reason,
+   0);
+}
+
+static void main_link_handle_closed(void)
+{
+  LinkSessionState state = link_session_state(&gba_link_session);
+  RuntimeLogFlushReason flush_reason;
+  int shutdown_result;
+
+  if(state != LINK_SESSION_DISCONNECTED && state != LINK_SESSION_ERROR)
+    return;
+  if(!gba_link_terminal_logged)
+  {
+    /* Preserve the terminal benchmark and live transport counters before
+       worker teardown clears the queues and failure context. */
+    main_log_link_benchmark(0);
+    if(quit_started)
+      psp_adhoc_stop_for_exit();
+    else
+      psp_adhoc_stop();
+    shutdown_result = psp_adhoc_service_shutdown();
+    if(shutdown_result == 0)
+      return;
+
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_ERROR, cpu_ticks,
+     (u8)state, (u32)psp_adhoc_last_error(),
+     (u32)gba_link_session.reason,
+     ((u32)gba_link_session.reason_detail << 16) |
+      main_adhoc_failure_phase_value());
+    main_log_link_checkpoint();
+    main_log_link_snapshot();
+    gba_link_terminal_logged = 1;
+
+    if(gba_link_session.reason == LINK_REASON_USER)
+      flush_reason = RUNTIME_LOG_FLUSH_DISCONNECT;
+    else if(gba_link_session.reason == LINK_REASON_SUSPEND)
+      flush_reason = RUNTIME_LOG_FLUSH_SUSPEND;
+    else if(gba_link_session.reason == LINK_REASON_ROM_CHANGE)
+      flush_reason = RUNTIME_LOG_FLUSH_ROM_CHANGE;
+    else
+      flush_reason = RUNTIME_LOG_FLUSH_LINK_FAILURE;
+    runtime_log_psp_flush(flush_reason);
+  }
+  else if(psp_adhoc_shutdown_pending())
+    psp_adhoc_service_shutdown();
+  set_cpu_clock(option_clock_speed);
 }
 
 static int main_link_start(int host)
@@ -565,10 +1236,20 @@ static int main_link_start(int host)
   u64 now;
   u32 session_id;
 
-  if(gamepak_filename[0] == '\0' || gamepak_file_size < 0xC0u)
-    return 0;
   if(!psp_adhoc_wlan_enabled())
     return 0;
+
+  /* The no-ROM menu has never called reset_gba. Prepare only a cold SIO;
+     an already loaded game's registers and pending transfer stay intact. */
+  if(!gba_sio_prepare(&gba_sio, io_registers))
+    return 0;
+
+  gba_link_attempt_id++;
+  if(gba_link_attempt_id == 0)
+    gba_link_attempt_id = 1u;
+  gba_link_audio_underrun_base = sound_audio_underrun_count();
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COMMAND, cpu_ticks,
+   (u8)(host != 0), main_adhoc_state_value(), 0, gba_link_attempt_id);
 
   main_fast_forward_stop();
 
@@ -580,14 +1261,35 @@ static int main_link_start(int host)
   main_link_hello(&hello);
   link_session_init(&gba_link_session, &gba_sio, psp_adhoc_transport(),
    &hello);
+  gba_link_transfer_started = 0;
+  gba_link_transfer_committed = 0;
+  gba_link_transfer_aborted = 0;
+  gba_link_serial_irqs = 0;
+  gba_link_recovery_checkpointed = 0;
+  gba_link_terminal_logged = 0;
+  set_cpu_clock(PSP_CLOCK_333);
+  psp_adhoc_set_transition_phase(PSP_ADHOC_TRANSITION_LINK_START);
   if(!psp_adhoc_start())
+  {
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_ERROR, cpu_ticks,
+     0, (u32)psp_adhoc_last_error(), main_adhoc_state_value(),
+     main_adhoc_failure_phase_value());
+    main_log_link_checkpoint();
+    main_log_link_snapshot();
+    runtime_log_psp_flush(RUNTIME_LOG_FLUSH_LINK_FAILURE);
+    set_cpu_clock(option_clock_speed);
     return 0;
+  }
 
   if(!host)
   {
     if(link_session_join(&gba_link_session))
+    {
+      runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_STATE, cpu_ticks, 0,
+       (u32)gba_link_session.state, (u32)gba_link_session.reason, 0);
       return 1;
-    psp_adhoc_stop();
+    }
+    main_link_handle_closed();
     return 0;
   }
 
@@ -597,9 +1299,13 @@ static int main_link_start(int host)
   if(session_id == 0)
     session_id = 1;
   if(link_session_host(&gba_link_session, session_id))
+  {
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_STATE, cpu_ticks, 0,
+     (u32)gba_link_session.state, (u32)gba_link_session.reason, 0);
     return 1;
+  }
 
-  psp_adhoc_stop();
+  main_link_handle_closed();
   return 0;
 }
 
@@ -615,24 +1321,70 @@ int main_link_join(void)
 
 void main_link_disconnect(LinkSessionReason reason)
 {
-  if(link_session_state(&gba_link_session) != LINK_SESSION_IDLE)
+  LinkSessionState state = link_session_state(&gba_link_session);
+
+  if(state != LINK_SESSION_IDLE && state != LINK_SESSION_DISCONNECTED &&
+     state != LINK_SESSION_ERROR)
     main_link_apply_events(link_session_disconnect(&gba_link_session,
      reason));
-  psp_adhoc_stop();
+  main_link_handle_closed();
+  if(link_session_state(&gba_link_session) == LINK_SESSION_IDLE)
+  {
+    if(quit_started)
+      psp_adhoc_stop_for_exit();
+    else
+      psp_adhoc_stop();
+  }
 }
 
 void main_link_pump(void)
 {
   LinkSessionState state;
+  u64 budget_started;
+  u64 now;
+  u64 gap;
 
-  if(!main_link_session_open())
-    return;
-
-  main_link_apply_events(link_session_pump(&gba_link_session));
-  main_link_publish_sio();
   state = link_session_state(&gba_link_session);
   if(state == LINK_SESSION_DISCONNECTED || state == LINK_SESSION_ERROR)
-    psp_adhoc_stop();
+  {
+    main_link_handle_closed();
+    return;
+  }
+  if(!main_link_session_open())
+  {
+    if(psp_adhoc_shutdown_pending())
+      psp_adhoc_service_shutdown();
+    return;
+  }
+
+  budget_started = sceKernelGetSystemTimeWide();
+  do
+  {
+    now = sceKernelGetSystemTimeWide();
+    if(main_link_benchmark_active() && gba_link_benchmark_last_pump_us != 0)
+    {
+      gap = now >= gba_link_benchmark_last_pump_us ?
+       now - gba_link_benchmark_last_pump_us : 0;
+      if(gap > gba_link_benchmark_starvation_max_us)
+        gba_link_benchmark_starvation_max_us = main_link_bounded_u64(gap);
+    }
+    link_session_set_emulated_cycle(&gba_link_session, cpu_ticks);
+    main_link_apply_events(link_session_pump(&gba_link_session));
+    main_link_publish_sio();
+    main_link_apply_events(link_session_publish_clock(&gba_link_session,
+     cpu_ticks));
+    main_link_benchmark_observe(now);
+    gba_link_benchmark_last_pump_us = now;
+    main_log_link_benchmark(1);
+    if(!main_link_benchmark_active() || now < budget_started ||
+       now - budget_started >= MAIN_LINK_BENCHMARK_SERVICE_BUDGET_US)
+      break;
+    sceKernelDelayThread(50u);
+  }
+  while(1);
+  state = link_session_state(&gba_link_session);
+  if(state == LINK_SESSION_DISCONNECTED || state == LINK_SESSION_ERROR)
+    main_link_handle_closed();
 }
 
 static void main_link_publish_sio(void)
@@ -640,16 +1392,22 @@ static void main_link_publish_sio(void)
   LinkSioState state;
   u32 events;
 
-  if(!gba_sio_state_dirty ||
-     link_session_state(&gba_link_session) != LINK_SESSION_CONNECTED)
+  if(!gba_sio_state_dirty || !link_session_is_connected(&gba_link_session))
     return;
 
   memset(&state, 0, sizeof(state));
   state.mode = (u8)gba_sio.mode;
   state.player_id = gba_sio.player_id;
   state.player_count = gba_sio.player_count;
-  state.flags = (u8)(gba_sio.pending_start | (gba_sio.waiting << 1) |
-   (gba_sio.active << 2));
+  state.flags = 0;
+  if(gba_sio.pending_start)
+    state.flags |= LINK_SIO_FLAG_PENDING_START;
+  if(gba_sio.waiting)
+    state.flags |= LINK_SIO_FLAG_WAITING;
+  if(gba_sio.active)
+    state.flags |= LINK_SIO_FLAG_ACTIVE;
+  if(gba_link_gameplay_active)
+    state.flags |= LINK_SIO_FLAG_GAMEPLAY_ACTIVE;
   state.control = pIO_REG(REG_SIOCNT);
   state.rcnt = pIO_REG(REG_RCNT);
 
@@ -661,27 +1419,67 @@ static void main_link_publish_sio(void)
 
 static void main_link_service(void)
 {
+  LinkSessionPauseReason pause_reason;
+  u64 wait_started;
+  u64 wait_finished;
+  u64 wait_duration;
+  u32 wait_flags;
+  u32 clock_lead = 0;
   u32 events;
+  u32 audio_wait_active;
 
+  link_session_set_emulated_cycle(&gba_link_session, cpu_ticks);
   events = link_session_pump(&gba_link_session);
   main_link_apply_events(events);
   main_link_publish_sio();
+  main_link_apply_events(link_session_publish_clock(&gba_link_session,
+   cpu_ticks));
 
   if(!main_link_session_open())
   {
-    psp_adhoc_stop();
+    main_link_handle_closed();
     return;
   }
 
   events = link_session_begin_transfer(&gba_link_session);
   main_link_apply_events(events);
 
-  if(!link_session_in_barrier(&gba_link_session))
+  pause_reason = link_session_pause_reason(&gba_link_session);
+  if(pause_reason == LINK_SESSION_PAUSE_NONE)
     return;
 
-  sound_link_wait_begin();
-  while(link_session_in_barrier(&gba_link_session))
+  wait_flags = 0;
+  if(pause_reason == LINK_SESSION_PAUSE_SIO_DEPENDENCY)
+    wait_flags |= 1u;
+  if(pause_reason == LINK_SESSION_PAUSE_AHEAD_PACING)
+    wait_flags |= 2u;
+  if(pause_reason == LINK_SESSION_PAUSE_RECOVERY)
+    wait_flags |= 16u;
+  if(link_session_in_barrier(&gba_link_session))
+    wait_flags |= 4u;
+  if(gba_link_gameplay_active)
+    wait_flags |= 8u;
+  if(gba_link_session.clock.peer_valid)
   {
+    u32 local_elapsed = gba_link_session.clock.local_cycle -
+     gba_link_session.clock.local_base;
+    u32 peer_elapsed = gba_link_session.clock.peer_cycle -
+     gba_link_session.clock.peer_base;
+
+    clock_lead = local_elapsed - peer_elapsed;
+  }
+  wait_started = sceKernelGetSystemTimeWide();
+  audio_wait_active = 0;
+  while(main_link_session_open() &&
+        pause_reason != LINK_SESSION_PAUSE_NONE)
+  {
+    if(!audio_wait_active &&
+       pause_reason != LINK_SESSION_PAUSE_AHEAD_PACING)
+    {
+      sound_link_wait_begin();
+      audio_wait_active = 1;
+    }
+    main_power_service();
     if(sleep_flag != 0)
       events = link_session_disconnect(&gba_link_session,
        LINK_REASON_SUSPEND);
@@ -689,11 +1487,22 @@ static void main_link_service(void)
       events = link_session_pump(&gba_link_session);
 
     main_link_apply_events(events);
-    if(link_session_in_barrier(&gba_link_session))
+    main_link_apply_events(link_session_publish_clock(&gba_link_session,
+     cpu_ticks));
+    pause_reason = link_session_pause_reason(&gba_link_session);
+    if(main_link_session_open() && pause_reason != LINK_SESSION_PAUSE_NONE)
       sceKernelDelayThread(1000);
   }
-  sound_link_wait_end(cpu_ticks);
+  if(audio_wait_active)
+    sound_link_wait_end(cpu_ticks);
+  wait_finished = sceKernelGetSystemTimeWide();
+  wait_duration = wait_finished >= wait_started ?
+   wait_finished - wait_started : 0;
+  if((wait_flags & 1u) != 0 || wait_duration >= 5000u)
+    main_link_record_wait(wait_duration, (u8)wait_flags, clock_lead,
+     wait_finished);
   main_link_publish_sio();
+  main_link_handle_closed();
 }
 
 u32 update_gba(void)
@@ -716,7 +1525,10 @@ u32 update_gba(void)
     {
       sio_event = gba_sio_advance(&gba_sio, reg[EXECUTE_CYCLES]);
       if((sio_event & GBA_SIO_EVENT_SERIAL_IRQ) != 0)
+      {
         irq_raised |= IRQ_SERIAL;
+        gba_link_serial_irqs++;
+      }
       if(!gba_sio.active)
         gba_sio_state_dirty = 1;
     }
@@ -875,7 +1687,17 @@ u32 update_gba(void)
     }
 
     if(gba_sio.active)
+    {
       CHECK_COUNT(gba_sio.cycles_remaining);
+    }
+    else
+    {
+      u32 link_pause_cycles =
+       link_session_cycles_until_pause(&gba_link_session);
+
+      if(link_pause_cycles != GBA_SIO_NO_EVENT)
+        CHECK_COUNT(link_pause_cycles);
+    }
 
     if (dma_cycle_count != 0)
     {
@@ -1239,6 +2061,7 @@ static void setup_main(const char *eboot_path)
   video_resolution_large();
 
   find_main_path(eboot_path);
+  runtime_log_psp_init(main_path[0] != '\0' ? main_path : NULL);
 
   sceKernelRegisterSubIntrHandler(PSP_VBLANK_INT, 0, vblank_interrupt_handler, NULL);
   sceKernelEnableSubIntr(PSP_VBLANK_INT, 0);
@@ -1369,11 +2192,17 @@ int main(int argc, char *argv[])
 
 void quit(void)
 {
+  if(!__sync_bool_compare_and_swap(&quit_started, 0, 1))
+    return;
+
   main_fast_forward_stop();
   main_link_disconnect(LINK_REASON_USER);
 
   update_backup_immediately();
   save_config_file();
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_SESSION_END, cpu_ticks, 0,
+   (u32)gba_link_session.state, (u32)gba_link_session.reason, 0);
+  runtime_log_psp_flush(RUNTIME_LOG_FLUSH_EXIT);
 
   sound_term();
   memory_term();
@@ -1386,23 +2215,46 @@ void quit(void)
 
   scePowerUnregisterCallback(0);
 
+  quit_cleanup_complete = 1;
+  __sync_synchronize();
   sceKernelExitGame();
 }
 
 void reset_gba(void)
 {
+  u32 new_identity = 0;
+
   main_fast_forward_stop();
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
   input_diagnostic_trace_cancel();
 #endif
   main_link_disconnect(LINK_REASON_ROM_CHANGE);
+  if(main_link_active())
+    return;
+
+  if(gamepak_file_size >= 0xC0u)
+  {
+    new_identity = ((u32)gamepak_header[0xAC] << 24) |
+     ((u32)gamepak_header[0xAD] << 16) |
+     ((u32)gamepak_header[0xAE] << 8) | gamepak_header[0xAF];
+  }
+  if(runtime_log_rom_active && new_identity != runtime_log_rom_identity)
+    runtime_log_psp_flush(RUNTIME_LOG_FLUSH_ROM_CHANGE);
 
   clear_texture(0x7FFF);
   init_memory();
   init_main();
   link_session_init(&gba_link_session, &gba_sio, psp_adhoc_transport(),
    NULL);
+  gba_link_terminal_logged = 0;
+  if(gamepak_file_size >= 0xC0u)
+  {
+    runtime_log_psp_set_rom(gamepak_header + 0xAC, gamepak_header[0xBC],
+     gamepak_file_size, cpu_ticks);
+    runtime_log_rom_identity = new_identity;
+    runtime_log_rom_active = 1;
+  }
   reset_sound();
 }
 
@@ -1444,6 +2296,8 @@ static void main_power_reopen_gamepak(void)
 
 static void psp_sleep_loop(void)
 {
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_SUSPEND, cpu_ticks, 0,
+   (u32)gba_link_session.state, main_adhoc_state_value(), sleep_flag);
   main_fast_forward_stop();
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
@@ -1463,8 +2317,13 @@ static void psp_sleep_loop(void)
     sleep_reopen_gamepak = 1;
   }
 
+  runtime_log_psp_flush(RUNTIME_LOG_FLUSH_SUSPEND);
+
   do
   {
+    main_link_handle_closed();
+    if(psp_adhoc_shutdown_pending())
+      psp_adhoc_service_shutdown();
     sceKernelDelayThread(100 * 1000);
   }
   while (sleep_flag != 0);
@@ -1474,6 +2333,15 @@ void main_power_service(void)
 {
   PowerLifecycleState state;
   int audio_result;
+
+  if(exit_requested && !quit_started)
+    quit();
+
+  if(link_session_state(&gba_link_session) == LINK_SESSION_DISCONNECTED ||
+     link_session_state(&gba_link_session) == LINK_SESSION_ERROR)
+    main_link_handle_closed();
+  else if(psp_adhoc_shutdown_pending())
+    psp_adhoc_service_shutdown();
 
   state = power_lifecycle_state(&psp_power_lifecycle);
   if(sleep_flag != 0 || state == POWER_LIFECYCLE_SUSPENDED)
@@ -1499,12 +2367,30 @@ void main_power_service(void)
   video_power_resume();
   sound_power_resume_finish(cpu_ticks, audio_result);
   sleep_auto_saved = 0;
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_RESUME, cpu_ticks,
+   (u8)(audio_result >= 0), (u32)audio_result,
+   (u32)gba_link_session.state, main_adhoc_state_value());
 }
 
 
 static int exit_callback(int arg1, int arg2, void *common)
 {
-  quit();
+  u64 started;
+
+  (void)arg1;
+  (void)arg2;
+  (void)common;
+
+  exit_requested = 1;
+  __sync_synchronize();
+  started = sceKernelGetSystemTimeWide();
+  while(!quit_cleanup_complete &&
+        sceKernelGetSystemTimeWide() - started <
+         MAIN_EXIT_CALLBACK_TIMEOUT_US)
+    sceKernelDelayThread(10000u);
+
+  if(!quit_cleanup_complete)
+    sceKernelExitGame();
 
   return 0;
 }
@@ -1675,11 +2561,11 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
   metadata.fast_forward_audio = fast_forward_settings.audio;
   if(gamepak_file_size >= 0xC0U)
   {
-    metadata.rom_title = gamepak_rom + 0xA0;
+    metadata.rom_title = gamepak_header + 0xA0;
     metadata.rom_title_length = 12;
-    metadata.game_code = gamepak_rom + 0xAC;
+    metadata.game_code = gamepak_header + 0xAC;
     metadata.game_code_length = 4;
-    metadata.rom_revision = gamepak_rom[0xBC];
+    metadata.rom_revision = gamepak_header[0xBC];
   }
   metadata.duration_us = perf_monitor_duration_us();
 

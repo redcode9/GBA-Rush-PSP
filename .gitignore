@@ -16,6 +16,7 @@ source/single-game_launcher/tool/assets/EBOOT.PBP
 
 # Release output
 build/
+models/link/states/
 dist/
 release/
 *.sha256
@@ -33,6 +34,9 @@ source/single-game_launcher/tool/*.spec
 *.cht
 gba_bios.bin
 dir.ini
+
+# Clang static-analyzer reports generated in the repository root
+/*.plist
 
 # Editor and operating-system files
 __pycache__/

@@ -901,6 +901,12 @@
   // MSG_LINK_MENU_DISCONNECT
   "Disconnect",
 
+  // MSG_LINK_MENU_BENCHMARK_RUN
+  "Run link benchmark",
+
+  // MSG_LINK_MENU_BENCHMARK_STOP
+  "Stop link benchmark",
+
   // MSG_LINK_MENU_HELP_STATUS
   "Current link cable state",
 
@@ -912,6 +918,27 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "Close the current link session",
+
+  // MSG_LINK_MENU_HELP_BENCHMARK
+  "Test the real two-PSP stream for ten minutes",
+
+  // MSG_LINK_BENCHMARK_IDLE
+  "Benchmark: ready",
+
+  // MSG_LINK_BENCHMARK_WAITING
+  "Benchmark: synchronizing",
+
+  // MSG_LINK_BENCHMARK_RUNNING
+  "Benchmark: running",
+
+  // MSG_LINK_BENCHMARK_PASS
+  "Benchmark: PASS",
+
+  // MSG_LINK_BENCHMARK_FAIL
+  "Benchmark: FAIL",
+
+  // MSG_LINK_BENCHMARK_ABORT
+  "Benchmark: ABORT",
 
   // MSG_LINK_STATUS_NO_GAME
   "No game loaded",

@@ -53,16 +53,19 @@ is evidence and normally leaves the milestone `in progress`.
 
 | Field | Value |
 |---|---|
-| Last updated | 2026-08-28 |
-| Design state | Approved; replacement architecture not implemented |
-| Active milestone | M1 — formal protocol model and shared transition table |
-| Baseline commit | `790d3da` (`Define low-overhead runtime diagnostics`) |
-| Working tree | Contains the existing link prototype and uncommitted diagnostic, transport, recovery and test work; preserve it until M1 classifies reusable parts |
-| Last hardware pair | PSP-2000 host and PSP-1000 joiner |
-| Last accepted build evidence | EBOOT SHA-256 `f20fb67bd216148eddd18a1dedb5c01edbd7a71f5ac8a05e670c5992aca0fab` passed host checks but did not complete a Pokémon FireRed trade |
-| Last verified finding | Session and transport recovery used different timeout ownership; recovery could compare a local aborted sequence with an older remote history and regress the transaction |
-| Immediate next action | Model the three-stage transfer journal, loss, duplication, reorder, backpressure and one-sided recovery before changing the production session |
-| External blocker | None |
+| Last updated | 2026-09-14 |
+| Design state | RC3.3 is a local correction candidate, not an accepted two-PSP cable. It fixes reproduced early-START, lost-presence and benchmark-terminal defects. No new physical benchmark or FireRed trade has been performed |
+| Active milestone | M8; the guest-timing prerequisite in M4 is reopened. A bounded synthetic workload is not proof of a shared safe horizon for arbitrary guest programs |
+| Working tree | The RC3.3 working tree (protocol-v3 stream implementation, models, CBMC proofs, tools, tests and documentation) is committed in this handoff and the tree is clean. The historical code baseline is `790d3da`. Gate outputs and isolated count-audit copies are in `build/link-audit/`. No SD installation, file replacement or ejection was performed in this correction pass |
+| Last hardware evidence | Sep-11 RC3.2, PSP-2004 host / PSP-1004 joiner: shared session nonce 1131198442, 10,434 STARTs / 10,433 REPLYs, 10,433 words displayed, then host WLAN-off. Neither log has a terminal benchmark summary or enough data to reconstruct throughput. Suspend is a hypothesis, not an established cause. Acquisition, photo, checksums, decoded logs and the original failing reproducer remain in `build/hardware-logs/20260911-rc32-benchmark.yGIP2P/` |
+| Earlier evidence and rollback | Sep-10 FireRed failures: `build/hardware-logs/20260910-m8-v3-rc31-hardware-stall/`. RC3.1 no-ROM null-register crash and RC3.2 validation: `build/hardware-logs/20260911-m8-v3-rc31-no-rom-crash/`. Paired installation manifests: `build/hardware-logs/20260911-rc32-install.hXxVA2/`. Last installed RC3.2 EBOOT SHA-256: `0ac8bd009632769062025ce4df83804fdcbba37a9e6298c28e89f4d3251fc4a9`. Prior local binaries and the previous detailed handoff are preserved in `build/link-audit/rc32-binaries/` and `build/link-audit/previous-handoff.md` |
+| Verified corrections | Session/SIO tests now cover delayed guest IRQ handling, unequal cycle bases, cycle wrap, recovery before latching, immutable scheduled results, periodic presence repair, all benchmark session endings and silent joiner timeout. `test_link_cable_runtime` passes 720 register-level words through the production scheduler/lanes with independently advancing guests, asymmetric latency, loss, duplication and backpressure. It does not execute a ROM, PSP threads or radio firmware |
+| Software gate | Re-verified on the committed RC3.3 tree: `make -j4 check HOST_CC='cc -O1' HOST_BUILD_DIR=build/host-work` exits 0 (`build/link-audit/check-final-20260914.log`) and `make -j4 test-sanitize HOST_CC='cc -O1 -fsanitize=address,undefined' HOST_SANITIZE_DIR=build/sanitize-work` exits 0. Each explores 5,159,580 schedules / 120,593 observed signatures and runs the 720-word production-scheduler workload; native checks also pass 27 Python tests. Earlier equivalent logs: `build/link-audit/check-final.log`, `sanitize-final.log`. The original five-failure benchmark reproducer passes under ASan/UBSan (`original-benchmark-reproducer-green.log`) |
+| Exploration audit | The initial full runs failed only their old count assertions. Isolated copies disable only presence refresh and reproduce exactly 5,156,572 schedules / 67,753 signatures (exit 0). Comparing all 324 recovery configurations attributes the additional 3,008 schedules to 752 post-outage packet opportunities, each explored with four faults. Zero-outage configurations are unchanged. The updated counts retain every invariant and completion check; audit script, source copies and outputs remain in `build/link-audit/` |
+| Proof and static checks | `make check-cbmc` exits 0 on the committed tree (2026-09-14). `make check-link-model TLA2TOOLS_JAR=/tmp/gba-link-research/tla2tools.jar TLC_WORKERS=2 TLC_STATE_DIR="$PWD/build/link-audit/tlc"` passes all four TLC safety/liveness gates, including the cable liveness temporal check over 2,690,938 fair states: cable 7,136,984 generated / 1,345,469 distinct, stream 4,550 / 1,558 (`build/link-audit/link-model-final-20260914.log`). Clang static analysis re-run reports zero diagnostics for SIO, session, stream, benchmark, lanes and scheduler; these checks do not model PSP firmware or guest ROM execution |
+| Candidate artifact | PSPDEV `v20260801`, GCC 15.2.0: clean build plus final `make -j4 psp-build` relink exit 0. EBOOT is 5,608,188 bytes, SHA-256 `8571083399536a579ede4a17bd347b1e3819cf17d055de13dd785db80add8636`; its embedded PRX byte-matches `source/TempGBA.prx`. ELF contains `1.4.0-m8-v3-rc3.3`; exception PRX is unchanged. `dist/GBA-Rush-PSP-1.4.0-m8-v3-rc3.3.zip` is 5,626,777 bytes, SHA-256 `580a29679fbd614320ea89306995a871bcd0171902e63e2ef03aae01e17b8008`; `make artifact-smoke VERSION=1.4.0-m8-v3-rc3.3` re-ran exit 0 on the committed tree (2026-09-14). Full binary hashes and package/build logs are in `build/link-audit/`. The only compiler warning concerns serial LTO compilation, not a code diagnostic |
+| Remaining risk | Real PSP service latency, WLAN-switch failure origin and FireRed compatibility remain unverified. Stream clock hints are advisory, not a proven conservative execution grant; an early-START regression alone cannot establish all guest timing or mode-transition behavior. Models abstract guest execution. A ten-minute benchmark validates transport performance, not Pokémon protocol correctness |
+| Immediate next action | M8 is blocked on an external dependency: obtain paired ten-minute RC3.3 hardware benchmarks in both roles, preserving terminal logs before another run. Continue with the FireRed/save-reload/lifecycle matrix only if both paired gates pass. Investigate any first divergence against guest SIO timing, not just packet counts; M4's generic safe-horizon requirement remains open. Do not call M8 complete, infer a successful trade from host tests, or install to a guessed/stale SD mount |
 
 When updating this table, retain only the latest verified handoff. Move durable
 requirements into the specification or milestone gates instead of accumulating
@@ -139,6 +142,105 @@ The current explicit-state harness remains useful but bounded. Its fake
 transport does not model PSP scheduling, firmware socket buffers, radio,
 network-module memory pressure, audio, power callbacks or storage. Passing its
 existing schedule count is not hardware-completeness evidence.
+
+### M8 protocol-v3 multiplayer refinement
+
+The two-message stream described here supersedes the transaction-journal hot
+path below for two-player Multiplayer 16-bit mode. This maintained section is
+the implementation reference; it does not depend on retired draft-plan paths.
+The journal remains in use for Normal 8/32-bit transfers and legacy regression
+coverage; it must not be put back into v3 multiplayer.
+
+Both peers advertise protocol major 3 and
+`LINK_CAPABILITY_STREAM_TRANSFER`. Version 2 and version 3 EBOOTs are not
+interoperable. The host sends one immutable `TRANSFER_START`; the joiner
+latches its word on the emulation thread and returns one `TRANSFER_REPLY`.
+Only one causally dependent word is active, receipt of `REPLY(N)` acknowledges
+`START(N)`, and `START(N+1)` or an idle heartbeat acknowledges the cached
+reply. Duplicate traffic may retransmit or replay a packet but may not repeat a
+GBA result update or serial IRQ.
+
+The stream sends no `PREPARE`, `ACCEPT`, `COMMIT`, `COMMIT_ACK`, `RELEASE` or
+`RELEASE_ACK`, and carries clock anchors in start, reply and low-rate heartbeat
+records instead of producing standalone hot CLOCK traffic. A critical reply
+wakes the PSP network worker; bounded hot drains prioritize stream records,
+while the cold regime retains low CPU use. Recovery preserves the semantic
+pending start or cached reply across a generation change but rejects every old
+generation datagram before session mutation.
+
+A stream session may schedule at most one heartbeat request per
+`LINK_SESSION_HEARTBEAT_US`. Immediate correlated replies bypass that request
+gate. Successful START, REPLY, heartbeat-request and heartbeat-reply publication
+all reset the wall-clock interval before another scheduled request. A GBA-cycle
+clock deadline alone must never authorize another scheduled heartbeat; otherwise
+the removed near-1 kHz CLOCK traffic is merely renamed and can exhaust the PSP
+PDP send buffer before the first SIO word.
+
+#### RC3.3 behavior and timing limits
+
+Receipt of `START(N+1)` is not evidence that the joiner's CPU executed the
+serial handler for word N. `link_session_service_stream_start` retains one
+unlatched START while the previous SIO event is busy. It then maps the master's
+inter-word cycle delta onto the previous local start before reading the next
+`SIOMLT_SEND`. Duplicate STARTs cannot reset this wait or repeat the latch.
+Recovery may discard and replay an unlatched START, but not an already
+scheduled register result or IRQ. An uncertain REPLY timeout requests recovery
+instead of cancelling a result the other peer may already have scheduled.
+
+The first stream word still uses a local timing base. Mapping a later START
+cannot rewind a guest that has already advanced past it. The 2 ms freshness
+limit on stream pacing prevents a one-second heartbeat from imposing a
+500 ms wait, but it is **not a conservative safe-horizon protocol**. Both peers
+must advertise hot gameplay presence before this advisory pacing applies.
+The stricter SIO-hot contract below remains a requirement, not a completed
+arbitrary-guest guarantee. This is why M4 and M8 remain open.
+
+Unchanged SIO/menu presence is republished once per heartbeat interval. A
+latest-wins mailbox prevents queue buildup, not packet loss; the final update
+must remain repairable. Presence refresh also permits a due correlated probe
+so its own traffic cannot indefinitely suppress liveness checks.
+
+`test_link_cable_runtime` runs the production scheduler and transport lanes
+with separate 300/700-cycle guest budgets, 300/700 microsecond wire delays,
+a delayed serial handler, nine-word bursts and Timer3 spacing. Four scenarios
+cover either slower role with and without loss, delayed duplicates and send
+backpressure. Its 720 words check data and exact-once IRQ/application, not a
+FireRed ROM, actual PSP thread concurrency or Wi-Fi throughput. The older
+`test_link_pipeline` still exercises `AdhocDatagram`/`LinkTxQueue`; retain it as
+legacy/recovery coverage rather than calling it the PSP runtime.
+
+#### Benchmark and diagnostic contract
+
+The benchmark offers 1,000 words/s; the acceptance floor is 600 words/s for
+600,000 ms. Short host tests may configure a lower target, but cannot satisfy
+the unchanged physical acceptance gate. A live summary measures from benchmark
+start, not emulator uptime. An unbounded histogram bucket reports `UINT_MAX`,
+not an optimistic 32 ms percentile. A threshold failure has an explicit reason.
+
+User, suspend and ROM-change disconnects terminate an active benchmark as
+aborted; transport failure and lack of progress terminate it as failed. The
+joiner's watchdog applies even before its first START and while both peers are
+in menus. It ends the benchmark, not the existing intentional menu-pause policy:
+a silent menu connection may remain open for explicit disconnect. Terminal
+results do not change when polled again or disconnected.
+The main loop records a result before teardown, benchmark replacement or
+clearing on game entry, allowing up to 250 ms for a final STOP/ACK queue drain
+when the transport is still open. The retained 64-record critical ring must
+hold all 14 summary records plus the 32-record shutdown checkpoint.
+
+Start records use `link-benchmark` flags `0x80` (run, requested duration,
+offered rate) and `0x81` (run, seed, role). They are not terminal summaries.
+The paired analyzer requires every terminal field, one host and one joiner,
+matching counts/digests and valid checksums. A missing record or unmatched run
+fails rather than producing a traceback or inferring success. Run IDs are identifiers, not
+ordered timestamps: use `--run-id` if multiple common runs are retained.
+
+During the benchmark, the PSP menu services networking and power independently
+of its approximately 30 Hz rendering/input cadence. Run observation and
+terminal logging check cheap status/identity fields before computing summary
+histograms and checksums, avoiding redundant work on every network pump. It does not wait for
+vblank between benchmark pumps. These changes require on-console latency,
+power and input checks; a successful PSP build does not execute that loop.
 
 ### Layer ownership
 
@@ -356,9 +458,28 @@ disconnect, suspend, ROM change or exit boundary. The snapshot records dropped
 event counts; loss of diagnostic capacity cannot be mistaken for absence of an
 event.
 
+Failure attribution has three independent axes. `link-failure` domain values
+are `none`, `psp-api`, `transport`, `session`, `lifecycle` and `internal`; the
+internal signed/hex code must never be displayed as if it were the original
+PSP return value. A separate API phase and signed/hex result identify the real
+firmware call. `link-timeout` names `receive-silence`, `active-transfer`,
+`ahead-pacing`, `pressure`, `recovery-rendezvous`, `shutdown`, `negotiation`,
+`abort-ack`, `control`, `peer-discovery` or `connect-handshake`.
+
+The versioned `link-stream-metrics` records retain start/reply/apply counts,
+duplicates, cached replays, stale generations, RTT/RTO, nine-word burst and
+barrier latency, worker wake/drain/yield data and audio underruns. A terminal
+`link-benchmark` summary is bound to one run ID and contains status, failure,
+role, duration, completed words, throughput, digest, RTT percentiles, burst
+tails, retransmissions, queue state, recovery, starvation and a checksum. The
+paired analyzer requires one host and one joiner record with matching run ID,
+word count and digest.
+
 ### Verification gates
 
-The design is accepted in layers:
+The following are required acceptance layers, not a claim that every layer
+has been implemented. In particular, the current stream model treats guest
+application atomically and does not model guest ISR execution or PSP threads.
 
 - A TLA+/PlusCal model checks every safety invariant plus conditional liveness
   under loss, duplication, reorder, backpressure, one-sided recovery, suspend
@@ -379,6 +500,10 @@ checks are supplementary; text-pattern checks do not prove protocol behavior.
 
 Physical acceptance on the current PSP-1000/PSP-2000 pair requires:
 
+- a ten-minute no-ROM v3 benchmark in each host/join role assignment with at
+  least 600 words/s, nine-word burst p99 at most 20 ms, zero full recoveries,
+  no persistent queue, timeout, stale generation, audio underrun or more than
+  50 ms main-thread starvation;
 - both host/join role assignments;
 - 10,000 consecutive transfers per synthetic supported-mode ROM;
 - a 60-minute idle hot session without recovery churn;
@@ -386,6 +511,29 @@ Physical acceptance on the current PSP-1000/PSP-2000 pair requires:
 - suspend, resume, peer exit and local exit from each exposed session phase;
 - no crash, permanent freeze, divergent transfer hash or repeated serial IRQ;
 - bounded exit and a single stable audio pause rather than recurring underruns.
+
+For a controlled physical test:
+
+1. Back up both saves and record PSP model, firmware, EBOOT SHA-256, clock,
+   ROM revision/CRC and role. Both consoles need the same candidate. Enable
+   the physical WLAN switch; disable WLAN Power Save and automatic system
+   suspend for the benchmark. Screen blanking is not proof of system suspend.
+2. Start fresh emulator processes without loading ROMs. Create/join, start the
+   benchmark on the host and wait for a terminal result. A frozen word count,
+   error, timeout or manual Stop is not a pass. Exit normally and copy both
+   logs before another run can replace retained evidence.
+3. Run `python3 tools/analyze_link_benchmark.py host.gbrlog joiner.gbrlog
+   --json` (one shell line). Preserve its exit status and JSON. Repeat the full
+   ten minutes with roles reversed. An on-screen PASS alone is insufficient.
+4. Only after both paired gates pass, test legally obtained FireRed copies
+   with separate saves and no cheats or fast-forward. Record room entry,
+   an actual completed exchange, normal room exit, in-game save and reload
+   verification of both received Pokémon. Repeat entry/trade/exit without
+   restarting the link and with roles reversed, until the matrix above is met.
+5. Test user disconnect, WLAN loss, suspend/resume and peer exit separately
+   from successful runs. Preserve the first failed pair and reproduction
+   steps; stop rather than repeatedly attempting trades against an unstable
+   build. Never overwrite the only copy of a save during acceptance testing.
 
 Other PSP models are an additional compatibility gate, not a prerequisite for
 developing the verified core. Public compatibility claims list the hardware
@@ -396,31 +544,87 @@ and modes actually tested.
 | ID | State | Deliverable and exit gate |
 |---|---|---|
 | M0 | complete | Root-cause analysis, source research and this canonical specification |
-| M1 | in progress | Formal model and one table of legal production transitions; all stated invariants checked before production rewrites |
-| M2 | not started | Three transport lanes, bounded SPSC handoff, unambiguous packet numbering and adaptive probes; deterministic loss/backpressure tests pass |
-| M3 | not started | Monotonic `ARMED/DECIDED/RELEASED` journal and single recovery coordinator; model and C harness traces agree |
-| M4 | not started | Cycle-level SIO-hot barrier and shared finish scheduling for Normal 8/32 and two-player Multiplayer; differential traces pass |
-| M5 | not started | Bounded suspend/exit, stable audio wait and complete binary failure snapshot; lifecycle fault injection passes |
-| M6 | not started | Full host, sanitizer, CBMC and schedule-exploration gate with no invariant or memory failure |
-| M7 | not started | PSP-1000/PSP-2000 physical acceptance matrix completed in both roles |
-| M8 | deferred | GPIO/general-purpose cable behavior and a broader commercial-game matrix after M7 |
+| M1 | complete | Finite journal/stream models and one table of legal transitions; model-level safety/liveness pass, without proving the guest-timing refinement required by M4 |
+| M2 | complete | Three transport lanes, bounded SPSC handoff, unambiguous packet numbering and adaptive probes; deterministic loss/backpressure tests pass |
+| M3 | complete | Monotonic `ARMED/DECIDED/RELEASED` journal and single recovery coordinator; model and C harness traces agree |
+| M4 | in progress | Timing prerequisite reopened by the early-START regression: local completion and deferred-latch tests pass, but arbitrary-guest safe horizons and differential ROM traces remain unverified |
+| M5 | complete | Host-tested bounded teardown, audio wait and binary failure snapshots; lifecycle fault injection passes, while physical PSP lifecycle acceptance remains in M8 |
+| M6 | complete | Full host, sanitizer, CBMC and schedule-exploration gate with no invariant or memory failure |
+| M7 | superseded | Physical trials produced the retained failure evidence and proved the six-phase journal hot path unsuitable for Pokémon cadence; it is the rollback baseline, not an accepted cable |
+| M8 | in progress | Protocol-v3 two-message multiplayer stream, full software/build gate, ten-minute benchmark in both PSP role assignments and complete FireRed matrix |
+| M9 | deferred | GPIO/general-purpose cable behavior and a broader commercial-game matrix after M8 |
 
 The working prototype may supply reusable parsing, logging or SIO code, but its
 existing state names and recovery behavior are not compatibility constraints.
 Reuse is decided only after M1 maps a component to this specification.
 
+M1 classifies the prototype at component boundaries:
+
+| Component | Decision for the replacement |
+|---|---|
+| `link_protocol` | Reuse bounded parsing, CRC and encoding patterns; replace the wire schema with the identity, journal and timing fields above |
+| `adhoc_datagram` | Reuse nonblocking PSP PDP I/O primitives; replace its reliability, acknowledgement and backpressure policy with the three transport lanes |
+| `link_tx_queue` | Replace the single mixed queue with bounded critical, replaceable-state and unreliable lanes; retain focused queue-test patterns |
+| `link_session`, `adhoc_recovery`, `adhoc_resync` | Replace transaction states and independent timeout/recovery ownership with the generated journal table and one coordinator |
+| `gba_sio` | Reuse register/mode primitives only after differential verification; replace frame-scale release scheduling with the cycle horizon in M4 |
+| `link_clock` | Reuse cycle-conversion helpers; reject the 31.25 ms publication and two-frame lead policy for SIO-hot synchronization |
+| `runtime_log`, `runtime_log_store` | Reuse fixed binary rings and bounded persistence; extend the failure snapshot with link identity, journal, horizon and queue evidence |
+| `power_lifecycle` | Reuse callback plumbing after M5 proves bounded worker/socket teardown; do not reuse unbounded waits |
+
+### Reference implementation findings
+
+Research reviewed for this correction (2026-09-14):
+
+- GBATEK describes writable multiplayer receive registers, their START reset
+  to `FFFF`, and the four-slot serial behavior. `gba_sio` now accepts guest
+  clears of `SIOMULTI0-3`; START still resets all receive slots.
+- mGBA's current SIO transfer table gives 5,755 GBA cycles for two-player
+  multiplayer at 115200 baud. Its local lockstep scheduler synchronizes core
+  events; it is not a drop-in protocol for two PSP radio endpoints.
+- FireRed's decompiled serial handler consumes a checksum plus eight command
+  words and arms Timer3 between words. The regression uses the documented
+  `(197 * 64)`-cycle gap. Precomputed packets alone do not test this guest code.
+- libretro gpSP batches Pokémon commands and explicitly simulates a fake
+  master at nine IRQs per frame for the slave. This is useful protocol-specific
+  HLE research, not a generic cable fix to copy into the SIO implementation.
+- The independent `mgba-switch-netlink` project reports two consecutive
+  FireRed/LeafGreen trades between local desktop processes and documents
+  pending START, mode-epoch and room-exit races. Its README explicitly leaves
+  cross-machine/physical Switch acceptance open. That author's reported
+  result is not an independently reproduced result here, nor PSP evidence.
+- VBA-M's network link code is another timing/state-machine reference, but a
+  TCP transport does not by itself align guest clocks or remove serial ISR
+  dependencies. No external protocol-specific synthetic data was imported.
+
 ### Technical references
+
+- GBATEK GBA serial I/O register reference:
+  <https://mgba-emu.github.io/gbatek/>
+- libretro gpSP serial engine and Pokémon protocol batching:
+  <https://github.com/libretro/gpsp/blob/master/serial.c>
+  <https://github.com/libretro/gpsp/blob/master/serial_proto.c>
+- Independent desktop network-link prototype and its stated limitations:
+  <https://github.com/senhaoran213/mgba-switch-netlink>
+  <https://github.com/mgba-emu/mgba/issues/2379>
 
 - Nintendo AGB Programming Manual, Communication Functions:
   <https://mutantstargoat.com/~nuclear/tmp/gba_prog_manual.pdf>
 - mGBA SIO lockstep and timing:
   <https://github.com/mgba-emu/mgba/blob/master/src/gba/sio/lockstep.c>
+  <https://github.com/mgba-emu/mgba/blob/master/src/gba/sio.c>
 - VBA-M GBA link synchronization:
   <https://github.com/visualboyadvance-m/visualboyadvance-m/blob/master/src/core/gba/gbaLink.cpp>
 - Pokémon FireRed cable state and timeouts:
   <https://github.com/pret/pokefirered/blob/master/src/link.c>
 - PSPDev PDP, PTP and GameMode API:
   <https://github.com/pspdev/pspsdk/blob/master/src/net/pspnet_adhoc.h>
+- Sony PSP WLAN power-saving setting and communication caveat:
+  <https://manuals.playstation.net/document/en/psp/current/settings/wlan.html>
+- MIPS Technologies MIPS32 Architecture for Programmers, Volume III,
+  revision 2.50, sections 8.22-8.23 (Cause.BD and EPC interpretation):
+  <https://cse.sc.edu/~jbakos/611/mips/MIPS32_Volume_III.pdf>
+- PSPSDK thread lifecycle/status API:
+  <https://github.com/pspdev/pspsdk/blob/master/src/user/pspthreadman.h>
 - RFC 1982 serial-number arithmetic:
   <https://www.rfc-editor.org/rfc/rfc1982.html>
 - RFC 6298 retransmission timing and Karn sampling:
