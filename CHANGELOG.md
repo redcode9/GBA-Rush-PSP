@@ -62,7 +62,12 @@
   in rotated bitmap paths.
 - Performance options keep common controls visible and move low-level dynarec,
   HBlank, stack and boot settings to an advanced screen.
-- Public documentation is consolidated into four maintained Markdown files.
+- Contributor documentation separates the link specification from the 1.4.0
+  release checklist; obsolete design drafts and local progress records are
+  retired. Inherited text documentation is grouped under `docs/legacy/`.
+- Repository ignores cover local workspaces, private ROMs, hardware logs and
+  build output while retaining the four TLC model configurations required by
+  the link verification gate.
 
 ### Fixed
 

@@ -106,11 +106,13 @@ backup of important saves when testing cheats.
 
 ## Link cable
 
-The current M8 builds are experimental and have not passed the real-PSP
-benchmark/trade acceptance gates. RC3.3 fixes reproduced guest serial-handler
-timing, lost-presence and benchmark termination defects, retaining RC3.2's
-no-ROM startup fix. A completed FireRed trade on two PSPs remains unverified;
-this is a test candidate, not a release compatibility claim.
+The link implementation for 1.4.0 is experimental. The last documented
+two-PSP FireRed trial, on September 16, 2026, failed before any recorded serial
+transfer and showed long recovery waits. No paired ten-minute benchmark or
+completed trade has passed acceptance. The
+[1.4.0 release roadmap](docs/ROADMAP-1.4.0.md) lists the remaining work and the
+hardware results required for release; the
+[link specification](docs/link-cable.md) defines protocol and timing requirements.
 
 Both PSP systems must use the same protocol-v3 EBOOT with WLAN enabled. A v2
 EBOOT is intentionally incompatible and fails during negotiation. Open
@@ -155,7 +157,7 @@ The GBA Wireless Adapter, three- or four-player sessions, UART, JoyBus,
 GameCube link, multiboot and internet relay are not supported. Games using the
 Wireless Adapter need a separate cable mode to work here.
 
-Original diagnostic ROM sources for the supported modes are in
+Diagnostic ROM sources for the supported modes are in
 `tests/link-rom/`. Build them with a configured devkitPro GBA toolchain by
 running `make` in that directory.
 
@@ -173,9 +175,12 @@ The benchmark does not need a ROM and never creates or changes a ROM or save.
 Installing a link candidate replaces only the emulator EBOOT and exception
 module; keep existing ROMs and saves backed up and untouched. The full paired
 benchmark, repeated-trade, save/reload and disconnect procedure is maintained
-in [CONTRIBUTING.md](CONTRIBUTING.md#verification-gates).
+in the [release acceptance checklist](docs/ROADMAP-1.4.0.md#4-pass-release-acceptance-on-physical-hardware).
 
 ## Build and test
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the source layout, verification
+commands and hardware-test procedure.
 
 A current [PSPDev](https://pspdev.github.io/) toolchain must provide
 `psp-config` in `PATH`.
