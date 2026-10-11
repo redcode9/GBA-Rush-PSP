@@ -19,8 +19,11 @@ release_name="GBA-Rush-PSP-$version"
 archive="dist/$release_name.zip"
 checksum="$archive.sha256"
 
+documentation_files='LICENSE NOTICE README.md CHANGELOG.md CONTRIBUTING.md
+docs/link-cable.md docs/ROADMAP-1.4.0.md source/copyright source/res/PIC1.png'
+
 for required in "$archive" "$checksum" source/EBOOT.PBP \
-  source/exception.prx README.md CHANGELOG.md LICENSE
+  source/exception.prx $documentation_files
 do
   if [ ! -f "$required" ]; then
     echo "Missing package input: $required" >&2
@@ -35,11 +38,12 @@ expected_manifest="$temporary_root/expected.txt"
 actual_manifest="$temporary_root/actual.txt"
 
 {
-  echo "$release_name/CHANGELOG.md"
   echo "$release_name/GBARushPSP/EBOOT.PBP"
   echo "$release_name/GBARushPSP/exception.prx"
-  echo "$release_name/LICENSE"
-  echo "$release_name/README.md"
+  for document in $documentation_files
+  do
+    echo "$release_name/$document"
+  done
 } | LC_ALL=C sort > "$expected_manifest"
 
 unzip -Z1 "$archive" | sed '/\/$/d' | LC_ALL=C sort > "$actual_manifest"
@@ -59,9 +63,10 @@ fi
 package_root="$temporary_root/extracted/$release_name"
 cmp source/EBOOT.PBP "$package_root/GBARushPSP/EBOOT.PBP"
 cmp source/exception.prx "$package_root/GBARushPSP/exception.prx"
-cmp README.md "$package_root/README.md"
-cmp CHANGELOG.md "$package_root/CHANGELOG.md"
-cmp LICENSE "$package_root/LICENSE"
+for document in $documentation_files
+do
+  cmp "$document" "$package_root/$document"
+done
 
 if command -v shasum >/dev/null 2>&1; then
   (cd dist && shasum -a 256 -c "$release_name.zip.sha256")

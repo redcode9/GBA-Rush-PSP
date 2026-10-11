@@ -20,12 +20,12 @@ Use a clean build after changing compiler or diagnostic flags. Release packages
 are created and checked with:
 
 ```sh
-make package VERSION=1.4.0
-make artifact-smoke VERSION=1.4.0
+make package VERSION=1.4.0-rc.4
+make artifact-smoke VERSION=1.4.0-rc.4
 ```
 
 The optional desktop launcher has its own
-[build instructions](source/single-game_launcher/tool/README.md).
+[build instructions](https://github.com/redcode9/GBA-Rush-PSP/blob/master/source/single-game_launcher/tool/README.md).
 
 ## Source tree
 

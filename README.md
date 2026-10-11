@@ -151,12 +151,13 @@ docker run --rm -v "$PWD:/workspace" -w /workspace/source pspdev/pspdev:latest m
 After a successful candidate build:
 
 ```sh
-make package VERSION=1.4.0
+make package VERSION=1.4.0-rc.4
 ```
 
 The package command creates a reproducible ZIP and SHA-256 checksum under
-`dist/`, then verifies the archive manifest. It never includes BIOS files,
-ROMs, saves, settings or cheat databases.
+`dist/`, then verifies the archive manifest. The archive includes the license
+notices, installation guide and current link test checklist. It never includes
+BIOS files, ROMs, saves, settings or cheat databases.
 
 ### Performance comparison
 
@@ -185,7 +186,7 @@ python3 -m pip install -r source/single-game_launcher/tool/requirements.txt
 python3 source/single-game_launcher/tool/gui.py
 ```
 
-See the [launcher README](source/single-game_launcher/tool/README.md) for asset
+See the [launcher README](https://github.com/redcode9/GBA-Rush-PSP/blob/master/source/single-game_launcher/tool/README.md) for asset
 sizes and required external tools.
 
 ## Credits and license

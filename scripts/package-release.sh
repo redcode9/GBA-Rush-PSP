@@ -15,8 +15,10 @@ case "$version" in
     ;;
 esac
 
-for required in source/EBOOT.PBP source/exception.prx LICENSE \
- README.md CHANGELOG.md
+documentation_files='LICENSE NOTICE README.md CHANGELOG.md CONTRIBUTING.md
+docs/link-cable.md docs/ROADMAP-1.4.0.md source/copyright source/res/PIC1.png'
+
+for required in source/EBOOT.PBP source/exception.prx $documentation_files
 do
   if [ ! -f "$required" ]; then
     echo "Missing required file: $required" >&2
@@ -57,9 +59,11 @@ mkdir -p "$install_root"
 
 cp source/EBOOT.PBP "$install_root/EBOOT.PBP"
 cp source/exception.prx "$install_root/exception.prx"
-cp README.md "$release_root/README.md"
-cp CHANGELOG.md "$release_root/CHANGELOG.md"
-cp LICENSE "$release_root/LICENSE"
+for document in $documentation_files
+do
+  mkdir -p "$release_root/$(dirname "$document")"
+  cp "$document" "$release_root/$document"
+done
 
 find "$release_root" -exec env TZ=UTC touch -t "$archive_timestamp" {} +
 (cd dist && TZ=UTC zip -q -X -D -r "$release_name.zip" "$release_name")
