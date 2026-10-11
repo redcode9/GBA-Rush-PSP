@@ -1,38 +1,13 @@
 # Contributing
 
-Changes should preserve compatibility and performance on real PSP hardware.
-Prefer fixes that apply to the GBA or PSP platform generally. Keep any
-game-specific workaround explicit and narrowly scoped, and preserve inherited
-copyright, license and attribution notices.
+Builds and tests should keep the emulator usable on real PSP hardware. Include
+reproduction steps for bug fixes and preserve the original copyright and license
+notices when changing inherited code.
 
-## Project layout
+## Build
 
-| Directory | Contents |
-|---|---|
-| `source/src/` | Emulator core, renderers, PSP integration and portable link modules |
-| `source/prx/` | Kernel bridge and exception-handler sources |
-| `source/SDK/` | Required vendored PSP headers and static libraries |
-| `source/res/` | Application artwork and editable SVG sources |
-| `source/single-game_launcher/` | PSP launcher stub and desktop builder |
-| `tests/` | Portable regression tests and original diagnostic ROM sources |
-| `models/link/` | TLA+ models, TLC configurations and journal transition definitions |
-| `proofs/cbmc/` | Bounded C proof harnesses |
-| `scripts/` | Source checks, performance comparison and release packaging |
-| `tools/` | Runtime-log analysis and transition generation |
-| `docs/` | Link specification, release roadmap and inherited text references |
-
-The maintained documentation is the root README, changelog, this guide,
-[link specification](docs/link-cable.md),
-[1.4.0 roadmap](docs/ROADMAP-1.4.0.md) and
-[launcher README](source/single-game_launcher/tool/README.md).
-Update these documents when behavior or acceptance changes. Git history holds
-the detailed change record; avoid duplicate plans and progress diaries.
-`docs/legacy/` preserves the original Japanese usage notes and acknowledgements.
-
-## Build and verification
-
-Host checks require a C compiler and Python 3. PSP builds require a configured
-PSPDev toolchain with `psp-config` in `PATH`. Start with:
+Install a PSPDev toolchain and put `psp-config` in `PATH`. Host tests require a C
+compiler and Python 3.
 
 ```sh
 make -j4 check HOST_CC='cc -O1'
@@ -40,71 +15,36 @@ make -j4 test-sanitize HOST_CC='cc -O1'
 make -j4 psp-build
 ```
 
-`make check` runs portable module regressions, schedule exploration, Python
-analysis-tool tests and source-tree guards. `make test-sanitize` applies
-AddressSanitizer and UndefinedBehaviorSanitizer to the host harnesses. Host
-tests do not execute PSP firmware, GE, MIPS assembly or physical Wi-Fi.
-
-Link protocol, recovery, queue and timing changes also require:
+Use a clean build after changing compiler or diagnostic flags. Release packages
+are created and checked with:
 
 ```sh
-make check-cbmc
-make check-link-model TLA2TOOLS_JAR=/path/to/tla2tools.jar TLC_WORKERS=2
-python3 tools/generate_link_transitions.py --check
+make package VERSION=1.4.0
+make artifact-smoke VERSION=1.4.0
 ```
 
-The bounded-proof gate requires CBMC. The model gate requires Java and a local
-TLA+ tools JAR; its four `.cfg` files are versioned verification inputs.
-Generated journal files come from `models/link/link_journal_transitions.def`.
-Change that definition and regenerate both C and TLA+ outputs together.
+The optional desktop launcher has its own
+[build instructions](source/single-game_launcher/tool/README.md).
 
-Hot-path changes need a focused regression that exercises production code when
-practical, plus hardware comparison when performance may change. Thread,
-audio, storage, network and timing changes need menu, suspend, resume and exit
-checks on PSP. Keep emulator timing, executable-memory invalidation and raster
-effects correct while measuring improvements.
+## Source tree
 
-Build fresh candidates when compiler or diagnostic flags change; old object
-files do not establish the identity of the new build. Keep source revision,
-toolchain, flags and EBOOT hashes with the measured results.
+The emulator and PSP integration are in `source/src/`; `source/prx/` contains
+helper modules. Keep the vendored SDK libraries in `source/SDK/` and the artwork
+in `source/res/`. Portable tests live in `tests/`, checks and packaging scripts
+in `scripts/`. Original usage notes are retained in `docs/legacy/`.
 
-## Link development
+The `feature/link-cable` branch also contains link models in `models/link/`, C
+proof harnesses in `proofs/cbmc/` and log-analysis utilities in `tools/`.
 
-The [link specification](docs/link-cable.md) defines layer ownership, protocol
-semantics, recovery invariants and guest timing requirements. The
-[release roadmap](docs/ROADMAP-1.4.0.md) lists the remaining work in dependency
-order and gives the physical acceptance thresholds.
+## Testing changes
 
-Preserve the first failed paired logs and reproduce a defect before selecting
-a repair. Do not infer a completed transfer from a socket connection, replayed
-packet, missing record or successful process exit. No test may invent a remote
-result, repeat a serial IRQ, accept an old generation or wait indefinitely.
+Add a focused regression for a reproduced bug where practical. `make check`
+runs host tests and source checks; sanitizer tests cover host memory errors.
+PSP rendering, MIPS assembly, radio behavior and power callbacks need testing
+on the console as well.
 
-Build diagnostic ROMs from `tests/link-rom/` with a configured devkitPro GBA
-toolchain. These original sources can be versioned; compiled ROMs stay local.
-
-## Runtime diagnostics
-
-Gameplay diagnostics use separate fixed binary RAM rings for the main and
-network threads. Recording must not allocate, format text, take a kernel lock
-or touch storage. Aggregate repetitive events and persist versioned,
-checksummed snapshots only at safe lifecycle boundaries. Retain at most four
-sessions; logging failure must never interrupt emulation.
-
-Decode logs and compare a paired benchmark with:
-
-```sh
-python3 tools/decode_runtime_log.py /path/to/PSP/GAME/GBARushPSP/logs
-python3 tools/analyze_link_benchmark.py host.gbrlog joiner.gbrlog --json
-```
-
-Interpret fields against the production emitters and their schema. Error
-domain, internal code, PSP API phase and original PSP return value are separate
-facts. A full ring or dropped records means incomplete evidence.
-
-## Hardware performance comparison
-
-Collect at least three reports per build for the same repeatable workload:
+For performance changes, compare at least three runs per build with the same
+ROM, initial save or state, renderer, clocks and settings:
 
 ```sh
 python3 scripts/compare-benchmarks.py \
@@ -112,26 +52,27 @@ python3 scripts/compare-benchmarks.py \
   --candidate new-1.txt new-2.txt new-3.txt
 ```
 
-Record PSP model/firmware, clock, storage, ROM and initial-state hashes,
-renderer, scale, VSync, frameskip, audio, fast-forward and actual ROM-cache
-capacity. Separate resident and paged workloads. Compare like-for-like runs
-and measure normal variation and instrumentation overhead before attributing
-a benefit. A comparator pass establishes only its stated non-regression gate.
+Record the PSP model, firmware, storage, ROM hash and actual ROM-cache capacity.
+Test menu transitions, suspend, resume and exit when changing threads, audio,
+networking or file access.
 
-## Release packaging
+## Link development
 
-After the roadmap gates pass and the final source build is verified:
+See the [link implementation notes](docs/link-cable.md) and the
+[remaining work for 1.4.0](docs/ROADMAP-1.4.0.md). On `feature/link-cable`, run
+these additional checks for protocol, queue or recovery changes:
 
 ```sh
-make package VERSION=1.4.0
-make artifact-smoke VERSION=1.4.0
+make check-cbmc
+make check-link-model TLA2TOOLS_JAR=/path/to/tla2tools.jar TLC_WORKERS=2
+python3 tools/generate_link_transitions.py --check
 ```
 
-Packaging writes a ZIP and SHA-256 checksum under `dist/` and checks its
-manifest. Generated builds and proof output belong in `build/`. Local hardware
-evidence belongs in `artifacts/`; all three directories are ignored by Git.
+CBMC checks require CBMC; model checks require Java and the TLA+ tools JAR.
+The four model `.cfg` files are source inputs. Journal transitions are generated
+from `models/link/link_journal_transitions.def`.
 
-Do not commit BIOS files, game ROMs, saves, savestates, cheat databases, local
-configuration or generated executables. Synthetic sources and test vectors
-must be original and redistributable. Vendored SDK libraries, artwork and
-component license files remain required repository inputs.
+Keep paired PSP logs with the build hashes and reproduction steps. Store local
+results in `artifacts/`, build output in `build/` and packages in `dist/`.
+These directories are ignored. BIOS files, game ROMs, saves and local settings
+stay out of Git; diagnostic ROM sources must be redistributable.

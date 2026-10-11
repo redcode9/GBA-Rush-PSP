@@ -33,19 +33,8 @@ dir.ini
 !/models/link/LinkStreamSafety.cfg
 !/models/link/LinkStreamLiveness.cfg
 
-# Local contributor settings and analysis workspaces
+# Local contributor files
 /.gitmessage
-/.agents/
-/.codex/
-/.claude/
-/.cursor/
-/.pi/
-/.wayfinder/
-/graphify-out/
-/skills-lock.json
-/AGENTS.md
-/CLAUDE.md
-/GEMINI.md
 /*.plist
 
 # Python environments, caches and desktop-tool output
