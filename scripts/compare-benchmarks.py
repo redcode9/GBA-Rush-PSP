@@ -19,6 +19,13 @@ MATCH_FIELDS = (
 )
 
 OPTIONAL_MATCH_FIELDS = (
+    "gamepak-file-size",
+    "gamepak-ram-buffer-size",
+    "gamepak-ram-pages",
+    "psp-fw-version",
+    "vsync",
+    "audio-sample-rate",
+    "audio-samples",
     "fast-forward-game-override",
     "fast-forward-profile",
     "fast-forward-activation",

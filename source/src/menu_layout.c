@@ -44,7 +44,21 @@ size_t menu_layout_max_columns(uint32_t screen_width, uint32_t start_x,
   return (screen_width - start_x) / glyph_width;
 }
 
-size_t menu_text_clip_length(const char *text, size_t max_columns)
+static size_t text_character_bytes(const char *text,
+ MenuTextEncoding encoding)
+{
+  unsigned char lead = (unsigned char)text[0];
+  unsigned char trail = (unsigned char)text[1];
+  int double_byte = encoding == MENU_TEXT_SHIFT_JIS ?
+   ((lead >= 0x81 && lead <= 0x9F) || (lead >= 0xE0 && lead <= 0xEF)) :
+   (lead >= 0x81 && lead <= 0xFE);
+
+  return double_byte && trail >= 0x40 && trail != 0x7F &&
+   trail <= (encoding == MENU_TEXT_SHIFT_JIS ? 0xFC : 0xFE) ? 2 : 1;
+}
+
+size_t menu_text_clip_length_for_encoding(const char *text,
+ size_t max_columns, MenuTextEncoding encoding)
 {
   size_t bytes = 0;
   size_t columns = 0;
@@ -54,9 +68,7 @@ size_t menu_text_clip_length(const char *text, size_t max_columns)
 
   while(text[bytes] != '\0')
   {
-    const unsigned char current = (unsigned char)text[bytes];
-    const size_t char_bytes = current >= 0x80 && text[bytes + 1] != '\0' ?
-     2 : 1;
+    const size_t char_bytes = text_character_bytes(text + bytes, encoding);
     const size_t char_columns = char_bytes;
 
     if(char_columns > max_columns - columns)
@@ -64,6 +76,32 @@ size_t menu_text_clip_length(const char *text, size_t max_columns)
 
     bytes += char_bytes;
     columns += char_columns;
+  }
+
+  return bytes;
+}
+
+size_t menu_text_clip_length(const char *text, size_t max_columns)
+{
+  return menu_text_clip_length_for_encoding(text, max_columns, MENU_TEXT_GBK);
+}
+
+size_t menu_text_scroll_start(const char *text, size_t column_offset,
+ MenuTextEncoding encoding)
+{
+  size_t bytes = 0;
+
+  if(text == NULL)
+    return 0;
+
+  while(text[bytes] != '\0' && column_offset != 0)
+  {
+    const size_t char_bytes = text_character_bytes(text + bytes, encoding);
+
+    if(char_bytes > column_offset)
+      break;
+    bytes += char_bytes;
+    column_offset -= char_bytes;
   }
 
   return bytes;

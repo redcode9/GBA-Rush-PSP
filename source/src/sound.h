@@ -71,6 +71,7 @@ int sound_power_resume(void);
 void sound_power_resume_finish(u32 cpu_ticks, int audio_result);
 void sound_link_wait_begin(void);
 void sound_link_wait_end(u32 cpu_ticks);
+u32 sound_audio_underrun_count(void);
 
 void sound_write_mem_savestate(SceUID savestate_file);
 void sound_read_savestate(SceUID savestate_file);

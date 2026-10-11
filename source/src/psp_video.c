@@ -30,6 +30,7 @@ static u32 present_blocked;
 static u32 synchronous_present;
 static u32 last_ge_wait_us;
 static u32 adaptive_last_frame_time;
+static int adaptive_has_last_frame_time;
 static VideoAdaptiveState adaptive_video;
 
 static void *sharp_draw_frame = (void *)SHARP_TEXTURE_OFFSET;
@@ -160,6 +161,36 @@ void draw_popup_frame_auto(int x, int y, int w, int h)
     draw_popup_frame(x, y, w, h, popup_bg);
 }
 
+static void video_ge_sync_direct(void)
+{
+  int measuring = perf_monitor_active();
+  u32 sync_start;
+
+  if(measuring)
+    sync_start = sceKernelGetSystemTimeLow();
+
+  sceGuSync(0, GU_SYNC_FINISH);
+
+  if(measuring)
+    perf_monitor_record_ge_sync_direct(
+     sceKernelGetSystemTimeLow() - sync_start);
+}
+
+static void video_dcache_writeback(void)
+{
+  int measuring = perf_monitor_active();
+  u32 writeback_start;
+
+  if(measuring)
+    writeback_start = sceKernelGetSystemTimeLow();
+
+  sceKernelDcacheWritebackAll();
+
+  if(measuring)
+    perf_monitor_record_dcache_writeback(
+     sceKernelGetSystemTimeLow() - writeback_start);
+}
+
 void init_video(int devkit_version)
 {
   disp_frame = (void *)0;
@@ -168,6 +199,7 @@ void init_video(int devkit_version)
   present_blocked = 0;
   synchronous_present = 0;
   last_ge_wait_us = 0;
+  adaptive_has_last_frame_time = 0;
   adaptive_last_frame_time = 0;
   video_adaptive_init(&adaptive_video, 0);
 
@@ -243,6 +275,7 @@ void video_power_resume(void)
 {
   video_sync_present();
   last_ge_wait_us = 0;
+  adaptive_has_last_frame_time = 0;
   adaptive_last_frame_time = 0;
   video_adaptive_reset(&adaptive_video);
   set_gba_resolution();
@@ -262,8 +295,9 @@ void video_adaptive_frame_complete(int frame_skipped, int audio_event)
   u32 now;
 
   now = sceKernelGetSystemTimeLow();
-  if(adaptive_last_frame_time == 0)
+  if(!adaptive_has_last_frame_time)
   {
+    adaptive_has_last_frame_time = 1;
     adaptive_last_frame_time = now;
     return;
   }
@@ -284,6 +318,7 @@ void video_adaptive_frame_complete(int frame_skipped, int audio_event)
 
 void video_reset_frame_timing(void)
 {
+  adaptive_has_last_frame_time = 0;
   adaptive_last_frame_time = 0;
 }
 
@@ -291,7 +326,20 @@ void flip_screen(u32 vsync)
 {
   video_sync_present();
 
-  if (vsync != 0) sceDisplayWaitVblankStart();
+  if (vsync != 0)
+  {
+    int measuring = perf_monitor_active();
+    u32 vblank_start;
+
+    if(measuring)
+      vblank_start = sceKernelGetSystemTimeLow();
+
+    sceDisplayWaitVblankStart();
+
+    if(measuring)
+      perf_monitor_record_wait(PERF_METRICS_WAIT_PRESENT,
+       sceKernelGetSystemTimeLow() - vblank_start);
+  }
 
   disp_frame = draw_frame;
   draw_frame = sceGuSwapBuffers();
@@ -403,7 +451,7 @@ static void restore_gu_state(void)
   sceGuDisable(GU_BLEND);
   sceGuTexFlush();
   sceGuFinish();
-  sceGuSync(0, GU_SYNC_FINISH);
+  video_ge_sync_direct();
 }
 
 static void bitbilt_gu(void)
@@ -413,7 +461,7 @@ static void bitbilt_gu(void)
 
   video_sync_present();
   last_ge_wait_us = 0;
-  sceKernelDcacheWritebackAll();
+  video_dcache_writeback();
 
   sceGuStart(GU_DIRECT, display_list);
 
@@ -421,6 +469,9 @@ static void bitbilt_gu(void)
 
   sceGuFinish();
   present_pending = 1;
+
+  if(selected_texture_filter() == GU_NEAREST)
+    perf_monitor_record_quality_presented(0);
 
   if(synchronous_present)
   {
@@ -477,7 +528,7 @@ static void bitbilt_sharp(void)
 
   video_sync_present();
   last_ge_wait_us = 0;
-  sceKernelDcacheWritebackAll();
+  video_dcache_writeback();
 
   sceGuStart(GU_DIRECT, display_list);
 
@@ -518,10 +569,11 @@ static void bitbilt_sharp(void)
   if(first_pass_ok && second_pass_ok)
   {
     present_pending = 1;
+    perf_monitor_record_quality_presented(1);
   }
   else
   {
-    sceGuSync(0, GU_SYNC_FINISH);
+    video_ge_sync_direct();
     adaptive_video.quality = VIDEO_ADAPTIVE_QUALITY_CRISP;
     apply_adaptive_quality();
   }
@@ -542,14 +594,14 @@ static void bitbilt_sw(void)
   u16 *d, *d0;
 
   video_sync_present();
-  sceKernelDcacheWritebackAll();
+  video_dcache_writeback();
 
   sceGuStart(GU_DIRECT, display_list);
 
   sceGuClear(GU_COLOR_BUFFER_BIT | GU_FAST_CLEAR_BIT);
 
   sceGuFinish();
-  sceGuSync(0, GU_SYNC_FINISH);
+  video_ge_sync_direct();
 
   vptr0 = (u16 *)psp_vram_addr(draw_frame, 60, 16);
   d0 = screen_texture;
@@ -593,6 +645,7 @@ void video_resolution_small(void)
   u32 gameplay_filter = option_screen_filter;
 
   video_sync_present();
+  adaptive_has_last_frame_time = 0;
   adaptive_last_frame_time = 0;
   video_adaptive_set_enabled(&adaptive_video,
    option_screen_scale == SCALED_16X9_AUTO,
@@ -611,7 +664,7 @@ void video_resolution_small(void)
   sceGuTexFilter(gameplay_filter, gameplay_filter);
 
   sceGuFinish();
-  sceGuSync(0, GU_SYNC_FINISH);
+  video_ge_sync_direct();
 }
 
 static void set_gba_resolution(void)
@@ -672,7 +725,7 @@ static void apply_adaptive_quality(void)
     sceGuStart(GU_DIRECT, display_list);
     sceGuTexFilter(GU_NEAREST, GU_NEAREST);
     sceGuFinish();
-    sceGuSync(0, GU_SYNC_FINISH);
+    video_ge_sync_direct();
     update_screen = bitbilt_gu;
   }
 }
@@ -726,8 +779,8 @@ u16 *copy_screen(void)
   // This prevents crashes when menu is called during active gameplay
   sceDisplayWaitVblankStart();
   video_sync_present();
-  sceGuSync(0, GU_SYNC_FINISH);
-  sceKernelDcacheWritebackAll();
+  video_ge_sync_direct();
+  video_dcache_writeback();
 
   copy = (u16 *)safe_malloc(GBA_SCREEN_SIZE);
 
@@ -808,7 +861,7 @@ void draw_box_line(u16 x1, u16 y1, u16 x2, u16 y2, u16 color)
   sceGuEnable(GU_TEXTURE_2D);
 
   sceGuFinish();
-  sceGuSync(0, GU_SYNC_FINISH);
+  video_ge_sync_direct();
 }
 
 void draw_box_fill(u16 x1, u16 y1, u16 x2, u16 y2, u16 color)
@@ -848,7 +901,7 @@ void draw_box_fill(u16 x1, u16 y1, u16 x2, u16 y2, u16 color)
   sceGuEnable(GU_TEXTURE_2D);
 
   sceGuFinish();
-  sceGuSync(0, GU_SYNC_FINISH);
+  video_ge_sync_direct();
 }
 
 void draw_box_alpha(u16 x1, u16 y1, u16 x2, u16 y2, u32 color)
@@ -890,7 +943,7 @@ void draw_box_alpha(u16 x1, u16 y1, u16 x2, u16 y2, u32 color)
   sceGuEnable(GU_TEXTURE_2D);
 
   sceGuFinish();
-  sceGuSync(0, GU_SYNC_FINISH);
+  video_ge_sync_direct();
 }
 
 void draw_hline(u16 sx, u16 ex, u16 y, u16 color)
@@ -922,7 +975,7 @@ void draw_hline(u16 sx, u16 ex, u16 y, u16 color)
   sceGuEnable(GU_TEXTURE_2D);
 
   sceGuFinish();
-  sceGuSync(0, GU_SYNC_FINISH);
+  video_ge_sync_direct();
 }
 
 void draw_vline(u16 x, u16 sy, u16 ey, u16 color)
@@ -954,7 +1007,7 @@ void draw_vline(u16 x, u16 sy, u16 ey, u16 color)
   sceGuEnable(GU_TEXTURE_2D);
 
   sceGuFinish();
-  sceGuSync(0, GU_SYNC_FINISH);
+  video_ge_sync_direct();
 }
 
 void print_string(const char *str, s16 x, u16 y, u16 fg_color, s16 bg_color)
@@ -1093,7 +1146,7 @@ static void draw_volume(int volume)
   Vertex *vertices, *vertices_tmp;
 
   video_sync_present();
-  sceKernelDcacheWritebackAll();
+  video_dcache_writeback();
 
   sceGuStart(GU_DIRECT, display_list);
 
@@ -1202,7 +1255,7 @@ static void draw_volume(int volume)
   sceGuTexMode(GU_PSM_5551, 0, 0, GU_FALSE);
 
   sceGuFinish();
-  sceGuSync(0, GU_SYNC_FINISH);
+  video_ge_sync_direct();
 }
 
 int draw_volume_status(int draw)

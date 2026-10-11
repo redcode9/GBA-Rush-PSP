@@ -901,6 +901,12 @@
   // MSG_LINK_MENU_DISCONNECT
   "切断",
 
+  // MSG_LINK_MENU_BENCHMARK_RUN
+  "通信ベンチマーク開始",
+
+  // MSG_LINK_MENU_BENCHMARK_STOP
+  "通信ベンチマーク停止",
+
   // MSG_LINK_MENU_HELP_STATUS
   "現在の通信状態",
 
@@ -912,6 +918,27 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "現在の通信を終了します",
+
+  // MSG_LINK_MENU_HELP_BENCHMARK
+  "2台のPSP通信を10分間テストします",
+
+  // MSG_LINK_BENCHMARK_IDLE
+  "ベンチマーク: 準備完了",
+
+  // MSG_LINK_BENCHMARK_WAITING
+  "ベンチマーク: 同期中",
+
+  // MSG_LINK_BENCHMARK_RUNNING
+  "ベンチマーク: 実行中",
+
+  // MSG_LINK_BENCHMARK_PASS
+  "ベンチマーク: 合格",
+
+  // MSG_LINK_BENCHMARK_FAIL
+  "ベンチマーク: 失敗",
+
+  // MSG_LINK_BENCHMARK_ABORT
+  "ベンチマーク: 中止",
 
   // MSG_LINK_STATUS_NO_GAME
   "ゲームが読み込まれていません",

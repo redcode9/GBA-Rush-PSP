@@ -12,7 +12,8 @@ SPEC.loader.exec_module(MODULE)
 
 def report(frame_p95=17000, frames=600, duration=10_000_000,
            underruns=0, skipped=0, clock=333, fast_forward_time=None,
-           fast_forward_frames=0):
+           fast_forward_frames=0, psp_fw_version="600", vsync="0",
+           audio_sample_rate="48000", audio_samples="800"):
     result = {
         "state": "stopped",
         "psp-model": "1",
@@ -32,6 +33,14 @@ def report(frame_p95=17000, frames=600, duration=10_000_000,
         "frame-time-p95-us": str(frame_p95),
         "ge-wait-p95-us": "500",
     }
+    if psp_fw_version is not None:
+        result["psp-fw-version"] = psp_fw_version
+    if vsync is not None:
+        result["vsync"] = vsync
+    if audio_sample_rate is not None:
+        result["audio-sample-rate"] = audio_sample_rate
+    if audio_samples is not None:
+        result["audio-samples"] = audio_samples
     if fast_forward_time is not None:
         result["fast-forward-time-us"] = str(fast_forward_time)
         result["fast-forward-frames"] = str(fast_forward_frames)
@@ -86,6 +95,47 @@ class BenchmarkComparisonTests(unittest.TestCase):
             ["fast-forward speed regression exceeds 2%"],
         )
         self.assertLess(result["fast_forward_change"], -2.0)
+
+    def test_new_identity_fields_must_match(self):
+        baseline = [report(), report(), report()]
+        candidate = [report(vsync="1") for _ in range(3)]
+
+        with self.assertRaisesRegex(ValueError, "vsync"):
+            MODULE.compare(baseline, candidate)
+
+    def test_reports_without_new_identity_fields_compare(self):
+        def legacy():
+            return report(psp_fw_version=None, vsync=None,
+                          audio_sample_rate=None, audio_samples=None)
+
+        baseline = [legacy() for _ in range(3)]
+        candidate = [legacy() for _ in range(3)]
+
+        result = MODULE.compare(baseline, candidate)
+
+        self.assertTrue(result["passed"])
+
+    def test_paging_identity_must_match_when_reported(self):
+        baseline = [report() for _ in range(3)]
+        candidate = [report() for _ in range(3)]
+        for run in baseline + candidate:
+            run.update({"gamepak-file-size": "33554432",
+                        "gamepak-ram-buffer-size": "16777216",
+                        "gamepak-ram-pages": "512"})
+        for field, changed in (("gamepak-file-size", "16777216"),
+                               ("gamepak-ram-buffer-size", "33554432"),
+                               ("gamepak-ram-pages", "1024")):
+            original = candidate[0][field]
+            candidate[0][field] = changed
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, field):
+                MODULE.compare(baseline, candidate)
+            candidate[0][field] = original
+
+        del candidate[0]["gamepak-ram-buffer-size"]
+        with self.assertRaisesRegex(ValueError, "gamepak-ram-buffer-size"):
+            MODULE.compare(baseline, candidate)
+        candidate[0]["gamepak-ram-buffer-size"] = "16777216"
+        self.assertTrue(MODULE.compare(baseline, candidate)["passed"])
 
     def test_parser_rejects_unstopped_report(self):
         with tempfile.TemporaryDirectory() as directory:

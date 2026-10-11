@@ -25,7 +25,7 @@
 #include "link_session.h"
 #include "perf_metrics.h"
 
-#define GBA_RUSH_VERSION "1.4.0-dev"
+#define GBA_RUSH_VERSION "1.4.0-rc.4"
 
 // video scale type
 #define SCALED_NONE    0
@@ -130,7 +130,12 @@ void main_link_disconnect(LinkSessionReason reason);
 void main_link_pump(void);
 int main_link_active(void);
 int main_link_connected(void);
-int main_link_pending(void);
+int main_link_benchmark_available(void);
+int main_link_benchmark_active(void);
+int main_link_benchmark_start(void);
+void main_link_benchmark_stop(void);
+void main_link_benchmark_summary(LinkBenchmarkSummary *summary);
+void main_link_set_gameplay_active(int active);
 void main_power_service(void);
 
 void main_fast_forward_input(u32 pressed, u32 held);

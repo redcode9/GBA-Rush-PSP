@@ -901,6 +901,12 @@
   // MSG_LINK_MENU_DISCONNECT
   "Disconnetti",
 
+  // MSG_LINK_MENU_BENCHMARK_RUN
+  "Avvia benchmark link",
+
+  // MSG_LINK_MENU_BENCHMARK_STOP
+  "Interrompi benchmark link",
+
   // MSG_LINK_MENU_HELP_STATUS
   "Stato attuale del cavo link",
 
@@ -912,6 +918,27 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "Chiudi la sessione link attuale",
+
+  // MSG_LINK_MENU_HELP_BENCHMARK
+  "Verifica per dieci minuti lo stream reale tra le due PSP",
+
+  // MSG_LINK_BENCHMARK_IDLE
+  "Benchmark: pronto",
+
+  // MSG_LINK_BENCHMARK_WAITING
+  "Benchmark: sincronizzazione",
+
+  // MSG_LINK_BENCHMARK_RUNNING
+  "Benchmark: in corso",
+
+  // MSG_LINK_BENCHMARK_PASS
+  "Benchmark: SUPERATO",
+
+  // MSG_LINK_BENCHMARK_FAIL
+  "Benchmark: FALLITO",
+
+  // MSG_LINK_BENCHMARK_ABORT
+  "Benchmark: INTERROTTO",
 
   // MSG_LINK_STATUS_NO_GAME
   "Nessun gioco caricato",

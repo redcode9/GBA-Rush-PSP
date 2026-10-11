@@ -196,6 +196,94 @@ static void test_saturating_counters(void)
   assert(result.frame_time_samples == UINT64_MAX);
 }
 
+static void test_wait_and_frame_probes(void)
+{
+  PerfMetrics metrics;
+  PerfMetricsSnapshot result;
+
+  perf_metrics_init(&metrics);
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_PRESENT, 50);
+  perf_metrics_record_renderer_frame(&metrics, 50);
+  perf_metrics_record_gba_update_entry(&metrics);
+  perf_metrics_record_dma(&metrics, 0, 10, 100, 1);
+  perf_metrics_record_dma(&metrics, 1, 10, 100, 1);
+  perf_metrics_record_gamepak_evict_scan(&metrics, 100);
+  perf_metrics_record_gamepak_rom_io(&metrics, 100, 200, 32 * 1024, 1);
+  result = snapshot(&metrics);
+  assert(result.vblank_present_count == 0);
+  assert(result.renderer_total_us == 0);
+  assert(result.gba_update_entries == 0);
+  assert(result.dma16_transfers == 0);
+  assert(result.dma32_transfers == 0);
+  assert(result.gamepak_miss_count == 0);
+
+  assert(perf_metrics_start(&metrics));
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_BACKPRESSURE, 1000);
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_BACKPRESSURE, 500);
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_PRESENT, 2000);
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_AUDIO, 3000);
+  perf_metrics_record_renderer_frame(&metrics, 1200);
+  perf_metrics_record_renderer_frame(&metrics, 800);
+  perf_metrics_record_dcache_writeback(&metrics, 150);
+  perf_metrics_record_dcache_writeback(&metrics, 250);
+  perf_metrics_record_ge_sync_direct(&metrics, 350);
+  perf_metrics_record_quality_presented(&metrics, 1);
+  perf_metrics_record_quality_presented(&metrics, 0);
+  perf_metrics_record_gba_update_entry(&metrics);
+  perf_metrics_record_gba_update_entry(&metrics);
+  perf_metrics_record_gba_update_iteration(&metrics);
+  perf_metrics_record_dma(&metrics, 0, 10, 100, 1);
+  perf_metrics_record_dma(&metrics, 0, 4, 50, 0);
+  perf_metrics_record_dma(&metrics, 1, 8, 200, 1);
+  perf_metrics_record_gamepak_evict_scan(&metrics, 120);
+  perf_metrics_record_gamepak_evict_scan(&metrics, 80);
+  perf_metrics_record_gamepak_rom_io(&metrics, 50, 200, 32 * 1024, 0);
+  perf_metrics_record_gamepak_rom_io(&metrics, 25, 100, 32 * 1024, 1);
+
+  result = snapshot(&metrics);
+  assert(result.vblank_backpressure_count == 2);
+  assert(result.vblank_backpressure_total_us == 1500);
+  assert(result.vblank_present_count == 1);
+  assert(result.vblank_present_total_us == 2000);
+  assert(result.vblank_audio_count == 1);
+  assert(result.vblank_audio_total_us == 3000);
+  assert(result.renderer_total_us == 2000);
+  assert(result.renderer_max_us == 1200);
+  assert(result.dcache_writeback_count == 2);
+  assert(result.dcache_writeback_total_us == 400);
+  assert(result.ge_sync_direct_count == 1);
+  assert(result.ge_sync_direct_total_us == 350);
+  assert(result.sharp_presented_frames == 1);
+  assert(result.crisp_presented_frames == 1);
+  assert(result.gba_update_entries == 2);
+  assert(result.gba_update_iterations == 1);
+  assert(result.dma16_transfers == 2);
+  assert(result.dma16_elements == 14);
+  assert(result.dma16_bytes == 28);
+  assert(result.dma16_total_us == 150);
+  assert(result.dma32_transfers == 1);
+  assert(result.dma32_elements == 8);
+  assert(result.dma32_bytes == 32);
+  assert(result.dma32_total_us == 200);
+  assert(result.dma_gamepak_pairs == 2);
+  assert(result.gamepak_evict_scan_count == 2);
+  assert(result.gamepak_evict_scan_total_us == 200);
+  assert(result.gamepak_miss_count == 2);
+  assert(result.gamepak_miss_bytes == 2 * (32 * 1024));
+  assert(result.gamepak_read_errors == 1);
+  assert(result.gamepak_rom_seek_total_us == 75);
+  assert(result.gamepak_rom_read_total_us == 300);
+
+  perf_metrics_reset(&metrics);
+  result = snapshot(&metrics);
+  assert(result.vblank_backpressure_count == 0);
+  assert(result.renderer_total_us == 0);
+  assert(result.gba_update_entries == 0);
+  assert(result.dma16_transfers == 0);
+  assert(result.dma32_transfers == 0);
+  assert(result.gamepak_miss_count == 0);
+}
+
 int main(void)
 {
   test_session_states();
@@ -203,6 +291,7 @@ int main(void)
   test_percentiles_and_totals();
   test_empty_and_overflow_percentiles();
   test_saturating_counters();
+  test_wait_and_frame_probes();
   puts("Performance metrics tests passed");
   return 0;
 }

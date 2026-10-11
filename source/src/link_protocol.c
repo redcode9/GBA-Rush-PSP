@@ -20,21 +20,27 @@
 #define LINK_HELLO_SIZE          32u
 #define LINK_SESSION_READY_SIZE   8u
 #define LINK_SIO_STATE_SIZE       8u
-#define LINK_TRANSFER_SIZE       24u
+#define LINK_TRANSFER_SIZE       32u
 #define LINK_REASON_SIZE          4u
+#define LINK_CLOCK_SIZE          12u
+#define LINK_RESUME_SIZE LINK_PROTOCOL_RESUME_PAYLOAD_SIZE
+#define LINK_STREAM_START_SIZE   32u
+#define LINK_STREAM_REPLY_SIZE   28u
+#define LINK_STREAM_HEARTBEAT_SIZE 12u
+#define LINK_BENCHMARK_SIZE      24u
 
 static void link_write_u16(uint8_t *output, uint16_t value)
 {
-  output[0] = (uint8_t)(value >> 8);
-  output[1] = (uint8_t)value;
+  output[0] = (uint8_t)((value >> 8) & 0xFFu);
+  output[1] = (uint8_t)(value & 0xFFu);
 }
 
 static void link_write_u32(uint8_t *output, uint32_t value)
 {
-  output[0] = (uint8_t)(value >> 24);
-  output[1] = (uint8_t)(value >> 16);
-  output[2] = (uint8_t)(value >> 8);
-  output[3] = (uint8_t)value;
+  output[0] = (uint8_t)((value >> 24) & 0xFFu);
+  output[1] = (uint8_t)((value >> 16) & 0xFFu);
+  output[2] = (uint8_t)((value >> 8) & 0xFFu);
+  output[3] = (uint8_t)(value & 0xFFu);
 }
 
 static uint16_t link_read_u16(const uint8_t *input)
@@ -67,7 +73,7 @@ static uint32_t link_protocol_crc(const uint8_t *frame, size_t frame_size)
 
 int link_protocol_message_known(uint8_t type)
 {
-  return type >= LINK_MESSAGE_HELLO && type <= LINK_MESSAGE_DISCONNECT;
+  return type >= LINK_MESSAGE_HELLO && type <= LINK_MESSAGE_LAST;
 }
 
 static int link_protocol_payload_size_valid(uint8_t type,
@@ -88,6 +94,8 @@ static int link_protocol_payload_size_valid(uint8_t type,
     case LINK_MESSAGE_TRANSFER_PREPARE:
     case LINK_MESSAGE_TRANSFER_ACCEPT:
     case LINK_MESSAGE_TRANSFER_COMMIT:
+    case LINK_MESSAGE_TRANSFER_RELEASE:
+    case LINK_MESSAGE_TRANSFER_RELEASE_ACK:
       return payload_size == LINK_TRANSFER_SIZE;
 
     case LINK_MESSAGE_TRANSFER_ABORT:
@@ -95,10 +103,82 @@ static int link_protocol_payload_size_valid(uint8_t type,
       return payload_size == LINK_REASON_SIZE;
 
     case LINK_MESSAGE_HEARTBEAT:
+      return payload_size == 0 ||
+       payload_size == LINK_STREAM_HEARTBEAT_SIZE;
+
+    case LINK_MESSAGE_TRANSFER_COMMIT_ACK:
+    case LINK_MESSAGE_TRANSFER_ABORT_ACK:
       return payload_size == 0;
+
+    case LINK_MESSAGE_CLOCK_SYNC:
+      return payload_size == LINK_CLOCK_SIZE;
+
+    case LINK_MESSAGE_RESUME:
+    case LINK_MESSAGE_RESUME_ACK:
+    case LINK_MESSAGE_RESUME_DONE:
+      return payload_size == LINK_RESUME_SIZE;
+
+    case LINK_MESSAGE_TRANSFER_START:
+      return payload_size == LINK_STREAM_START_SIZE;
+
+    case LINK_MESSAGE_TRANSFER_REPLY:
+      return payload_size == LINK_STREAM_REPLY_SIZE;
+
+    case LINK_MESSAGE_BENCHMARK_CONTROL:
+      return payload_size == LINK_BENCHMARK_SIZE;
 
     default:
       return payload_size <= LINK_PROTOCOL_MAX_PAYLOAD;
+  }
+}
+
+static int link_protocol_stream_start_valid(const uint8_t *payload)
+{
+  return link_read_u32(payload) != 0 && payload[28] == 2u &&
+   payload[29] <= 3u && payload[30] == 2u &&
+   (payload[31] & LINK_STREAM_FLAG_MASK) == payload[31];
+}
+
+static int link_protocol_stream_reply_valid(const uint8_t *payload)
+{
+  return link_read_u32(payload) != 0 && payload[24] == 2u &&
+   payload[25] <= 3u && payload[26] == 2u &&
+   (payload[27] & LINK_STREAM_FLAG_MASK) == payload[27];
+}
+
+static int link_protocol_benchmark_valid(const uint8_t *payload)
+{
+  uint8_t action = payload[22];
+  uint16_t burst_words = link_read_u16(payload + 20);
+
+  if(link_read_u32(payload) == 0 ||
+     action < LINK_BENCHMARK_START || action > LINK_BENCHMARK_STOP ||
+     payload[23] != 0)
+    return 0;
+  if(action == LINK_BENCHMARK_STOP)
+    return 1;
+  return link_read_u32(payload + 4) != 0 &&
+   link_read_u32(payload + 8) != 0 &&
+   link_read_u32(payload + 12) != 0 &&
+   burst_words != 0 && burst_words <= 64u;
+}
+
+static int link_protocol_payload_value_valid(uint8_t type,
+ const uint8_t *payload)
+{
+  switch(type)
+  {
+    case LINK_MESSAGE_TRANSFER_START:
+      return link_protocol_stream_start_valid(payload);
+
+    case LINK_MESSAGE_TRANSFER_REPLY:
+      return link_protocol_stream_reply_valid(payload);
+
+    case LINK_MESSAGE_BENCHMARK_CONTROL:
+      return link_protocol_benchmark_valid(payload);
+
+    default:
+      return 1;
   }
 }
 
@@ -166,6 +246,8 @@ LinkProtocolError link_protocol_encode(const LinkPacket *packet,
     return LINK_PROTOCOL_ERROR_PAYLOAD_SIZE;
   if(!link_protocol_payload_size_valid(packet->type, packet->payload_size))
     return LINK_PROTOCOL_ERROR_PAYLOAD_SIZE;
+  if(!link_protocol_payload_value_valid(packet->type, packet->payload))
+    return LINK_PROTOCOL_ERROR_VALUE;
 
   frame_size = LINK_PROTOCOL_HEADER_SIZE + packet->payload_size;
   if(capacity < frame_size)
@@ -211,6 +293,9 @@ LinkProtocolError link_protocol_decode(const uint8_t *input, size_t input_size,
     return LINK_PROTOCOL_ERROR_LENGTH;
   if(link_read_u32(input + 20) != link_protocol_crc(input, input_size))
     return LINK_PROTOCOL_ERROR_CRC;
+  if(!link_protocol_payload_value_valid(input[6],
+     input + LINK_PROTOCOL_HEADER_SIZE))
+    return LINK_PROTOCOL_ERROR_VALUE;
 
   payload_size = link_read_u16(input + 8);
   memset(packet, 0, sizeof(*packet));
@@ -449,14 +534,48 @@ static int link_protocol_transfer_type(uint8_t type)
   return type == LINK_MESSAGE_TRANSFER_REQUEST ||
    type == LINK_MESSAGE_TRANSFER_PREPARE ||
    type == LINK_MESSAGE_TRANSFER_ACCEPT ||
-   type == LINK_MESSAGE_TRANSFER_COMMIT;
+   type == LINK_MESSAGE_TRANSFER_COMMIT ||
+   type == LINK_MESSAGE_TRANSFER_RELEASE ||
+   type == LINK_MESSAGE_TRANSFER_RELEASE_ACK;
+}
+
+static void link_protocol_write_transfer_payload(uint8_t *payload,
+ const LinkTransferData *transfer)
+{
+  uint32_t i;
+
+  memset(payload, 0, LINK_TRANSFER_SIZE);
+  payload[0] = transfer->mode;
+  payload[1] = transfer->setting;
+  payload[2] = transfer->clock_owner;
+  payload[3] = transfer->player_count;
+  payload[4] = transfer->participant_mask;
+  link_write_u32(payload + 8, transfer->start_cycle);
+  link_write_u32(payload + 12, transfer->finish_cycle);
+  for(i = 0; i < 4; i++)
+    link_write_u32(payload + 16 + (i * 4), transfer->data[i]);
+}
+
+static void link_protocol_read_transfer_payload(const uint8_t *payload,
+ LinkTransferData *transfer)
+{
+  uint32_t i;
+
+  memset(transfer, 0, sizeof(*transfer));
+  transfer->mode = payload[0];
+  transfer->setting = payload[1];
+  transfer->clock_owner = payload[2];
+  transfer->player_count = payload[3];
+  transfer->participant_mask = payload[4];
+  transfer->start_cycle = link_read_u32(payload + 8);
+  transfer->finish_cycle = link_read_u32(payload + 12);
+  for(i = 0; i < 4; i++)
+    transfer->data[i] = link_read_u32(payload + 16 + (i * 4));
 }
 
 LinkProtocolError link_protocol_write_transfer(LinkPacket *packet,
  LinkMessageType type, const LinkTransferData *transfer)
 {
-  uint32_t i;
-
   if(packet == NULL || transfer == NULL)
     return LINK_PROTOCOL_ERROR_ARGUMENT;
   if(!link_protocol_transfer_type((uint8_t)type))
@@ -464,22 +583,13 @@ LinkProtocolError link_protocol_write_transfer(LinkPacket *packet,
 
   packet->type = (uint8_t)type;
   packet->payload_size = LINK_TRANSFER_SIZE;
-  memset(packet->payload, 0, LINK_TRANSFER_SIZE);
-  packet->payload[0] = transfer->mode;
-  packet->payload[1] = transfer->setting;
-  packet->payload[2] = transfer->clock_owner;
-  packet->payload[3] = transfer->player_count;
-  packet->payload[4] = transfer->participant_mask;
-  for(i = 0; i < 4; i++)
-    link_write_u32(packet->payload + 8 + (i * 4), transfer->data[i]);
+  link_protocol_write_transfer_payload(packet->payload, transfer);
   return LINK_PROTOCOL_OK;
 }
 
 LinkProtocolError link_protocol_read_transfer(const LinkPacket *packet,
  LinkTransferData *transfer)
 {
-  uint32_t i;
-
   if(packet == NULL || transfer == NULL)
     return LINK_PROTOCOL_ERROR_ARGUMENT;
   if(!link_protocol_transfer_type(packet->type))
@@ -487,14 +597,340 @@ LinkProtocolError link_protocol_read_transfer(const LinkPacket *packet,
   if(packet->payload_size != LINK_TRANSFER_SIZE)
     return LINK_PROTOCOL_ERROR_PAYLOAD_SIZE;
 
-  memset(transfer, 0, sizeof(*transfer));
-  transfer->mode = packet->payload[0];
-  transfer->setting = packet->payload[1];
-  transfer->clock_owner = packet->payload[2];
-  transfer->player_count = packet->payload[3];
-  transfer->participant_mask = packet->payload[4];
-  for(i = 0; i < 4; i++)
-    transfer->data[i] = link_read_u32(packet->payload + 8 + (i * 4));
+  link_protocol_read_transfer_payload(packet->payload, transfer);
+  return LINK_PROTOCOL_OK;
+}
+
+LinkProtocolError link_protocol_write_clock(LinkPacket *packet,
+ const LinkClockSync *clock)
+{
+  if(packet == NULL || clock == NULL)
+    return LINK_PROTOCOL_ERROR_ARGUMENT;
+
+  packet->type = LINK_MESSAGE_CLOCK_SYNC;
+  packet->payload_size = LINK_CLOCK_SIZE;
+  link_write_u32(packet->payload, clock->generation);
+  link_write_u32(packet->payload + 4, clock->cycle);
+  link_write_u32(packet->payload + 8, clock->last_sequence);
+  return LINK_PROTOCOL_OK;
+}
+
+LinkProtocolError link_protocol_read_clock(const LinkPacket *packet,
+ LinkClockSync *clock)
+{
+  if(packet == NULL || clock == NULL)
+    return LINK_PROTOCOL_ERROR_ARGUMENT;
+  if(packet->type != LINK_MESSAGE_CLOCK_SYNC)
+    return LINK_PROTOCOL_ERROR_TYPE;
+  if(packet->payload_size != LINK_CLOCK_SIZE)
+    return LINK_PROTOCOL_ERROR_PAYLOAD_SIZE;
+
+  clock->generation = link_read_u32(packet->payload);
+  clock->cycle = link_read_u32(packet->payload + 4);
+  clock->last_sequence = link_read_u32(packet->payload + 8);
+  return LINK_PROTOCOL_OK;
+}
+
+LinkProtocolError link_protocol_write_stream_start(LinkPacket *packet,
+ const LinkStreamStart *start)
+{
+  uint8_t *payload;
+
+  if(packet == NULL || start == NULL)
+    return LINK_PROTOCOL_ERROR_ARGUMENT;
+  if(start->generation == 0 || start->mode != 2u || start->setting > 3u ||
+     start->player_count != 2u ||
+     (start->flags & LINK_STREAM_FLAG_MASK) != start->flags)
+    return LINK_PROTOCOL_ERROR_VALUE;
+
+  packet->type = LINK_MESSAGE_TRANSFER_START;
+  packet->payload_size = LINK_STREAM_START_SIZE;
+  payload = packet->payload;
+  memset(payload, 0, LINK_STREAM_START_SIZE);
+  link_write_u32(payload, start->generation);
+  link_write_u32(payload + 4, start->start_cycle);
+  link_write_u32(payload + 8, start->finish_cycle);
+  link_write_u32(payload + 12, start->clock_cycle);
+  link_write_u32(payload + 16, start->acknowledged_sequence);
+  link_write_u32(payload + 20, start->outgoing);
+  link_write_u32(payload + 24, start->identity);
+  payload[28] = start->mode;
+  payload[29] = start->setting;
+  payload[30] = start->player_count;
+  payload[31] = start->flags;
+  return LINK_PROTOCOL_OK;
+}
+
+LinkProtocolError link_protocol_read_stream_start(const LinkPacket *packet,
+ LinkStreamStart *start)
+{
+  const uint8_t *payload;
+
+  if(packet == NULL || start == NULL)
+    return LINK_PROTOCOL_ERROR_ARGUMENT;
+  if(packet->type != LINK_MESSAGE_TRANSFER_START)
+    return LINK_PROTOCOL_ERROR_TYPE;
+  if(packet->payload_size != LINK_STREAM_START_SIZE)
+    return LINK_PROTOCOL_ERROR_PAYLOAD_SIZE;
+  payload = packet->payload;
+  if(!link_protocol_payload_value_valid(packet->type, payload))
+    return LINK_PROTOCOL_ERROR_VALUE;
+
+  memset(start, 0, sizeof(*start));
+  start->generation = link_read_u32(payload);
+  start->start_cycle = link_read_u32(payload + 4);
+  start->finish_cycle = link_read_u32(payload + 8);
+  start->clock_cycle = link_read_u32(payload + 12);
+  start->acknowledged_sequence = link_read_u32(payload + 16);
+  start->outgoing = link_read_u32(payload + 20);
+  start->identity = link_read_u32(payload + 24);
+  start->mode = payload[28];
+  start->setting = payload[29];
+  start->player_count = payload[30];
+  start->flags = payload[31];
+  return LINK_PROTOCOL_OK;
+}
+
+LinkProtocolError link_protocol_write_stream_reply(LinkPacket *packet,
+ const LinkStreamReply *reply)
+{
+  uint8_t *payload;
+
+  if(packet == NULL || reply == NULL)
+    return LINK_PROTOCOL_ERROR_ARGUMENT;
+  if(reply->generation == 0 || reply->mode != 2u || reply->setting > 3u ||
+     reply->player_count != 2u ||
+     (reply->flags & LINK_STREAM_FLAG_MASK) != reply->flags)
+    return LINK_PROTOCOL_ERROR_VALUE;
+
+  packet->type = LINK_MESSAGE_TRANSFER_REPLY;
+  packet->payload_size = LINK_STREAM_REPLY_SIZE;
+  payload = packet->payload;
+  memset(payload, 0, LINK_STREAM_REPLY_SIZE);
+  link_write_u32(payload, reply->generation);
+  link_write_u32(payload + 4, reply->clock_cycle);
+  link_write_u32(payload + 8, reply->acknowledged_sequence);
+  link_write_u32(payload + 12, reply->outgoing);
+  link_write_u32(payload + 16, reply->start_identity);
+  link_write_u32(payload + 20, reply->start_cycle);
+  payload[24] = reply->mode;
+  payload[25] = reply->setting;
+  payload[26] = reply->player_count;
+  payload[27] = reply->flags;
+  return LINK_PROTOCOL_OK;
+}
+
+LinkProtocolError link_protocol_read_stream_reply(const LinkPacket *packet,
+ LinkStreamReply *reply)
+{
+  const uint8_t *payload;
+
+  if(packet == NULL || reply == NULL)
+    return LINK_PROTOCOL_ERROR_ARGUMENT;
+  if(packet->type != LINK_MESSAGE_TRANSFER_REPLY)
+    return LINK_PROTOCOL_ERROR_TYPE;
+  if(packet->payload_size != LINK_STREAM_REPLY_SIZE)
+    return LINK_PROTOCOL_ERROR_PAYLOAD_SIZE;
+  payload = packet->payload;
+  if(!link_protocol_payload_value_valid(packet->type, payload))
+    return LINK_PROTOCOL_ERROR_VALUE;
+
+  memset(reply, 0, sizeof(*reply));
+  reply->generation = link_read_u32(payload);
+  reply->clock_cycle = link_read_u32(payload + 4);
+  reply->acknowledged_sequence = link_read_u32(payload + 8);
+  reply->outgoing = link_read_u32(payload + 12);
+  reply->start_identity = link_read_u32(payload + 16);
+  reply->start_cycle = link_read_u32(payload + 20);
+  reply->mode = payload[24];
+  reply->setting = payload[25];
+  reply->player_count = payload[26];
+  reply->flags = payload[27];
+  return LINK_PROTOCOL_OK;
+}
+
+LinkProtocolError link_protocol_write_stream_heartbeat(LinkPacket *packet,
+ const LinkStreamHeartbeat *heartbeat)
+{
+  if(packet == NULL || heartbeat == NULL)
+    return LINK_PROTOCOL_ERROR_ARGUMENT;
+  if(heartbeat->generation == 0)
+    return LINK_PROTOCOL_ERROR_VALUE;
+
+  packet->type = LINK_MESSAGE_HEARTBEAT;
+  packet->payload_size = LINK_STREAM_HEARTBEAT_SIZE;
+  link_write_u32(packet->payload, heartbeat->generation);
+  link_write_u32(packet->payload + 4, heartbeat->clock_cycle);
+  link_write_u32(packet->payload + 8, heartbeat->acknowledged_sequence);
+  return LINK_PROTOCOL_OK;
+}
+
+LinkProtocolError link_protocol_read_stream_heartbeat(
+ const LinkPacket *packet, LinkStreamHeartbeat *heartbeat)
+{
+  if(packet == NULL || heartbeat == NULL)
+    return LINK_PROTOCOL_ERROR_ARGUMENT;
+  if(packet->type != LINK_MESSAGE_HEARTBEAT)
+    return LINK_PROTOCOL_ERROR_TYPE;
+  if(packet->payload_size != LINK_STREAM_HEARTBEAT_SIZE)
+    return LINK_PROTOCOL_ERROR_PAYLOAD_SIZE;
+
+  heartbeat->generation = link_read_u32(packet->payload);
+  heartbeat->clock_cycle = link_read_u32(packet->payload + 4);
+  heartbeat->acknowledged_sequence = link_read_u32(packet->payload + 8);
+  return heartbeat->generation == 0 ? LINK_PROTOCOL_ERROR_VALUE :
+   LINK_PROTOCOL_OK;
+}
+
+LinkProtocolError link_protocol_write_benchmark_control(LinkPacket *packet,
+ const LinkBenchmarkControl *control)
+{
+  uint8_t *payload;
+
+  if(packet == NULL || control == NULL)
+    return LINK_PROTOCOL_ERROR_ARGUMENT;
+
+  packet->type = LINK_MESSAGE_BENCHMARK_CONTROL;
+  packet->flags = LINK_PROTOCOL_FLAG_OPTIONAL;
+  packet->payload_size = LINK_BENCHMARK_SIZE;
+  payload = packet->payload;
+  memset(payload, 0, LINK_BENCHMARK_SIZE);
+  link_write_u32(payload, control->run_id);
+  link_write_u32(payload + 4, control->duration_ms);
+  link_write_u32(payload + 8, control->target_words_per_second);
+  link_write_u32(payload + 12, control->maximum_burst_us);
+  link_write_u32(payload + 16, control->seed);
+  link_write_u16(payload + 20, control->burst_words);
+  payload[22] = control->action;
+  payload[23] = control->flags;
+  if(!link_protocol_benchmark_valid(payload))
+    return LINK_PROTOCOL_ERROR_VALUE;
+  return LINK_PROTOCOL_OK;
+}
+
+LinkProtocolError link_protocol_read_benchmark_control(
+ const LinkPacket *packet, LinkBenchmarkControl *control)
+{
+  const uint8_t *payload;
+
+  if(packet == NULL || control == NULL)
+    return LINK_PROTOCOL_ERROR_ARGUMENT;
+  if(packet->type != LINK_MESSAGE_BENCHMARK_CONTROL)
+    return LINK_PROTOCOL_ERROR_TYPE;
+  if(packet->payload_size != LINK_BENCHMARK_SIZE)
+    return LINK_PROTOCOL_ERROR_PAYLOAD_SIZE;
+  payload = packet->payload;
+  if(!link_protocol_benchmark_valid(payload))
+    return LINK_PROTOCOL_ERROR_VALUE;
+
+  memset(control, 0, sizeof(*control));
+  control->run_id = link_read_u32(payload);
+  control->duration_ms = link_read_u32(payload + 4);
+  control->target_words_per_second = link_read_u32(payload + 8);
+  control->maximum_burst_us = link_read_u32(payload + 12);
+  control->seed = link_read_u32(payload + 16);
+  control->burst_words = link_read_u16(payload + 20);
+  control->action = payload[22];
+  control->flags = payload[23];
+  return LINK_PROTOCOL_OK;
+}
+
+static int link_protocol_resume_type(uint8_t type)
+{
+  return type == LINK_MESSAGE_RESUME ||
+   type == LINK_MESSAGE_RESUME_ACK ||
+   type == LINK_MESSAGE_RESUME_DONE;
+}
+
+LinkProtocolError link_protocol_write_resume(LinkPacket *packet,
+ LinkMessageType type, const LinkResumeState *state)
+{
+  if(packet == NULL || state == NULL)
+    return LINK_PROTOCOL_ERROR_ARGUMENT;
+  if(!link_protocol_resume_type((uint8_t)type))
+    return LINK_PROTOCOL_ERROR_TYPE;
+
+  packet->type = (uint8_t)type;
+  packet->payload_size = LINK_RESUME_SIZE;
+  memset(packet->payload, 0, LINK_RESUME_SIZE);
+  link_write_u32(packet->payload, state->last_sequence);
+  link_write_u32(packet->payload + 4, state->active_sequence);
+  link_protocol_write_transfer_payload(packet->payload + 8,
+   &state->transfer);
+  packet->payload[40] = state->phase;
+  packet->payload[41] = state->flags;
+  packet->payload[42] = state->transaction_stage;
+  link_write_u32(packet->payload + 44, state->epoch);
+  link_write_u32(packet->payload + 48, state->checkpoint);
+  link_write_u32(packet->payload + 52, state->checkpoint_hash);
+  link_write_u32(packet->payload + 56, state->journal_hash);
+  link_write_u32(packet->payload + 60, state->sio_revision);
+  packet->payload[64] = state->sio.mode;
+  packet->payload[65] = state->sio.player_id;
+  packet->payload[66] = state->sio.player_count;
+  packet->payload[67] = state->sio.flags;
+  link_write_u16(packet->payload + 68, state->sio.control);
+  link_write_u16(packet->payload + 70, state->sio.rcnt);
+  packet->payload[72] = state->journal_stage;
+  packet->payload[73] = state->journal_role;
+  packet->payload[74] = state->journal_applied;
+  packet->payload[75] = state->journal_irq_delivered;
+  packet->payload[76] = state->release_shared;
+  link_write_u32(packet->payload + 80, state->stream_generation);
+  link_write_u32(packet->payload + 84,
+   state->stream_transport_generation);
+  link_write_u32(packet->payload + 88, state->stream_last_committed);
+  link_write_u32(packet->payload + 92, state->stream_active_sequence);
+  link_write_u32(packet->payload + 96, state->stream_start_identity);
+  link_write_u32(packet->payload + 100, state->stream_reply_outgoing);
+  link_write_u32(packet->payload + 104, state->stream_commit_identity);
+  packet->payload[108] = state->stream_flags;
+  return LINK_PROTOCOL_OK;
+}
+
+LinkProtocolError link_protocol_read_resume(const LinkPacket *packet,
+ LinkResumeState *state)
+{
+  if(packet == NULL || state == NULL)
+    return LINK_PROTOCOL_ERROR_ARGUMENT;
+  if(!link_protocol_resume_type(packet->type))
+    return LINK_PROTOCOL_ERROR_TYPE;
+  if(packet->payload_size != LINK_RESUME_SIZE)
+    return LINK_PROTOCOL_ERROR_PAYLOAD_SIZE;
+
+  memset(state, 0, sizeof(*state));
+  state->last_sequence = link_read_u32(packet->payload);
+  state->active_sequence = link_read_u32(packet->payload + 4);
+  link_protocol_read_transfer_payload(packet->payload + 8,
+   &state->transfer);
+  state->phase = packet->payload[40];
+  state->flags = packet->payload[41];
+  state->transaction_stage = packet->payload[42];
+  state->epoch = link_read_u32(packet->payload + 44);
+  state->checkpoint = link_read_u32(packet->payload + 48);
+  state->checkpoint_hash = link_read_u32(packet->payload + 52);
+  state->journal_hash = link_read_u32(packet->payload + 56);
+  state->sio_revision = link_read_u32(packet->payload + 60);
+  state->sio.mode = packet->payload[64];
+  state->sio.player_id = packet->payload[65];
+  state->sio.player_count = packet->payload[66];
+  state->sio.flags = packet->payload[67];
+  state->sio.control = link_read_u16(packet->payload + 68);
+  state->sio.rcnt = link_read_u16(packet->payload + 70);
+  state->journal_stage = packet->payload[72];
+  state->journal_role = packet->payload[73];
+  state->journal_applied = packet->payload[74];
+  state->journal_irq_delivered = packet->payload[75];
+  state->release_shared = packet->payload[76];
+  state->stream_generation = link_read_u32(packet->payload + 80);
+  state->stream_transport_generation =
+   link_read_u32(packet->payload + 84);
+  state->stream_last_committed = link_read_u32(packet->payload + 88);
+  state->stream_active_sequence = link_read_u32(packet->payload + 92);
+  state->stream_start_identity = link_read_u32(packet->payload + 96);
+  state->stream_reply_outgoing = link_read_u32(packet->payload + 100);
+  state->stream_commit_identity = link_read_u32(packet->payload + 104);
+  state->stream_flags = packet->payload[108];
   return LINK_PROTOCOL_OK;
 }
 

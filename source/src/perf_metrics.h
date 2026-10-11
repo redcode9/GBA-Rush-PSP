@@ -35,6 +35,13 @@ typedef struct
   uint32_t bucket_width_us;
 } PerfMetricsHistogram;
 
+typedef enum
+{
+  PERF_METRICS_WAIT_BACKPRESSURE,
+  PERF_METRICS_WAIT_PRESENT,
+  PERF_METRICS_WAIT_AUDIO
+} PerfMetricsWaitSite;
+
 typedef struct
 {
   PerfMetricsState state;
@@ -59,6 +66,38 @@ typedef struct
   uint64_t dynarec_writable_high_water;
   uint64_t memory_low_water;
   int has_memory_sample;
+  uint64_t vblank_backpressure_count;
+  uint64_t vblank_backpressure_total_us;
+  uint64_t vblank_present_count;
+  uint64_t vblank_present_total_us;
+  uint64_t vblank_audio_count;
+  uint64_t vblank_audio_total_us;
+  uint64_t renderer_total_us;
+  uint32_t renderer_max_us;
+  uint64_t dcache_writeback_count;
+  uint64_t dcache_writeback_total_us;
+  uint64_t ge_sync_direct_count;
+  uint64_t ge_sync_direct_total_us;
+  uint64_t sharp_presented_frames;
+  uint64_t crisp_presented_frames;
+  uint64_t gba_update_entries;
+  uint64_t gba_update_iterations;
+  uint64_t dma16_transfers;
+  uint64_t dma16_elements;
+  uint64_t dma16_bytes;
+  uint64_t dma16_total_us;
+  uint64_t dma32_transfers;
+  uint64_t dma32_elements;
+  uint64_t dma32_bytes;
+  uint64_t dma32_total_us;
+  uint64_t dma_gamepak_pairs;
+  uint64_t gamepak_evict_scan_count;
+  uint64_t gamepak_evict_scan_total_us;
+  uint64_t gamepak_miss_count;
+  uint64_t gamepak_miss_bytes;
+  uint64_t gamepak_read_errors;
+  uint64_t gamepak_rom_seek_total_us;
+  uint64_t gamepak_rom_read_total_us;
   PerfMetricsHistogram frame_time;
   PerfMetricsHistogram ge_wait;
 } PerfMetrics;
@@ -99,6 +138,38 @@ typedef struct
   uint32_t ge_wait_p50_us;
   uint32_t ge_wait_p95_us;
   uint32_t ge_wait_p99_us;
+  uint64_t vblank_backpressure_count;
+  uint64_t vblank_backpressure_total_us;
+  uint64_t vblank_present_count;
+  uint64_t vblank_present_total_us;
+  uint64_t vblank_audio_count;
+  uint64_t vblank_audio_total_us;
+  uint64_t renderer_total_us;
+  uint32_t renderer_max_us;
+  uint64_t dcache_writeback_count;
+  uint64_t dcache_writeback_total_us;
+  uint64_t ge_sync_direct_count;
+  uint64_t ge_sync_direct_total_us;
+  uint64_t sharp_presented_frames;
+  uint64_t crisp_presented_frames;
+  uint64_t gba_update_entries;
+  uint64_t gba_update_iterations;
+  uint64_t dma16_transfers;
+  uint64_t dma16_elements;
+  uint64_t dma16_bytes;
+  uint64_t dma16_total_us;
+  uint64_t dma32_transfers;
+  uint64_t dma32_elements;
+  uint64_t dma32_bytes;
+  uint64_t dma32_total_us;
+  uint64_t dma_gamepak_pairs;
+  uint64_t gamepak_evict_scan_count;
+  uint64_t gamepak_evict_scan_total_us;
+  uint64_t gamepak_miss_count;
+  uint64_t gamepak_miss_bytes;
+  uint64_t gamepak_read_errors;
+  uint64_t gamepak_rom_seek_total_us;
+  uint64_t gamepak_rom_read_total_us;
 } PerfMetricsSnapshot;
 
 void perf_metrics_init(PerfMetrics *metrics);
@@ -126,6 +197,25 @@ void perf_metrics_observe_dynarec_cache(PerfMetrics *metrics,
  uint64_t readonly_bytes, uint64_t writable_bytes);
 void perf_metrics_observe_memory_available(PerfMetrics *metrics,
  uint64_t bytes);
+void perf_metrics_record_wait(PerfMetrics *metrics,
+ PerfMetricsWaitSite site, uint32_t wait_us);
+void perf_metrics_record_renderer_frame(PerfMetrics *metrics,
+ uint32_t renderer_us);
+void perf_metrics_record_dcache_writeback(PerfMetrics *metrics,
+ uint32_t wait_us);
+void perf_metrics_record_ge_sync_direct(PerfMetrics *metrics,
+ uint32_t wait_us);
+void perf_metrics_record_quality_presented(PerfMetrics *metrics,
+ int sharp);
+void perf_metrics_record_gba_update_entry(PerfMetrics *metrics);
+void perf_metrics_record_gba_update_iteration(PerfMetrics *metrics);
+void perf_metrics_record_dma(PerfMetrics *metrics, int bits32,
+ uint32_t elements, uint32_t dma_us, int gamepak_pair);
+void perf_metrics_record_gamepak_evict_scan(PerfMetrics *metrics,
+ uint32_t us);
+void perf_metrics_record_gamepak_rom_io(PerfMetrics *metrics,
+ uint32_t seek_us, uint32_t read_us, uint32_t bytes_read,
+ int read_error);
 void perf_metrics_snapshot(const PerfMetrics *metrics,
  PerfMetricsSnapshot *snapshot);
 
