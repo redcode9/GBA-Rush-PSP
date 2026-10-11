@@ -37,7 +37,7 @@ The upstream review of October 11, 2026 identified these useful changes to adapt
   direct launches too, and restore HOME-dialog handling after the file browser.
 - [x] Port invalidation of aligned IWRAM stack stores from
   the [SMOL fix](https://github.com/andymcca/TempGBA4PSP-mod/commit/bd150150a3f7b0495261ae86be3d24deb6acb97b)
-  while preserving stores below SP. Verify SMOL overlays and audio on PSP.
+  while preserving stores below SP.
 - [x] Add the missing [included-renderer dependencies](https://github.com/andymcca/TempGBA4PSP-mod/commit/1b7c5a9b382f647cde41cab0f1de4990839a2cda).
   Common-header dependencies already exist.
 - [x] Preserve character boundaries in browser clipping and scrolling. Compile
@@ -62,10 +62,13 @@ The upstream review of October 11, 2026 identified these useful changes to adapt
   roles. Verify room exit, in-game saves and both received Pokémon after reload.
 - [ ] Test user disconnect, WLAN loss, menus, suspend/resume, peer exit and local
   exit. Recovery or shutdown must finish without a crash, freeze or duplicate IRQ.
-- [ ] Run host, sanitizer, CBMC and model checks on the final source; make a clean
-  PSP build and verify the release ZIP. Record hardware results and package
-  hashes, merge the completed link branch, update compatibility notes, then
-  tag 1.4.0.
+- [x] Validate `1.4.0-rc.4` with host tests, ASan/UBSan, CBMC and all four TLA+
+  checks. Build the PSP executable and verify the ZIP manifest, checksum and
+  reproducibility. Preserve the software logs and build hashes locally.
+- [ ] Record paired hardware results, resolve the remaining link issues and
+  update compatibility notes. Repeat final-source verification after those
+  fixes, promote the reviewed source through `develop` into `master`, then
+  tag the stable 1.4.0 release.
 
 ## Later work
 
