@@ -21,7 +21,8 @@
   in rotated bitmap paths.
 - Performance options keep common controls visible and move low-level dynarec,
   HBlank, stack and boot settings to an advanced screen.
-- Public documentation is consolidated into four maintained Markdown files.
+- Build instructions, link notes and the 1.4.0 checklist are maintained alongside
+  the user guide. Original text references are grouped under `docs/legacy/`.
 
 ### Fixed
 

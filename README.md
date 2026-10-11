@@ -106,21 +106,24 @@ backup of important saves when testing cheats.
 
 ## Link cable
 
-Both PSP systems should use the same emulator build with WLAN enabled. Load a
-game on each system, then open **Main menu > Link cable**. Player 1 creates the
-session and Player 2 joins it.
+Two-player cable emulation is experimental. The newer protocol-v3 implementation
+and its no-ROM benchmark are maintained on
+[`feature/link-cable`](https://github.com/redcode9/GBA-Rush-PSP/tree/feature/link-cable).
+The last recorded FireRed trial failed before a serial transfer; a completed
+trade and the paired hardware benchmark remain unverified.
 
-Normal 8-bit, Normal 32-bit and two-player Multiplayer 16-bit transfers are
-supported. Fast-forward and savestates are disabled while a session is open.
-Reset, ROM replacement, suspend and exit disconnect cleanly.
+Use the same build on both PSPs with WLAN enabled. Open **Main menu > Link cable**:
+Player 1 creates a session and Player 2 joins. For gameplay, load a game on both
+systems before connecting. Fast-forward and savestates are disabled while the
+session is open; reset, ROM change, suspend and exit disconnect it.
 
-The GBA Wireless Adapter, three- or four-player sessions, UART, JoyBus,
-GameCube link, multiboot and internet relay are not supported. Games using the
-Wireless Adapter need a separate cable mode to work here.
+Normal 8-bit, Normal 32-bit and two-player Multiplayer 16-bit paths exist.
+Wireless Adapter, additional players, UART, JoyBus, multiboot and internet relay
+are outside the current scope.
 
-Original diagnostic ROM sources for the supported modes are in
-`tests/link-rom/`. Build them with a configured devkitPro GBA toolchain by
-running `make` in that directory.
+The [implementation notes](docs/link-cable.md) describe the development protocol,
+benchmark and log tools. The [1.4.0 checklist](docs/ROADMAP-1.4.0.md) gives the
+remaining fixes and hardware tests. Keep backups of both saves during testing.
 
 ## Build and test
 

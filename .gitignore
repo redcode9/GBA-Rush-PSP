@@ -1,42 +1,59 @@
-# PSP build output
-source/*.o
-source/*.elf
-source/*.prx
-source/*.PBP
-source/PARAM.SFO
-source/prx/**/prx/*.o
-source/prx/**/prx/*.elf
-source/prx/**/prx/*.prx
-source/single-game_launcher/*.o
-source/single-game_launcher/*.elf
-source/single-game_launcher/*.prx
-source/single-game_launcher/*.PBP
-source/single-game_launcher/PARAM.SFO
-source/single-game_launcher/tool/assets/EBOOT.PBP
-
-# Release output
+# Build and release output; vendored SDK libraries remain versioned
 build/
 dist/
 release/
+*.o
+*.d
+*.elf
+*.prx
+*.PBP
+*.map
+PARAM.SFO
 *.sha256
+/models/link/states/
+/source/single-game_launcher/tool/build_exe_output/
+/source/single-game_launcher/tool/*.spec
 
-# Single-game launcher output
-source/single-game_launcher/tool/build/
-source/single-game_launcher/tool/build_exe_output/
-source/single-game_launcher/tool/__pycache__/
-source/single-game_launcher/tool/*.spec
-
-# Local emulator data
-*.cfg
+# Private emulator data and local hardware evidence
+/artifacts/
+/logs/
+*.gbrlog
+*.gba
+*.agb
 *.sav
 *.svs
 *.cht
+*.cfg
 gba_bios.bin
 dir.ini
 
-# Editor and operating-system files
+# TLC configurations are source inputs, not emulator settings
+!/models/link/LinkCableSafety.cfg
+!/models/link/LinkCableLiveness.cfg
+!/models/link/LinkStreamSafety.cfg
+!/models/link/LinkStreamLiveness.cfg
+
+# Local contributor files
+/.gitmessage
+/*.plist
+
+# Python environments, caches and desktop-tool output
+.venv/
+venv/
 __pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Editor and operating-system files
 .DS_Store
+._*
 .idea/
 .vscode/
 *.swp
+*.swo
+*~

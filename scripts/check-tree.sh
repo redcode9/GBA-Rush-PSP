@@ -28,6 +28,8 @@ expected_markdown_files=$(printf '%s\n' \
   CHANGELOG.md \
   CONTRIBUTING.md \
   README.md \
+  docs/ROADMAP-1.4.0.md \
+  docs/link-cable.md \
   source/single-game_launcher/tool/README.md)
 
 if [ "$markdown_files" != "$expected_markdown_files" ]; then
