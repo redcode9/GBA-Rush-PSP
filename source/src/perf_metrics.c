@@ -303,6 +303,168 @@ void perf_metrics_observe_memory_available(PerfMetrics *metrics,
   metrics->has_memory_sample = 1;
 }
 
+void perf_metrics_record_wait(PerfMetrics *metrics,
+ PerfMetricsWaitSite site, uint32_t wait_us)
+{
+  uint64_t *count;
+  uint64_t *total;
+
+  if(!perf_metrics_active(metrics))
+    return;
+
+  switch(site)
+  {
+    case PERF_METRICS_WAIT_BACKPRESSURE:
+      count = &metrics->vblank_backpressure_count;
+      total = &metrics->vblank_backpressure_total_us;
+      break;
+    case PERF_METRICS_WAIT_PRESENT:
+      count = &metrics->vblank_present_count;
+      total = &metrics->vblank_present_total_us;
+      break;
+    case PERF_METRICS_WAIT_AUDIO:
+      count = &metrics->vblank_audio_count;
+      total = &metrics->vblank_audio_total_us;
+      break;
+    default:
+      return;
+  }
+
+  *count = perf_metrics_saturating_add(*count, 1);
+  *total = perf_metrics_saturating_add(*total, wait_us);
+}
+
+void perf_metrics_record_renderer_frame(PerfMetrics *metrics,
+ uint32_t renderer_us)
+{
+  if(!perf_metrics_active(metrics))
+    return;
+
+  metrics->renderer_total_us = perf_metrics_saturating_add(
+   metrics->renderer_total_us, renderer_us);
+  if(renderer_us > metrics->renderer_max_us)
+    metrics->renderer_max_us = renderer_us;
+}
+
+void perf_metrics_record_dcache_writeback(PerfMetrics *metrics,
+ uint32_t wait_us)
+{
+  if(!perf_metrics_active(metrics))
+    return;
+
+  metrics->dcache_writeback_count = perf_metrics_saturating_add(
+   metrics->dcache_writeback_count, 1);
+  metrics->dcache_writeback_total_us = perf_metrics_saturating_add(
+   metrics->dcache_writeback_total_us, wait_us);
+}
+
+void perf_metrics_record_ge_sync_direct(PerfMetrics *metrics,
+ uint32_t wait_us)
+{
+  if(!perf_metrics_active(metrics))
+    return;
+
+  metrics->ge_sync_direct_count = perf_metrics_saturating_add(
+   metrics->ge_sync_direct_count, 1);
+  metrics->ge_sync_direct_total_us = perf_metrics_saturating_add(
+   metrics->ge_sync_direct_total_us, wait_us);
+}
+
+void perf_metrics_record_quality_presented(PerfMetrics *metrics,
+ int sharp)
+{
+  if(!perf_metrics_active(metrics))
+    return;
+
+  if(sharp)
+    metrics->sharp_presented_frames = perf_metrics_saturating_add(
+     metrics->sharp_presented_frames, 1);
+  else
+    metrics->crisp_presented_frames = perf_metrics_saturating_add(
+     metrics->crisp_presented_frames, 1);
+}
+
+void perf_metrics_record_gba_update_entry(PerfMetrics *metrics)
+{
+  if(perf_metrics_active(metrics))
+    metrics->gba_update_entries = perf_metrics_saturating_add(
+     metrics->gba_update_entries, 1);
+}
+
+void perf_metrics_record_gba_update_iteration(PerfMetrics *metrics)
+{
+  if(perf_metrics_active(metrics))
+    metrics->gba_update_iterations = perf_metrics_saturating_add(
+     metrics->gba_update_iterations, 1);
+}
+
+void perf_metrics_record_dma(PerfMetrics *metrics, int bits32,
+ uint32_t elements, uint32_t dma_us, int gamepak_pair)
+{
+  if(!perf_metrics_active(metrics))
+    return;
+
+  uint64_t bytes = (uint64_t)elements * (bits32 ? 4U : 2U);
+
+  if(bits32)
+  {
+    metrics->dma32_transfers = perf_metrics_saturating_add(
+     metrics->dma32_transfers, 1);
+    metrics->dma32_elements = perf_metrics_saturating_add(
+     metrics->dma32_elements, elements);
+    metrics->dma32_bytes = perf_metrics_saturating_add(
+     metrics->dma32_bytes, bytes);
+    metrics->dma32_total_us = perf_metrics_saturating_add(
+     metrics->dma32_total_us, dma_us);
+  }
+  else
+  {
+    metrics->dma16_transfers = perf_metrics_saturating_add(
+     metrics->dma16_transfers, 1);
+    metrics->dma16_elements = perf_metrics_saturating_add(
+     metrics->dma16_elements, elements);
+    metrics->dma16_bytes = perf_metrics_saturating_add(
+     metrics->dma16_bytes, bytes);
+    metrics->dma16_total_us = perf_metrics_saturating_add(
+     metrics->dma16_total_us, dma_us);
+  }
+
+  if(gamepak_pair)
+    metrics->dma_gamepak_pairs = perf_metrics_saturating_add(
+     metrics->dma_gamepak_pairs, 1);
+}
+
+void perf_metrics_record_gamepak_evict_scan(PerfMetrics *metrics,
+ uint32_t us)
+{
+  if(!perf_metrics_active(metrics))
+    return;
+
+  metrics->gamepak_evict_scan_count = perf_metrics_saturating_add(
+   metrics->gamepak_evict_scan_count, 1);
+  metrics->gamepak_evict_scan_total_us = perf_metrics_saturating_add(
+   metrics->gamepak_evict_scan_total_us, us);
+}
+
+void perf_metrics_record_gamepak_rom_io(PerfMetrics *metrics,
+ uint32_t seek_us, uint32_t read_us, uint32_t bytes_read, int read_error)
+{
+  if(!perf_metrics_active(metrics))
+    return;
+
+  metrics->gamepak_miss_count = perf_metrics_saturating_add(
+   metrics->gamepak_miss_count, 1);
+  metrics->gamepak_miss_bytes = perf_metrics_saturating_add(
+   metrics->gamepak_miss_bytes, bytes_read);
+  metrics->gamepak_rom_seek_total_us = perf_metrics_saturating_add(
+   metrics->gamepak_rom_seek_total_us, seek_us);
+  metrics->gamepak_rom_read_total_us = perf_metrics_saturating_add(
+   metrics->gamepak_rom_read_total_us, read_us);
+  if(read_error)
+    metrics->gamepak_read_errors = perf_metrics_saturating_add(
+     metrics->gamepak_read_errors, 1);
+}
+
 void perf_metrics_snapshot(const PerfMetrics *metrics,
  PerfMetricsSnapshot *snapshot)
 {
@@ -359,4 +521,39 @@ void perf_metrics_snapshot(const PerfMetrics *metrics,
    &metrics->ge_wait, 95);
   snapshot->ge_wait_p99_us = perf_metrics_histogram_percentile(
    &metrics->ge_wait, 99);
+
+  snapshot->vblank_backpressure_count = metrics->vblank_backpressure_count;
+  snapshot->vblank_backpressure_total_us =
+   metrics->vblank_backpressure_total_us;
+  snapshot->vblank_present_count = metrics->vblank_present_count;
+  snapshot->vblank_present_total_us = metrics->vblank_present_total_us;
+  snapshot->vblank_audio_count = metrics->vblank_audio_count;
+  snapshot->vblank_audio_total_us = metrics->vblank_audio_total_us;
+  snapshot->renderer_total_us = metrics->renderer_total_us;
+  snapshot->renderer_max_us = metrics->renderer_max_us;
+  snapshot->dcache_writeback_count = metrics->dcache_writeback_count;
+  snapshot->dcache_writeback_total_us = metrics->dcache_writeback_total_us;
+  snapshot->ge_sync_direct_count = metrics->ge_sync_direct_count;
+  snapshot->ge_sync_direct_total_us = metrics->ge_sync_direct_total_us;
+  snapshot->sharp_presented_frames = metrics->sharp_presented_frames;
+  snapshot->crisp_presented_frames = metrics->crisp_presented_frames;
+  snapshot->gba_update_entries = metrics->gba_update_entries;
+  snapshot->gba_update_iterations = metrics->gba_update_iterations;
+  snapshot->dma16_transfers = metrics->dma16_transfers;
+  snapshot->dma16_elements = metrics->dma16_elements;
+  snapshot->dma16_bytes = metrics->dma16_bytes;
+  snapshot->dma16_total_us = metrics->dma16_total_us;
+  snapshot->dma32_transfers = metrics->dma32_transfers;
+  snapshot->dma32_elements = metrics->dma32_elements;
+  snapshot->dma32_bytes = metrics->dma32_bytes;
+  snapshot->dma32_total_us = metrics->dma32_total_us;
+  snapshot->dma_gamepak_pairs = metrics->dma_gamepak_pairs;
+  snapshot->gamepak_evict_scan_count = metrics->gamepak_evict_scan_count;
+  snapshot->gamepak_evict_scan_total_us =
+   metrics->gamepak_evict_scan_total_us;
+  snapshot->gamepak_miss_count = metrics->gamepak_miss_count;
+  snapshot->gamepak_miss_bytes = metrics->gamepak_miss_bytes;
+  snapshot->gamepak_read_errors = metrics->gamepak_read_errors;
+  snapshot->gamepak_rom_seek_total_us = metrics->gamepak_rom_seek_total_us;
+  snapshot->gamepak_rom_read_total_us = metrics->gamepak_rom_read_total_us;
 }

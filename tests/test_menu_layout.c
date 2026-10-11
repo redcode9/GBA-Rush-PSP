@@ -59,6 +59,23 @@ static void test_text_bounds(void)
   assert(menu_text_clip_length(double_byte, 2) == 2);
   assert(menu_text_clip_length(double_byte, 3) == 3);
   assert(menu_text_clip_length(NULL, 3) == 0);
+  assert(menu_text_scroll_start(double_byte, 0, MENU_TEXT_GBK) == 0);
+  assert(menu_text_scroll_start(double_byte, 1, MENU_TEXT_GBK) == 0);
+  assert(menu_text_scroll_start(double_byte, 2, MENU_TEXT_GBK) == 2);
+  assert(menu_text_scroll_start(double_byte, 3, MENU_TEXT_GBK) == 3);
+  assert(menu_text_scroll_start(double_byte, 99, MENU_TEXT_GBK) == 5);
+  assert(menu_text_scroll_start(NULL, 3, MENU_TEXT_GBK) == 0);
+  {
+    const char japanese[] = { (char)0xB1, (char)0x82, (char)0xA0, 'A', 0 };
+    assert(menu_text_clip_length_for_encoding(japanese, 1,
+     MENU_TEXT_SHIFT_JIS) == 1);
+    assert(menu_text_clip_length_for_encoding(japanese, 2,
+     MENU_TEXT_SHIFT_JIS) == 1);
+    assert(menu_text_clip_length_for_encoding(japanese, 3,
+     MENU_TEXT_SHIFT_JIS) == 3);
+    assert(menu_text_scroll_start(japanese, 2, MENU_TEXT_SHIFT_JIS) == 1);
+    assert(menu_text_scroll_start(japanese, 3, MENU_TEXT_SHIFT_JIS) == 3);
+  }
 }
 
 int main(void)

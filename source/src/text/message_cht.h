@@ -902,6 +902,12 @@
   // MSG_LINK_MENU_DISCONNECT
   "中斷連線",
 
+  // MSG_LINK_MENU_BENCHMARK_RUN
+  "執行連線基準測試",
+
+  // MSG_LINK_MENU_BENCHMARK_STOP
+  "停止連線基準測試",
+
   // MSG_LINK_MENU_HELP_STATUS
   "目前的連線狀態",
 
@@ -913,6 +919,27 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "關閉目前的連線",
+
+  // MSG_LINK_MENU_HELP_BENCHMARK
+  "測試兩台 PSP 的十分鐘真實資料流",
+
+  // MSG_LINK_BENCHMARK_IDLE
+  "基準測試：就緒",
+
+  // MSG_LINK_BENCHMARK_WAITING
+  "基準測試：同步中",
+
+  // MSG_LINK_BENCHMARK_RUNNING
+  "基準測試：執行中",
+
+  // MSG_LINK_BENCHMARK_PASS
+  "基準測試：通過",
+
+  // MSG_LINK_BENCHMARK_FAIL
+  "基準測試：失敗",
+
+  // MSG_LINK_BENCHMARK_ABORT
+  "基準測試：已中止",
 
   // MSG_LINK_STATUS_NO_GAME
   "尚未載入遊戲",

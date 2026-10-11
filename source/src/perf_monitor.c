@@ -11,7 +11,11 @@
 
 #include "perf_monitor.h"
 
+#include <stddef.h>
+#include <string.h>
+
 static PerfMetrics perf_monitor_metrics;
+static PerfMonitorIdentity perf_monitor_current_identity;
 static uint64_t perf_monitor_started_us;
 static uint64_t perf_monitor_elapsed_us;
 
@@ -26,6 +30,8 @@ static uint64_t perf_monitor_elapsed(uint64_t now_us)
 void perf_monitor_init(void)
 {
   perf_metrics_init(&perf_monitor_metrics);
+  memset(&perf_monitor_current_identity, 0,
+   sizeof(perf_monitor_current_identity));
   perf_monitor_started_us = 0;
   perf_monitor_elapsed_us = 0;
 }
@@ -37,6 +43,8 @@ int perf_monitor_start(uint64_t now_us)
 
   perf_monitor_started_us = now_us;
   perf_monitor_elapsed_us = 0;
+  memset(&perf_monitor_current_identity, 0,
+   sizeof(perf_monitor_current_identity));
   return 1;
 }
 
@@ -130,4 +138,70 @@ void perf_monitor_observe_dynarec_cache(uint64_t readonly_bytes,
 void perf_monitor_observe_memory_available(uint64_t bytes)
 {
   perf_metrics_observe_memory_available(&perf_monitor_metrics, bytes);
+}
+
+void perf_monitor_set_identity(const PerfMonitorIdentity *identity)
+{
+  if(identity != NULL && perf_monitor_active())
+    perf_monitor_current_identity = *identity;
+}
+
+void perf_monitor_identity(PerfMonitorIdentity *identity)
+{
+  if(identity != NULL)
+    *identity = perf_monitor_current_identity;
+}
+
+void perf_monitor_record_wait(PerfMetricsWaitSite site, uint32_t wait_us)
+{
+  perf_metrics_record_wait(&perf_monitor_metrics, site, wait_us);
+}
+
+void perf_monitor_record_renderer_frame(uint32_t renderer_us)
+{
+  perf_metrics_record_renderer_frame(&perf_monitor_metrics, renderer_us);
+}
+
+void perf_monitor_record_dcache_writeback(uint32_t wait_us)
+{
+  perf_metrics_record_dcache_writeback(&perf_monitor_metrics, wait_us);
+}
+
+void perf_monitor_record_ge_sync_direct(uint32_t wait_us)
+{
+  perf_metrics_record_ge_sync_direct(&perf_monitor_metrics, wait_us);
+}
+
+void perf_monitor_record_quality_presented(int sharp)
+{
+  perf_metrics_record_quality_presented(&perf_monitor_metrics, sharp);
+}
+
+void perf_monitor_record_gba_update_entry(void)
+{
+  perf_metrics_record_gba_update_entry(&perf_monitor_metrics);
+}
+
+void perf_monitor_record_gba_update_iteration(void)
+{
+  perf_metrics_record_gba_update_iteration(&perf_monitor_metrics);
+}
+
+void perf_monitor_record_dma(int bits32, uint32_t elements, uint32_t dma_us,
+ int gamepak_pair)
+{
+  perf_metrics_record_dma(&perf_monitor_metrics, bits32, elements, dma_us,
+   gamepak_pair);
+}
+
+void perf_monitor_record_gamepak_evict_scan(uint32_t us)
+{
+  perf_metrics_record_gamepak_evict_scan(&perf_monitor_metrics, us);
+}
+
+void perf_monitor_record_gamepak_rom_io(uint32_t seek_us, uint32_t read_us,
+ uint32_t bytes_read, int read_error)
+{
+  perf_metrics_record_gamepak_rom_io(&perf_monitor_metrics, seek_us, read_us,
+   bytes_read, read_error);
 }

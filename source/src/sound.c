@@ -18,8 +18,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <limits.h>
+
 #include "common.h"
 #include "fast_forward_audio.h"
+#include "link_audio_wait.h"
 #include "perf_monitor.h"
 #include "sound_math.h"
 
@@ -122,15 +125,38 @@ static volatile u32 sound_fast_forward_fallback_pending = 0;
 static volatile u32 sound_power_suspended = 0;
 static volatile u32 sound_output_ready = 0;
 static volatile u32 sound_perf_underrun_pending = 0;
+static volatile u32 sound_audio_underruns = 0;
 static volatile u32 sound_perf_recovery_pending = 0;
 static volatile u32 sound_channel_reserved = 0;
 static void fill_sound_buffer(s16 *stream, u16 frames, u32 factor);
 static int sound_update_thread(SceSize args, void *argp);
 
+static void sound_note_audio_underrun(void)
+{
+  u32 current;
+  u32 next;
+
+  sound_perf_underrun_pending = 1;
+  do
+  {
+    current = __atomic_load_n(&sound_audio_underruns, __ATOMIC_RELAXED);
+    if(current == UINT_MAX)
+      break;
+    next = current + 1u;
+  }
+  while(!__atomic_compare_exchange_n(&sound_audio_underruns, &current, next,
+         0, __ATOMIC_RELAXED, __ATOMIC_RELAXED));
+  __builtin_allegrex_sync();
+}
+
+u32 sound_audio_underrun_count(void)
+{
+  return __atomic_load_n(&sound_audio_underruns, __ATOMIC_ACQUIRE);
+}
+
 static volatile u8 sound_sleep = 0;
 static void sound_thread_wakeup(void);
-static u32 sound_link_wait_active = 0;
-static u32 sound_link_saved_pause = 0;
+static LinkAudioWait sound_link_wait;
 static u32 sound_fast_forward_audio_started = 0;
 static u64 sound_fast_forward_starvation_since = 0;
 
@@ -898,24 +924,25 @@ void sound_power_resume_finish(u32 cpu_ticks, int audio_result)
 
 void sound_link_wait_begin(void)
 {
-  if(sound_link_wait_active)
+  u32 next_pause = sound_pause;
+
+  if(!link_audio_wait_begin(&sound_link_wait, sound_pause, &next_pause))
     return;
 
-  sound_link_wait_active = 1;
-  sound_link_saved_pause = sound_pause;
-  sound_pause = 1;
+  sound_pause = next_pause;
   sound_buffer_base = gbc_sound_buffer_index;
 }
 
 void sound_link_wait_end(u32 cpu_ticks)
 {
-  if(!sound_link_wait_active)
+  u32 next_pause = sound_pause;
+
+  if(!link_audio_wait_end(&sound_link_wait, &next_pause))
     return;
 
   gbc_sound_last_cpu_ticks = cpu_ticks;
   sound_buffer_base = gbc_sound_buffer_index;
-  sound_pause = sound_link_saved_pause;
-  sound_link_wait_active = 0;
+  sound_pause = next_pause;
   sound_thread_wakeup();
 }
 
@@ -952,7 +979,18 @@ void synchronize_sound(void)
     {
       if (option_frameskip_type == FRAMESKIP_AUTO)
       {
+        int measuring = perf_monitor_active();
+        u32 vblank_start;
+
+        if(measuring)
+          vblank_start = sceKernelGetSystemTimeLow();
+
         sceDisplayWaitVblankStart();
+
+        if(measuring)
+          perf_monitor_record_wait(PERF_METRICS_WAIT_AUDIO,
+           sceKernelGetSystemTimeLow() - vblank_start);
+
         real_frame_count = 0;
         virtual_frame_count = 0;
       }
@@ -1178,7 +1216,7 @@ static int sound_update_thread(SceSize args, void *argp)
             output_failed = 0;
           }
           else
-            sound_perf_underrun_pending = 1;
+            sound_note_audio_underrun();
           __builtin_allegrex_sync();
           sceKernelSignalSema(sound_sema, 1);
         }
@@ -1240,7 +1278,7 @@ static int sound_update_thread(SceSize args, void *argp)
     if(sceAudioSRCOutputBlocking(output_volume,
        psp_sound_buffer[buf_idx]) < 0)
     {
-      sound_perf_underrun_pending = 1;
+      sound_note_audio_underrun();
       sound_output_ready = 0;
       output_failed = 1;
       __builtin_allegrex_sync();
@@ -1396,9 +1434,9 @@ void reset_sound(void)
   GBCSoundStruct    *gs = gbc_sound_channel;
 
   sound_on = 0;
-  sound_link_wait_active = 0;
-  sound_link_saved_pause = 0;
+  link_audio_wait_init(&sound_link_wait);
   sound_perf_underrun_pending = 0;
+  sound_audio_underruns = 0;
   sound_perf_recovery_pending = 0;
   sound_fast_forward = 0;
   sound_fast_forward_factor = 1;

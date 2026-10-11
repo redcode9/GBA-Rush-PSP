@@ -25,7 +25,7 @@ included in this repository or its releases.
 - Full-scale 16-bit audio mixing and optional 2x/3x accelerated audio.
 - Plaintext and encrypted CodeBreaker support, including timed master hooks.
 - Existing GameShark, Pro Action Replay and direct-write cheat formats.
-- Two-PSP GBA cable emulation over local ad-hoc Wi-Fi.
+- Experimental two-PSP GBA cable emulation over local ad-hoc Wi-Fi.
 - Suspend and resume recovery for audio, ROM access, saves and video state.
 - Box art, recent ROMs, themes, configurable controls and per-game settings.
 - Japanese, English, Simplified Chinese, Traditional Chinese and Italian UI.
@@ -106,9 +106,8 @@ backup of important saves when testing cheats.
 
 ## Link cable
 
-Two-player cable emulation is experimental. The newer protocol-v3 implementation
-and its no-ROM benchmark are maintained on
-[`feature/link-cable`](https://github.com/redcode9/GBA-Rush-PSP/tree/feature/link-cable).
+Two-player cable emulation is experimental. The 1.4.0 candidate includes
+protocol v3 and a built-in no-ROM benchmark.
 The last recorded FireRed trial failed before a serial transfer; a completed
 trade and the paired hardware benchmark remain unverified.
 
@@ -126,6 +125,9 @@ benchmark and log tools. The [1.4.0 checklist](docs/ROADMAP-1.4.0.md) gives the
 remaining fixes and hardware tests. Keep backups of both saves during testing.
 
 ## Build and test
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the source layout, verification
+commands and hardware-test procedure.
 
 A current [PSPDev](https://pspdev.github.io/) toolchain must provide
 `psp-config` in `PATH`.
@@ -149,12 +151,13 @@ docker run --rm -v "$PWD:/workspace" -w /workspace/source pspdev/pspdev:latest m
 After a successful candidate build:
 
 ```sh
-make package VERSION=1.4.0
+make package VERSION=1.4.0-rc.4
 ```
 
 The package command creates a reproducible ZIP and SHA-256 checksum under
-`dist/`, then verifies the archive manifest. It never includes BIOS files,
-ROMs, saves, settings or cheat databases.
+`dist/`, then verifies the archive manifest. The archive includes the license
+notices, installation guide and current link test checklist. It never includes
+BIOS files, ROMs, saves, settings or cheat databases.
 
 ### Performance comparison
 
@@ -183,7 +186,7 @@ python3 -m pip install -r source/single-game_launcher/tool/requirements.txt
 python3 source/single-game_launcher/tool/gui.py
 ```
 
-See the [launcher README](source/single-game_launcher/tool/README.md) for asset
+See the [launcher README](https://github.com/redcode9/GBA-Rush-PSP/blob/master/source/single-game_launcher/tool/README.md) for asset
 sizes and required external tools.
 
 ## Credits and license

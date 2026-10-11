@@ -307,6 +307,32 @@ int input_trace_begin_replay(InputTrace *trace, const uint8_t *encoded,
   return 1;
 }
 
+int input_trace_begin_record_from_header(InputTrace *trace,
+ uint32_t start_frame,
+ const uint8_t header[INPUT_TRACE_IDENTITY_SIZE], uint32_t file_size,
+ uint16_t initial_keys)
+{
+  if(trace == NULL || header == NULL ||
+     file_size < INPUT_TRACE_IDENTITY_SIZE)
+    return 0;
+
+  return input_trace_begin_record(trace, start_frame, header + 0xAC,
+   header[0xBC], initial_keys);
+}
+
+int input_trace_begin_replay_from_header(InputTrace *trace,
+ const uint8_t *encoded, size_t encoded_size,
+ const uint8_t header[INPUT_TRACE_IDENTITY_SIZE], uint32_t file_size,
+ uint32_t start_frame)
+{
+  if(trace == NULL || header == NULL ||
+     file_size < INPUT_TRACE_IDENTITY_SIZE)
+    return 0;
+
+  return input_trace_begin_replay(trace, encoded, encoded_size,
+   header + 0xAC, header[0xBC], start_frame);
+}
+
 uint16_t input_trace_apply(InputTrace *trace, uint32_t frame,
  uint16_t physical_keys)
 {

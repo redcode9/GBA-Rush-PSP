@@ -24,6 +24,10 @@
 #define GBA_SIO_MULTI_ID      0x0030u
 #define GBA_SIO_MULTI_ERROR   0x0040u
 
+#define GBA_SIO_RCNT_SC       0x0001u
+#define GBA_SIO_RCNT_SD       0x0002u
+#define GBA_SIO_RCNT_SI       0x0004u
+
 #define GBA_SIO_NORMAL_WRITABLE 0x708Bu
 #define GBA_SIO_MULTI_WRITABLE  0x7083u
 
@@ -76,12 +80,60 @@ static int gba_sio_transfer_busy(const GbaSio *sio)
   return sio->pending_start != 0 || sio->waiting != 0 || sio->active != 0;
 }
 
+static int gba_sio_peer_ready(const GbaSio *sio, GbaSioMode mode)
+{
+  return sio->player_count >= 2 && sio->peer_active != 0 &&
+   sio->peer_mode == mode;
+}
+
+static void gba_sio_refresh_pins(GbaSio *sio)
+{
+  uint16_t *rcnt = gba_sio_register(sio, GBA_SIO_REG_RCNT);
+  uint16_t pins;
+
+  if(sio->mode != GBA_SIO_MODE_MULTIPLAYER &&
+     sio->mode != GBA_SIO_MODE_NORMAL_8 &&
+     sio->mode != GBA_SIO_MODE_NORMAL_32)
+    return;
+
+  pins = (uint16_t)(*rcnt &
+   ~(GBA_SIO_RCNT_SC | GBA_SIO_RCNT_SD | GBA_SIO_RCNT_SI));
+
+  if(sio->mode == GBA_SIO_MODE_MULTIPLAYER)
+  {
+    if(!gba_sio_transfer_busy(sio))
+      pins |= GBA_SIO_RCNT_SC;
+    if(gba_sio_peer_ready(sio, GBA_SIO_MODE_MULTIPLAYER))
+      pins |= GBA_SIO_RCNT_SD;
+    if(sio->player_count == 0 || sio->player_id != 0)
+      pins |= GBA_SIO_RCNT_SI;
+  }
+  else if(sio->mode == GBA_SIO_MODE_NORMAL_8 ||
+          sio->mode == GBA_SIO_MODE_NORMAL_32)
+  {
+    uint16_t control = *gba_sio_register(sio, GBA_SIO_REG_CONTROL);
+
+    if(!gba_sio_transfer_busy(sio))
+      pins |= GBA_SIO_RCNT_SC;
+    if((control & 0x0008u) != 0)
+      pins |= GBA_SIO_RCNT_SD;
+    if(!gba_sio_peer_ready(sio, sio->mode) ||
+       (sio->peer_control & 0x0008u) != 0)
+      pins |= GBA_SIO_RCNT_SI;
+  }
+
+  *rcnt = pins;
+}
+
 static void gba_sio_clear_transient(GbaSio *sio)
 {
   sio->pending_start = 0;
   sio->waiting = 0;
   sio->active = 0;
+  sio->decision_locked = 0;
   sio->completion_error = 0;
+  sio->transfer_start_cycle = 0;
+  sio->transfer_finish_cycle = 0;
   sio->cycles_remaining = 0;
   sio->outgoing = 0;
   memset(sio->incoming, 0, sizeof(sio->incoming));
@@ -96,7 +148,11 @@ static void gba_sio_refresh_control(GbaSio *sio)
     case GBA_SIO_MODE_NORMAL_8:
     case GBA_SIO_MODE_NORMAL_32:
       control &= GBA_SIO_NORMAL_WRITABLE;
-      control |= GBA_SIO_NORMAL_SI;
+      if(!gba_sio_peer_ready(sio, sio->mode) ||
+         (sio->peer_control & 0x0008u) != 0)
+        control |= GBA_SIO_NORMAL_SI;
+      else
+        control &= (uint16_t)~GBA_SIO_NORMAL_SI;
       if(gba_sio_transfer_busy(sio))
         control |= GBA_SIO_CONTROL_START;
       break;
@@ -107,7 +163,8 @@ static void gba_sio_refresh_control(GbaSio *sio)
       if(sio->player_count == 0 || sio->player_id != 0)
         control |= GBA_SIO_MULTI_SLAVE;
 
-      control |= GBA_SIO_MULTI_READY;
+      if(gba_sio_peer_ready(sio, GBA_SIO_MODE_MULTIPLAYER))
+        control |= GBA_SIO_MULTI_READY;
       control |= (uint16_t)((sio->player_id & 0x03u) << 4);
 
       if(sio->transfer_error != 0)
@@ -124,6 +181,7 @@ static void gba_sio_refresh_control(GbaSio *sio)
   }
 
   *gba_sio_register(sio, GBA_SIO_REG_CONTROL) = control;
+  gba_sio_refresh_pins(sio);
 }
 
 static uint32_t gba_sio_read_outgoing(const GbaSio *sio)
@@ -157,6 +215,7 @@ static void gba_sio_latch_transfer(GbaSio *sio, uint8_t setting,
   sio->pending_start = 1;
   sio->waiting = 0;
   sio->active = 0;
+  sio->decision_locked = 0;
   sio->transfer_error = 0;
   sio->completion_error = 0;
   sio->transfer_mode = sio->mode;
@@ -194,6 +253,7 @@ static GbaSioEvent gba_sio_finish(GbaSio *sio)
 {
   uint16_t control = *gba_sio_register(sio, GBA_SIO_REG_CONTROL);
   GbaSioEvent event = GBA_SIO_EVENT_NONE;
+  int completed = sio->active != 0;
   uint32_t i;
 
   switch(sio->transfer_mode)
@@ -226,6 +286,11 @@ static GbaSioEvent gba_sio_finish(GbaSio *sio)
   sio->pending_start = 0;
   sio->waiting = 0;
   sio->active = 0;
+  sio->decision_locked = 0;
+  if(completed)
+    sio->current_cycle = sio->transfer_finish_cycle;
+  sio->transfer_start_cycle = 0;
+  sio->transfer_finish_cycle = 0;
   sio->cycles_remaining = 0;
   *gba_sio_register(sio, GBA_SIO_REG_CONTROL) =
    (uint16_t)(control & ~GBA_SIO_CONTROL_START);
@@ -242,6 +307,17 @@ void gba_sio_init(GbaSio *sio, uint16_t *registers)
   memset(sio, 0, sizeof(*sio));
   sio->registers = registers;
   gba_sio_reset(sio);
+}
+
+int gba_sio_prepare(GbaSio *sio, uint16_t *registers)
+{
+  if(sio == NULL || registers == NULL)
+    return 0;
+  if(sio->registers != NULL)
+    return sio->registers == registers;
+
+  gba_sio_init(sio, registers);
+  return 1;
 }
 
 void gba_sio_reset(GbaSio *sio)
@@ -288,12 +364,28 @@ void gba_sio_set_connection(GbaSio *sio, uint8_t player_id,
   gba_sio_refresh_control(sio);
 }
 
+void gba_sio_set_peer_state(GbaSio *sio, GbaSioMode mode,
+ uint16_t control, uint16_t rcnt, int active)
+{
+  if(sio == NULL)
+    return;
+
+  sio->peer_mode = mode;
+  sio->peer_control = control;
+  sio->peer_rcnt = rcnt;
+  sio->peer_active = active != 0 && sio->player_count >= 2;
+  gba_sio_refresh_control(sio);
+}
+
 GbaSioEvent gba_sio_disconnect(GbaSio *sio)
 {
   GbaSioEvent event = gba_sio_abort(sio);
 
   sio->player_id = 0;
   sio->player_count = 0;
+  sio->peer_active = 0;
+  sio->peer_control = 0;
+  sio->peer_rcnt = 0;
   gba_sio_refresh_control(sio);
   return event;
 }
@@ -309,7 +401,8 @@ static GbaSioEvent gba_sio_write_control(GbaSio *sio, uint16_t value)
 
   if(new_mode != old_mode)
   {
-    gba_sio_clear_transient(sio);
+    if(!sio->decision_locked)
+      gba_sio_clear_transient(sio);
     sio->transfer_error = 0;
     sio->mode = new_mode;
     event = GBA_SIO_EVENT_MODE_CHANGE;
@@ -326,7 +419,8 @@ static GbaSioEvent gba_sio_write_control(GbaSio *sio, uint16_t value)
       start_edge = (value & GBA_SIO_CONTROL_START) != 0 &&
        ((old_control & GBA_SIO_CONTROL_START) == 0 || old_mode != new_mode);
 
-      if(start_edge && (value & GBA_SIO_NORMAL_CLOCK) != 0)
+      if(start_edge && !sio->decision_locked &&
+         (value & GBA_SIO_NORMAL_CLOCK) != 0)
       {
         gba_sio_latch_transfer(sio,
          (uint8_t)((value & GBA_SIO_NORMAL_FAST) != 0), 1);
@@ -345,7 +439,7 @@ static GbaSioEvent gba_sio_write_control(GbaSio *sio, uint16_t value)
       start_edge = (value & GBA_SIO_CONTROL_START) != 0 &&
        ((old_control & GBA_SIO_CONTROL_START) == 0 || old_mode != new_mode);
 
-      if(start_edge && sio->player_id == 0)
+      if(start_edge && !sio->decision_locked && sio->player_id == 0)
       {
         gba_sio_latch_transfer(sio, (uint8_t)(value & 0x0003u), 1);
         event = (GbaSioEvent)(event | GBA_SIO_EVENT_START);
@@ -383,7 +477,8 @@ static GbaSioEvent gba_sio_write_rcnt(GbaSio *sio, uint16_t value)
 
   if(new_mode != sio->mode)
   {
-    gba_sio_clear_transient(sio);
+    if(!sio->decision_locked)
+      gba_sio_clear_transient(sio);
     sio->transfer_error = 0;
     sio->mode = new_mode;
     event = GBA_SIO_EVENT_MODE_CHANGE;
@@ -411,13 +506,16 @@ GbaSioEvent gba_sio_write16(GbaSio *sio, uint32_t address,
     case GBA_SIO_REG_DATA32_L:
     case GBA_SIO_REG_DATA32_H:
       if(sio->mode == GBA_SIO_MODE_NORMAL_32 ||
+         sio->mode == GBA_SIO_MODE_MULTIPLAYER ||
          !gba_sio_supported_mode(sio->mode))
         *gba_sio_register(sio, address) = value;
       break;
 
     case GBA_SIO_REG_MULTI2:
     case GBA_SIO_REG_MULTI3:
-      if(!gba_sio_supported_mode(sio->mode))
+      /* Receive registers are writable; START resets them to 0xFFFF. */
+      if(sio->mode == GBA_SIO_MODE_MULTIPLAYER ||
+         !gba_sio_supported_mode(sio->mode))
         *gba_sio_register(sio, address) = value;
       break;
 
@@ -463,6 +561,15 @@ int gba_sio_take_start(GbaSio *sio, GbaSioTransfer *transfer)
   sio->pending_start = 0;
   sio->waiting = 1;
   gba_sio_refresh_control(sio);
+  gba_sio_fill_transfer(sio, transfer);
+  return 1;
+}
+
+int gba_sio_peek_start(const GbaSio *sio, GbaSioTransfer *transfer)
+{
+  if(sio == NULL || transfer == NULL || sio->pending_start == 0)
+    return 0;
+
   gba_sio_fill_transfer(sio, transfer);
   return 1;
 }
@@ -534,31 +641,112 @@ uint32_t gba_sio_transfer_cycles(GbaSioMode mode, uint8_t setting,
   return 0;
 }
 
-int gba_sio_commit(GbaSio *sio, const GbaSioResult *result)
+int gba_sio_can_commit(const GbaSio *sio)
 {
+  return sio != NULL && sio->waiting != 0;
+}
+
+int gba_sio_lock_decision(GbaSio *sio)
+{
+  if(sio == NULL || sio->waiting == 0 || sio->active != 0)
+    return 0;
+  sio->decision_locked = 1;
+  return 1;
+}
+
+int gba_sio_set_cycle(GbaSio *sio, uint32_t cycle)
+{
+  if(sio == NULL || (sio->active != 0 && cycle != sio->current_cycle))
+    return 0;
+  sio->current_cycle = cycle;
+  return 1;
+}
+
+static int gba_sio_commit_at_internal(GbaSio *sio,
+ const GbaSioResult *result, uint32_t start_cycle, uint32_t finish_cycle,
+ int allow_elapsed, GbaSioEvent *event)
+{
+  uint32_t elapsed;
+  uint32_t expected_cycles;
   uint8_t player_count;
 
+  if(event != NULL)
+    *event = GBA_SIO_EVENT_NONE;
   if(sio == NULL || result == NULL || sio->waiting == 0)
     return 0;
 
-  memcpy(sio->incoming, result->data, sizeof(sio->incoming));
-  sio->completion_error = result->error != 0;
   player_count = result->player_count;
   if(player_count == 0)
     player_count = sio->transfer_players;
   if(player_count > 4)
     player_count = 4;
+  expected_cycles = gba_sio_transfer_cycles(sio->transfer_mode,
+   sio->transfer_setting, player_count);
+  elapsed = sio->current_cycle - start_cycle;
+  if(expected_cycles == 0 || finish_cycle - start_cycle != expected_cycles ||
+     (!allow_elapsed && elapsed != 0) || elapsed >= 0x80000000u)
+    return 0;
+  memcpy(sio->incoming, result->data, sizeof(sio->incoming));
+  sio->completion_error = result->error != 0;
   sio->transfer_players = player_count;
   sio->waiting = 0;
   sio->active = 1;
-  sio->cycles_remaining = gba_sio_transfer_cycles(sio->transfer_mode,
-   sio->transfer_setting, sio->transfer_players);
+  sio->transfer_start_cycle = start_cycle;
+  sio->transfer_finish_cycle = finish_cycle;
+  sio->cycles_remaining = elapsed < expected_cycles ?
+   expected_cycles - elapsed : 0u;
   gba_sio_refresh_control(sio);
 
-  if(sio->cycles_remaining == 0)
-    gba_sio_finish(sio);
+  if(elapsed >= expected_cycles && event != NULL)
+    *event = gba_sio_finish(sio);
 
   return 1;
+}
+
+int gba_sio_commit_at(GbaSio *sio, const GbaSioResult *result,
+ uint32_t start_cycle, uint32_t finish_cycle)
+{
+  return gba_sio_commit_at_internal(sio, result, start_cycle, finish_cycle,
+   0, NULL);
+}
+
+int gba_sio_commit_at_horizon(GbaSio *sio, const GbaSioResult *result,
+ uint32_t start_cycle, uint32_t finish_cycle, GbaSioEvent *event)
+{
+  if(event == NULL)
+    return 0;
+  return gba_sio_commit_at_internal(sio, result, start_cycle, finish_cycle,
+   1, event);
+}
+
+int gba_sio_commit(GbaSio *sio, const GbaSioResult *result)
+{
+  uint8_t player_count;
+  uint32_t cycles;
+
+  if(sio == NULL || result == NULL)
+    return 0;
+  player_count = result->player_count;
+  if(player_count == 0)
+    player_count = sio->transfer_players;
+  if(player_count > 4)
+    player_count = 4;
+  cycles = gba_sio_transfer_cycles(sio->transfer_mode,
+   sio->transfer_setting, player_count);
+  return gba_sio_commit_at(sio, result, sio->current_cycle,
+   sio->current_cycle + cycles);
+}
+
+GbaSioEvent gba_sio_cancel(GbaSio *sio)
+{
+  if(sio == NULL || !gba_sio_transfer_busy(sio))
+    return GBA_SIO_EVENT_NONE;
+
+  gba_sio_clear_transient(sio);
+  *gba_sio_register(sio, GBA_SIO_REG_CONTROL) &=
+   (uint16_t)~GBA_SIO_CONTROL_START;
+  gba_sio_refresh_control(sio);
+  return GBA_SIO_EVENT_NONE;
 }
 
 GbaSioEvent gba_sio_abort(GbaSio *sio)
@@ -589,6 +777,7 @@ GbaSioEvent gba_sio_advance(GbaSio *sio, uint32_t cycles)
 
   if(cycles < sio->cycles_remaining)
   {
+    sio->current_cycle += cycles;
     sio->cycles_remaining -= cycles;
     return GBA_SIO_EVENT_NONE;
   }
@@ -609,6 +798,11 @@ int gba_sio_is_waiting(const GbaSio *sio)
   return sio != NULL && sio->waiting != 0;
 }
 
+int gba_sio_is_busy(const GbaSio *sio)
+{
+  return sio != NULL && gba_sio_transfer_busy(sio);
+}
+
 void gba_sio_save_snapshot(const GbaSio *sio, GbaSioSnapshot *snapshot)
 {
   memset(snapshot, 0, sizeof(*snapshot));
@@ -624,6 +818,7 @@ void gba_sio_save_snapshot(const GbaSio *sio, GbaSioSnapshot *snapshot)
   snapshot->transfer_mode = (uint8_t)sio->transfer_mode;
   snapshot->transfer_setting = sio->transfer_setting;
   snapshot->transfer_players = sio->transfer_players;
+  snapshot->decision_locked = sio->decision_locked;
   snapshot->cycles_remaining = sio->cycles_remaining;
   snapshot->outgoing = sio->outgoing;
   memcpy(snapshot->incoming, sio->incoming, sizeof(snapshot->incoming));
@@ -674,12 +869,18 @@ int gba_sio_load_snapshot(GbaSio *sio, const GbaSioSnapshot *snapshot)
   sio->transfer_mode = (GbaSioMode)snapshot->transfer_mode;
   sio->transfer_setting = snapshot->transfer_setting;
   sio->transfer_players = snapshot->transfer_players;
+  sio->decision_locked = snapshot->decision_locked != 0;
   sio->cycles_remaining = snapshot->cycles_remaining;
+  sio->current_cycle = 0;
+  sio->transfer_start_cycle = 0;
+  sio->transfer_finish_cycle = sio->active ?
+   snapshot->cycles_remaining : 0;
   sio->outgoing = snapshot->outgoing;
   memcpy(sio->incoming, snapshot->incoming, sizeof(sio->incoming));
 
   if((sio->pending_start + sio->waiting + sio->active) > 1 ||
      (sio->active != 0 && sio->cycles_remaining == 0) ||
+     (sio->decision_locked != 0 && sio->waiting == 0 && sio->active == 0) ||
      (gba_sio_transfer_busy(sio) && sio->transfer_players == 0) ||
      !gba_sio_supported_mode(sio->transfer_mode))
   {

@@ -901,6 +901,12 @@
   // MSG_LINK_MENU_DISCONNECT
   "断开连接",
 
+  // MSG_LINK_MENU_BENCHMARK_RUN
+  "运行联机基准测试",
+
+  // MSG_LINK_MENU_BENCHMARK_STOP
+  "停止联机基准测试",
+
   // MSG_LINK_MENU_HELP_STATUS
   "当前联机状态",
 
@@ -912,6 +918,27 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "关闭当前联机会话",
+
+  // MSG_LINK_MENU_HELP_BENCHMARK
+  "测试两台 PSP 的十分钟真实数据流",
+
+  // MSG_LINK_BENCHMARK_IDLE
+  "基准测试：就绪",
+
+  // MSG_LINK_BENCHMARK_WAITING
+  "基准测试：同步中",
+
+  // MSG_LINK_BENCHMARK_RUNNING
+  "基准测试：运行中",
+
+  // MSG_LINK_BENCHMARK_PASS
+  "基准测试：通过",
+
+  // MSG_LINK_BENCHMARK_FAIL
+  "基准测试：失败",
+
+  // MSG_LINK_BENCHMARK_ABORT
+  "基准测试：已中止",
 
   // MSG_LINK_STATUS_NO_GAME
   "未加载游戏",

@@ -20,6 +20,7 @@
 #define INPUT_TRACE_HEADER_SIZE 32U
 #define INPUT_TRACE_EVENT_SIZE 8U
 #define INPUT_TRACE_GAME_CODE_SIZE 4U
+#define INPUT_TRACE_IDENTITY_SIZE 0xC0U
 #define INPUT_TRACE_KEY_MASK 0x03FFU
 
 typedef enum
@@ -80,6 +81,14 @@ int input_trace_begin_replay(InputTrace *trace, const uint8_t *encoded,
  size_t encoded_size,
  const uint8_t expected_game_code[INPUT_TRACE_GAME_CODE_SIZE],
  uint8_t expected_rom_revision, uint32_t start_frame);
+int input_trace_begin_record_from_header(InputTrace *trace,
+ uint32_t start_frame,
+ const uint8_t header[INPUT_TRACE_IDENTITY_SIZE], uint32_t file_size,
+ uint16_t initial_keys);
+int input_trace_begin_replay_from_header(InputTrace *trace,
+ const uint8_t *encoded, size_t encoded_size,
+ const uint8_t header[INPUT_TRACE_IDENTITY_SIZE], uint32_t file_size,
+ uint32_t start_frame);
 uint16_t input_trace_apply(InputTrace *trace, uint32_t frame,
  uint16_t physical_keys);
 
