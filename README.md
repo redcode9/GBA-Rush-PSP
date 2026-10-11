@@ -106,9 +106,8 @@ backup of important saves when testing cheats.
 
 ## Link cable
 
-Two-player cable emulation is experimental. The newer protocol-v3 implementation
-and its no-ROM benchmark are maintained on
-[`feature/link-cable`](https://github.com/redcode9/GBA-Rush-PSP/tree/feature/link-cable).
+Two-player cable emulation is experimental. The 1.4.0 candidate includes
+protocol v3 and a built-in no-ROM benchmark.
 The last recorded FireRed trial failed before a serial transfer; a completed
 trade and the paired hardware benchmark remain unverified.
 

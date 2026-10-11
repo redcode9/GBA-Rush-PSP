@@ -76,6 +76,32 @@ def fixture_v3() -> bytes:
 
 
 class RuntimeLogDecoderTests(unittest.TestCase):
+    def test_version_four_session_fields_preserve_full_detail(self):
+        packed = (12 << 24) | (15 << 16) | (3 << 8) | 0x12
+        detail = decoder.describe({"event": "link-counters", "flags": 26,
+                                   "values": [15, 3, 0x212]})
+        self.assertIn("state=recovering reason=transport", detail)
+        self.assertIn("detail=530/0x0212", detail)
+        text = decoder.describe({"event": "link-counters", "flags": 2,
+                                 "values": [7, 8, packed]})
+        self.assertIn("heartbeat-tx=7 heartbeat-rx=8", text)
+        self.assertIn("message=12 state=recovering reason=transport", text)
+
+    def test_health_is_an_exclusive_state_and_old_logs_remain_raw(self):
+        record = {"event": "link-counters", "flags": 20, "values": [0, 0, 3]}
+        self.assertIn("health=recovering", decoder.describe(record))
+        self.assertNotIn("degraded=", decoder.describe(record))
+        record["version"] = 3
+        self.assertIn("health-raw=0x00000003", decoder.describe(record))
+
+    def test_decodes_version_four_header(self):
+        data = bytearray(fixture_v3())
+        struct.pack_into(">H", data, 4, 4)
+        struct.pack_into(">I", data, 60, binascii.crc32(data[:60]) & 0xFFFFFFFF)
+        snapshot = decoder.parse_snapshot(data)
+        self.assertEqual(snapshot["version"], 4)
+        self.assertTrue(all(r["version"] == 4 for r in snapshot["records"]))
+
     def test_link_state_names_match_enum_order(self):
         self.assertEqual(decoder.LINK_STATES, [
             "idle", "hosting", "joining", "negotiating", "wait-ready",

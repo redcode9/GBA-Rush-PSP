@@ -1100,7 +1100,7 @@ static void main_log_link_snapshot(void)
    ((u32)gba_link_session.last_message_type << 24) |
     ((u32)gba_link_session.state << 16) |
     ((u32)gba_link_session.reason << 8) |
-    gba_link_session.reason_detail);
+    (gba_link_session.reason_detail & 0xFFu));
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 3,
    snapshot.transport_epoch, snapshot.last_received_sequence,
    snapshot.outstanding_packets);
@@ -1183,6 +1183,9 @@ static void main_log_link_snapshot(void)
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 25,
    snapshot.session_recovery_requests, snapshot.session_recovery_reason,
    0);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 26,
+   gba_link_session.state, gba_link_session.reason,
+   gba_link_session.reason_detail);
 }
 
 static void main_link_handle_closed(void)
@@ -1511,11 +1514,15 @@ u32 update_gba(void)
   IRQ_TYPE irq_raised = IRQ_NONE;
   GbaSioEvent sio_event;
 
+  perf_monitor_record_gba_update_entry();
+
   do
   {
     reg[CPU_DMA_HACK] = 0;
 
     update_gba_loop:
+
+    perf_monitor_record_gba_update_iteration();
 
     main_power_service();
 
@@ -1605,7 +1612,18 @@ u32 update_gba(void)
             continue;
 
           if (!skip_next_frame)
+          {
+            u32 renderer_start = 0;
+
+            if(perf_monitor_active())
+              renderer_start = sceKernelGetSystemTimeLow();
+
             (*update_screen)();
+
+            if(renderer_start != 0)
+              perf_monitor_record_renderer_frame(
+               sceKernelGetSystemTimeLow() - renderer_start);
+          }
 
           update_gbc_sound(cpu_ticks);
           gbc_sound_update = 0;
@@ -1788,10 +1806,7 @@ static void synchronize(void)
     if (reg[CPU_HALT_STATE] == CPU_STOP)
     {
       clear_screen(0);
-      if (option_language == 0)
-        print_string(MSG[MSG_GBA_SLEEP_MODE], X_POS_CENTER, 130, color_active_item, BG_NO_FILL);
-      else
-        print_string_gbk(MSG[MSG_GBA_SLEEP_MODE], X_POS_CENTER, 130, color_active_item, BG_NO_FILL);
+      print_string_gbk(MSG[MSG_GBA_SLEEP_MODE], X_POS_CENTER, 130, color_active_item, BG_NO_FILL);
     }
 
     // PSP controller - hold
@@ -1900,7 +1915,18 @@ static void synchronize(void)
   {
     if (synchronize_flag != 0)
     {
+      int measuring = perf_monitor_active();
+      u32 vblank_start;
+
+      if(measuring)
+        vblank_start = sceKernelGetSystemTimeLow();
+
       sceDisplayWaitVblankStart();
+
+      if(measuring)
+        perf_monitor_record_wait(PERF_METRICS_WAIT_BACKPRESSURE,
+         sceKernelGetSystemTimeLow() - vblank_start);
+
       real_frame_count = 0;
       virtual_frame_count = 0;
     }
@@ -2108,6 +2134,7 @@ int user_main(int argc, char *argv[])
   char load_filename[MAX_FILE];
   const char *file_ext[] = { ".zip", ".gba", ".bin", ".agb", ".gbz", NULL };
   u32 rom_loaded = 0;
+  u32 prepared_by_menu = 0;
 
   setup_main((argc > 0 && argv[0] != NULL) ? argv[0] : NULL);
 
@@ -2139,7 +2166,7 @@ int user_main(int argc, char *argv[])
       {
         clear_screen(COLOR32_BLACK);
         error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
-        menu();
+        prepared_by_menu = rom_loaded = menu() != 0;
       }
       else
       {
@@ -2149,13 +2176,13 @@ int user_main(int argc, char *argv[])
     }
     else if (load_file(file_ext, load_filename, dir_roms, 1) < 0)
     {
-      menu();
+      prepared_by_menu = rom_loaded = menu() != 0;
     }
     else if (load_gamepak(load_filename) < 0)
     {
       clear_screen(COLOR32_BLACK);
       error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
-      menu();
+      prepared_by_menu = rom_loaded = menu() != 0;
     }
     else
     {
@@ -2166,7 +2193,13 @@ int user_main(int argc, char *argv[])
 
   if (rom_loaded)
   {
-    reset_gba();
+    if (!prepared_by_menu)
+    {
+      reset_gba();
+      maybe_load_auto_savestate();
+    }
+
+    sceImposeSetHomePopup(enable_home_menu ^ 1);
 
     set_cpu_clock(option_clock_speed);
 
@@ -2179,7 +2212,7 @@ int user_main(int argc, char *argv[])
     execute_arm_translate(reg[EXECUTE_CYCLES]);
   }
 
-  /* If we get here, menu() returned without loading a ROM */
+  quit();
   return 0;
 }
 
@@ -2483,8 +2516,40 @@ static u32 main_perf_clock_mhz(void)
 
 int main_perf_start(void)
 {
+  FastForwardSettings fast_forward_settings;
+  PerfMonitorIdentity identity;
+
   if(!perf_monitor_start(sceKernelGetSystemTimeWide()))
     return 0;
+
+  fast_forward_settings = main_fast_forward_settings();
+  memset(&identity, 0, sizeof(identity));
+  identity.clock_mhz = main_perf_clock_mhz();
+  identity.psp_vsync = option_psp_vsync;
+  identity.renderer = option_video_renderer;
+  identity.scale = option_screen_scale;
+  identity.filter = option_screen_filter;
+  identity.frameskip_type = option_frameskip_type;
+  identity.frameskip_value = option_frameskip_value;
+  identity.sound_volume = option_sound_volume;
+  identity.fast_forward_game_override = option_fast_forward_game_override;
+  identity.fast_forward_profile = fast_forward_settings.profile;
+  identity.fast_forward_activation = fast_forward_settings.activation;
+  identity.fast_forward_speed = fast_forward_settings.speed;
+  identity.fast_forward_presentation = fast_forward_settings.presentation;
+  identity.fast_forward_audio = fast_forward_settings.audio;
+  identity.gamepak_file_size = gamepak_file_size;
+  identity.gamepak_ram_buffer_size = gamepak_ram_buffer_size;
+  identity.gamepak_ram_pages = gamepak_ram_pages;
+  if(gamepak_file_size >= 0xC0U)
+  {
+    memcpy(identity.rom_title, gamepak_header + 0xA0,
+     sizeof(identity.rom_title));
+    memcpy(identity.game_code, gamepak_header + 0xAC,
+     sizeof(identity.game_code));
+    identity.rom_revision = gamepak_header[0xBC];
+  }
+  perf_monitor_set_identity(&identity);
 
   perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
   video_reset_frame_timing();
@@ -2523,14 +2588,14 @@ static int main_perf_write_all(SceUID file, const char *data, u32 length)
 
 int main_perf_write_report(char *output_path, size_t output_path_size)
 {
-  FastForwardSettings fast_forward_settings;
   PerfMetricsSnapshot metrics;
   PerfReportMetadata metadata;
+  PerfMonitorIdentity identity;
   ScePspDateTime date = { 0 };
   SceIoStat directory_stat;
   char directory[MAX_PATH];
   char filename[MAX_PATH];
-  char report[2048];
+  char report[PERF_REPORT_CAPACITY];
   SceUID file;
   int formatted;
   int report_length;
@@ -2541,31 +2606,43 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
      metrics.state == PERF_METRICS_ACTIVE)
     return -1;
 
+  perf_monitor_identity(&identity);
   memset(&metadata, 0, sizeof(metadata));
   metadata.emulator_version = GBA_RUSH_VERSION;
   model = kuKernelGetModel();
   metadata.psp_model = model < 0 ? UINT32_MAX : (u32)model;
-  metadata.clock_mhz = main_perf_clock_mhz();
-  metadata.renderer = option_video_renderer;
-  metadata.scale = option_screen_scale;
-  metadata.filter = option_screen_filter;
-  metadata.frameskip_type = option_frameskip_type;
-  metadata.frameskip_value = option_frameskip_value;
-  metadata.sound_volume = option_sound_volume;
-  fast_forward_settings = main_fast_forward_settings();
-  metadata.fast_forward_game_override = option_fast_forward_game_override;
-  metadata.fast_forward_profile = fast_forward_settings.profile;
-  metadata.fast_forward_activation = fast_forward_settings.activation;
-  metadata.fast_forward_speed = fast_forward_settings.speed;
-  metadata.fast_forward_presentation = fast_forward_settings.presentation;
-  metadata.fast_forward_audio = fast_forward_settings.audio;
-  if(gamepak_file_size >= 0xC0U)
+  metadata.clock_mhz = identity.clock_mhz;
+/* _PSP_FW_VERSION is the compile-time SDK macro, not the device firmware. */
+#ifdef _PSP_FW_VERSION
+  metadata.psp_sdk_fw_macro = _PSP_FW_VERSION;
+#else
+  metadata.psp_sdk_fw_macro = 0;
+#endif
+  metadata.psp_vsync = identity.psp_vsync;
+  metadata.renderer = identity.renderer;
+  metadata.scale = identity.scale;
+  metadata.filter = identity.filter;
+  metadata.frameskip_type = identity.frameskip_type;
+  metadata.frameskip_value = identity.frameskip_value;
+  metadata.sound_volume = identity.sound_volume;
+  metadata.audio_sample_rate = SOUND_FREQUENCY;
+  metadata.audio_samples = SOUND_SAMPLES;
+  metadata.fast_forward_game_override = identity.fast_forward_game_override;
+  metadata.fast_forward_profile = identity.fast_forward_profile;
+  metadata.fast_forward_activation = identity.fast_forward_activation;
+  metadata.fast_forward_speed = identity.fast_forward_speed;
+  metadata.fast_forward_presentation = identity.fast_forward_presentation;
+  metadata.fast_forward_audio = identity.fast_forward_audio;
+  metadata.gamepak_file_size = identity.gamepak_file_size;
+  metadata.gamepak_ram_buffer_size = identity.gamepak_ram_buffer_size;
+  metadata.gamepak_ram_pages = identity.gamepak_ram_pages;
+  if(identity.gamepak_file_size >= 0xC0U)
   {
-    metadata.rom_title = gamepak_header + 0xA0;
+    metadata.rom_title = identity.rom_title;
     metadata.rom_title_length = 12;
-    metadata.game_code = gamepak_header + 0xAC;
+    metadata.game_code = identity.game_code;
     metadata.game_code_length = 4;
-    metadata.rom_revision = gamepak_header[0xBC];
+    metadata.rom_revision = identity.rom_revision;
   }
   metadata.duration_us = perf_monitor_duration_us();
 
@@ -2682,16 +2759,17 @@ u32 yesno_dialog(const char *text)
   const int popup_x = (PSP_SCREEN_WIDTH - popup_w) / 2;
   const int popup_y = (PSP_SCREEN_HEIGHT - popup_h) / 2;
 
+  while (get_pad_input(PSP_CTRL_CROSS | PSP_CTRL_CIRCLE) != 0)
+  {
+    main_power_service();
+    main_link_pump();
+    sceKernelDelayThread(5000);
+  }
+
   draw_popup_frame_auto(popup_x, popup_y, popup_w, popup_h);
 
-  if (option_language == 0)
-  {
-    print_string(text, X_POS_CENTER, popup_y + 16, color_active_item, BG_NO_FILL);
-  }
-  else
-  {
-    print_string_gbk(text, X_POS_CENTER, popup_y + 16, color_active_item, BG_NO_FILL);
-  }
+  print_swap_aware(text, X_POS_CENTER, popup_y + 16,
+   color_active_item, BG_NO_FILL);
   print_swap_aware(MSG[MSG_YES_NO], X_POS_CENTER, popup_y + 46, color_active_item, BG_NO_FILL);
 
   flip_screen(1);

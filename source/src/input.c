@@ -464,11 +464,8 @@ void init_input_kernel(void)
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 int input_diagnostic_trace_begin_record(void)
 {
-  if(gamepak_file_size < 0xC0U)
-    return 0;
-
-  return input_trace_begin_record(&diagnostic_trace, diagnostic_trace_frame,
-   gamepak_rom + 0xAC, gamepak_rom[0xBC], (u16)key);
+  return input_trace_begin_record_from_header(&diagnostic_trace,
+   diagnostic_trace_frame, gamepak_header, gamepak_file_size, (u16)key);
 }
 
 int input_diagnostic_trace_finish_record(void)
@@ -486,11 +483,8 @@ int input_diagnostic_trace_encode(u8 *output, size_t output_size,
 int input_diagnostic_trace_begin_replay(const u8 *encoded,
  size_t encoded_size)
 {
-  if(gamepak_file_size < 0xC0U)
-    return 0;
-
-  return input_trace_begin_replay(&diagnostic_trace, encoded, encoded_size,
-   gamepak_rom + 0xAC, gamepak_rom[0xBC], diagnostic_trace_frame);
+  return input_trace_begin_replay_from_header(&diagnostic_trace, encoded,
+   encoded_size, gamepak_header, gamepak_file_size, diagnostic_trace_frame);
 }
 
 void input_diagnostic_trace_cancel(void)

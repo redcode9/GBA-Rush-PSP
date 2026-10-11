@@ -150,6 +150,111 @@ static void test_cancel_and_invalid_arguments(void)
   assert(trace.event_count == 0);
 }
 
+static void test_paged_header_identity(void)
+{
+  /*
+   * Fixture of a paged ROM: the first 32KiB page (which holds the header)
+   * has been evicted and its physical slot reused for a distant file
+   * region, so gamepak_rom no longer carries the identity. Only the
+   * stable gamepak_header copy (taken at load time) does.
+   */
+  uint8_t rom_page[32 * 1024];
+  uint8_t header[INPUT_TRACE_IDENTITY_SIZE];
+  uint8_t encoded[INPUT_TRACE_HEADER_SIZE + 8 * INPUT_TRACE_EVENT_SIZE];
+  InputTraceEvent events[8];
+  InputTrace trace;
+  InputTrace replay;
+  size_t written = 0;
+  size_t size;
+  size_t i;
+
+  for(i = 0; i < sizeof(rom_page); i++)
+    rom_page[i] = (uint8_t)(i ^ 0xA5);
+
+  memset(header, 0, sizeof(header));
+  memcpy(header + 0xA0, "BPREREPLAY", 10);
+  memcpy(header + 0xAC, game_code, sizeof(game_code));
+  header[0xBC] = 7;
+
+  /* The record wrapper must take the identity from the stable header,
+   * not from the paged ROM buffer. */
+  input_trace_init(&trace, events, 8);
+  assert(input_trace_begin_record_from_header(&trace, 0, header,
+   0x1000000U, 0));
+  assert(trace.state == INPUT_TRACE_RECORDING);
+  assert(memcmp(trace.game_code, game_code, sizeof(game_code)) == 0);
+  assert(trace.rom_revision == 7);
+  assert(input_trace_apply(&trace, 0, 0) == 0);
+  assert(input_trace_apply(&trace, 1, 5) == 5);
+  assert(input_trace_finish_record(&trace, 2));
+  assert(input_trace_encode(&trace, encoded, sizeof(encoded), &written));
+  size = written;
+
+  /* The replay wrapper must validate against the stable header even
+   * though the ROM header page is gone. */
+  input_trace_init(&replay, events, 8);
+  assert(input_trace_begin_replay_from_header(&replay, encoded, size,
+   header, 0x1000000U, 1000));
+  assert(replay.state == INPUT_TRACE_REPLAYING);
+  assert(replay.rom_revision == 7);
+  assert(input_trace_apply(&replay, 1001, 0x3FF) == 5);
+  input_trace_cancel(&replay);
+  assert(replay.state == INPUT_TRACE_IDLE);
+
+  /* A header carrying a different ROM revision must be rejected. */
+  header[0xBC] = 8;
+  input_trace_init(&replay, events, 8);
+  assert(!input_trace_begin_replay_from_header(&replay, encoded, size,
+   header, 0x1000000U, 1000));
+  assert(replay.error == INPUT_TRACE_ERROR_IDENTITY);
+  header[0xBC] = 7;
+
+  /* The paged ROM buffer itself must not be a source of identity. */
+  memset(rom_page + 0xAC, 0, sizeof(game_code));
+  assert(memcmp(rom_page + 0xAC, game_code, sizeof(game_code)) != 0);
+}
+
+static void test_header_file_size_gate(void)
+{
+  uint8_t header[INPUT_TRACE_IDENTITY_SIZE];
+  uint8_t encoded[INPUT_TRACE_HEADER_SIZE + 8 * INPUT_TRACE_EVENT_SIZE];
+  InputTraceEvent events[8];
+  InputTrace trace;
+  InputTrace replay;
+  size_t size;
+
+  memset(header, 0, sizeof(header));
+  memcpy(header + 0xAC, game_code, sizeof(game_code));
+  header[0xBC] = 1;
+  size = make_trace(encoded, sizeof(encoded));
+
+  input_trace_init(&trace, events, 8);
+  assert(!input_trace_begin_record_from_header(&trace, 0, header,
+   INPUT_TRACE_IDENTITY_SIZE - 1U, 0));
+  assert(trace.state == INPUT_TRACE_IDLE);
+  assert(input_trace_begin_record_from_header(&trace, 0, header,
+   INPUT_TRACE_IDENTITY_SIZE, 0));
+  assert(trace.state == INPUT_TRACE_RECORDING);
+  assert(input_trace_finish_record(&trace, 1));
+  input_trace_cancel(&trace);
+
+  input_trace_init(&replay, events, 8);
+  assert(!input_trace_begin_replay_from_header(&replay, encoded, size,
+   header, INPUT_TRACE_IDENTITY_SIZE - 1U, 0));
+  assert(replay.state == INPUT_TRACE_IDLE);
+  assert(!input_trace_begin_replay_from_header(&replay, encoded, size,
+   NULL, 0x1000000U, 0));
+  assert(replay.state == INPUT_TRACE_IDLE);
+
+  input_trace_init(&replay, events, 8);
+  assert(input_trace_begin_replay_from_header(&replay, encoded, size,
+   header, 0x1000000U, 2000));
+  assert(replay.state == INPUT_TRACE_REPLAYING);
+  assert(input_trace_apply(&replay, 2000 + replay.duration_frames + 1,
+   0x3FF) == 0x3FF);
+  assert(replay.state == INPUT_TRACE_FINISHED);
+}
+
 int main(void)
 {
   test_record_and_replay();
@@ -157,6 +262,8 @@ int main(void)
   test_identity_and_checksum_rejection();
   test_malformed_traces();
   test_cancel_and_invalid_arguments();
+  test_paged_header_identity();
+  test_header_file_size_gate();
   puts("Input trace tests passed");
   return 0;
 }

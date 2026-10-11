@@ -1,7 +1,7 @@
 # Link cable implementation
 
-The protocol-v3 implementation is on `feature/link-cable`; `main` retains the
-older protocol. Use matching builds on both consoles. The cable is experimental
+The 1.4.0 candidate includes protocol v3. Use matching builds on both consoles.
+The cable is experimental
 and has not completed the [1.4.0 hardware tests](ROADMAP-1.4.0.md#release-tests).
 
 ## Components
@@ -65,7 +65,7 @@ speeds, delayed handlers, packet faults and burst transfers. TLA+ models and
 CBMC harnesses add bounded state and memory checks. Hardware scheduling, radio
 and guest ROM execution still need console tests.
 
-On the development build, run the built-in no-ROM benchmark before testing games.
+Run the built-in no-ROM benchmark before testing games.
 Start fresh emulator processes for each role assignment, leave WLAN on, disable
 WLAN Power Save and automatic suspend, and copy both terminal logs before another
 run. An on-screen PASS without matching terminal records is incomplete evidence.
@@ -78,6 +78,11 @@ python3 tools/analyze_link_benchmark.py host.gbrlog joiner.gbrlog --json
 Use `--run-id ID` if the logs contain several common benchmark runs. Preserve
 internal error domain/code separately from the original PSP API phase and return
 value. A full log ring means packet history may be incomplete.
+
+Snapshot version 4 records the full session failure detail separately from
+packed heartbeat counters and identifies exclusive transport-health states.
+Older snapshots remain readable; ambiguous historical fields are shown as raw
+values rather than guessed states.
 
 The supported scope is two PSPs and the three GBA cable modes. Wireless Adapter,
 additional players, UART, JoyBus, multiboot and internet relay are separate work.

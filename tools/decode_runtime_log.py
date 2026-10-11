@@ -15,7 +15,7 @@ from typing import Any, Iterable
 HEADER = struct.Struct(">4sHHHHHHIIIIIIQQII")
 RECORD = struct.Struct(">QIIHBBIII")
 MAGIC = b"GBRL"
-VERSIONS = {1, 2, 3}
+VERSIONS = {1, 2, 3, 4}
 
 SOURCES = {1: "main", 2: "network", 3: "critical"}
 EVENTS = {
@@ -71,6 +71,9 @@ LINK_TX_KINDS = ["none", "ack", "critical", "state", "probe"]
 LINK_STATE_CLASSES = ["none", "sio", "heartbeat", "clock"]
 ERROR_DOMAINS = [
     "none", "psp-api", "transport", "session", "lifecycle", "internal",
+]
+TRANSPORT_HEALTH = [
+    "healthy", "pressured", "recovery-requested", "recovering", "failed",
 ]
 ADHOC_PHASES = [
     "none", "wlan", "thread", "load-common", "load-adhoc", "net-init",
@@ -148,6 +151,7 @@ def parse_snapshot(data: bytes, path: str = "<memory>") -> dict[str, Any]:
         timestamp, cycle, ordinal, event, source, flags = values[:6]
         value0, value1, value2 = values[6:]
         records.append({
+            "version": version,
             "timestamp_us": timestamp,
             "elapsed_us": timestamp - started_us if timestamp >= started_us else None,
             "emulated_cycle": cycle,
@@ -184,6 +188,7 @@ def describe(record: dict[str, Any]) -> str:
     event = record["event"]
     flags = record["flags"]
     value0, value1, value2 = record["values"]
+    version = record.get("version", 4)
     if event == "link-state":
         return f"state={_name(LINK_STATES, value0)} reason={_name(LINK_REASONS, value1)} detail={value2} events=0x{flags:02X}"
     if event == "link-pause-end" and flags & 0x80:
@@ -219,6 +224,17 @@ def describe(record: dict[str, Any]) -> str:
     if event == "rom-open":
         return f"code={_rom_code(value0)} revision={flags} size={value1}"
     if event == "link-counters":
+        if flags == 2:
+            if version < 4:
+                return (f"heartbeat-tx={value0} heartbeat-rx={value1} "
+                        f"session-packed=0x{value2:08X}")
+            return (
+                f"heartbeat-tx={value0} heartbeat-rx={value1} "
+                f"message={value2 >> 24} "
+                f"state={_name(LINK_STATES, (value2 >> 16) & 0xFF)} "
+                f"reason={_name(LINK_REASONS, (value2 >> 8) & 0xFF)} "
+                f"detail-low=0x{value2 & 0xFF:02X}"
+            )
         if flags in (16, 17, 18):
             mailbox = {16: "sio", 17: "heartbeat", 18: "clock"}[flags]
             return (
@@ -235,12 +251,10 @@ def describe(record: dict[str, Any]) -> str:
                 f"retry-suppressed={value2}"
             )
         if flags == 20:
-            return (
-                f"last-transfer reason={_name(LINK_REASONS, value0)} "
-                f"detail={value1} degraded={bool(value2 & 1)} "
-                f"recovery-requested={bool(value2 & 2)} "
-                f"recovering={bool(value2 & 4)}"
-            )
+            health = (f"health={_name(TRANSPORT_HEALTH, value2)}" if version >= 4
+                      else f"health-raw=0x{value2:08X}")
+            return (f"last-transfer reason={_name(LINK_REASONS, value0)} "
+                    f"detail={value1} {health}")
         if flags == 21:
             return (
                 f"backpressure age={value0}ms streak={value1} "
@@ -272,6 +286,10 @@ def describe(record: dict[str, Any]) -> str:
                 f"session-recovery requests={value0} "
                 f"reason={_name(LINK_REASONS, value1)}"
             )
+        if flags == 26:
+            return (f"session state={_name(LINK_STATES, value0)} "
+                    f"reason={_name(LINK_REASONS, value1)} "
+                    f"detail={value2}/0x{value2:04X}")
         labels = {
             0: "resync/group/stack",
             1: "tx/rx/retransmit",

@@ -1,13 +1,13 @@
 # Changelog
 
-## 1.4.0 - Unreleased
+## 1.4.0-rc.4 - 2026-10-11
 
 ### Added
 
 - Modern, Classic and Custom fast-forward profiles, per-game overrides and
   optional accelerated audio at 2x/3x.
 - Fast-forward measurements in performance reports and benchmark comparisons.
-- On the link development branch: paired no-ROM benchmarks, binary runtime logs,
+- Paired no-ROM benchmarks, binary runtime logs,
   protocol models, C proof harnesses and fault-injection tests.
 
 ### Changed
@@ -16,13 +16,27 @@
 - Dynarec branch resolution uses an iterative worklist to bound host stack use.
 - Mosaic rendering avoids per-pixel division and fixes rotated bitmap sampling.
 - Performance menus separate common settings from advanced core options.
-- The development cable uses protocol v3, with a START/REPLY stream for multiplayer,
+- The cable uses protocol v3, with a START/REPLY stream for multiplayer,
   bounded transport queues, correlated heartbeats and one recovery coordinator.
 - Build instructions, link notes and the 1.4.0 checklist are maintained alongside
   the user guide. Original text references are grouped under `docs/legacy/`.
 
 ### Fixed
 
+- ROMs loaded from the startup menu now run without resetting the state restored
+  there. Direct launches offer the auto-savestate prompt; the browser restores
+  HOME handling, and the prompt waits for the selecting button to be released.
+- Aligned IWRAM stack stores invalidate translated-code tags for SMOL overlays,
+  following the upstream fix while preserving stores below the stack pointer.
+- Renderer wrappers rebuild when their included sources change.
+- Translation headers remain UTF-8 and compile as GBK for the menu glyphs;
+  filename clipping and scrolling preserve GBK pairs and Shift-JIS kana.
+- Evicted ROM pages invalidate the cached read pointer. Failed and short reads
+  clear unread bytes and remain uncached for retry; partial final pages are padded.
+- Stopped performance reports retain the original ROM and settings. DMA counters
+  exclude SRAM from ROM transfers, and clock wrap no longer drops frame samples.
+- Snapshot v4 preserves full failure details and decodes transport health as an
+  exclusive state. Older logs remain readable without guessing ambiguous fields.
 - Fast-forward ends at menus, reset, ROM changes, link setup, suspend and exit;
   accelerated audio falls back to silence when output cannot stay stable.
 - Version 1.3 settings migrate without discarding unrelated configuration.

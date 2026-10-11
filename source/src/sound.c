@@ -979,7 +979,18 @@ void synchronize_sound(void)
     {
       if (option_frameskip_type == FRAMESKIP_AUTO)
       {
+        int measuring = perf_monitor_active();
+        u32 vblank_start;
+
+        if(measuring)
+          vblank_start = sceKernelGetSystemTimeLow();
+
         sceDisplayWaitVblankStart();
+
+        if(measuring)
+          perf_monitor_record_wait(PERF_METRICS_WAIT_AUDIO,
+           sceKernelGetSystemTimeLow() - vblank_start);
+
         real_frame_count = 0;
         virtual_frame_count = 0;
       }

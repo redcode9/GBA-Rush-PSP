@@ -580,7 +580,6 @@ void add_recent_rom(const char *filename)
 
 
 /* Forward declarations for status bar functions */
-static void update_status_string(char *time_str, char *batt_str, u16 *color_batt);
 static void update_status_string_gbk(char *time_str, char *batt_str, u16 *color_batt);
 static void draw_status_bar(void);
 
@@ -620,10 +619,7 @@ static void draw_theme_preview(u16 editing_color_ptr_value)
     draw_box_line(px - 1, py - 1, px + pw, py + ph, color_inactive_item);
 
     /* Title bar at top */
-    if (option_language == 0)
-        print_string(MSG[MSG_PREVIEW_TITLE], px + 6, py + 4, color_rom_info, BG_NO_FILL);
-    else
-        print_string_gbk(MSG[MSG_PREVIEW_TITLE], px + 6, py + 4, color_rom_info, BG_NO_FILL);
+    print_string_gbk(MSG[MSG_PREVIEW_TITLE], px + 6, py + 4, color_rom_info, BG_NO_FILL);
 
     /* Menu items — simulate a list with one active, rest inactive */
     /* Scaled for 240x160: 5 items, ~20px each */
@@ -642,10 +638,7 @@ static void draw_theme_preview(u16 editing_color_ptr_value)
     for (u32 i = 0; i < num_fake; i++)
     {
         u16 item_color = (i == active_idx) ? color_active_item : color_inactive_item;
-        if (option_language == 0)
-            print_string(fake_items[i], px + 10, item_y + i * item_h, item_color, BG_NO_FILL);
-        else
-            print_string_gbk(fake_items[i], px + 10, item_y + i * item_h, item_color, BG_NO_FILL);
+        print_string_gbk(fake_items[i], px + 10, item_y + i * item_h, item_color, BG_NO_FILL);
     }
 
     /* Scroll bar on the left edge */
@@ -689,10 +682,7 @@ static void draw_theme_preview(u16 editing_color_ptr_value)
 
     /* Tooltip */
     u32 tooltip_y = py + ph - 40;
-    if (option_language == 0)
-        print_string(MSG[MSG_PREVIEW_ITEM_TOOLTIP], px + 10, tooltip_y, color_tooltip_text, BG_NO_FILL);
-    else
-        print_string_gbk(MSG[MSG_PREVIEW_ITEM_TOOLTIP], px + 10, tooltip_y, color_tooltip_text, BG_NO_FILL);
+    print_string_gbk(MSG[MSG_PREVIEW_ITEM_TOOLTIP], px + 10, tooltip_y, color_tooltip_text, BG_NO_FILL);
 
     /* Help bar at bottom — button symbols embedded in MSG, print_swap_aware swaps them */
     print_swap_aware(MSG[MSG_PREVIEW_ITEM_HELP], px + 15, py + ph - 16, color_help_text, BG_NO_FILL);
@@ -742,10 +732,7 @@ void print_swap_aware(const char *src, u32 x, u32 y, u16 color, u16 bg)
 
     copy_swap_aware(src, buf, sizeof(buf));
 
-    if (option_language == 0)
-        print_string(buf, x, y, color, bg);
-    else
-        print_string_gbk(buf, x, y, color, bg);
+    print_string_gbk(buf, x, y, color, bg);
 }
 
 /* ------------------------------------------------------------------
@@ -837,21 +824,29 @@ static void print_string_scroll(const char *str, u32 x, u32 y, u16 color, u16 bg
     if (len == 0) return;
 
     if (len <= max_chars) {
-        print_string(str, x, y, color, bg);
+        if (option_language == 0)
+            print_string(str, x, y, color, bg);
+        else
+            print_string_gbk(str, x, y, color, bg);
         return;
     }
 
-    u32 start = (u32)scroll_offset;
-    if (start >= len) start = len - 1;
-    u32 clip_len = len - start;
-    if (clip_len > max_chars) clip_len = max_chars;
-    if (clip_len >= 256) clip_len = 255;
+    MenuTextEncoding encoding = option_language == 0 ?
+        MENU_TEXT_SHIFT_JIS : MENU_TEXT_GBK;
+    u32 start = menu_text_scroll_start(str,
+        scroll_offset > 0 ? (u32)scroll_offset : 0, encoding);
+    if (max_chars >= 256) max_chars = 255;
+    u32 clip_len = menu_text_clip_length_for_encoding(str + start,
+        max_chars, encoding);
 
     char buf[256];
     memcpy(buf, str + start, clip_len);
     buf[clip_len] = '\0';
 
-    print_string(buf, x, y, color, bg);
+    if (option_language == 0)
+        print_string(buf, x, y, color, bg);
+    else
+        print_string_gbk(buf, x, y, color, bg);
 }
 
 /* Clip any string to max_chars width — used for non-selected items */
@@ -861,17 +856,25 @@ static void print_string_clipped(const char *str, u32 x, u32 y, u16 color, u16 b
     if (len == 0) return;
 
     if (len <= max_chars) {
-        print_string(str, x, y, color, bg);
+        if (option_language == 0)
+            print_string(str, x, y, color, bg);
+        else
+            print_string_gbk(str, x, y, color, bg);
         return;
     }
 
     if (max_chars >= 256) max_chars = 255;
 
     char buf[256];
-    memcpy(buf, str, max_chars);
-    buf[max_chars] = '\0';
+    u32 clip_len = menu_text_clip_length_for_encoding(str, max_chars,
+        option_language == 0 ? MENU_TEXT_SHIFT_JIS : MENU_TEXT_GBK);
+    memcpy(buf, str, clip_len);
+    buf[clip_len] = '\0';
 
-    print_string(buf, x, y, color, bg);
+    if (option_language == 0)
+        print_string(buf, x, y, color, bg);
+    else
+        print_string_gbk(buf, x, y, color, bg);
 }
 
 static void draw_color_picker(u32 h, u32 s, u32 v, s32 cx, s32 cy, s32 hue_seg,
@@ -883,10 +886,7 @@ static void draw_color_picker(u32 h, u32 s, u32 v, s32 cx, s32 cy, s32 hue_seg,
     clear_screen(COLOR15_TO_32(color_bg));
 
     /* Title */
-    if (option_language == 0)
-        print_string(MSG[title_msg_idx], 10, 10, color_active_item, BG_NO_FILL);
-    else
-        print_string_gbk(MSG[title_msg_idx], 10, 10, color_active_item, BG_NO_FILL);
+    print_string_gbk(MSG[title_msg_idx], 10, 10, color_active_item, BG_NO_FILL);
 
     /* SV square (Saturation x Value) */
     for (gy = 0; gy < PICKER_SV_GRID; gy++)
@@ -949,10 +949,10 @@ static void draw_color_picker(u32 h, u32 s, u32 v, s32 cx, s32 cy, s32 hue_seg,
     /* Labels */
     if (option_language == 0)
     {
-        print_string(MSG[MSG_PICKER_OLD], PICKER_PREV_X, PICKER_PREV_Y + PICKER_PREV_SIZE + 3, color_help_text, BG_NO_FILL);
-        print_string(MSG[MSG_PICKER_NEW], PICKER_PREV_X, PICKER_PREV_Y + PICKER_PREV_SIZE * 2 + 23, color_help_text, BG_NO_FILL);
-        print_string(MSG[MSG_PICKER_CONTROLS], 25, 180, color_help_text, BG_NO_FILL);
-        print_string(MSG[MSG_CUSTOM_COLOR_HELP_ITEM], 30, 258, color_help_text, BG_NO_FILL);
+        print_string_gbk(MSG[MSG_PICKER_OLD], PICKER_PREV_X, PICKER_PREV_Y + PICKER_PREV_SIZE + 3, color_help_text, BG_NO_FILL);
+        print_string_gbk(MSG[MSG_PICKER_NEW], PICKER_PREV_X, PICKER_PREV_Y + PICKER_PREV_SIZE * 2 + 23, color_help_text, BG_NO_FILL);
+        print_string_gbk(MSG[MSG_PICKER_CONTROLS], 25, 180, color_help_text, BG_NO_FILL);
+        print_string_gbk(MSG[MSG_CUSTOM_COLOR_HELP_ITEM], 30, 258, color_help_text, BG_NO_FILL);
     }
     else
     {
@@ -975,17 +975,14 @@ static void draw_status_bar(void)
 
     if ((status_counter % 30) == 0)
     {
-        if (option_language == 0)
-            update_status_string(time_str, batt_str, &color_batt_life);
-        else
-            update_status_string_gbk(time_str, batt_str, &color_batt_life);
+        update_status_string_gbk(time_str, batt_str, &color_batt_life);
     }
     status_counter++;
 
     if (option_language == 0)
     {
-        print_string(time_str, TIME_STATUS_POS_X, 2, color_help_text, BG_NO_FILL);
-        print_string(batt_str, BATT_STATUS_POS_X, 2, color_batt_life, BG_NO_FILL);
+        print_string_gbk(time_str, TIME_STATUS_POS_X, 2, color_help_text, BG_NO_FILL);
+        print_string_gbk(batt_str, BATT_STATUS_POS_X, 2, color_batt_life, BG_NO_FILL);
     }
     else
     {
@@ -1997,21 +1994,12 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
         print_string_gbk(current_dir_short, 6, 2, color_help_text, BG_NO_FILL);
       if ((counter % 30) == 0)
       {
-        if (option_language == 0)
-          update_status_string(time_str, batt_str, &color_batt_life);
-        else
-          update_status_string_gbk(time_str, batt_str, &color_batt_life);
+        update_status_string_gbk(time_str, batt_str, &color_batt_life);
       }
       counter++;
-      if (option_language == 0)
-        print_string(time_str, TIME_STATUS_POS_X, 2, color_help_text, BG_NO_FILL);
-      else
-        print_string_gbk(time_str, TIME_STATUS_POS_X, 2, color_help_text, BG_NO_FILL);
+      print_string_gbk(time_str, TIME_STATUS_POS_X, 2, color_help_text, BG_NO_FILL);
 
-      if (option_language == 0)
-        print_string(batt_str, BATT_STATUS_POS_X, 2, color_batt_life, BG_NO_FILL);
-      else
-        print_string_gbk(batt_str, BATT_STATUS_POS_X, 2, color_batt_life, BG_NO_FILL);
+      print_string_gbk(batt_str, BATT_STATUS_POS_X, 2, color_batt_life, BG_NO_FILL);
 
       /* At root, Square/Back does nothing — show simplified hint. */
       {
@@ -2026,18 +2014,12 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
 /*
       char str_buffer_size[32];
       sprintf(str_buffer_size, MSG[MSG_BUFFER], gamepak_ram_buffer_size >> 20);
-		if (option_language == 0)
-			print_string(str_buffer_size, 384, 258, color_help_text, BG_NO_FILL);
-		else
-			print_string_gbk(str_buffer_size, 384, 258, color_help_text, BG_NO_FILL);
+		print_string_gbk(str_buffer_size, 384, 258, color_help_text, BG_NO_FILL);
 */
       // PSP controller - hold
       if (get_pad_input(PSP_CTRL_HOLD) != 0)
 		{
-		if (option_language == 0)
-			print_string(FONT_KEY_ICON_GBK, 6, 258, color_batt_low, BG_NO_FILL);
-		else
-			print_string_gbk(FONT_KEY_ICON, 6, 258, color_batt_low, BG_NO_FILL);
+		print_string_gbk(FONT_KEY_ICON_GBK, 6, 258, color_batt_low, BG_NO_FILL);
 		}
       /* Compute visible rows before drawing scroll bar */
       u32 file_list_visible_rows = FILE_LIST_ROWS;
@@ -2240,10 +2222,7 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
         u16 header_color = color_help_text;
 
         /* Header */
-        if (option_language == 0)
-          print_string(MSG[MSG_BROWSER_RECENT_GAMES], FILE_LIST_POS_X, recent_y, header_color, BG_NO_FILL);
-        else
-          print_string_gbk(MSG[MSG_BROWSER_RECENT_GAMES], FILE_LIST_POS_X, recent_y, header_color, BG_NO_FILL);
+        print_string_gbk(MSG[MSG_BROWSER_RECENT_GAMES], FILE_LIST_POS_X, recent_y, header_color, BG_NO_FILL);
         recent_y += FONTHEIGHT;
 
         /* Recent ROM entries */
@@ -2271,10 +2250,7 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
         }
 
         /* Separator */
-        if (option_language == 0)
-          print_string(MSG[MSG_BROWSER_ALL_GAMES], FILE_LIST_POS_X, recent_y, header_color, BG_NO_FILL);
-        else
-          print_string_gbk(MSG[MSG_BROWSER_ALL_GAMES], FILE_LIST_POS_X, recent_y, header_color, BG_NO_FILL);
+        print_string_gbk(MSG[MSG_BROWSER_ALL_GAMES], FILE_LIST_POS_X, recent_y, header_color, BG_NO_FILL);
 
         file_list_y_offset = (num_recent_roms + 2) * FONTHEIGHT;
       }
@@ -2813,6 +2789,7 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
 
   } /* end while (return_value == 1) */
 
+  sceImposeSetHomePopup(1);
   return return_value;
 }
 
@@ -2855,10 +2832,7 @@ static void get_savestate_info(char *filename, u16 *snapshot, char *timestamp)
     if (snapshot != NULL)
     {
       memset(snapshot, 0, GBA_SCREEN_SIZE);
-		if (option_language == 0)
-			print_string_ext(MSG[MSG_STATE_MENU_STATE_NONE], X_POS_CENTER, 74, COLOR15_WHITE, BG_NO_FILL, snapshot, GBA_SCREEN_WIDTH);
-		else
-			print_string_ext_gbk(MSG[MSG_STATE_MENU_STATE_NONE], X_POS_CENTER, 74, COLOR15_WHITE, BG_NO_FILL, snapshot, GBA_SCREEN_WIDTH);
+		print_string_ext_gbk(MSG[MSG_STATE_MENU_STATE_NONE], X_POS_CENTER, 74, COLOR15_WHITE, BG_NO_FILL, snapshot, GBA_SCREEN_WIDTH);
     }
 
     sprintf(timestamp, "%s", MSG[(date_format == 0) ? MSG_STATE_MENU_DATE_NONE_0 : MSG_STATE_MENU_DATE_NONE_1]);
@@ -2973,6 +2947,16 @@ static u32 auto_savestate_exists(void)
 }
 
 static u32 ram_dynarec_policy_menu_prev = ~(u32)0;
+
+void maybe_load_auto_savestate(void)
+{
+  if (gamepak_filename[0] == '\0' || main_link_active() ||
+      !auto_savestate_exists())
+    return;
+
+  if (yesno_dialog(MSG[MSG_AUTO_SAVESTATE_LOAD_PROMPT]) == 0)
+    action_loadstate_slot(10);
+}
 
 static void menu_passive_ram_dynarec_policy(void)
 {
@@ -3614,6 +3598,7 @@ u32 menu(void)
   u32 return_value = 0;
 
   u32 first_load = 0;
+  u32 preview_language = option_language;
 
   GUI_ACTION_TYPE gui_action;
   SceCtrlData ctrl_data;
@@ -3803,14 +3788,7 @@ u32 menu(void)
       /* Add to recent ROMs list */
       add_recent_rom(filename_buffer);
 
-      /* Prompt to load auto-savestate for the newly loaded game */
-      if (auto_savestate_exists())
-      {
-        if (yesno_dialog(MSG[MSG_AUTO_SAVESTATE_LOAD_PROMPT]) == 0)
-        {
-          action_loadstate_slot(10);
-        }
-      }
+      maybe_load_auto_savestate();
 
       return_value = 1;
       repeat = 0;
@@ -4110,12 +4088,8 @@ u32 menu(void)
 
       /* Refresh screenshot to blank */
       memset(savestate_screen, 0, GBA_SCREEN_SIZE);
-      if (option_language == 0)
-        print_string_ext(MSG[MSG_STATE_MENU_STATE_NONE], X_POS_CENTER, 74,
+      print_string_ext_gbk(MSG[MSG_STATE_MENU_STATE_NONE], X_POS_CENTER, 74,
                          COLOR15_WHITE, BG_NO_FILL, savestate_screen, GBA_SCREEN_WIDTH);
-      else
-        print_string_ext_gbk(MSG[MSG_STATE_MENU_STATE_NONE], X_POS_CENTER, 74,
-                             COLOR15_WHITE, BG_NO_FILL, savestate_screen, GBA_SCREEN_WIDTH);
 
       screen_image_ptr = savestate_screen;
     }
@@ -4500,9 +4474,6 @@ u32 menu(void)
         savestate_slot = current_option_num;
         menu_change_state();
       }
-      if (option_language == 0)
-      print_string(MSG[savestate_action ? MSG_SAVE : MSG_LOAD], MENU_LIST_POS_X + ((strlen(savestate_timestamps[current_option_num]) + 1) * FONTWIDTH), (current_option_num * FONTHEIGHT) + 28, color_active_item, BG_NO_FILL);
-	else
       print_string_gbk(MSG[savestate_action ? MSG_SAVE : MSG_LOAD], MENU_LIST_POS_X + ((strlen(savestate_timestamps[current_option_num]) + 1) * FONTWIDTH), (current_option_num * FONTHEIGHT) + 28, color_active_item, BG_NO_FILL);
     }
   }
@@ -4671,10 +4642,7 @@ u32 menu(void)
     first_load = 1;
 
     memset(current_screen, 0x00, GBA_SCREEN_SIZE);
-	if (option_language == 0)
-    print_string_ext(MSG[MSG_NON_LOAD_GAME], X_POS_CENTER, 74, COLOR15_WHITE, BG_NO_FILL, current_screen, GBA_SCREEN_WIDTH);
-	else
-    print_string_ext_gbk(MSG[MSG_NON_LOAD_GAME], X_POS_CENTER, 74, COLOR15_WHITE, BG_NO_FILL, current_screen, GBA_SCREEN_WIDTH);
+	print_string_ext_gbk(MSG[MSG_NON_LOAD_GAME], X_POS_CENTER, 74, COLOR15_WHITE, BG_NO_FILL, current_screen, GBA_SCREEN_WIDTH);
   }
 
   void gamepak_file_reopen(void)
@@ -4836,10 +4804,7 @@ u32 menu(void)
               memcpy(line_buf, start + offset, chunk);
               line_buf[chunk] = '\0';
 
-              if (option_language == 0)
-                print_string(line_buf, 6, ypos, color_active_item, color_bg);
-              else
-                print_string_gbk(line_buf, 6, ypos, color_active_item, color_bg);
+              print_string_gbk(line_buf, 6, ypos, color_active_item, color_bg);
 
               ypos = (u16)(ypos + FONTHEIGHT);
               lines_drawn++;
@@ -5594,6 +5559,15 @@ u32 menu(void)
 
   while (repeat)
   {
+    if (first_load && preview_language != option_language)
+    {
+      memset(current_screen, 0, GBA_SCREEN_SIZE);
+      print_string_ext_gbk(MSG[MSG_NON_LOAD_GAME], X_POS_CENTER, 74,
+       COLOR15_WHITE, BG_NO_FILL, current_screen, GBA_SCREEN_WIDTH);
+      screen_image_ptr = current_screen;
+      preview_language = option_language;
+    }
+
     if(main_link_benchmark_active())
     {
       u64 now;
@@ -5617,20 +5591,11 @@ u32 menu(void)
 
     if ((counter % 30) == 0)
 	{
-	  if (option_language == 0)
-      update_status_string(time_str, batt_str, &color_batt_life);
-	  else
-      update_status_string_gbk(time_str, batt_str, &color_batt_life);
+	  update_status_string_gbk(time_str, batt_str, &color_batt_life);
 	}
     counter++;
-	if (option_language == 0)
-    print_string(time_str, TIME_STATUS_POS_X, 2, color_help_text, BG_NO_FILL);
-	else
-    print_string_gbk(time_str, TIME_STATUS_POS_X, 2, color_help_text, BG_NO_FILL);
+	print_string_gbk(time_str, TIME_STATUS_POS_X, 2, color_help_text, BG_NO_FILL);
 
-	if (option_language == 0)
-    print_string(batt_str, BATT_STATUS_POS_X, 2, color_batt_life, BG_NO_FILL);
-	else
 	print_string_gbk(batt_str, BATT_STATUS_POS_X, 2, color_batt_life, BG_NO_FILL);
 
     {
@@ -5818,10 +5783,7 @@ u32 menu(void)
      color_help_text, BG_NO_FILL, footer_max_chars);
   }
 
-/* 	if (option_language == 0)
-		print_string(MSG[current_option->help_string], 30, 258, color_help_text, BG_NO_FILL);
-	else
-		print_string_gbk(MSG[current_option->help_string], 30, 258, color_help_text, BG_NO_FILL); */
+/* 	print_string_gbk(MSG[current_option->help_string], 30, 258, color_help_text, BG_NO_FILL); */
 
     // PSP controller - hold
     if (get_pad_input(PSP_CTRL_HOLD) != 0)
@@ -6099,80 +6061,7 @@ u32 menu(void)
   Status bar
 -----------------------------------------------------------------------------*/
 
-static void update_status_string(char *time_str, char *batt_str, u16 *color_batt)
-{
-  ScePspDateTime current_time = { 0 };
 
-  u32 i = 0;
-  int batt_life_per;
-  int batt_life_time;
-
-  char batt_icon[4][4] =
-  {
-    FONT_BATTERY0 "\0", // empty
-    FONT_BATTERY1 "\0",
-    FONT_BATTERY2 "\0",
-    FONT_BATTERY3 "\0", // full
-  };
-
-  sceRtcGetCurrentClockLocalTime(&current_time);
-  int day_of_week = sceRtcGetDayOfWeek(current_time.year, current_time.month, current_time.day);
-
-  get_timestamp_string(time_str, MSG_MENU_DATE_FMT_0, &current_time, day_of_week);
-
-
-  batt_life_per = scePowerGetBatteryLifePercent();
-
-  if (batt_life_per < 0)
-  {
-    sprintf(batt_str, "%3s --%%", batt_icon[0]);
-  }
-  else
-  {
-    if (batt_life_per > 66)      i = 3;
-    else if (batt_life_per > 33) i = 2;
-    else if (batt_life_per >  9) i = 1;
-    else                         i = 0;
-
-    sprintf(batt_str, "%3s%3d%%", batt_icon[i], batt_life_per);
-  }
-
-  if (scePowerIsPowerOnline() == 1)
-  {
-    char tmp[40];
-    sprintf(tmp, "%s%s", batt_str, MSG[MSG_CHARGE]);
-    strcpy(batt_str, tmp);
-  }
-  else
-  {
-    batt_life_time = scePowerGetBatteryLifeTime();
-
-    if (batt_life_time < 0)
-    {
-      char tmp[40];
-      sprintf(tmp, "%s%s", batt_str, "[--:--]");
-      strcpy(batt_str, tmp);
-    }
-    else
-    {
-      char tmp[40];
-      sprintf(tmp, "%s[%2d:%02d]", batt_str, (batt_life_time / 60) % 100, batt_life_time % 60);
-      strcpy(batt_str, tmp);
-    }
-  }
-
-  if (scePowerIsBatteryCharging() == 1)
-  {
-    *color_batt = color_batt_charg;
-  }
-  else
-  {
-    if (scePowerIsLowBattery() == 1)
-      *color_batt = color_batt_low;
-    else
-      *color_batt = color_batt_normal;
-  }
-}
 
 static void update_status_string_gbk(char *time_str, char *batt_str, u16 *color_batt)
 {
@@ -6741,10 +6630,7 @@ s32 load_dir_cfg(char *file_name)
       else
       {
         sprintf(str_buf, MSG[MSG_ERR_SET_DIR_0], current_variable);
-	    if (option_language == 0)
-        print_string(str_buf, 7, str_line, COLOR15_WHITE, COLOR15_BLACK);
-		else
-        print_string_gbk(str_buf, 7, str_line, COLOR15_WHITE, COLOR15_BLACK);
+	    print_string_gbk(str_buf, 7, str_line, COLOR15_WHITE, COLOR15_BLACK);
         str_line += FONTHEIGHT;
 
         strcpy(dir_name, main_path);
@@ -6757,10 +6643,7 @@ s32 load_dir_cfg(char *file_name)
     if (dir_name[0] == 0)
     {
       sprintf(str_buf, MSG[MSG_ERR_SET_DIR_1], item_name);
-	  if (option_language == 0)
-      print_string(str_buf, 7, str_line, COLOR15_WHITE, COLOR15_BLACK);
-	  else
-      print_string_gbk(str_buf, 7, str_line, COLOR15_WHITE, COLOR15_BLACK);
+	  print_string_gbk(str_buf, 7, str_line, COLOR15_WHITE, COLOR15_BLACK);
       str_line += FONTHEIGHT;
 
       strcpy(dir_name, main_path);

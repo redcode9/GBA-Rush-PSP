@@ -154,7 +154,9 @@ extern u8 *gamepak_rom;
 #define GAMEPAK_HEADER_SIZE 0xC0u
 extern u8 gamepak_header[GAMEPAK_HEADER_SIZE];
 extern u32 gamepak_file_size;
+extern u32 gamepak_size;
 extern u32 gamepak_ram_buffer_size;
+extern u32 gamepak_ram_pages;
 
 extern u32 oam_update;
 

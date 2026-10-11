@@ -3,6 +3,7 @@ PYTHON ?= python3
 HOST_BUILD_DIR ?= build/host
 HOST_SANITIZE_DIR ?= build/sanitize
 HOST_SANITIZE_FLAGS ?= -fsanitize=address,undefined -fno-omit-frame-pointer
+PSP_SDK_INCLUDE ?= $(shell psp-config --pspsdk-path 2>/dev/null)/include
 HOST_TEST_CODEBREAKER = $(HOST_BUILD_DIR)/test_codebreaker
 HOST_TEST_GBA_SIO = $(HOST_BUILD_DIR)/test_gba_sio
 HOST_TEST_LINK_PROTOCOL = $(HOST_BUILD_DIR)/test_link_protocol
@@ -33,6 +34,8 @@ HOST_TEST_VIDEO_DISPATCH = $(HOST_BUILD_DIR)/test_video_dispatch_state
 HOST_TEST_PERF_METRICS = $(HOST_BUILD_DIR)/test_perf_metrics
 HOST_TEST_PERF_REPORT = $(HOST_BUILD_DIR)/test_perf_report
 HOST_TEST_PERF_MONITOR = $(HOST_BUILD_DIR)/test_perf_monitor
+HOST_TEST_PERF_DMA_PROBE = $(HOST_BUILD_DIR)/test_perf_dma_probe
+HOST_TEST_PERF_VIDEO_SENTINEL = $(HOST_BUILD_DIR)/test_perf_video_sentinel
 HOST_TEST_INPUT_TRACE = $(HOST_BUILD_DIR)/test_input_trace
 HOST_TEST_MENU_MODEL = $(HOST_BUILD_DIR)/test_menu_model
 HOST_TEST_MENU_LAYOUT = $(HOST_BUILD_DIR)/test_menu_layout
@@ -64,7 +67,9 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_LINK_AUDIO_WAIT) $(HOST_TEST_VIDEO_ADAPTIVE) \
  $(HOST_TEST_VIDEO_DISPATCH) \
  $(HOST_TEST_PERF_METRICS) $(HOST_TEST_PERF_REPORT) \
- $(HOST_TEST_PERF_MONITOR) $(HOST_TEST_INPUT_TRACE) $(HOST_TEST_MENU_MODEL) \
+ $(HOST_TEST_PERF_MONITOR) $(HOST_TEST_PERF_DMA_PROBE) \
+ $(HOST_TEST_PERF_VIDEO_SENTINEL) \
+ $(HOST_TEST_INPUT_TRACE) $(HOST_TEST_MENU_MODEL) \
  $(HOST_TEST_MENU_LAYOUT) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE) $(HOST_TEST_FAST_FORWARD) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
@@ -94,6 +99,8 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_perf_metrics \
  $(HOST_SANITIZE_DIR)/test_perf_report \
  $(HOST_SANITIZE_DIR)/test_perf_monitor \
+ $(HOST_SANITIZE_DIR)/test_perf_dma_probe \
+ $(HOST_SANITIZE_DIR)/test_perf_video_sentinel \
  $(HOST_SANITIZE_DIR)/test_input_trace \
  $(HOST_SANITIZE_DIR)/test_menu_model \
  $(HOST_SANITIZE_DIR)/test_menu_layout \
@@ -145,6 +152,8 @@ test: $(HOST_TESTS) test-benchmark-tool
 	$(HOST_TEST_PERF_METRICS)
 	$(HOST_TEST_PERF_REPORT)
 	$(HOST_TEST_PERF_MONITOR)
+	$(HOST_TEST_PERF_DMA_PROBE)
+	$(HOST_TEST_PERF_VIDEO_SENTINEL)
 	$(HOST_TEST_INPUT_TRACE)
 	$(HOST_TEST_MENU_MODEL)
 	$(HOST_TEST_MENU_LAYOUT)
@@ -167,7 +176,8 @@ test: $(HOST_TESTS) test-benchmark-tool
 
 test-benchmark-tool:
 	$(PYTHON) -m unittest tests/test_compare_benchmarks.py \
-	 tests/test_decode_runtime_log.py tests/test_analyze_link_benchmark.py
+	 tests/test_decode_runtime_log.py tests/test_analyze_link_benchmark.py \
+	 tests/test_startup.py tests/test_browser_text.py
 
 test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_codebreaker
@@ -192,6 +202,8 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_perf_metrics
 	$(HOST_SANITIZE_DIR)/test_perf_report
 	$(HOST_SANITIZE_DIR)/test_perf_monitor
+	$(HOST_SANITIZE_DIR)/test_perf_dma_probe
+	$(HOST_SANITIZE_DIR)/test_perf_video_sentinel
 	$(HOST_SANITIZE_DIR)/test_input_trace
 	$(HOST_SANITIZE_DIR)/test_menu_model
 	$(HOST_SANITIZE_DIR)/test_menu_layout
@@ -397,6 +409,59 @@ $(HOST_TEST_PERF_MONITOR): tests/test_perf_monitor.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_perf_monitor.c source/src/perf_monitor.c \
 	 source/src/perf_metrics.c -o $@
+
+# Host test for the production dma_transfer() probe path.
+# memory.c is compiled against the real PSP SDK headers with -w (host
+# build); the test TU itself is built with -Wall -Wextra -Werror.
+$(HOST_TEST_PERF_DMA_PROBE): tests/test_perf_dma_probe.c tests/host_dma_stubs.c \
+ source/src/memory.c source/src/memory.h source/src/cpu.h \
+ source/src/perf_monitor.c source/src/perf_monitor.h \
+ source/src/perf_metrics.c source/src/perf_metrics.h \
+ tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
+ tests/host_shim/psptypes.h
+	mkdir -p $(HOST_BUILD_DIR)
+	# SDK include before tests/host_shim: the real SDK psptypes.h must win
+	# for memory.c (the shim psptypes.h must not shadow it).
+	$(HOST_CC) -std=c99 -O1 -w -include tests/host_shim/host_builtins.h \
+	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -c source/src/memory.c -o $(HOST_BUILD_DIR)/perf_dma_memory.o
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror \
+	 -I source/src \
+	 tests/test_perf_dma_probe.c tests/host_dma_stubs.c \
+	 source/src/perf_monitor.c source/src/perf_metrics.c \
+	 $(HOST_BUILD_DIR)/perf_dma_memory.o -o $@
+
+# Host test for the psp_video.c frame-time timestamp sentinel
+# psp_video.c and the stub TU are compiled against the
+# real PSP SDK headers with -w (host build); the test TU itself is
+# built with -Wall -Wextra -Werror.
+$(HOST_TEST_PERF_VIDEO_SENTINEL): tests/test_perf_video_sentinel.c \
+ tests/host_psp_video_stubs.c \
+ source/src/psp_video.c source/src/psp_video.h \
+ source/src/video_adaptive.h source/src/video_adaptive.c \
+ source/src/perf_monitor.c source/src/perf_monitor.h \
+ source/src/perf_metrics.c source/src/perf_metrics.h \
+ tests/host_shim/gba_types.h tests/host_shim/host_builtins.h \
+ tests/host_shim/psptypes.h
+	mkdir -p $(HOST_BUILD_DIR)
+	# Stages 1-2 put the SDK include before tests/host_shim: the real
+	# SDK psptypes.h (needed by pspthreadman.h, ...) wins, while the
+	# shim malloc.h still resolves (the SDK ships no malloc.h and the
+	# macOS SDK dropped it). Only the Werror test TU (stage 3) uses
+	# the shim psptypes.h (host_shim first, no SDK path).
+	$(HOST_CC) -std=c99 -O1 -w -include tests/host_shim/host_builtins.h \
+	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -c source/src/psp_video.c -o $(HOST_BUILD_DIR)/perf_video_psp_video.o
+	$(HOST_CC) -std=c99 -O1 -w -include tests/host_shim/host_builtins.h \
+	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -c tests/host_psp_video_stubs.c -o $(HOST_BUILD_DIR)/perf_video_stubs.o
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror \
+	 -I source/src -I tests/host_shim \
+	 tests/test_perf_video_sentinel.c \
+	 source/src/perf_monitor.c source/src/perf_metrics.c \
+	 source/src/video_adaptive.c \
+	 $(HOST_BUILD_DIR)/perf_video_psp_video.o \
+	 $(HOST_BUILD_DIR)/perf_video_stubs.o -o $@
 
 $(HOST_TEST_INPUT_TRACE): tests/test_input_trace.c \
  source/src/input_trace.c source/src/input_trace.h
@@ -710,6 +775,51 @@ $(HOST_SANITIZE_DIR)/test_perf_report: tests/test_perf_report.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_perf_report.c source/src/perf_report.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_perf_dma_probe: tests/test_perf_dma_probe.c \
+ tests/host_dma_stubs.c \
+ source/src/memory.c source/src/memory.h source/src/cpu.h \
+ source/src/perf_monitor.c source/src/perf_monitor.h \
+ source/src/perf_metrics.c source/src/perf_metrics.h \
+ tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
+ tests/host_shim/psptypes.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	# SDK include before tests/host_shim: the real SDK psptypes.h must win
+	# for memory.c (the shim psptypes.h must not shadow it).
+	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
+	 -include tests/host_shim/host_builtins.h \
+	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -c source/src/memory.c -o $(HOST_SANITIZE_DIR)/perf_dma_memory.o
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -I source/src \
+	 tests/test_perf_dma_probe.c tests/host_dma_stubs.c \
+	 source/src/perf_monitor.c source/src/perf_metrics.c \
+	 $(HOST_SANITIZE_DIR)/perf_dma_memory.o -o $@
+
+$(HOST_SANITIZE_DIR)/test_perf_video_sentinel: tests/test_perf_video_sentinel.c \
+ tests/host_psp_video_stubs.c \
+ source/src/psp_video.c source/src/psp_video.h \
+ source/src/video_adaptive.h source/src/video_adaptive.c \
+ source/src/perf_monitor.c source/src/perf_monitor.h \
+ source/src/perf_metrics.c source/src/perf_metrics.h \
+ tests/host_shim/gba_types.h tests/host_shim/host_builtins.h \
+ tests/host_shim/psptypes.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
+	 -include tests/host_shim/host_builtins.h \
+	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -c source/src/psp_video.c -o $(HOST_SANITIZE_DIR)/perf_video_psp_video.o
+	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
+	 -include tests/host_shim/host_builtins.h \
+	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -c tests/host_psp_video_stubs.c -o $(HOST_SANITIZE_DIR)/perf_video_stubs.o
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -I source/src -I tests/host_shim \
+	 tests/test_perf_video_sentinel.c \
+	 source/src/perf_monitor.c source/src/perf_metrics.c \
+	 source/src/video_adaptive.c \
+	 $(HOST_SANITIZE_DIR)/perf_video_psp_video.o \
+	 $(HOST_SANITIZE_DIR)/perf_video_stubs.o -o $@
 
 $(HOST_SANITIZE_DIR)/test_perf_monitor: tests/test_perf_monitor.c \
  source/src/perf_monitor.c source/src/perf_monitor.h \

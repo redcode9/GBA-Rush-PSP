@@ -147,6 +147,9 @@ int perf_report_format(char *output, size_t output_size,
   perf_report_append(&writer, "version=%s\n", version);
   perf_report_append(&writer, "psp-model=%u\n", metadata->psp_model);
   perf_report_append(&writer, "clock-mhz=%u\n", metadata->clock_mhz);
+  perf_report_append(&writer, "psp-fw-version=%u\n",
+   metadata->psp_sdk_fw_macro);
+  perf_report_append(&writer, "vsync=%u\n", metadata->psp_vsync);
   perf_report_append(&writer, "renderer=%u\n", metadata->renderer);
   perf_report_append(&writer, "scale=%u\n", metadata->scale);
   perf_report_append(&writer, "filter=%u\n", metadata->filter);
@@ -155,6 +158,10 @@ int perf_report_format(char *output, size_t output_size,
   perf_report_append(&writer, "frameskip-value=%u\n",
    metadata->frameskip_value);
   perf_report_append(&writer, "sound-volume=%u\n", metadata->sound_volume);
+  perf_report_append(&writer, "audio-sample-rate=%u\n",
+   metadata->audio_sample_rate);
+  perf_report_append(&writer, "audio-samples=%u\n",
+   metadata->audio_samples);
   perf_report_append(&writer, "fast-forward-game-override=%u\n",
    metadata->fast_forward_game_override);
   perf_report_append(&writer, "fast-forward-profile=%u\n",
@@ -172,6 +179,12 @@ int perf_report_format(char *output, size_t output_size,
   perf_report_append(&writer, "rom-revision=%u\n", metadata->rom_revision);
   perf_report_append(&writer, "duration-us=%llu\n",
    (unsigned long long)metadata->duration_us);
+  perf_report_append(&writer, "gamepak-file-size=%u\n",
+   metadata->gamepak_file_size);
+  perf_report_append(&writer, "gamepak-ram-buffer-size=%u\n",
+   metadata->gamepak_ram_buffer_size);
+  perf_report_append(&writer, "gamepak-ram-pages=%u\n",
+   metadata->gamepak_ram_pages);
   perf_report_append(&writer, "state=%s\n",
    perf_report_state_name(metrics->state));
   perf_report_append(&writer, "emulated-frames=%llu\n",
@@ -240,6 +253,70 @@ int perf_report_format(char *output, size_t output_size,
    metrics->ge_wait_p95_us);
   perf_report_append(&writer, "ge-wait-p99-us=%u\n",
    metrics->ge_wait_p99_us);
+  perf_report_append(&writer, "vblank-backpressure-count=%llu\n",
+   (unsigned long long)metrics->vblank_backpressure_count);
+  perf_report_append(&writer, "vblank-backpressure-total-us=%llu\n",
+   (unsigned long long)metrics->vblank_backpressure_total_us);
+  perf_report_append(&writer, "vblank-present-count=%llu\n",
+   (unsigned long long)metrics->vblank_present_count);
+  perf_report_append(&writer, "vblank-present-total-us=%llu\n",
+   (unsigned long long)metrics->vblank_present_total_us);
+  perf_report_append(&writer, "vblank-audio-count=%llu\n",
+   (unsigned long long)metrics->vblank_audio_count);
+  perf_report_append(&writer, "vblank-audio-total-us=%llu\n",
+   (unsigned long long)metrics->vblank_audio_total_us);
+  perf_report_append(&writer, "renderer-total-us=%llu\n",
+   (unsigned long long)metrics->renderer_total_us);
+  perf_report_append(&writer, "renderer-max-us=%u\n",
+   metrics->renderer_max_us);
+  perf_report_append(&writer, "dcache-writeback-count=%llu\n",
+   (unsigned long long)metrics->dcache_writeback_count);
+  perf_report_append(&writer, "dcache-writeback-total-us=%llu\n",
+   (unsigned long long)metrics->dcache_writeback_total_us);
+  perf_report_append(&writer, "ge-sync-direct-count=%llu\n",
+   (unsigned long long)metrics->ge_sync_direct_count);
+  perf_report_append(&writer, "ge-sync-direct-total-us=%llu\n",
+   (unsigned long long)metrics->ge_sync_direct_total_us);
+  perf_report_append(&writer, "sharp-presented-frames=%llu\n",
+   (unsigned long long)metrics->sharp_presented_frames);
+  perf_report_append(&writer, "crisp-presented-frames=%llu\n",
+   (unsigned long long)metrics->crisp_presented_frames);
+  perf_report_append(&writer, "gba-update-entries=%llu\n",
+   (unsigned long long)metrics->gba_update_entries);
+  perf_report_append(&writer, "gba-update-iterations=%llu\n",
+   (unsigned long long)metrics->gba_update_iterations);
+  perf_report_append(&writer, "dma16-transfers=%llu\n",
+   (unsigned long long)metrics->dma16_transfers);
+  perf_report_append(&writer, "dma16-elements=%llu\n",
+   (unsigned long long)metrics->dma16_elements);
+  perf_report_append(&writer, "dma16-bytes=%llu\n",
+   (unsigned long long)metrics->dma16_bytes);
+  perf_report_append(&writer, "dma16-total-us=%llu\n",
+   (unsigned long long)metrics->dma16_total_us);
+  perf_report_append(&writer, "dma32-transfers=%llu\n",
+   (unsigned long long)metrics->dma32_transfers);
+  perf_report_append(&writer, "dma32-elements=%llu\n",
+   (unsigned long long)metrics->dma32_elements);
+  perf_report_append(&writer, "dma32-bytes=%llu\n",
+   (unsigned long long)metrics->dma32_bytes);
+  perf_report_append(&writer, "dma32-total-us=%llu\n",
+   (unsigned long long)metrics->dma32_total_us);
+  perf_report_append(&writer, "dma-gamepak-pairs=%llu\n",
+   (unsigned long long)metrics->dma_gamepak_pairs);
+  perf_report_append(&writer, "gamepak-evict-scan-count=%llu\n",
+   (unsigned long long)metrics->gamepak_evict_scan_count);
+  perf_report_append(&writer, "gamepak-evict-scan-total-us=%llu\n",
+   (unsigned long long)metrics->gamepak_evict_scan_total_us);
+  perf_report_append(&writer, "gamepak-miss-count=%llu\n",
+   (unsigned long long)metrics->gamepak_miss_count);
+  perf_report_append(&writer, "gamepak-miss-bytes=%llu\n",
+   (unsigned long long)metrics->gamepak_miss_bytes);
+  perf_report_append(&writer, "gamepak-read-errors=%llu\n",
+   (unsigned long long)metrics->gamepak_read_errors);
+  perf_report_append(&writer, "gamepak-rom-seek-total-us=%llu\n",
+   (unsigned long long)metrics->gamepak_rom_seek_total_us);
+  perf_report_append(&writer, "gamepak-rom-read-total-us=%llu\n",
+   (unsigned long long)metrics->gamepak_rom_read_total_us);
 
   if(writer.failed)
   {

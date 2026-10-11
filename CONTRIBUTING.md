@@ -7,7 +7,8 @@ notices when changing inherited code.
 ## Build
 
 Install a PSPDev toolchain and put `psp-config` in `PATH`. Host tests require a C
-compiler and Python 3.
+compiler, Python 3 and PSP SDK headers; source checks also require `rg`.
+`PSP_SDK_INCLUDE` can override the SDK include directory for host tests.
 
 ```sh
 make -j4 check HOST_CC='cc -O1'
@@ -33,8 +34,8 @@ helper modules. Keep the vendored SDK libraries in `source/SDK/` and the artwork
 in `source/res/`. Portable tests live in `tests/`, checks and packaging scripts
 in `scripts/`. Original usage notes are retained in `docs/legacy/`.
 
-The `feature/link-cable` branch also contains link models in `models/link/`, C
-proof harnesses in `proofs/cbmc/` and log-analysis utilities in `tools/`.
+Link models are in `models/link/`, C proof harnesses in `proofs/cbmc/` and
+log-analysis utilities in `tools/`.
 
 ## Testing changes
 
@@ -59,8 +60,8 @@ networking or file access.
 ## Link development
 
 See the [link implementation notes](docs/link-cable.md) and the
-[remaining work for 1.4.0](docs/ROADMAP-1.4.0.md). On `feature/link-cable`, run
-these additional checks for protocol, queue or recovery changes:
+[remaining work for 1.4.0](docs/ROADMAP-1.4.0.md). Run these additional checks
+for protocol, queue or recovery changes:
 
 ```sh
 make check-cbmc
@@ -76,3 +77,7 @@ Keep paired PSP logs with the build hashes and reproduction steps. Store local
 results in `artifacts/`, build output in `build/` and packages in `dist/`.
 These directories are ignored. BIOS files, game ROMs, saves and local settings
 stay out of Git; diagnostic ROM sources must be redistributable.
+
+Open release pull requests against `develop`, then promote the reviewed source
+to `master`. Hardware acceptance remains required for a stable release; an
+untested console build must be published as a prerelease.

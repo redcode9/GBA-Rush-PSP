@@ -19,6 +19,7 @@
  */
 
 #include "common.h"
+#include "perf_monitor.h"
 
 /* Popup depth frame — declared in psp_video.h, defined in psp_video.c */
 extern void draw_popup_frame_auto(int x, int y, int w, int h);
@@ -2540,6 +2541,15 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
   s32 src_increment  = dma_addr_control[dma->source_direction];
   s32 dest_increment = dma_addr_control[dma->dest_direction];
 
+  int measuring = perf_monitor_active();
+  u32 dma_start = 0;
+  u32 dma_elements = dma->length;
+  int gamepak_pair = dma->source_address >= 0x08000000 &&
+   dma->source_address < 0x0E000000 &&
+   dma->dest_address >= 0x08000000 && dma->dest_address < 0x0E000000;
+  if(measuring)
+    dma_start = sceKernelGetSystemTimeLow();
+
   COUNT_DMA_CYCLES();
 
   if (dma->length_type == DMA_16BIT)
@@ -2548,6 +2558,10 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
     dest_ptr &= ~0x01;
 
     DMA_TRANSFER_LOOP(16);
+
+    if(measuring)
+      perf_monitor_record_dma(0, dma_elements,
+       sceKernelGetSystemTimeLow() - dma_start, gamepak_pair);
 
     reg[CPU_DMA_LAST] = read_value | (read_value << 16);
   }
@@ -2560,6 +2574,10 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
     dest_increment <<= 1;
 
     DMA_TRANSFER_LOOP(32);
+
+    if(measuring)
+      perf_monitor_record_dma(1, dma_elements,
+       sceKernelGetSystemTimeLow() - dma_start, gamepak_pair);
 
     reg[CPU_DMA_LAST] = read_value;
   }
@@ -2633,6 +2651,11 @@ static u32 evict_gamepak_page(void)
   u32 smallest = gamepak_memory_map[0].page_timestamp;
   u32 i;
 
+  int measuring = perf_monitor_active();
+  u32 scan_start = 0;
+  if(measuring)
+    scan_start = sceKernelGetSystemTimeLow();
+
   for (i = 1; i < gamepak_ram_pages; i++)
   {
     if (gamepak_memory_map[i].page_timestamp <= smallest)
@@ -2642,7 +2665,17 @@ static u32 evict_gamepak_page(void)
     }
   }
 
+  if(measuring)
+    perf_monitor_record_gamepak_evict_scan(
+     sceKernelGetSystemTimeLow() - scan_start);
+
   physical_index = gamepak_memory_map[page_index].physical_index;
+
+  if ((read_rom_region & 0x3FF) == physical_index)
+  {
+    read_rom_region = 0xFFFFFFFF;
+    read_rom_block = NULL;
+  }
 
   memory_map_read[(0x8000000 / (32 * 1024)) + physical_index] = NULL;
   memory_map_read[(0xA000000 / (32 * 1024)) + physical_index] = NULL;
@@ -2664,12 +2697,59 @@ u8 *load_gamepak_page(u32 physical_index)
   gamepak_memory_map[page_index].physical_index = physical_index;
   page_time++;
 
-  FILE_SEEK(gamepak_file_large, physical_index * (32 * 1024), SEEK_SET);
-  FILE_READ(gamepak_file_large, swap_location, (32 * 1024));
+  int measuring = perf_monitor_active();
+  u32 seek_us = 0;
+  u32 read_us = 0;
+  u32 file_offset = physical_index * (32 * 1024);
+  u32 requested = file_offset < gamepak_file_size ?
+   gamepak_file_size - file_offset : 0;
+  s32 seek_result = 0;
+  s32 bytes_read = 0;
+  if(requested > 32 * 1024)
+    requested = 32 * 1024;
+  if(measuring)
+  {
+    u32 seek_start = sceKernelGetSystemTimeLow();
+    if(requested != 0)
+      seek_result = FILE_SEEK(gamepak_file_large, file_offset, SEEK_SET);
+    seek_us = sceKernelGetSystemTimeLow() - seek_start;
 
-  memory_map_read[(0x8000000 / (32 * 1024)) + physical_index] = swap_location;
-  memory_map_read[(0xA000000 / (32 * 1024)) + physical_index] = swap_location;
-  memory_map_read[(0xC000000 / (32 * 1024)) + physical_index] = swap_location;
+    u32 read_start = sceKernelGetSystemTimeLow();
+    if(requested != 0)
+      bytes_read = seek_result < 0 ? -1 :
+       FILE_READ(gamepak_file_large, swap_location, requested);
+    read_us = sceKernelGetSystemTimeLow() - read_start;
+  }
+  else
+  {
+    if(requested != 0)
+    {
+      seek_result = FILE_SEEK(gamepak_file_large, file_offset, SEEK_SET);
+      bytes_read = seek_result < 0 ? -1 :
+       FILE_READ(gamepak_file_large, swap_location, requested);
+    }
+  }
+
+  u32 valid_bytes = bytes_read < 0 ? 0 : (u32)bytes_read;
+  int read_error = bytes_read < 0 || valid_bytes != requested;
+  if(valid_bytes < 32 * 1024)
+    memset(swap_location + valid_bytes, 0xFF, 32 * 1024 - valid_bytes);
+
+  if(measuring)
+    perf_monitor_record_gamepak_rom_io(seek_us, read_us,
+     bytes_read < 0 ? 0 : (u32)bytes_read,
+     read_error);
+
+  if(!read_error)
+  {
+    memory_map_read[(0x8000000 / (32 * 1024)) + physical_index] = swap_location;
+    memory_map_read[(0xA000000 / (32 * 1024)) + physical_index] = swap_location;
+    memory_map_read[(0xC000000 / (32 * 1024)) + physical_index] = swap_location;
+  }
+  else
+  {
+    read_rom_region = 0xFFFFFFFF;
+  }
 
   // If RTC is active page the RTC register bytes so they can be read
   if ((rtc_state != RTC_DISABLED) && (physical_index == 0))
@@ -3470,16 +3550,10 @@ s32 load_gamepak(char *name)
   gamepak_file_large = -1;
 
   draw_popup_frame_auto(110, 50, 260, 170);
-  if (option_language == 0)
-    print_string(MSG[MSG_LOADING_ROM], X_POS_CENTER, 100, color_active_item, BG_NO_FILL);
-  else
-    print_string_gbk(MSG[MSG_LOADING_ROM], X_POS_CENTER, 100, color_active_item, BG_NO_FILL);
+  print_string_gbk(MSG[MSG_LOADING_ROM], X_POS_CENTER, 100, color_active_item, BG_NO_FILL);
   flip_screen(1);
   draw_popup_frame_auto(110, 50, 260, 170);
-  if (option_language == 0)
-    print_string(MSG[MSG_LOADING_ROM], X_POS_CENTER, 100, color_active_item, BG_NO_FILL);
-  else
-    print_string_gbk(MSG[MSG_LOADING_ROM], X_POS_CENTER, 100, color_active_item, BG_NO_FILL);
+  print_string_gbk(MSG[MSG_LOADING_ROM], X_POS_CENTER, 100, color_active_item, BG_NO_FILL);
 
   scePowerLock(0);
   set_cpu_clock(PSP_CLOCK_333);
@@ -3493,10 +3567,7 @@ s32 load_gamepak(char *name)
   if (!strcasecmp(dot_position, ".gba") || !strcasecmp(dot_position, ".agb") || !strcasecmp(dot_position, ".bin"))
   {
     file_size = load_gamepak_raw(name);
-	if (option_language == 0)
-		print_string(MSG[MSG_SEARCHING_BACKUP_ID], X_POS_CENTER, 148, color_active_item, BG_NO_FILL);
-    else
-		print_string_gbk(MSG[MSG_SEARCHING_BACKUP_ID], X_POS_CENTER, 148, color_active_item, BG_NO_FILL);
+	print_string_gbk(MSG[MSG_SEARCHING_BACKUP_ID], X_POS_CENTER, 148, color_active_item, BG_NO_FILL);
     flip_screen(1);
   }
 

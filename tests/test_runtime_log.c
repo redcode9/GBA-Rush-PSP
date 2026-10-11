@@ -264,7 +264,7 @@ static void test_encode_and_validate(void)
   assert(runtime_log_validate(encoded, written, &decoded, &main_count,
    &network_count, &critical_count));
   assert(read_u16(encoded + 4) == RUNTIME_LOG_VERSION);
-  assert(RUNTIME_LOG_VERSION == 3u);
+  assert(RUNTIME_LOG_VERSION == 4u);
   assert(main_count == 1);
   assert(network_count == 1);
   assert(critical_count == 1);

@@ -72,6 +72,9 @@ $(C_ONLY_OBJS): CFLAGS += -Wbad-function-cast -Wmissing-prototypes
 $(OBJZ) $(OBJG): CFLAGS += -Wno-old-style-definition
 $(MAINOBJS): $(COMMON_FILE)
 message.o: $(MESSAGE_FILE)
+message.o: CFLAGS += -finput-charset=UTF-8 -fexec-charset=GBK
+video_cc_wrap.o: src/video_cc.cc
+video_old_wrap.o: src/video.c
 
 INCDIR = SDK/include src src/zlib src/libpower
 LIBDIR = SDK/lib
