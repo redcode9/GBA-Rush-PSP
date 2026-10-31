@@ -22,11 +22,9 @@
 #define SOUND_H
 
 
+// One PSP output block: 800 stereo frames, one 60 Hz frame at 48 kHz.
 #define SOUND_SAMPLES   (800)
 #define SOUND_FREQUENCY (48000)
-
-// #define SOUND_SAMPLES   (736)
-// #define SOUND_FREQUENCY (44100)
 
 extern u32 sound_pause;
 

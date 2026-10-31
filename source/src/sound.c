@@ -18,6 +18,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+// GBA sound: the four PSG channels and the two Direct Sound FIFOs are mixed
+// into a stereo s32 ring at SOUND_FREQUENCY, which a PSP audio thread drains.
+// memory.c forwards sound register writes here; main.c runs the FIFO timers
+// (sound_timer) and calls update_gbc_sound() and synchronize_sound().
+
 #include <limits.h>
 
 #include "common.h"
@@ -27,13 +32,17 @@
 #include "sound_math.h"
 
 
+// s16 entries in one interleaved stereo PSP output block.
 #define SOUND_BUFFER_SIZE (SOUND_SAMPLES * 2)
+// s32 entries in the interleaved stereo mix ring.
 #define RING_BUFFER_SIZE  (65536)
 
 u32 sound_pause = 0;
 
 u32 gbc_sound_update = 0;
 
+// Output enable bits as laid out in SOUNDCNT_H/SOUNDCNT_L: bit 0 right,
+// bit 1 left.
 typedef enum
 {
   DIRECT_SOUND_INACTIVE,
@@ -61,12 +70,13 @@ typedef struct
   DIRECT_SOUND_STATUS_TYPE status;
   DIRECT_SOUND_VOLUME_TYPE volume;
 
+  // Phase between the current and next FIFO sample.
   FIXED08_24 fifo_fractional;
-  // The + 1 is to give some extra room for linear interpolation
-  // when wrapping around.
 
+  // Ring position this channel mixes into next.
   u32 buffer_index;
 
+  // 32-byte hardware FIFO, filled by DMA or direct writes to FIFO_A/B.
   s8 fifo[32];
   u32 fifo_base;
   u32 fifo_top;
@@ -176,14 +186,20 @@ u8 master_enable = 0;
 u8 gbc_sound_wave_update = 0;
 u8 wave_type = 0;
 u8 wave_bank = 0;
+// Byte offset (0 or 16) of the wave RAM bank the CPU writes: the bank that
+// is not selected for playback.
 u8 wave_bank_user = 0x00;
 u32 wave_volume = 0;
+// Both 16-byte wave RAM banks as written, and unpacked to signed samples.
 u8 ALIGN_DATA wave_ram_data[32];
 s8 ALIGN_DATA wave_samples[64];
+// SOUND3CNT_H volume codes 0%, 100%, 50%, 25% in 14-bit fixed point.
 const u32 ALIGN_DATA gbc_sound_wave_volume[4] = { 0, 16384, 8192, 4096 };
 
 u8 noise_type = 0;
 u32 noise_index = 0;
+// LFSR output bit streams, 32 bits per word: 15-bit mode repeats every
+// 32767 bits, 7-bit mode every 127.
 u32 ALIGN_DATA noise_table15[1024];
 u32 ALIGN_DATA noise_table7[4];
 static void init_noise_table(u32 *table, u32 period, u32 bit_length);
@@ -194,9 +210,9 @@ static void init_noise_table(u32 *table, u32 period, u32 bit_length);
 // Master volume = 2bits
 
 // Recalculate left and right volume as volume changes.
-// To calculate the current sample, use (sample * volume) >> 16
+// Samples are scaled by sound_math_scale_psg().
 
-// Square waves range from -8 (low) to 7 (high)
+// Square waves range from -8 (low) to 7 (high). Duty 12.5%, 25%, 50%, 75%.
 
 s8 ALIGN_DATA square_pattern_duty[4][8] =
 {
@@ -206,6 +222,7 @@ s8 ALIGN_DATA square_pattern_duty[4][8] =
   { 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0xF8, 0xF8 }
 };
 
+// SOUNDCNT_H bits 0-1: PSG volume 25%, 50%, 100%; 3 is prohibited.
 const u32 ALIGN_DATA gbc_sound_master_volume_table[4] = { 1, 2, 4, 0 };
 
 const u32 ALIGN_DATA gbc_sound_channel_volume_table[8] =
@@ -251,6 +268,9 @@ u32 gbc_sound_partial_ticks = 0;
 FIXED08_24 gbc_sound_tick_step;
 
 
+// SOUND1CNT_H / SOUND2CNT_L / SOUND4CNT_L: length (bits 0-5), duty (6-7),
+// envelope step (8-10), direction (11), initial volume (12-15).
+// Envelope steps are n/64 s, i.e. 4 ticks of the 256 Hz sequencer each.
 void gbc_sound_tone_control_low(u8 channel, u32 value)
 {
   GBCSoundStruct *gs = gbc_sound_channel + channel;
@@ -278,6 +298,8 @@ void gbc_sound_tone_control_low(u8 channel, u32 value)
   gbc_sound_update = 1;
 }
 
+// SOUND1CNT_X / SOUND2CNT_H: rate (bits 0-10), length enable (14),
+// restart (15).
 void gbc_sound_tone_control_high(u8 channel, u32 value)
 {
   GBCSoundStruct *gs = gbc_sound_channel + channel;
@@ -300,6 +322,8 @@ void gbc_sound_tone_control_high(u8 channel, u32 value)
   gbc_sound_update = 1;
 }
 
+// SOUND1CNT_L: sweep shift (bits 0-2), direction (3), time (4-6).
+// Sweep steps are n/128 s, i.e. 2 sequencer ticks each.
 void gbc_sound_tone_control_sweep(u32 value)
 {
   GBCSoundStruct *gs = gbc_sound_channel + 0;
@@ -317,6 +341,8 @@ void gbc_sound_tone_control_sweep(u32 value)
   gbc_sound_update = 1;
 }
 
+// SOUND3CNT_L: 64-sample mode using both banks (bit 5), bank select (6),
+// channel enable (7).
 void gbc_sound_wave_control(u32 value)
 {
   wave_bank = (value >> 6) & 0x01;
@@ -329,6 +355,7 @@ void gbc_sound_wave_control(u32 value)
   gbc_sound_update = 1;
 }
 
+// SOUND3CNT_H: length (bits 0-7), volume (13-14), force 75% volume (15).
 void gbc_sound_tone_control_low_wave(u32 value)
 {
   GBCSoundStruct *gs = gbc_sound_channel + 2;
@@ -336,7 +363,7 @@ void gbc_sound_tone_control_low_wave(u32 value)
   gs->length_ticks = 256 - (value & 0xFF);
 
   if ((value & 0x8000) != 0)
-    wave_volume = 12288;
+    wave_volume = 12288; // 75%
   else
     wave_volume = gbc_sound_wave_volume[(value >> 13) & 0x03];
 
@@ -362,6 +389,8 @@ void gbc_sound_tone_control_high_wave(u32 value)
   gbc_sound_update = 1;
 }
 
+// Writes land in the bank not being played; flag that bank for unpacking
+// on the next update_gbc_sound().
 void gbc_sound_wave_pattern_ram16(u32 address, u32 value)
 {
   if (wave_bank_user != 0)
@@ -372,6 +401,8 @@ void gbc_sound_wave_pattern_ram16(u32 address, u32 value)
   ADDRESS16(wave_ram_data, (address & 0x0e) | wave_bank_user) = value;
 }
 
+// SOUND4CNT_H: dividing ratio (bits 0-2), 7-bit LFSR (3), shift (4-7),
+// length enable (14), restart (15).
 void gbc_sound_noise_control(u32 value)
 {
   GBCSoundStruct *gs = gbc_sound_channel + 3;
@@ -398,6 +429,8 @@ void gbc_sound_noise_control(u32 value)
   gbc_sound_update = 1;
 }
 
+// SOUNDCNT_L bits 8-11 enable each PSG channel on the right, 12-15 on the
+// left; fold them into GBC_SOUND_STATUS_TYPE.
 #define GBC_SOUND_CHANNEL_STATUS(channel)                                     \
   gbc_sound_channel[channel].status = ((value >> (channel + 11)) & 0x02) |    \
                                       ((value >> (channel +  8)) & 0x01)      \
@@ -413,6 +446,9 @@ void sound_control_low(u32 value)
   GBC_SOUND_CHANNEL_STATUS(3);
 }
 
+// SOUNDCNT_H: PSG volume (bits 0-1), FIFO A/B volume (2, 3), FIFO A
+// right/left enable (8-9), timer select (10), reset (11); FIFO B uses
+// bits 12-15 the same way.
 void sound_control_high(u32 value)
 {
   gbc_sound_master_volume = value & 0x03;
@@ -431,6 +467,7 @@ void sound_control_high(u32 value)
     sound_reset_fifo(1);
 }
 
+// SOUNDCNT_X bit 7: master sound enable.
 void sound_control_x(u32 value)
 {
   if ((value & 0x80) != 0)
@@ -448,6 +485,7 @@ void sound_control_x(u32 value)
 }
 
 
+// CPU ticks elapsed, allowing for one wrap of the 32-bit counter.
 static u64 delta_ticks(u32 now_ticks, u32 last_ticks)
 {
   if (now_ticks == last_ticks)
@@ -459,6 +497,8 @@ static u64 delta_ticks(u32 now_ticks, u32 last_ticks)
   return 4294967296ULL - last_ticks + now_ticks;
 }
 
+// Moves a FIFO channel's mix position to where the PSG renderer will be at
+// cpu_ticks, keeping both sources in step in the shared ring.
 void adjust_direct_sound_buffer(u8 channel, u32 cpu_ticks)
 {
   u64 count_ticks;
@@ -475,6 +515,10 @@ void adjust_direct_sound_buffer(u8 channel, u32 cpu_ticks)
   direct_sound_channel[channel].buffer_index = (gbc_sound_buffer_index + (buffer_ticks << 1)) % RING_BUFFER_SIZE;
 }
 
+// I/O offset of FIFO_A (0x40000A0); FIFO_B follows at 0xA4.
+#define FIFO_A_IO_OFFSET 0xA0
+
+// Pushes the 4 bytes just written to FIFO_A/B into the channel's FIFO.
 void sound_timer_queue(u8 channel)
 {
   DirectSoundStruct *ds = direct_sound_channel + channel;
@@ -482,7 +526,7 @@ void sound_timer_queue(u8 channel)
   u32 i;
   u32 fifo_top = ds->fifo_top;
   s8 *fifo = ds->fifo;
-  s8 *fifo_data = (s8 *)io_registers + (0xA0 + (channel << 2));
+  s8 *fifo_data = (s8 *)io_registers + (FIFO_A_IO_OFFSET + (channel << 2));
 
   for (i = 0; i < 4; i++)
   {
@@ -544,6 +588,8 @@ static u32 buffer_length(u32 top, u32 base, u32 length)
     buffer_index = (buffer_index + 2) % RING_BUFFER_SIZE;                     \
   }                                                                           \
 
+// Called on each overflow of the timer driving a FIFO channel: pops one
+// sample and mixes it into the ring until the next overflow is due.
 void sound_timer(FIXED08_24 frequency_step, u8 channel)
 {
   DirectSoundStruct *ds = direct_sound_channel + channel;
@@ -554,6 +600,7 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
 
   s32 current_sample, next_sample, dest_sample;
 
+  // 8-bit FIFO samples to the 16-bit mix scale.
   current_sample = ds->fifo[fifo_base] * 256;
 
   ds->fifo[fifo_base] = 0;
@@ -685,6 +732,7 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
 
 #define UPDATE_TONE_NOENVELOPE()                                              \
 
+// Advances the 256 Hz sequencer: length counter, then envelope and sweep.
 #define UPDATE_TONE_COUNTERS(envelope_op, sweep_op)                           \
   tick_counter += gbc_sound_tick_step;                                        \
   if (tick_counter > 0x00FFFFFF)                                              \
@@ -732,10 +780,13 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
     UPDATE_TONE_COUNTERS(envelope_op, sweep_op);                              \
   }                                                                           \
 
+// LFSR periods: 15-bit and 7-bit modes.
 #define GBC_NOISE_WRAP_FULL 32767
 
 #define GBC_NOISE_WRAP_HALF 127
 
+// Move the current LFSR bit to bit 31, sign-extend to 0 or -1, and map that
+// to +7 or -8.
 #define GET_NOISE_SAMPLE_FULL()                                               \
   current_sample = ((s32)(noise_table15[noise_index >> 5] << (noise_index & 0x1F)) >> 31) ^ 0x07; \
 
@@ -791,6 +842,7 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
   gs->tick_counter = tick_counter;                                            \
 
 
+// Unpacks 16 bytes of wave RAM (high nibble first) to signed -8..7 samples.
 #define GBC_SOUND_LOAD_WAVE_RAM()                                             \
   for (i = 0, i2 = 0; i < 16; i++, i2 += 2)                                   \
   {                                                                           \
@@ -825,6 +877,8 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
 #define SOUND_BUFFER_LENGTH                                                   \
   buffer_length(gbc_sound_buffer_index, sound_buffer_base, RING_BUFFER_SIZE)  \
 
+// factor: 1 normal speed, 2 or 3 downmixed fast-forward audio, 0 muted
+// fast-forward (the ring is discarded and the audio thread sleeps).
 static void sound_set_fast_forward_mode(u32 enabled, u32 factor)
 {
   enabled = enabled != 0;
@@ -946,6 +1000,9 @@ void sound_link_wait_end(u32 cpu_ticks)
   sound_thread_wakeup();
 }
 
+// Called once per emulated frame: reports audio faults to perf_monitor and,
+// unless fast-forward has turned frame sync off, blocks while more than
+// about four output blocks are queued so that sound paces emulation.
 void synchronize_sound(void)
 {
   u64 started;
@@ -1013,6 +1070,8 @@ void synchronize_sound(void)
 }
 
 
+// Renders the PSG channels from the last call up to cpu_ticks, updates the
+// channel-on flags in SOUNDCNT_X bits 0-3 and wakes the audio thread.
 void update_gbc_sound(u32 cpu_ticks)
 {
   u32 i, i2;
@@ -1039,6 +1098,7 @@ void update_gbc_sound(u32 cpu_ticks)
     gbc_sound_partial_ticks &= 0x00FFFFFF;
   }
 
+  // Low nibble: per-channel "sound on" flags, rebuilt below.
   u16 sound_status = pIO_REG(REG_SOUNDCNT_X) & 0xFFF0;
 
   if (sound_on == 1)
@@ -1158,6 +1218,7 @@ static void init_noise_table(u32 *table, u32 period, u32 bit_length)
 }
 
 
+// option_sound_volume is 0..10.
 void set_sound_volume(void)
 {
   sound_volume = PSP_AUDIO_VOLUME_MAX * (option_sound_volume * 10) / 100;
@@ -1178,6 +1239,10 @@ static void sound_thread_wakeup(void)
     sceKernelWakeupThread(sound_thread);
 }
 
+// PSP audio thread: waits until the ring holds a full block, downmixes it
+// with fast_forward_audio and outputs it. If the audio channel fails it
+// keeps retrying the reservation; during fast-forward audio, a ring starved
+// for 100 ms raises sound_take_fast_forward_fallback().
 static int sound_update_thread(SceSize args, void *argp)
 {
   u32 buf_idx = 0;
@@ -1377,6 +1442,7 @@ static int start_sound_thread(void)
   }
   sound_power_suspended = 0;
 
+  // Priority 8 runs ahead of the main emulation thread (32); 64 KiB stack.
   sound_thread = sceKernelCreateThread("Sound thread",
                                        sound_update_thread,
                                        0x08,
@@ -1478,6 +1544,7 @@ void reset_sound(void)
   wave_bank = 0;
   wave_bank_user = 0x00;
   wave_volume = 0;
+  // Nibble 8 unpacks to a silent 0 sample.
   memset(wave_ram_data, 0x88, sizeof(wave_ram_data));
   memset(wave_samples,  0x00, sizeof(wave_samples));
 
@@ -1501,6 +1568,7 @@ void init_sound(void)
 }
 
 
+// Field order and sizes are the savestate format; keep them unchanged.
 #define SOUND_SAVESTATE_BODY(type)                                          \
 {                                                                           \
   FILE_##type##_VARIABLE(savestate_file, sound_on);                         \
