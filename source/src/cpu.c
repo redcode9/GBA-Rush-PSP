@@ -2673,6 +2673,20 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
  * ({area}_block_tag_top) and limit ({area}_max_tag).
  */
 
+/*
+ * What a lookup does on a miss. block_lookup_translate below, its
+ * tagged_readonly variant for the BIOS and the ROM branch of
+ * block_lookup_address_body all follow the same steps:
+ *  1. translate the block (translate_block_{arm,thumb});
+ *  2. record its native address under a new tag, or in rom_branch_hash;
+ *  3. at the outermost level only (translation_recursion_level == 1),
+ *     link the direct exits queued meanwhile (process_deferred_exits);
+ *  4. on failure (a cache filled up and was flushed, so translation or
+ *     linking returned NULL/0), nested levels return NULL to unwind and
+ *     the outermost level drops the queued exits and retries from redo.
+ * They are macros because each is expanded per instruction set and
+ * metadata area, with names built by ## pasting.
+ */
 #define block_lookup_translate(instruction_type, mem_type, metadata_area)     \
   block_tag = get_tag_##instruction_type();                                   \
   if ((block_tag < MIN_TAG) || (block_tag > metadata_area##_max_tag))         \
