@@ -114,12 +114,15 @@ static uint64_t outage_period_us, outage_us;
 static uint32_t rng_state = 12345;
 static uint64_t sim_now;
 
+/* Linear congruential generator; the low bits are weak, so drop them. */
 static uint32_t rng(void)
 {
   rng_state = rng_state * 1664525u + 1013904223u;
   return rng_state >> 8;
 }
 
+/* Puts a datagram in flight to console `to` with the scripted outage,
+   loss, duplication, latency and jitter (which also reorders). */
 static void network_send(int to, const uint8_t *data, size_t size)
 {
   unsigned copies = 1;
@@ -405,6 +408,9 @@ static void side_advance(Side *side)
   }
 }
 
+/* Advances the simulation by TICK_US: delivers due datagrams, then runs
+   each console towards its target unless frozen, asleep until VBlank or
+   blocked by the cable, and sends the cable's next datagram. */
 static void run_tick(void)
 {
   int s;
