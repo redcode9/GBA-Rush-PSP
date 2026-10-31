@@ -14,6 +14,10 @@
 #include <stddef.h>
 #include <string.h>
 
+/* A GBA frame lasts about 16743 us (59.73 Hz). A window is bad if its 95th
+ * percentile frame time or GE wait exceeds the BAD limit, or if any frame
+ * was skipped or an audio event reported; good if all stay under GOOD.
+ * Two bad windows in a row drop to CRISP, five good ones restore SHARP. */
 #define VIDEO_ADAPTIVE_BAD_FRAME_US 17200U
 #define VIDEO_ADAPTIVE_GOOD_FRAME_US 16900U
 #define VIDEO_ADAPTIVE_BAD_GE_WAIT_US 2500U
@@ -21,6 +25,7 @@
 #define VIDEO_ADAPTIVE_BAD_WINDOWS 2U
 #define VIDEO_ADAPTIVE_GOOD_WINDOWS 5U
 
+/* Insertion sort on a copy; 120 samples is small enough. */
 static uint32_t video_adaptive_percentile95(const uint32_t *values)
 {
   uint32_t sorted[VIDEO_ADAPTIVE_WINDOW_SIZE];
