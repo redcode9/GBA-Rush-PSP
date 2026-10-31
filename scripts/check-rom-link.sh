@@ -9,7 +9,8 @@ set -eu
 #             been upstairs in a Pokemon Center yet
 #   ROM2 SAVE2  optional second game (defaults to ROM and SAVE)
 # The script trades the host's first Pokemon for the joiner's second one,
-# then checks both saved parties, under several network conditions.
+# then checks both saved parties, under several network conditions and once
+# in the lockstep mode used for every non-Pokemon game.
 
 : "${MGBA_DIR:?Set MGBA_DIR to an mGBA 0.10 tree built in build/}"
 : "${ROM:?Set ROM to a FireRed ROM}"
@@ -51,9 +52,16 @@ run_case()
   shift
   # Network and speed apply from the moment the cable starts; walking to
   # the Cable Club stays identical on both consoles.
+  # "lockstep" makes the cable use the mode it uses for non-Pokemon games.
   while IFS= read -r line; do
     if [ "$line" = link ]; then
-      for condition in "$@"; do echo "$condition"; done
+      for condition in "$@"; do
+        if [ "$condition" = lockstep ]; then
+          line="link lockstep"
+        else
+          echo "$condition"
+        fi
+      done
     fi
     echo "$line"
   done < tests/rom_link/firered_trade.txt > "$out/$name.txt"
@@ -72,4 +80,5 @@ run_case adhoc "net 3000 4000 3 1"
 run_case noisy "net 8000 15000 15 5"
 run_case slow-joiner "net 3000 4000 3 1" "speed 1 0.8"
 run_case slow-host-noisy "net 8000 15000 15 5" "speed 0 0.8"
+run_case lockstep "net 3000 4000 3 1" lockstep
 echo "ROM link checks passed"

@@ -10,7 +10,8 @@
  * in step with the script):
  *   run <frames> [<keys0>] [<keys1>]   hold keys (A+B+START... or -)
  *   tap <side> <keys> [frames]          press keys on one side, then release
- *   link                                start the cable (console 0 hosts)
+ *   link [lockstep]                     start the cable (console 0 hosts);
+ *                                       lockstep forces the generic mode
  *   net <latency_us> <jitter_us> <loss%> <dup%>
  *   speed <side> <factor>               guest speed relative to real time
  *   shot <name>                         write <name>-0.bmp and <name>-1.bmp
@@ -333,12 +334,16 @@ static void side_init(Side *side, int index, const char *rom,
   side->target = side_clock(side);
 }
 
-static void side_link(Side *side)
+/* `generic` hides the game code so the cable uses the lockstep mode it
+   uses for every non-Pokemon game. */
+static void side_link(Side *side, int generic)
 {
   char code[16] = { 0 };
 
   /* mGBA reports "AGB-BPRI"; the cable wants the header's four letters. */
   side->core->getGameCode(side->core, code);
+  if(generic)
+    memcpy(code + 4, "TEST", 4);
   link_cable_start(&side->cable, &side->sio, side->index == 0, code + 4,
    0x100u + (uint32_t)side->index, sim_now);
   side->linked = 1;
@@ -402,7 +407,9 @@ static void run_frames(unsigned frames)
 {
   uint32_t end0 = sides[0].core->frameCounter(sides[0].core) + frames;
   uint32_t end1 = sides[1].core->frameCounter(sides[1].core) + frames;
-  uint64_t limit = sim_now + (uint64_t)frames * 16743u * 4u + 2000000u;
+  /* Generous: in lockstep mode a game sending many words per frame runs
+     several times slower than real time. */
+  uint64_t limit = sim_now + (uint64_t)frames * 16743u * 20u + 5000000u;
   uint32_t keys0 = sides[0].keys;
   uint32_t keys1 = sides[1].keys;
 
@@ -482,6 +489,17 @@ static void print_status(void)
      side->cable.pokemon.frames_sent, side->cable.pokemon.frames_received,
      side->cable.net.rtt_us, (double)side->blocked_us / 1e6,
      side->core->frameCounter(side->core));
+    if(side->cable.mode == LINK_CABLE_MODE_LOCKSTEP)
+      printf("  lockstep waiting %d deferred %d transfers %u cycle %u "
+       "finish %u deferred-until %u peer-clock %u pacing %u/%u sio %d%d%d "
+       "control %04X inbox %u\n", side->cable.lockstep.waiting,
+       side->cable.lockstep.deferred, side->cable.lockstep.transfers,
+       side_cycle(side), side->cable.lockstep.finish_cycle,
+       side->cable.lockstep.deferred_until, side->cable.net.peer_clock,
+       side->cable.pacing_local, side->cable.pacing_peer,
+       side->sio.pending_start, side->sio.waiting, side->sio.active,
+       side->registers[GBA_SIO_REG_CONTROL >> 1],
+       side->cable.net.in_write - side->cable.net.in_read);
   }
   fflush(stdout);
 }
@@ -528,8 +546,10 @@ int main(int argc, char **argv)
     }
     else if(strcmp(cmd, "link") == 0)
     {
-      side_link(&sides[0]);
-      side_link(&sides[1]);
+      int generic = a != NULL && strcmp(a, "lockstep") == 0;
+
+      side_link(&sides[0], generic);
+      side_link(&sides[1], generic);
     }
     else if(strcmp(cmd, "shot") == 0)
     {
