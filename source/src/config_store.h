@@ -40,8 +40,10 @@ typedef enum
 ConfigStoreResult config_store_load(const ConfigStoreIo *io,
  const char *primary_path, const char *recovery_path, ConfigModel *model,
  int *used_recovery);
-/* Writes and checks temporary, keeps the old primary as the recovery copy,
-   then moves temporary into place. */
+/* Writes and checks temporary, moves the old primary to recovery only if it
+   is valid (an invalid one is deleted, keeping the older recovery), then
+   moves temporary into place; if a later step fails, that old primary is
+   moved back. */
 ConfigStoreResult config_store_save(const ConfigStoreIo *io,
  const char *primary_path, const char *temporary_path,
  const char *recovery_path, const ConfigModel *model);
