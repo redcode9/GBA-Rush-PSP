@@ -155,6 +155,7 @@ static u32 gba_link_benchmark_logged_run_id = 0;
 static u32 gba_link_benchmark_audio_base = 0;
 static u64 gba_link_benchmark_barrier_base = 0;
 static u64 gba_link_benchmark_last_pump_us = 0;
+static u32 gba_link_service_ticks = 0;
 static u32 gba_link_benchmark_starvation_max_us = 0;
 static u32 gba_link_wait_count = 0;
 static u32 gba_link_wait_total_us = 0;
@@ -175,6 +176,9 @@ static volatile int quit_cleanup_complete = 0;
 #define MAIN_LINK_BENCHMARK_SERVICE_BUDGET_US 1000u
 #define MAIN_LINK_BENCHMARK_DRAIN_TIMEOUT_US 250000u
 #define MAIN_LINK_BENCHMARK_ROM_ID 0x42454E43u
+/* About 1 ms of guest time. Idle link service runs at this rate instead of
+   on every update_gba pass (~27k/s), which left FireRed no idle time. */
+#define MAIN_LINK_SERVICE_CYCLES 16384u
 
 u32 cpu_ticks = 0;
 s32 video_count = 272;
@@ -1694,8 +1698,14 @@ u32 update_gba(void)
 
     if(gba_link_session.state != LINK_SESSION_IDLE &&
        gba_link_session.state != LINK_SESSION_DISCONNECTED &&
-       gba_link_session.state != LINK_SESSION_ERROR)
+       gba_link_session.state != LINK_SESSION_ERROR &&
+       (gba_sio.active || gba_sio.pending_start || gba_sio_state_dirty ||
+        link_session_in_barrier(&gba_link_session) ||
+        cpu_ticks - gba_link_service_ticks >= MAIN_LINK_SERVICE_CYCLES))
+    {
+      gba_link_service_ticks = cpu_ticks;
       main_link_service();
+    }
 
     reg[EXECUTE_CYCLES] = video_count;
 
