@@ -1186,7 +1186,7 @@ void update_gbc_sound(u32 cpu_ticks)
 }
 
 
-// Special thanks to blarrg for the LSFR frequency used in Meridian, as posted
+// Special thanks to blargg for the LFSR frequency used in Meridian, as posted
 // on the forum at http://meridian.overclocked.org:
 // http://meridian.overclocked.org/cgi-bin/wwwthreads/showpost.pl?Board=merid
 // angeneraldiscussion&Number=2069&page=0&view=expanded&mode=threaded&sb=4

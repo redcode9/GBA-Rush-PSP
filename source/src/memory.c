@@ -2181,7 +2181,7 @@ CPU_ALERT_TYPE write_backup(u32 address, u32 value)
 }
 
 
-// RTC code derived from VBA's (due to lack of any real publically available
+// RTC code derived from VBA's (due to lack of any real publicly available
 // documentation...)
 
 static u32 encode_bcd(u8 value)
