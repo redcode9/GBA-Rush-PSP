@@ -21,6 +21,9 @@ LIBS =
 PSPSDK=$(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
 
+# After build.mak links ku_bridge.prx: generate the user-side import stub
+# (ku_bridge.S) from the exports, copy prx, stub and header one folder up
+# and clean the build directory.
 all:
 	psp-build-exports -s $(PRX_EXPORTS)
 	@cp $(TARGET).prx ../

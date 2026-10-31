@@ -2,6 +2,15 @@
 
   ku_bridge.prx
 
+  Kernel-mode helper that lets the user-mode emulator reach kernel-only
+  APIs: sceImpose (system volume state) and sceCtrl_driver (pad sampling
+  and reads). The emulator links the import stub source/src/ku_bridge.S,
+  generated from ku_bridge.exp by this folder's Makefile.
+
+  Not to be confused with the CFW's KUBridge (kuKernelLoadModule), which
+  the emulator links through -lpspkubridge. The top-level build does not
+  build, package or load this module.
+
 ******************************************************************************/
 
 #include <pspsdk.h>
@@ -17,6 +26,7 @@ PSP_MAIN_THREAD_ATTR(0);
   prototypes
 ******************************************************************************/
 
+/* 3.71+ NIDs of the sceCtrl_driver calls, imported in sceCtrl_driver.S */
 int sceCtrlSetSamplingCycle371(int cycle);
 int sceCtrlSetSamplingMode371(int mode);
 
@@ -28,6 +38,8 @@ int sceCtrlPeekBufferPositive371(SceCtrlData *pad_data, int count);
   local variables
 ******************************************************************************/
 
+/* sceCtrl_driver entry points for the running firmware; set by
+   init_ku_bridge(), NULL (wrappers return -1) until then. */
 static int (*__sceCtrlPeekBufferPositive)(SceCtrlData *pad_data, int count);
 static int (*__sceCtrlReadBufferPositive)(SceCtrlData *pad_data, int count);
 
@@ -38,6 +50,9 @@ static int (*__sceCtrlSetSamplingMode)(int mode);
   functions
 ******************************************************************************/
 
+/* Each wrapper clears $k1 around the kernel call: $k1 carries the caller's
+   privilege, and with it cleared the kernel accepts the call and the user
+   pointers as if they came from kernel mode. */
 int kuImposeGetParam(SceImposeParam param)
 {
   int k1 = pspSdkSetK1(0);
@@ -109,9 +124,15 @@ int kuCtrlReadBufferPositive(SceCtrlData *pad_data, int count)
 }
 
 
+/* sceKernelDevkitVersion() of firmware 3.71, the first whose sceCtrl_driver
+   NIDs differ from the older ones */
+#define DEVKIT_VERSION_371 0x03070110
+
+/* The caller passes sceKernelDevkitVersion(); picks the sceCtrl_driver NID
+   set matching the running firmware. */
 void init_ku_bridge(int devkit_version)
 {
-  if (devkit_version < 0x03070110)
+  if (devkit_version < DEVKIT_VERSION_371)
   {
     __sceCtrlSetSamplingCycle = sceCtrlSetSamplingCycle;
     __sceCtrlSetSamplingMode  = sceCtrlSetSamplingMode;
