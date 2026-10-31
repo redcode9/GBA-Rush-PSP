@@ -225,6 +225,8 @@ static void video_dcache_writeback(void)
  * sceGuViewport place the visible area around it. */
 #define GU_COORD_CENTER 2048
 
+/* Called once by main.c at startup. Starts with the x1.5 GU presenter;
+ * video_resolution_small() applies the screen scale option later. */
 void init_video(int devkit_version)
 {
   disp_frame = (void *)0;
@@ -366,6 +368,8 @@ void video_reset_frame_timing(void)
   adaptive_last_frame_time = 0;
 }
 
+/* Shows the back buffer: waits for queued GE work and, when vsync is
+ * nonzero, for vblank, then swaps the framebuffers. */
 void flip_screen(u32 vsync)
 {
   video_sync_present();
@@ -463,6 +467,8 @@ static void generate_display_list(float scale_x, float scale_y,
   sceGuFinish();
 }
 
+/* Quality that the fixed screen options amount to; the governor holds it
+ * while 16:9 auto is off. */
 static VideoAdaptiveQuality selected_manual_quality(void)
 {
   if(option_screen_scale == SCALED_16X9_SHARP)
@@ -877,6 +883,8 @@ u16 *copy_screen(void)
   return copy;
 }
 
+/* CPU copy of a packed w x h 16-bit image (box art, the menu's game
+ * screenshot) into the back framebuffer at (dest_x, dest_y). */
 void blit_to_screen(u16 *src, u16 w, u16 h, u16 dest_x, u16 dest_y)
 {
   u32 x, y;
@@ -897,6 +905,9 @@ void blit_to_screen(u16 *src, u16 w, u16 h, u16 dest_x, u16 dest_y)
   }
 }
 
+/* The box and line helpers below draw with the GE into the back
+ * framebuffer and wait for it before returning. Coordinates are inclusive;
+ * colors are RGBA5551 except for draw_box_alpha. */
 void draw_box_line(u16 x1, u16 y1, u16 x2, u16 y2, u16 color)
 {
   VertexLineCol16 *vertices;
@@ -981,6 +992,7 @@ void draw_box_fill(u16 x1, u16 y1, u16 x2, u16 y2, u16 color)
   video_ge_sync_direct();
 }
 
+/* Alpha-blended fill; color is a GU 8888 value, 0xAABBGGRR. */
 void draw_box_alpha(u16 x1, u16 y1, u16 x2, u16 y2, u32 color)
 {
   VertexLineCol32 *vertices;
@@ -1087,6 +1099,9 @@ void draw_vline(u16 x, u16 sy, u16 ey, u16 color)
   video_ge_sync_direct();
 }
 
+/* Text in the back framebuffer; x < 0 centers it. The _ext forms draw into
+ * any 16-bit buffer (centered on its pitch); the _gbk forms use the GBK
+ * font (ch_print) instead of Shift-JIS (mh_print). */
 void print_string(const char *str, s16 x, u16 y, u16 fg_color, s16 bg_color)
 {
   video_sync_present();

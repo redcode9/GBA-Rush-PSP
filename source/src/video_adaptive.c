@@ -68,6 +68,8 @@ void video_adaptive_init(VideoAdaptiveState *state, int enabled)
   state->enabled = enabled != 0;
 }
 
+/* After resume: drops the collected windows. An enabled governor restarts
+ * at SHARP; a disabled one keeps its manual quality. */
 void video_adaptive_reset(VideoAdaptiveState *state)
 {
   int enabled;
@@ -84,6 +86,8 @@ void video_adaptive_reset(VideoAdaptiveState *state)
   state->reason = VIDEO_ADAPTIVE_REASON_RESET;
 }
 
+/* Enabled (16:9 auto): start a fresh run at SHARP. Disabled: hold
+ * manual_quality, with out-of-range values treated as SMOOTH. */
 void video_adaptive_set_enabled(VideoAdaptiveState *state, int enabled,
  VideoAdaptiveQuality manual_quality)
 {
@@ -109,6 +113,8 @@ void video_adaptive_set_enabled(VideoAdaptiveState *state, int enabled,
   }
 }
 
+/* Cause reported for a drop to CRISP, most specific first; a bad window
+ * that none of the others explain was caused by GE wait. */
 static VideoAdaptiveReason video_adaptive_bad_reason(
  const VideoAdaptiveState *state)
 {
@@ -121,6 +127,8 @@ static VideoAdaptiveReason video_adaptive_bad_reason(
   return VIDEO_ADAPTIVE_REASON_GE_WAIT;
 }
 
+/* Rates a full window bad, good or neither (neither breaks both streaks)
+ * and steps the quality; returns 1 when it changed. */
 static int video_adaptive_evaluate_window(VideoAdaptiveState *state)
 {
   int bad;
