@@ -16,6 +16,8 @@ static int row_available(const MenuRow *row)
   return row->available == NULL || row->available(row->context);
 }
 
+/* Availability is not checked: a disabled row still takes the cursor, and
+   menu_model_activate/adjust refuse it with MENU_MODEL_UNAVAILABLE. */
 static int row_selectable(const MenuRow *row)
 {
   return (row->flags & MENU_ROW_SELECTABLE) != 0 && row_visible(row);
