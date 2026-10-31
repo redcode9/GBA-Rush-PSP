@@ -4062,6 +4062,14 @@ void clear_metadata_area(METADATA_AREA_TYPE metadata_area, METADATA_CLEAR_REASON
   }
 }
 
+// Translated code is thrown away by a flush of a whole region: the cache
+// filled up (FULL_CACHE), every reset_gba (LOADING_ROM), or a full clear
+// (CLEAR_ALL: start-up, cheat load, RAM policy change, full-flush RAM
+// policy). A metadata area that runs out of tags drops its own blocks
+// (CLEAR_REASON_LAST_TAG), loading a savestate forgets the RAM blocks
+// (CLEAR_REASON_LOADING_STATE), and a store over RAM code clears just the
+// blocks around it (partial_clear_metadata).
+//
 // Empties a code cache and the metadata that points into it. A read-only
 // flush for a new ROM or a full cache also flushes the writable cache, which
 // may jump into it; FLUSH_REASON_CLEAR_ALL clears only the region given.
