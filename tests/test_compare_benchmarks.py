@@ -1,9 +1,12 @@
+"""Tests for scripts/compare-benchmarks.py on synthetic benchmark reports."""
+
 import importlib.util
 import pathlib
 import tempfile
 import unittest
 
 
+# The script name has a dash, so load it as a module by path.
 SCRIPT = pathlib.Path(__file__).parents[1] / "scripts" / "compare-benchmarks.py"
 SPEC = importlib.util.spec_from_file_location("compare_benchmarks", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -14,6 +17,11 @@ def report(frame_p95=17000, frames=600, duration=10_000_000,
            underruns=0, skipped=0, clock=333, fast_forward_time=None,
            fast_forward_frames=0, psp_fw_version="600", vsync="0",
            audio_sample_rate="48000", audio_samples="800"):
+    """A parsed report as read_report() returns it.
+
+    Passing None for an optional field leaves it out, as in reports from
+    older builds.
+    """
     result = {
         "state": "stopped",
         "psp-model": "1",
@@ -58,6 +66,7 @@ class BenchmarkComparisonTests(unittest.TestCase):
         self.assertGreater(result["throughput_change"], 0)
 
     def test_regressions_fail(self):
+        # Throughput -5%, p95 +6%, more underruns and skips: four failures.
         baseline = [report(), report(), report()]
         candidate = [
             report(frame_p95=18000, frames=570, underruns=2, skipped=12),

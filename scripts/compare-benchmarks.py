@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
+"""Compare two builds from their PSP performance reports.
+
+Each build is run three times on the same game and settings; the medians of
+the candidate runs must not regress against the baseline runs. The reports
+are the key=value files written by source/src/perf_report.c.
+"""
 
 import argparse
 import statistics
 import sys
 
 
+# Settings that every run must share, or the timings are not comparable.
 MATCH_FIELDS = (
     "psp-model",
     "clock-mhz",
@@ -18,6 +25,8 @@ MATCH_FIELDS = (
     "rom-revision",
 )
 
+# Fields that older reports lack: checked only when the first baseline
+# report has them, and then every run must carry the same value.
 OPTIONAL_MATCH_FIELDS = (
     "gamepak-file-size",
     "gamepak-ram-buffer-size",
@@ -36,6 +45,7 @@ OPTIONAL_MATCH_FIELDS = (
 
 
 def read_report(path):
+    """Parse a report into a dict; only finished (stopped) sessions count."""
     values = {}
     with open(path, "r", encoding="utf-8") as report:
         for line_number, line in enumerate(report, 1):
@@ -80,6 +90,11 @@ def skip_ratio(report):
 
 
 def fast_forward_multiplier(report):
+    """Fast-forward speed as a multiple of a real GBA.
+
+    Each frame is 280896 cycles at 16777216 Hz, so emulated time in us is
+    frames * 280896e6 / 16777216, divided here by the wall time spent.
+    """
     duration = number(report, "fast-forward-time-us")
     if duration <= 0:
         raise ValueError("fast-forward-time-us must be positive")
@@ -105,6 +120,12 @@ def validate_matching_runs(baseline, candidate):
 
 
 def compare(baseline, candidate):
+    """Compare run medians and list every regression past its threshold.
+
+    Fails on throughput down more than 2%, frame-time p95 up more than 5%,
+    more audio underruns, a skipped-frame ratio up more than 0.5 points, or
+    fast-forward speed down more than 2% (when all runs measured it).
+    """
     validate_matching_runs(baseline, candidate)
 
     baseline_throughput = median_metric(baseline, throughput)
