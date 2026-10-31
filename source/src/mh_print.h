@@ -1,7 +1,9 @@
+/* Glyph size and icon code points of the Shift-JIS font drawn by
+   mh_print.c (print_string). The icons are custom glyphs in the font. */
 #define FONTWIDTH  (6)
 #define FONTHEIGHT (12)
 
-#define BG_NO_FILL (-1)
+#define BG_NO_FILL (-1) // background colour: leave the pixels untouched
 
 
 #define FONT_BATTERY0          "\xF3\xF6\xF7" // empty
