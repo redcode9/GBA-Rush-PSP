@@ -3746,6 +3746,8 @@ static u8 *translate_block_##type(u32 pc)                                     \
 translate_block_builder(arm);
 translate_block_builder(thumb);
 
+// Hash of the scanned opcodes, keying writable_checksum_hash so a RAM block
+// translated again can reuse its native code. Bit 0: 0 ARM, 1 Thumb.
 static u16 block_checksum_arm(u32 opcode_count)
 {
   // Init: Checksum = NOT Opcodes[0]
@@ -3777,6 +3779,8 @@ static u16 block_checksum_thumb(u32 opcode_count)
   return result | 0x0001;
 }
 
+// Widen the range of metadata offsets holding code (ewram_code_min and
+// friends) for pc's RAM area as a block starts and ends translation.
 static void update_metadata_area_start(u32 pc)
 {
   u32 offset = 0;
@@ -3806,6 +3810,7 @@ static void update_metadata_area_start(u32 pc)
   }
 }
 
+// 0xFFFFFFFF means no code yet, so it is replaced rather than compared.
 static void update_metadata_area_end(u32 pc)
 {
   u32 offset = 0;
