@@ -871,7 +871,10 @@ int link_cable_blocked(const LinkCable *cable, uint32_t cycle)
      (int32_t)(cycle - cable->lockstep.finish_cycle) >= 0)
     return 1;
 
-  if(!link_cable_in_use(cable, cycle))
+  /* The other console is waiting for our reply to a START we hold back
+     until our guest reaches its time. Pacing must let us get there, or
+     both consoles would wait for each other. */
+  if(!link_cable_in_use(cable, cycle) || cable->lockstep.deferred)
     return 0;
 
   peer_elapsed = (int32_t)(cable->net.peer_clock - cable->pacing_peer);

@@ -1615,6 +1615,9 @@ int main(int argc, char **argv)
       break;
     test_lockstep_multiplayer(&net_profiles[n], 1, 1.0, 1.0);
     test_lockstep_multiplayer(&net_profiles[n], 4, 1.0, 0.85);
+    /* A fast joiner reaches the pacing limit while the host waits for its
+       reply; the joiner must still be able to answer. */
+    test_lockstep_multiplayer(&net_profiles[n], 9, 1.0, 1.1);
     test_lockstep_normal32(&net_profiles[n]);
   }
 
