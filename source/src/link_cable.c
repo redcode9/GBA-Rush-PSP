@@ -504,6 +504,8 @@ static void pokemon_take_pair(LinkCable *cable, uint32_t cycle)
   link_net_pop(&cable->net);
 }
 
+/* True when any of a frame's eight data words is set; an all-zero frame is
+   only sent when the other side needs an answer. */
 static int pokemon_words_nonzero(const uint16_t words[8])
 {
   unsigned int i;
@@ -589,6 +591,8 @@ static void pokemon_frame_word(LinkCable *cable, uint16_t local_word,
   }
 }
 
+/* Starts the guest's waiting multiplayer transfer now, delivering words as
+   the four player slots (SIOMULTI0-3). */
 static void pokemon_commit(LinkCable *cable, const uint16_t words[4],
  uint32_t cycle)
 {

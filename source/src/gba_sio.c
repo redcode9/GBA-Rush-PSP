@@ -199,6 +199,8 @@ static void gba_sio_refresh_control(GbaSio *sio)
   gba_sio_refresh_pins(sio);
 }
 
+/* The word the game queued to send in this mode (SIODATA8, SIODATA32 or
+   SIOMLT_SEND); 0 in the modes the link does not emulate. */
 static uint32_t gba_sio_read_outgoing(const GbaSio *sio)
 {
   switch(sio->mode)
@@ -496,6 +498,8 @@ static GbaSioEvent gba_sio_write_control(GbaSio *sio, uint16_t value)
   return event;
 }
 
+/* RCNT write. Like gba_sio_write_control(), a mode change drops a transfer
+   the link has not locked and reports MODE_CHANGE. */
 static GbaSioEvent gba_sio_write_rcnt(GbaSio *sio, uint16_t value)
 {
   uint16_t old_rcnt = *gba_sio_register(sio, GBA_SIO_REG_RCNT);
@@ -852,6 +856,8 @@ int gba_sio_is_busy(const GbaSio *sio)
   return sio != NULL && gba_sio_transfer_busy(sio);
 }
 
+/* Copies the transfer state into the savestate's SIO1 block; registers are
+   saved with the I/O bank and the connection is not saved at all. */
 void gba_sio_save_snapshot(const GbaSio *sio, GbaSioSnapshot *snapshot)
 {
   memset(snapshot, 0, sizeof(*snapshot));
