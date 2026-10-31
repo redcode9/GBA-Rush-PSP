@@ -164,6 +164,8 @@ static volatile int quit_cleanup_complete = 0;
 #define MAIN_LINK_SERVICE_CYCLES 16384u
 /* While the link holds the guest, poll the network this often. */
 #define MAIN_LINK_WAIT_POLL_US 1000u
+/* While waiting for VBlank in lockstep mode, check for VBlank this often. */
+#define MAIN_LINK_VBLANK_POLL_US 500u
 
 u32 cpu_ticks = 0;
 s32 video_count = 272;
@@ -600,6 +602,27 @@ void main_link_disconnect(MainLinkEnd reason)
   if(size != 0)
     psp_adhoc_send(datagram, size);
   main_link_close(reason);
+}
+
+/* Waits for the next PSP VBlank like sceDisplayWaitVblankStart, but
+   answers link traffic meanwhile. In lockstep mode the other console may
+   be waiting for our reply, and a whole frame of sleep would add up to
+   16 ms to every transfer. */
+static void main_link_wait_vblank(void)
+{
+  u32 vcount = sceDisplayGetVcount();
+
+  if(!gba_link_open || gba_link.mode != LINK_CABLE_MODE_LOCKSTEP)
+  {
+    sceDisplayWaitVblankStart();
+    return;
+  }
+  while(gba_link_open && sceDisplayGetVcount() == vcount)
+  {
+    psp_adhoc_wait(MAIN_LINK_VBLANK_POLL_US);
+    if(main_link_exchange())
+      pIO_REG(REG_IF) |= IRQ_SERIAL;
+  }
 }
 
 /* Keeps the link alive while a menu has the emulation stopped. */
@@ -1170,7 +1193,7 @@ static void synchronize(void)
       if(measuring)
         vblank_start = sceKernelGetSystemTimeLow();
 
-      sceDisplayWaitVblankStart();
+      main_link_wait_vblank();
 
       if(measuring)
         perf_monitor_record_wait(PERF_METRICS_WAIT_BACKPRESSURE,
