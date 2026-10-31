@@ -7,7 +7,8 @@ set -eu
 #   ROM BIOS SAVE  your own FireRed ROM, GBA BIOS and a save whose last
 #             Pokemon Center visit was in a town and whose player has not
 #             been upstairs in a Pokemon Center yet
-#   ROM2 SAVE2  optional second game (defaults to ROM and SAVE)
+#   ROM2 SAVE2  optional second game (defaults to ROM and SAVE), such as
+#             LeafGreen with a matching save
 # The script trades the host's first Pokemon for the joiner's second one,
 # then checks both saved parties, under several network conditions and once
 # in the lockstep mode used for every non-Pokemon game.
@@ -27,7 +28,7 @@ absolute()
   esac
 }
 
-out=build/rom_link
+out=${OUT:-build/rom_link}
 mkdir -p "$out"
 frameworks=
 if [ "$(uname)" = Darwin ]; then
