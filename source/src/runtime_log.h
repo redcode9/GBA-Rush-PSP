@@ -9,6 +9,13 @@
  * the License, or (at your option) any later version.
  */
 
+/*
+ * Runtime diagnostic log. Events are 32-byte records kept in fixed rings in
+ * memory (main, network and critical sources) and encoded into a "GBRL"
+ * snapshot when runtime_log_psp.c flushes. tools/decode_runtime_log.py
+ * reads the files; enum values and record layouts are part of the format.
+ */
+
 #ifndef RUNTIME_LOG_H
 #define RUNTIME_LOG_H
 
@@ -19,12 +26,14 @@
 #define RUNTIME_LOG_HEADER_SIZE 64u
 #define RUNTIME_LOG_RECORD_SIZE 32u
 #define RUNTIME_LOG_RING_CAPACITY 128u
+/* The critical ring uses only this many of its slots. */
 #define RUNTIME_LOG_CRITICAL_CAPACITY 64u
 #define RUNTIME_LOG_MAX_FILE_SIZE \
  (RUNTIME_LOG_HEADER_SIZE + \
   (((RUNTIME_LOG_RING_CAPACITY * 2u) + RUNTIME_LOG_CRITICAL_CAPACITY) * \
    RUNTIME_LOG_RECORD_SIZE))
 
+/* Ring indices are masked, so the capacity must be a power of two. */
 typedef char RuntimeLogRingCapacityCheck[
  (RUNTIME_LOG_RING_CAPACITY != 0u &&
   (RUNTIME_LOG_RING_CAPACITY & (RUNTIME_LOG_RING_CAPACITY - 1u)) == 0u) ?
@@ -78,6 +87,7 @@ typedef enum
   RUNTIME_LOG_FLUSH_LINK_CHECKPOINT
 } RuntimeLogFlushReason;
 
+/* value[] meanings depend on the event type; the decoder documents them. */
 typedef struct
 {
   uint64_t timestamp_us;
@@ -92,6 +102,10 @@ typedef struct
 typedef char RuntimeLogRecordSizeCheck[
  sizeof(RuntimeLogRecord) == RUNTIME_LOG_RECORD_SIZE ? 1 : -1];
 
+/* One writer per ring; the oldest record is overwritten when it is full.
+   published[i] is the ordinal of the complete record in slot i, or 0 while
+   it is being written, so a reader can skip torn records. Ordinals count
+   from 1. */
 typedef struct
 {
   RuntimeLogRecord records[RUNTIME_LOG_RING_CAPACITY];
@@ -114,9 +128,11 @@ typedef struct
 } RuntimeLogMetadata;
 
 void runtime_log_ring_init(RuntimeLogRing *ring, RuntimeLogSource source);
+/* Never blocks or allocates; safe on the emulator thread's hot paths. */
 void runtime_log_ring_emit(RuntimeLogRing *ring, uint64_t timestamp_us,
  uint32_t emulated_cycle, RuntimeLogEventType type, uint8_t flags,
  uint32_t value0, uint32_t value1, uint32_t value2);
+/* Copies the newest complete records, oldest first. */
 size_t runtime_log_ring_snapshot(const RuntimeLogRing *ring,
  RuntimeLogRecord *records, size_t capacity);
 uint32_t runtime_log_ring_dropped(const RuntimeLogRing *ring);
@@ -124,6 +140,7 @@ int runtime_log_encode(const RuntimeLogRing *main_ring,
  const RuntimeLogRing *network_ring, const RuntimeLogRing *critical_ring,
  const RuntimeLogMetadata *metadata, uint8_t *output, size_t capacity,
  size_t *written);
+/* Checks a snapshot's header, sizes and both CRCs; 1 if it is intact. */
 int runtime_log_validate(const uint8_t *input, size_t size,
  RuntimeLogMetadata *metadata, uint16_t *main_count,
  uint16_t *network_count, uint16_t *critical_count);
