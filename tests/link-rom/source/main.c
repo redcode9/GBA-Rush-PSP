@@ -429,6 +429,8 @@ static void prepare_next_data(void)
   REG_SIOMLT_SEND = (u16)next_data;
 }
 
+/* Rewrites SIOCNT for multiplayer at the current baud rate (RCNT 0 lets
+   SIOCNT pick the mode) and reloads the outgoing word. */
 static void configure_multiplayer(void)
 {
   REG_RCNT = 0;

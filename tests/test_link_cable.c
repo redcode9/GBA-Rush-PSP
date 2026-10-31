@@ -549,6 +549,8 @@ static void EnableSerial(Console *console)
   game->handshakePlayerCount = 0;
 }
 
+/* Port of link.c ResetSerial(): EnableSerial() resets the driver's
+   counters, then DisableSerial() leaves the port idle. */
 static void ResetSerial(Console *console)
 {
   EnableSerial(console);
