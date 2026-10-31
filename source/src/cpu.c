@@ -2620,12 +2620,8 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
   block_data->flag_data = flag_status;
 }
 
-// This function will return a pointer to a translated block of code. If it
-// doesn't exist it will translate it, if it does it will pass it back.
-
-// type should be "arm", "thumb", or "dual." For arm or thumb the PC should
-// be a real PC, for dual the least significant bit will determine if it's
-// ARM or Thumb mode.
+// Helpers for block_lookup_address_body below, whose type is "arm" or
+// "thumb"; block_lookup_address_dual picks one from bit 0 of the PC.
 
 #define block_lookup_address_pc_arm()                                         \
   u32 thumb = 0;                                                           \
@@ -2876,13 +2872,11 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
     }                                                                         \
                                                                               \
     default:                                                                  \
-      /* If we're at the bottom, it means we're actually trying to jump to an \
-         address that we can't handle. Otherwise, it means that code scanned  \
-         has reached an address that can't be handled, which means that we    \
-         have most likely hit an area that doesn't contain code yet (for      \
-         instance, in RAM). If such a thing happens, return NULL and the      \
-         block translator will naively link it (it'll be okay, since it       \
-         should never be hit) */                                              \
+      /* No code can run from this address. At the top level it is a          \
+         fatal bad jump. Nested calls return NULL, a failed lookup; queued    \
+         exits never get here, since only BIOS, ROM and (under the            \
+         full-flush policy) RAM targets are linked, see                       \
+         BRANCH_TARGET_CAN_BE_LINKED. */                                      \
       if (translation_recursion_level == 0)                                   \
       {                                                                       \
         char buffer[80];                                                      \
