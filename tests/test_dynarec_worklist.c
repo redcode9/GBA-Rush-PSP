@@ -1,3 +1,9 @@
+/*
+ * Host tests for dynarec_worklist.c, the growable stack of block exits the
+ * dynarec still has to link (cpu.c process_deferred_exits()). It must pop in
+ * LIFO order, grow past its initial capacity, and keep its buffer on clear.
+ */
+
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -19,6 +25,7 @@ static void test_deep_chain_uses_heap_storage(void)
   DynarecWorkItem item;
   uintptr_t i;
 
+  /* A long chain of untranslated exits, far beyond the initial 128 slots. */
   for(i = 0; i < 10000; i++)
   {
     assert(dynarec_worklist_push(&worklist, (void *)(i + 1),
