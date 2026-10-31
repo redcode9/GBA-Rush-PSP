@@ -99,6 +99,8 @@ static u16 get_preset_color(u32 theme, u32 item_index)
     return 0;
 }
 
+/* Load preset theme (0-8, else 0) into the menu colours, and delete the
+   custom colours file so it cannot override the preset. */
 static void apply_theme(u32 theme)
 {
     if (theme >= 9) theme = 0;
@@ -203,6 +205,8 @@ static const char *fast_forward_presentation_options[
  FAST_FORWARD_PRESENTATION_COUNT];
 static const char *fast_forward_audio_options[FAST_FORWARD_AUDIO_COUNT];
 
+/* Point the option value labels at the current language's MSG strings; run
+   on every menu() entry and again after a language change. */
 static void init_choice_arrays(void)
 {
     scale_options[0] = MSG[MSG_SCN_SCALED_NONE];
@@ -349,6 +353,7 @@ static u16 rgb_to_color15(u8 r, u8 g, u8 b)
 #define C5TO8(v) (((v) << 3) | ((v) >> 2))
 #define C8TO5(v) ((v) >> 3)
 
+/* H 0-359, S and V 0-255, from the channels widened to 8 bits. */
 static void rgb15_to_hsv(u16 c, u32 *h, u32 *s, u32 *v)
 {
     u8 r5, g5, b5;
@@ -385,6 +390,7 @@ static void rgb15_to_hsv(u16 c, u32 *h, u32 *s, u32 *v)
     }
 }
 
+/* Inverse of rgb15_to_hsv(); h wraps at 360, s and v are 0-255. */
 static u16 hsv_to_color15(u32 h, u32 s, u32 v)
 {
     u8 r, g, b;
@@ -460,6 +466,8 @@ void add_recent_rom(const char *filename);
 static void validate_recent_roms(void);
 static u32 is_recent_roms_empty(void);
 
+/* Reload recent_roms from recent.cfg, stopping at the first malformed entry,
+   then drop entries whose file is gone. Run at boot and by the ROM browser. */
 void load_recent_roms(void)
 {
     SceUID fd;
@@ -554,6 +562,8 @@ static u32 is_recent_roms_empty(void)
     return (num_recent_roms == 0);
 }
 
+/* Move a just-loaded ROM (made absolute against the cwd) to the top of the
+   list, dropping its old entry (case-insensitive) or the oldest, and save. */
 void add_recent_rom(const char *filename)
 {
     u32 i;
@@ -823,6 +833,8 @@ static s32 compute_scroll_offset(u32 tick, u32 str_len, u32 max_chars)
     return (s32)(scroll_len - (t / SCROLL_SPEED_FRAME));
 }
 
+/* Call once per drawn frame with the hash of the text on show; the tick
+   feeds compute_scroll_offset(). The file and title versions match. */
 static void update_menu_scroll(u32 hash)
 {
     if (hash != g_scroll.last_menu_hash) {
@@ -853,6 +865,8 @@ static void update_title_scroll(u32 hash)
     }
 }
 
+/* Scrolling form of print_string_clipped(): shows max_chars columns of str
+   from column scroll_offset (see compute_scroll_offset()). */
 static void print_string_scroll(const char *str, u32 x, u32 y, u16 color, u16 bg, u32 max_chars, s32 scroll_offset)
 {
     u32 len = strlen(str);
@@ -913,6 +927,9 @@ static void print_string_clipped(const char *str, u32 x, u32 y, u16 color, u16 b
         print_string_gbk(buf, x, y, color, bg);
 }
 
+/* One frame of run_color_picker(): the saturation/value grid at hue h, the
+   hue bar, old and new swatches and the theme preview. cx, cy and hue_seg
+   are cursor cells, not pixels. */
 static void draw_color_picker(u32 h, u32 s, u32 v, s32 cx, s32 cy, s32 hue_seg,
                               u16 original_color, u16 current_color, u32 title_msg_idx)
 {
@@ -1128,6 +1145,8 @@ void menu_pick_color(void)
     save_theme_config();
 }
 
+/* tempgba_theme.cfg: the 11 menu colours as raw u16s in color_items[]
+   order. Written whenever a custom colour changes. */
 s32 save_theme_config(void)
 {
     SceUID fd;
@@ -1154,6 +1173,8 @@ s32 save_theme_config(void)
     return -1;
 }
 
+/* Apply the custom colours file over the current colours; returns -1 if it
+   is missing or short, leaving the colours unchanged. */
 s32 load_theme_config(void)
 {
     SceUID fd;
@@ -1275,6 +1296,8 @@ typedef struct _MenuType MenuType;
 /* behavior_flags: a status line the cursor skips over. */
 #define MENU_OPTION_PASSIVE_ROW (1U << 0)
 
+/* MenuRow predicates for build_legacy_menu_model(); context is the
+   MenuOptionType the row mirrors. */
 static int legacy_menu_row_visible(void *context)
 {
   MenuOptionType *option = (MenuOptionType *)context;
@@ -2965,6 +2988,7 @@ static u32 savestate_file_exists(u32 slot)
 }
 
 
+/* Hotkey load of savestate_slot; load_state() asks for confirmation. */
 u32 action_loadstate(void)
 {
   char savestate_filename[MAX_FILE];
@@ -2973,6 +2997,8 @@ u32 action_loadstate(void)
   return load_state(savestate_filename);
 }
 
+/* Hotkey save to savestate_slot after a confirmation; the current screen is
+   stored in the state as its preview. */
 u32 action_savestate(void)
 {
   char savestate_filename[MAX_FILE];
@@ -3005,6 +3031,7 @@ static u32 action_savestate_slot(u32 slot)
   return result;
 }
 
+/* Load a slot with no confirmation prompt (auto savestate resume). */
 static u32 action_loadstate_slot(u32 slot)
 {
   char savestate_filename[MAX_FILE];
@@ -3086,6 +3113,8 @@ static void menu_passive_cheat_toggle(void)
     rebuild_active_cheat_indexes();
 }
 
+/* Rebuild each cheat's row label (number and name) from the current
+   language's format string. */
 static void refresh_cheat_format_strings(void)
 {
     u32 i;
@@ -3213,6 +3242,8 @@ static void menu_diagnostics_stop(void)
     main_perf_stop();
 }
 
+/* Write the perf report and show its file name, or the failure, on the
+   status row. */
 static void menu_diagnostics_write_report(void)
 {
     char report_path[MAX_PATH];
@@ -3339,6 +3370,8 @@ static void menu_trace_start(void)
          "%s", MSG[MSG_TRACE_FAILED]);
 }
 
+/* Stop recording and save the trace to menu_trace_path(); the status row
+   reports saved or failed. */
 static void menu_trace_finish_save(void)
 {
     u8 *encoded;
@@ -3375,6 +3408,7 @@ finish:
      MSG[success ? MSG_TRACE_SAVED : MSG_TRACE_FAILED]);
 }
 
+/* Start replaying this ROM's saved trace; only a failure is reported. */
 static void menu_trace_replay(void)
 {
     char path[MAX_PATH];
@@ -3480,6 +3514,8 @@ static void print_menu_line(const char *str, s16 x, s16 y, u16 fg, s16 bg)
         print_string_gbk(str, x, y, fg, bg);
 }
 
+/* Menu value scroller with byte offsets. Text containing double-byte
+   characters is drawn whole, unscrolled and unclipped, so none is split. */
 static void print_menu_line_scroll(const char *str, s16 x, s16 y, u16 fg, s16 bg, u32 max_chars, s32 scroll_offset)
 {
     if (menu_string_has_gbk(str)) {
@@ -6155,6 +6191,8 @@ static void capture_global_config(ConfigModel *model)
     model->gamepad[i] = gamepad_config_map[i];
 }
 
+/* Inverse of capture_global_config(), then the side effects: button mask,
+   preset theme (apply_theme()) and fast forward settings. */
 static void apply_global_config(const ConfigModel *model)
 {
   u32 i;
@@ -6216,6 +6254,8 @@ static s32 save_global_config(void)
    &model) == CONFIG_STORE_OK ? 0 : -1;
 }
 
+/* Load tempgba.cfg (or its .bak). With neither, apply the defaults, with
+   the language taken from the PSP system setting, and return -1. */
 static s32 load_global_config(void)
 {
   ConfigModel model;
@@ -6286,6 +6326,7 @@ static void capture_game_config(ConfigModel *model)
     model->gamepad[i] = gamepad_config_map[i];
 }
 
+/* Per-game counterpart of apply_global_config(). */
 static void apply_game_config(const ConfigModel *model)
 {
   u32 i;
@@ -6370,6 +6411,8 @@ static s32 save_game_config_file(void)
   return return_value;
 }
 
+/* Saves the running game's .cfg as well as tempgba.cfg; the result is that
+   of the global save. */
 s32 save_config_file(void)
 {
   s32 return_value;
@@ -6404,6 +6447,8 @@ s32 load_game_config_file(void)
   return -1;
 }
 
+/* Global settings only; load_game_config_file() reads the per-game file
+   when a ROM loads. */
 s32 load_config_file(void)
 {
   return load_global_config();
