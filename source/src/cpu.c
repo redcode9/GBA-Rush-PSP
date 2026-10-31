@@ -3706,6 +3706,7 @@ static u8 *translate_block_##type(u32 pc)                                     \
          block_exits[i].branch_source, branch_target,                         \
          type##_deferred_exit_thumb))                                         \
         {                                                                     \
+          /* No memory for the exit queue: handled as a full cache. */        \
           flush_translation_cache(translation_region, FLUSH_REASON_FULL_CACHE); \
           return NULL;                                                        \
         }                                                                     \
@@ -4063,6 +4064,11 @@ void clear_metadata_area(METADATA_AREA_TYPE metadata_area, METADATA_CLEAR_REASON
 // (CLEAR_REASON_LAST_TAG), loading a savestate forgets the RAM blocks
 // (CLEAR_REASON_LOADING_STATE), and a store over RAM code clears just the
 // blocks around it (partial_clear_metadata).
+//
+// Flush only from C outside translated code, or from a stub that re-enters
+// through lookup_pc as smc_write does: code returning into a flushed cache
+// would run stale instructions. A new reason needs an entry in both enums
+// in cpu.h and a case in each switch below, whose default does nothing.
 //
 // Empties a code cache and the metadata that points into it. A read-only
 // flush for a new ROM or a full cache also flushes the writable cache, which
