@@ -40,16 +40,17 @@ static int failures;
     } \
   } while(0)
 
-#define CYCLES_PER_FRAME 280896u
-#define CYCLES_PER_US 16.777216
-#define TICK_US 100u
-#define SERVICE_CYCLES 16384u
+#define CYCLES_PER_FRAME 280896u   /* 228 lines x 1232 cycles */
+#define CYCLES_PER_US 16.777216    /* GBA clock, 16.78 MHz */
+#define TICK_US 100u               /* simulation step of the wall clock */
+#define SERVICE_CYCLES 16384u      /* main.c MAIN_LINK_SERVICE_CYCLES */
 
 static uint32_t rng_state;
 
 /* The simulated wall clock only moves forward, across runs too. */
 static uint64_t sim_clock;
 
+/* Linear congruential generator; the low bits are weak, so drop them. */
 static uint32_t rng(void)
 {
   rng_state = rng_state * 1664525u + 1013904223u;
@@ -74,18 +75,19 @@ struct Console
   GbaSio sio;
   LinkCable cable;
   const Guest *guest;
-  void *state;
-  double speed;
-  double budget;
+  void *state;          /* the guest's own data */
+  double speed;         /* emulation speed relative to a real GBA */
+  double budget;        /* fraction of a cycle carried to the next tick */
   uint32_t cycle;
   uint32_t next_vblank;
   uint32_t frames;
   uint32_t last_service;
-  uint8_t service_due;
+  uint8_t service_due;  /* a START write asks for an immediate service */
+  /* One hardware timer is enough: games here use only timer 3. */
   uint8_t timer_on;
   uint32_t timer_at;
   uint32_t timer_period;
-  uint64_t blocked_us;
+  uint64_t blocked_us;  /* wall time spent stopped by the cable */
   uint64_t now;
   /* The console stops completely for freeze_us once per freeze_period_us,
      like a PSP writing to its memory stick. */
@@ -140,6 +142,9 @@ static uint32_t clamp_step(uint32_t step, uint32_t limit)
   return limit < step ? limit : step;
 }
 
+/* Runs one TICK_US of wall time at the console's speed. The guest advances
+   from event to event (VBlank, timer, SIO completion, cable service) and
+   stops for the rest of the tick whenever the cable blocks it. */
 static void console_run(Console *console, uint64_t now)
 {
   uint32_t budget;
@@ -215,10 +220,12 @@ typedef struct
   uint32_t jitter_us;
   uint32_t loss_percent;
   uint32_t duplicate_percent;
+  /* Window, from the start of the run, in which every datagram is lost. */
   uint64_t outage_start_us;
   uint64_t outage_end_us;
 } NetProfile;
 
+/* A datagram on its way to console `to`. */
 typedef struct
 {
   uint8_t data[LINK_NET_MAX_DATAGRAM];
@@ -232,6 +239,7 @@ static Flight flights[MAX_FLIGHTS];
 static unsigned int flight_count;
 static uint64_t run_start;
 
+/* Random jitter on each copy also reorders datagrams. */
 static void network_send(const NetProfile *net, int to, const uint8_t *data,
  size_t size, uint64_t now)
 {
@@ -336,6 +344,10 @@ static uint64_t run_link(Console *consoles[2], const NetProfile *net,
 #define LINKCMD_INIT_BLOCK 0xBBBB
 #define LINKCMD_SEND_HELD_KEYS 0xCAFE
 
+#define REG_SIOMULTI0 0x120
+#define REG_SIOMULTI1 0x122
+#define REG_SIOMULTI2 0x124
+#define REG_SIOMULTI3 0x126
 #define REG_SIOCNT 0x128
 #define REG_SIOMLT_SEND 0x12A
 #define REG_RCNT 0x134
@@ -357,8 +369,13 @@ enum
 
 enum { LAG_NONE, LAG_MASTER, LAG_SLAVE };
 
+/* link.c starts timer 3 at -197 with the 64-cycle prescaler between the
+   master's words. */
 #define TIMER3_PERIOD (197u * 64u)
 
+/* The script's two block transfers (player record, then party), the frames
+   of held keys each side sends in the link room, and the capacity of the
+   per-frame key log compared between the consoles. */
 #define LINK_PLAYER_BLOCK_SIZE 60u
 #define PARTY_BLOCK_SIZE 600u
 #define KEY_FRAMES 240u
@@ -379,6 +396,8 @@ typedef enum
   SCRIPT_DONE
 } ScriptPhase;
 
+/* Blocks travel 14 bytes per command, so the last command may read up to
+   13 bytes past the block; the buffers leave room for it. */
 typedef struct
 {
   int active;
@@ -490,10 +509,11 @@ static void DisableSerial(Console *console)
   timer_stop(console);
   reg_write(console, REG_SIOCNT, SIO_MULTI_MODE);
   reg_write(console, REG_SIOMLT_SEND, 0);
-  reg_write(console, 0x120, 0);
-  reg_write(console, 0x122, 0);
-  reg_write(console, 0x124, 0);
-  reg_write(console, 0x126, 0);
+  reg_write(console, REG_SIOMULTI0, 0);
+  reg_write(console, REG_SIOMULTI1, 0);
+  reg_write(console, REG_SIOMULTI2, 0);
+  reg_write(console, REG_SIOMULTI3, 0);
+  /* Clears gLink: every field before the file-scope statics. */
   memset(game, 0, offsetof(PokemonGame, numVBlanksWithoutSerialIntr));
   game->linkOpen = keep_open;
   game->vsyncDisabled = keep_vsync;
@@ -715,9 +735,9 @@ static int DoHandshake(Console *console)
   else
     reg_write(console, REG_SIOMLT_SEND, SLAVE_HANDSHAKE);
   for(i = 0; i < 4; i++)
-    game->tempRecvBuffer[i] = reg_read(console, 0x120 + i * 2);
+    game->tempRecvBuffer[i] = reg_read(console, REG_SIOMULTI0 + i * 2);
   for(i = 0; i < 4; i++)
-    reg_write(console, 0x120 + i * 2, 0);
+    reg_write(console, REG_SIOMULTI0 + i * 2, 0);
   game->handshakeAsMaster = 0;
   for(i = 0; i < 4; i++)
   {
@@ -750,7 +770,7 @@ static void DoRecv(Console *console)
   uint8_t index;
 
   for(i = 0; i < 4; i++)
-    recv[i] = reg_read(console, 0x120 + i * 2);
+    recv[i] = reg_read(console, REG_SIOMULTI0 + i * 2);
   if(game->sendCmdIndex == 0)
   {
     for(i = 0; i < game->playerCount; i++)
@@ -881,6 +901,8 @@ static void Timer3Intr(Console *console)
 
 /* ---- Pokemon guest: game logic above the driver ----------------------- */
 
+/* Payload byte derived from the sender's seed, so the receiver can verify a
+   block without a copy of it. */
 static uint8_t block_byte(uint32_t seed, uint32_t kind, uint32_t index)
 {
   return (uint8_t)((seed * 131u + kind * 17u + index * 7u + (index >> 3)) ^
@@ -1226,6 +1248,8 @@ static int pokemon_done(Console *consoles[2])
    a->errors != 0 || b->errors != 0;
 }
 
+/* Each side opens the link at its own frame (players reach the Cable Club
+   at different times) and the pair links up `sessions` times in a row. */
 typedef struct
 {
   const char *name;
@@ -1356,6 +1380,7 @@ static void test_pokemon_peer_closes_in_room(void)
    "keeps running");
 }
 
+/* Latency, jitter (us), loss and duplicate (%), outage window (us). */
 static const NetProfile net_profiles[] =
 {
   { "lan",       1500u,  1000u,  0u, 0u, 0u, 0u },
@@ -1365,6 +1390,8 @@ static const NetProfile net_profiles[] =
   { "terrible", 20000u, 40000u, 30u, 10u, 0u, 0u }
 };
 
+/* Game codes: BPRE/BPRI FireRed (US/Italian), BPGE LeafGreen, BPEE Emerald,
+   AXVE Ruby. 0.80 speed stands for a PSP-1000 that cannot hold full speed. */
 static void test_pokemon_trades(void)
 {
   static const PokemonCase cases[] =
@@ -1431,8 +1458,8 @@ static void lockstep_start_multi(Console *console)
 static void lockstep_multi_irq(Console *console)
 {
   LockstepGame *game = lockstep_of(console);
-  uint16_t master_word = reg_read(console, 0x120);
-  uint16_t slave_word = reg_read(console, 0x122);
+  uint16_t master_word = reg_read(console, REG_SIOMULTI0);
+  uint16_t slave_word = reg_read(console, REG_SIOMULTI1);
 
   game->frames_without_irq = 0;
   game->transfers++;
@@ -1536,7 +1563,9 @@ static void test_lockstep_multiplayer(const NetProfile *net,
 }
 
 /* A normal-mode game: the clocking side sends a counter and the other side
-   answers with the last value it received, set after every interrupt. */
+   answers with the last value it received, set after every interrupt.
+   0x120/0x122 are SIODATA32 low/high; SIOCNT 0x1000 selects 32-bit normal
+   mode, 0x4000 enables the IRQ and 0x0001 makes this side the clock. */
 static void normal_start(Console *console)
 {
   LockstepGame *game = lockstep_of(console);
@@ -1657,6 +1686,8 @@ static void idle_irq(Console *console)
 
 static const Guest idle_guest = { idle_irq, idle_irq, idle_irq };
 
+/* Ruby, Sapphire, Emerald, FireRed and LeafGreen in any region use the
+   Pokemon mode; every other game uses lockstep. */
 static void test_mode_selection_and_roles(void)
 {
   char pokemon[][5] = { "AXVE", "AXPE", "BPEE", "BPRI", "BPGE", "BPRJ" };
@@ -1722,6 +1753,7 @@ int main(int argc, char **argv)
   test_session_lifecycle();
   test_pokemon_trades();
 
+  /* --quick (the sanitizer build) runs lockstep on two profiles only. */
   for(n = 0; n < sizeof(net_profiles) / sizeof(net_profiles[0]); n++)
   {
     if(quick && n > 1)
