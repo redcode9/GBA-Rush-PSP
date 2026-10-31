@@ -3113,8 +3113,9 @@ static void menu_passive_ram_dynarec_policy(void)
 
 
 /* ------------------------------------------------------------------
-   Cheat menu page refresh -- file scope to avoid GCC nested-function
-   trampoline crash when used as a menu passive_function callback.
+   Cheat menu page refresh. Kept at file scope: taking the address of a
+   nested function goes through a stack trampoline, which crashed when
+   these were passive_function callbacks. Plain functions need none.
    ------------------------------------------------------------------ */
 static char cheat_format_str[MAX_CHEATS][CHEAT_NAME_LENGTH + 16];
 static char cheat_page_format_str[64];
