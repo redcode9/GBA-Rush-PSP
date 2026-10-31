@@ -1,3 +1,10 @@
+/*
+ * Host tests for power_lifecycle.c. The PSP power callback thread records
+ * suspend (with or without an autosave request) and resume (with the
+ * audio restart result); the main loop later takes each pending save and
+ * resume exactly once, however the callbacks repeat or interleave.
+ */
+
 #include <assert.h>
 #include <stdio.h>
 
@@ -38,6 +45,7 @@ static void test_suspend_and_resume(void)
   assert(power_lifecycle_state(&lifecycle) == POWER_LIFECYCLE_RUNNING);
 }
 
+/* Suspend and resume both arrive before the main loop runs again. */
 static void test_callbacks_before_foreground(void)
 {
   PowerLifecycle lifecycle;
@@ -53,6 +61,7 @@ static void test_callbacks_before_foreground(void)
   assert(power_lifecycle_state(&lifecycle) == POWER_LIFECYCLE_RUNNING);
 }
 
+/* A repeated callback without the opposite one in between is ignored. */
 static void test_duplicate_callbacks(void)
 {
   PowerLifecycle lifecycle;
@@ -71,6 +80,7 @@ static void test_duplicate_callbacks(void)
   assert(!power_lifecycle_take_resume(&lifecycle, &result));
 }
 
+/* Two full cycles before the main loop looks: one save, latest result. */
 static void test_repeated_cycles_coalesce_safely(void)
 {
   PowerLifecycle lifecycle;
