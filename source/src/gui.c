@@ -5059,9 +5059,10 @@ u32 menu(void)
      option_* global (main.c, main.h); a row in the screen's table, whose
      label holds one %s or %d for the value (the screen row is a line
      number: unused numbers leave blank spacer lines, so shift later rows
-     if needed); MSG ids in message.h and every text/message_*.h; its value
-     in that screen's menu_*_default() reset if it has one; and, to save it,
-     the steps in config_model.c plus capture_*_config() and
+     if needed); MSG ids in message.h (before MSG_END) and every
+     text/message_*.h; its default in the menu_*_default() reset that covers
+     it (the Interface screen's also resets audio and capture options); and,
+     to save it, the steps in config_model.c plus capture_*_config() and
      apply_*_config() here. */
   MenuOptionType custom_colors_options[] =
   {
