@@ -5095,9 +5095,10 @@ u32 menu(void)
   MAKE_MENU(theme, NULL, NULL);
 
   /* Adding an option: an option_* global (main.c, main.h), a row in the
-     screen's table below, MSG ids in message.h and every text/message_*.h,
-     and, to save it, the steps in config_model.c plus capture_*_config()
-     and apply_*_config() in this file.
+     screen's table below, its value in that screen's menu_*_default()
+     reset, MSG ids in message.h and every text/message_*.h, and, to save
+     it, the steps in config_model.c plus capture_*_config() and
+     apply_*_config() in this file.
      Row arguments: ..., option count, help line, screen row, label id.
      MSG_OPTION_MENU_HELP_7 is the generic "<- -> change, X exit" help line;
      the MSG_OPTION_MENU_<n> ids are plain labels, numbered by history.

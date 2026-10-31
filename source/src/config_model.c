@@ -13,9 +13,11 @@
    drops files of the older one unless it learns that layout too.
    Adding a setting: append it to model_to_values() and values_to_model()
    (limit and default), add the default to config_model_defaults(), raise
-   CONFIG_MODEL_VALUE_COUNT in config_model.h and the versions here. Then
-   map it in gui.c's capture_*_config()/apply_*_config() and add its
-   option_ global, menu row and messages. */
+   CONFIG_MODEL_VALUE_COUNT in config_model.h, then bump the version and
+   set the PREVIOUS_* values here to the old ones (fixing the "Version 1"
+   note on decode_versioned and the migration test in
+   tests/test_config_model.c). Then map it in gui.c's capture_*_config() and
+   apply_*_config() and add its option_ global, menu row and messages. */
 #define CONFIG_MODEL_VERSION 2U
 #define CONFIG_MODEL_PREVIOUS_VERSION 1U
 #define CONFIG_MODEL_PREVIOUS_VALUE_COUNT 39U
