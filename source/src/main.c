@@ -166,6 +166,11 @@ static volatile int quit_cleanup_complete = 0;
 #define MAIN_LINK_WAIT_POLL_US 1000u
 /* While waiting for VBlank in lockstep mode, check for VBlank this often. */
 #define MAIN_LINK_VBLANK_POLL_US 500u
+/* A frame that runs late never waits for VBlank, and then no thread below
+   the emulator gets the CPU. Part of the PSP's Wi-Fi stack sits there:
+   starving it held every datagram for seconds until the link was lost.
+   While a link is open, each late frame gives up this much time. */
+#define MAIN_LINK_YIELD_US 2000u
 
 u32 cpu_ticks = 0;
 s32 video_count = 272;
@@ -1175,6 +1180,9 @@ static void synchronize(void)
 
   if (real_frame_count >= virtual_frame_count)
   {
+    if(gba_link_open)
+      sceKernelDelayThread(MAIN_LINK_YIELD_US);
+
     if ((real_frame_count > virtual_frame_count) &&
         (used_frameskip_type == FRAMESKIP_AUTO) &&
         (num_skipped_frames < option_frameskip_value))

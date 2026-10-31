@@ -79,7 +79,9 @@ emulator thread, creates or joins the `GBARUSH` group and only moves datagrams
 through two lock-free queues. All link logic runs on the emulator thread.
 A datagram the PSP network stack refuses is dropped, since the next one
 repeats its messages; retrying at once made the stack hold datagrams for
-seconds.
+seconds. Part of that stack runs below the emulator thread, so while a link
+is open every frame that runs late still sleeps for 2 ms; a console that
+never slept held datagrams for seconds too, until the link was lost.
 
 `link_net.c` makes the datagrams reliable and ordered. Every datagram repeats
 all messages the other side has not acknowledged yet, as GGPO does with
