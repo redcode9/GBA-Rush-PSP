@@ -108,6 +108,8 @@ static uint32_t perf_metrics_histogram_percentile(
   return histogram->max_us;
 }
 
+/* Zeroes everything to IDLE and sets the frame-time and GE-wait histogram
+   bucket widths; perf_metrics_reset() does the same. */
 void perf_metrics_init(PerfMetrics *metrics)
 {
   if(metrics == NULL)
@@ -126,6 +128,8 @@ void perf_metrics_reset(PerfMetrics *metrics)
   perf_metrics_init(metrics);
 }
 
+/* Begins a fresh capture, discarding the previous one; 0 if a capture is
+   already running. */
 int perf_metrics_start(PerfMetrics *metrics)
 {
   if(metrics == NULL || metrics->state == PERF_METRICS_ACTIVE)
@@ -182,6 +186,8 @@ void perf_metrics_record_frame(PerfMetrics *metrics, uint32_t frame_time_us,
   }
 }
 
+/* The emulated half of perf_metrics_record_frame(): counts the frame and
+   its fast-forward time, and samples the frame-time histogram. */
 void perf_metrics_record_emulated_frame(PerfMetrics *metrics,
  uint32_t frame_time_us, int fast_forward)
 {
@@ -200,6 +206,8 @@ void perf_metrics_record_emulated_frame(PerfMetrics *metrics,
   perf_metrics_histogram_record(&metrics->frame_time, frame_time_us);
 }
 
+/* The presented half of perf_metrics_record_frame(), without the
+   fast-forward presented count. */
 void perf_metrics_record_presented_frame(PerfMetrics *metrics,
  uint32_t ge_wait_us)
 {
@@ -267,6 +275,8 @@ void perf_metrics_record_dynarec_retry(PerfMetrics *metrics)
      metrics->dynarec_retries, 1);
 }
 
+/* Counts a full-cache dynarec flush (the only kind cpu.c reports), split by
+   the read-only or writable code cache. */
 void perf_metrics_record_dynarec_flush(PerfMetrics *metrics, int writable)
 {
   if(!perf_metrics_active(metrics))
@@ -282,6 +292,8 @@ void perf_metrics_record_dynarec_flush(PerfMetrics *metrics, int writable)
      metrics->dynarec_readonly_flushes, 1);
 }
 
+/* Raises the high-water marks of both code caches' used bytes and their
+   sum; cpu.c reports after each block it compiles. */
 void perf_metrics_observe_dynarec_cache(PerfMetrics *metrics,
  uint64_t readonly_bytes, uint64_t writable_bytes)
 {
@@ -299,6 +311,8 @@ void perf_metrics_observe_dynarec_cache(PerfMetrics *metrics,
     metrics->dynarec_writable_high_water = writable_bytes;
 }
 
+/* Keeps the lowest free-memory sample of the capture; main.c samples at
+   start and stop. */
 void perf_metrics_observe_memory_available(PerfMetrics *metrics,
  uint64_t bytes)
 {
@@ -310,6 +324,8 @@ void perf_metrics_observe_memory_available(PerfMetrics *metrics,
   metrics->has_memory_sample = 1;
 }
 
+/* Adds one VBlank wait to the count and total of its site; an unknown site
+   is ignored. */
 void perf_metrics_record_wait(PerfMetrics *metrics,
  PerfMetricsWaitSite site, uint32_t wait_us)
 {
@@ -341,6 +357,8 @@ void perf_metrics_record_wait(PerfMetrics *metrics,
   *total = perf_metrics_saturating_add(*total, wait_us);
 }
 
+/* Time one update_screen() call took to render a GBA frame; keeps the
+   total and the worst frame. */
 void perf_metrics_record_renderer_frame(PerfMetrics *metrics,
  uint32_t renderer_us)
 {
@@ -353,6 +371,8 @@ void perf_metrics_record_renderer_frame(PerfMetrics *metrics,
     metrics->renderer_max_us = renderer_us;
 }
 
+/* Times the full D-cache writeback done before handing a frame to the GE
+   (count and total). */
 void perf_metrics_record_dcache_writeback(PerfMetrics *metrics,
  uint32_t wait_us)
 {
@@ -365,6 +385,8 @@ void perf_metrics_record_dcache_writeback(PerfMetrics *metrics,
    metrics->dcache_writeback_total_us, wait_us);
 }
 
+/* Like perf_metrics_record_dcache_writeback(), for a wait on a GU_DIRECT
+   display list to finish. */
 void perf_metrics_record_ge_sync_direct(PerfMetrics *metrics,
  uint32_t wait_us)
 {
@@ -377,6 +399,8 @@ void perf_metrics_record_ge_sync_direct(PerfMetrics *metrics,
    metrics->ge_sync_direct_total_us, wait_us);
 }
 
+/* Counts a presented frame as SHARP (two-pass upscale) or CRISP (single
+   pass, nearest filter); see video_adaptive.h. */
 void perf_metrics_record_quality_presented(PerfMetrics *metrics,
  int sharp)
 {
@@ -443,6 +467,8 @@ void perf_metrics_record_dma(PerfMetrics *metrics, int bits32,
      metrics->dma_gamepak_pairs, 1);
 }
 
+/* Times one scan of the ROM page cache for the least recently used page
+   to evict (count and total). */
 void perf_metrics_record_gamepak_evict_scan(PerfMetrics *metrics,
  uint32_t us)
 {
@@ -476,6 +502,8 @@ void perf_metrics_record_gamepak_rom_io(PerfMetrics *metrics,
      metrics->gamepak_read_errors, 1);
 }
 
+/* Copies the counters, reducing each histogram to samples, total, max and
+   p50/p95/p99; an all-zero snapshot when metrics is NULL. */
 void perf_metrics_snapshot(const PerfMetrics *metrics,
  PerfMetricsSnapshot *snapshot)
 {
