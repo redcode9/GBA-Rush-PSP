@@ -9,6 +9,13 @@
  * the License, or (at your option) any later version.
  */
 
+/*
+ * Bare-metal GBA ROM for checking a link cable, real or emulated. The
+ * Makefile builds it once per mode (normal 8-bit, normal 32-bit,
+ * multiplayer); it prints SIOCNT, the words sent and received and the IRQ
+ * count on a bitmap screen. Interrupts stay masked: IF is polled per frame.
+ */
+
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned int u32;
@@ -69,6 +76,7 @@ typedef enum
   ROLE_EXTERNAL
 } NormalRole;
 
+/* 5x7 glyphs, one byte per row; bit 4 is the leftmost pixel. */
 static const u8 digit_font[10][7] =
 {
   { 14, 17, 19, 21, 25, 17, 14 },
@@ -230,6 +238,8 @@ static void wait_for_vblank(void)
   }
 }
 
+/* With IME off the serial IRQ is never taken; its IF bit still latches and
+   is acknowledged by writing it back. */
 static void poll_serial_interrupt(void)
 {
   if((REG_IF & IRQ_SERIAL) == 0)
@@ -270,6 +280,9 @@ static const char *normal_role_name(void)
   return "NOT SELECTED";
 }
 
+/* Easy-to-read patterns that differ by side and count up per transfer:
+   8-bit 0x40-0x7F (the external-clock side starts 0x20 ahead), 32-bit an
+   0xA1 or 0xB2 tag in the top byte above the transfer count. */
 static void prepare_next_data(void)
 {
 #if LINK_DIAGNOSTIC_MODE == LINK_TEST_NORMAL_8
@@ -391,6 +404,8 @@ static void draw_normal(void)
 #endif
 
 #if LINK_DIAGNOSTIC_MODE == LINK_TEST_MULTIPLAYER
+/* SIOCNT bits 4-5 hold this console's player number: player 1 sends
+   0x1000 + count, the others 0x2000 + count. */
 static void prepare_next_data(void)
 {
   next_data = ((REG_SIOCNT >> 4) & 3u) == 0 ?
@@ -401,6 +416,7 @@ static void prepare_next_data(void)
 static void configure_multiplayer(void)
 {
   REG_RCNT = 0;
+  /* speed_setting is the baud rate field, SIOCNT bits 0-1. */
   REG_SIOCNT = (u16)(SIOCNT_MULTIPLAYER | SIOCNT_IRQ | speed_setting);
   prepare_next_data();
 }
@@ -416,6 +432,7 @@ static void update_multiplayer(u16 keys)
     configure_multiplayer();
   }
 
+  /* Only the parent (SI low) can start a multiplayer transfer. */
   if((keys & KEY_A) != 0 &&
      (REG_SIOCNT & (SIOCNT_MULTI_CHILD | SIOCNT_START)) == 0)
   {
@@ -485,7 +502,7 @@ int main(void)
   REG_IME = 0;
   REG_IE = IRQ_SERIAL;
   REG_IF = 0xFFFFu;
-  REG_DISPCNT = 0x0403u;
+  REG_DISPCNT = 0x0403u;   /* mode 3 (240x160 bitmap), BG2 on */
 
 #if LINK_DIAGNOSTIC_MODE == LINK_TEST_MULTIPLAYER
   speed_setting = 3;
@@ -504,6 +521,7 @@ int main(void)
     wait_for_vblank();
     frame_count++;
     poll_serial_interrupt();
+    /* KEYINPUT bits read 0 while a button is held. */
     held_keys = (u16)(~REG_KEYINPUT) & 0x03FFu;
     pressed_keys = (u16)(held_keys & ~previous_keys);
     previous_keys = held_keys;
