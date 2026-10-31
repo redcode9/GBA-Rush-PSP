@@ -54,6 +54,8 @@ static int runtime_log_psp_exists(void *context, const char *path)
   return sceIoGetstat(path, &status) >= 0 && FIO_S_ISREG(status.st_mode);
 }
 
+/* Creates or truncates path and writes all of data; 0 if any write or the
+   close fails. */
 static int runtime_log_psp_write(void *context, const char *path,
  const uint8_t *data, size_t size)
 {
@@ -92,6 +94,8 @@ static int runtime_log_psp_rename(void *context, const char *source,
   return sceIoRename(source, target) >= 0;
 }
 
+/* The callbacks above as the table runtime_log_store's recover, rotate and
+   save take; context stays NULL. */
 static RuntimeLogStoreIo runtime_log_psp_io(void)
 {
   RuntimeLogStoreIo io;

@@ -61,6 +61,8 @@ static void perf_report_sanitize_bytes(const uint8_t *source,
   destination[count] = '\0';
 }
 
+/* Like perf_report_sanitize_bytes(), for a NUL-terminated string such as
+   the emulator version. */
 static void perf_report_sanitize_string(const char *source,
  char *destination, size_t destination_size)
 {
@@ -103,6 +105,8 @@ static void perf_report_append(PerfReportWriter *writer,
   writer->length += (size_t)written;
 }
 
+/* The report's state= value; compare-benchmarks.py only accepts a
+   "stopped" capture. */
 static const char *perf_report_state_name(PerfMetricsState state)
 {
   switch(state)
