@@ -58,6 +58,7 @@ static int fake_exists(void *context, const char *path)
   return fake_file((FakeLogStore *)context, path, 0) != NULL;
 }
 
+/* Creates or replaces path; fails over 64 bytes or with all slots taken. */
 static int fake_write(void *context, const char *path,
  const uint8_t *data, size_t size)
 {
@@ -104,6 +105,7 @@ static int fake_rename(void *context, const char *source,
   return 1;
 }
 
+/* The store's I/O callbacks, wired to the in-memory file system. */
 static RuntimeLogStoreIo fake_io(FakeLogStore *store)
 {
   RuntimeLogStoreIo io;
@@ -395,6 +397,8 @@ static void test_store_rotates_four_sessions(void)
   assert(fake_file(&store, "log4", 0)->data[0] == 3);
 }
 
+/* Runs every ring, encoding and store case; a failing assert aborts the
+   run. */
 int main(void)
 {
   test_ring_retains_latest_records();

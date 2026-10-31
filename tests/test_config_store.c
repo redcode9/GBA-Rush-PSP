@@ -37,6 +37,7 @@ typedef struct
   int corrupt_primary; /* config.tmp lands in config.bin damaged */
 } FakeStore;
 
+/* The slot for one of the three known paths, or NULL for any other name. */
 static FakeFile *find_file(FakeStore *store, const char *path)
 {
   size_t i;
@@ -49,6 +50,7 @@ static FakeFile *find_file(FakeStore *store, const char *path)
   return NULL;
 }
 
+/* ConfigStoreIo read: fails for an absent file or one over capacity. */
 static int fake_read(void *context, const char *path, uint8_t *data,
  size_t capacity, size_t *size)
 {
@@ -61,6 +63,8 @@ static int fake_read(void *context, const char *path, uint8_t *data,
   return 1;
 }
 
+/* ConfigStoreIo write: fail_write fails it, and corrupt_temp flips a bit in
+   the last byte stored to config.tmp. */
 static int fake_write(void *context, const char *path, const uint8_t *data,
  size_t size)
 {
@@ -106,6 +110,7 @@ static int fake_move(void *context, const char *source, const char *target)
   return 1;
 }
 
+/* Removing an absent file still succeeds; only an unknown path fails. */
 static int fake_remove(void *context, const char *path)
 {
   FakeFile *file = find_file((FakeStore *)context, path);
@@ -124,6 +129,8 @@ static int fake_exists(void *context, const char *path)
   return file != NULL && file->present;
 }
 
+/* Empties the three files, clears every fault switch and points io at the
+   fakes. */
 static void init_store(FakeStore *store, ConfigStoreIo *io)
 {
   memset(store, 0, sizeof(*store));
@@ -152,6 +159,7 @@ static void seed_file(FakeStore *store, const char *path,
   file->present = 1;
 }
 
+/* Decodes what path holds now; asserts it exists and is not invalid. */
 static ConfigModel decode_file(FakeStore *store, const char *path)
 {
   FakeFile *file = find_file(store, path);
@@ -308,6 +316,7 @@ static void test_load_uses_recovery_only_when_needed(void)
   assert(used_recovery == 1);
 }
 
+/* Runs every save and recovery case; a failing assert aborts the run. */
 int main(void)
 {
   test_atomic_save_and_recovery_copy();
