@@ -73,7 +73,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_sound_math \
  $(HOST_SANITIZE_DIR)/test_runtime_log
 
-.PHONY: all check test test-tools test-sanitize check-cbmc \
+.PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
  tree-check psp-build launcher-stub package artifact-smoke clean
 
 all: check
@@ -535,6 +535,9 @@ $(HOST_SANITIZE_DIR)/test_sound_math: tests/test_sound_math.c \
 
 check-cbmc:
 	sh scripts/check-cbmc.sh
+
+check-rom-link:
+	sh scripts/check-rom-link.sh
 
 tree-check:
 	sh scripts/check-tree.sh
