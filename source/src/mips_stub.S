@@ -17,6 +17,13 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
+/*
+ * Runtime support for translated code: the entry from C
+ * (execute_arm_translate), exits back into the block lookup for indirect
+ * branches and spent cycle budgets, the per-region memory access handlers,
+ * and CPSR/SPSR/SWI helpers. Also defines reg[] and the memory map tables.
+ */
+
 .align 4
 
 .global mips_update_gba
@@ -103,6 +110,16 @@
 # $30 - ARM r14 (saved)
 # $31 - return address
 
+/*
+ * Every call into C goes through save_registers/restore_registers, which
+ * spill all mapped ARM registers to reg[]: many live in caller-saved MIPS
+ * registers, and C code reads reg[] directly. $20-$23 hold N/Z/C/V as 0 or
+ * 1; collapse_flags/extract_flags move them to and from CPSR bits 31-28.
+ * Memory handlers take $4 = address, $5 = PC as the ARM sees it (loads) or
+ * the value (stores), $6 = next PC (stores), and charge waitstates to $17.
+ */
+
+/* Byte offsets into reg[] ($16); keep in sync with EXT_REG_NUMBERS. */
 .equ REG_R0,              (0 * 4)
 .equ REG_R1,              (1 * 4)
 .equ REG_R2,              (2 * 4)
@@ -141,6 +158,7 @@
 
 .equ REG_TMP,             (63 * 4)
 
+/* reg_mode[MODE_SUPERVISOR][6] and spsr[MODE_SUPERVISOR], for execute_swi */
 .equ SUPERVISOR_LR,       (reg_mode + (3 * (7 * 4)) + (6 * 4))
 .equ SUPERVISOR_SPSR,     (spsr + (3 * 4))
 
@@ -201,6 +219,8 @@
   sw $30, REG_R14($16)
 .endm
 
+/* $28 is ARM r13 in translated code; give C its $gp back. Nothing stores
+ * GP_SAVE, so this loads 0, which is harmless because the build uses -G0. */
 .macro save_registers_1
   lw $28, GP_SAVE($16)
 .endm
@@ -245,6 +265,10 @@
 # $16: register base
 # $17: cycle counter
 
+/* update_gba returns the new cycle budget in $2 and sets CHANGED_PC_STATUS
+ * when the PC moved (IRQ entry, reset, savestate load); then the new PC is
+ * looked up instead of returning to the caller. */
+
 .balign 64
 
 mips_update_gba:
@@ -273,6 +297,9 @@ mips_update_gba:
   jr $ra                          # if not, go back to caller
   restore_registers_1             # restore registers 2/2 (delay)
 
+
+/* Indirect branch with the cycle budget spent: run update_gba, then jump to
+ * the branch target, or to the new PC if update_gba moved it. */
 
 branch_arm_update_gba:
   lw $2, REG_CPSR($16)            # load CPSR
@@ -388,6 +415,14 @@ mips_indirect_branch_dual_no_update_gba:
   restore_registers_1             # restore registers 2/2 (delay)
 
 
+/*
+ * Memory accesses in translated code are "jal execute_<op>" calls. Each
+ * handler serves one region; on a mismatch it goes to patch_<op>, which
+ * rewrites the calling jal to the handler that <op>_ftable lists for the
+ * address and returns to re-execute it. Call sites thus specialise
+ * themselves to the region they actually access.
+ */
+
 # $4: address to write to
 # $5: current PC
 
@@ -458,6 +493,9 @@ mips_indirect_branch_dual_no_update_gba:
   nop                             # wary of putting cache here
 .endm
 
+
+/* The region_check macros end in a branch to the patch routine; the first
+ * instruction after them sits in its delay slot and runs either way. */
 
 .macro region_check region, patch_handler
   srl $1, $4, 24                  # check upper 8bits of address
@@ -623,6 +661,9 @@ mips_indirect_branch_dual_no_update_gba:
 .endm
 
 
+/* memory_map_read lies 0x8000 bytes before reg (end of file), so
+ * memory_map_read[page] is at $16 + page * 4 - 32768. A NULL entry means the
+ * ROM page is not resident and load_gamepak_page brings it in. */
 .macro translate_region_gamepak_core mask
   srl $2, $4, 15                  # $2 = page number of address (delay)
   sll $2, $2, 2                   # adjust to word index
@@ -1179,6 +1220,7 @@ store_update_gba:
 #   $5 (outgoing)  = memory region
 #   $6 (invariant) = PC
 # See smc_write for its register assignment.
+/* Bits 0-1 of [3] (not just bit 0) mark Thumb and ARM code; see cpu.c. */
 .macro post_write_metadata_core base, metabase, memory_region
   srl $2, $4, 2                   # $2 = (address & ~3) [>> 2]
   sll $2, $2, 3                   # byte offset into a 16-bit array: * 2
@@ -1207,6 +1249,8 @@ post_write_metadata_iwram:
 post_write_metadata_vram:
   post_write_metadata_core vram, vram_metadata, 0x06
 
+/* STM onto the IWRAM stack: drop the tags and flags of just this word,
+ * without a partial clear or a PC lookup. */
 post_write_metadata_aligned_iwram:
   srl $2, $4, 2                   # $2 = (address & ~3) [>> 2]
   sll $2, $2, 3                   # byte offset into a 16-bit array: * 2
@@ -2526,6 +2570,9 @@ patch_load_u32:
 
 
 
+/* The u32a handlers serve LDM/STM/PUSH/POP (usually all but the last word)
+ * and preserve $6, which holds the transfer's base address. */
+
 # Unsigned always aligned 32bit load handlers
 
 execute_load_bios_u32a:
@@ -3075,6 +3122,8 @@ store_ignore:
 # bit4 - DMA transfers
 # bit5 - synchronized serial transfer
 
+/* I/O store handlers jump here after the C write, with registers saved and
+ * $ra pushed on the stack. */
 write_io_epilogue:
   andi $4, $2, 0x01
   bne $4, $0, io_smc_write        # is it an SMC alert?
@@ -3194,6 +3243,9 @@ smc_write:
   blez $17, smc_write_update_gba  # if counter <= 0
   nop
 
+/* Re-enter translated code at reg[REG_PC] in the state CPSR.T selects.
+ * lookup_pc_changed first reloads the flags from CPSR, since update_gba may
+ * have replaced the CPU state. */
 lookup_pc:
   lw $2, REG_CPSR($16)            # load CPSR
   andi $2, $2, 0x20               # isolate mode bit
@@ -3299,6 +3351,8 @@ execute_swi:
   restore_registers_1             # restore registers 2/2
 
 
+/* MOVS pc / LDM with pc and ^: CPSR = SPSR, then branch to $4 in the
+ * restored state, servicing a pending IRQ or event first. */
 # $4: pc to restore to
 # returns in $4
 
@@ -3403,6 +3457,8 @@ no_spsr_restore:
   jr $2
   restore_registers_1             # restore registers 2/2 (delay)
 
+/* MSR CPSR: user mode may only change the flag byte. Runs update_gba if
+ * the C body reports a newly pending IRQ. */
 # $4: new cpsr
 # $5: store mask
 # $6: current PC
@@ -3477,6 +3533,8 @@ execute_store_spsr:
   sw $4, %lo(spsr)($1)            # spsr[cpu_mode] = $4 (delay slot)
 
 
+/* Register-specified shifts that also set C ($22), following the ARM rules
+ * for amounts 0, 32 and above. The result is returned in $4, not $2. */
 # $4: value
 # $5: shift
 
@@ -3568,6 +3626,8 @@ ror_shift_high:
   ext $22, $4, 31, 1              # c flag = (value >> 31) & 0x01
 
 
+/* Entry from the C main loop. Does not return: everything else, menus
+ * included, runs inside update_gba. */
 # $4: cycle counter argument
 
 execute_arm_translate:
@@ -3584,6 +3644,7 @@ execute_arm_translate:
   restore_registers_1             # restore registers 2/2 (delay)
 
 
+/* Bank in the user registers around an LDM/STM with ^. */
 # $4 = cpu_mode
 # $5 = new_mode
 
@@ -3624,6 +3685,8 @@ no_change_registers:
   nop
 
 
+/* Charge a taken branch: 2 cycles plus 2S + 1N waitstates of the target
+ * region ($1 = region; +16 selects the 32-bit entries for ARM state). */
 .macro count_branch_ticks
   lui $2, %hi(memory_waitstate_s)
   addu $2, $2, $1
@@ -3659,6 +3722,8 @@ execute_branch_ticks_dual:
   count_branch_ticks
 
 
+/* Multiply interlock (1-4 cycles) from the number of significant bytes of
+ * the rs operand in $4. */
 execute_multiply_ticks:
   sra $1, $4, 31
   xor $4, $4, $1                  # if (value < 0) value = ~value;
@@ -3704,6 +3769,8 @@ done:
   nop
 
 # Writes back dcache and invalidates icache.
+/* Allegrex I and D caches are 16 KB, 2-way, with 64-byte lines: index ops
+ * at offset and offset + 0x2000 cover both ways. */
 
 invalidate_all_cache:
   addu $4, $0, $0                 # $4 = 0
@@ -3722,6 +3789,8 @@ iac_loop:
   jr $ra                          # return
   nop
 
+/* memory_map_read must stay exactly 0x8000 bytes before reg; see
+ * translate_region_gamepak_core. */
 memory_map_read:
   .space 0x8000
 
