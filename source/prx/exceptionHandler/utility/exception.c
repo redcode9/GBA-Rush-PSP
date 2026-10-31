@@ -64,22 +64,22 @@ void ExceptionHandler(PspDebugRegBlock * regs)
         if (pad.Buttons & PSP_CTRL_CROSS){
             FILE *log = fopen("exception.log", "w");
             if (log != NULL){
-                char log_line[512];
-                sprintf(log_line, "Exception details:\n\n");
-                fwrite(log_line, 1, strlen(log_line), log);
-                sprintf(log_line, "Exception - %s\n", codeTxt[(regs->cause >> 2) & 31]);
-                fwrite(log_line, 1, strlen(log_line), log);
-                sprintf(log_line, "EPC       - %08X / %s.text + %08X\n", (int)regs->epc, module_info.modname, (unsigned int)(regs->epc-(int)&_ftext));
-                fwrite(log_line, 1, strlen(log_line), log);
-                sprintf(log_line, "Cause     - %08X\n", (int)regs->cause);
-                fwrite(log_line, 1, strlen(log_line), log);
-                sprintf(log_line, "Status    - %08X\n", (int)regs->status);
-                fwrite(log_line, 1, strlen(log_line), log);
-                sprintf(log_line, "BadVAddr  - %08X\n", (int)regs->badvaddr);
-                fwrite(log_line, 1, strlen(log_line), log);
+                char crash_line[512];
+                sprintf(crash_line, "Exception details:\n\n");
+                fwrite(crash_line, 1, strlen(crash_line), log);
+                sprintf(crash_line, "Exception - %s\n", codeTxt[(regs->cause >> 2) & 31]);
+                fwrite(crash_line, 1, strlen(crash_line), log);
+                sprintf(crash_line, "EPC       - %08X / %s.text + %08X\n", (int)regs->epc, module_info.modname, (unsigned int)(regs->epc-(int)&_ftext));
+                fwrite(crash_line, 1, strlen(crash_line), log);
+                sprintf(crash_line, "Cause     - %08X\n", (int)regs->cause);
+                fwrite(crash_line, 1, strlen(crash_line), log);
+                sprintf(crash_line, "Status    - %08X\n", (int)regs->status);
+                fwrite(crash_line, 1, strlen(crash_line), log);
+                sprintf(crash_line, "BadVAddr  - %08X\n", (int)regs->badvaddr);
+                fwrite(crash_line, 1, strlen(crash_line), log);
                 for(i=0; i<32; i+=4){
-                    sprintf(log_line, "%s:%08X %s:%08X %s:%08X %s:%08X\n", regName[i], (int)regs->r[i], regName[i+1], (int)regs->r[i+1], regName[i+2], (int)regs->r[i+2], regName[i+3], (int)regs->r[i+3]);
-                    fwrite(log_line, 1, strlen(log_line), log);
+                    sprintf(crash_line, "%s:%08X %s:%08X %s:%08X %s:%08X\n", regName[i], (int)regs->r[i], regName[i+1], (int)regs->r[i+1], regName[i+2], (int)regs->r[i+2], regName[i+3], (int)regs->r[i+3]);
+                    fwrite(crash_line, 1, strlen(crash_line), log);
                 }
                 fclose(log);
             }
@@ -95,7 +95,7 @@ void ExceptionHandler(PspDebugRegBlock * regs)
 void initExceptionHandler()
 {
    SceKernelLMOption option;
-   int args[2], fd, modid;
+   int args[2], start_status, modid;
 
    memset(&option, 0, sizeof(option));
    option.size = sizeof(option);
@@ -109,6 +109,6 @@ void initExceptionHandler()
       args[0] = (int)ExceptionHandler;
       args[1] = (int)&exception_regs;
       /* 8 bytes: the two pointers exception.prx's module_start() expects */
-      sceKernelStartModule(modid, 8, args, &fd, NULL);
+      sceKernelStartModule(modid, 8, args, &start_status, NULL);
    }
 }
