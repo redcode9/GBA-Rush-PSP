@@ -343,6 +343,7 @@ static void test_rejects_unknown_or_truncated_data(void)
          CONFIG_MODEL_DECODE_INVALID);
 }
 
+/* Runs every codec case; a failing assert aborts the run. */
 int main(void)
 {
   test_defaults_and_versioned_round_trip();

@@ -327,6 +327,8 @@ static void test_silence_and_heartbeat(void)
   CHECK(link_net_peer_silent(&a, 8000000, 8000000));
 }
 
+/* Runs every case, the lossy one from a perfect link up to 50% loss; failed
+   CHECKs are printed and counted, and any failure makes the exit status 1. */
 int main(void)
 {
   test_first_contact_and_delivery();

@@ -273,6 +273,8 @@ static void test_header_file_size_gate(void)
   assert(replay.state == INPUT_TRACE_FINISHED);
 }
 
+/* Runs every recording, file and replay case; a failing assert aborts the
+   run. */
 int main(void)
 {
   test_record_and_replay();

@@ -218,6 +218,7 @@ static void test_capture_identity_survives_rom_change(void)
   assert(memcmp(&saved, &replacement, sizeof(saved)) == 0);
 }
 
+/* Runs every session case; a failing assert aborts the run. */
 int main(void)
 {
   test_duration_and_states();

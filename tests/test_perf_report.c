@@ -397,6 +397,7 @@ static void test_worst_case_capacity(void)
   assert(report[0] == '\0');
 }
 
+/* Runs every report case; a failing assert aborts the run. */
 int main(void)
 {
   test_golden_report();

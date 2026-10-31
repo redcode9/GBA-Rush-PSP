@@ -299,6 +299,7 @@ static void test_wait_and_frame_probes(void)
   assert(result.gamepak_miss_count == 0);
 }
 
+/* Runs every counter case; a failing assert aborts the run. */
 int main(void)
 {
   test_session_states();

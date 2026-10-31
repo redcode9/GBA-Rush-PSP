@@ -12,6 +12,7 @@
 
 #include "fast_forward_policy.h"
 
+/* Defaults switched to the Custom profile with the four given choices. */
 static FastForwardSettings custom_settings(FastForwardActivation activation,
  FastForwardSpeed speed, FastForwardPresentation presentation,
  FastForwardAudio audio)
@@ -231,6 +232,7 @@ static void test_forced_stop_and_audio_fallback(void)
   assert(!fast_forward_policy_active(&policy));
 }
 
+/* Runs every profile and timing case; a failing assert aborts the run. */
 int main(void)
 {
   test_defaults_and_invalid_fields();

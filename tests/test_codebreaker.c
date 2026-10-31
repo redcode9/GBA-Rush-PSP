@@ -291,6 +291,8 @@ static void test_truncated_multiline_operations(void)
   CHECK(memory_image[0x126] == 0);
 }
 
+/* Runs every case; failed CHECKs are printed and counted, and any failure
+   makes the exit status 1. */
 int main(void)
 {
   test_reset();

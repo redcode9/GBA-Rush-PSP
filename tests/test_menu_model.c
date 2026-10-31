@@ -199,6 +199,7 @@ static void test_main_category_order(void)
   }
 }
 
+/* Runs every menu model and catalog case; a failing assert aborts the run. */
 int main(void)
 {
   test_navigation_and_dispatch();

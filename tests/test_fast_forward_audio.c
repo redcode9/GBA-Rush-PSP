@@ -82,6 +82,7 @@ static void test_average_rounds_without_sign_bias(void)
   assert(output[3] == -3);
 }
 
+/* Runs every case; a failing assert aborts the run. */
 int main(void)
 {
   test_required_samples();

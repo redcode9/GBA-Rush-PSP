@@ -82,6 +82,8 @@ static void test_no_remote(void)
   CHECK(!adhoc_peer_select(NULL, NULL, &peers[0][0], 1, selected));
 }
 
+/* Runs every case; failed CHECKs are printed and counted, and any failure
+   makes the exit status 1. */
 int main(void)
 {
   test_single_remote();

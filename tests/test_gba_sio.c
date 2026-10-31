@@ -44,6 +44,8 @@ static void reset_sio(void)
   gba_sio_init(&sio, registers);
 }
 
+/* Puts the port in mode as a game would: RCNT alone for GPIO and JOY bus,
+   else RCNT 0 and SIOCNT with only the mode bits set. */
 static void select_mode(GbaSioMode mode)
 {
   uint16_t control = 0;
@@ -951,6 +953,8 @@ static void test_interrupt_disable_counter(void)
   CHECK(sio.interrupt_disables == 2);
 }
 
+/* Runs every case; failed CHECKs are printed and counted, and any failure
+   makes the exit status 1. */
 int main(void)
 {
   test_interrupt_disable_counter();

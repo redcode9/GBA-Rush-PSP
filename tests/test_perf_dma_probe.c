@@ -123,6 +123,8 @@ static void test_paged_rom_cache_and_io(void)
   CHECK_EQ(snap.gamepak_read_errors, 4, "final page padding is not an I/O error");
 }
 
+/* Transfers A-G share one monitor, so each checks running totals; then the
+   paged ROM test. Mismatches print FAIL and make the exit status 1. */
 int main(void)
 {
   PerfMetricsSnapshot snap;

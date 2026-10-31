@@ -169,6 +169,7 @@ static void test_profile_validation(void)
   assert(!video_adaptive_apply_profile(&state, &profile, 0x12345678, 4, 222));
 }
 
+/* Runs every adaptive video case; a failing assert aborts the run. */
 int main(void)
 {
   test_initial_and_manual_state();

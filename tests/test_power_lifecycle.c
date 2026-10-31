@@ -127,6 +127,7 @@ static void test_resume_without_suspend_is_ignored(void)
   assert(result == 91);
 }
 
+/* Runs every callback case; a failing assert aborts the run. */
 int main(void)
 {
   test_initial_state();

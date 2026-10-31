@@ -26,6 +26,7 @@ void host_video_time_push(u32 value);
 
 static int failures = 0;
 
+/* Prints PASS or FAIL for every check and counts the failures. */
 static void check(int condition, const char *label)
 {
   if(condition)
@@ -53,6 +54,7 @@ static PerfMetricsSnapshot take_snapshot(void)
   return snapshot;
 }
 
+/* Runs scenarios A-C; any failed check makes the exit status 1. */
 int main(void)
 {
   PerfMetricsSnapshot snapshot;

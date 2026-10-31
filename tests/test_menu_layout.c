@@ -91,6 +91,7 @@ static void test_text_bounds(void)
   }
 }
 
+/* Runs every layout and clipping case; a failing assert aborts the run. */
 int main(void)
 {
   test_top_of_menu();
