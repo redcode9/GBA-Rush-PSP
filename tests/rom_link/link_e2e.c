@@ -13,7 +13,16 @@
  *   link [lockstep]                     start the cable (console 0 hosts);
  *                                       lockstep forces the generic mode
  *   net <latency_us> <jitter_us> <loss%> <dup%>
+ *   outage <period_ms> <length_ms>      drop every datagram for the last
+ *                                       length_ms of each period
+ *   seed <n>                            reseed the network's randomness
  *   speed <side> <factor>               guest speed relative to real time
+ *   psp <side> <burst_ms>               run like the PSP: each frame is
+ *                                       emulated in one burst of burst_ms,
+ *                                       and the link is not serviced while
+ *                                       the console waits for VBlank
+ *   hiccup <side> <period_ms> <length_ms>  freeze the console, link
+ *                                       included, once per period
  *   shot <name>                         write <name>-0.bmp and <name>-1.bmp
  *   dump <name>                         write both saves to <name>-N.sav
  *   state <save|load> <name>            savestates, before linking only
@@ -43,6 +52,8 @@
 
 #define CYCLES_PER_US 16.777216
 #define TICK_US 100u
+#define FRAME_CYCLES 280896u
+#define FRAME_US 16743u
 #define SERVICE_CYCLES 4096
 
 typedef struct
@@ -62,6 +73,12 @@ typedef struct
   double budget;
   uint64_t target;
   uint64_t blocked_us;
+  uint32_t burst_cycles;    /* per tick in PSP mode, 0 for smooth running */
+  uint64_t hiccup_period_us;
+  uint64_t hiccup_us;
+  uint32_t max_backlog;
+  uint64_t backlog_sum;     /* per tick while the games are linked */
+  uint64_t linked_ticks;
   uint32_t keys;
   uint64_t now;
   uint64_t clock;
@@ -92,6 +109,7 @@ static Flight flights[4096];
 static unsigned flight_count;
 static uint32_t net_latency = 3000, net_jitter = 4000, net_loss = 3,
  net_dup = 1;
+static uint64_t outage_period_us, outage_us;
 static uint32_t rng_state = 12345;
 static uint64_t sim_now;
 
@@ -105,6 +123,9 @@ static void network_send(int to, const uint8_t *data, size_t size)
 {
   unsigned copies = 1;
 
+  if(outage_period_us != 0 &&
+     sim_now % outage_period_us >= outage_period_us - outage_us)
+    return;
   if(rng() % 100u < net_loss)
     return;
   if(rng() % 100u < net_dup)
@@ -350,6 +371,22 @@ static void side_link(Side *side, int generic)
   mTimingSchedule(&side->gba->timing, &side->service_event, SERVICE_CYCLES);
 }
 
+static void side_advance(Side *side)
+{
+  if(side->burst_cycles == 0)
+  {
+    side->budget += side->speed * TICK_US * CYCLES_PER_US;
+    side->target += (uint64_t)side->budget;
+    side->budget -= (uint64_t)side->budget;
+  }
+  else if(sim_now % FRAME_US < TICK_US)
+  {
+    /* PSP mode: the next frame becomes due at each VBlank. A console that
+       fell behind catches up at burst speed, as frameskip lets it. */
+    side->target += FRAME_CYCLES;
+  }
+}
+
 static void run_tick(void)
 {
   int s;
@@ -360,32 +397,44 @@ static void run_tick(void)
   {
     Side *side = &sides[s];
     uint8_t datagram[LINK_NET_MAX_DATAGRAM];
+    uint64_t limit;
     size_t size;
 
     side->now = sim_now;
     side->core->setKeys(side->core, side->keys);
+    if(side->hiccup_period_us != 0 &&
+       sim_now % side->hiccup_period_us < side->hiccup_us)
+    {
+      /* Frozen, like a PSP writing to the memory stick: nothing runs and
+         the lost time is never made up. */
+      side->target = side_clock(side);
+      continue;
+    }
+    /* A PSP that has finished its frame sleeps until VBlank without
+       touching the link. */
+    if(side->burst_cycles != 0 && side_clock(side) >= side->target)
+    {
+      side_advance(side);
+      if(side_clock(side) >= side->target)
+        continue;
+    }
+    else
+      side_advance(side);
     if(side->linked)
     {
       side_service(side);
       if(link_cable_blocked(&side->cable, side_cycle(side)))
       {
         side->blocked_us += TICK_US;
-        side->target = side_clock(side);
-      }
-      else
-      {
-        side->budget += side->speed * TICK_US * CYCLES_PER_US;
-        side->target += (uint64_t)side->budget;
-        side->budget -= (uint64_t)side->budget;
+        if(side->burst_cycles == 0)
+          side->target = side_clock(side);
       }
     }
-    else
-    {
-      side->budget += side->speed * TICK_US * CYCLES_PER_US;
-      side->target += (uint64_t)side->budget;
-      side->budget -= (uint64_t)side->budget;
-    }
-    while(side_clock(side) < side->target)
+    limit = side->burst_cycles != 0 ?
+     side_clock(side) + side->burst_cycles : side->target;
+    if(limit > side->target)
+      limit = side->target;
+    while(side_clock(side) < limit)
     {
       if(side->linked && link_cable_blocked(&side->cable, side_cycle(side)))
         break;
@@ -393,6 +442,15 @@ static void run_tick(void)
     }
     if(side->linked)
     {
+      uint32_t backlog = link_net_backlog(&side->cable.net);
+
+      if(backlog > side->max_backlog)
+        side->max_backlog = backlog;
+      if(side->cable.pokemon.local == LINK_POKEMON_CONNECTED)
+      {
+        side->backlog_sum += backlog;
+        side->linked_ticks++;
+      }
       size = link_cable_build(&side->cable, datagram, sizeof(datagram),
        side_cycle(side), sim_now);
       if(size)
@@ -483,12 +541,15 @@ static void print_status(void)
   for(s = 0; s < 2; s++)
   {
     Side *side = &sides[s];
-    printf("side %d: status %d mode %d local %d peer %d frames tx %u rx %u "
-     "rtt %uus blocked %.1fs frame %u\n", s, side->cable.status,
-     side->cable.mode, side->cable.pokemon.local, side->cable.pokemon.peer,
-     side->cable.pokemon.frames_sent, side->cable.pokemon.frames_received,
-     side->cable.net.rtt_us, (double)side->blocked_us / 1e6,
-     side->core->frameCounter(side->core));
+    printf("side %d: %.4s with %.4s status %d mode %d local %d peer %d "
+     "frames tx %u rx %u rtt %uus blocked %.1fs frame %u max-backlog %u "
+     "avg-backlog %.1f\n", s, side->cable.local_game, side->cable.peer_game,
+     side->cable.status, side->cable.mode, side->cable.pokemon.local,
+     side->cable.pokemon.peer, side->cable.pokemon.frames_sent,
+     side->cable.pokemon.frames_received, side->cable.net.rtt_us,
+     (double)side->blocked_us / 1e6, side->core->frameCounter(side->core),
+     side->max_backlog, side->linked_ticks ?
+      (double)side->backlog_sum / (double)side->linked_ticks : 0.0);
     if(side->cable.mode == LINK_CABLE_MODE_LOCKSTEP)
       printf("  lockstep waiting %d deferred %d transfers %u cycle %u "
        "finish %u deferred-until %u peer-clock %u pacing %u/%u sio %d%d%d "
@@ -593,8 +654,23 @@ int main(int argc, char **argv)
       net_loss = (uint32_t)atoi(c);
       net_dup = (uint32_t)atoi(d);
     }
+    else if(strcmp(cmd, "outage") == 0)
+    {
+      outage_period_us = (uint64_t)atoi(a) * 1000u;
+      outage_us = (uint64_t)atoi(b) * 1000u;
+    }
+    else if(strcmp(cmd, "seed") == 0)
+      rng_state = (uint32_t)strtoul(a, NULL, 0);
     else if(strcmp(cmd, "speed") == 0)
       sides[atoi(a)].speed = atof(b);
+    else if(strcmp(cmd, "psp") == 0)
+      sides[atoi(a)].burst_cycles = (uint32_t)((double)FRAME_CYCLES *
+       TICK_US / (atof(b) * 1000.0));
+    else if(strcmp(cmd, "hiccup") == 0)
+    {
+      sides[atoi(a)].hiccup_period_us = (uint64_t)atoi(b) * 1000u;
+      sides[atoi(a)].hiccup_us = (uint64_t)atoi(c) * 1000u;
+    }
     else if(strcmp(cmd, "status") == 0)
       print_status();
     else if(strcmp(cmd, "trace") == 0)

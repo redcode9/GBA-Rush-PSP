@@ -111,6 +111,8 @@ backup of important saves when testing cheats.
 Two PSPs can connect as if a GBA link cable joined them. Both need this
 version of GBA Rush PSP; the games may differ.
 
+![Pokemon FireRed on a PSP-2000 and a PSP-1000 linked over Wi-Fi, both players at the Cable Club trade table](docs/images/link-trade-room.jpg)
+
 1. Load the game on both PSPs with WLAN on.
 2. On the first PSP open **Main menu > Link cable > Create session**.
 3. On the second PSP choose **Join session**.
@@ -159,7 +161,7 @@ docker run --rm -v "$PWD:/workspace" -w /workspace/source pspdev/pspdev:latest m
 After a successful candidate build:
 
 ```sh
-make package VERSION=1.4.0
+make package VERSION=1.4.1
 ```
 
 The package command creates a reproducible ZIP and SHA-256 checksum under

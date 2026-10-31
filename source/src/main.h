@@ -25,7 +25,7 @@
 #include "link_cable.h"
 #include "perf_metrics.h"
 
-#define GBA_RUSH_VERSION "1.4.0"
+#define GBA_RUSH_VERSION "1.4.1"
 
 // video scale type
 #define SCALED_NONE    0

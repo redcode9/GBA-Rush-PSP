@@ -99,6 +99,9 @@ typedef struct
   int peer_valid;
   PspAdhocRing outgoing;
   PspAdhocRing incoming;
+  volatile uint32_t sends;
+  volatile uint32_t send_errors;
+  volatile uint32_t receive_drops;
 } PspAdhocContext;
 
 static PspAdhocContext psp_adhoc =
@@ -521,6 +524,8 @@ static int psp_adhoc_receive_all(PspAdhocContext *context)
 
     if(ring_push(&context->incoming, data, (size_t)length))
       delivered = 1;
+    else
+      context->receive_drops++;
   }
   if(delivered)
     psp_adhoc_wake(context->wake_receive);
@@ -539,12 +544,17 @@ static int psp_adhoc_send_all(PspAdhocContext *context)
 
     if(!context->peer_valid)
       continue;
+    context->sends++;
     result = sceNetAdhocPdpSend(context->socket_id, context->peer_mac,
      context->peer_port, data, (unsigned int)size, 0, 1);
-    /* A full send buffer drops this datagram; the link repeats it. */
-    if(result < 0 && result != SCE_NET_ERROR_NO_SPACE &&
-       result != SCE_ADHOC_ERROR_WOULD_BLOCK &&
-       result != SCE_ADHOC_ERROR_TIMEOUT)
+    /* A busy stack drops this datagram; the next one repeats its messages.
+       Never retry at once: on a PSP, sending again every millisecond made
+       the stack hold datagrams for seconds and the games never linked. */
+    if(result == SCE_NET_ERROR_NO_SPACE ||
+       result == SCE_ADHOC_ERROR_WOULD_BLOCK ||
+       result == SCE_ADHOC_ERROR_TIMEOUT)
+      context->send_errors++;
+    else if(result < 0)
       return psp_adhoc_fail(context, result);
   }
   return 1;
@@ -773,6 +783,14 @@ int psp_adhoc_send(const uint8_t *data, size_t size)
 size_t psp_adhoc_receive(uint8_t *data, size_t capacity)
 {
   return ring_pop(&psp_adhoc.incoming, data, capacity);
+}
+
+void psp_adhoc_counters(uint32_t *sends, uint32_t *send_errors,
+ uint32_t *receive_drops)
+{
+  *sends = psp_adhoc.sends;
+  *send_errors = psp_adhoc.send_errors;
+  *receive_drops = psp_adhoc.receive_drops;
 }
 
 void psp_adhoc_wait(unsigned int timeout_us)

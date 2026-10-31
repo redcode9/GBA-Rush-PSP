@@ -25,6 +25,8 @@
  *   network. The host decides how its frames pair with the joiner's and
  *   sends the joiner the exact pair, so both games see identical data, as
  *   they would on a real cable. The checksum word is filled in locally.
+ *   In the Cable Club rooms, where both games send keys on every frame,
+ *   each console waits for the other's frames so the delay stays fixed.
  *
  * Lockstep mode (every other game).
  *   Each transfer is sent to the other console, and the console that
@@ -47,7 +49,7 @@
 #include "gba_sio.h"
 #include "link_net.h"
 
-#define LINK_CABLE_PROTOCOL 1u
+#define LINK_CABLE_PROTOCOL 2u
 
 typedef enum
 {
@@ -84,9 +86,15 @@ typedef struct
   uint8_t handshake_repeats;  /* handshake words seen while connected */
   uint8_t pair_valid;
   uint8_t transfer_scheduled;
+  uint8_t keys;               /* the last frame carried held keys: a room */
+  uint8_t waiting;            /* holding our next frame for the other's */
   uint16_t local_words[8];
   uint16_t pair[2][8];        /* words delivered this frame, per player */
   uint32_t next_transfer;     /* joiner: cycle of the next local transfer */
+  uint32_t frame_start;       /* joiner: cycle of this frame's first word */
+  uint32_t pairs_seen;        /* joiner: host frames taken or dropped */
+  uint32_t answered;          /* host: pairs_seen in the joiner's last frame */
+  uint64_t wait_since_us;
   uint32_t interrupt_disables;
   uint32_t frames_sent;
   uint32_t frames_received;
@@ -145,8 +153,8 @@ uint32_t link_cable_cycles_until_service(const LinkCable *cable,
  uint32_t cycle);
 int link_cable_due(const LinkCable *cable, uint32_t cycle);
 
-/* True while the guest must not run: a reply is due, or the guest is too
-   far ahead of the other console. */
+/* True while the guest must not run: a reply or the other console's frame
+   is due, or the guest is too far ahead of the other console. */
 int link_cable_blocked(const LinkCable *cable, uint32_t cycle);
 
 int link_cable_receive(LinkCable *cable, const uint8_t *datagram,
