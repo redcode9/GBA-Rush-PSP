@@ -12,6 +12,12 @@
 #ifndef VIDEO_MOSAIC_H
 #define VIDEO_MOSAIC_H
 
+/* Horizontal mosaic sampler for video_cc.cc. take() returns 1 on the first
+ * pixel of every `width`-pixel block, meaning "fetch a new source pixel";
+ * otherwise the renderer repeats the last one. A NULL counter always takes.
+ * Host tested in tests/test_video_mosaic.c.
+ */
+
 #include <stdint.h>
 
 typedef struct
