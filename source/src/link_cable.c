@@ -13,16 +13,18 @@
 
 #include <string.h>
 
+/* Message types and payloads (little-endian). */
 enum
 {
-  LINK_MSG_HELLO = 1,
-  LINK_MSG_BYE,
-  LINK_MSG_SIO_STATE,
-  LINK_MSG_START,
-  LINK_MSG_REPLY,
-  LINK_MSG_POKEMON_STATE,
+  LINK_MSG_HELLO = 1,      /* protocol, host flag, 4-letter game code */
+  LINK_MSG_BYE,            /* empty */
+  LINK_MSG_SIO_STATE,      /* mode, SIOCNT SO bit (u16), RCNT (u16) */
+  LINK_MSG_START,          /* sequence, cycle, word (u32 each), mode, setting */
+  LINK_MSG_REPLY,          /* sequence, word (u32 each), ready flag */
+  LINK_MSG_POKEMON_STATE,  /* the sender's LinkPokemonState */
   LINK_MSG_POKEMON_PAIR,   /* host to joiner: both players' words of a frame */
-  LINK_MSG_POKEMON_WORDS   /* joiner to host: the joiner's words of a frame */
+  LINK_MSG_POKEMON_WORDS   /* joiner to host: its words of a frame, then
+                              how many host frames it has seen (u32) */
 };
 
 #define LINK_SIO_CONTROL_IRQ 0x4000u
