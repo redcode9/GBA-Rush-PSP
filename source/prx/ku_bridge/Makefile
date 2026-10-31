@@ -1,3 +1,5 @@
+# Builds ku_bridge.prx, the kernel helper described in main.c. Built by hand:
+# the top-level build neither builds nor packages it.
 TARGET = ku_bridge
 OBJS = main.o sceCtrl_driver.o
 
