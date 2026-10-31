@@ -243,6 +243,9 @@ static void test_snapshot_at_ordinal_limit_is_bounded(void)
   assert(records[1].ordinal == UINT32_MAX);
 }
 
+/* One record per ring survives encode and validate, and a flipped
+   payload byte fails the CRC. The version is pinned so that a format
+   change also updates VERSIONS in tools/decode_runtime_log.py. */
 static void test_encode_and_validate(void)
 {
   uint8_t encoded[RUNTIME_LOG_MAX_FILE_SIZE];
