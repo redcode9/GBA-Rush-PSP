@@ -2635,6 +2635,7 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
   u32 thumb = 1;                                            \
   pc &= ~0x01;                                                                \
 
+/* mem_type is unused here; callers pass an empty argument. */
 #define block_lookup_translate_arm(mem_type)                                  \
   translation_result = translate_block_arm(pc)                                \
 
@@ -2665,22 +2666,11 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
   location[pc & 2] = metadata_area##_block_tag_top                            \
 
 /*
- * In gpSP 0.9, assigning a tag to a Metadata Entry signifies that
- * translate_block_{instype} will compile something new, and that it WILL be
- * at address ({region}_next_code + block_prologue_size).
- * With the new writable translation region behaviour, it will be possible for
- * translate_block_arm (or perhaps a block_reuse_lookup, to mirror the
- * new process: block_lookup, block_reuse_lookup, translate) to signify that
- * the new tag needs to reference code that is not at {region}_next_code. So
- * the return value of block_lookup_translate_{instype} needs to change, and I
- * need to carefully examine which GBA memory line (0x00, 0x02, 0x03, 0x06,
- * 0x08..0x0D) goes into which translation region, which metadata area (sized
- * twice as large as the data area) and which tag domain. (It is possible for
- * tags to be for separate metadata areas -- which means that reaching MAX_TAG
- * in IWRAM doesn't affect EWRAM --, or for them to be for a translation
- * region instead -- which means that reaching MAX_TAG in IWRAM clears IWRAM,
- * EWRAM and VRAM and forces reuse lookup and possibly translation in all of
- * them.)
+ * A tag indexes {metadata_area}_block_ptrs, which holds the native address
+ * of the block. translate_block_{arm,thumb} returns that address: fresh code
+ * at {region}_next_code, or an older identical RAM block found through
+ * writable_checksum_hash. Each metadata area has its own tag counter
+ * ({area}_block_tag_top) and limit ({area}_max_tag).
  */
 
 #define block_lookup_translate(instruction_type, mem_type, metadata_area)     \
@@ -2876,7 +2866,7 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
          address that we can't handle. Otherwise, it means that code scanned  \
          has reached an address that can't be handled, which means that we    \
          have most likely hit an area that doesn't contain code yet (for      \
-         instance, in RAM). If such a thing happens, return -1 and the        \
+         instance, in RAM). If such a thing happens, return NULL and the      \
          block translator will naively link it (it'll be okay, since it       \
          should never be hit) */                                              \
       if (translation_recursion_level == 0)                                   \
