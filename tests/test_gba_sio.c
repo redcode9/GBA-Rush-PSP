@@ -382,6 +382,8 @@ static void test_reference_timing_and_register_traces(void)
   }
 }
 
+/* With the IRQ bit clear a transfer still completes and stores the
+   received byte, but raises no interrupt. */
 static void test_reference_irq_disabled_trace(void)
 {
   GbaSioTransfer transfer;
@@ -725,6 +727,8 @@ static void test_normal_abort_values(void)
   CHECK(reg16(GBA_SIO_REG_DATA32_H) == 0xFFFF);
 }
 
+/* A multiplayer transfer that completes with an error sets SIOCNT bit 6;
+   switching to normal mode clears the error and busy bits. */
 static void test_error_completion_and_mode_change(void)
 {
   GbaSioTransfer transfer;
@@ -766,6 +770,8 @@ static void test_result_player_clamp(void)
   CHECK(gba_sio_next_event(&sio) == 125829);
 }
 
+/* A second START write while busy is ignored, and gba_sio_reset cancels
+   the pending transfer. */
 static void test_repeated_start_and_reset(void)
 {
   GbaSioEvent event;
@@ -867,6 +873,7 @@ static void test_localized_horizon_commit(void)
   CHECK(reg16(GBA_SIO_REG_SEND) == 0xA5u);
 }
 
+/* A finish cycle that wraps past 2^32 is still hit exactly. */
 static void test_absolute_deadline_wrap(void)
 {
   GbaSioTransfer transfer;
@@ -929,6 +936,8 @@ static void test_snapshot(void)
   CHECK((restored_registers[GBA_SIO_REG_CONTROL >> 1] & 0x0080) == 0);
 }
 
+/* Every SIOCNT write with the IRQ bit clear is counted: link_cable uses
+   the count to notice a game closing or reopening its link layer. */
 static void test_interrupt_disable_counter(void)
 {
   reset_sio();
