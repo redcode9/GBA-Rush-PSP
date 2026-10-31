@@ -1359,7 +1359,7 @@ static int sound_update_thread(SceSize args, void *argp)
     }
     sound_fast_forward_starvation_since = 0;
 
-    if (output_volume != sound_volume) output_volume = sound_volume;
+    output_volume = sound_volume;
 
     if (!sound_pause)
       fill_sound_buffer(psp_sound_buffer[buf_idx], SOUND_SAMPLES, factor);
