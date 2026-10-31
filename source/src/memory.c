@@ -75,8 +75,8 @@ struct BiosData bios;        // BIOS ROM and code tags  (00000000h)     48 KiB
 /*
  * These are Metadata Areas corresponding to the Data Areas above. They
  * contain information about the native code compilation status of each
- * Data Word in that Data Area. For more information about these, see
- * "doc/partial flushing of RAM code.txt" in your source tree.
+ * Data Word in that Data Area: 4 u16 per GBA word, laid out as described
+ * above the *_block_ptrs tables in cpu.c.
  */
 u16 ewram_metadata[0x40000]; // External Working RAM code metadata     512 KiB
 u16 iwram_metadata[ 0x8000]; // Internal Working RAM code metadata      64 KiB
@@ -908,8 +908,8 @@ static u32 read32_open(u32 address)
 // (partial_clear_metadata) and returns CPU_ALERT_SMC.
 inline static CPU_ALERT_TYPE check_smc_write(u16 *metadata, u32 offset, u8 region)
 {
-  /* Get the Metadata Entry's [3], bits 0-1, to see if there's code at this
-   * location. See "doc/partial flushing of RAM code.txt" for more info. */
+  /* Entry [3], bits 0-1: Thumb or ARM code was translated from this word
+   * (layout above the *_block_ptrs tables in cpu.c). */
   u16 smc = metadata[offset | 3] & 0x03;
   if (smc != 0) {
     /* Policy is applied inside partial_clear_metadata():
@@ -2072,7 +2072,9 @@ CPU_ALERT_TYPE write_backup(u32 address, u32 value)
   address &= 0xFFFF;
   value &= 0xFF;
 
-  // Tilt Sensor
+  // Tilt-sensor carts save to EEPROM and map the sensor into this region:
+  // writing 0x55 to 0x8000 and 0xAA to 0x8100 starts a sample. Any other
+  // write on an EEPROM cart is ignored.
   if (backup_type == BACKUP_EEPROM)
   {
     // start sampling
