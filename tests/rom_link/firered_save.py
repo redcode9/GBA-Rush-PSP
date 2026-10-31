@@ -14,6 +14,10 @@
 import struct
 import sys
 
+# A save holds two slots of 14 sectors of 4 KiB; each sector ends with a
+# footer at 0xFF4 (section id, checksum, signature, save counter). SIZES are
+# the checksummed data sizes of section 0 (SaveBlock2) and section 1 (the
+# start of SaveBlock1), the only sections edited here.
 SECTOR = 0x1000
 SIZES = {0: 0xF24, 1: 0xF80}
 # Substructure order for personality % 24: G=growth (holds the species).
@@ -23,6 +27,7 @@ ORDERS = ["GAEM", "GAME", "GEAM", "GEMA", "GMAE", "GMEA", "AGEM", "AGME",
 
 
 def newest_sections(data):
+    """Map section id to file offset in the slot with the newest counter."""
     best = None
     for slot in (0, 1):
         sections = {}
@@ -37,6 +42,7 @@ def newest_sections(data):
 
 
 def fix_checksum(data, off, size):
+    """Sum the section's words and fold the total into 16 bits at 0xFF6."""
     total = sum(struct.unpack_from('<%dI' % (size // 4), data, off))
     struct.pack_into('<H', data, off + 0xFF6, ((total >> 16) + total) & 0xFFFF)
 
@@ -45,6 +51,7 @@ def place(src, dst, group, mapnum, x, y):
     data = bytearray(open(src, 'rb').read())
     sections = newest_sections(data)
     data[sections[0] + 9] |= 1          # specialSaveWarpFlags: continue warp
+    # SaveBlock1.continueGameWarp: map group, map number, warp id -1, x, y.
     struct.pack_into('<bbbxhh', data, sections[1] + 12, group, mapnum, -1, x, y)
     fix_checksum(data, sections[0], SIZES[0])
     fix_checksum(data, sections[1], SIZES[1])
@@ -52,6 +59,12 @@ def place(src, dst, group, mapnum, x, y):
 
 
 def party(path):
+    """Species of each party Pokemon, decrypted from the save.
+
+    SaveBlock1 holds the party count at 0x34 and 100-byte Pokemon from 0x38.
+    Their four 12-byte substructures at offset 32 are XORed with
+    personality ^ OT id and ordered by personality % 24.
+    """
     data = open(path, 'rb').read()
     block1 = newest_sections(data)[1]
     count = data[block1 + 0x34]
@@ -67,6 +80,7 @@ def party(path):
 
 
 def last_heal(path):
+    """SaveBlock1.lastHealLocation (0x1C), outside the last Pokemon Center."""
     data = open(path, 'rb').read()
     block1 = newest_sections(data)[1]
     group, mapnum, _, x, y = struct.unpack_from('<bbbxhh', data, block1 + 0x1C)
@@ -77,6 +91,8 @@ if __name__ == '__main__':
     if sys.argv[1] == 'place':
         place(sys.argv[2], sys.argv[3], *map(int, sys.argv[4:8]))
     elif sys.argv[1] == 'check-trade':
+        # Host slot 0 now holds the joiner's second Pokemon and the joiner's
+        # slot 1 holds the host's first; every other slot is unchanged.
         host0, host1, join0, join1 = (party(p) for p in sys.argv[2:6])
         expected_host = [join0[1]] + host0[1:]
         expected_join = join0[:1] + [host0[0]] + join0[2:]
