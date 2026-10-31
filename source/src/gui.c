@@ -5055,6 +5055,12 @@ u32 menu(void)
      below, by menu and line number.
    ------------------------------------------------------------------ */
 
+  /* The option tables, one per screen, follow. Adding an option: an
+     option_* global (main.c, main.h); a row in the screen's table on a free
+     screen row, whose label holds one %s or %d for the value; MSG ids in
+     message.h and every text/message_*.h; its value in that screen's
+     menu_*_default() reset if it has one; and, to save it, the steps in
+     config_model.c plus capture_*_config() and apply_*_config() here. */
   MenuOptionType custom_colors_options[] =
   {
     ACTION_OPTION(menu_pick_color, NULL, MSG[MSG_CUSTOM_COLOR_BG],            MSG_OPTION_MENU_HELP_CUSTOM_COLORS, 0, MSG_CUSTOM_COLOR_BG),
@@ -5094,12 +5100,7 @@ u32 menu(void)
 
   MAKE_MENU(theme, NULL, NULL);
 
-  /* Adding an option: an option_* global (main.c, main.h), a row in the
-     screen's table below, its value in that screen's menu_*_default()
-     reset, MSG ids in message.h and every text/message_*.h, and, to save
-     it, the steps in config_model.c plus capture_*_config() and
-     apply_*_config() in this file.
-     Row arguments: ..., option count, help line, screen row, label id.
+  /* Row arguments: ..., option count, help line, screen row, label id.
      MSG_OPTION_MENU_HELP_7 is the generic "<- -> change, X exit" help line;
      the MSG_OPTION_MENU_<n> ids are plain labels, numbered by history.
      Magnification takes 201 values (0-200 %). */
