@@ -30,6 +30,8 @@ void power_lifecycle_init(PowerLifecycle *lifecycle)
   memset(lifecycle, 0, sizeof(*lifecycle));
 }
 
+/* The counters are published before the suspended flag flips, so the
+   emulator thread never sees the flag without the request behind it. */
 void power_lifecycle_suspend(PowerLifecycle *lifecycle, int request_save)
 {
   if(lifecycle == NULL || lifecycle->suspended)
