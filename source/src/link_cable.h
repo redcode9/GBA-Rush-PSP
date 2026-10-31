@@ -1,0 +1,157 @@
+/*
+ * GBA Rush PSP
+ *
+ * Copyright (C) 2026 Piero Carrieri
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ */
+
+/*
+ * Emulated GBA link cable between two consoles.
+ *
+ * A real cable exchanges one 16-bit word every few hundred microseconds,
+ * while a Wi-Fi round trip takes several milliseconds. Waiting for the
+ * network on every word is correct but slow, so the cable picks one of two
+ * techniques once both consoles have said which game they run:
+ *
+ * Pokemon mode (Ruby, Sapphire, Emerald, FireRed, LeafGreen in any mix).
+ *   These games wrap the cable in their own link layer: every frame the
+ *   master sends one checksum word and eight data words, and an all-zero
+ *   frame means "nothing to say". Each console therefore emulates the wire
+ *   locally, at full speed, and only the non-empty frames cross the
+ *   network. The host decides how its frames pair with the joiner's and
+ *   sends the joiner the exact pair, so both games see identical data, as
+ *   they would on a real cable. The checksum word is filled in locally.
+ *
+ * Lockstep mode (every other game).
+ *   Each transfer is sent to the other console, and the console that
+ *   clocks the transfer waits for the reply before the guest can see the
+ *   result. The guest keeps running while the transfer would still be in
+ *   flight on real hardware, which hides part of the round trip. The
+ *   joiner is kept within a few frames of the host's guest clock so that
+ *   neither game sees the other fall silent.
+ *
+ * The cable owns no platform resources: the caller moves datagrams between
+ * link_cable_receive / link_cable_build and the network.
+ */
+
+#ifndef LINK_CABLE_H
+#define LINK_CABLE_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include "gba_sio.h"
+#include "link_net.h"
+
+#define LINK_CABLE_PROTOCOL 1u
+
+typedef enum
+{
+  LINK_CABLE_OFF,
+  LINK_CABLE_WAITING,       /* network up, waiting for the peer's hello */
+  LINK_CABLE_CONNECTED,
+  LINK_CABLE_INCOMPATIBLE,  /* the peer runs another link protocol */
+  LINK_CABLE_PEER_LEFT,     /* the peer disconnected on purpose */
+  LINK_CABLE_LOST           /* the peer stopped answering */
+} LinkCableStatus;
+
+typedef enum
+{
+  LINK_CABLE_MODE_NONE,
+  LINK_CABLE_MODE_LOCKSTEP,
+  LINK_CABLE_MODE_POKEMON
+} LinkCableMode;
+
+/* Where a Pokemon game's link layer is, as observed on the wire. */
+typedef enum
+{
+  LINK_POKEMON_CLOSED,
+  LINK_POKEMON_HANDSHAKE,
+  LINK_POKEMON_CONNECTED
+} LinkPokemonState;
+
+typedef struct
+{
+  LinkPokemonState local;
+  LinkPokemonState peer;      /* applied in the order the peer sent it */
+  LinkPokemonState reported;  /* last local state sent to the peer */
+  uint8_t offset;             /* 0 = checksum word, 1..8 = data words */
+  uint8_t handshake_count;    /* the game's previous handshake count */
+  uint8_t handshake_repeats;  /* handshake words seen while connected */
+  uint8_t pair_valid;
+  uint8_t transfer_scheduled;
+  uint16_t local_words[8];
+  uint16_t pair[2][8];        /* words delivered this frame, per player */
+  uint32_t next_transfer;     /* joiner: cycle of the next local transfer */
+  uint32_t interrupt_disables;
+  uint32_t frames_sent;
+  uint32_t frames_received;
+} LinkPokemon;
+
+typedef struct
+{
+  uint32_t sequence;
+  uint32_t start_cycle;
+  uint32_t finish_cycle;
+  uint32_t outgoing;
+  uint8_t waiting;            /* a START is out and its reply is missing */
+  uint8_t anchored;
+  uint8_t deferred;           /* a received START waits for deferred_until */
+  uint32_t deferred_until;
+  uint32_t local_anchor;      /* our cycle when the last START was applied */
+  uint32_t peer_anchor;       /* the sender's cycle carried by that START */
+  uint32_t last_transfer;     /* our cycle at the latest transfer */
+  uint8_t state_mode;
+  uint16_t state_control;
+  uint8_t state_sent;
+  uint32_t transfers;
+} LinkLockstep;
+
+typedef struct
+{
+  GbaSio *sio;
+  LinkNet net;
+  LinkCableStatus status;
+  LinkCableMode mode;
+  uint8_t host;
+  uint8_t hello_received;
+  uint8_t bye_queued;
+  char local_game[4];
+  char peer_game[4];
+  LinkPokemon pokemon;
+  LinkLockstep lockstep;
+  /* Guest clocks of both consoles when the link was last idle. */
+  uint32_t pacing_local;
+  uint32_t pacing_peer;
+} LinkCable;
+
+void link_cable_start(LinkCable *cable, GbaSio *sio, int host,
+ const char game_code[4], uint32_t local_id, uint64_t now_us);
+
+/* Queues a goodbye for the peer; the next datagram carries it. */
+void link_cable_leave(LinkCable *cable);
+
+/* Runs the cable at guest cycle `cycle`. Returns SIO events to deliver. */
+GbaSioEvent link_cable_service(LinkCable *cable, uint32_t cycle,
+ uint64_t now_us);
+
+/* Guest cycles until the cable needs link_cable_service again. */
+uint32_t link_cable_cycles_until_service(const LinkCable *cable,
+ uint32_t cycle);
+
+/* True while the guest must not run: a reply is due, or the guest is too
+   far ahead of the other console. */
+int link_cable_blocked(const LinkCable *cable, uint32_t cycle);
+
+int link_cable_receive(LinkCable *cable, const uint8_t *datagram,
+ size_t size, uint64_t now_us);
+size_t link_cable_build(LinkCable *cable, uint8_t *datagram,
+ size_t capacity, uint32_t cycle, uint64_t now_us);
+
+int link_cable_is_pokemon_game(const char game_code[4]);
+
+#endif /* LINK_CABLE_H */

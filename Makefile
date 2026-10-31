@@ -7,6 +7,11 @@ PSP_SDK_INCLUDE ?= $(shell psp-config --pspsdk-path 2>/dev/null)/include
 HOST_TEST_CODEBREAKER = $(HOST_BUILD_DIR)/test_codebreaker
 HOST_TEST_GBA_SIO = $(HOST_BUILD_DIR)/test_gba_sio
 HOST_TEST_LINK_NET = $(HOST_BUILD_DIR)/test_link_net
+HOST_TEST_LINK_CABLE = $(HOST_BUILD_DIR)/test_link_cable
+LINK_CABLE_SOURCES = tests/test_link_cable.c source/src/link_cable.c \
+ source/src/link_net.c source/src/gba_sio.c
+LINK_CABLE_HEADERS = source/src/link_cable.h source/src/link_net.h \
+ source/src/gba_sio.h
 HOST_TEST_LINK_PROTOCOL = $(HOST_BUILD_DIR)/test_link_protocol
 HOST_TEST_LINK_STREAM = $(HOST_BUILD_DIR)/test_link_stream
 HOST_TEST_LINK_BENCHMARK = $(HOST_BUILD_DIR)/test_link_benchmark
@@ -57,7 +62,7 @@ HOST_TEST_LINK_LANES = $(HOST_BUILD_DIR)/test_link_transport_lanes
 HOST_TEST_LINK_SCHEDULER = $(HOST_BUILD_DIR)/test_link_transport_scheduler
 HOST_TEST_RUNTIME_LOG = $(HOST_BUILD_DIR)/test_runtime_log
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
- $(HOST_TEST_LINK_NET) \
+ $(HOST_TEST_LINK_NET) $(HOST_TEST_LINK_CABLE) \
  $(HOST_TEST_ADHOC_PEER) $(HOST_TEST_ADHOC_DATAGRAM) \
  $(HOST_TEST_ADHOC_RECOVERY) \
  $(HOST_TEST_ADHOC_RENDEZVOUS) $(HOST_TEST_ADHOC_RESYNC) \
@@ -81,7 +86,8 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_LINK_RECOVERY) \
  $(HOST_TEST_LINK_LANES) $(HOST_TEST_LINK_SCHEDULER) $(HOST_TEST_RUNTIME_LOG)
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
- $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_net $(HOST_SANITIZE_DIR)/test_link_protocol \
+ $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_net \
+ $(HOST_SANITIZE_DIR)/test_link_cable $(HOST_SANITIZE_DIR)/test_link_protocol \
  $(HOST_SANITIZE_DIR)/test_link_stream \
  $(HOST_SANITIZE_DIR)/test_link_benchmark \
  $(HOST_SANITIZE_DIR)/test_adhoc_peer \
@@ -135,6 +141,7 @@ test: $(HOST_TESTS) test-benchmark-tool
 	$(HOST_TEST_CODEBREAKER)
 	$(HOST_TEST_GBA_SIO)
 	$(HOST_TEST_LINK_NET)
+	$(HOST_TEST_LINK_CABLE)
 	$(HOST_TEST_ADHOC_PEER)
 	$(HOST_TEST_ADHOC_DATAGRAM)
 	$(HOST_TEST_ADHOC_RECOVERY)
@@ -186,6 +193,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_codebreaker
 	$(HOST_SANITIZE_DIR)/test_gba_sio
 	$(HOST_SANITIZE_DIR)/test_link_net
+	$(HOST_SANITIZE_DIR)/test_link_cable --quick
 	$(HOST_SANITIZE_DIR)/test_adhoc_peer
 	$(HOST_SANITIZE_DIR)/test_adhoc_datagram
 	$(HOST_SANITIZE_DIR)/test_adhoc_recovery
@@ -243,6 +251,11 @@ $(HOST_TEST_LINK_NET): tests/test_link_net.c source/src/link_net.c \
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_link_net.c source/src/link_net.c -o $@
+
+$(HOST_TEST_LINK_CABLE): $(LINK_CABLE_SOURCES) $(LINK_CABLE_HEADERS)
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -Isource/src \
+	 $(LINK_CABLE_SOURCES) -o $@
 
 $(HOST_TEST_ADHOC_PEER): tests/test_adhoc_peer.c \
  source/src/adhoc_peer.c source/src/adhoc_peer.h
@@ -607,6 +620,12 @@ $(HOST_SANITIZE_DIR)/test_gba_sio: tests/test_gba_sio.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_gba_sio.c source/src/gba_sio.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_link_cable: $(LINK_CABLE_SOURCES) \
+ $(LINK_CABLE_HEADERS)
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src $(LINK_CABLE_SOURCES) -o $@
 
 $(HOST_SANITIZE_DIR)/test_link_net: tests/test_link_net.c \
  source/src/link_net.c source/src/link_net.h
