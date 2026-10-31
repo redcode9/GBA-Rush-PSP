@@ -170,6 +170,8 @@ uint32_t runtime_log_ring_dropped(const RuntimeLogRing *ring)
   return ring->dropped_records;
 }
 
+/* Record (32 bytes): 0 timestamp, 8 emulated cycle, 12 ordinal, 16 type,
+   18 source, 19 flags, 20/24/28 values. */
 static void runtime_log_encode_record(uint8_t *output,
  const RuntimeLogRecord *record)
 {

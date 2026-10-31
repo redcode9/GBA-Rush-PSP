@@ -44,6 +44,8 @@ typedef struct
 
 static RuntimeLogPsp runtime_log_psp;
 
+/* sceIo versions of the runtime_log_store file callbacks, gathered by
+   runtime_log_psp_io; context is unused. */
 static int runtime_log_psp_exists(void *context, const char *path)
 {
   SceIoStat status;
@@ -102,6 +104,8 @@ static RuntimeLogStoreIo runtime_log_psp_io(void)
   return io;
 }
 
+/* Builds the session, temporary and backup paths under <base_path>logs
+   and the device prefix; 0 if any path does not fit. */
 static int runtime_log_psp_paths(const char *base_path)
 {
   const char *separator;
