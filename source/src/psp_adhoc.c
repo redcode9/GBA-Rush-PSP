@@ -113,6 +113,8 @@ static PspAdhocContext psp_adhoc =
   .socket_id = -1
 };
 
+/* Producer side: 0 for an empty or oversized datagram or a full ring. The
+   barrier makes the slot visible before the new write index. */
 static int ring_push(PspAdhocRing *ring, const uint8_t *data, size_t size)
 {
   uint32_t write = ring->write;
@@ -155,6 +157,8 @@ static void psp_adhoc_wake(SceUID flag)
     sceKernelSetEventFlag(flag, 1);
 }
 
+/* Waits up to timeout_us for psp_adhoc_wake() on flag; a plain delay when
+   the flag was never created. */
 static void psp_adhoc_sleep(SceUID flag, unsigned int timeout_us)
 {
   SceUInt timeout = timeout_us;
@@ -169,6 +173,8 @@ static void psp_adhoc_sleep(SceUID flag, unsigned int timeout_us)
    &matched, &timeout);
 }
 
+/* Deletes both wake flags and marks them -1, which turns later wakes into
+   no-ops and sleeps into plain delays. */
 static void psp_adhoc_delete_flags(PspAdhocContext *context)
 {
   if(context->wake_send >= 0)
@@ -234,6 +240,8 @@ static int psp_adhoc_network_init(PspAdhocContext *context)
   return 0;
 }
 
+/* Undoes psp_adhoc_network_init() in reverse, socket and group first;
+   only the steps that succeeded are undone, so a partial bring-up is safe. */
 static void psp_adhoc_network_term(PspAdhocContext *context)
 {
   if(context->socket_id >= 0)
@@ -291,6 +299,8 @@ static int psp_adhoc_wait_group(PspAdhocContext *context)
   return psp_adhoc_fail(context, SCE_ADHOC_ERROR_TIMEOUT);
 }
 
+/* Opens the PDP (datagram) socket on this PSP's MAC and the given port;
+   1 on success, -1 with the failure recorded. */
 static int psp_adhoc_open_socket(PspAdhocContext *context,
  unsigned short port)
 {
@@ -633,6 +643,8 @@ static void psp_adhoc_connected(PspAdhocContext *context)
   psp_adhoc_send_all(context);
 }
 
+/* The worker thread: brings the network up, hosts or joins, runs the
+   session, then tears everything down and leaves STOPPED or FAILED. */
 static int psp_adhoc_thread(SceSize args, void *argp)
 {
   PspAdhocContext *context = &psp_adhoc;
@@ -761,6 +773,7 @@ PspAdhocPhase psp_adhoc_failure_phase(void)
   return psp_adhoc.failure_phase;
 }
 
+/* Short phase label for the link error line in the menu. */
 const char *psp_adhoc_phase_name(PspAdhocPhase phase)
 {
   switch(phase)
