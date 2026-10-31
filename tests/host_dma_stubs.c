@@ -101,6 +101,8 @@ int64_t sceIoLseek(int fd, int64_t offset, int whence)
   return offset;
 }
 
+/* Fills buf with the fake ROM pattern at the current seek offset and
+   advances it; returns -1 or a short count as host_stub_rom_io() set. */
 int sceIoRead(int fd, void *buf, int size)
 {
   (void)fd;

@@ -273,6 +273,7 @@ int kuImposeGetParam(SceImposeParam param)
   return 0;
 }
 
+/* No-op GBK text printer: the sentinel test never draws text. */
 void ch_print(const char *str, u16 x, u16 y, u16 col, s16 bg_col,
  u16 *base_vram, u16 bufferwidth)
 {
@@ -285,6 +286,7 @@ void ch_print(const char *str, u16 x, u16 y, u16 col, s16 bg_col,
   (void)bufferwidth;
 }
 
+/* Like ch_print(), for the Shift-JIS printer. */
 void mh_print(const char *str, u16 x, u16 y, u16 col, s16 bg_col,
  u16 *base_vram, u16 bufferwidth)
 {

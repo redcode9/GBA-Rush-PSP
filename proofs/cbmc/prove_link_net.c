@@ -24,6 +24,8 @@ uint32_t nondet_u32(void);
 uint64_t nondet_u64(void);
 size_t nondet_size(void);
 
+/* The proof itself: CBMC fails it if any assert or safety check can fail
+   for some nondet datagram, channel state or reply capacity. */
 int main(void)
 {
   static LinkNet net;
