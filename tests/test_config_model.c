@@ -61,6 +61,8 @@ static void assert_models_equal(const ConfigModel *left,
   assert(memcmp(left, right, sizeof(*left)) == 0);
 }
 
+/* Also flips a bit in the last byte: decoding must then fail and leave the
+   output untouched. */
 static void test_defaults_and_versioned_round_trip(void)
 {
   ConfigModel original;

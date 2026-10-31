@@ -30,6 +30,8 @@ static int feed_window(VideoAdaptiveState *state, uint32_t frame_time_us,
   return changed;
 }
 
+/* Disabled, the manual quality holds through bad frames and reset;
+   re-enabling restarts at SHARP whatever quality is passed. */
 static void test_initial_and_manual_state(void)
 {
   VideoAdaptiveState state;

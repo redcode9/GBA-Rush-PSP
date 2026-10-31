@@ -110,6 +110,8 @@ static void test_identity_and_checksum_rejection(void)
   assert(replay.error == INPUT_TRACE_ERROR_CHECKSUM);
 }
 
+/* Replay refuses a short header, a bad magic, an unknown version (byte 4),
+   a truncated event list and more events than its buffer holds. */
 static void test_malformed_traces(void)
 {
   uint8_t encoded[INPUT_TRACE_HEADER_SIZE + 8 * INPUT_TRACE_EVENT_SIZE];

@@ -118,6 +118,8 @@ static void test_classic_cycle_and_frame_divisors(void)
   assert(fast_forward_policy_take_force_present(&policy));
 }
 
+/* Toggle latches on a press and stays on after release until the next
+   press; configure() then switches the live policy to hold at 3x. */
 static void test_custom_hold_toggle_and_reconfigure(void)
 {
   FastForwardSettings settings = custom_settings(

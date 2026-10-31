@@ -21,6 +21,8 @@ static uint32_t reference_step(double numerator, uint32_t denominator)
   return result > UINT32_MAX ? UINT32_MAX : (uint32_t)result;
 }
 
+/* Every valid input must give exactly the step the former floating-point
+   code computed (reference_step()). */
 static void test_integer_steps_match_previous_timing(void)
 {
   uint32_t rate;
