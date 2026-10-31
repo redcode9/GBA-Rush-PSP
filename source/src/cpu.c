@@ -3763,6 +3763,7 @@ static u16 block_checksum_arm(u32 opcode_count)
   return (u16)(((result >> 16) ^ result) & 0xFFFE);
 }
 
+// Thumb version of block_checksum_arm(): keeps all 16 bits, sets bit 0.
 static u16 block_checksum_thumb(u32 opcode_count)
 {
   // Init: Checksum = NOT Opcodes[0]
@@ -3947,6 +3948,8 @@ static void partial_clear_metadata_thumb(u16 *metadata, u16 *metadata_area_start
   }
 }
 
+// Like partial_clear_metadata_thumb(), with the ARM tag bits (0x2 code, 0x8
+// unconditional branch) and the ARM block tag in metadata[1].
 static void partial_clear_metadata_arm(u16 *metadata, u16 *metadata_area_start, u16 *metadata_area_end)
 {
   u16 *metadata_right = metadata; // Save this pointer to go to the right later
@@ -4169,6 +4172,8 @@ void set_cpu_mode(CPU_MODE_TYPE new_mode)
 }
 
 
+// Resets the ARM core for a new game: from the BIOS reset vector, or straight
+// into the ROM in system mode with the stacks the BIOS would have set up.
 void init_cpu(void)
 {
   translation_recursion_level = 0;

@@ -242,6 +242,7 @@ void rebuild_active_cheat_indexes(void)
   }
 }
 
+// Drops every cheat and hook so none runs until a cheat file is loaded again.
 void clear_cheats(void)
 {
   memset(cheats, 0, sizeof(cheats));
@@ -318,6 +319,7 @@ static CHEAT_VARIANT_ENUM parse_cheat_variant(const char *variant)
   return CHEAT_TYPE_INVALID;
 }
 
+// Strips trailing whitespace in place, CR included, so CRLF files parse too.
 static void trim_line_end(char *line)
 {
   u32 length = strlen(line);
