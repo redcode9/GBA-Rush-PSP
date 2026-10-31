@@ -204,13 +204,13 @@ s32 video_count = 272;
 u32 irq_ticks = 0;
 u8 cpu_init_state = 0;
 
-/* Frameskip state, and the FPS counter (frames, vblank_count and
+/* Frameskip state, and the FPS counter (fps_window_frames, vblank_count and
    interval_skipped_frames cover a 60-frame window). */
 u32 skip_next_frame = 0;
 u32 num_skipped_frames = 0;
 u32 frameskip_counter = 0;
 u32 interval_skipped_frames = 0;
-u32 frames = 0;
+u32 fps_window_frames = 0;
 u32 vblank_count = 0;
 
 /* The first init_main flushes both translation caches; later ROM loads
@@ -1153,16 +1153,16 @@ static void synchronize(void)
   u32 used_frameskip_type  = option_frameskip_type;
   u32 used_frameskip_value = option_frameskip_value;
 
-  frames++;
+  fps_window_frames++;
 
-  if (frames == 60)
+  if (fps_window_frames == 60)
   {
     // 60 GBA frames took vblank_count PSP frames at 60 Hz
     fps = vblank_count ? (3600 / vblank_count) : 0;
     frames_drawn = 60 - interval_skipped_frames;
 
     vblank_count = 0;
-    frames = 0;
+    fps_window_frames = 0;
     interval_skipped_frames = 0;
   }
 
@@ -1329,7 +1329,7 @@ static void init_main(void)
   skip_next_frame = 0;
 
   vblank_count = 0;
-  frames = 0;
+  fps_window_frames = 0;
   interval_skipped_frames = 0;
 
   for (i = 0; i < 4; i++)
