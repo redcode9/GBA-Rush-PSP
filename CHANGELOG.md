@@ -69,8 +69,13 @@
 
 ### Known issues
 
-- The new cable has not yet been tested on PSP hardware. See the
+- On hardware, FireRed with FireRed has linked a PSP-2000 host and a
+  PSP-1000 in the Cable Club, with occasional short stalls. LeafGreen pairs,
+  link battles and lockstep games have only been tested off hardware; see the
   [hardware tests](docs/ROADMAP-1.4.0.md).
+- In Pokemon mode, frames that queue up while one console stalls are not
+  caught up afterwards, so the Cable Club can lag by about half a second
+  until the players leave the room.
 
 ## 1.3.0 - 2026-08-22
 
