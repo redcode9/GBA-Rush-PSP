@@ -508,6 +508,8 @@ void load_recent_roms(void)
     validate_recent_roms();
 }
 
+/* Writes the list in load_recent_roms()'s format, under scePowerLock so a
+   suspend can't cut the write short. */
 static void save_recent_roms(void)
 {
     SceUID fd;
@@ -532,6 +534,8 @@ static void save_recent_roms(void)
     scePowerUnlock(0);
 }
 
+/* Drops entries whose path is no longer a regular file, keeping the order;
+   the file is rewritten only by the next save_recent_roms(). */
 static void validate_recent_roms(void)
 {
     u32 i, j;
@@ -845,6 +849,7 @@ static void update_menu_scroll(u32 hash)
     }
 }
 
+/* Like update_menu_scroll(), for the ROM browser's cursor entry. */
 static void update_file_scroll(u32 hash)
 {
     if (hash != g_scroll.last_file_hash) {
@@ -855,6 +860,7 @@ static void update_file_scroll(u32 hash)
     }
 }
 
+/* Like update_menu_scroll(), for the game title in the menu header. */
 static void update_title_scroll(u32 hash)
 {
     if (hash != g_scroll.last_title_hash) {
@@ -2976,6 +2982,8 @@ void auto_savestate_sleep(void)
     action_savestate_slot(AUTO_SAVESTATE_SLOT);
 }
 
+/* Nonzero if the slot's .svs is in dir_state; the slot menu backs up to the
+   auto slot only when there is a state to load. */
 static u32 savestate_file_exists(u32 slot)
 {
     char savestate_filename[MAX_FILE];
@@ -3045,6 +3053,8 @@ static u32 action_loadstate_slot(u32 slot)
   return result;
 }
 
+/* Nonzero if the auto-slot .svs can be opened; maybe_load_auto_savestate()
+   offers a resume only then. */
 static u32 auto_savestate_exists(void)
 {
   char savestate_filename[MAX_FILE];
@@ -3308,6 +3318,8 @@ static int menu_trace_path(char *path, size_t path_size, int create_directory)
     return result >= 0 && (size_t)result < path_size;
 }
 
+/* Repeats FILE_WRITE until all size bytes are out; 0 on an error or a
+   zero-length write. */
 static int menu_trace_write_all(SceUID file, const u8 *data, size_t size)
 {
     size_t written = 0;
@@ -3322,6 +3334,7 @@ static int menu_trace_write_all(SceUID file, const u8 *data, size_t size)
     return 1;
 }
 
+/* Like menu_trace_write_all(), reading; 0 on an error or early end of file. */
 static int menu_trace_read_all(SceUID file, u8 *data, size_t size)
 {
     size_t read = 0;
@@ -3544,6 +3557,8 @@ static void print_menu_line_scroll(const char *str, s16 x, s16 y, u16 fg, s16 bg
     print_menu_line(buf, x, y, fg, bg);
 }
 
+/* Cuts str to max_chars columns without splitting a double-byte character;
+   unlike print_menu_line_scroll(), the rest is simply not shown. */
 static void print_menu_line_clipped(const char *str, s16 x, s16 y, u16 fg, s16 bg, u32 max_chars)
 {
     size_t len = strlen(str);
@@ -6056,6 +6071,7 @@ static int config_io_read(void *context, const char *path, uint8_t *data,
   return 1;
 }
 
+/* Writes the whole buffer, looping over short writes; 0 on any failure. */
 static int config_io_write(void *context, const char *path,
  const uint8_t *data, size_t size)
 {
@@ -6240,6 +6256,8 @@ static void apply_global_config(const ConfigModel *model)
   main_fast_forward_reset_game_settings();
 }
 
+/* Stores the global options in tempgba.cfg through config_store's
+   temp-and-rename sequence; 0 on success, -1 on failure. */
 static s32 save_global_config(void)
 {
   ConfigModel model;
@@ -6289,6 +6307,8 @@ static s32 load_global_config(void)
   return -1;
 }
 
+/* The .tmp and .bak names config_store needs beside a per-game primary;
+   0 if either would not fit in MAX_PATH. */
 static int config_companion_paths(const char *primary, char *temporary,
  char *recovery)
 {
@@ -6357,6 +6377,7 @@ static void apply_game_config(const ConfigModel *model)
   main_fast_forward_apply_settings();
 }
 
+/* Per-game counterpart of save_global_config(), writing to primary. */
 static s32 save_game_config_atomic(const char *primary)
 {
   ConfigModel model;
@@ -6370,6 +6391,8 @@ static s32 save_game_config_atomic(const char *primary)
    &model) == CONFIG_STORE_OK ? 0 : -1;
 }
 
+/* Loads primary (or its .bak) into the per-game options; on -1 the current
+   options are left as they were. */
 static s32 load_game_config_atomic(const char *primary)
 {
   ConfigModel model;
@@ -6384,6 +6407,7 @@ static s32 load_game_config_atomic(const char *primary)
   return 0;
 }
 
+/* <dir_cfg>/<rom>.cfg; 0 when no ROM is loaded or the path is too long. */
 static int build_game_config_path(char *path)
 {
   char filename[MAX_FILE];
@@ -6397,6 +6421,8 @@ static int build_game_config_path(char *path)
   return length >= 0 && length < MAX_PATH;
 }
 
+/* Saves the running game's .cfg under scePowerLock; -1 if no ROM is loaded
+   or the save fails. */
 static s32 save_game_config_file(void)
 {
   char game_config_path[MAX_PATH];
