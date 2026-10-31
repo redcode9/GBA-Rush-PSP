@@ -2625,11 +2625,11 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
 // pc_* helpers also declare the local `thumb` that the ROM lookup uses.
 
 #define block_lookup_address_pc_arm()                                         \
-  u32 thumb = 0;                                                           \
+  u32 thumb = 0;                                                              \
   pc &= ~0x03;                                                                \
 
-#define block_lookup_address_pc_thumb()                                     \
-  u32 thumb = 1;                                            \
+#define block_lookup_address_pc_thumb()                                       \
+  u32 thumb = 1;                                                              \
   pc &= ~0x01;                                                                \
 
 /* mem_type is unused here; callers pass an empty argument. */
