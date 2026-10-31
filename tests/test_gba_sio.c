@@ -72,6 +72,8 @@ static void select_mode(GbaSioMode mode)
   gba_sio_write16(&sio, GBA_SIO_REG_CONTROL, control);
 }
 
+/* Power-on state is GPIO: RCNT 0x800F (all four pins high), SIOCNT 0x0004
+   (SI high). select_mode() then reaches every mode. */
 static void test_reset_and_modes(void)
 {
   reset_sio();
@@ -115,6 +117,8 @@ static void test_prepare_cold_preserves_other_registers(void)
   }
 }
 
+/* 0x6083 leaves a 115200-baud multiplayer start pending; prepare on the
+   bound bank must change nothing, then again right after gba_sio_reset(). */
 static void test_prepare_is_noop_for_loaded_game(void)
 {
   GbaSio before;
@@ -144,6 +148,8 @@ static void test_prepare_is_noop_for_loaded_game(void)
   CHECK(memcmp(registers_before, registers, sizeof(registers)) == 0);
 }
 
+/* NULL pointers, and a bank other than the one already bound, are refused
+   without touching the GbaSio or either bank. */
 static void test_prepare_rejects_invalid_storage(void)
 {
   GbaSio before;
@@ -197,6 +203,8 @@ static void test_control_masks(void)
   CHECK(reg16(GBA_SIO_REG_MULTI1) == 0);
 }
 
+/* GPIO mode lets the game write RCNT bits 0-8; in SIO and JOY bus modes
+   only bits 4-8 are written and the emulated pin levels (0-3) remain. */
 static void test_rcnt_masks(void)
 {
   reset_sio();
@@ -473,6 +481,8 @@ static void test_reference_irq_toggle_and_mode_change_traces(void)
   CHECK(sio.decision_locked == 0);
 }
 
+/* 0x4083 = IRQ | START | 2 MHz | internal clock: the low byte of SIODATA8
+   goes out and the IRQ lands 64 cycles later (8 bits, 8 cycles each). */
 static void test_normal8_transfer(void)
 {
   GbaSioTransfer transfer;
@@ -508,6 +518,8 @@ static void test_normal8_transfer(void)
   CHECK((reg16(GBA_SIO_REG_CONTROL) & 0x0080) == 0);
 }
 
+/* 0x5081 = IRQ | 32-bit | START | internal clock at 256 KHz: 32 bits at
+   64 cycles each take 2048 cycles. */
 static void test_normal32_transfer(void)
 {
   GbaSioTransfer transfer;
