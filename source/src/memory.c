@@ -1130,11 +1130,22 @@ static void waitstate_control(u32 value)
 }
 
 
+// DMA control (DMAxCNT_H) write handlers. Channel n's registers start at
+// 0xB0 + n * 12: source (SAD), destination (DAD), word count (CNT_L) and
+// control (CNT_H). CNT_H: destination control (bits 5-6), source control
+// (7-8), repeat (9), 32-bit (10), start timing (12-13), IRQ (14), enable
+// (15). A word count of 0 means the maximum: 0x4000, or 0x10000 on DMA3.
+// Addresses and count latch only on the enable edge; rewriting CNT_H while
+// enabled just updates the mode bits.
+#define DMA_CNT_ENABLE 0x8000
+// Special-timing DMA1/2 feed sound FIFO B when aimed here, else FIFO A.
+#define FIFO_B_ADDRESS 0x40000A4
+
 #define TRIGGER_DMA0()                                                        \
 {                                                                             \
   DmaTransferType *dma0 = dma + 0;                                            \
                                                                               \
-  if ((value & 0x8000) != 0)                                                  \
+  if ((value & DMA_CNT_ENABLE) != 0)                                          \
   {                                                                           \
     dma0->dma_channel = 0;                                                    \
     dma0->source_direction = (value >> 7) & 0x03;                             \
@@ -1175,7 +1186,7 @@ static void waitstate_control(u32 value)
 {                                                                             \
   DmaTransferType *dma1 = dma + 1;                                            \
                                                                               \
-  if ((value & 0x8000) != 0)                                                  \
+  if ((value & DMA_CNT_ENABLE) != 0)                                          \
   {                                                                           \
     dma1->dma_channel = 1;                                                    \
     dma1->source_direction = (value >> 7) & 0x03;                             \
@@ -1195,7 +1206,7 @@ static void waitstate_control(u32 value)
         dma1->length_type = DMA_32BIT;                                        \
         dma1->length = 4;                                                     \
                                                                               \
-        if (dma1->dest_address == 0x40000A4)                                  \
+        if (dma1->dest_address == FIFO_B_ADDRESS)                             \
           dma1->direct_sound_channel = DMA_DIRECT_SOUND_B;                    \
         else                                                                  \
           dma1->direct_sound_channel = DMA_DIRECT_SOUND_A;                    \
@@ -1239,7 +1250,7 @@ static void waitstate_control(u32 value)
 {                                                                             \
   DmaTransferType *dma2 = dma + 2;                                            \
                                                                               \
-  if ((value & 0x8000) != 0)                                                  \
+  if ((value & DMA_CNT_ENABLE) != 0)                                          \
   {                                                                           \
     dma2->dma_channel = 2;                                                    \
     dma2->source_direction = (value >> 7) & 0x03;                             \
@@ -1259,7 +1270,7 @@ static void waitstate_control(u32 value)
         dma2->length_type = DMA_32BIT;                                        \
         dma2->length = 4;                                                     \
                                                                               \
-        if (dma2->dest_address == 0x40000A4)                                  \
+        if (dma2->dest_address == FIFO_B_ADDRESS)                             \
           dma2->direct_sound_channel = DMA_DIRECT_SOUND_B;                    \
         else                                                                  \
           dma2->direct_sound_channel = DMA_DIRECT_SOUND_A;                    \
@@ -1299,11 +1310,13 @@ static void waitstate_control(u32 value)
   }                                                                           \
 }                                                                             \
 
+// DMA3 also detects 8 KB EEPROM: a 17-bit transfer to region 0xD is a read
+// request with a 14-bit address (2 command + 14 address + 1 stop bits).
 #define TRIGGER_DMA3()                                                        \
 {                                                                             \
   DmaTransferType *dma3 = dma + 3;                                            \
                                                                               \
-  if ((value & 0x8000) != 0)                                                  \
+  if ((value & DMA_CNT_ENABLE) != 0)                                          \
   {                                                                           \
     dma3->dma_channel = 3;                                                    \
     dma3->source_direction = (value >> 7) & 0x03;                             \
@@ -1344,6 +1357,8 @@ static void waitstate_control(u32 value)
 }                                                                             \
 
 
+// Merge an 8-bit or 16-bit write with the other half of the current
+// register so the wider handler below sees the whole value.
 #define ACCESS_REGISTER8_HIGH(address)                                        \
   value = ADDRESS8(io_registers, address) | (value << 8);                     \
 
@@ -1406,6 +1421,7 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       if (bg_mode > 5)
         value &= 0x07;
 
+      // Bitmap modes 3-5 use VRAM up to 0x14000, so OBJ tiles start there.
       if (bg_mode < 3)
         obj_address = 0x10000;
       else
@@ -1414,6 +1430,8 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       if (bg_mode != (dispcnt & 0x07))
         oam_update = 1;
 
+      // Leaving forced blank (bit 7) outside VBlank clears the HBlank
+      // status flag.
       if ((((dispcnt ^ value) & 0x80) != 0) && ((value & 0x80) == 0))
       {
         if ((pIO_REG(REG_DISPSTAT) & 0x01) == 0)
@@ -1424,7 +1442,7 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       break;
     }
 
-    // DISPSTAT
+    // DISPSTAT (bits 0-2, the blank and VCount match flags, are read-only)
     case 0x04:
       ADDRESS16(io_registers, 0x04) = (ADDRESS16(io_registers, 0x04) & 0x07) | (value & ~0x07);
       break;
@@ -1434,7 +1452,7 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       /* Read only */
       break;
 
-    // BG2 reference X
+    // BG2 reference X (28-bit signed fixed point, sign-extended here)
     case 0x28:
       ACCESS_REGISTER16_LOW(0x28);
       affine_reference_x[0] = ((s32)value << 4) >> 4;
@@ -1675,7 +1693,7 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       /* Read only */
       break;
 
-    // IE - Interrupt Enable Register
+    // IE - Interrupt Enable Register (14 interrupt sources)
     case 0x200:
       value &= 0x3FFF;
       ADDRESS16(io_registers, 0x200) = value;
@@ -1683,7 +1701,7 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
         return CPU_ALERT_IRQ;
       break;
 
-    // IF - Interrupt Request flags
+    // IF - Interrupt Request flags (writing 1 acknowledges a request)
     case 0x202:
       value = ~value & 0x3FFF;
       ADDRESS16(io_registers, 0x202) &= value;
@@ -2502,6 +2520,9 @@ CPU_ALERT_TYPE write_memory32(u32 address, u32 value)
     dest_ptr += dest_increment;                                               \
   }                                                                           \
 
+// Runs a whole DMA transfer at once, then reloads or stops the channel.
+// Returns CPU_ALERT_DMA plus alerts raised by the writes (SMC) and the
+// completion IRQ.
 CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
 {
   u32 read_value = 0;
@@ -2557,10 +2578,12 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
   }
 
 
+  // Open-bus reads now return the last DMA value (see read8_open).
   reg[CPU_DMA_HACK] = 1;
 
   dma->source_address = src_ptr;
 
+  // DMA_RELOAD restores the destination from DMAxDAD.
   if (dma->dest_direction == DMA_RELOAD)
     dma->dest_address = ADDRESS32(io_registers, 0xB4 + (dma->dma_channel * 12));
   else
@@ -2569,6 +2592,7 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
   if ((dma->repeat_type == DMA_REPEAT) && (dma->start_type != DMA_START_SPECIAL))
   {
     u32 length_max;
+    // Reload the word count from DMAxCNT_L.
     length = ADDRESS16(io_registers, 0xB8 + (dma->dma_channel * 12));
     length_max = (dma->dma_channel == 3) ? 0x10000 : 0x4000;
 
@@ -2580,6 +2604,7 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
     dma->start_type = DMA_INACTIVE;
     dma->direct_sound_channel = DMA_NO_DIRECT_SOUND;
 
+    // Clear the enable bit in DMAxCNT_H.
     ADDRESS16(io_registers, 0xBA + (dma->dma_channel * 12)) &= 0x7FFF;
   }
 
