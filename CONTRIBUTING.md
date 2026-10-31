@@ -20,8 +20,8 @@ Use a clean build after changing compiler or diagnostic flags. Release packages
 are created and checked with:
 
 ```sh
-make package VERSION=1.4.0-rc.5
-make artifact-smoke VERSION=1.4.0-rc.5
+make package VERSION=1.4.0
+make artifact-smoke VERSION=1.4.0
 ```
 
 The optional desktop launcher has its own

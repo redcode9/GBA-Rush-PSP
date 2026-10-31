@@ -3,7 +3,7 @@
 The release target is a working two-player GBA cable over PSP ad-hoc Wi-Fi on
 PSP-1000 and PSP-2000, with either console acting as host.
 
-`1.4.0-rc.5` replaces the earlier link stack, which never completed a transfer
+The 1.4.0 build replaces the earlier link stack, which never completed a transfer
 on hardware, with the design described in the [link cable notes](link-cable.md):
 a full-speed frame relay for Pokemon Ruby, Sapphire, Emerald, FireRed and
 LeafGreen, word-by-word lockstep for every other game, and a reliable channel
@@ -14,7 +14,7 @@ games through the same cable code on typical, noisy and uneven-speed links.
 
 ## Hardware tests
 
-Use one PSP-1000 and one PSP-2000 with the same `rc.5` EBOOT. Copy both
+Use one PSP-1000 and one PSP-2000 with the same 1.4.0 EBOOT. Copy both
 `logs/` folders after each run and decode them with
 `tools/decode_runtime_log.py`.
 

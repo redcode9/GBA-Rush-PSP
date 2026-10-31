@@ -1,9 +1,19 @@
 # Changelog
 
-## 1.4.0-rc.5 - 2026-10-31
+## 1.4.0 - 2026-10-31
+
+### Added
+
+- Modern, Classic and Custom fast-forward profiles, per-game overrides and
+  optional accelerated audio at 2x/3x.
+- Fast-forward measurements in performance reports and benchmark comparisons.
 
 ### Changed
 
+- Audio mixing retains 16-bit precision with integer timing and rounded scaling.
+- Dynarec branch resolution uses an iterative worklist to bound host stack use.
+- Mosaic rendering avoids per-pixel division and fixes rotated bitmap sampling.
+- Performance menus separate common settings from advanced core options.
 - The link cable is rebuilt around two techniques chosen per pair of games.
   Pokemon Ruby, Sapphire, Emerald, FireRed and LeafGreen, in any combination,
   emulate the wire locally on each PSP and relay only the games' link frames,
@@ -20,49 +30,6 @@
   benchmark is removed; a game must be loaded before connecting.
 - Runtime logs move to format 5 with the new link events.
 
-### Removed
-
-- The protocol v3 session, journal, recovery coordinator, transport lanes and
-  their TLA+ models and proofs, which never completed a transfer on hardware.
-
-### Testing
-
-- Host tests link two simulated consoles over networks with delay, jitter,
-  loss, duplicates, reordering and outages. A port of the pret FireRed serial
-  driver must complete full sessions (handshake, link-player exchange, link
-  room keys, a 600-byte trade block, close and reopen) with no link error and
-  identical frames on both consoles. Lockstep guests check Multiplayer and
-  Normal 32-bit transfers word by word. CBMC proves the packet parser.
-- An end-to-end test runs two real FireRed games in mGBA with this cable in
-  between: both players enter the Cable Club, trade and leave, and both saves
-  hold the traded Pokemon, on typical, noisy and uneven-speed links.
-
-### Known issues
-
-- The new cable has not yet been tested on PSP hardware. See the
-  [hardware tests](docs/ROADMAP-1.4.0.md).
-
-## 1.4.0-rc.4 - 2026-10-11
-
-### Added
-
-- Modern, Classic and Custom fast-forward profiles, per-game overrides and
-  optional accelerated audio at 2x/3x.
-- Fast-forward measurements in performance reports and benchmark comparisons.
-- Paired no-ROM benchmarks, binary runtime logs,
-  protocol models, C proof harnesses and fault-injection tests.
-
-### Changed
-
-- Audio mixing retains 16-bit precision with integer timing and rounded scaling.
-- Dynarec branch resolution uses an iterative worklist to bound host stack use.
-- Mosaic rendering avoids per-pixel division and fixes rotated bitmap sampling.
-- Performance menus separate common settings from advanced core options.
-- The cable uses protocol v3, with a START/REPLY stream for multiplayer,
-  bounded transport queues, correlated heartbeats and one recovery coordinator.
-- Build instructions, link notes and the 1.4.0 checklist are maintained alongside
-  the user guide. Original text references are grouped under `docs/legacy/`.
-
 ### Fixed
 
 - ROMs loaded from the startup menu now run without resetting the state restored
@@ -77,26 +44,33 @@
   clear unread bytes and remain uncached for retry; partial final pages are padded.
 - Stopped performance reports retain the original ROM and settings. DMA counters
   exclude SRAM from ROM transfers, and clock wrap no longer drops frame samples.
-- Snapshot v4 preserves full failure details and decodes transport health as an
-  exclusive state. Older logs remain readable without guessing ambiguous fields.
 - Fast-forward ends at menus, reset, ROM changes, link setup, suspend and exit;
   accelerated audio falls back to silence when output cannot stay stable.
 - Version 1.3 settings migrate without discarding unrelated configuration.
-- Development link fixes cover no-ROM SIO initialization, delayed guest serial
-  handlers, writable receive registers, lost presence updates and heartbeat
-  reply ordering.
-- Stream recovery preserves pending results and rejects stale generations.
-  Transfer hashes and serial IRQs cannot be applied twice.
-- Link setup and teardown handle PSP-1000 memory limits, background negotiation,
-  menu transitions and bounded worker shutdown.
-- Benchmark duration, terminal results, histogram tails and STOP/ACK draining
-  are recorded consistently, with internal errors separate from PSP API errors.
+
+### Removed
+
+- The previous link implementation (session, journal, recovery coordinator,
+  transport lanes) with its TLA+ models, proofs and paired benchmark, which
+  never completed a transfer on hardware.
+
+### Testing
+
+- Host tests link two simulated consoles over networks with delay, jitter,
+  loss, duplicates, reordering and outages. A port of the pret FireRed serial
+  driver must complete full sessions (handshake, link-player exchange, link
+  room keys, a 600-byte trade block, close and reopen) with no link error and
+  identical frames on both consoles. Lockstep guests check Multiplayer and
+  Normal 32-bit transfers word by word. CBMC proves the packet parser.
+- An end-to-end test runs two real FireRed games in mGBA with this cable in
+  between: both players enter the Cable Club, trade and leave, and both saves
+  hold the traded Pokemon, on typical, noisy and uneven-speed links and with
+  the cable forced into lockstep mode.
 
 ### Known issues
 
-- Two-PSP FireRed trades and paired ten-minute benchmarks have not passed.
-- Connection recovery can still stall gameplay; generic guest timing remains
-  incomplete. See the [remaining work](docs/ROADMAP-1.4.0.md).
+- The new cable has not yet been tested on PSP hardware. See the
+  [hardware tests](docs/ROADMAP-1.4.0.md).
 
 ## 1.3.0 - 2026-08-22
 

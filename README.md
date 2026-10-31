@@ -159,7 +159,7 @@ docker run --rm -v "$PWD:/workspace" -w /workspace/source pspdev/pspdev:latest m
 After a successful candidate build:
 
 ```sh
-make package VERSION=1.4.0-rc.5
+make package VERSION=1.4.0
 ```
 
 The package command creates a reproducible ZIP and SHA-256 checksum under
