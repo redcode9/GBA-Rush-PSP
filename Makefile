@@ -552,13 +552,13 @@ launcher-stub:
 
 package: psp-build check
 	@test -n "$(VERSION)" || \
-	 (echo "Set VERSION, for example VERSION=1.4.1" >&2; exit 1)
+	 (echo "Set VERSION, for example VERSION=1.4.2" >&2; exit 1)
 	sh scripts/package-release.sh "$(VERSION)"
 	sh scripts/check-package.sh "$(VERSION)"
 
 artifact-smoke:
 	@test -n "$(VERSION)" || \
-	 (echo "Set VERSION, for example VERSION=1.4.1" >&2; exit 1)
+	 (echo "Set VERSION, for example VERSION=1.4.2" >&2; exit 1)
 	sh scripts/check-package.sh "$(VERSION)"
 
 clean:

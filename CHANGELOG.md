@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.2 - 2026-10-31
+
+### Fixed
+
+- Games that report a link error as soon as the cable goes quiet for a
+  moment, such as Mario Kart: Super Circuit, now stay connected over Wi-Fi.
+  The console that receives transfers follows the sender's timing as on a
+  real cable instead of running ahead while the sender waits for replies.
+
 ## 1.4.1 - 2026-10-31
 
 ### Fixed
