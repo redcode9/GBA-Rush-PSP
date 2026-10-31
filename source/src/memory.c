@@ -717,6 +717,7 @@ static u32 read32_io_registers(u32 address)
 #define READ_PALETTE_RAM(type)                                                \
   return ADDRESS##type(palette_ram, address & 0x3FF);                         \
 
+// Palette RAM is 1 KiB, mirrored every 0x400 through region 5.
 static u32 read8_palette_ram(u32 address)
 {
   READ_PALETTE_RAM(8);
@@ -735,6 +736,7 @@ static u32 read32_palette_ram(u32 address)
 #define READ_OAM_RAM(type)                                                    \
   return ADDRESS##type(oam_ram, address & 0x3FF);                             \
 
+// OAM is 1 KiB, mirrored every 0x400 through region 7.
 static u32 read8_oam_ram(u32 address)
 {
   READ_OAM_RAM(8);
@@ -769,6 +771,7 @@ static u32 read32_oam_ram(u32 address)
     return ADDRESS##type(read_rom_block, address & 0x7FFF);                   \
   }                                                                           \
 
+// Addresses past the end of the ROM fall through READ_GAMEPAK to open bus.
 static u32 read8_gamepak(u32 address)
 {
   READ_GAMEPAK(8);
@@ -843,6 +846,8 @@ static u32 read32_ram(u32 address)
   READ_RAM(32);
 }
 
+// Only the DMA and open-bus tables use it; a CPU read of an unmapped region
+// goes to read*_open instead.
 static u32 read_null(u32 address)
 {
   return 0;
@@ -920,6 +925,8 @@ inline static CPU_ALERT_TYPE check_smc_write(u16 *metadata, u32 offset, u8 regio
   ADDRESS##type(ewram, address) = value;                                      \
   return check_smc_write(ewram_metadata, address, 0x02);                      \
 
+// EWRAM is 256 KiB, mirrored through region 2; a store over translated code
+// invalidates it (check_smc_write).
 static CPU_ALERT_TYPE write8_ewram(u32 address, u32 value)
 {
   WRITE_EWRAM(8);
@@ -940,6 +947,8 @@ static CPU_ALERT_TYPE write32_ewram(u32 address, u32 value)
   ADDRESS##type(iwram, address) = value;                                      \
   return check_smc_write(iwram_metadata, address, 0x03);                      \
 
+// IWRAM is 32 KiB, mirrored through region 3; a store over translated code
+// invalidates it (check_smc_write).
 static CPU_ALERT_TYPE write8_iwram(u32 address, u32 value)
 {
   WRITE_IWRAM(8);
@@ -1043,6 +1052,8 @@ static CPU_ALERT_TYPE write32_vram(u32 address, u32 value)
                                                                               \
   return  CPU_ALERT_NONE;                                                     \
 
+// Sets oam_update so the renderer re-sorts its sprite lists. Byte writes to
+// OAM are dropped: mem_write8 maps region 7 to write_null.
 static CPU_ALERT_TYPE write16_oam_ram(u32 address, u32 value)
 {
   WRITE_OAM_RAM(16);
