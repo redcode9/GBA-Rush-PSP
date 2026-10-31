@@ -1242,7 +1242,7 @@ static void sound_thread_wakeup(void)
 // PSP audio thread: waits until the ring holds a full block, downmixes it
 // with fast_forward_audio and outputs it. If the audio channel fails it
 // keeps retrying the reservation; during fast-forward audio, a ring starved
-// for 100 ms raises sound_take_fast_forward_fallback().
+// for 100 ms sets the flag that sound_take_fast_forward_fallback() reports.
 static int sound_update_thread(SceSize args, void *argp)
 {
   u32 buf_idx = 0;

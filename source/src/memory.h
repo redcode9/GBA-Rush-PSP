@@ -32,6 +32,7 @@
 // The DMA enums below hold DMAxCNT_H fields as decoded: start timing
 // (bits 12-13), 32-bit unit (bit 10), repeat (bit 9), source and
 // destination address control (bits 7-8, 5-6) and IRQ (bit 14).
+// DMA_INACTIVE is an emulator-only state.
 typedef enum
 {
   DMA_START_IMMEDIATELY,
