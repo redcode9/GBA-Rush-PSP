@@ -25,6 +25,7 @@ typedef struct
   uint32_t remaining;
 } VideoMosaicCounter;
 
+/* A zeroed counter takes on its first call; width 0 counts as 1. */
 static inline int video_mosaic_counter_take(VideoMosaicCounter *counter,
  uint32_t width)
 {

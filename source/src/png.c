@@ -153,6 +153,7 @@ static int write_chunk(SceUID fd, u32 chunk_type, u8 *chunk_data, u32 chunk_leng
   return 1;
 }
 
+/* The 8-byte signature that starts every PNG; 0 on a short write. */
 static int png_write_sig(SceUID fd)
 {
   /* PNG Signature */
@@ -165,6 +166,8 @@ static int png_write_sig(SceUID fd)
   return 1;
 }
 
+/* Every chunk after the signature: IHDR (8-bit RGB), IDAT, the queued tEXt
+   chunks (freed as written), IEND. Returns 0 on the first failed write. */
 static int png_write_datastream(SceUID fd, struct PngInfo *p)
 {
   u8 ihdr[13];

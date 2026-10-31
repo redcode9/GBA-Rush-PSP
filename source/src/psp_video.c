@@ -830,6 +830,8 @@ void clear_screen(u32 color)
   }
 }
 
+/* Fills the 240x160 GBA area of screen_texture with one color; reset_gba()
+ * blanks the previous game's frame with it. */
 void clear_texture(u16 color)
 {
   u32 x, y;
@@ -952,6 +954,8 @@ void draw_box_line(u16 x1, u16 y1, u16 x2, u16 y2, u16 color)
   video_ge_sync_direct();
 }
 
+/* Solid rectangle as a two-triangle strip; x2 + 1 and y2 + 1 because the GE
+ * leaves out the far edges. */
 void draw_box_fill(u16 x1, u16 y1, u16 x2, u16 y2, u16 color)
 {
   VertexLineCol16 *vertices;
@@ -1035,6 +1039,8 @@ void draw_box_alpha(u16 x1, u16 y1, u16 x2, u16 y2, u32 color)
   video_ge_sync_direct();
 }
 
+/* sx to ex inclusive; the end gets + 1 since the GE skips a line's last
+ * pixel. */
 void draw_hline(u16 sx, u16 ex, u16 y, u16 color)
 {
   VertexLineCol16 *vertices;
@@ -1067,6 +1073,7 @@ void draw_hline(u16 sx, u16 ex, u16 y, u16 color)
   video_ge_sync_direct();
 }
 
+/* Like draw_hline(), vertical, from sy to ey inclusive. */
 void draw_vline(u16 x, u16 sy, u16 ey, u16 color)
 {
   VertexLineCol16 *vertices;

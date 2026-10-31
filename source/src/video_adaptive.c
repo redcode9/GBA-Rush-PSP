@@ -57,6 +57,8 @@ static void video_adaptive_clear_window(VideoAdaptiveState *state)
   state->audio_events = 0;
 }
 
+/* Starts at SHARP with empty windows; while disabled, frames are not
+ * recorded and only video_adaptive_set_enabled() changes the quality. */
 void video_adaptive_init(VideoAdaptiveState *state, int enabled)
 {
   if(state == NULL)
