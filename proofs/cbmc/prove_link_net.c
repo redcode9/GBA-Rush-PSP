@@ -16,8 +16,10 @@
 
 #include "link_net.h"
 
+/* The 40-byte header plus 12 bytes: room for several short records. */
 #define PROOF_DATAGRAM 52u
 
+/* Left undefined on purpose: CBMC lets each call return any value. */
 uint32_t nondet_u32(void);
 uint64_t nondet_u64(void);
 size_t nondet_size(void);
@@ -26,7 +28,7 @@ int main(void)
 {
   static LinkNet net;
   uint8_t datagram[PROOF_DATAGRAM];   /* left unset: CBMC tries every value */
-  uint8_t reply[PROOF_DATAGRAM + 32u];
+  uint8_t reply[PROOF_DATAGRAM + 32u]; /* fits one full-size record */
   size_t size = nondet_size();
   size_t capacity = nondet_size();
   uint32_t queued = nondet_u32();
