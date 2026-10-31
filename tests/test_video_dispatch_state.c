@@ -1,3 +1,9 @@
+/*
+ * Host tests for video_dispatch_state.c: a renderer change requested from
+ * the menu takes effect only at the next frame boundary, so no frame is
+ * drawn by two renderers, and unknown renderer ids fall back to the new one.
+ */
+
 #include <assert.h>
 #include <stdio.h>
 

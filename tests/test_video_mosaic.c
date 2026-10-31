@@ -1,3 +1,9 @@
+/*
+ * Host tests for the horizontal mosaic counter in video_mosaic.h: with a
+ * mosaic width of w the renderer samples a new source pixel every w pixels,
+ * starting at the first pixel of each scanline.
+ */
+
 #include <assert.h>
 #include <stdio.h>
 
