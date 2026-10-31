@@ -1,10 +1,11 @@
+# Standalone EBOOT that crashes on purpose to try exception.prx; not part
+# of the release build.
 TARGET = exception_handler_test
 OBJS = ../utility/exception.o main.o
 
 #To build for custom firmware:
 BUILD_PRX = 1
 
-#CFLAGS = -O3 -G0 -Wall
 CFLAGS = -O3 -frename-registers -G0 -Wall
 CXXFLAGS = $(CFLAGS) -fno-exceptions -fno-rtti
 ASFLAGS = $(CFLAGS)
