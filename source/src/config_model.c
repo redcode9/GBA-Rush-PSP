@@ -13,7 +13,9 @@
    drops files of the older one unless it learns that layout too.
    Adding a setting: append it to model_to_values() and values_to_model()
    (limit and default), add the default to config_model_defaults(), raise
-   CONFIG_MODEL_VALUE_COUNT in config_model.h and the versions here. */
+   CONFIG_MODEL_VALUE_COUNT in config_model.h and the versions here. Then
+   map it in gui.c's capture_*_config()/apply_*_config() and add its
+   option_ global, menu row and messages. */
 #define CONFIG_MODEL_VERSION 2U
 #define CONFIG_MODEL_PREVIOUS_VERSION 1U
 #define CONFIG_MODEL_PREVIOUS_VALUE_COUNT 39U
@@ -95,19 +97,19 @@ void config_model_defaults(ConfigModel *model)
     return;
 
   memset(model, 0, sizeof(*model));
-  model->screen_scale = 6;
+  model->screen_scale = 6;              /* SCALED_16X9_AUTO */
   model->screen_magnification = 170;
   model->screen_filter = 1;
   model->frameskip_type = 0;
   model->frameskip_value = 9;
-  model->clock_speed = 3;
+  model->clock_speed = 3;               /* PSP_CLOCK_333 */
   model->sound_volume = 10;
   model->stack_optimize = 1;
   model->ram_dynarec_policy = 2;
   model->video_renderer = 1;
   model->update_backup = 1;
   model->analog_sensitivity = 4;
-  model->language = 1;
+  model->language = 1;                  /* LANGUAGE_ENGLISH */
   model->hblank_window_start = 1;
   model->hblank_window_end = 160;
   model->fast_forward_profile = 0;
