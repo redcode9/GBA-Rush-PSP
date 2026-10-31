@@ -1393,6 +1393,7 @@ static void build_legacy_menu_model(MenuModel *model, MenuRow *rows,
   display_msg                                                           \
 }                                                                       \
 
+/* Cheat rows are re-pointed at the current page by reload_cheats_page(). */
 #define CHEAT_OPTION(number)        \
 {                                   \
   NULL,                             \
@@ -1409,6 +1410,7 @@ static void build_legacy_menu_model(MenuModel *model, MenuRow *rows,
   0                                 \
 }                                   \
 
+/* Slot rows share savestate_action: left/right toggles Load and Save. */
 #define SAVESTATE_OPTION(number)              \
 {                                             \
   NULL,                                       \
