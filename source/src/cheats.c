@@ -130,6 +130,8 @@ static u32 add_hook_address(u32 *addresses, u32 *count, u32 address)
   return 1;
 }
 
+// Recollects the hook addresses of every loaded CodeBreaker cheat. Also
+// restores them after a failed load, whose check pass cleared the list.
 static void rebuild_configured_hook_index(void)
 {
   u32 i;
@@ -174,6 +176,9 @@ static u32 codebreaker_entry_hook(const CHEAT_TYPE *cheat)
   return 0;
 }
 
+// Rebuilds the enabled-cheat lists after a load or a menu toggle. Only one
+// CodeBreaker hook can be active: enabling a cheat with a new hook switches
+// to it and disables the enabled cheats on any other hook.
 void rebuild_active_cheat_indexes(void)
 {
   u32 i;
@@ -283,6 +288,8 @@ static void decrypt_gsa_code(int *address_ptr, int *value_ptr,
   *value_ptr = value;
 }
 
+// Maps the first word of a cheat header line to its type. v1 and v2 codes
+// share a key and format; a bare "#" means unencrypted v3.
 static CHEAT_VARIANT_ENUM parse_cheat_variant(const char *variant)
 {
   if(!strcasecmp(variant, "gameshark_v1") ||
@@ -516,6 +523,9 @@ static CHEAT_LOAD_RESULT parse_cheats_file(FILE *cheats_file, u32 store,
   return cheat_count ? CHEAT_LOAD_OK : CHEAT_LOAD_ERROR_EMPTY;
 }
 
+// Loads a cheat file with all cheats disabled. The file is checked before
+// the list is replaced, *error_line gets the failing line, and translated
+// code is flushed because hook calls are compiled into it.
 CHEAT_LOAD_RESULT load_cheats(const char *cheats_path, u32 *error_line)
 {
   FILE *cheats_file;
@@ -570,6 +580,8 @@ CHEAT_LOAD_RESULT load_cheats(const char *cheats_path, u32 *error_line)
   return CHEAT_LOAD_OK;
 }
 
+// Runs one GameShark / Action Replay v1-v2 (or direct v1) cheat. The opcode
+// is the address's top nibble; 0x3 takes the next lines as address pairs.
 static void process_cheat_gs1(CHEAT_TYPE *cheat)
 {
   u32 cheat_opcode;
@@ -789,6 +801,8 @@ static void process_cheat_gs3(CHEAT_TYPE *cheat)
   }
 }
 
+// Lines the code at line spans with its data lines, clipped to the cheat;
+// 0 past the end. Same as the codebreaker.c helper, for a stored cheat.
 static u32 codebreaker_operation_lines(const CHEAT_TYPE *cheat, u32 line)
 {
   u32 lines = 1;
@@ -821,6 +835,8 @@ u32 cheat_hook_configured(u32 pc)
    configured_hook_count, pc & ~1u);
 }
 
+// Runs the enabled CodeBreaker cheats when pc is the active hook. Called
+// from translated code through execute_cheat_hook in mips_stub.S.
 void process_cheats_at_hook(u32 pc)
 {
   u32 i;
@@ -834,6 +850,8 @@ void process_cheats_at_hook(u32 pc)
 }
 
 
+// Applies the enabled cheats once per frame, as VBlank ends (main.c).
+// CodeBreaker cheats run here only when no hook address is active.
 void process_cheats(void)
 {
   u32 i;

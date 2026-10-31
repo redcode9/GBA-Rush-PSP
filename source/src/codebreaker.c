@@ -165,6 +165,8 @@ uint32_t codebreaker_payload_lines(uint32_t op1, uint16_t op2)
   }
 }
 
+/* Lines the code at line spans with its data lines, clipped to line_count;
+ * 0 past the end. */
 static uint32_t codebreaker_operation_lines(const uint32_t *codes,
  uint32_t line_count, uint32_t line)
 {
