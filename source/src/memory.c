@@ -1815,8 +1815,12 @@ CPU_ALERT_TYPE write_io_register32(u32 address, u32 value)
 }
 
 
-// EEPROM is 512 bytes by default; it is autodetecte as 8KB if
+// EEPROM is 512 bytes by default; it is autodetected as 8KB if
 // 14bit address DMAs are made (this is done in the DMA handler).
+// Serial protocol, one bit per halfword access: a 2-bit command (11 read,
+// 10 write), the 6- or 14-bit number of an 8-byte block, 64 data bits for
+// a write, then a stop bit. A read then returns 4 dummy bits and 64 data
+// bits.
 
 CPU_ALERT_TYPE write_eeprom(u32 address, u32 value)
 {
@@ -1952,6 +1956,9 @@ u32 read_eeprom(void)
 }
 
 
+// Byte reads from region 0xE: SRAM, Flash (or its ID codes in ID mode) or,
+// on EEPROM carts, the tilt sensor. The first access with no detected type
+// settles on SRAM.
 u32 read_backup(u32 address)
 {
   address &= 0xFFFF;
@@ -2020,6 +2027,11 @@ u32 read_backup(u32 address)
   return value & 0xFF;
 }
 
+// Flash commands: 0xAA to 0x5555, 0x55 to 0x2AAA, then a command byte to
+// 0x5555: 0x90 ID mode, 0xF0 leave ID mode, 0xA0 write one byte, 0xB0 bank
+// switch (then the bank to 0x0000, 128KB chips), 0x80 erase (then a second
+// unlock and 0x10 for the chip, or 0x30 to a sector). The first unlock
+// write marks the backup as Flash; until then writes go to SRAM.
 CPU_ALERT_TYPE write_backup(u32 address, u32 value)
 {
   address &= 0xFFFF;
@@ -2177,6 +2189,9 @@ static u32 encode_bcd(u8 value)
   return ((value / 10) << 4) | (value % 10);
 }
 
+// The RTC sits behind a GPIO port in ROM space: data at 0x80000C4,
+// direction at 0xC6 and control at 0xC8 (rtc_registers[0..2]). Each write is
+// mirrored into the ROM page so the game reads it back.
 #define WRITE_RTC_REGISTER(index, _value)                                     \
   update_address = 0x80000C4 + (index << 1);                                  \
   rtc_registers[index] = _value;                                              \
@@ -2199,10 +2214,10 @@ CPU_ALERT_TYPE write_rtc(u32 address, u32 value)
 
   switch (address)
   {
-    // RTC command
-    // Bit 0: SCHK, perform action
-    // Bit 1: IO, input/output command data
-    // Bit 2: CS, select input/output? If high make I/O write only
+    // RTC command (GPIO data)
+    // Bit 0: SCK, serial clock
+    // Bit 1: SIO, serial data in or out
+    // Bit 2: CS, chip select; while low the SIO bit is left unchanged
     case 0xC4:
       if (rtc_state == RTC_DISABLED)
         rtc_state = RTC_IDLE;
@@ -2376,12 +2391,12 @@ CPU_ALERT_TYPE write_rtc(u32 address, u32 value)
       }
       break;
 
-    // Write parameter A
+    // Write parameter A (GPIO direction)
     case 0xC6:
       WRITE_RTC_REGISTER(1, value);
       break;
 
-    // Write parameter B
+    // Write parameter B (GPIO control; bit 0 enables the port)
     case 0xC8:
       WRITE_RTC_REGISTER(2, value);
       break;
@@ -2950,6 +2965,9 @@ void memory_term(void)
 }
 
 
+// Resets the backup state, then scans the ROM backwards for the save library
+// ID string (EEPROM_V, SRAM_V, SRAM_F_V, FLASH_V, FLASH512_V, FLASH1M_V)
+// that names the save type.
 static void load_backup_id(void)
 {
   u32 addr = 0x08000000 + gamepak_size - 4;
@@ -3053,6 +3071,8 @@ static void load_backup_id(void)
   }
 }
 
+// Loads the .sav file into gamepak_backup (0xFF fills the rest); a known
+// file size can override the save type found from the ROM's ID string.
 s32 load_backup(char *name)
 {
   SceUID backup_file;
@@ -3171,6 +3191,7 @@ void update_backup(void)
   }
 }
 
+// Saves a pending backup write now instead of after the delay.
 void update_backup_immediately(void)
 {
   if (backup_update != (WRITE_BACKUP_DELAY + 1))
