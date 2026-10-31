@@ -156,6 +156,8 @@ int perf_metrics_active(const PerfMetrics *metrics)
   return metrics != NULL && metrics->state == PERF_METRICS_ACTIVE;
 }
 
+/* A whole frame in one call: emulated, then skipped or presented. Only
+   presented frames sample the GE wait. */
 void perf_metrics_record_frame(PerfMetrics *metrics, uint32_t frame_time_us,
  uint32_t ge_wait_us, int skipped, int fast_forward)
 {
@@ -403,6 +405,8 @@ void perf_metrics_record_gba_update_iteration(PerfMetrics *metrics)
      metrics->gba_update_iterations, 1);
 }
 
+/* gamepak_pair: source and destination both lie in cartridge space
+   (0x08000000-0x0DFFFFFF). */
 void perf_metrics_record_dma(PerfMetrics *metrics, int bits32,
  uint32_t elements, uint32_t dma_us, int gamepak_pair)
 {
@@ -451,6 +455,8 @@ void perf_metrics_record_gamepak_evict_scan(PerfMetrics *metrics,
    metrics->gamepak_evict_scan_total_us, us);
 }
 
+/* One ROM page cache miss: the seek and read that loaded the page from
+   the ROM file. */
 void perf_metrics_record_gamepak_rom_io(PerfMetrics *metrics,
  uint32_t seek_us, uint32_t read_us, uint32_t bytes_read, int read_error)
 {
