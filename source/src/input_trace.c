@@ -91,6 +91,8 @@ void input_trace_init(InputTrace *trace, InputTraceEvent *events,
   trace->state = INPUT_TRACE_IDLE;
 }
 
+/* Back to IDLE, dropping any recording, replay or error; the caller's
+   event buffer stays attached. */
 void input_trace_cancel(InputTrace *trace)
 {
   InputTraceEvent *events;
@@ -201,6 +203,8 @@ size_t input_trace_encoded_size(const InputTrace *trace)
    (size_t)trace->event_count * INPUT_TRACE_EVENT_SIZE;
 }
 
+/* Serializes a READY trace in the layout at the top of the file; fails
+   without writing when output is smaller than input_trace_encoded_size(). */
 int input_trace_encode(const InputTrace *trace, uint8_t *output,
  size_t output_size, size_t *written)
 {
@@ -341,6 +345,7 @@ int input_trace_begin_record_from_header(InputTrace *trace,
    header[0xBC], initial_keys);
 }
 
+/* Like input_trace_begin_record_from_header(), for a replay. */
 int input_trace_begin_replay_from_header(InputTrace *trace,
  const uint8_t *encoded, size_t encoded_size,
  const uint8_t header[INPUT_TRACE_IDENTITY_SIZE], uint32_t file_size,

@@ -471,6 +471,8 @@ u32 update_input(void)
 }
 
 
+/* Startup controller setup with the user-mode read calls;
+   init_input_kernel() is the kubridge alternative. */
 void init_input(void)
 {
   // Sample once per display frame, with the analog stick on
