@@ -75,6 +75,10 @@ const char *psp_adhoc_phase_name(PspAdhocPhase phase);
    the link protocol repeats anything that matters. */
 int psp_adhoc_send(const uint8_t *data, size_t size);
 size_t psp_adhoc_receive(uint8_t *data, size_t capacity);
+/* Datagrams handed to the PSP network stack, those it refused, and
+   incoming datagrams lost to a full queue. */
+void psp_adhoc_counters(uint32_t *sends, uint32_t *send_errors,
+ uint32_t *receive_drops);
 /* Sleeps until a datagram arrives or the timeout expires. */
 void psp_adhoc_wait(unsigned int timeout_us);
 

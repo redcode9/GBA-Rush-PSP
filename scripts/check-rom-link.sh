@@ -7,7 +7,8 @@ set -eu
 #   ROM BIOS SAVE  your own FireRed ROM, GBA BIOS and a save whose last
 #             Pokemon Center visit was in a town and whose player has not
 #             been upstairs in a Pokemon Center yet
-#   ROM2 SAVE2  optional second game (defaults to ROM and SAVE)
+#   ROM2 SAVE2  optional second game (defaults to ROM and SAVE), such as
+#             LeafGreen with a matching save
 # The script trades the host's first Pokemon for the joiner's second one,
 # then checks both saved parties, under several network conditions and once
 # in the lockstep mode used for every non-Pokemon game.
@@ -27,7 +28,7 @@ absolute()
   esac
 }
 
-out=build/rom_link
+out=${OUT:-build/rom_link}
 mkdir -p "$out"
 frameworks=
 if [ "$(uname)" = Darwin ]; then
@@ -80,5 +81,12 @@ run_case adhoc "net 3000 4000 3 1"
 run_case noisy "net 8000 15000 15 5"
 run_case slow-joiner "net 3000 4000 3 1" "speed 1 0.8"
 run_case slow-host-noisy "net 8000 15000 15 5" "speed 0 0.8"
+# Conditions measured between a PSP-2000 and a PSP-1000: each console runs
+# a frame in a burst and leaves the link alone while it waits for VBlank,
+# over a 70 ms round trip that loses a third of the datagrams. The second
+# case adds radio dropouts and a joiner that freezes now and then.
+run_case psp "net 20000 30000 35 1" "psp 0 10" "psp 1 10"
+run_case psp-stalls "net 20000 30000 35 1" "psp 0 10" "psp 1 10" \
+  "outage 7000 250" "hiccup 1 9000 600"
 run_case lockstep "net 3000 4000 3 1" lockstep
 echo "ROM link checks passed"

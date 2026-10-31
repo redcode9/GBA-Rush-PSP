@@ -16,7 +16,9 @@ case "$version" in
 esac
 
 documentation_files='LICENSE NOTICE README.md CHANGELOG.md CONTRIBUTING.md
-docs/link-cable.md docs/ROADMAP-1.4.0.md source/copyright source/res/PIC1.png'
+docs/link-cable.md docs/ROADMAP-1.4.0.md docs/images/link-trade-room.jpg
+docs/images/link-cable-club.jpg docs/images/link-trainer-card.jpg
+source/copyright source/res/PIC1.png'
 
 for required in source/EBOOT.PBP source/exception.prx $documentation_files
 do
