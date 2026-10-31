@@ -61,6 +61,7 @@ int kuImposeGetParam(SceImposeParam param)
   return ret;
 }
 
+/* Like kuImposeGetParam(), for setting a value. */
 int kuImposeSetParam(SceImposeParam param, int value)
 {
   int k1 = pspSdkSetK1(0);
@@ -70,6 +71,7 @@ int kuImposeSetParam(SceImposeParam param, int value)
 }
 
 
+/* Calls the firmware's sceCtrlSetSamplingCycle; -1 before init_ku_bridge(). */
 int kuCtrlSetSamplingCycle(int cycle)
 {
   if (__sceCtrlSetSamplingCycle)
@@ -83,6 +85,7 @@ int kuCtrlSetSamplingCycle(int cycle)
   return -1;
 }
 
+/* Like kuCtrlSetSamplingCycle(), for the analog sampling mode. */
 int kuCtrlSetSamplingMode(int mode)
 {
   if (__sceCtrlSetSamplingMode)
@@ -97,6 +100,7 @@ int kuCtrlSetSamplingMode(int mode)
 }
 
 
+/* Copies the latest pad samples without waiting; -1 before init_ku_bridge(). */
 int kuCtrlPeekBufferPositive(SceCtrlData *pad_data, int count)
 {
   if (__sceCtrlPeekBufferPositive)
@@ -110,6 +114,7 @@ int kuCtrlPeekBufferPositive(SceCtrlData *pad_data, int count)
   return -1;
 }
 
+/* Like kuCtrlPeekBufferPositive(), but blocks until the next sample. */
 int kuCtrlReadBufferPositive(SceCtrlData *pad_data, int count)
 {
   if (__sceCtrlReadBufferPositive)
@@ -151,6 +156,8 @@ void init_ku_bridge(int devkit_version)
 }
 
 
+/* Leaves every kuCtrl* wrapper returning -1 until the emulator calls
+   init_ku_bridge(). */
 int module_start(SceSize args, void *argp)
 {
   __sceCtrlSetSamplingCycle = NULL;
@@ -162,6 +169,7 @@ int module_start(SceSize args, void *argp)
   return 0;
 }
 
+/* Nothing to undo on unload. */
 int module_stop(void)
 {
   return 0;

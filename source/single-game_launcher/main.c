@@ -294,6 +294,8 @@ static void ensure_trailing_slash(char *path, size_t size)
     }
 }
 
+/* Validates both text files and the paths they name, then replaces this
+ * process with the emulator; each failure shows error_screen() and exits. */
 int main(int argc, char *argv[])
 {
     char my_dir[MAX_PATH];
