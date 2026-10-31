@@ -697,6 +697,7 @@ class AudioTabMixin:
         current_id = self._yt_download_id
 
         def _thread_worker():
+            """Download off the UI thread and post the result back via after()."""
             try:
                 from convert import download_youtube
                 # Use nanosecond timestamp for unique temp filename (avoids Windows lock issues)

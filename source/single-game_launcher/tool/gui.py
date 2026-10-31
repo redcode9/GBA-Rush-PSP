@@ -401,6 +401,7 @@ class BuilderApp(InfoTabMixin, ImagesTabMixin, AudioTabMixin,
                 self.func = func
                 self._aid = None
             def __call__(self):
+                """Forget the after() id once it fires, then run func."""
                 if self._aid is not None:
                     self.app._after_ids.discard(self._aid)
                 self.func()

@@ -32,6 +32,7 @@ APP_NAME = "GBA Rush PSP Single-Game Launcher Builder"
 
 
 def main():
+    """Run PyInstaller and lay out build_exe_output/ as described above."""
     here = Path(__file__).parent
     output_dir = here / "build_exe_output"
 

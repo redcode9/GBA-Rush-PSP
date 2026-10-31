@@ -215,6 +215,7 @@ class ImagesTabMixin:
         self.update()
 
         def _thread_worker():
+            """Run the steps above off the UI thread."""
             try:
                 # Step 1: Download raw bytes
                 tmp_raw = self._temp_dir / f"dl_{asset_type}_raw"

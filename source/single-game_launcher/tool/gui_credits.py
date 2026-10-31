@@ -151,6 +151,7 @@ class CreditsMixin:
             if remaining:
                 text.insert("end", remaining, base_tag)
 
+        # Show a hand cursor while the pointer is over a link.
         def on_enter(e, t=text):
             t.config(cursor="hand2")
 
