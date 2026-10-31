@@ -1222,8 +1222,8 @@ store_update_gba:
 # See smc_write for its register assignment.
 /* Bits 0-1 of [3] (not just bit 0) mark Thumb and ARM code; see cpu.c. */
 .macro post_write_metadata_core base, metabase, memory_region
-  srl $2, $4, 2                   # $2 = (address & ~3) [>> 2]
-  sll $2, $2, 3                   # byte offset into a 16-bit array: * 2
+  srl $2, $4, 2                   # $2 = word index (address >> 2)
+  sll $2, $2, 3                   # * 8: an entry is 4 u16 per GBA word
   la $1, \metabase                # load the Metadata Area's address
   addu $1, $1, $2                 # $1 = &metabase[offset] (u16)
 
@@ -1252,8 +1252,8 @@ post_write_metadata_vram:
 /* STM onto the IWRAM stack: drop the tags and flags of just this word,
  * without a partial clear or a PC lookup. */
 post_write_metadata_aligned_iwram:
-  srl $2, $4, 2                   # $2 = (address & ~3) [>> 2]
-  sll $2, $2, 3                   # byte offset into a 16-bit array: * 2
+  srl $2, $4, 2                   # $2 = word index (address >> 2)
+  sll $2, $2, 3                   # * 8: an entry is 4 u16 per GBA word
   la $1, iwram_metadata
   addu $1, $1, $2                 # $1 = &iwram_metadata[offset]
 
