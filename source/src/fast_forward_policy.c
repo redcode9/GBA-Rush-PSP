@@ -56,6 +56,8 @@ static void set_active(FastForwardPolicy *policy, int active)
   policy->force_present = 1;
 }
 
+/* The settings used until a config is read: MODERN, hold for maximum
+   speed, silent audio. */
 void fast_forward_settings_defaults(FastForwardSettings *settings)
 {
   if(settings == NULL)
@@ -68,6 +70,8 @@ void fast_forward_settings_defaults(FastForwardSettings *settings)
   settings->audio = FAST_FORWARD_AUDIO_SILENT;
 }
 
+/* Resets each out-of-range field (an old or damaged config value) to its
+   default. */
 void fast_forward_settings_sanitize(FastForwardSettings *settings)
 {
   if(settings == NULL)
@@ -85,6 +89,8 @@ void fast_forward_settings_sanitize(FastForwardSettings *settings)
     settings->audio = FAST_FORWARD_AUDIO_SILENT;
 }
 
+/* Starts inactive with sanitized settings (the defaults when settings is
+   NULL); the first frame is always shown. */
 void fast_forward_policy_init(FastForwardPolicy *policy,
  const FastForwardSettings *settings)
 {
@@ -152,6 +158,8 @@ void fast_forward_policy_input(FastForwardPolicy *policy, int pressed,
   }
 }
 
+/* Turns fast-forward off and clears the held button, CLASSIC step and audio
+   fallback so the next start is fresh (menu, reset, suspend, link). */
 void fast_forward_policy_stop(FastForwardPolicy *policy)
 {
   if(policy == NULL)
