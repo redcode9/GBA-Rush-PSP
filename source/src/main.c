@@ -1736,7 +1736,7 @@ static void psp_sleep_loop(void)
   if (FILE_CHECK_VALID(gamepak_file_large))
   {
     FILE_CLOSE(gamepak_file_large);
-    gamepak_file_large = -1;
+    gamepak_file_large = GAMEPAK_FILE_NONE;
     sleep_reopen_gamepak = 1;
   }
 
@@ -1776,7 +1776,7 @@ void main_power_service(void)
   if(FILE_CHECK_VALID(gamepak_file_large) && !sleep_reopen_gamepak)
   {
     FILE_CLOSE(gamepak_file_large);
-    gamepak_file_large = -1;
+    gamepak_file_large = GAMEPAK_FILE_NONE;
     sleep_reopen_gamepak = 1;
   }
 

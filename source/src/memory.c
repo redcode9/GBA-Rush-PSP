@@ -124,7 +124,7 @@ GamepakSwapEntryType *gamepak_memory_map;
 // pages from, so there's no slowdown with opening and closing the file
 // a lot.
 
-SceUID gamepak_file_large = -1;
+SceUID gamepak_file_large = GAMEPAK_FILE_NONE;
 
 // Writes to these respective locations should trigger an update
 // so the related subsystem may react to it.
@@ -3542,7 +3542,7 @@ s32 load_gamepak(char *name)
   char *dot_position = strrchr(name, '.');
 
   s32 file_size = -1;
-  gamepak_file_large = -1;
+  gamepak_file_large = GAMEPAK_FILE_NONE;
 
   draw_popup_frame_auto(110, 50, 260, 170);
   print_string_gbk(MSG[MSG_LOADING_ROM], X_POS_CENTER, 100, color_active_item, BG_NO_FILL);

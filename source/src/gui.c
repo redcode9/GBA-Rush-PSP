@@ -5374,12 +5374,12 @@ u32 menu(void)
 
   load_savestate_timestamps();
 
-  /* Close the streamed ROM file while the menu runs; -2 tells the exit path
-     to reopen it (gamepak_file_reopen). */
+  /* Close the streamed ROM file while the menu runs; the exit path
+     sees GAMEPAK_FILE_MENU_CLOSED and reopens it (gamepak_file_reopen). */
   if (FILE_CHECK_VALID(gamepak_file_large))
   {
     FILE_CLOSE(gamepak_file_large);
-    gamepak_file_large = -2;
+    gamepak_file_large = GAMEPAK_FILE_MENU_CLOSED;
   }
 
 
@@ -5843,7 +5843,7 @@ u32 menu(void)
 
   scePowerLock(0);
 
-  if (gamepak_file_large == -2)
+  if (gamepak_file_large == GAMEPAK_FILE_MENU_CLOSED)
     gamepak_file_reopen();
 
   /* Wait for every button up to HOME (PSP_CTRL bits 0-16) to be released so

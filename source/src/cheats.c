@@ -623,7 +623,7 @@ static void process_cheat_gs1(CHEAT_TYPE *cheat)
 
       // ROM patch, only when the whole ROM is in memory
       case 0x6:
-        if(gamepak_file_large == -1)
+        if(gamepak_file_large == GAMEPAK_FILE_NONE)
         {
           ADDRESS16(gamepak_rom, (address * 2) - 0x08000000)
            = (value & 0xFFFF);

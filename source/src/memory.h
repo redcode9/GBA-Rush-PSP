@@ -161,6 +161,9 @@ typedef enum
 extern char gamepak_filename[MAX_FILE];
 extern char gamepak_filename_raw[MAX_FILE];
 
+/* Handle of a ROM streamed from storage (too big for its buffer), or: */
+#define GAMEPAK_FILE_NONE        (-1)  /* no ROM file open */
+#define GAMEPAK_FILE_MENU_CLOSED (-2)  /* closed while the menu runs */
 extern SceUID gamepak_file_large;
 extern u8 *gamepak_rom;
 #define GAMEPAK_HEADER_SIZE 0xC0u
