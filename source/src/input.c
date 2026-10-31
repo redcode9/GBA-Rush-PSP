@@ -491,6 +491,9 @@ void init_input(void)
   __sceCtrlReadBufferPositive = sceCtrlReadBufferPositive;
 }
 
+/* Switches pad sampling and reads to the ku_bridge kernel calls, which
+   fail until init_ku_bridge. Skips init_input's mask and trace setup;
+   nothing calls it at present. */
 void init_input_kernel(void)
 {
   kuCtrlSetSamplingCycle(0);
@@ -501,6 +504,9 @@ void init_input_kernel(void)
 }
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+/* GUI side of the one diagnostic trace. These pass update_input's frame
+   count and the loaded ROM's header, which tags the trace with its game
+   code and revision. */
 int input_diagnostic_trace_begin_record(void)
 {
   return input_trace_begin_record_from_header(&diagnostic_trace,
@@ -520,6 +526,8 @@ int input_diagnostic_trace_encode(u8 *output, size_t output_size,
   return input_trace_encode(&diagnostic_trace, output, output_size, written);
 }
 
+/* Starts at the current frame; fails with an IDENTITY error unless the
+   trace was recorded with this ROM's game code and revision. */
 int input_diagnostic_trace_begin_replay(const u8 *encoded,
  size_t encoded_size)
 {
@@ -547,6 +555,8 @@ u32 input_diagnostic_trace_event_count(void)
   return diagnostic_trace.event_count;
 }
 
+/* A trace with every event slot used: the GUI's encode buffer size and
+   the largest trace file it will load. */
 size_t input_diagnostic_trace_max_encoded_size(void)
 {
   return INPUT_TRACE_HEADER_SIZE +
