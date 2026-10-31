@@ -1441,10 +1441,12 @@ CPU_ALERT_TYPE write_io_register8(u32 address, u32 value)
 // DMA, timers, IRQ, link). Returns CPU_ALERT_* bits for the caller.
 CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
 {
+  /* Cases are byte offsets from 0x4000000; the REG_* names in memory.h are
+     halfword indexes (offset / 2). Each case names its GBA register. */
   switch (address)
   {
     // DISPCNT
-    case 0x00:
+    case 0x00:  // DISPCNT
     {
       u16 bg_mode = value & 0x07;
       u16 dispcnt = pIO_REG(REG_DISPCNT);
@@ -1474,258 +1476,258 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
     }
 
     // DISPSTAT (bits 0-2, the blank and VCount match flags, are read-only)
-    case 0x04:
+    case 0x04:  // DISPSTAT
       ADDRESS16(io_registers, 0x04) = (ADDRESS16(io_registers, 0x04) & 0x07) | (value & ~0x07);
       break;
 
     // VCOUNT
-    case 0x06:
+    case 0x06:  // VCOUNT
       /* Read only */
       break;
 
     // BG2 reference X (28-bit signed fixed point, sign-extended here)
-    case 0x28:
+    case 0x28:  // BG2X_L
       ACCESS_REGISTER16_LOW(0x28);
       affine_reference_x[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x28) = value;
       break;
 
-    case 0x2A:
+    case 0x2A:  // BG2X_H
       ACCESS_REGISTER16_HIGH(0x28);
       affine_reference_x[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x28) = value;
       break;
 
     // BG2 reference Y
-    case 0x2C:
+    case 0x2C:  // BG2Y_L
       ACCESS_REGISTER16_LOW(0x2C);
       affine_reference_y[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x2C) = value;
       break;
 
-    case 0x2E:
+    case 0x2E:  // BG2Y_H
       ACCESS_REGISTER16_HIGH(0x2C);
       affine_reference_y[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x2C) = value;
       break;
 
     // BG3 reference X
-    case 0x38:
+    case 0x38:  // BG3X_L
       ACCESS_REGISTER16_LOW(0x38);
       affine_reference_x[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x38) = value;
       break;
 
-    case 0x3A:
+    case 0x3A:  // BG3X_H
       ACCESS_REGISTER16_HIGH(0x38);
       affine_reference_x[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x38) = value;
       break;
 
     // BG3 reference Y
-    case 0x3C:
+    case 0x3C:  // BG3Y_L
       ACCESS_REGISTER16_LOW(0x3C);
       affine_reference_y[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x3C) = value;
       break;
 
-    case 0x3E:
+    case 0x3E:  // BG3Y_H
       ACCESS_REGISTER16_HIGH(0x3C);
       affine_reference_y[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x3C) = value;
       break;
 
     // Sound 1 control sweep
-    case 0x60:
+    case 0x60:  // SOUND1CNT_L
       value &= 0x007F;
       gbc_sound_tone_control_sweep(value);
       ADDRESS16(io_registers, 0x60) = value;
       break;
 
     // Sound 1 control duty/length/envelope
-    case 0x62:
+    case 0x62:  // SOUND1CNT_H
       gbc_sound_tone_control_low(0, value);
       ADDRESS16(io_registers, 0x62) = value;
       break;
 
     // Sound 1 control frequency
-    case 0x64:
+    case 0x64:  // SOUND1CNT_X
       gbc_sound_tone_control_high(0, value);
       ADDRESS16(io_registers, 0x64) = value & 0x47FF;
       break;
 
     // Sound 2 control duty/length/envelope
-    case 0x68:
+    case 0x68:  // SOUND2CNT_L
       gbc_sound_tone_control_low(1, value);
       ADDRESS16(io_registers, 0x68) = value;
       break;
 
     // Sound 2 control frequency
-    case 0x6C:
+    case 0x6C:  // SOUND2CNT_H
       gbc_sound_tone_control_high(1, value);
       ADDRESS16(io_registers, 0x6C) = value & 0x47FF;
       break;
 
     // Sound 3 control wave
-    case 0x70:
+    case 0x70:  // SOUND3CNT_L
       gbc_sound_wave_control(value);
       ADDRESS16(io_registers, 0x70) = value & 0x00E0;
       break;
 
     // Sound 3 control length/volume
-    case 0x72:
+    case 0x72:  // SOUND3CNT_H
       gbc_sound_tone_control_low_wave(value);
       ADDRESS16(io_registers, 0x72) = value;
       break;
 
     // Sound 3 control frequency
-    case 0x74:
+    case 0x74:  // SOUND3CNT_X
       gbc_sound_tone_control_high_wave(value);
       ADDRESS16(io_registers, 0x74) = value;
       break;
 
     // Sound 4 control length/envelope
-    case 0x78:
+    case 0x78:  // SOUND4CNT_L
       gbc_sound_tone_control_low(3, value);
       ADDRESS16(io_registers, 0x78) = value;
       break;
 
     // Sound 4 control frequency
-    case 0x7C:
+    case 0x7C:  // SOUND4CNT_H
       gbc_sound_noise_control(value);
       ADDRESS16(io_registers, 0x7C) = value & 0x40FF;
       break;
 
     // Sound control L
-    case 0x80:
+    case 0x80:  // SOUNDCNT_L
       sound_control_low(value);
       ADDRESS16(io_registers, 0x80) = value & 0xFF77;
       break;
 
     // Sound control H
-    case 0x82:
+    case 0x82:  // SOUNDCNT_H
       sound_control_high(value);
       ADDRESS16(io_registers, 0x82) = value & 0x770F;
       break;
 
     // Sound control X
-    case 0x84:
+    case 0x84:  // SOUNDCNT_X
       sound_control_x(value);
       ADDRESS16(io_registers, 0x84) = (ADDRESS16(io_registers, 0x84) & 0x000F) | (value & 0xFFF0);
       break;
 
     // Sound wave RAM
-    case 0x90: case 0x92: case 0x94: case 0x96:
-    case 0x98: case 0x9A: case 0x9C: case 0x9E:
+    case 0x90: case 0x92: case 0x94: case 0x96:  // WAVE_RAM
+    case 0x98: case 0x9A: case 0x9C: case 0x9E:  // WAVE_RAM
       gbc_sound_wave_pattern_ram16(address, value);
       ADDRESS16(io_registers, address) = value;
       break;
 
     // Sound FIFO A
-    case 0xA0:
-    case 0xA2:
+    case 0xA0:  // FIFO_A
+    case 0xA2:  // FIFO_A
       ADDRESS16(io_registers, address) = value;
       sound_timer_queue(0);
       break;
 
     // Sound FIFO B
-    case 0xA4:
-    case 0xA6:
+    case 0xA4:  // FIFO_B
+    case 0xA6:  // FIFO_B
       ADDRESS16(io_registers, address) = value;
       sound_timer_queue(1);
       break;
 
     // DMA Source Address High (internal memory)
-    case 0xB2:
+    case 0xB2:  // DMA0SAD_H
     // DMA Destination Address High (internal memory)
-    case 0xB6: case 0xC2: case 0xCe:
+    case 0xB6: case 0xC2: case 0xCE:  // DMA0DAD_H, DMA1DAD_H, DMA2DAD_H
       ADDRESS16(io_registers, address) = value & 0x07FF;
       break;
 
     // DMA Source Address High (any memory)
-    case 0xBe: case 0xCA: case 0xD6:
+    case 0xBE: case 0xCA: case 0xD6:  // DMA1SAD_H, DMA2SAD_H, DMA3SAD_H
     // DMA Destination Address High (any memory)
-    case 0xDA:
+    case 0xDA:  // DMA3DAD_H
       ADDRESS16(io_registers, address) = value & 0x0FFF;
       break;
 
     // DMA Word Count (14 bit)
-    case 0xB8: case 0xC4: case 0xD0:
+    case 0xB8: case 0xC4: case 0xD0:  // DMA0CNT_L, DMA1CNT_L, DMA2CNT_L
       ADDRESS16(io_registers, address) = value & 0x3FFF;
       break;
 
     // DMA control
-    case 0xBA:
+    case 0xBA:  // DMA0CNT_H
       ADDRESS16(io_registers, 0xBA) = value;
       TRIGGER_DMA0();
       break;
 
-    case 0xC6:
+    case 0xC6:  // DMA1CNT_H
       ADDRESS16(io_registers, 0xC6) = value;
       TRIGGER_DMA1();
       break;
 
-    case 0xD2:
+    case 0xD2:  // DMA2CNT_H
       ADDRESS16(io_registers, 0xD2) = value;
       TRIGGER_DMA2();
       break;
 
-    case 0xDE:
+    case 0xDE:  // DMA3CNT_H
       ADDRESS16(io_registers, 0xDE) = value;
       TRIGGER_DMA3();
       break;
 
     // Timer counts
-    case 0x100:
+    case 0x100:  // TM0CNT_L
       timer_control_low(0, value);
       break;
 
-    case 0x104:
+    case 0x104:  // TM1CNT_L
       timer_control_low(1, value);
       break;
 
-    case 0x108:
+    case 0x108:  // TM2CNT_L
       timer_control_low(2, value);
       break;
 
-    case 0x10C:
+    case 0x10C:  // TM3CNT_L
       timer_control_low(3, value);
       break;
 
     // Timer control
-    case 0x102:
+    case 0x102:  // TM0CNT_H
       ADDRESS16(io_registers, 0x102) = value;
       return timer_control_high(0, value);
 
-    case 0x106:
+    case 0x106:  // TM1CNT_H
       ADDRESS16(io_registers, 0x106) = value;
       return timer_control_high(1, value);
 
-    case 0x10A:
+    case 0x10A:  // TM2CNT_H
       ADDRESS16(io_registers, 0x10A) = value;
       return timer_control_high(2, value);
 
-    case 0x10E:
+    case 0x10E:  // TM3CNT_H
       ADDRESS16(io_registers, 0x10e) = value;
       return timer_control_high(3, value);
 
     // GBA serial registers
-    case 0x120: case 0x122: case 0x124: case 0x126:
-    case 0x128:
-    case 0x12A:
-    case 0x134:
+    case 0x120: case 0x122: case 0x124: case 0x126:  // SIOMULTI0-3
+    case 0x128:  // SIOCNT
+    case 0x12A:  // SIOMLT_SEND
+    case 0x134:  // RCNT
       if(address == GBA_SIO_REG_CONTROL || address == GBA_SIO_REG_RCNT)
         gba_sio_state_dirty = 1;
       return gba_sio_alert(gba_sio_write16(&gba_sio, address,
        (u16)value));
 
     // P1
-    case 0x130:
+    case 0x130:  // KEYINPUT
       /* Read only */
       break;
 
     // IE - Interrupt Enable Register (14 interrupt sources)
-    case 0x200:
+    case 0x200:  // IE
       value &= 0x3FFF;
       ADDRESS16(io_registers, 0x200) = value;
       if (((value & pIO_REG(REG_IF)) != 0) && GBA_IME_STATE && ARM_IRQ_STATE)
@@ -1733,18 +1735,18 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       break;
 
     // IF - Interrupt Request flags (writing 1 acknowledges a request)
-    case 0x202:
+    case 0x202:  // IF
       value = ~value & 0x3FFF;
       ADDRESS16(io_registers, 0x202) &= value;
       break;
 
     // WAITCNT
-    case 0x204:
+    case 0x204:  // WAITCNT
       waitstate_control(value);
       break;
 
     // IME - Interrupt Master Enable Register
-    case 0x208:
+    case 0x208:  // IME
       value &= 0x0001;
       ADDRESS16(io_registers, 0x208) = value;
       if (((pIO_REG(REG_IE) & pIO_REG(REG_IF)) != 0) && (value != 0) && ARM_IRQ_STATE)
@@ -1752,7 +1754,7 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       break;
 
     // Halt
-    case 0x300:
+    case 0x300:  // POSTFLG/HALTCNT
       if ((value & 0x8000) != 0)
         reg[CPU_HALT_STATE] = CPU_STOP;
       else
