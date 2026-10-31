@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-PyInstaller build script for creating a standalone Windows executable.
+PyInstaller build script that bundles the builder, its assets (including the
+launcher stub assets/EBOOT.PBP) and the ffmpeg, atracdenc and yt-dlp binaries
+into one standalone executable for the current platform.
 
 Output layout:
     build_exe_output/

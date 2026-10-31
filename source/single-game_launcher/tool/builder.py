@@ -4,6 +4,15 @@
 """
 PBP injection and build orchestration.
 
+A build produces one folder for the user to copy to PSP/GAME/<folder>/:
+  - EBOOT.PBP: the launcher stub (assets/EBOOT.PBP, built from ../main.c by
+    `make launcher-stub`) with this game's PARAM.SFO title, ICON0, PIC0,
+    PIC1 and SND0 swapped in. DATA.PSP, the stub's code, is kept as is.
+  - rom_path.txt and emulator_path.txt: read by the stub at boot to find the
+    ROM and the GBA Rush PSP EBOOT, which it then starts with the ROM path
+    as argv[1].
+  - assets/ (the converted PNG/AT3 files) and readme.txt (install notes).
+
 This module handles:
   - Parsing and editing the PARAM.SFO inside an EBOOT.PBP stub
   - Replacing image/audio sections in the PBP
@@ -42,7 +51,8 @@ class SFOEditor:
         if len(self.raw) < 20 or self.raw[:4] != b'\x00PSF':
             raise PBPBuilderError("Invalid SFO signature")
 
-        # Parse SFO header
+        # Parse SFO header: magic, version, key table offset, data table
+        # offset, entry count (5 x u32 = 20 bytes)
         self.key_offset = struct.unpack('<I', self.raw[8:12])[0]
         self.data_offset = struct.unpack('<I', self.raw[12:16])[0]
         self.count = struct.unpack('<I', self.raw[16:20])[0]
@@ -62,6 +72,7 @@ class SFOEditor:
     def _parse_entries(self):
         """Parse all SFO entries into self.entries list."""
         for i in range(self.count):
+            # Index table follows the 20-byte header, 16 bytes per entry
             off = 20 + i * 16
             name_off = struct.unpack('<H', self.raw[off:off+2])[0]
             align = self.raw[off+2]
@@ -241,7 +252,7 @@ class PBPBuilder:
 
         with open(output_path, 'wb') as f:
             f.write(b'\x00PBP')
-            f.write(struct.pack('<I', 0x00010000))
+            f.write(struct.pack('<I', 0x00010000))  # PBP format version 1.0
             f.write(struct.pack('<8I', *offsets))
             for i in range(8):
                 if i in self.sections:

@@ -11,6 +11,14 @@ such as audio playback, temporary directories, and the title scroll animation.
 The app uses a mixin architecture: BuilderApp inherits from tab-specific mixins
 (InfoTabMixin, ImagesTabMixin, etc.) plus customtkinter.CTk. Each mixin handles
 one tab's UI and logic, keeping the codebase modular.
+
+The mixins share state as attributes of the one BuilderApp instance (e.g.
+title_entry is created in gui_info.py and read in gui_build.py), so attribute
+and method names are effectively global across the gui_*.py files.
+
+Build flow: the Build tab (gui_build.py) snapshots the widgets and runs
+builder.SingleGameBuilder in a worker thread, which converts the assets
+(convert.py, riff.py) and writes the output folder described in builder.py.
 """
 
 import sys
