@@ -9,6 +9,10 @@
  * the License, or (at your option) any later version.
  */
 
+/* PSP ad-hoc worker for the link cable: network start-up and teardown, the
+   PDP socket and the two lock-free datagram queues. psp_adhoc.h describes
+   the threading contract. */
+
 #include <string.h>
 
 #include <pspkernel.h>
