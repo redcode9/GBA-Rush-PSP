@@ -32,10 +32,10 @@ enum
 #define LINK_HEARTBEAT_IDLE_US   250000u
 #define LINK_HEARTBEAT_ACTIVE_US  16000u
 
-/* Pacing: while the link is in use, a console may run at most this far
-   ahead of the other one's guest clock. The figure covers network delay
-   and the heartbeat interval, so it only bites on a real speed difference
-   or when the other console is paused. */
+/* Lockstep pacing: while the link is in use, a console may run at most
+   this far ahead of the other one's guest clock. The figure covers network
+   delay and the heartbeat interval, so it only bites on a real speed
+   difference or when the other console is paused. */
 #define LINK_MAX_LEAD (4u * LINK_CYCLES_PER_FRAME)
 /* A lockstep link counts as in use for one second after a transfer. */
 #define LINK_LOCKSTEP_ACTIVE (60u * LINK_CYCLES_PER_FRAME)
@@ -50,6 +50,22 @@ enum
 #define POKEMON_FRAME_INTERVAL      28672u
 /* A connected game that keeps sending handshake words has restarted. */
 #define POKEMON_RESTART_WORDS          18u
+/* LINKCMD_SEND_HELD_KEYS: in the Cable Club rooms every game sends its
+   held keys this way on every frame. */
+#define POKEMON_HELD_KEYS 0xCAFEu
+/* Frames kept in the loop between the two games in the rooms: a Wi-Fi
+   round trip plus a margin for jitter, within these bounds. A smaller
+   margin shortens the delay in the rooms but makes the consoles wait for
+   each other more often. */
+#define POKEMON_LOOP_MARGIN  5u
+#define POKEMON_LOOP_MIN     3u
+#define POKEMON_LOOP_MAX    15u
+/* A console never waits longer than this for the other one's frame. */
+#define POKEMON_WAIT_LIMIT_US 1000000u
+/* Messages the other console may leave unconsumed before this one waits,
+   which keeps a long outage from overflowing the channel. */
+#define POKEMON_MAX_BACKLOG 64u
+#define LINK_FRAME_US 16743u
 
 static void put16(uint8_t *out, uint16_t value)
 {
@@ -406,6 +422,8 @@ static void pokemon_set_local(LinkPokemon *pokemon, LinkPokemonState state)
   pokemon->offset = 0;
   pokemon->handshake_repeats = 0;
   pokemon->pair_valid = 0;
+  pokemon->keys = 0;
+  pokemon->waiting = 0;
   if(state != LINK_POKEMON_HANDSHAKE)
     pokemon->handshake_count = 0;
 }
@@ -458,6 +476,10 @@ static void pokemon_take_pair(LinkCable *cable, uint32_t cycle)
       pokemon->pair[1][i] = get16(message->data + 16 + i * 2);
     }
   }
+  if(cable->host && message->size >= 20)
+    pokemon->answered = get32(message->data + 16);
+  if(!cable->host)
+    pokemon->pairs_seen++;
   pokemon->pair_valid = 1;
   pokemon->frames_received++;
   link_net_pop(&cable->net);
@@ -514,6 +536,9 @@ static void pokemon_frame_word(LinkCable *cable, uint16_t local_word,
     return;
 
   pokemon->offset = 0;
+  pokemon->keys = (cable->host ? pokemon->local_words[0] :
+   pokemon->pair[0][0]) == POKEMON_HELD_KEYS ||
+   pokemon->pair[1][0] == POKEMON_HELD_KEYS;
   if(cable->host)
   {
     if(pokemon_words_nonzero(pokemon->local_words) || pokemon->pair_valid)
@@ -530,12 +555,15 @@ static void pokemon_frame_word(LinkCable *cable, uint16_t local_word,
       pokemon->frames_sent++;
     }
   }
-  else if(pokemon_words_nonzero(pokemon->local_words))
+  else if(pokemon_words_nonzero(pokemon->local_words) || pokemon->keys)
   {
-    uint8_t message[16];
+    /* In the rooms the host waits for an answer to each of its frames,
+       so the joiner answers even when it has nothing to say. */
+    uint8_t message[20];
 
     for(i = 0; i < 8; i++)
       put16(message + i * 2, pokemon->local_words[i]);
+    put32(message + 16, pokemon->pairs_seen);
     link_cable_queue(cable, LINK_MSG_POKEMON_WORDS, message,
      sizeof(message));
     pokemon->frames_sent++;
@@ -631,6 +659,60 @@ static void pokemon_joiner_transfer(LinkCable *cable, uint32_t cycle)
   pokemon_commit(cable, words, cycle);
 }
 
+/* In the Cable Club rooms both games send their held keys on every frame,
+   and a game that receives nothing skips the frame but still sends. Each
+   frame a console runs without the other's would leave one more frame
+   queued between the two games for good, so the rooms would lag further
+   behind after every stall or outage. There the consoles therefore work
+   like a real cable: each one waits for the other's next frame before it
+   starts its own. The host only goes ahead without one while the frames
+   in the loop do not yet cover a round trip, which sets the delay. */
+static int pokemon_must_wait(LinkCable *cable, uint64_t now_us)
+{
+  LinkPokemon *pokemon = &cable->pokemon;
+  const LinkNetMessage *message = link_net_peek(&cable->net);
+  uint8_t expected = cable->host ?
+   LINK_MSG_POKEMON_WORDS : LINK_MSG_POKEMON_PAIR;
+
+  if(pokemon->local != LINK_POKEMON_CONNECTED || pokemon->offset != 0 ||
+     !pokemon->keys || pokemon->peer != LINK_POKEMON_CONNECTED ||
+     (message != NULL && message->type == expected))
+  {
+    pokemon->waiting = 0;
+    return 0;
+  }
+
+  if(cable->host)
+  {
+    uint32_t needed = cable->net.rtt_us / LINK_FRAME_US +
+     POKEMON_LOOP_MARGIN;
+
+    if(needed < POKEMON_LOOP_MIN)
+      needed = POKEMON_LOOP_MIN;
+    if(needed > POKEMON_LOOP_MAX)
+      needed = POKEMON_LOOP_MAX;
+    if(pokemon->frames_sent - pokemon->answered < needed)
+    {
+      pokemon->waiting = 0;
+      return 0;
+    }
+  }
+
+  if(!pokemon->waiting)
+  {
+    pokemon->waiting = 1;
+    pokemon->wait_since_us = now_us;
+  }
+  /* A game that stopped answering for another reason must not hang the
+     other console. */
+  if(now_us - pokemon->wait_since_us >= POKEMON_WAIT_LIMIT_US)
+  {
+    pokemon->waiting = 0;
+    return 0;
+  }
+  return 1;
+}
+
 static int pokemon_drop_frame(const LinkCable *cable, uint8_t type)
 {
   if(cable->mode != LINK_CABLE_MODE_POKEMON)
@@ -642,7 +724,8 @@ static int pokemon_drop_frame(const LinkCable *cable, uint8_t type)
    cable->pokemon.local == LINK_POKEMON_CLOSED;
 }
 
-static GbaSioEvent pokemon_service(LinkCable *cable, uint32_t cycle)
+static GbaSioEvent pokemon_service(LinkCable *cable, uint32_t cycle,
+ uint64_t now_us)
 {
   LinkPokemon *pokemon = &cable->pokemon;
   GbaSio *sio = cable->sio;
@@ -660,11 +743,18 @@ static GbaSioEvent pokemon_service(LinkCable *cable, uint32_t cycle)
       pokemon_set_local(pokemon, LINK_POKEMON_CLOSED);
   }
 
+  /* A wait holds back one transfer and ends when it is no longer due. */
+  if(cable->host && !sio->pending_start)
+    pokemon->waiting = 0;
+
   if(sio->pending_start)
   {
-    if(cable->host && sio->mode == GBA_SIO_MODE_MULTIPLAYER &&
-       gba_sio_take_start(sio, &transfer))
-      pokemon_host_transfer(cable, (uint16_t)transfer.outgoing, cycle);
+    if(cable->host && sio->mode == GBA_SIO_MODE_MULTIPLAYER)
+    {
+      if(!pokemon_must_wait(cable, now_us) &&
+         gba_sio_take_start(sio, &transfer))
+        pokemon_host_transfer(cable, (uint16_t)transfer.outgoing, cycle);
+    }
     else
       /* Normal-mode probes, such as the wireless adapter check, find
          nothing attached. */
@@ -679,19 +769,31 @@ static GbaSioEvent pokemon_service(LinkCable *cable, uint32_t cycle)
      pokemon->peer == LINK_POKEMON_CONNECTED || pokemon->offset != 0);
 
     if(!wanted)
+    {
       pokemon->transfer_scheduled = 0;
+      pokemon->waiting = 0;
+    }
     else if(!pokemon->transfer_scheduled)
     {
       pokemon->transfer_scheduled = 1;
       pokemon->next_transfer = cycle + POKEMON_HANDSHAKE_INTERVAL;
     }
     else if((int32_t)(cycle - pokemon->next_transfer) >= 0 &&
-            !gba_sio_is_busy(sio))
+            !gba_sio_is_busy(sio) && !pokemon_must_wait(cable, now_us))
     {
+      if(pokemon->offset == 0)
+        pokemon->frame_start = cycle;
       pokemon_joiner_transfer(cable, cycle);
       pokemon->next_transfer = cycle +
        (pokemon->local == LINK_POKEMON_CONNECTED ?
         POKEMON_FRAME_INTERVAL : POKEMON_HANDSHAKE_INTERVAL);
+      /* In the rooms the host sends one frame per video frame; starting
+         frames faster would only make this console wait for them. */
+      if(pokemon->offset == 0 && pokemon->keys &&
+         (int32_t)(pokemon->frame_start + LINK_CYCLES_PER_FRAME -
+          pokemon->next_transfer) > 0)
+        pokemon->next_transfer = pokemon->frame_start +
+         LINK_CYCLES_PER_FRAME;
     }
   }
 
@@ -747,6 +849,8 @@ static GbaSioEvent link_cable_drain(LinkCable *cable, uint32_t cycle)
       case LINK_MSG_POKEMON_WORDS:
         if(!pokemon_drop_frame(cable, message->type))
           return events;
+        if(!cable->host && message->type == LINK_MSG_POKEMON_PAIR)
+          cable->pokemon.pairs_seen++;
         break;
 
       default:
@@ -793,7 +897,7 @@ GbaSioEvent link_cable_service(LinkCable *cable, uint32_t cycle,
   }
 
   if(cable->mode == LINK_CABLE_MODE_POKEMON)
-    events |= pokemon_service(cable, cycle);
+    events |= pokemon_service(cable, cycle, now_us);
   else
   {
     lockstep_publish_state(cable);
@@ -858,6 +962,20 @@ int link_cable_due(const LinkCable *cable, uint32_t cycle)
    (int32_t)(cycle - cable->pokemon.next_transfer) >= 0;
 }
 
+/* Pokemon mode does not pace on the guest clocks: a clock seen over Wi-Fi
+   is tens of milliseconds old, and pacing on it made both consoles wait
+   for each other on every bit of jitter and outage. The games wait for
+   each other's frames in the rooms (see pokemon_must_wait); elsewhere a
+   console only waits before its messages would overflow the channel, and
+   the joiner never while a message is queued for it. */
+static int pokemon_blocked(const LinkCable *cable)
+{
+  if(cable->pokemon.waiting)
+    return 1;
+  return link_net_backlog(&cable->net) > POKEMON_MAX_BACKLOG &&
+   (cable->host || link_net_peek(&cable->net) == NULL);
+}
+
 int link_cable_blocked(const LinkCable *cable, uint32_t cycle)
 {
   int32_t peer_elapsed;
@@ -865,6 +983,8 @@ int link_cable_blocked(const LinkCable *cable, uint32_t cycle)
 
   if(cable->status != LINK_CABLE_CONNECTED)
     return 0;
+  if(cable->mode == LINK_CABLE_MODE_POKEMON)
+    return pokemon_blocked(cable);
 
   if(cable->mode == LINK_CABLE_MODE_LOCKSTEP && cable->lockstep.waiting &&
      gba_sio_is_waiting(cable->sio) &&

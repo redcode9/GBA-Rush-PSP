@@ -12,7 +12,8 @@
  * 9-transfer frames with checksum, send and receive queues, lag detection,
  * block transfers and the link room's shared key stream. A test passes
  * only if both games finish their scripts without any link error, receive
- * each other's data intact and process identical key frames.
+ * each other's data intact, process identical key frames and see their
+ * own keys come back within a bounded delay in the link room.
  *
  * The lockstep guests check the generic mode word by word.
  */
@@ -86,6 +87,10 @@ struct Console
   uint32_t timer_period;
   uint64_t blocked_us;
   uint64_t now;
+  /* The console stops completely for freeze_us once per freeze_period_us,
+     like a PSP writing to its memory stick. */
+  uint64_t freeze_period_us;
+  uint64_t freeze_us;
 };
 
 static uint16_t reg_read(const Console *console, uint32_t address)
@@ -270,6 +275,12 @@ static void network_deliver(Console *consoles[2], uint64_t now)
 
 typedef int (*DoneFunction)(Console *consoles[2]);
 
+static int never_done(Console *consoles[2])
+{
+  (void)consoles;
+  return 0;
+}
+
 /* Runs both consoles until done() or for limit_us. Returns the time used. */
 static uint64_t run_link(Console *consoles[2], const NetProfile *net,
  uint64_t limit_us, DoneFunction done)
@@ -289,6 +300,10 @@ static uint64_t run_link(Console *consoles[2], const NetProfile *net,
       uint8_t datagram[LINK_NET_MAX_DATAGRAM];
       size_t size;
 
+      if(consoles[side]->freeze_period_us != 0 &&
+         (now - start) % consoles[side]->freeze_period_us <
+          consoles[side]->freeze_us)
+        continue;
       console_run(consoles[side], now);
       size = link_cable_build(&consoles[side]->cable, datagram,
        sizeof(datagram), consoles[side]->cycle, now);
@@ -348,6 +363,10 @@ enum { LAG_NONE, LAG_MASTER, LAG_SLAVE };
 #define PARTY_BLOCK_SIZE 600u
 #define KEY_FRAMES 240u
 #define MAX_TUPLES 4096u
+#define LINK_KEY_CODE_EMPTY 0x11
+/* Each player's own keys must come back to it within this many frames on
+   average in the link room, however the network or the consoles stall. */
+#define ROOM_DELAY_LIMIT 20u
 
 typedef enum
 {
@@ -442,6 +461,11 @@ typedef struct
   uint32_t phaseFrame;
   uint32_t keysSent;
   uint32_t peerKeysSeen;
+  uint16_t heldKeyCode;
+  uint32_t keySentFrame[KEY_FRAMES];
+  uint32_t delaySum;
+  uint32_t delayCount;
+  uint32_t delayMax;
   uint32_t sessions;
   uint32_t sessionsWanted;
   uint32_t seed;
@@ -914,13 +938,10 @@ static void RunLinkCallback(PokemonGame *game)
       break;
 
     case CALLBACK_HELD_KEYS:
-      if(game->keysSent < KEY_FRAMES)
-      {
-        game->sendCmd[0] = LINKCMD_SEND_HELD_KEYS;
-        game->sendCmd[1] = (uint16_t)(0x11 +
-         (game->keysSent * 5u + game->seed) % 7u);
-        game->keysSent++;
-      }
+      /* LinkCB_SendHeldKeys runs on every frame, including the frames
+         whose game logic is skipped. */
+      game->sendCmd[0] = LINKCMD_SEND_HELD_KEYS;
+      game->sendCmd[1] = game->heldKeyCode;
       break;
 
     case CALLBACK_WAIT_CLOSE:
@@ -1004,6 +1025,36 @@ static void OpenLink(Console *console)
   /* The partner may enter the room first, so count its keys from here. */
   game->keysSent = 0;
   game->peerKeysSeen = 0;
+  game->heldKeyCode = LINK_KEY_CODE_EMPTY;
+}
+
+/* CB1_UpdateLinkState: the room's game logic for one frame. Each new key
+   code is unique, so the frame it comes back in this player's own slot
+   measures the delay the player sees in the room. */
+static void RoomFrame(Console *console, PokemonGame *game, int self)
+{
+  uint16_t own = game->heldKeys[self];
+
+  if(own >= 0x100u && own < 0x100u + KEY_FRAMES &&
+     game->keySentFrame[own - 0x100u] != 0)
+  {
+    uint32_t delay = console->frames - game->keySentFrame[own - 0x100u];
+
+    game->keySentFrame[own - 0x100u] = 0;
+    game->delaySum += delay;
+    game->delayCount++;
+    if(delay > game->delayMax)
+      game->delayMax = delay;
+  }
+
+  if(game->keysSent < KEY_FRAMES)
+  {
+    game->heldKeyCode = (uint16_t)(0x100u + game->keysSent);
+    game->keySentFrame[game->keysSent] = console->frames;
+    game->keysSent++;
+  }
+  else
+    game->heldKeyCode = LINK_KEY_CODE_EMPTY;
 }
 
 static void CloseLink(Console *console)
@@ -1071,11 +1122,15 @@ static void PokemonFrame(Console *console)
   memset(game->sendCmd, 0, sizeof(game->sendCmd));
   if(!(game->linkStatus & LINK_STAT_CONN_ESTABLISHED))
     return;
-  /* Decided before this frame's callback so the last key is not
-     overwritten by the start of the next block. */
   keys_done = game->keysSent >= KEY_FRAMES;
   ProcessRecvCmds(game);
   RunLinkCallback(game);
+  /* HandleLinkConnection: in the room a frame that received nothing skips
+     the game logic, but its held keys have already gone out. */
+  if(game->callback == CALLBACK_HELD_KEYS && game->receivedNothing)
+    return;
+  if(game->phase == SCRIPT_ROOM)
+    RoomFrame(console, game, self);
 
   if(game->heldKeys[0] != 0 || game->heldKeys[1] != 0)
   {
@@ -1181,6 +1236,9 @@ typedef struct
   uint32_t host_open_frame;
   uint32_t joiner_open_frame;
   uint32_t sessions;
+  int freeze_side;            /* -1 for none */
+  uint32_t freeze_period_ms;
+  uint32_t freeze_ms;
 } PokemonCase;
 
 static PokemonGame pokemon_games[2];
@@ -1212,6 +1270,12 @@ static void run_pokemon_case(const PokemonCase *test, const NetProfile *net)
    test->host_speed);
   console_init(&joiner, 1, 0, test->joiner_game, &pokemon_guest, b,
    test->joiner_speed);
+  if(test->freeze_side >= 0)
+  {
+    consoles[test->freeze_side]->freeze_period_us =
+     (uint64_t)test->freeze_period_ms * 1000u;
+    consoles[test->freeze_side]->freeze_us = (uint64_t)test->freeze_ms * 1000u;
+  }
 
   elapsed = run_link(consoles, net, 120000000u, pokemon_done);
 
@@ -1232,14 +1296,64 @@ static void run_pokemon_case(const PokemonCase *test, const NetProfile *net)
      a->tuples[i][1] == b->tuples[i][1];
   CHECK(tuples_match);
   CHECK(a->tupleCount >= KEY_FRAMES * test->sessions);
+  CHECK(a->delayCount != 0 && b->delayCount != 0);
+  CHECK(a->delaySum <= ROOM_DELAY_LIMIT * a->delayCount);
+  CHECK(b->delaySum <= ROOM_DELAY_LIMIT * b->delayCount);
 
   printf("pokemon %-26s %-8s %5.1fs, host %4.1f%% / joiner %4.1f%% waiting,"
-   " %u+%u frames, errors %05X/%05X%s\n", test->name, net->name,
-   (double)elapsed / 1e6, 100.0 * (double)host.blocked_us / (double)elapsed,
+   " room delay %4.1f/%4.1f frames (max %u/%u), errors %05X/%05X%s\n",
+   test->name, net->name, (double)elapsed / 1e6,
+   100.0 * (double)host.blocked_us / (double)elapsed,
    100.0 * (double)joiner.blocked_us / (double)elapsed,
-   host.cable.pokemon.frames_sent, joiner.cable.pokemon.frames_sent,
-   a->errors >> 12, b->errors >> 12,
-   (a->errors | b->errors) != 0 || !tuples_match ? "  FAILED" : "");
+   a->delayCount ? (double)a->delaySum / a->delayCount : 0.0,
+   b->delayCount ? (double)b->delaySum / b->delayCount : 0.0,
+   a->delayMax, b->delayMax, a->errors >> 12, b->errors >> 12,
+   (a->errors | b->errors) != 0 || !tuples_match ||
+   a->delaySum > ROOM_DELAY_LIMIT * a->delayCount ||
+   b->delaySum > ROOM_DELAY_LIMIT * b->delayCount ? "  FAILED" : "");
+}
+
+static int joiner_waits_in_room(Console *consoles[2])
+{
+  return game_of(consoles[0])->phase == SCRIPT_ROOM &&
+   game_of(consoles[1])->phase == SCRIPT_ROOM &&
+   game_of(consoles[0])->keysSent > 30u && consoles[1]->cable.pokemon.waiting;
+}
+
+/* The host's game closes its link in the middle of the link room, as after
+   a link error, while the joiner waits for the host's next frame. The
+   joiner must not stay stuck waiting for a frame that will never come. */
+static void test_pokemon_peer_closes_in_room(void)
+{
+  static const NetProfile net = { "adhoc", 3000u, 4000u, 3u, 1u, 0u, 0u };
+  Console host;
+  Console joiner;
+  Console *consoles[2] = { &host, &joiner };
+
+  memset(pokemon_games, 0, sizeof(pokemon_games));
+  rng_state = 0xC105EDu;
+  pokemon_games[0].seed = 11;
+  pokemon_games[1].seed = 29;
+  pokemon_games[0].openFrame = 30;
+  pokemon_games[1].openFrame = 30;
+  pokemon_games[0].sessionsWanted = 1;
+  pokemon_games[1].sessionsWanted = 1;
+  /* A slow host makes the joiner wait for its frames. */
+  console_init(&host, 0, 1, "BPRE", &pokemon_guest, &pokemon_games[0], 0.6);
+  console_init(&joiner, 1, 0, "BPGE", &pokemon_guest, &pokemon_games[1],
+   1.0);
+
+  run_link(consoles, &net, 30000000u, joiner_waits_in_room);
+  CHECK(joiner_waits_in_room(consoles));
+  CloseLink(&host);
+  run_link(consoles, &net, 2000000u, never_done);
+
+  CHECK(joiner.cable.status == LINK_CABLE_CONNECTED);
+  CHECK(joiner.cable.pokemon.peer == LINK_POKEMON_CLOSED);
+  CHECK(!link_cable_blocked(&joiner.cable, joiner.cycle));
+  printf("pokemon host closes in the room: joiner %s\n",
+   link_cable_blocked(&joiner.cable, joiner.cycle) ? "stuck  FAILED" :
+   "keeps running");
 }
 
 static const NetProfile net_profiles[] =
@@ -1255,13 +1369,17 @@ static void test_pokemon_trades(void)
 {
   static const PokemonCase cases[] =
   {
-    { "FireRed host, FireRed",  "BPRI", "BPRI", 1.00, 1.00, 30, 45, 2 },
-    { "FireRed host, LeafGreen", "BPRE", "BPGE", 1.00, 1.00, 30, 200, 1 },
-    { "LeafGreen host, Emerald", "BPGE", "BPEE", 1.00, 1.00, 300, 30, 1 },
-    { "Ruby host, FireRed",     "AXVE", "BPRE", 1.00, 1.00, 30, 30, 1 },
-    { "slow joiner (PSP-1000)", "BPRE", "BPGE", 1.00, 0.80, 30, 30, 1 },
-    { "slow host (PSP-1000)",   "BPRE", "BPGE", 0.80, 1.00, 30, 30, 1 },
-    { "uneven speeds",          "BPRE", "BPRE", 1.05, 0.93, 30, 60, 2 }
+    { "FireRed host, FireRed",  "BPRI", "BPRI", 1.00, 1.00, 30, 45, 2, -1, 0, 0 },
+    { "FireRed host, LeafGreen", "BPRE", "BPGE", 1.00, 1.00, 30, 200, 1, -1, 0, 0 },
+    { "LeafGreen host, Emerald", "BPGE", "BPEE", 1.00, 1.00, 300, 30, 1, -1, 0, 0 },
+    { "Ruby host, FireRed",     "AXVE", "BPRE", 1.00, 1.00, 30, 30, 1, -1, 0, 0 },
+    { "slow joiner (PSP-1000)", "BPRE", "BPGE", 1.00, 0.80, 30, 30, 1, -1, 0, 0 },
+    { "slow host (PSP-1000)",   "BPRE", "BPGE", 0.80, 1.00, 30, 30, 1, -1, 0, 0 },
+    { "uneven speeds",          "BPRE", "BPRE", 1.05, 0.93, 30, 60, 2, -1, 0, 0 },
+    { "joiner freezes",         "BPRE", "BPGE", 1.00, 1.00, 30, 30, 2,
+      1, 1700, 300 },
+    { "host freezes",           "BPGE", "BPRE", 1.00, 1.00, 30, 30, 2,
+      0, 1300, 250 }
   };
   size_t c;
   size_t n;
@@ -1269,6 +1387,7 @@ static void test_pokemon_trades(void)
   for(n = 0; n < sizeof(net_profiles) / sizeof(net_profiles[0]); n++)
     for(c = 0; c < sizeof(cases) / sizeof(cases[0]); c++)
       run_pokemon_case(&cases[c], &net_profiles[n]);
+  test_pokemon_peer_closes_in_room();
 }
 
 /* ---- Lockstep guests -------------------------------------------------- */
@@ -1530,12 +1649,6 @@ static void test_lockstep_normal32(const NetProfile *net)
 }
 
 /* ---- Session handling -------------------------------------------------- */
-
-static int never_done(Console *consoles[2])
-{
-  (void)consoles;
-  return 0;
-}
 
 static void idle_irq(Console *console)
 {
