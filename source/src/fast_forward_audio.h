@@ -11,8 +11,10 @@
 
 /*
  * Fast-forward audio: sound.c drains its stereo s32 mix ring through here,
- * averaging 1-3 emulated frames into each output frame so fast-forward
- * plays at normal pitch. Host-tested by tests/test_fast_forward_audio.c.
+ * averaging 1-3 consecutive sample frames into each output frame. That is
+ * the "Accelerated" setting: the audio keeps up with 2x or 3x emulation by
+ * playing faster, so its pitch rises. Host-tested by
+ * tests/test_fast_forward_audio.c.
  */
 
 #ifndef FAST_FORWARD_AUDIO_H
