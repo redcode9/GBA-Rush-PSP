@@ -9,9 +9,12 @@ set -eu
 #             been upstairs in a Pokemon Center yet
 #   ROM2 SAVE2  optional second game (defaults to ROM and SAVE), such as
 #             LeafGreen with a matching save
+#   MKSC      optional Mario Kart: Super Circuit ROM (European release)
 # The script trades the host's first Pokemon for the joiner's second one,
 # then checks both saved parties, under several network conditions and once
-# in the lockstep mode used for every non-Pokemon game.
+# in the lockstep mode used for every non-Pokemon game. With MKSC it also
+# races two Mario Kart games in Multi-Pak mode, which use lockstep mode,
+# and checks that both race clocks run in step.
 
 : "${MGBA_DIR:?Set MGBA_DIR to an mGBA 0.10 tree built in build/}"
 : "${ROM:?Set ROM to a FireRed ROM}"
@@ -89,4 +92,31 @@ run_case psp "net 20000 30000 35 1" "psp 0 10" "psp 1 10"
 run_case psp-stalls "net 20000 30000 35 1" "psp 0 10" "psp 1 10" \
   "outage 7000 250" "hiccup 1 9000 600"
 run_case lockstep "net 3000 4000 3 1" lockstep
+
+# Mario Kart starts from blank saves; its script checks the race itself.
+race_case()
+{
+  name=$1
+  shift
+  for condition in "$@"; do
+    echo "$condition"
+  done > "$out/$name.txt"
+  cat tests/rom_link/mksc_race.txt >> "$out/$name.txt"
+  dd if=/dev/zero bs=1024 count=64 2>/dev/null | tr '\000' '\377' \
+    > "$out/mksc-0.sav"
+  cp "$out/mksc-0.sav" "$out/mksc-1.sav"
+  if ! (cd "$out" && ./link_e2e "$mksc" mksc-0.sav "$mksc" mksc-1.sav \
+    "$bios" "$name.txt" > "$name.log"); then
+    echo "ROM link $name: FAILED, see $out/$name.log" >&2
+    exit 1
+  fi
+  echo "ROM link $name: both race clocks in step"
+}
+
+if [ -n "${MKSC:-}" ]; then
+  mksc=$(absolute "$MKSC")
+  race_case mksc-adhoc "net 3000 4000 3 1"
+  race_case mksc-noisy "net 8000 15000 15 5"
+  race_case mksc-psp "net 20000 30000 35 1" "psp 0 10" "psp 1 10"
+fi
 echo "ROM link checks passed"
