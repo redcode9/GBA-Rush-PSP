@@ -11,7 +11,14 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
+# The module docstring doubles as the --help description.
 
+# Big-endian file written by source/src/runtime_log.c. Header (64 bytes):
+# magic, version, header size, record size, critical/main/network record
+# counts, session id, flush reason, PSP model, firmware, CPU clock in MHz,
+# ROM game code, start and flush times in us, payload CRC-32 and header
+# CRC-32. Record (32 bytes): timestamp in us, emulated cycle, ordinal,
+# event, source, flags and three event-specific values.
 HEADER = struct.Struct(">4sHHHHHHIIIIIIQQII")
 RECORD = struct.Struct(">QIIHBBIII")
 MAGIC = b"GBRL"
@@ -89,14 +96,17 @@ def _crc32(data: bytes) -> int:
 
 
 def _name(names: list[str], value: int) -> str:
+    """Name of an enum value, or the number when this decoder lacks it."""
     return names[value] if value < len(names) else str(value)
 
 
 def _signed(value: int) -> int:
+    """Reinterpret a 32-bit field as signed (PSP error codes, audio)."""
     return value if value < 0x80000000 else value - 0x100000000
 
 
 def _rom_code(identity: int) -> str:
+    """Four-letter game code packed into an int, or hex if not printable."""
     raw = identity.to_bytes(4, "big")
     if all(32 <= byte < 127 for byte in raw):
         return raw.decode("ascii", "replace")
@@ -104,6 +114,11 @@ def _rom_code(identity: int) -> str:
 
 
 def parse_snapshot(data: bytes, path: str = "<memory>") -> dict[str, Any]:
+    """Validate one .gbrlog file and return its header and records.
+
+    Records from all rings are merged and sorted by time. Raises ValueError
+    on a truncated, unknown or corrupt file.
+    """
     if len(data) < HEADER.size:
         raise ValueError(f"{path}: truncated header")
     fields = HEADER.unpack_from(data)
@@ -112,6 +127,7 @@ def parse_snapshot(data: bytes, path: str = "<memory>") -> dict[str, Any]:
      rom_identity, started_us, flushed_us, payload_crc, header_crc) = fields
     if magic != MAGIC or version not in VERSIONS:
         raise ValueError(f"{path}: unsupported log format")
+    # Version 1 files had no critical ring.
     if version == 1:
         critical_count = 0
     if header_size != HEADER.size or record_size != RECORD.size:
@@ -119,6 +135,7 @@ def parse_snapshot(data: bytes, path: str = "<memory>") -> dict[str, Any]:
     expected = header_size + (main_count + network_count + critical_count) * record_size
     if len(data) != expected:
         raise ValueError(f"{path}: expected {expected} bytes, found {len(data)}")
+    # The header CRC covers every header byte before it (the first 60).
     if _crc32(data[:60]) != header_crc:
         raise ValueError(f"{path}: header checksum mismatch")
     if _crc32(data[header_size:]) != payload_crc:
@@ -165,6 +182,7 @@ def parse_snapshot(data: bytes, path: str = "<memory>") -> dict[str, Any]:
 
 
 def describe(record: dict[str, Any]) -> str:
+    """Render a record's flags and values according to its event type."""
     event = record["event"]
     flags = record["flags"]
     value0, value1, value2 = record["values"]
@@ -210,6 +228,7 @@ def describe(record: dict[str, Any]) -> str:
 
 
 def iter_log_paths(arguments: Iterable[str]) -> list[Path]:
+    """Expand directories to their session-*.gbrlog files, in name order."""
     paths: list[Path] = []
     for argument in arguments:
         path = Path(argument)
@@ -236,6 +255,11 @@ def print_snapshot(snapshot: dict[str, Any]) -> None:
 
 
 def print_summary(snapshot: dict[str, Any]) -> None:
+    """Print record counts and only the link session events.
+
+    "retained" is records kept per ring over the highest ordinal seen,
+    which shows how many older records the ring overwrote.
+    """
     records = snapshot["records"]
     counts = Counter(record["event"] for record in records)
     retained = Counter(record["source"] for record in records)
