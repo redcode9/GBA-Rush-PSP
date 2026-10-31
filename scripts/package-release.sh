@@ -2,6 +2,11 @@
 
 set -eu
 
+# Builds dist/GBA-Rush-PSP-VERSION.zip from the built EBOOT.PBP and
+# exception.prx plus the documentation (make package). The archive is
+# reproducible: every file gets the last commit's time (or
+# SOURCE_DATE_EPOCH) and zip -X leaves out extra file attributes.
+
 if [ "$#" -ne 1 ]; then
   echo "Usage: $0 VERSION" >&2
   exit 1
@@ -42,6 +47,7 @@ case "$release_epoch" in
     ;;
 esac
 
+# BSD date takes -r SECONDS, GNU date -d @SECONDS.
 if archive_timestamp=$(date -u -r "$release_epoch" +%Y%m%d%H%M.%S \
   2>/dev/null)
 then

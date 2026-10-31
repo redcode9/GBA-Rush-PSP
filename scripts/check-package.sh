@@ -2,6 +2,10 @@
 
 set -eu
 
+# Checks the archive made by package-release.sh (make package, or make
+# artifact-smoke on its own): exactly the approved files, no symbolic links,
+# contents identical to the tree, and a matching SHA-256 file.
+
 if [ "$#" -ne 1 ]; then
   echo "Usage: $0 VERSION" >&2
   exit 1
@@ -48,6 +52,7 @@ actual_manifest="$temporary_root/actual.txt"
   done
 } | LC_ALL=C sort > "$expected_manifest"
 
+# List the archive's files, without directory entries.
 unzip -Z1 "$archive" | sed '/\/$/d' | LC_ALL=C sort > "$actual_manifest"
 if ! diff -u "$expected_manifest" "$actual_manifest"
 then
