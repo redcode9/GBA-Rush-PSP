@@ -1567,8 +1567,9 @@ int user_main(int argc, char *argv[])
   /* Priority 2: pre-installed game.gba for single-game packages */
   else
   {
-    /* Drop-in compatible with GrabowskiDev single-game installs: when
-     * roms/game.gba exists, load it directly (no ROM browser). */
+    /* Single-game installs made the GrabowskiDev way (a convention kept
+     * from upstream) ship the ROM as roms/game.gba with no launcher files:
+     * when that file exists, load it directly (no ROM browser). */
     snprintf(load_filename, sizeof(load_filename), "%sgame.gba", dir_roms);
 
     if (path_is_regular_file(load_filename))
