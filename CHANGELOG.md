@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.4.1 - 2026-10-31
+
+### Fixed
+
+- The Cable Club no longer falls further behind after every stall. In the
+  Cable Club rooms the two PSPs now wait for each other's frames like a real
+  cable, so the delay stays near one Wi-Fi round trip plus a few frames
+  instead of growing to half a second or more.
+- Pokemon games no longer pace on the other PSP's game clock, which made both
+  consoles pause for each other after every radio dropout.
+- The link sends only the newest datagram when several are queued, and the
+  session log counts the datagrams the PSP network stack refused or dropped.
+
+### Changed
+
+- The link protocol changed: both PSPs need GBA Rush PSP 1.4.1.
+
 ## 1.4.0 - 2026-10-31
 
 ### Added

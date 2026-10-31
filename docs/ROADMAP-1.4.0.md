@@ -14,7 +14,7 @@ games through the same cable code on typical, noisy and uneven-speed links.
 
 ## Hardware tests
 
-Use one PSP-1000 and one PSP-2000 with the same 1.4.0 EBOOT. Copy both
+Use one PSP-1000 and one PSP-2000 with the same EBOOT. Copy both
 `logs/` folders after each run and decode them with
 `tools/decode_runtime_log.py`.
 
