@@ -60,18 +60,19 @@ def create_riff(ea3, riff, number_of_samples=0, loop=False):
         f.write(buf)
 
         # --- fmt chunk (format descriptor) ---
-        _b = bytearray(24)
-        _b[:4] = b"fmt "
-        struct.pack_into("<H", _b, 8, 0x270)  # compression code (ATRAC3)
-        struct.pack_into("<H", _b, 10, 2)     # number of channels (stereo)
-        struct.pack_into("<I", _b, 12, 44100)  # sample rate
-        struct.pack_into("<I", _b, 16, ATRAC3_STEREO_BYTES_PER_SEC)  # avg bytes per sec
-        struct.pack_into("<H", _b, 20, 384)   # block align
-        struct.pack_into("<H", _b, 22, 0)     # significant bits per sample
-        _b = _b + b"\x0e\x00"
-        _b = _b + b"\x01\x00\x00\x10\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00"
-        struct.pack_into("<I", _b, 4, len(_b) - 8)
-        f.write(_b)
+        chunk_buf = bytearray(24)
+        chunk_buf[:4] = b"fmt "
+        struct.pack_into("<H", chunk_buf, 8, 0x270)  # compression code (ATRAC3)
+        struct.pack_into("<H", chunk_buf, 10, 2)     # number of channels (stereo)
+        struct.pack_into("<I", chunk_buf, 12, 44100)  # sample rate
+        struct.pack_into("<I", chunk_buf, 16, ATRAC3_STEREO_BYTES_PER_SEC)  # avg bytes per sec
+        struct.pack_into("<H", chunk_buf, 20, 384)   # block align
+        struct.pack_into("<H", chunk_buf, 22, 0)     # significant bits per sample
+        # cbSize = 14, followed by the 14 bytes of ATRAC3-specific format data
+        chunk_buf = chunk_buf + b"\x0e\x00"
+        chunk_buf = chunk_buf + b"\x01\x00\x00\x10\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00"
+        struct.pack_into("<I", chunk_buf, 4, len(chunk_buf) - 8)
+        f.write(chunk_buf)
 
         # --- Read and validate EA3 data ---
         with open(ea3, "rb") as d:
@@ -88,65 +89,65 @@ def create_riff(ea3, riff, number_of_samples=0, loop=False):
 
         if loop:
             # --- fact chunk (loop-aware) ---
-            _b = bytearray(16)
-            _b[:4] = b"fact"
-            struct.pack_into("<I", _b, 4, len(_b) - 8)
-            struct.pack_into("<I", _b, 8, (number_of_samples & ~0xFFF) - 0x2000)
-            struct.pack_into("<I", _b, 12, 0x800)
-            f.write(_b)
+            chunk_buf = bytearray(16)
+            chunk_buf[:4] = b"fact"
+            struct.pack_into("<I", chunk_buf, 4, len(chunk_buf) - 8)
+            struct.pack_into("<I", chunk_buf, 8, (number_of_samples & ~0xFFF) - 0x2000)
+            struct.pack_into("<I", chunk_buf, 12, 0x800)
+            f.write(chunk_buf)
 
             # --- smpl chunk (loop markers) ---
-            _l = bytearray(24)
-            struct.pack_into("<I", _l, 0, 0)          # cue point id
-            struct.pack_into("<I", _l, 4, 0)          # type
-            struct.pack_into("<I", _l, 8, 0x800)      # start
+            smpl_loop = bytearray(24)
+            struct.pack_into("<I", smpl_loop, 0, 0)          # cue point id
+            struct.pack_into("<I", smpl_loop, 4, 0)          # type
+            struct.pack_into("<I", smpl_loop, 8, 0x800)      # start
             # Critical bugfix: clamp loop_end to prevent underflow on short files
             loop_end = max(0x800, (number_of_samples & ~0xFFF) - 0x2000 - 0x2801)
-            struct.pack_into("<I", _l, 12, loop_end)  # end
-            struct.pack_into("<I", _l, 16, 0)         # fraction
-            struct.pack_into("<I", _l, 20, 0)         # play count
+            struct.pack_into("<I", smpl_loop, 12, loop_end)  # end
+            struct.pack_into("<I", smpl_loop, 16, 0)         # fraction
+            struct.pack_into("<I", smpl_loop, 20, 0)         # play count
 
-            _s = bytearray(36)
-            struct.pack_into("<I", _s, 0, 0)          # manufacturer
-            struct.pack_into("<I", _s, 4, 0)          # product
-            struct.pack_into("<I", _s, 8, 22676)      # sample period
-            struct.pack_into("<I", _s, 12, 60)        # midi unity note
-            struct.pack_into("<I", _s, 16, 0)         # midi pitch fraction
-            struct.pack_into("<I", _s, 20, 0)         # smpte format
-            struct.pack_into("<I", _s, 24, 0)         # smpte offset
-            struct.pack_into("<I", _s, 28, int(len(_l) / 24))  # num sample loops
-            struct.pack_into("<I", _s, 32, len(_l))   # sampler data
+            smpl_header = bytearray(36)
+            struct.pack_into("<I", smpl_header, 0, 0)          # manufacturer
+            struct.pack_into("<I", smpl_header, 4, 0)          # product
+            struct.pack_into("<I", smpl_header, 8, 22676)      # sample period (ns, 1e9/44100)
+            struct.pack_into("<I", smpl_header, 12, 60)        # midi unity note
+            struct.pack_into("<I", smpl_header, 16, 0)         # midi pitch fraction
+            struct.pack_into("<I", smpl_header, 20, 0)         # smpte format
+            struct.pack_into("<I", smpl_header, 24, 0)         # smpte offset
+            struct.pack_into("<I", smpl_header, 28, int(len(smpl_loop) / 24))  # num sample loops
+            struct.pack_into("<I", smpl_header, 32, len(smpl_loop))   # sampler data
 
-            _b = bytearray(8)
-            _b[:4] = b"smpl"
-            struct.pack_into("<I", _b, 4, len(_s) + len(_l))
-            f.write(_b + _s + _l)
+            chunk_buf = bytearray(8)
+            chunk_buf[:4] = b"smpl"
+            struct.pack_into("<I", chunk_buf, 4, len(smpl_header) + len(smpl_loop))
+            f.write(chunk_buf + smpl_header + smpl_loop)
 
         # --- data chunk (raw ATRAC3 frames) ---
-        _b = bytearray(8)
-        _b[:4] = b"data"
-        struct.pack_into("<I", _b, 4, data_size)
-        buf = _b + buf
+        chunk_buf = bytearray(8)
+        chunk_buf[:4] = b"data"
+        struct.pack_into("<I", chunk_buf, 4, data_size)
+        buf = chunk_buf + buf
         if len(buf) & 1:
             buf = buf + b"\x00"  # Pad to even length
         f.write(buf)
 
         if not loop:
             # --- fact chunk (non-looping) ---
-            _b = bytearray(12)
-            _b[:4] = b"fact"
-            struct.pack_into("<I", _b, 4, len(_b) - 8)
-            struct.pack_into("<I", _b, 8, number_of_samples)
-            f.write(_b)
+            chunk_buf = bytearray(12)
+            chunk_buf[:4] = b"fact"
+            struct.pack_into("<I", chunk_buf, 4, len(chunk_buf) - 8)
+            struct.pack_into("<I", chunk_buf, 8, number_of_samples)
+            f.write(chunk_buf)
 
         # --- LIST chunk (software info) ---
         buf = b"ATRACDENC\x00"
-        _b = bytearray(4)
-        struct.pack_into("<I", _b, 0, len(buf))
-        buf = b"INFOISFT" + _b + buf
-        _b = bytearray(4)
-        struct.pack_into("<I", _b, 0, len(buf))
-        buf = b"LIST" + _b + buf
+        chunk_buf = bytearray(4)
+        struct.pack_into("<I", chunk_buf, 0, len(buf))
+        buf = b"INFOISFT" + chunk_buf + buf
+        chunk_buf = bytearray(4)
+        struct.pack_into("<I", chunk_buf, 0, len(buf))
+        buf = b"LIST" + chunk_buf + buf
         if len(buf) & 1:
             buf = buf + b"\x00"
         f.write(buf)
@@ -154,7 +155,7 @@ def create_riff(ea3, riff, number_of_samples=0, loop=False):
         # --- Update RIFF length in header ---
         f.seek(0, 2)
         x = f.tell() - 8
-        _b = bytearray(4)
-        struct.pack_into("<I", _b, 0, x)
+        chunk_buf = bytearray(4)
+        struct.pack_into("<I", chunk_buf, 0, x)
         f.seek(4)
-        f.write(_b)
+        f.write(chunk_buf)
