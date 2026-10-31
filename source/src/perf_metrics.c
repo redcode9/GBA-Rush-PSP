@@ -29,6 +29,7 @@ static void perf_metrics_histogram_init(PerfMetricsHistogram *histogram,
   histogram->bucket_width_us = bucket_width_us;
 }
 
+/* Bucket 0 holds exact zeros; bucket n holds values in ((n-1)*w, n*w]. */
 static void perf_metrics_histogram_record(PerfMetricsHistogram *histogram,
  uint32_t value_us)
 {
@@ -53,6 +54,8 @@ static void perf_metrics_histogram_record(PerfMetricsHistogram *histogram,
     histogram->max_us = value_us;
 }
 
+/* Nearest-rank: ceil(count * percentile / 100), split so it cannot
+   overflow. */
 static uint64_t perf_metrics_percentile_rank(uint64_t count,
  uint32_t percentile)
 {
@@ -68,6 +71,8 @@ static uint64_t perf_metrics_percentile_rank(uint64_t count,
    ((remainder * percentile + 99U) / 100U);
 }
 
+/* Upper bound of the bucket holding the percentile; the true maximum if it
+   falls in the open-ended last bucket. */
 static uint32_t perf_metrics_histogram_percentile(
  const PerfMetricsHistogram *histogram, uint32_t percentile)
 {

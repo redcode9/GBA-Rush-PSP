@@ -9,6 +9,12 @@
  * the License, or (at your option) any later version.
  */
 
+/*
+ * The process-wide benchmark capture: one PerfMetrics plus its timing and
+ * settings. Hot modules (cpu, memory, video, sound) call the record
+ * functions; main.c starts, stops and reports.
+ */
+
 #ifndef PERF_MONITOR_H
 #define PERF_MONITOR_H
 
