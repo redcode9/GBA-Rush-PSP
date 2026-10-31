@@ -82,6 +82,8 @@ static uint32_t decode_legacy_ram_policy(uint32_t value)
   return 2;
 }
 
+/* Factory settings. Keep them equal to the defaults in values_to_model(),
+   which decoding falls back to for each out-of-range value. */
 void config_model_defaults(ConfigModel *model)
 {
   if(model == NULL)
@@ -151,6 +153,8 @@ static void model_to_values(const ConfigModel *model, uint32_t *values)
   values[44] = model->fast_forward_audio;
 }
 
+/* Inverse of model_to_values(). A value outside [0, limit) takes its
+   default, so a damaged file cannot set an out-of-range option. */
 static void values_to_model(const uint32_t *values, ConfigModel *model)
 {
   size_t i;
@@ -189,6 +193,8 @@ static void values_to_model(const uint32_t *values, ConfigModel *model)
   model->fast_forward_audio = valid_or_default(values[44], 2, 0);
 }
 
+/* Writes the current versioned format; output needs at least
+   CONFIG_MODEL_ENCODED_SIZE bytes. Returns 1, or 0 on bad arguments. */
 int config_model_encode(const ConfigModel *model, uint8_t *output,
  size_t output_size, size_t *written)
 {
@@ -256,6 +262,8 @@ static int legacy_word_count_supported(size_t word_count)
          word_count == 32 || word_count == 23;
 }
 
+/* Settings were inserted mid-array over the releases, so the word count
+   selects the layout and where the 16 button mappings start. */
 static ConfigModelDecodeResult decode_legacy(const uint8_t *data, size_t size,
  ConfigModel *model)
 {
@@ -380,6 +388,8 @@ static ConfigModelDecodeResult decode_legacy(const uint8_t *data, size_t size,
   return CONFIG_MODEL_DECODE_LEGACY;
 }
 
+/* Returns the format that was read. On CONFIG_MODEL_DECODE_INVALID, *model
+   is left untouched. */
 ConfigModelDecodeResult config_model_decode(const uint8_t *data, size_t size,
  ConfigModel *model)
 {

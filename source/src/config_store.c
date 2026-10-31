@@ -13,6 +13,7 @@ static int io_valid(const ConfigStoreIo *io)
          io->exists != NULL;
 }
 
+/* True if path reads and decodes; model may be NULL to only validate. */
 static int read_valid_model(const ConfigStoreIo *io, const char *path,
  ConfigModel *model)
 {
