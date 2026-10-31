@@ -1,3 +1,9 @@
+/*
+ * Host tests for adhoc_peer_select(), which picks the link partner from the
+ * ad-hoc scan list: the console's own MAC is never chosen, and a remembered
+ * preferred MAC wins over scan order when it is present.
+ */
+
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -56,6 +62,7 @@ static void test_local_is_ignored(void)
   };
   uint8_t selected[ADHOC_PEER_MAC_SIZE] = { 0 };
 
+  /* Even when "preferred" is our own MAC, the scan entry for it is skipped. */
   CHECK(adhoc_peer_select(local, local, &peers[0][0], 2, selected));
   CHECK(memcmp(selected, peers[1], ADHOC_PEER_MAC_SIZE) == 0);
 }
@@ -69,6 +76,7 @@ static void test_no_remote(void)
   };
   uint8_t selected[ADHOC_PEER_MAC_SIZE] = { 0 };
 
+  /* Empty list, a list holding only ourselves, and no local MAC at all. */
   CHECK(!adhoc_peer_select(local, NULL, &peers[0][0], 0, selected));
   CHECK(!adhoc_peer_select(local, NULL, &peers[0][0], 1, selected));
   CHECK(!adhoc_peer_select(NULL, NULL, &peers[0][0], 1, selected));
