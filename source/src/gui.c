@@ -1162,7 +1162,10 @@ s32 load_theme_config(void)
 
 
 
-// scroll bar
+// scroll bar: outline box at the left edge of the file list. The *I macros
+// are the filled thumb inside it, 2 px in from the outline. SBAR_T/B/H and
+// SBAR_Y1I/Y2I are unused: load_file() computes the track itself because the
+// list shrinks when the recent games section is shown.
 #define SBAR_X1  (2)
 #define SBAR_X2  (6) // 12 default
 #define SBAR_Y1  (16)
@@ -1739,11 +1742,13 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
   #define FILE_LIST (0)
   #define DIR_LIST  (1)
 
+  /* Per-column state, indexed by FILE_LIST / DIR_LIST: entry count, selected
+     entry, first visible entry, and the cursor's row inside the window. */
   u32 column;
   u32 num[2];
   u32 selection[2];
   u32 scroll_value[2];
-  u32 in_scroll[2];
+  u32 cursor_row[2];
 
   u32 current_file_number, current_dir_number;
   u16 current_line_color;
@@ -1835,11 +1840,11 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
 
     selection[FILE_LIST]    = 0;
     scroll_value[FILE_LIST] = 0;
-    in_scroll[FILE_LIST]    = 0;
+    cursor_row[FILE_LIST]    = 0;
 
     selection[DIR_LIST]     = 0;
     scroll_value[DIR_LIST]  = 0;
-    in_scroll[DIR_LIST]     = 0;
+    cursor_row[DIR_LIST]     = 0;
 
     memset(&current_file, 0, sizeof(current_file));
 
@@ -2028,28 +2033,29 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
       // draw scroll bar (hidden in carousel mode)
       if (!carousel_mode && num[FILE_LIST] > file_list_visible_rows)
       {
-        u32 sbar_top, sbar_bottom, sbar_t, sbar_b, sbar_h;
-        u32 sbar_y1i, sbar_y2i;
+        u32 frame_top, frame_bottom, track_top, track_bottom, track_height;
+        u32 thumb_top, thumb_bottom;
 
         if (is_recent_roms_empty())
         {
-          sbar_top    = SBAR_Y1;
-          sbar_bottom = SBAR_Y2;
+          frame_top    = SBAR_Y1;
+          frame_bottom = SBAR_Y2;
         }
         else
         {
-          sbar_top    = FILE_LIST_POS_Y + file_list_y_offset;
-          sbar_bottom = sbar_top + file_list_visible_rows * FONTHEIGHT;
+          frame_top    = FILE_LIST_POS_Y + file_list_y_offset;
+          frame_bottom = frame_top + file_list_visible_rows * FONTHEIGHT;
         }
 
-        sbar_t   = sbar_top + 2;
-        sbar_b   = sbar_bottom - 2;
-        sbar_h   = sbar_b - sbar_t;
-        sbar_y1i = sbar_h * scroll_value[FILE_LIST] / num[FILE_LIST] + sbar_t;
-        sbar_y2i = sbar_h * (scroll_value[FILE_LIST] + file_list_visible_rows) / num[FILE_LIST] + sbar_t;
+        /* The thumb spans the visible rows' share of the track height. */
+        track_top    = frame_top + 2;
+        track_bottom = frame_bottom - 2;
+        track_height = track_bottom - track_top;
+        thumb_top    = track_height * scroll_value[FILE_LIST] / num[FILE_LIST] + track_top;
+        thumb_bottom = track_height * (scroll_value[FILE_LIST] + file_list_visible_rows) / num[FILE_LIST] + track_top;
 
-        draw_box_line(SBAR_X1,  sbar_top,    SBAR_X2,  sbar_bottom, color_scroll_bar);
-        draw_box_fill(SBAR_X1I, sbar_y1i,    SBAR_X2I, sbar_y2i,    color_scroll_bar);
+        draw_box_line(SBAR_X1,  frame_top, SBAR_X2,  frame_bottom, color_scroll_bar);
+        draw_box_fill(SBAR_X1I, thumb_top, SBAR_X2I, thumb_bottom, color_scroll_bar);
       }
 
       /* ================================================================
@@ -2347,14 +2353,14 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
               column = FILE_LIST;
               selection[FILE_LIST] = 0;
               scroll_value[FILE_LIST] = 0;
-              in_scroll[FILE_LIST] = 0;
+              cursor_row[FILE_LIST] = 0;
             }
             else
             {
               column = DIR_LIST;
               selection[DIR_LIST] = 0;
               scroll_value[DIR_LIST] = 0;
-              in_scroll[DIR_LIST] = 0;
+              cursor_row[DIR_LIST] = 0;
             }
           }
           /* Clear the old boxart state when switching modes */
@@ -2395,7 +2401,7 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
               column = FILE_LIST;
               selection[FILE_LIST] = 0;
               scroll_value[FILE_LIST] = 0;
-              in_scroll[FILE_LIST] = 0;
+              cursor_row[FILE_LIST] = 0;
             }
           }
           else if (column == FILE_LIST)
@@ -2404,10 +2410,10 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
             {
               selection[FILE_LIST]++;
 
-              if (in_scroll[FILE_LIST] == (visible_rows[FILE_LIST] - 1))
+              if (cursor_row[FILE_LIST] == (visible_rows[FILE_LIST] - 1))
                 scroll_value[FILE_LIST]++;
               else
-                in_scroll[FILE_LIST]++;
+                cursor_row[FILE_LIST]++;
             }
           }
           else /* DIR_LIST */
@@ -2416,10 +2422,10 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
             {
               selection[column]++;
 
-              if (in_scroll[column] == (FILE_LIST_ROWS - 1))
+              if (cursor_row[column] == (FILE_LIST_ROWS - 1))
                 scroll_value[column]++;
               else
-                in_scroll[column]++;
+                cursor_row[column]++;
             }
           }
           break;
@@ -2441,36 +2447,36 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
             {
               selection[column] += PAGE_SCROLL_NUM;
 
-              if (in_scroll[column] >= (visible_rows[column] - PAGE_SCROLL_NUM))
+              if (cursor_row[column] >= (visible_rows[column] - PAGE_SCROLL_NUM))
               {
                 scroll_value[column] += PAGE_SCROLL_NUM;
 
                 if (scroll_value[column] > (num[column] - visible_rows[column]))
                 {
                   scroll_value[column] = num[column] - visible_rows[column];
-                  in_scroll[column] = selection[column] - scroll_value[column];
+                  cursor_row[column] = selection[column] - scroll_value[column];
                 }
               }
               else
               {
-                in_scroll[column] += PAGE_SCROLL_NUM;
+                cursor_row[column] += PAGE_SCROLL_NUM;
               }
             }
             else
             {
               selection[column] = num[column] - 1;
-              in_scroll[column] += PAGE_SCROLL_NUM;
+              cursor_row[column] += PAGE_SCROLL_NUM;
 
-              if (in_scroll[column] >= (visible_rows[column] - 1))
+              if (cursor_row[column] >= (visible_rows[column] - 1))
               {
                 if (num[column] > (visible_rows[column] - 1))
                 {
-                  in_scroll[column] = visible_rows[column] - 1;
+                  cursor_row[column] = visible_rows[column] - 1;
                   scroll_value[column] = num[column] - visible_rows[column];
                 }
                 else
                 {
-                  in_scroll[column] = num[column] - 1;
+                  cursor_row[column] = num[column] - 1;
                 }
               }
             }
@@ -2478,7 +2484,7 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
           else
           {
             selection[column] = num[column] - 1;
-            in_scroll[column] = num[column] - 1;
+            cursor_row[column] = num[column] - 1;
           }
           break;
 
@@ -2505,10 +2511,10 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
             {
               selection[FILE_LIST]--;
 
-              if (in_scroll[FILE_LIST] == 0)
+              if (cursor_row[FILE_LIST] == 0)
                 scroll_value[FILE_LIST]--;
               else
-                in_scroll[FILE_LIST]--;
+                cursor_row[FILE_LIST]--;
             }
           }
           else /* DIR_LIST */
@@ -2517,10 +2523,10 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
             {
               selection[column]--;
 
-              if (in_scroll[column] == 0)
+              if (cursor_row[column] == 0)
                 scroll_value[column]--;
               else
-                in_scroll[column]--;
+                cursor_row[column]--;
             }
           }
           break;
@@ -2540,7 +2546,7 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
           {
             selection[column] -= PAGE_SCROLL_NUM;
 
-            if (in_scroll[column] < PAGE_SCROLL_NUM)
+            if (cursor_row[column] < PAGE_SCROLL_NUM)
             {
               if (scroll_value[column] >= PAGE_SCROLL_NUM)
               {
@@ -2549,18 +2555,18 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
               else
               {
                 scroll_value[column] = 0;
-                in_scroll[column] = selection[column];
+                cursor_row[column] = selection[column];
               }
             }
             else
             {
-              in_scroll[column] -= PAGE_SCROLL_NUM;
+              cursor_row[column] -= PAGE_SCROLL_NUM;
             }
           }
           else
           {
             selection[column] = 0;
-            in_scroll[column] = 0;
+            cursor_row[column] = 0;
             scroll_value[column] = 0;
           }
           break;
@@ -2613,8 +2619,8 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
               /* Clamp directory scroll to shrunk view when returning to files */
               if (scroll_value[DIR_LIST] > num[DIR_LIST] - 8)
                 scroll_value[DIR_LIST] = (num[DIR_LIST] > 8) ? num[DIR_LIST] - 8 : 0;
-              if (in_scroll[DIR_LIST] >= 8)
-                in_scroll[DIR_LIST] = 7;
+              if (cursor_row[DIR_LIST] >= 8)
+                cursor_row[DIR_LIST] = 7;
             }
           }
           break;
