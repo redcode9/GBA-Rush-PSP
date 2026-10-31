@@ -38,6 +38,7 @@
 #define GBA_SIO_NORMAL_WRITABLE 0x708Bu
 #define GBA_SIO_MULTI_WRITABLE  0x7083u
 
+/* address is a byte offset into the I/O bank; registers are halfwords. */
 static uint16_t *gba_sio_register(GbaSio *sio, uint32_t address)
 {
   return sio->registers + (address >> 1);
@@ -136,6 +137,8 @@ static void gba_sio_refresh_pins(GbaSio *sio)
   *rcnt = pins;
 }
 
+/* Drops any transfer in progress. Registers, connection, mode and
+   transfer_error are left alone. */
 static void gba_sio_clear_transient(GbaSio *sio)
 {
   sio->pending_start = 0;
@@ -249,6 +252,8 @@ static void gba_sio_latch_transfer(GbaSio *sio, uint8_t setting,
   gba_sio_refresh_control(sio);
 }
 
+/* Describes the latched transfer for the link. In Multiplayer the parent
+   (player 0) drives the clock; in Normal mode SIOCNT's clock bit decides. */
 static void gba_sio_fill_transfer(const GbaSio *sio,
  GbaSioTransfer *transfer)
 {
@@ -359,6 +364,8 @@ GbaSioMode gba_sio_mode(const GbaSio *sio)
   return sio->mode;
 }
 
+/* Set by the link when a session connects. A count below two means not
+   connected; otherwise it is clamped to four and the id to the count. */
 void gba_sio_set_connection(GbaSio *sio, uint8_t player_id,
  uint8_t player_count)
 {
@@ -381,6 +388,8 @@ void gba_sio_set_connection(GbaSio *sio, uint8_t player_id,
   gba_sio_refresh_control(sio);
 }
 
+/* The other console's mode, SIOCNT and RCNT as the link last reported
+   them. peer_active stays 0 unless set_connection made two players. */
 void gba_sio_set_peer_state(GbaSio *sio, GbaSioMode mode,
  uint16_t control, uint16_t rcnt, int active)
 {
@@ -394,6 +403,8 @@ void gba_sio_set_peer_state(GbaSio *sio, GbaSioMode mode,
   gba_sio_refresh_control(sio);
 }
 
+/* Ends the session: a transfer in progress completes as failed (the IRQ
+   event is returned), then the port reads as unconnected. */
 GbaSioEvent gba_sio_disconnect(GbaSio *sio)
 {
   GbaSioEvent event = gba_sio_abort(sio);
@@ -407,6 +418,8 @@ GbaSioEvent gba_sio_disconnect(GbaSio *sio)
   return event;
 }
 
+/* SIOCNT write. A mode change drops a transfer the link has not locked;
+   a new START latches one when this console drives the clock. */
 static GbaSioEvent gba_sio_write_control(GbaSio *sio, uint16_t value)
 {
   uint16_t old_control = *gba_sio_register(sio, GBA_SIO_REG_CONTROL);
@@ -514,6 +527,8 @@ static GbaSioEvent gba_sio_write_rcnt(GbaSio *sio, uint16_t value)
   return event;
 }
 
+/* Game writes to the serial registers land here from memory.c (address
+   is the I/O offset). START and MODE_CHANGE events tell the link to act. */
 GbaSioEvent gba_sio_write16(GbaSio *sio, uint32_t address,
  uint16_t value)
 {
@@ -693,6 +708,8 @@ int gba_sio_set_cycle(GbaSio *sio, uint32_t cycle)
   return 1;
 }
 
+/* Shared body of commit_at and commit_at_horizon (allow_elapsed set);
+   the contract is in gba_sio.h. */
 static int gba_sio_commit_at_internal(GbaSio *sio,
  const GbaSioResult *result, uint32_t start_cycle, uint32_t finish_cycle,
  int allow_elapsed, GbaSioEvent *event)
