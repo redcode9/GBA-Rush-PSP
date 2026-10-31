@@ -2621,7 +2621,8 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
 }
 
 // Helpers for block_lookup_address_body below, whose type is "arm" or
-// "thumb"; block_lookup_address_dual picks one from bit 0 of the PC.
+// "thumb"; block_lookup_address_dual picks one from bit 0 of the PC. The
+// pc_* helpers also declare the local `thumb` that the ROM lookup uses.
 
 #define block_lookup_address_pc_arm()                                         \
   u32 thumb = 0;                                                           \
