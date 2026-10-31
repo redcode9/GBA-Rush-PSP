@@ -18,6 +18,13 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+/* PSP user interface, called from main.c and input.c. In file order:
+ * themes and the colour picker, recent ROMs, text helpers, the menu option
+ * macros, the file browser (load_file, list and carousel views), savestate
+ * slots, cheat and diagnostics callbacks, the in-game menu (menu(), whose
+ * screens are nested functions), the status bar, and loading and saving of
+ * the global, per-game and directory settings files. */
+
 #include "common.h"
 #include "boxart.h"   // carousel / boxart support
 #include "config_store.h"
@@ -27,8 +34,15 @@
 
 extern u32 option_swap_confirm_buttons;
 
+/* Both live in main_path. The theme file holds the 11 custom colours as raw
+   u16 values in color_items[] order; the config file is the versioned
+   ConfigModel blob (config_model.c), saved through config_store.c. */
 #define GPSP_THEME_FILENAME             "tempgba_theme.cfg"
 #define GPSP_CONFIG_FILENAME            "tempgba.cfg"
+
+/* ------------------------------------------------------------------
+   Themes
+   ------------------------------------------------------------------ */
 
 /* Runtime theme colors — initialized to OG theme defaults */
 u16 color_bg            = COLOR15( 3,  5,  8);
@@ -64,6 +78,7 @@ static const ThemeColors theme_presets[9] = {
     /* 8 Retro */    { COLOR15(0,0,0), COLOR15(0,22,0), COLOR15(0,31,0), COLOR15(0,18,0), COLOR15(0,20,0), COLOR15(0,24,0), COLOR15(0,18,0), COLOR15(0,10,0), COLOR15(0,24,0), COLOR15(31,31,0), COLOR15(0,31,0) },
 };
 
+/* item_index follows the color_items[] / ThemeColors field order. */
 static u16 get_preset_color(u32 theme, u32 item_index)
 {
     if (theme >= 9) theme = 0;
@@ -151,10 +166,9 @@ static const ColorItem color_items[] = {
 #define PICKER_PREV_Y    PICKER_SV_Y
 #define PICKER_PREV_SIZE 36
 
-/* Theme preview panel — shows all UI elements in a miniature menu mockup */
-/* Theme preview panel — same size/position as the game screenshot window
-   (228,44) with 240x160 dimensions; literals used because SCREEN macros
-   are defined later in this file. */
+/* Theme preview panel — a miniature menu mockup drawn in the same place and
+   size as the game screenshot window (228,44, 240x160); literals are used
+   because the SCREEN_IMAGE_POS macros are defined later in this file. */
 #define PREVIEW_PANEL_X  228
 #define PREVIEW_PANEL_Y  44
 #define PREVIEW_PANEL_W  240
@@ -318,6 +332,8 @@ static void refresh_choice_arrays(void)
     init_choice_arrays();
 }
 
+/* Colours are PSP 15-bit 5551: red in bits 0-4, green 5-9, blue 10-14.
+   The HSV helpers below work on 8-bit channels, H in degrees 0-359. */
 static void color15_to_rgb(u16 c, u8 *r, u8 *g, u8 *b)
 {
     *r = (c >> 0) & 0x1F;
@@ -395,7 +411,7 @@ static u16 hsv_to_color15(u32 h, u32 s, u32 v)
     return rgb_to_color15(C8TO5(r), C8TO5(g), C8TO5(b));
 }
 
-/* Dim an RGB565 colour by a brightness percentage (50, 75, or 100).
+/* Dim a 15-bit colour by a brightness percentage (50, 75, or 100).
  * Used to apply depth shading to folder frames and placeholders. */
 static u16 dim_color15(u16 color, u8 brightness)
 {
@@ -424,6 +440,8 @@ static u16 dim_color15(u16 color, u8 brightness)
    Recent ROMs management
    ------------------------------------------------------------------ */
 
+/* recent.cfg in main_path: u32 count, then for each entry a u32 length and
+   the absolute path bytes without a terminator. Newest entry first. */
 #define MAX_RECENT_ROMS     5
 #define RECENT_CFG_FILENAME "recent.cfg"
 
@@ -593,6 +611,10 @@ void menu_pick_color(void);
 static u32 action_savestate_slot(u32 slot);
 static u32 action_loadstate_slot(u32 slot);
 
+/* Menu screen layout in pixels on the 480x272 PSP screen. Row 2 holds the
+   title and status bar, the option list runs down the left side, the game
+   screenshot sits at the right, the three guide lines start at
+   TEXT_TOOLTIP_POS_Y and the button help line is drawn at y = 258. */
 #define TEXT_TOOLTIP_POS_Y  (210)
 #define MENU_LIST_POS_X     (10) //18 default
 #define MENU_LIST_POS_Y     (28)
@@ -607,6 +629,9 @@ static u32 action_loadstate_slot(u32 slot);
 #define DIR_NAME_LENGTH     ((TIME_STATUS_POS_X / FONTWIDTH) - 2)  // 42
 
 
+/* Draw the theme mockup with the current colours. editing_color_ptr_value
+   is 0xFFFF outside the colour picker; inside it, the battery sample shows
+   the low or charging state when that colour is the one being edited. */
 static void draw_theme_preview(u16 editing_color_ptr_value)
 {
     u32 px = PREVIEW_PANEL_X;
@@ -689,7 +714,10 @@ static void draw_theme_preview(u16 editing_color_ptr_value)
 }
 
 
-/* Copy text while applying the configured confirm/cancel button symbols. */
+/* Copy text while applying the configured confirm/cancel button symbols.
+   A1 F0 and A1 C1 are the Circle and Cross glyphs of the GBK font
+   (FONT_BTN_CIRCLE_GBK / FONT_BTN_CROSS_GBK); they trade places when
+   option_swap_confirm_buttons is set. */
 static void copy_swap_aware(const char *src, char *buf, size_t size)
 {
     char *dst = buf;
@@ -738,6 +766,9 @@ void print_swap_aware(const char *src, u32 x, u32 y, u16 color, u16 bg)
 /* ------------------------------------------------------------------
    Scrolling text helpers — ping-pong character-stepped
    ------------------------------------------------------------------ */
+/* Timing in redraws: one character every SCROLL_SPEED_FRAME frames, with a
+   SCROLL_EDGE_PAUSE pause at each end. option_language 0 (Japanese) prints
+   Shift-JIS with print_string(); every other language uses the GBK font. */
 #define SCROLL_SPEED_FRAME  2
 #define SCROLL_EDGE_PAUSE   60
 
@@ -757,6 +788,8 @@ typedef struct {
 
 static ScrollState g_scroll = {0, ~0U, 0, ~0U, 0, ~0U};
 
+/* The update_*_scroll() helpers restart a scroller when the hash of what it
+   shows changes, i.e. when the selection moves. */
 static u32 hash_string(const char *s)
 {
     u32 h = 0;
@@ -766,6 +799,8 @@ static u32 hash_string(const char *s)
     return h;
 }
 
+/* First character to show at this tick: pause, scroll to the end, pause,
+   scroll back. Returns 0 when the string already fits. */
 static s32 compute_scroll_offset(u32 tick, u32 str_len, u32 max_chars)
 {
     if (str_len <= max_chars)
@@ -966,6 +1001,7 @@ static void draw_color_picker(u32 h, u32 s, u32 v, s32 cx, s32 cy, s32 hue_seg,
     draw_theme_preview(current_color);
 }
 
+/* Clock and battery at the top right; the strings refresh every 30 frames. */
 static void draw_status_bar(void)
 {
     static char time_str[40];
@@ -991,6 +1027,10 @@ static void draw_status_bar(void)
     }
 }
 
+/* Modal HSV picker for one theme colour. The SV square is a 16x16 grid
+   (cx = saturation, cy = inverted value) and the hue bar has 32 steps. The
+   colour is written to *color_ptr live so the preview updates. Returns the
+   chosen colour on confirm and the original colour on cancel. */
 static u16 run_color_picker(u16 *color_ptr, u32 title_msg_idx)
 {
     u32 h, s, v;
@@ -1153,6 +1193,8 @@ s32 load_theme_config(void)
     return -1;
 }
 
+/* File browser layout: files on the left, directories in a right-hand
+   column starting at DIR_LIST_POS_X. L/R page by PAGE_SCROLL_NUM entries. */
 #define FILE_LIST_ROWS        (20)
 #define FILE_LIST_POS_X       (10) //18 default
 #define FILE_LIST_POS_Y       (16)
@@ -1180,6 +1222,13 @@ s32 load_theme_config(void)
 #define SBAR_Y2I (SBAR_H * (scroll_value[0] + FILE_LIST_ROWS) / num[0] + SBAR_T)
 
 
+/* ------------------------------------------------------------------
+   Menu definitions
+   ------------------------------------------------------------------ */
+
+/* A MenuType is one menu screen; its options are the rows. The option type
+   bits combine, e.g. a savestate slot is a NUMBER_SELECTION_OPTION that is
+   also an ACTION_OPTION. */
 typedef enum
 {
   NUMBER_SELECTION_OPTION = 0x01,
@@ -1200,15 +1249,15 @@ struct _MenuType
 
 struct _MenuOptionType
 {
-  void (*action_function)(void);
-  void (*passive_function)(void);
+  void (*action_function)(void);    // run on confirm
+  void (*passive_function)(void);   // run after the value changes
   struct _MenuType *sub_menu;
-  const char *display_string;
-  void *options;
-  u32 *current_option;
-  u32 num_options;
-  u32 help_string;
-  u32 line_number;
+  const char *display_string;       // label, may hold one %s or %d
+  void *options;                    // value names for string selections
+  u32 *current_option;              // value being edited
+  u32 num_options;                  // value count; left/right wrap at it
+  u32 help_string;                  // MSG index for the footer help line
+  u32 line_number;                  // screen row, gaps give blank lines
   MENU_OPTION_TYPE_ENUM option_type;
   u32 tooltip_string;   // MSG index for tooltip, 0 = none
   u32 display_msg;      // MSG index for display_string, 0 = dynamic
@@ -1222,6 +1271,7 @@ typedef struct _MenuOptionType MenuOptionType;
 typedef struct _MenuType MenuType;
 
 #define MAX_MENU_MODEL_ROWS 32
+/* behavior_flags: a status line the cursor skips over. */
 #define MENU_OPTION_PASSIVE_ROW (1U << 0)
 
 static int legacy_menu_row_visible(void *context)
@@ -1248,6 +1298,8 @@ static int menu_option_available(const MenuOptionType *option)
   return option->available_function == NULL || option->available_function();
 }
 
+/* Mirror a MenuType into MenuRows so menu_model.c drives cursor movement
+   (skipping hidden and passive rows). Values are still changed by menu(). */
 static void build_legacy_menu_model(MenuModel *model, MenuRow *rows,
  MenuType *menu)
 {
@@ -1296,6 +1348,8 @@ static void build_legacy_menu_model(MenuModel *model, MenuRow *rows,
     menu->selected_option = (u32)model->selected_index;
 }
 
+/* Option initializers, positional in struct _MenuOptionType field order.
+   MAKE_MENU(foo, ...) defines foo_menu over the foo_options[] array. */
 #define MAKE_MENU(name, init_function, passive_function)    \
   MenuType name##_menu =                                    \
   {                                                         \
@@ -1533,6 +1587,8 @@ char dir_boxart[MAX_PATH];
 char dir_boxart_folders[MAX_PATH];
 
 u32 menu_cheat_page = 0;
+/* Button config menu row -> gamepad_config_map[] index (PSP button). The
+   analog stick directions follow at indices 12-15. */
 u32 ALIGN_DATA gamepad_config_line_to_button[] =
 {
  8,
@@ -1552,6 +1608,9 @@ u32 ALIGN_DATA gamepad_config_line_to_button[] =
 u32 savestate_slot = 0;
 
 
+/* On MIPS, GCC calls _flush_cache() after writing a nested function's
+   trampoline to the stack (this file relies on nested functions); the PSP
+   C library does not provide it. */
 void _flush_cache(void) __attribute__((used, externally_visible));
 
 static int sort_function(const void *dest_str_ptr, const void *src_str_ptr);
@@ -1567,7 +1626,7 @@ static void get_savestate_filename(u32 slot, char *name_buffer);
 /* ========================================================================
  * Savestate preview extraction for file browser
  *
- * Savestate files (.svs) begin with a 240x160 RGB565 screenshot.
+ * Savestate files (.svs) begin with a 240x160 15-bit (PSP 5551) screenshot.
  * We extract it and scale to 141x141 for the boxart preview panel.
  * ======================================================================== */
 
@@ -1707,6 +1766,11 @@ void _flush_cache(void)
 }
 
 
+/* ------------------------------------------------------------------
+   File browser
+   ------------------------------------------------------------------ */
+
+/* qsort comparator for the browser lists: ".." first, then by name. */
 static int sort_function(const void *dest_str_ptr, const void *src_str_ptr)
 {
   char *dest_str = *((char **)dest_str_ptr);
@@ -1724,6 +1788,12 @@ static int sort_function(const void *dest_str_ptr, const void *src_str_ptr)
   return strcmp(dest_str, src_str);
 }
 
+/* Modal file browser for files ending in one of the NULL-terminated
+   wildcards. Starts in default_dir_name (or the current directory) and
+   chdir()s as the user navigates. On success copies the bare file name to
+   result, leaves the current directory set to its folder and returns 0;
+   returns -1 if the user backs out. show_recent adds the recent ROMs list.
+   SELECT toggles between the list view and the carousel view. */
 s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 show_recent)
 {
   char current_dir_name[MAX_PATH];
@@ -1834,17 +1904,19 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
   /* File browser is not the main menu; disable OS exit dialog here */
   sceImposeSetHomePopup(0);
 
+  /* Outer loop: one pass per directory. Read and sort its entries, then run
+     the input loop until the user picks a file or changes directory. */
   while (return_value == 1)
   {
     column = FILE_LIST;
 
     selection[FILE_LIST]    = 0;
     scroll_value[FILE_LIST] = 0;
-    cursor_row[FILE_LIST]    = 0;
+    cursor_row[FILE_LIST]   = 0;
 
     selection[DIR_LIST]     = 0;
     scroll_value[DIR_LIST]  = 0;
-    cursor_row[DIR_LIST]     = 0;
+    cursor_row[DIR_LIST]    = 0;
 
     memset(&current_file, 0, sizeof(current_file));
 
@@ -1871,6 +1943,7 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
       }
     }
 
+    /* A device root such as "ms0:/" has nothing above it, so no "..". */
     {
       char *root_check = strstr(current_dir_name, ":/");
       if (root_check == NULL || strlen(root_check) != 2)
@@ -2309,7 +2382,9 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
       }
 
 
-        /* Draw boxart or savestate preview for selected item (list view only) */
+        /* Draw boxart or savestate preview for selected item (list view only).
+           +108/+70 puts the 141x141 image in the bottom-right corner of
+           the screen. */
         if (browsing_savestates && column == FILE_LIST && num[FILE_LIST] > 0)
         {
           u16 *svs_buf = savestate_preview_get(file_list[selection[FILE_LIST]]);
@@ -2795,6 +2870,13 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
 }
 
 
+/* ------------------------------------------------------------------
+   Savestate slots
+   ------------------------------------------------------------------ */
+
+/* Read a savestate's screenshot (if snapshot is not NULL) and format its
+   save time into timestamp. A missing file gives a "no state" placeholder.
+   The .svs file starts with the screenshot, followed by a u64 UTC tick. */
 static void get_savestate_info(char *filename, u16 *snapshot, char *timestamp)
 {
   SceUID savestate_file;
@@ -2954,6 +3036,7 @@ static u32 auto_savestate_exists(void)
   return 0;
 }
 
+/* Last RAM dynarec policy seen by the menu; ~0 means "not sampled yet". */
 static u32 ram_dynarec_policy_menu_prev = ~(u32)0;
 
 /* After a ROM loads, offer to resume from its auto savestate. The slot is
@@ -2968,6 +3051,8 @@ void maybe_load_auto_savestate(void)
     action_loadstate_slot(10);
 }
 
+/* Translated RAM code was built under the old policy, so a change flushes
+   the writable-region translation cache. */
 static void menu_passive_ram_dynarec_policy(void)
 {
   if (ram_dynarec_policy_menu_prev == ~(u32)0)
@@ -3008,6 +3093,8 @@ static void refresh_cheat_format_strings(void)
                  cheats[i].cheat_name);
 }
 
+/* Point option rows 0-9 of the cheat menu at the cheats on the current page
+   (ten per page) and refresh the page selector in row 10. */
 static void reload_cheats_page(void)
 {
     u32 i;
@@ -3063,8 +3150,9 @@ static void reload_cheats_page(void)
     cheats_misc_options_ptr[10].num_options = page_count;
 }
 
-/* Global array of all menus — populated once inside menu(),
-   then used by file-scope refresh to avoid nested functions. */
+/* Global array of all menus — filled on each menu() call (the tables live
+   in its stack frame, so it is only valid while menu() runs), then used by
+   file-scope refresh to avoid nested functions. */
 #define MAX_MENUS 16
 static MenuType *all_menus[MAX_MENUS];
 static u32 num_all_menus = 0;
@@ -3074,6 +3162,8 @@ static char diagnostics_report_line[96];
 static char diagnostics_trace_status_line[96];
 #endif
 
+/* Menu row callbacks: *_available() enables a row, *_visible() shows it,
+   the rest are actions. */
 static int menu_game_available(void)
 {
     return gamepak_filename[0] != '\0';
@@ -3149,6 +3239,9 @@ static void menu_quit_action(void)
 }
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+/* <main_path>traces/input-<game code>-r<version>.gbit, named from the GBA
+   cartridge header: game code at 0xAC, software version at 0xBC; the header
+   is 0xC0 bytes long. */
 static int menu_trace_path(char *path, size_t path_size, int create_directory)
 {
     char directory[MAX_PATH];
@@ -3320,7 +3413,9 @@ static void menu_trace_cancel(void)
 }
 #endif
 
-/* A link session needs a game: loading another one closes the link. */
+/* A link session needs a game: loading another one closes the link.
+   Starting a session pins the CPU at 333 MHz; when it fails or ends, the
+   menu's usual 222 MHz is restored. */
 static void menu_link_host_action(void)
 {
     if (gamepak_filename[0] == '\0' || !main_link_host())
@@ -3352,6 +3447,12 @@ static void menu_link_peer_code(char code[5])
     code[4] = '\0';
 }
 
+/* ------------------------------------------------------------------
+   Menu text rendering
+   ------------------------------------------------------------------ */
+
+/* True if the string has a double-byte lead byte; such text needs the GBK
+   font even when the menu language is Japanese. */
 static int menu_string_has_gbk(const char *str)
 {
     const u8 *p = (const u8 *)str;
@@ -3532,6 +3633,7 @@ static void print_menu_option_split(const MenuOptionType *opt, s16 x, s16 y, u16
     }
 }
 
+/* Re-read every translated label after option_language changes. */
 static void menu_refresh_language(void)
 {
     u32 i, j;
@@ -3557,6 +3659,14 @@ static void menu_refresh_language(void)
 }
 
 
+/* ------------------------------------------------------------------
+   In-game menu
+   ------------------------------------------------------------------ */
+
+/* Runs the menu until the user leaves it. Returns 1 when it leaves through
+   an action on the emulated machine (ROM load, reset, savestate save or
+   load), 0 on a plain resume. The menu tables and screen handlers below are
+   locals and nested functions so they can share this frame's state. */
 u32 menu(void)
 {
 
@@ -3568,7 +3678,7 @@ u32 menu(void)
   u32 repeat = 1;
   u32 return_value = 0;
 
-  u32 first_load = 0;
+  u32 first_load = 0;           // 1 = no ROM loaded yet
   u32 preview_language = option_language;
 
   GUI_ACTION_TYPE gui_action;
@@ -3579,7 +3689,7 @@ u32 menu(void)
   u16 *current_screen   = NULL;
   u16 *savestate_screen = NULL;
 
-  u32 savestate_action = 0;
+  u32 savestate_action = 0;     // slot rows: 0 = load, 1 = save
   static char savestate_timestamps[SAVESTATE_SLOT_COUNT][40];
 
   char time_str[40];
@@ -3606,7 +3716,8 @@ u32 menu(void)
   MenuModel navigation_model;
   MenuRow navigation_rows[MAX_MENU_MODEL_ROWS];
 
-  u32 menu_init_flag = 0;
+  u32 menu_init_flag = 0;       // set by menu_init(): next screen redraw
+                                // runs its one-time setup
 
   u32 current_option_num = 0;
   u32 menu_main_option_num = 0;
@@ -3768,6 +3879,7 @@ u32 menu(void)
     }
   }
 
+  /* Show the selected slot's screenshot and refresh its timestamp row. */
   void menu_change_state(void)
   {
     get_savestate_filename(savestate_slot, filename_buffer);
@@ -3803,6 +3915,9 @@ u32 menu(void)
     return load_state(filename_buffer);
   }
 
+  /* Pick any .svs in dir_state. A state of the running ROM loads directly;
+     one of another ROM first loads that ROM from dir_roms, named by the
+     part of the file name before the last '_'. */
   void menu_load_state_file(void)
   {
     const char *file_ext[] = { ".svs", NULL };
@@ -4266,6 +4381,9 @@ u32 menu(void)
     }
   }
 
+  /* Screen handlers: menu() calls the submenu_*() matching current_menu on
+     every redraw to draw its title (icon + text at the top left) and any
+     extra content. The _GBK variants use the GBK font's icons. */
   #define DRAW_TITLE(title)                                         \
    sprintf(line_buffer, "%s %s", FONT_GBA_ICON, MSG[title]);        \
    print_string(line_buffer, 6, 2, color_help_text, BG_NO_FILL);    \
@@ -4362,6 +4480,7 @@ u32 menu(void)
         savestate_slot = current_option_num;
         menu_change_state();
       }
+      /* "Load"/"Save" tag after the slot text; 28 is MENU_LIST_POS_Y. */
       print_string_gbk(MSG[savestate_action ? MSG_SAVE : MSG_LOAD], MENU_LIST_POS_X + ((strlen(savestate_timestamps[current_option_num]) + 1) * FONTWIDTH), (current_option_num * FONTHEIGHT) + 28, color_active_item, BG_NO_FILL);
     }
   }
@@ -4457,6 +4576,9 @@ u32 menu(void)
     DRAW_TITLE_PSP_GBK(MSG_CATEGORY_EXIT);
   }
 
+  /* Live analog stick view over the screenshot area: the stick position and
+     the dead zone set by option_analog_sensitivity. The 0-255 stick range is
+     drawn at half scale (PAD_RANGE pixels), centred in the 240x160 window. */
   void draw_analog_pad_range(void)
   {
     char print_buffer[40];
@@ -4521,6 +4643,7 @@ u32 menu(void)
     }
   }
 
+  /* Forget the current ROM and show the "no game loaded" placeholder. */
   void gamepak_file_none(void)
   {
     gamepak_filename[0] = 0;
@@ -4533,6 +4656,8 @@ u32 menu(void)
 	print_string_ext_gbk(MSG[MSG_NON_LOAD_GAME], X_POS_CENTER, 74, COLOR15_WHITE, BG_NO_FILL, current_screen, GBA_SCREEN_WIDTH);
   }
 
+  /* Reopen the streamed ROM file closed on menu entry: five tries, 0.5 s
+     apart, then a fatal error. */
   void gamepak_file_reopen(void)
   {
     for (i = 0; i < 5; i++)
@@ -4550,6 +4675,8 @@ u32 menu(void)
     quit();
   }
 
+  /* Scrollable page with the ROM header bytes used to match
+     game_config.txt and the idle loop / SMC gate hacks loaded for it. */
   void menu_show_game_txt_debug(void)
   {
     char buf[2400];
@@ -4732,10 +4859,8 @@ u32 menu(void)
   }
 
 
-  // Marker for help information, don't go past this mark (except \n)------*
-
   /* ------------------------------------------------------------------
-     Theme submenu
+     Theme, custom colour and link screens
    ------------------------------------------------------------------ */
 
   void submenu_theme(void)
@@ -4854,6 +4979,13 @@ u32 menu(void)
     option_theme = 0;
     apply_theme(option_theme);
   }
+
+  /* ------------------------------------------------------------------
+     Menu tables, built on every menu() call. Submenus come before the
+     menus that link to them; the parents are wired up after main_menu.
+     An option with a NULL action is handled inline in the input switch
+     below, by menu and line number.
+   ------------------------------------------------------------------ */
 
   MenuOptionType custom_colors_options[] =
   {
@@ -5205,6 +5337,7 @@ u32 menu(void)
 
   menu_refresh_language();
 
+  /* Switch screens; NULL means back to the parent menu. */
   void choose_menu(MenuType *new_menu)
   {
     if (new_menu == NULL)
@@ -5239,6 +5372,8 @@ u32 menu(void)
 
   load_savestate_timestamps();
 
+  /* Close the streamed ROM file while the menu runs; -2 tells the exit path
+     to reopen it (gamepak_file_reopen). */
   if (FILE_CHECK_VALID(gamepak_file_large))
   {
     FILE_CLOSE(gamepak_file_large);
@@ -5254,8 +5389,10 @@ u32 menu(void)
     set_cpu_clock(PSP_CLOCK_222);
   choose_menu(&main_menu);
 
+  /* One iteration per frame: draw the screen, then handle one input. */
   while (repeat)
   {
+    /* Redraw the "no game" placeholder in the newly selected language. */
     if (first_load && preview_language != option_language)
     {
       memset(current_screen, 0, GBA_SCREEN_SIZE);
@@ -5533,6 +5670,8 @@ u32 menu(void)
         }
         break;
 
+      /* Shoulder shortcuts: R opens the savestate menu, L opens the file
+         browser that fits the current menu. */
       case CURSOR_RTRIGGER:
         if (current_menu == &main_menu)
         {
@@ -5631,6 +5770,8 @@ u32 menu(void)
                   default:
                     if (current_option->line_number < SAVESTATE_SLOT_COUNT)
                     {
+                      /* Back up the current progress to the auto slot
+                         before loading a numbered slot over it. */
                       if (savestate_action == 0 && current_option->line_number < AUTO_SAVESTATE_SLOT)
                       {
                         if (savestate_file_exists(current_option->line_number))
@@ -5703,6 +5844,8 @@ u32 menu(void)
   if (gamepak_file_large == -2)
     gamepak_file_reopen();
 
+  /* Wait for every button up to HOME (PSP_CTRL bits 0-16) to be released so
+     the press that closed the menu does not reach the game. */
   while (get_pad_input(0x0001FFFF) != 0);
 
   menu_term();
@@ -5731,6 +5874,8 @@ u32 menu(void)
 
 
 
+/* Format the clock and the battery text (icon, percent, then "charging" or
+   the remaining h:mm) and pick the battery colour. Buffers are 40 bytes. */
 static void update_status_string_gbk(char *time_str, char *batt_str, u16 *color_batt)
 {
   ScePspDateTime current_time = { 0 };
@@ -5807,6 +5952,8 @@ static void update_status_string_gbk(char *time_str, char *batt_str, u16 *color_
 }
 
 
+/* date_format is the PSP system setting. Date format messages come in
+   pairs: msg_id is year-first, msg_id + 1 takes the other two orders. */
 static void get_timestamp_string(char *buffer, u16 msg_id, ScePspDateTime *msg_time, int day_of_week)
 {
   const char *week_str[] =
@@ -5833,6 +5980,10 @@ static void get_timestamp_string(char *buffer, u16 msg_id, ScePspDateTime *msg_t
   Save Config Files
 -----------------------------------------------------------------------------*/
 
+/* ConfigStoreIo callbacks: config_store.c's save-to-temp, validate, rename
+   sequence carried out with sceIo calls. Each returns nonzero on success. */
+
+/* Fails if the file holds more than capacity bytes. */
 static int config_io_read(void *context, const char *path, uint8_t *data,
  size_t capacity, size_t *size)
 {
@@ -5890,6 +6041,7 @@ static int config_io_write(void *context, const char *path,
   return 1;
 }
 
+/* Sync the device that holds main_path, e.g. "ms0:". */
 static int config_io_flush(void *context)
 {
   char device[8];
@@ -5915,6 +6067,7 @@ static int config_io_move(void *context, const char *source,
   return sceIoRename(source, target) >= 0;
 }
 
+/* Removing a file that does not exist counts as success. */
 static int config_io_remove(void *context, const char *path)
 {
   SceIoStat stat;
@@ -5944,6 +6097,7 @@ static const ConfigStoreIo config_store_io =
   config_io_exists
 };
 
+/* tempgba.cfg plus its .tmp (write target) and .bak (last good) siblings. */
 static int config_paths(char *primary, char *temporary, char *recovery)
 {
   int result;
@@ -5959,6 +6113,8 @@ static int config_paths(char *primary, char *temporary, char *recovery)
   return result >= 0 && result < MAX_PATH;
 }
 
+/* Global settings <-> ConfigModel. The per-game fast forward override is
+   never stored globally. */
 static void capture_global_config(ConfigModel *model)
 {
   u32 i;
@@ -6035,6 +6191,7 @@ static void apply_global_config(const ConfigModel *model)
     if(gamepad_config_map[i] == BUTTON_ID_MENU)
       has_menu_button = 1;
   }
+  /* Without HOME there must be a way into the menu: put it on Triangle. */
   if(!enable_home_menu && !has_menu_button)
     gamepad_config_map[0] = BUTTON_ID_MENU;
   rebuild_fast_forward_button_mask();
@@ -6101,6 +6258,9 @@ static int config_companion_paths(const char *primary, char *temporary,
   return result >= 0 && result < MAX_PATH;
 }
 
+/* Per-game files (<dir_cfg>/<rom>.cfg) use the same format but only carry
+   video, frameskip, clock, volume, fast forward and button settings; the
+   remaining fields are written as defaults and ignored on load. */
 static void capture_game_config(ConfigModel *model)
 {
   u32 i;
@@ -6247,6 +6407,10 @@ s32 load_config_file(void)
 }
 
 
+/* Read the "name = path" directory settings. Relative paths are taken from
+   main_path; a missing or unopenable directory falls back to main_path with
+   an on-screen warning. Returns 0 if the file was read, -1 if it is absent
+   (every directory is then main_path). */
 s32 load_dir_cfg(char *file_name)
 {
   char current_line[256];
