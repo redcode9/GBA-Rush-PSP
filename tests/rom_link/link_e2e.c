@@ -387,6 +387,8 @@ static void side_link(Side *side, int generic)
   mTimingSchedule(&side->gba->timing, &side->service_event, SERVICE_CYCLES);
 }
 
+/* Moves one console's emulation target on by a tick: smoothly at its
+   speed, or a whole frame per VBlank in PSP burst mode. */
 static void side_advance(Side *side)
 {
   if(side->burst_cycles == 0)

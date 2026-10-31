@@ -283,6 +283,7 @@ static void network_deliver(Console *consoles[2], uint64_t now)
 
 typedef int (*DoneFunction)(Console *consoles[2]);
 
+/* Stop condition for runs that last the whole time limit. */
 static int never_done(Console *consoles[2])
 {
   (void)consoles;
@@ -1337,6 +1338,8 @@ static void run_pokemon_case(const PokemonCase *test, const NetProfile *net)
    b->delaySum > ROOM_DELAY_LIMIT * b->delayCount ? "  FAILED" : "");
 }
 
+/* Stop condition: both games are in the room and the joiner is holding
+   its frame for the host's. */
 static int joiner_waits_in_room(Console *consoles[2])
 {
   return game_of(consoles[0])->phase == SCRIPT_ROOM &&

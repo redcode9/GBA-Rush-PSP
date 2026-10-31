@@ -65,6 +65,7 @@ enum
 /* Messages the other console may leave unconsumed before this one waits,
    which keeps a long outage from overflowing the channel. */
 #define POKEMON_MAX_BACKLOG 64u
+/* One GBA frame in microseconds (59.73 Hz). */
 #define LINK_FRAME_US 16743u
 
 static void put16(uint8_t *out, uint16_t value)
