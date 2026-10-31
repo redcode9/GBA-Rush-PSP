@@ -178,7 +178,8 @@ s32 rtc_bit_count;
 //    means EEPROM (a 17-unit DMA to it selects the 8 KB size).
 //  - Saving: each game write arms backup_update; update_backup() writes the
 //    .sav WRITE_BACKUP_DELAY frames later when auto-save is on, and
-//    update_backup_immediately() on quit, suspend or ROM change.
+//    update_backup_immediately() on quit, ROM change or a suspend from the
+//    menu (a power-button suspend writes only a savestate).
 
 // Up to 128kb, store SRAM, flash ROM, or EEPROM here.
 static u8 ALIGN_DATA gamepak_backup[1024 * 128];
@@ -1452,7 +1453,9 @@ CPU_ALERT_TYPE write_io_register8(u32 address, u32 value)
 CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
 {
   /* Cases are byte offsets from 0x4000000; the REG_* names in memory.h are
-     halfword indexes (offset / 2). Each case names its GBA register. */
+     halfword indexes (offset / 2). Each case names its GBA register. A new
+     write-only register must also be cleared in io_readable (init_memory),
+     or reads return the stored value instead of open bus. */
   switch (address)
   {
     // DISPCNT
@@ -3673,7 +3676,9 @@ s32 load_gamepak(char *name)
     game_title[12] = 0;
     game_code[4] = 0;
     maker_code[2] = 0;
+    // game_config.txt: per-ROM emulation fixes (idle loops, SMC gates...)
     load_game_config(game_title, game_code, maker_code);
+    // gui.c: the user's saved settings for this game
     load_game_config_file();
     rebuild_fast_forward_button_mask();
 
