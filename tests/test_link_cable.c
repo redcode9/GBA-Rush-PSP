@@ -100,6 +100,7 @@ static uint16_t reg_read(const Console *console, uint32_t address)
   return console->registers[address >> 1];
 }
 
+/* A guest register write, which goes through gba_sio like on the PSP. */
 static void reg_write(Console *console, uint32_t address, uint16_t value)
 {
   GbaSioEvent event = gba_sio_write16(&console->sio, address, value);
@@ -110,6 +111,8 @@ static void reg_write(Console *console, uint32_t address, uint16_t value)
     console->service_due = 1;
 }
 
+/* Resets a console to cycle 0 and starts its cable, with local ID
+   0x1000 + index; host picks the side that hosts. */
 static void console_init(Console *console, int index, int host,
  const char *game, const Guest *guest, void *state, double speed)
 {
@@ -124,6 +127,8 @@ static void console_init(Console *console, int index, int host,
    0x1000u + (uint32_t)index, sim_clock);
 }
 
+/* One link service call, like main.c's periodic one; a serial IRQ it
+   raises goes straight to the guest. */
 static void console_service(Console *console)
 {
   GbaSioEvent event = link_cable_service(&console->cable, console->cycle,
@@ -504,6 +509,8 @@ static PokemonGame *game_of(Console *console)
   return (PokemonGame *)console->state;
 }
 
+/* Port of link.c DisableSerial(): stops the timer and the serial IRQ, zeroes
+   the SIO data registers and gLink, keeping linkOpen and vsyncDisabled. */
 static void DisableSerial(Console *console)
 {
   PokemonGame *game = game_of(console);
@@ -523,6 +530,8 @@ static void DisableSerial(Console *console)
   game->vsyncDisabled = keep_vsync;
 }
 
+/* Port of link.c EnableSerial(): multiplayer at 115200 baud with the IRQ
+   on; resets gLink and the driver's static counters. */
 static void EnableSerial(Console *console)
 {
   PokemonGame *game = game_of(console);
@@ -1502,6 +1511,8 @@ static void lockstep_start_multi(Console *console)
    SIO_START));
 }
 
+/* Counts a mismatch unless the slave's word is the master's previous word
+   plus 1; the master then times its next word, the slave queues its reply. */
 static void lockstep_multi_irq(Console *console)
 {
   LockstepGame *game = lockstep_of(console);
@@ -1626,6 +1637,8 @@ static void normal_start(Console *console)
    SIO_START));
 }
 
+/* The master checks the echo of its last value; the slave checks the
+   counter, echoes it and starts again on the master's clock. */
 static void normal_irq(Console *console)
 {
   LockstepGame *game = lockstep_of(console);
@@ -1797,6 +1810,8 @@ static void test_session_lifecycle(void)
   }
 }
 
+/* Runs every case (--quick trims the lockstep profiles); failed CHECKs are
+   printed and counted, and any failure makes the exit status 1. */
 int main(int argc, char **argv)
 {
   size_t n;
