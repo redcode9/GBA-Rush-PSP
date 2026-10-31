@@ -18,6 +18,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+// GBA memory map and I/O: read/write handlers per region, I/O register side
+// effects, DMA, ROM paging for ROMs larger than the buffer, cartridge backup
+// memory (SRAM/Flash/EEPROM) and its save type detection, the cartridge RTC,
+// per-game config (game_config.txt) and savestate files. The dynarec reads
+// memory_map_read/write directly and calls back into these handlers.
+
 #include "common.h"
 #include "perf_monitor.h"
 
@@ -27,6 +33,8 @@ extern void draw_popup_frame_auto(int x, int y, int w, int h);
 #define CONFIG_FILENAME  "game_config.txt"
 
 
+// Wait cycles per region (address >> 24); waitstate_control() rewrites the
+// gamepak entries (0x08-0x0E) when WAITCNT changes.
 u8 ALIGN_DATA memory_waitstate_n[2][16] =
 {
   { 0, 0, 2, 0, 0, 0, 0, 0, 4, 4, 4, 4, 4, 4, 4, 0 }, // 8,16bit accesses
@@ -78,22 +86,26 @@ u16 vram_metadata [0x18000]; // Video RAM code metadata                192 KiB
 
 u32 bios_read_protect;
 
+// Internal memory control register (0x4000800).
 u32 iwram_control;
+// One flag per I/O byte offset: nonzero if it reads back (see init_memory).
 u8 *io_readable = (u8 *)io_registers + 0x400;
 
 u32 obj_address = 0x10000; // OBJ Tiles Address
 
 DmaTransferType ALIGN_DATA dma[4];
+// Address step per 16-bit unit for DMA_INCREMENT, DECREMENT, FIXED and
+// RELOAD (which increments); doubled for 32-bit transfers.
 const ALIGN_DATA s32 dma_addr_control[4] = { 2, -2, 0, 2 };
 
 
-// Keeps us knowing how much we have left.
+// ROM buffer: the whole ROM, or a cache of 32 KiB pages if it does not fit.
 u8 *gamepak_rom;
 u8 gamepak_header[GAMEPAK_HEADER_SIZE];
 u32 gamepak_size;
 u32 gamepak_file_size;
 
-// Picks a page to evict
+// Page load counter, used as the LRU timestamp when evicting a ROM page.
 u32 page_time = 0;
 
 typedef struct
@@ -105,7 +117,7 @@ typedef struct
 u32 gamepak_ram_buffer_size;
 u32 gamepak_ram_pages;
 
-// Enough to map the gamepak RAM space.
+// One entry per 32 KiB page of the ROM buffer: which ROM page it holds.
 GamepakSwapEntryType *gamepak_memory_map;
 
 // This is global so that it can be kept open for large ROMs to swap
@@ -153,7 +165,7 @@ RTC_WRITE_MODE_TYPE rtc_write_mode;
 u16 ALIGN_DATA rtc_registers[3];
 u32 ALIGN_DATA rtc_data[12];
 u32 rtc_command;
-u32 rtc_status = 0x40;
+u32 rtc_status = 0x40; // 24-hour mode
 u32 rtc_data_bytes;
 s32 rtc_bit_count;
 
@@ -161,11 +173,12 @@ s32 rtc_bit_count;
 // Up to 128kb, store SRAM, flash ROM, or EEPROM here.
 static u8 ALIGN_DATA gamepak_backup[1024 * 128];
 
-// Write out backup file this many cycles after the most recent
-// backup write.
+// Write out backup file this many frames after the most recent
+// backup write (update_backup() runs once per VBlank).
 #define WRITE_BACKUP_DELAY  (10)
 
-// If the backup space is written (only update once this hits 0)
+// Frames until a pending backup write is saved (only update once this hits
+// 0); WRITE_BACKUP_DELAY + 1 means nothing is pending.
 s32 backup_update = WRITE_BACKUP_DELAY + 1;
 
 typedef enum
@@ -182,7 +195,8 @@ typedef enum
   SRAM_SIZE_64KB = 0x10000
 } SRAM_SIZE_TYPE;
 
-// Keep it 32KB until the upper 64KB is accessed, then make it 64KB.
+// Keep it 32KB until the upper half of the 64KB space is written, then make
+// it 64KB.
 
 BACKUP_TYPE_TYPE backup_type = BACKUP_NONE;
 SRAM_SIZE_TYPE sram_size = SRAM_SIZE_32KB;
@@ -276,6 +290,7 @@ static u32 save_backup(char *name);
 static u32 encode_bcd(u8 value);
 
 #define SAVESTATE_SIZE  0x80000 // 512K Byte (524288 Byte)
+// The link cable snapshot occupies the last bytes of the savestate.
 #define SAVESTATE_SIO_OFFSET (SAVESTATE_SIZE - sizeof(GbaSioSnapshot))
 u8 *write_mem_ptr;
 static void memory_write_mem_savestate(SceUID savestate_file);
@@ -287,6 +302,7 @@ typedef char GbaSioSnapshotMustFit[
  sizeof(GbaSioSnapshot) < SAVESTATE_SIZE ? 1 : -1];
 
 
+// Last page looked up by the ROM and RAM read handlers (one-entry cache).
 u8 *read_rom_block = NULL;
 u8 *read_ram_block = NULL;
 
@@ -326,6 +342,7 @@ static u32 read32_gamepak(u32 address);
 static u32 read32_backup(u32 address);
 static u32 read32_open(u32 address);
 
+// Handler tables indexed by region (address >> 24).
 static u32 (*mem_read8[16])(u32) =
 {
   read8_bios,          // 0
@@ -386,6 +403,7 @@ static u32 (*mem_read32[16])(u32) =
   read32_open          // f
 };
 
+// DMA reads from the BIOS, SRAM and unused regions return 0.
 static u32 (*dma_read16[16])(u32) =
 {
   read_null,           // 0
@@ -426,6 +444,8 @@ static u32 (*dma_read32[16])(u32) =
   read_null            // f
 };
 
+// Open-bus reads return the opcode being prefetched, so only regions that
+// code can run from are readable here.
 static u32 (*open_read8[16])(u32) =
 {
   read8_bios,          // 0
@@ -529,6 +549,7 @@ static CPU_ALERT_TYPE (*mem_write8[16])(u32, u32) =
   write_null            // f
 };
 
+// Halfword writes to ROM (region 8) reach the RTC's GPIO port.
 static CPU_ALERT_TYPE (*mem_write16[16])(u32, u32) =
 {
   write_null,           // 0
@@ -569,6 +590,7 @@ static CPU_ALERT_TYPE (*mem_write32[16])(u32, u32) =
   write_null            // f
 };
 
+// EEPROM (region 0xD) is written through DMA only.
 static CPU_ALERT_TYPE (*dma_write16[16])(u32, u32) =
 {
   write_null,           // 0
@@ -610,6 +632,8 @@ static CPU_ALERT_TYPE (*dma_write32[16])(u32, u32) =
 };
 
 
+// The BIOS reads back only while executing inside it; elsewhere a read
+// returns the last BIOS opcode fetched (bios_read_protect).
 #define READ_BIOS(type)                                                       \
   if ((address >> 14) != 0)                                                   \
     return read##type##_open(address);                                        \
@@ -634,6 +658,8 @@ static u32 read32_bios(u32 address)
   READ_BIOS(32);
 }
 
+// Registers live in the first 1 KiB; 0x4000800 (internal memory control)
+// repeats every 64 KiB. Unreadable offsets fall through to open bus.
 static u32 read8_io_registers(u32 address)
 {
   if ((address & 0xFFFC) == 0x0800) // repeated each 64K
@@ -713,6 +739,8 @@ static u32 read32_oam_ram(u32 address)
   READ_OAM_RAM(32);
 }
 
+// ROM pages may be missing when the ROM is larger than the buffer; they are
+// loaded from the file on first touch.
 #define READ_GAMEPAK(type)                                                    \
   if ((address & 0x1FFFFFF) < gamepak_size)                                   \
   {                                                                           \
@@ -751,6 +779,7 @@ static u32 read32_gamepak(u32 address)
   return read32_open(address);
 }
 
+// Region 0xD is ROM if the ROM reaches that far, otherwise EEPROM data.
 static u32 read16_eeprom(u32 address)
 {
   READ_GAMEPAK(16);
@@ -763,6 +792,7 @@ static u32 read8_backup(u32 address)
   return read_backup(address);
 }
 
+// The backup bus is 8 bits wide: wider reads repeat the byte.
 static u32 read16_backup(u32 address)
 {
   u32 value = read_backup(address);
@@ -809,6 +839,8 @@ static u32 read_null(u32 address)
 
 #define THUMB_STATE (reg[REG_CPSR] & 0x20)
 
+// Open bus: the opcode being prefetched (PC + 2 in Thumb, PC + 4 in ARM),
+// or the last DMA value just after a DMA (CPU_DMA_HACK).
 static u32 read8_open(u32 address)
 {
   u32 offset = 0;
@@ -908,6 +940,7 @@ static CPU_ALERT_TYPE write32_iwram(u32 address, u32 value)
   WRITE_IWRAM(32);
 }
 
+// Only the first 1 KiB of region 4 holds registers.
 #define WRITE_IO_REGISTERS(type)                                              \
   if (((address >> 10) & 0x3FFF) != 0)                                        \
     return CPU_ALERT_NONE;                                                    \
@@ -929,6 +962,8 @@ static CPU_ALERT_TYPE write32_io_registers(u32 address, u32 value)
   WRITE_IO_REGISTERS(32);
 }
 
+// 8-bit writes to palette RAM store the byte in both halves of the
+// halfword.
 static CPU_ALERT_TYPE write8_palette_ram(u32 address, u32 value)
 {
   ADDRESS16(palette_ram, address & 0x3Fe) = value | (value << 8);
@@ -950,6 +985,8 @@ static CPU_ALERT_TYPE write32_palette_ram(u32 address, u32 value)
   return CPU_ALERT_NONE;
 }
 
+// VRAM is 96 KiB in a 128 KiB window; 0x18000-0x1FFFF mirrors the OBJ area
+// at 0x10000-0x17FFF.
 #define WRITE_VRAM(type)                                                      \
   if (((address >> 16) & 0x01) != 0)                                          \
     address &= 0x17FFF;                                                       \
@@ -959,6 +996,8 @@ static CPU_ALERT_TYPE write32_palette_ram(u32 address, u32 value)
   ADDRESS##type(vram, address) = value;                                       \
   return check_smc_write(vram_metadata, address, 0x06);                       \
 
+// 8-bit writes to BG VRAM fill both bytes of the halfword; writes to OBJ
+// VRAM are ignored.
 static CPU_ALERT_TYPE write8_vram(u32 address, u32 value)
 {
   if (((address >> 16) & 0x01) != 0)
@@ -1007,6 +1046,8 @@ static CPU_ALERT_TYPE write_null(u32 address, u32 value)
 
 // write io registers
 
+// Turns link cable events into CPU alerts: raises the serial IRQ and flags
+// SIO state changes for the link layer.
 static CPU_ALERT_TYPE gba_sio_alert(GbaSioEvent event)
 {
   CPU_ALERT_TYPE alert = CPU_ALERT_NONE;
@@ -1025,9 +1066,13 @@ static CPU_ALERT_TYPE gba_sio_alert(GbaSioEvent event)
   return alert;
 }
 
+// WAITCNT: SRAM wait (bits 0-1), WS0/WS1/WS2 first access (2-3, 5-6, 8-9)
+// and second access (4, 7, 10), gamepak prefetch (14).
 static void waitstate_control(u32 value)
 {
   u32 i;
+  // Wait cycles for the 2-bit first-access codes, then per wait state for
+  // the 1-bit second-access codes.
   const u8 waitstate_table[4] = { 4, 3, 2, 8 };
   const u8 gamepak_ws0_seq[2] = { 2, 1 };
   const u8 gamepak_ws1_seq[2] = { 4, 1 };
@@ -1080,6 +1125,7 @@ static void waitstate_control(u32 value)
     }
   }
 
+  // Bit 15 (cartridge type) is read-only.
   pIO_REG(REG_WAITCNT) = (pIO_REG(REG_WAITCNT) & 0x8000) | (value & 0x7FFF);
 }
 
