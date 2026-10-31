@@ -78,6 +78,8 @@ static GbaSioMode gba_sio_decode_mode(uint16_t control, uint16_t rcnt)
   return GBA_SIO_MODE_GPIO;
 }
 
+/* The modes the link emulates; in UART, JOY Bus and GPIO the registers
+   are plain storage. */
 static int gba_sio_supported_mode(GbaSioMode mode)
 {
   return mode == GBA_SIO_MODE_NORMAL_8 ||
@@ -85,11 +87,15 @@ static int gba_sio_supported_mode(GbaSioMode mode)
    mode == GBA_SIO_MODE_MULTIPLAYER;
 }
 
+/* In any transfer stage from pending_start to active (see GbaSio); the
+   game sees it as SIOCNT START set and SC low. */
 static int gba_sio_transfer_busy(const GbaSio *sio)
 {
   return sio->pending_start != 0 || sio->waiting != 0 || sio->active != 0;
 }
 
+/* A second console is connected with its port in the same mode: sets
+   Multiplayer READY, and in Normal mode lets SI follow the peer's SO. */
 static int gba_sio_peer_ready(const GbaSio *sio, GbaSioMode mode)
 {
   return sio->player_count >= 2 && sio->peer_active != 0 &&

@@ -32,6 +32,8 @@ static FastForwardSettings sanitized_settings(
   return result;
 }
 
+/* Forgets the pacing and presentation deadlines so the next frame
+   re-anchors them to the current time instead of catching up. */
 static void reset_schedule(FastForwardPolicy *policy)
 {
   policy->pacing_ready = 0;
