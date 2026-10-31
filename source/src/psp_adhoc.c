@@ -49,6 +49,11 @@
 #define PSP_ADHOC_HANDSHAKE_ACKS   3
 #define PSP_ADHOC_POLL_DELAY       1000u
 #define PSP_ADHOC_CONTROL_DELAY    10000u
+/* The PSP scheduler is strictly preemptive with no time slicing. The stack
+   threads must outrank the emulator main thread (0x20), which never sleeps
+   while behind schedule, or ad-hoc reception stops during gameplay. */
+#define PSP_ADHOC_STACK_PRIORITY   0x1C
+#define PSP_ADHOC_CONTROL_PRIORITY 0x1D
 #define PSP_ADHOC_TX_WAKE_BIT          1u
 #define PSP_ADHOC_HOT_ACK_GRACE_US   500u
 #define PSP_ADHOC_HOT_WINDOW_US     50000u
@@ -1378,7 +1383,8 @@ static int psp_adhoc_network_init(PspAdhocContext *context)
   context->module_adhoc = 1;
 
   psp_adhoc_set_phase(context, PSP_ADHOC_PHASE_NET_INIT);
-  result = sceNetInit(128 * 1024, 42, 4 * 1024, 42, 4 * 1024);
+  result = sceNetInit(128 * 1024, PSP_ADHOC_STACK_PRIORITY, 4 * 1024,
+   PSP_ADHOC_STACK_PRIORITY, 4 * 1024);
   if(result < 0)
     return result;
   context->net_initialized = 1;
@@ -1392,7 +1398,8 @@ static int psp_adhoc_network_init(PspAdhocContext *context)
   memset(&product, 0, sizeof(product));
   memcpy(product.product, "GBARUSH01", sizeof(product.product));
   psp_adhoc_set_phase(context, PSP_ADHOC_PHASE_CONTROL_INIT);
-  result = sceNetAdhocctlInit(32 * 1024, 0x20, &product);
+  result = sceNetAdhocctlInit(32 * 1024, PSP_ADHOC_CONTROL_PRIORITY,
+   &product);
   if(result < 0)
     return result;
   context->control_initialized = 1;
