@@ -10,8 +10,8 @@
   instead of growing to half a second or more.
 - Pokemon games no longer pace on the other PSP's game clock, which made both
   consoles pause for each other after every radio dropout.
-- The link sends only the newest datagram when several are queued, and the
-  session log counts the datagrams the PSP network stack refused or dropped.
+- The session log counts the datagrams handed to the PSP network stack, those
+  it refused and incoming ones dropped.
 
 ### Changed
 

@@ -416,8 +416,8 @@ static void main_link_log_state(void)
 
 static void main_link_close(MainLinkEnd reason)
 {
+  uint32_t sends;
   uint32_t send_errors;
-  uint32_t sends_skipped;
   uint32_t receive_drops;
 
   if(!gba_link_open)
@@ -440,9 +440,9 @@ static void main_link_close(MainLinkEnd reason)
    gba_link_waits, gba_link_wait_max_us,
    gba_link_wait_total_us > UINT_MAX ? UINT_MAX :
     (u32)gba_link_wait_total_us);
-  psp_adhoc_counters(&send_errors, &sends_skipped, &receive_drops);
+  psp_adhoc_counters(&sends, &send_errors, &receive_drops);
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 4,
-   send_errors, sends_skipped, receive_drops);
+   sends, send_errors, receive_drops);
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_ERROR, cpu_ticks,
    (u8)reason, (u32)gba_link.status, (u32)psp_adhoc_last_error(),
    main_adhoc_phase_value());

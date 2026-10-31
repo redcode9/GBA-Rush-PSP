@@ -99,11 +99,8 @@ typedef struct
   int peer_valid;
   PspAdhocRing outgoing;
   PspAdhocRing incoming;
-  /* The newest outgoing datagram, until the stack accepts it. */
-  uint8_t pending[PSP_ADHOC_MAX_DATAGRAM];
-  size_t pending_size;
+  volatile uint32_t sends;
   volatile uint32_t send_errors;
-  volatile uint32_t sends_skipped;
   volatile uint32_t receive_drops;
 } PspAdhocContext;
 
@@ -535,38 +532,31 @@ static int psp_adhoc_receive_all(PspAdhocContext *context)
   return 1;
 }
 
-/* Every datagram repeats all the messages the other console has not
-   acknowledged yet, so only the newest one queued needs to go out; sending
-   a whole burst would only crowd the radio. A datagram the stack cannot
-   take right now is tried again on the next pass, unless a newer one has
-   replaced it by then. */
 static int psp_adhoc_send_all(PspAdhocContext *context)
 {
+  uint8_t data[PSP_ADHOC_MAX_DATAGRAM];
   size_t size;
-  int result;
 
   context->phase = PSP_ADHOC_PHASE_SEND;
-  while((size = ring_pop(&context->outgoing, context->pending,
-         sizeof(context->pending))) != 0)
+  while((size = ring_pop(&context->outgoing, data, sizeof(data))) != 0)
   {
-    if(context->pending_size != 0)
-      context->sends_skipped++;
-    context->pending_size = size;
-  }
-  if(context->pending_size == 0 || !context->peer_valid)
-    return 1;
+    int result;
 
-  result = sceNetAdhocPdpSend(context->socket_id, context->peer_mac,
-   context->peer_port, context->pending, (unsigned int)context->pending_size,
-   0, 1);
-  if(result >= 0)
-    context->pending_size = 0;
-  else if(result == SCE_NET_ERROR_NO_SPACE ||
-          result == SCE_ADHOC_ERROR_WOULD_BLOCK ||
-          result == SCE_ADHOC_ERROR_TIMEOUT)
-    context->send_errors++;
-  else
-    return psp_adhoc_fail(context, result);
+    if(!context->peer_valid)
+      continue;
+    context->sends++;
+    result = sceNetAdhocPdpSend(context->socket_id, context->peer_mac,
+     context->peer_port, data, (unsigned int)size, 0, 1);
+    /* A busy stack drops this datagram; the next one repeats its messages.
+       Never retry at once: on a PSP, sending again every millisecond made
+       the stack hold datagrams for seconds and the games never linked. */
+    if(result == SCE_NET_ERROR_NO_SPACE ||
+       result == SCE_ADHOC_ERROR_WOULD_BLOCK ||
+       result == SCE_ADHOC_ERROR_TIMEOUT)
+      context->send_errors++;
+    else if(result < 0)
+      return psp_adhoc_fail(context, result);
+  }
   return 1;
 }
 
@@ -795,11 +785,11 @@ size_t psp_adhoc_receive(uint8_t *data, size_t capacity)
   return ring_pop(&psp_adhoc.incoming, data, capacity);
 }
 
-void psp_adhoc_counters(uint32_t *send_errors, uint32_t *sends_skipped,
+void psp_adhoc_counters(uint32_t *sends, uint32_t *send_errors,
  uint32_t *receive_drops)
 {
+  *sends = psp_adhoc.sends;
   *send_errors = psp_adhoc.send_errors;
-  *sends_skipped = psp_adhoc.sends_skipped;
   *receive_drops = psp_adhoc.receive_drops;
 }
 

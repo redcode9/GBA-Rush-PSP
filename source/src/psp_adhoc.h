@@ -71,14 +71,13 @@ int psp_adhoc_last_error(void);
 PspAdhocPhase psp_adhoc_failure_phase(void);
 const char *psp_adhoc_phase_name(PspAdhocPhase phase);
 
-/* Emulator thread side. The worker only sends the newest datagram queued,
-   and sending drops the datagram if the queue is full: every datagram of
-   the link protocol repeats what the older ones carried. */
+/* Emulator thread side. Sending drops the datagram if the queue is full;
+   the link protocol repeats anything that matters. */
 int psp_adhoc_send(const uint8_t *data, size_t size);
 size_t psp_adhoc_receive(uint8_t *data, size_t capacity);
-/* Datagrams the stack refused for now, older datagrams replaced by a newer
-   one before they went out, and incoming datagrams lost to a full queue. */
-void psp_adhoc_counters(uint32_t *send_errors, uint32_t *sends_skipped,
+/* Datagrams handed to the PSP network stack, those it refused, and
+   incoming datagrams lost to a full queue. */
+void psp_adhoc_counters(uint32_t *sends, uint32_t *send_errors,
  uint32_t *receive_drops);
 /* Sleeps until a datagram arrives or the timeout expires. */
 void psp_adhoc_wait(unsigned int timeout_us);

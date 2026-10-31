@@ -77,9 +77,9 @@ both consoles down.
 `psp_adhoc.c` brings up the network on a worker thread that runs above the
 emulator thread, creates or joins the `GBARUSH` group and only moves datagrams
 through two lock-free queues. All link logic runs on the emulator thread.
-Since every datagram repeats what the older ones carried, the worker only
-sends the newest one queued and retries it a millisecond later if the stack
-refuses it.
+A datagram the PSP network stack refuses is dropped, since the next one
+repeats its messages; retrying at once made the stack hold datagrams for
+seconds.
 
 `link_net.c` makes the datagrams reliable and ordered. Every datagram repeats
 all messages the other side has not acknowledged yet, as GGPO does with
