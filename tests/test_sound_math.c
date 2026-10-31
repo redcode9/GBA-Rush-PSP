@@ -77,6 +77,9 @@ static void test_invalid_steps_are_rejected(void)
   assert(sound_math_tick_step(0) == 0);
 }
 
+/* Extremes stay in range: FIFO samples -128..127 scaled by 256
+   (-32768..32512) and PSG samples -8..7 at full volume (1 << 28);
+   PSG scaling rounds to nearest, a half rounding up. */
 static void test_full_scale_mixing(void)
 {
   assert(sound_math_interpolate(-32768, 32512, 0) == -32768);
