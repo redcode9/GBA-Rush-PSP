@@ -1,8 +1,20 @@
 /* GBA Rush PSP Single-Game Launcher
  *
+ * The EBOOT stub behind a per-game XMB bubble. `make launcher-stub` builds
+ * it into tool/assets/EBOOT.PBP; the desktop builder (tool/builder.py) then
+ * swaps in the game's title, ICON0, PIC0, PIC1 and SND0 and writes the two
+ * text files below next to the new EBOOT.PBP.
+ *
  * Reads rom_path.txt        (required)  -> ROM path to auto-load
  * Reads emulator_path.txt   (optional)  -> override emulator directory
  *                                         or full path to boot .PBP file
+ * Without emulator_path.txt the emulator must sit in a sibling folder named
+ * DEFAULT_EMU_FOLDER (ms0:/PSP/GAME/<bubble>/ -> ms0:/PSP/GAME/GBARushPSP/).
+ *
+ * Once both files check out, the stub replaces itself with the emulator,
+ * passing argv[0] = emulator EBOOT path and argv[1] = ROM path. The
+ * emulator's user_main() (source/src/main.c) loads argv[1] directly,
+ * skipping the ROM browser and the Recent ROMs list.
  *
  * CFW path:  sctrlKernelLoadExecVSHWithApitype (real PSP)
  * Fallback:  sceKernelLoadExec with argv[0] + argv[1] (PPSSPP / non-CFW)
@@ -92,7 +104,7 @@ static void error_screen(const char *line1, const char *line2, const char *path)
         if (pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE |
                            PSP_CTRL_SQUARE | PSP_CTRL_START | PSP_CTRL_SELECT))
             break;
-        sceKernelDelayThread(50000);
+        sceKernelDelayThread(50000);   /* poll the pad every 50 ms */
     }
 }
 
@@ -197,6 +209,8 @@ static int read_txt_line(const char *path, char *out, int out_size)
     return 0;
 }
 
+/* sctrlHENGetVersion() is answered by the CFW's SystemCtrl module; without
+ * a CFW the call is expected to fail with a negative error code. */
 static int is_cfw(void)
 {
     return (sctrlHENGetVersion() >= 0);
@@ -431,6 +445,7 @@ int main(int argc, char *argv[])
         struct SceKernelLoadExecVSHParam param;
         memset(&param, 0, sizeof(param));
         param.size = sizeof(param);
+        /* Same key and apitype (0x141) the XMB uses for a Memory Stick game */
         param.key  = "game";
         param.args = (len0 + 1) + (len1 + 1);
         param.argp = arg_buf;
