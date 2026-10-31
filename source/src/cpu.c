@@ -2684,6 +2684,25 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
  * They are macros because each is expanded per instruction set and
  * metadata area, with names built by ## pasting.
  */
+
+/* The shared end of every lookup that had to translate: leave this
+   translation level and, if it failed, unwind to the outermost level,
+   which drops the queued exits and retries from its redo label with the
+   caches just flushed. Expands to statements; call it without a
+   semicolon, inside a block that declares translation_result and redo. */
+#define block_lookup_finish_translation()                                     \
+  translation_recursion_level--;                                              \
+                                                                              \
+  if (translation_result == NULL)                                             \
+  {                                                                           \
+    if (translation_recursion_level != 0)                                     \
+      return NULL;                                                            \
+                                                                              \
+    dynarec_worklist_clear(&deferred_exit_worklist);                          \
+    perf_monitor_record_dynarec_retry();                                      \
+    goto redo;                                                                \
+  }                                                                           \
+
 #define block_lookup_translate(instruction_type, mem_type, metadata_area)     \
   block_tag = get_tag_##instruction_type();                                   \
   if ((block_tag < MIN_TAG) || (block_tag > metadata_area##_max_tag))         \
@@ -2711,19 +2730,7 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
         translation_result = NULL;                                            \
     }                                                                         \
                                                                               \
-    translation_recursion_level--;                                            \
-                                                                              \
-    /* If the translation failed then pass that failure on if we're in        \
-       a recursive level, or try again if we've hit the bottom. */            \
-    if (translation_result == NULL)                                           \
-    {                                                                         \
-      if (translation_recursion_level != 0)                                   \
-        return NULL;                                                          \
-                                                                              \
-      dynarec_worklist_clear(&deferred_exit_worklist);                        \
-      perf_monitor_record_dynarec_retry();                                    \
-      goto redo;                                                              \
-    }                                                                         \
+    block_lookup_finish_translation()                                         \
   }                                                                           \
   else                                                                        \
   {                                                                           \
@@ -2760,19 +2767,7 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
     if ((translation_result != NULL) && (translation_recursion_level == 1) && \
         !process_deferred_exits())                                            \
       translation_result = NULL;                                              \
-    translation_recursion_level--;                                            \
-                                                                              \
-    /* If the translation failed then pass that failure on if we're in        \
-       a recursive level, or try again if we've hit the bottom. */            \
-    if (translation_result == NULL)                                           \
-    {                                                                         \
-      if (translation_recursion_level != 0)                                   \
-        return NULL;                                                          \
-                                                                              \
-      dynarec_worklist_clear(&deferred_exit_worklist);                        \
-      perf_monitor_record_dynarec_retry();                                    \
-      goto redo;                                                              \
-    }                                                                         \
+    block_lookup_finish_translation()                                         \
   }                                                                           \
   else                                                                        \
   {                                                                           \
@@ -2855,19 +2850,7 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
             (translation_recursion_level == 1) &&                             \
             !process_deferred_exits())                                        \
           translation_result = NULL;                                          \
-        translation_recursion_level--;                                        \
-                                                                              \
-        /* If the translation failed then pass that failure on if we're in    \
-         a recursive level, or try again if we've hit the bottom. */          \
-        if (translation_result == NULL)                                       \
-        {                                                                     \
-          if (translation_recursion_level != 0)                               \
-            return NULL;                                                      \
-                                                                              \
-          dynarec_worklist_clear(&deferred_exit_worklist);                    \
-          perf_monitor_record_dynarec_retry();                                \
-          goto redo;                                                          \
-        }                                                                     \
+        block_lookup_finish_translation()                                     \
       }                                                                       \
       break;                                                                  \
     }                                                                         \
