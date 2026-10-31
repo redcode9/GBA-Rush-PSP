@@ -18,6 +18,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+// Dynamic recompiler front end (there is no interpreter): finds, translates
+// and caches ARM/Thumb blocks as MIPS code. Pass 1 scan_block, pass 2 dead
+// Thumb flag elimination, pass 3 emission via mips_emit.h. Also owns block
+// lookup, the code caches, self-modifying code metadata and mode switching.
+
 // Important todo:
 // - stm reglist writeback when base is in the list needs adjustment
 // - block memory needs psr swapping and user mode reg swapping
@@ -54,15 +59,16 @@ u32 ALIGN_DATA spsr[7];
 
 #define DCACHE_INDEX_WRITEBACK_INVALIDATE       (0x14) // Index WriteBack Invalidate (D)
 #define DCACHE_INDEX_UNLOCK                     (0x16) // Index Unlock (D)
-#define DCACHE_CREATE_DIRTY_EXCLUSIVE           (0x18) // Crate Dirty Exclusive (D)
+#define DCACHE_CREATE_DIRTY_EXCLUSIVE           (0x18) // Create Dirty Exclusive (D)
 #define DCACHE_HIT_INVALIDATE                   (0x19) // Hit Invalidate (D)
 #define DCACHE_HIT_WRITEBACK                    (0x1A) // Hit WriteBack (D)
 #define DCACHE_HIT_WRITEBACK_INVALIDATE         (0x1B) // Hit WriteBack Invalidate (D)
-#define DCACHE_CREATE_DIRTY_EXCLUSIVE_WITH_LOCK (0x1C) // Crate Dirty Exclusive with Lock (D)
+#define DCACHE_CREATE_DIRTY_EXCLUSIVE_WITH_LOCK (0x1C) // Create Dirty Exclusive with Lock (D)
 #define DCACHE_FILL                             (0x1E) // Fill (D)
 #define DCACHE_FILL_WITH_LOCK                   (0x1F) // Fill with Lock (D)
 
 
+// Native code caches (see TRANSLATION_REGION_TYPE in cpu.h).
 #define READONLY_CODE_CACHE_SIZE          (1024 * 1024 * 4)
 #define WRITABLE_CODE_CACHE_SIZE          (1024 * 1024 * 2)
  /* The following parameter needs to be at least enough bytes to hold
@@ -72,6 +78,7 @@ u32 ALIGN_DATA spsr[7];
 #define TRANSLATION_CACHE_LIMIT_THRESHOLD (1024)
 
 
+// Bucket counts of the ROM block hash and the RAM block reuse hash.
 #define ROM_BRANCH_HASH_SIZE (65536) /* Must be a power of 2, 2 <= n <= 65536 */
 #define WRITABLE_HASH_SIZE   (65536) /* Must be a power of 2, 2 <= n <= 65536 */
 
@@ -82,6 +89,7 @@ u32 ALIGN_DATA spsr[7];
 #define MAX_TAG_IWRAM (0x6000)
 #define MAX_TAG_VRAM  (0xFFFE)
 
+// Lowercase aliases so block_lookup_translate can build these names with ##.
 #define ewram_max_tag MAX_TAG_EWRAM
 #define iwram_max_tag MAX_TAG_IWRAM
 #define vram_max_tag  MAX_TAG_VRAM
@@ -93,6 +101,9 @@ u32 ALIGN_DATA spsr[7];
 #define rom_metadata_area   METADATA_AREA_ROM
 #define bios_metadata_area  METADATA_AREA_BIOS
 
+// Direct exits to these targets are patched into native jumps. RAM targets
+// qualify only under RAM_DYNAREC_FULL_FLUSH, where any write to RAM code
+// flushes the whole writable cache and every jump into it.
 #define BRANCH_TARGET_IS_BIOS_OR_ROM(addr)                                    \
   ((addr) < 0x00004000 ||                                                     \
    ((addr) >= 0x08000000 && (addr) < 0x0E000000))
@@ -104,10 +115,16 @@ u32 ALIGN_DATA spsr[7];
   (BRANCH_TARGET_IS_BIOS_OR_ROM(addr) ||                                      \
    ((option_ram_dynarec_policy == RAM_DYNAREC_FULL_FLUSH) && BRANCH_TARGET_IS_WRITABLE_RAM(addr)))
 
+// Per-block limits (instructions, branch exits); reaching one ends the
+// block with a translation gate.
 #define MAX_BLOCK_SIZE (8192)
 #define MAX_EXITS      (256)
 
 
+// Precedes every block in the writable cache, followed by a copy of its GBA
+// opcodes and then the native code. Chained per checksum in
+// writable_checksum_hash so unchanged RAM code can be reused after an SMC
+// clear instead of being translated again.
 struct _ReuseHeader
 {
   struct _ReuseHeader *Next;
@@ -117,12 +134,13 @@ struct _ReuseHeader
 
 typedef struct _ReuseHeader ReuseHeader;
 
+// Per-instruction results of scan_block, indexed by position in the block.
 typedef struct
 {
-  u8 *block_offset;
-  u16 flag_data;
-  u8 condition;
-  u8 update_cycles;
+  u8 *block_offset;   // native address, for branches inside the block
+  u16 flag_data;      // flag liveness bits, see thumb_flag_status
+  u8 condition;       // bits 0-3 condition, 0x10 exit point, 0x20 sets flags
+  u8 update_cycles;   // a branch inside the block lands here
 } BlockDataArmType;
 
 typedef struct
@@ -135,7 +153,7 @@ typedef struct
 typedef struct
 {
   u32 branch_target;
-  u8 *branch_source;
+  u8 *branch_source;  // emitted jump, patched once the target is known
 } BlockExitType;
 
 typedef union
@@ -158,12 +176,20 @@ u8 *readonly_next_code = readonly_code_cache;
 u8 ALIGN_DATA writable_code_cache[WRITABLE_CODE_CACHE_SIZE];
 u8 *writable_next_code = writable_code_cache;
 
-/* These represent Metadata Areas. */
+/* These represent Metadata Areas. ROM blocks are found by hashing the PC
+ * into rom_branch_hash; writable_checksum_hash finds reusable RAM blocks. */
 u32 *rom_branch_hash[ROM_BRANCH_HASH_SIZE];
 ReuseHeader *writable_checksum_hash[WRITABLE_HASH_SIZE];
 
+// Nesting of block translation; above 1 while process_deferred_exits
+// translates the targets of direct exits queued in deferred_exit_worklist.
 u32 translation_recursion_level = 0;
 static DynarecWorklist deferred_exit_worklist;
+
+// Tag -> native address tables. RAM and BIOS metadata hold 4 u16 per GBA
+// word: [0] Thumb tag (low halfword), [1] ARM tag, [2] Thumb tag (high
+// halfword), [3] RAM flags: 0x1 Thumb code, 0x2 ARM code, 0x4/0x8 a Thumb/ARM
+// block ends on this word. *_block_tag_top is the next free tag.
 
 u8 *ewram_block_ptrs[MAX_TAG_EWRAM + 1];
 u32 ewram_block_tag_top = MIN_TAG;
@@ -175,6 +201,8 @@ u32 vram_block_tag_top = MIN_TAG;
 u8 *bios_block_ptrs[MAX_TAG_BIOS + 1];
 u32 bios_block_tag_top = MIN_TAG;
 
+// Lowest/highest metadata offset holding code (0xFFFFFFFF: none), so a
+// clear only touches the used range.
 u32 ewram_code_min = 0xFFFFFFFF;
 u32 ewram_code_max = 0xFFFFFFFF;
 u32 iwram_code_min = 0xFFFFFFFF;
@@ -182,10 +210,12 @@ u32 iwram_code_max = 0xFFFFFFFF;
 u32 vram_code_min  = 0xFFFFFFFF;
 u32 vram_code_max  = 0xFFFFFFFF;
 
+// Scratch for the one block being translated.
 BlockDataType  ALIGN_DATA block_data;
 OpcodeDataType ALIGN_DATA opcodes;
 
 
+// Set bits per byte, for LDM/STM register lists.
 const u8 ALIGN_DATA bit_count[256] =
 {
   0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
@@ -206,6 +236,7 @@ const u8 ALIGN_DATA bit_count[256] =
   4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8
 };
 
+// MSR field mask (opcode bits 16-19: c, x, s, f) to the PSR bits written.
 const u32 ALIGN_DATA psr_masks[16] =
 {
   0x00000000, 0x000000FF, 0x0000FF00, 0x0000FFFF,
@@ -214,6 +245,7 @@ const u32 ALIGN_DATA psr_masks[16] =
   0xFFFF0000, 0xFFFF00FF, 0xFFFFFF00, 0xFFFFFFFF
 };
 
+// CPSR mode field to CPU_MODE_TYPE; System (0x1F) shares the User bank.
 const CPU_MODE_TYPE ALIGN_DATA cpu_modes[32] =
 {
   MODE_INVALID, MODE_INVALID, MODE_INVALID, MODE_INVALID,
@@ -249,6 +281,8 @@ static void partial_clear_metadata_arm(u16 *metadata, u16 *metadata_area_start, 
 static void partial_clear_metadata_thumb(u16 *metadata, u16 *metadata_area_start, u16 *metadata_area_end);
 
 
+// Operand field decoders, expanded by the mips_emit.h generators that the
+// translate_*_instruction switches call.
 #define arm_decode_data_proc_reg()                                            \
   u8 rn = (opcode >> 16) & 0x0F;                                              \
   u8 rd = (opcode >> 12) & 0x0F;                                              \
@@ -435,6 +469,7 @@ static void partial_clear_metadata_thumb(u16 *metadata, u16 *metadata_area_start
 #include "mips_emit.h"
 
 
+// Case labels for 8 or 16 consecutive opcode values.
 #define CASE08(base)                                                          \
   case base:                                                                  \
   case base + 0x01:                                                           \
@@ -463,6 +498,8 @@ static void partial_clear_metadata_thumb(u16 *metadata, u16 *metadata_area_start
   case base + 0x0E:                                                           \
   case base + 0x0F:                                                           \
 
+// Points pc_address_block at the host copy of the 32 KB page holding pc,
+// loading Game Pak pages on demand.
 #define check_pc_region(pc)                                                   \
   new_pc_region = (pc) >> 15;                                                 \
   if (new_pc_region != pc_region)                                             \
@@ -476,6 +513,8 @@ static void partial_clear_metadata_thumb(u16 *metadata, u16 *metadata_area_start
     }                                                                         \
   }                                                                           \
 
+// Pass 3 for one ARM instruction: unless the low nibble of condition is AL,
+// emit a skip branch first; then dispatch on opcode bits 27-20.
 #define translate_arm_instruction()                                           \
   opcode = opcodes.arm[block_data_position];                                  \
   condition = block_data.arm[block_data_position].condition;                  \
@@ -997,7 +1036,7 @@ static void partial_clear_metadata_thumb(u16 *metadata, u16 *metadata_area_start
       }                                                                       \
       else                                                                    \
       {                                                                       \
-        /* TST rd, rn, reg_op */                                              \
+        /* TST rn, reg_op */                                                  \
         arm_data_proc_test(tst, reg_flags);                                   \
       }                                                                       \
       break;                                                                  \
@@ -1051,7 +1090,7 @@ static void partial_clear_metadata_thumb(u16 *metadata, u16 *metadata_area_start
       }                                                                       \
       else                                                                    \
       {                                                                       \
-        /* TEQ rd, rn, reg_op */                                              \
+        /* TEQ rn, reg_op */                                                  \
         arm_data_proc_test(teq, reg_flags);                                   \
       }                                                                       \
       break;                                                                  \
@@ -1154,7 +1193,7 @@ static void partial_clear_metadata_thumb(u16 *metadata, u16 *metadata_area_start
       }                                                                       \
       else                                                                    \
       {                                                                       \
-        /* CMN rd, rn, reg_op */                                              \
+        /* CMN rn, reg_op */                                                  \
         arm_data_proc_test(cmn, reg);                                         \
       }                                                                       \
       break;                                                                  \
@@ -1351,7 +1390,7 @@ static void partial_clear_metadata_thumb(u16 *metadata, u16 *metadata_area_start
       }                                                                       \
       else                                                                    \
       {                                                                       \
-        /* MVNS rd, rn, reg_op */                                             \
+        /* MVNS rd, reg_op */                                                 \
         arm_data_proc_unary(mvns, reg_flags, flags);                          \
       }                                                                       \
       break;                                                                  \
@@ -1638,7 +1677,7 @@ static void partial_clear_metadata_thumb(u16 *metadata, u16 *metadata_area_start
       break;                                                                  \
                                                                               \
     case 0x5F:                                                                \
-      /* LDRBT rd, [rn + imm]! */                                             \
+      /* LDRB rd, [rn + imm]! */                                              \
       arm_access_memory(load, up, pre_wb, u8, imm);                           \
       break;                                                                  \
                                                                               \
@@ -1774,7 +1813,7 @@ static void partial_clear_metadata_thumb(u16 *metadata, u16 *metadata_area_start
       break;                                                                  \
                                                                               \
     case 0x7F:                                                                \
-      /* LDRBT rd, [rn + rm]! */                                              \
+      /* LDRB rd, [rn + rm]! */                                               \
       arm_access_memory(load, up, pre_wb, u8, reg);                           \
       break;                                                                  \
                                                                               \
@@ -1974,10 +2013,12 @@ static void partial_clear_metadata_thumb(u16 *metadata, u16 *metadata_area_start
   pc += 4;                                                                    \
 
 
+// ARM blocks skip flag liveness analysis (see arm_dead_flag_eliminate).
 static void arm_flag_status(BlockDataArmType *block_data, u32 opcode)
 {
 }
 
+// Pass 3 for one Thumb instruction, dispatching on the top opcode byte.
 #define translate_thumb_instruction()                                         \
   flag_status = block_data.thumb[block_data_position].flag_data;              \
   last_opcode = opcode;                                                       \
@@ -2417,7 +2458,7 @@ static void arm_flag_status(BlockDataArmType *block_data, u32 opcode)
                                                                               \
     CASE08(0xF8)                                                              \
       /* (high word) BL label */                                              \
-      /* This might not be preceeding a BL low word (Golden Sun 2), if so     \
+      /* This might not be preceding a BL low word (Golden Sun 2), if so      \
          it must be handled like an indirect branch. */                       \
       if ((last_opcode >= 0xF000) && (last_opcode < 0xF800))                  \
       {                                                                       \
@@ -2437,6 +2478,8 @@ static void arm_flag_status(BlockDataArmType *block_data, u32 opcode)
   pc += 2;                                                                    \
 
 
+// flag_data is three nibbles, each N=8 Z=4 C=2 V=1: bits 0-3 may modify,
+// 4-7 always modify, 8-11 read (see thumb_dead_flag_eliminate).
 #define thumb_flag_modifies_all()                                             \
   flag_status |= 0xFF                                                         \
 
@@ -2458,6 +2501,7 @@ static void arm_flag_status(BlockDataArmType *block_data, u32 opcode)
 #define thumb_flag_requires_all()                                             \
   flag_status |= 0xF00                                                        \
 
+// Pass 1: record how one Thumb instruction uses the flags.
 static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
 {
   u16 flag_status = 0;
@@ -2679,12 +2723,6 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
       perf_monitor_record_dynarec_retry();                                    \
       goto redo;                                                              \
     }                                                                         \
-/*                                                                              \
-    if (translation_recursion_level == 0)                                     \
-    {                                                                         \
-      translate_invalidate_dcache();                                          \
-    }                                                                         \
-*/                                                                              \
   }                                                                           \
   else                                                                        \
   {                                                                           \
@@ -2734,19 +2772,16 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
       perf_monitor_record_dynarec_retry();                                    \
       goto redo;                                                              \
     }                                                                         \
-/*                                                                              \
-    if (translation_recursion_level == 0)                                     \
-    {                                                                         \
-      translate_invalidate_dcache();                                          \
-    }                                                                         \
-*/                                                                              \
   }                                                                           \
   else                                                                        \
   {                                                                           \
     block_address = metadata_area##_block_ptrs[block_tag];                    \
   }                                                                           \
 
-// Where emulation started
+// Returns the native entry point (past the block prologue) for pc,
+// translating on a miss. BIOS and RAM blocks are found through metadata
+// tags, ROM blocks through rom_branch_hash, whose [key, next] entries sit in
+// the read-only cache just before each block (key = pc | thumb).
 #define block_lookup_address_body(type)                                       \
 {                                                                             \
   u16 *location;                                                              \
@@ -2785,6 +2820,7 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
     case 0x0C: case 0x0D:                                                     \
     {                                                                         \
       u32 key = pc | thumb;                                                            \
+      /* Knuth multiplicative hash */                                         \
       u32 hash_target = ((key * 2654435761U) >> 16) & (ROM_BRANCH_HASH_SIZE - 1); \
       u32 *block_ptr = rom_branch_hash[hash_target];                          \
       u32 **block_ptr_address = rom_branch_hash + hash_target;                \
@@ -2831,12 +2867,6 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
           perf_monitor_record_dynarec_retry();                                \
           goto redo;                                                          \
         }                                                                     \
-/*                                                                              \
-        if (translation_recursion_level == 0)                                 \
-        {                                                                     \
-          translate_invalidate_dcache();                                      \
-        }                                                                     \
-*/                                                                              \
       }                                                                       \
       break;                                                                  \
     }                                                                         \
@@ -2847,7 +2877,7 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
          has reached an address that can't be handled, which means that we    \
          have most likely hit an area that doesn't contain code yet (for      \
          instance, in RAM). If such a thing happens, return -1 and the        \
-         block translater will naively link it (it'll be okay, since it       \
+         block translator will naively link it (it'll be okay, since it       \
          should never be hit) */                                              \
       if (translation_recursion_level == 0)                                   \
       {                                                                       \
@@ -2871,6 +2901,7 @@ u8 *block_lookup_address_arm(u32 pc)
 u8 *block_lookup_address_thumb(u32 pc)
   block_lookup_address_body(thumb);
 
+// Bit 0 of pc selects Thumb; CPSR.T is updated to match.
 u8 *block_lookup_address_dual(u32 pc)
 {
   if ((pc & 0x01) != 0)
@@ -2984,6 +3015,7 @@ u8 *block_lookup_address_dual(u32 pc)
       break;                                                                  \
   }                                                                           \
 
+// Per-type parameters pasted in by scan_block and translate_block_builder.
 #define arm_deferred_exit_thumb (0)
 
 #define arm_instruction_width   (4)
@@ -3062,7 +3094,7 @@ u8 *block_lookup_address_dual(u32 pc)
   cycle_count++;                                                              \
 
 // Here's how this works: each instruction has three different sets of flag
-// attributes, each consisiting of a 4bit mask describing how that instruction
+// attributes, each consisting of a 4bit mask describing how that instruction
 // interacts with the 4 main flags (N/Z/C/V).
 // The first set, in bits 0:3, is the set of flags the instruction may
 // modify. After this pass this is changed to the set of flags the instruction
@@ -3083,7 +3115,7 @@ u8 *block_lookup_address_dual(u32 pc)
 // The algorithm is a simple liveness analysis procedure: It starts at the
 // bottom of the instruction stream and sets a "currently needed" mask to
 // the flags needed mask of the current instruction. Then it moves down
-// an instruction, ANDs that instructions "should generate" mask by the
+// an instruction, ANDs that instruction's "should generate" mask by the
 // "currently needed" mask, then ANDs the "currently needed" mask by
 // the 1's complement of the instruction's "must generate" mask, and ORs
 // the "currently needed" mask by the instruction's "flags needed" mask.
@@ -3104,6 +3136,10 @@ u8 *block_lookup_address_dual(u32 pc)
   }                                                                           \
 }                                                                             \
 
+// Pass 1 metadata marking for RAM blocks: flag each scanned word as Thumb
+// (0x1) or ARM (0x2) code so stores to it trigger an SMC clear, and flag
+// where the block ends on an unconditional branch (0x4 Thumb, 0x8 ARM) so a
+// partial clear knows where to stop.
 #define smc_write_arm_yes()                                                   \
   switch (block_end_pc >> 24)                                                 \
   {                                                                           \
@@ -3247,6 +3283,7 @@ static s32 BinarySearch(u32 *Array, u32 Value, s32 Size)
     return -1;
 }
 
+// Registers an SMC gate from the game config; only IWRAM PCs are kept.
 void add_smc_gate(u32 pc)
 {
   pc &= ~3u;
@@ -3263,6 +3300,9 @@ static inline u32 is_smc_gate(u32 pc)
   return (BinarySearch(smc_gate_pc, pc & ~3u, smc_gate_targets) != -1);
 }
 
+// Pass 1: decode forward from block_end_pc, recording opcodes, flag usage,
+// conditions and exits. ROM/BIOS blocks continue past an unconditional exit
+// that an earlier branch jumps just beyond; RAM blocks stop at the first.
 #define scan_block(type, smc_write_op)                                        \
 {                                                                             \
   u8 continue_block = 1;                                                      \
@@ -3287,8 +3327,7 @@ static inline u32 is_smc_gate(u32 pc)
         block_exits[block_exit_position].branch_target = branch_target;       \
         if (translation_region == TRANSLATION_REGION_READONLY)                \
         {                                                                     \
-          /* If we're in RAM, exit at the first unconditional branch, no      \
-           * questions asked */                                               \
+          /* An exit right before this target will not end the block */       \
           sorted_branch_count = InsertUniqueSorted(branch_targets_sorted, branch_target, sorted_branch_count); \
         }                                                                     \
         block_exit_position++;                                                \
@@ -3305,8 +3344,7 @@ static inline u32 is_smc_gate(u32 pc)
         block_exits[block_exit_position].branch_target = 0x00000008;          \
         if (translation_region == TRANSLATION_REGION_READONLY)                \
         {                                                                     \
-          /* If we're in RAM, exit at the first unconditional branch, no      \
-           * questions asked */                                               \
+          /* An exit right before this target will not end the block */       \
           sorted_branch_count = InsertUniqueSorted(branch_targets_sorted, 0x00000008, sorted_branch_count); /* could already be in */ \
         }                                                                     \
         block_exit_position++;                                                \
@@ -3363,6 +3401,8 @@ static inline u32 is_smc_gate(u32 pc)
       continue_block = 0;                                                     \
     }                                                                         \
                                                                               \
+    /* Also stop at the size limit, just before the end of EWRAM and at       \
+     * the IWRAM stack area (0x03007F00) */                                   \
     if ((block_data_position == MAX_BLOCK_SIZE) ||                            \
         ((block_end_pc & 0xFF03FFFF) == 0x0203FFF0) ||                        \
         ((block_end_pc & 0xFF007FFF) == 0x03007F00))                          \
@@ -3376,7 +3416,8 @@ static inline u32 is_smc_gate(u32 pc)
 }                                                                             \
 
 /*
- * Flushes a cache line in both the data cache and the instruction cache.
+ * Flushes a cache line in both the data cache and the instruction cache,
+ * so newly written code is not executed from stale I-cache contents.
  */
 static inline void FlushCacheLine(void *CacheLine)
 {
@@ -3385,6 +3426,9 @@ static inline void FlushCacheLine(void *CacheLine)
   __builtin_allegrex_cache(ICACHE_HIT_INVALIDATE, (int)CacheLine);
 }
 
+// Links the direct exits queued by translate_block_builder: looks up (and
+// translates) each target and patches the jump. Returns 0 if a lookup failed
+// because a cache was flushed; the caller then restarts the translation.
 static int process_deferred_exits(void)
 {
   DynarecWorkItem item;
@@ -3393,6 +3437,7 @@ static int process_deferred_exits(void)
   {
     u8 *translation_target;
 
+    // The SWI vector (0x08) is ARM code even when called from Thumb.
     if(item.branch_target == 0x00000008 || !item.thumb)
       translation_target = block_lookup_address_arm(item.branch_target);
     else
@@ -3421,6 +3466,9 @@ static int process_deferred_exits(void)
 #define thumb_fix_pc()                                                        \
   pc &= ~0x01;                                                                \
 
+// translate_block_arm/thumb: translate the block at pc into its region's
+// cache and return its start (the update trampoline). NULL means a cache was
+// flushed and the caller must retry the lookup.
 #define translate_block_builder(type)                                         \
 static u8 *translate_block_##type(u32 pc)                                     \
 {                                                                             \
@@ -3622,12 +3670,11 @@ static u8 *translate_block_##type(u32 pc)                                     \
       return NULL;                                                            \
     }                                                                         \
                                                                               \
-    /* If the next instruction is a block entry point update the              \
-       cycle counter and update */                                            \
+    /* If the next instruction is a branch target inside the block,           \
+       flush the pending cycle count before it */                             \
     if (block_data.type[block_data_position].update_cycles != 0)              \
     {                                                                         \
       generate_cycle_update();                                                \
-     /* check_cycle_counter(pc); */                                               \
     }                                                                         \
   }                                                                           \
                                                                               \
@@ -3680,6 +3727,7 @@ static u8 *translate_block_##type(u32 pc)                                     \
       break;                                                                  \
   }                                                                           \
                                                                               \
+  /* Make the new code visible to the I-cache */                              \
   u8 *flush_addr;                                                             \
   for (flush_addr = update_trampoline; flush_addr < translation_ptr + CACHE_LINE_SIZE; ) \
   {                                                                           \
@@ -3790,6 +3838,7 @@ static void update_metadata_area_end(u32 pc)
 /*
  * Starts a Partial Clear of the Metadata Entry for the Data Word at the given
  * GBA address, and all adjacent Metadata Entries.
+ * Called by smc_write in mips_stub.S when a store hits a word marked as code.
  */
 void partial_clear_metadata(u32 offset, u8 region)
 {
@@ -3850,6 +3899,8 @@ void partial_clear_metadata(u32 offset, u8 region)
     partial_clear_metadata_arm(metadata, metadata_area, metadata_area_end);
 }
 
+// Untags the Thumb (or, below, ARM) blocks around metadata: leftwards until
+// a word that is not code or ends a block, rightwards to the block's end.
 static void partial_clear_metadata_thumb(u16 *metadata, u16 *metadata_area_start, u16 *metadata_area_end)
 {
   u16 *metadata_right = metadata; // Save this pointer to go to the right later
@@ -3930,6 +3981,8 @@ static void partial_clear_metadata_arm(u16 *metadata, u16 *metadata_area_start, 
   }
 }
 
+// Forgets every block of one area; RAM areas clear only the range recorded
+// in *_code_min/max unless initializing.
 void clear_metadata_area(METADATA_AREA_TYPE metadata_area, METADATA_CLEAR_REASON_TYPE clear_reason)
 {
   switch (metadata_area)
@@ -3995,6 +4048,8 @@ void clear_metadata_area(METADATA_AREA_TYPE metadata_area, METADATA_CLEAR_REASON
   }
 }
 
+// Empties a code cache and the metadata that points into it. Flushing the
+// read-only cache also flushes the writable one, which may jump into it.
 void flush_translation_cache(TRANSLATION_REGION_TYPE translation_region, CACHE_FLUSH_REASON_TYPE flush_reason)
 {
   if(flush_reason == FLUSH_REASON_FULL_CACHE)
@@ -4054,6 +4109,7 @@ void flush_translation_cache(TRANSLATION_REGION_TYPE translation_region, CACHE_F
   }
 }
 
+// Debug aid: writes both code caches to the current directory.
 void dump_translation_cache(void)
 {
   SceUID fp;
@@ -4068,6 +4124,8 @@ void dump_translation_cache(void)
 }
 
 
+// Banks out r13/r14 of the current mode and banks in those of new_mode, plus
+// r8-r12 when entering or leaving FIQ. CPSR is left to the caller.
 void set_cpu_mode(CPU_MODE_TYPE new_mode)
 {
   s32 i;
@@ -4116,7 +4174,7 @@ void init_cpu(void)
 
   if (option_boot_mode != 0)
   {
-    // boot form BIOS
+    // boot from BIOS
     reg[REG_PC] = 0x00000000;
 
     reg[REG_CPSR] = 0x00000013; // supervisor mode
@@ -4127,6 +4185,7 @@ void init_cpu(void)
   }
   else
   {
+    // skip the BIOS: enter the ROM with the stacks the BIOS would set up
     reg[REG_PC] = 0x08000000;
 
     reg[REG_CPSR] = 0x0000001F; // system mode
@@ -4144,6 +4203,7 @@ void init_cpu(void)
 }
 
 
+// 0x100 bytes = all 64 reg[] slots.
 #define CPU_SAVESTATE_BODY(type)                                              \
   FILE_##type(savestate_file, reg, 0x100);                                    \
   FILE_##type##_ARRAY(savestate_file, spsr);                                  \
