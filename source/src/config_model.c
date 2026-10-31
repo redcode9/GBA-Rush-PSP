@@ -93,7 +93,8 @@ static uint32_t decode_legacy_ram_policy(uint32_t value)
 }
 
 /* Factory settings. Keep them equal to the defaults in values_to_model(),
-   which decoding falls back to for each out-of-range value. */
+   which decoding falls back to for each out-of-range value, and to the
+   values the menus' menu_*_default() resets in gui.c restore. */
 void config_model_defaults(ConfigModel *model)
 {
   if(model == NULL)
