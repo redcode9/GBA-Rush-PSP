@@ -58,7 +58,7 @@ static int (*__sceCtrlPeekBufferPositive)(SceCtrlData *pad_data, int count);
 static int (*__sceCtrlReadBufferPositive)(SceCtrlData *pad_data, int count);
 
 /* GBA keys held this frame, as BUTTON_* bits (1 = pressed). */
-u32 key = 0;
+u32 gba_keys_held = 0;
 
 /* The BUTTON_ID_* action of each PSP button, indexed like
    button_psp_mask_to_config. Saved with the settings. */
@@ -164,7 +164,7 @@ u32 enable_tilt_sensor = 0;
 u32 tilt_sensorX = 0x800;
 u32 tilt_sensorY = 0x800;
 
-static void trigger_key(u32 key);
+static void trigger_key(u32 keys_down);
 
 
 /* Raises the keypad IRQ if KEYCNT asks for it. KEYCNT (REG_P1CNT) bits 0-9
@@ -456,12 +456,12 @@ u32 update_input(void)
 #endif
 
   // Only a newly pressed key can trigger the keypad IRQ
-  if ((new_key | key) != key)
+  if ((new_key | gba_keys_held) != gba_keys_held)
     trigger_key(new_key);
 
-  key = new_key;
+  gba_keys_held = new_key;
   // KEYINPUT is active low
-  pIO_REG(REG_P1) = (~key) & 0x3FF;
+  pIO_REG(REG_P1) = (~gba_keys_held) & 0x3FF;
 
   return 0;
 }
@@ -498,7 +498,8 @@ void init_input_kernel(void)
 int input_diagnostic_trace_begin_record(void)
 {
   return input_trace_begin_record_from_header(&diagnostic_trace,
-   diagnostic_trace_frame, gamepak_header, gamepak_file_size, (u16)key);
+   diagnostic_trace_frame, gamepak_header, gamepak_file_size,
+   (u16)gba_keys_held);
 }
 
 int input_diagnostic_trace_finish_record(void)
@@ -551,7 +552,7 @@ size_t input_diagnostic_trace_max_encoded_size(void)
 // type = READ / WRITE_MEM
 #define INPUT_SAVESTATE_BODY(type)                                            \
 {                                                                             \
-  FILE_##type##_VARIABLE(savestate_file, key);                                \
+  FILE_##type##_VARIABLE(savestate_file, gba_keys_held);                      \
 }                                                                             \
 
 void input_read_savestate(SceUID savestate_file)
