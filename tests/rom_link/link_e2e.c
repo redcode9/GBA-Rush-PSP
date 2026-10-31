@@ -87,6 +87,7 @@ typedef struct
 
 static Side sides[2];
 
+/* Keeps mGBA's own log quiet so only the test's output is printed. */
 static void silent_log(struct mLogger *logger, int category,
  enum mLogLevel level, const char *format, va_list args)
 {
@@ -140,6 +141,7 @@ static void network_send(int to, const uint8_t *data, size_t size)
   }
 }
 
+/* Hands every datagram whose arrival time has come to its console. */
 static void network_deliver(void)
 {
   unsigned i = 0;
@@ -174,12 +176,14 @@ static uint64_t side_clock(Side *side)
   return side->clock;
 }
 
+/* Copies SIOCNT and RCNT, as gba_sio left them, back into mGBA. */
 static void side_sync_registers(Side *side)
 {
   side->gba->sio.siocnt = side->registers[GBA_SIO_REG_CONTROL >> 1];
   side->gba->sio.rcnt = side->registers[GBA_SIO_REG_RCNT >> 1];
 }
 
+/* Schedules finish_callback for when the running transfer completes. */
 static void side_schedule_finish(Side *side)
 {
   if(side->sio.active && !mTimingIsScheduled(&side->gba->timing,
@@ -190,6 +194,8 @@ static void side_schedule_finish(Side *side)
 
 static int trace_transfers;
 
+/* Shows a finished transfer's words (SIOMULTI0-3) to the guest and raises
+   the serial interrupt, `late` cycles after it was due. */
 static void side_deliver_irq(Side *side, uint32_t late)
 {
   int i;
@@ -209,6 +215,7 @@ static void side_deliver_irq(Side *side, uint32_t late)
   GBARaiseIRQ(side->gba, GBA_IRQ_SIO, late);
 }
 
+/* Runs one console's cable and applies the events it returns. */
 static void side_service(Side *side)
 {
   GbaSioEvent event;
@@ -232,6 +239,7 @@ static void side_service(Side *side)
   side_sync_registers(side);
 }
 
+/* mGBA timing event: the local transfer has clocked its last bit. */
 static void finish_callback(struct mTiming *timing, void *context,
  uint32_t late)
 {
@@ -246,6 +254,8 @@ static void finish_callback(struct mTiming *timing, void *context,
     side_sync_registers(side);
 }
 
+/* mGBA timing event: services the cable every SERVICE_CYCLES, or sooner
+   when the cable asks for it. */
 static void service_callback(struct mTiming *timing, void *context,
  uint32_t late)
 {
@@ -261,6 +271,8 @@ static void service_callback(struct mTiming *timing, void *context,
   mTimingSchedule(timing, &side->service_event, (int32_t)next);
 }
 
+/* mGBA's serial register write hook: gba_sio takes the write, and a write
+   that starts a transfer services the cable at once. */
 static uint16_t driver_write(struct GBASIODriver *driver, uint32_t address,
  uint16_t value)
 {
@@ -279,6 +291,7 @@ static uint16_t driver_write(struct GBASIODriver *driver, uint32_t address,
   return value;
 }
 
+/* Driver callbacks the bridge needs no work for. */
 static bool driver_true(struct GBASIODriver *driver)
 {
   (void)driver;
@@ -292,6 +305,7 @@ static void driver_none(struct GBASIODriver *driver)
 
 /* ---- Consoles ----------------------------------------------------------- */
 
+/* Reads a whole file, or exits: the test cannot run without it. */
 static void *read_file(const char *path, size_t *size)
 {
   FILE *f = fopen(path, "rb");
@@ -312,6 +326,8 @@ static void *read_file(const char *path, size_t *size)
   return data;
 }
 
+/* Boots one mGBA core with the ROM, BIOS and save, and puts our serial
+   driver and link timing events in place of mGBA's own. */
 static void side_init(Side *side, int index, const char *rom,
  const char *bios, const char *save)
 {
@@ -488,6 +504,7 @@ static void run_frames(unsigned frames)
   sides[1].keys = keys1;
 }
 
+/* "A+B+START" to KEYINPUT bits (bit 0 A ... bit 9 L); "-" means none. */
 static uint32_t parse_keys(const char *text)
 {
   static const char *names[] = { "A", "B", "SEL", "START", "RIGHT", "LEFT",
@@ -509,6 +526,8 @@ static uint32_t parse_keys(const char *text)
   return keys;
 }
 
+/* Saves the console's last frame as a 240x160 24-bit BMP: a 54-byte
+   header, then bottom-up BGR rows. */
 static void write_bmp(Side *side, const char *name)
 {
   char path[512];
