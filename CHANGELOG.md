@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.4.0-rc.5 - 2026-10-31
+
+### Changed
+
+- The link cable is rebuilt around two techniques chosen per pair of games.
+  Pokemon Ruby, Sapphire, Emerald, FireRed and LeafGreen, in any combination,
+  emulate the wire locally on each PSP and relay only the games' link frames,
+  so trades and battles run at full speed. The host pairs the frames so both
+  games see identical data. Every other game exchanges each serial word.
+- A new reliable channel repeats unacknowledged messages in every datagram,
+  and a console only waits when it runs more than four frames ahead of the
+  other one.
+- The ad-hoc worker only moves datagrams; the network stack and the worker
+  run above the emulator thread, which stopped reception during gameplay.
+- Input, the HOME menu and power events stay available while the link holds
+  the game.
+- The link menu shows the chosen technique and the round trip. The no-ROM
+  benchmark is removed; a game must be loaded before connecting.
+- Runtime logs move to format 5 with the new link events.
+
+### Removed
+
+- The protocol v3 session, journal, recovery coordinator, transport lanes and
+  their TLA+ models and proofs, which never completed a transfer on hardware.
+
+### Testing
+
+- Host tests link two simulated consoles over networks with delay, jitter,
+  loss, duplicates, reordering and outages. A port of the pret FireRed serial
+  driver must complete full sessions (handshake, link-player exchange, link
+  room keys, a 600-byte trade block, close and reopen) with no link error and
+  identical frames on both consoles. Lockstep guests check Multiplayer and
+  Normal 32-bit transfers word by word. CBMC proves the packet parser.
+- An end-to-end test runs two real FireRed games in mGBA with this cable in
+  between: both players enter the Cable Club, trade and leave, and both saves
+  hold the traded Pokemon, on typical, noisy and uneven-speed links.
+
+### Known issues
+
+- The new cable has not yet been tested on PSP hardware. See the
+  [hardware tests](docs/ROADMAP-1.4.0.md).
+
 ## 1.4.0-rc.4 - 2026-10-11
 
 ### Added

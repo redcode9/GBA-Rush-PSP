@@ -1,95 +1,158 @@
-# Link cable implementation
+# Link cable
 
-The 1.4.0 candidate includes protocol v3. Use matching builds on both consoles.
-The cable is experimental
-and has not completed the [1.4.0 hardware tests](ROADMAP-1.4.0.md#release-tests).
+GBA Rush PSP emulates the two-player GBA link cable over PSP ad-hoc Wi-Fi.
+Both consoles need the same GBA Rush PSP version; the games may differ.
 
-## Components
+## Why the cable cannot simply be forwarded
 
-`psp_adhoc` and the transport modules handle discovery, PDP datagrams,
-acknowledgements and queues. `link_session` owns connection identity, transfer
-state and recovery. `gba_sio` owns guest registers, completion timing and serial
-interrupts. Network retries cannot apply a guest result directly.
+A real cable exchanges a 16-bit word every few hundred microseconds and both
+GBAs see the result at the same instant. A round trip over PSP ad-hoc Wi-Fi
+takes several milliseconds. FireRed sends nine words per frame, so waiting for
+the other PSP on every word costs about nine round trips per frame and drops
+the game far below full speed. The cable therefore picks a technique per pair
+of games when the two consoles connect.
 
-The network worker and emulator exchange work through bounded queues. Critical
-transfer replies wake the worker and take priority over replaceable presence
-and clock updates. Logging uses separate binary RAM rings per thread; storage
-writes happen at disconnect, failure, suspend, ROM change or exit.
+## Pokemon mode
 
-## Multiplayer stream
+Used automatically when both consoles run Ruby, Sapphire, Emerald, FireRed or
+LeafGreen, in any combination (FireRed with LeafGreen, Emerald with FireRed and
+so on). Detection uses the ROM header game code, so translations, revisions
+and ROM hacks of these games are covered too.
 
-Protocol v3 negotiates `LINK_CAPABILITY_STREAM_TRANSFER`. The host sends one
-`TRANSFER_START`; the joiner latches its word on the emulation thread and returns
-`TRANSFER_REPLY`. Only one dependent word is active. A reply acknowledges its
-START; the next START or an idle heartbeat acknowledges the cached reply.
-Duplicates replay the existing result without applying registers or IRQ twice.
+These games wrap the cable in their own link layer (`src/link.c` in the pret
+decompilations). Every frame the master sends one checksum word and eight data
+words, an all-zero frame means "nothing to say", and the game copes with
+frames that arrive a few frames late. GBA Rush PSP uses that:
 
-This path replaces the older multi-phase transfer exchange. Clock anchors are
-carried in transfers and low-rate heartbeats rather than a separate fast clock
-stream. Heartbeat requests are tokenized and bidirectional; replies are not
-echoed. Presence is refreshed periodically so a lost final update can be repaired.
+- Each console emulates the wire locally at full speed. Transfers complete
+  without waiting for the network, and the joiner's console plays the role of
+  the master clock (one transfer per frame during the handshake, then about ten
+  per frame, slightly faster than the host's nine).
+- Only non-empty frames cross the network.
+- The host decides how its frames pair with the joiner's and sends the joiner
+  the exact pair. Both games therefore process identical frames in the same
+  order, which keeps the Cable Club room (where every frame carries both
+  players' keys) identical on both screens.
+- Each game's checksum word is echoed back to it, so the checksum always
+  matches what the game computed over the words it received.
+- The handshake words (0xB9A0 and 0x8FFF) are mirrored exactly as the game's
+  `DoHandshake` counts them, so the link opens and closes on the same transfer
+  the game expects.
 
-An early next START waits while the preceding SIO event is busy, then uses the
-master's inter-word cycle delta before reading the next outgoing word. Recovery
-retains pending starts and cached replies, and rejects old-generation packets.
-A reply timeout requests recovery rather than cancelling a result the peer may
-already have scheduled.
+The idea of emulating the wire locally for these games follows the Pokemon
+backend of [gpSP libretro](https://github.com/libretro/gpsp/blob/master/serial_proto.c).
+The host-authoritative pairing is added here because without it the two
+consoles can pair frames differently and the link room diverges.
 
-The first word still uses a local timing base, and current clock hints are
-advisory. Later packet mapping cannot rewind a guest that has already passed
-the event. A shared safe timeline and guest-executed timing tests remain open.
+## Lockstep mode
 
-## Normal modes and recovery
+Used for every other game, and for any mix of a Pokemon game with another
+game. Each serial transfer goes to the other console, which latches it into
+its own serial registers and answers with its outgoing word. The console that
+clocks the transfer keeps running for as long as the transfer would take on
+real hardware and only stops if the answer is still missing at that moment.
+The receiving console keeps the spacing the sender's game used between
+transfers, so its interrupt handler has time to load the next word.
 
-Normal 8/32-bit transfers use the journal states
-`EMPTY → ARMED → DECIDED → RELEASED → EMPTY`. An undecided arm can be cancelled;
-a decided result is immutable. Released sequence/hash pairs form checkpoints.
-Transport acknowledgements and application decisions are different events.
+Normal 8-bit, Normal 32-bit and Multiplayer 16-bit modes are supported. This
+is exact for any game but its speed depends on how many words the game sends
+per frame: one word per frame stays near full speed, many words per frame slow
+both consoles down.
 
-One coordinator stops new transfers, reconciles checkpoints and repairs the
-transport. Known decisions are replayed without regression. Conflicting hashes
-or unprovable decisions close the session. Rebuilding a socket cannot reset
-transfer evidence or extend the session deadline indefinitely. Process restart
-creates a new session.
+## Transport and pacing
 
-No-ROM setup initializes SIO storage before session admission. Fast-forward and
-savestates are disabled while connected. Reset, ROM change, suspend and exit
-close the session through a bounded worker shutdown. Serial waits must keep
-input, audio policy and power handling responsive.
+`psp_adhoc.c` brings up the network on a worker thread that runs above the
+emulator thread, creates or joins the `GBARUSH` group and only moves datagrams
+through two lock-free queues. All link logic runs on the emulator thread.
 
-## Tests and logs
+`link_net.c` makes the datagrams reliable and ordered. Every datagram repeats
+all messages the other side has not acknowledged yet, as GGPO does with
+inputs, so a lost packet is repaired by the next one instead of a timer. Each
+header also carries the guest clock, the number of consumed messages and a
+timestamp echo used to measure the round trip.
 
-Host tests cover protocol parsing, SIO, queues, streams, recovery and lifecycle.
-`test_link_cable_runtime` uses the production scheduler with separate guest
-speeds, delayed handlers, packet faults and burst transfers. TLA+ models and
-CBMC harnesses add bounded state and memory checks. Hardware scheduling, radio
-and guest ROM execution still need console tests.
+While the link is in use, a console may run at most four frames ahead of the
+other one's guest clock. Only the console that is ahead waits, so the rule
+cannot deadlock, and it absorbs speed differences such as a PSP-1000 that
+falls below full speed. A peer that stays silent for eight seconds ends the
+session. While a console waits, input, the HOME menu and power events keep
+working.
 
-Run the built-in no-ROM benchmark before testing games.
-Start fresh emulator processes for each role assignment, leave WLAN on, disable
-WLAN Power Save and automatic suspend, and copy both terminal logs before another
-run. An on-screen PASS without matching terminal records is incomplete evidence.
+## Using it
+
+1. Load the game on both PSPs, with WLAN on.
+2. On the first PSP open **Main menu > Link cable > Create session**.
+3. On the second PSP choose **Join session**.
+4. The status line shows the player number. The line below it shows which
+   technique was chosen and the measured round trip.
+
+In FireRed and LeafGreen talk to the Cable Club attendants on the Pokemon
+Center's second floor; the Wireless Club needs the Wireless Adapter, which is
+not emulated. Fast-forward
+and savestates are disabled while connected. Reset, ROM change, suspend and
+exit close the session and tell the other PSP.
+
+## Tests
+
+`make check` runs the host tests, including:
+
+- `tests/test_link_net.c`: exactly-once, in-order delivery with up to 50% loss,
+  duplicates and reordering; stale peers and malformed packets are rejected.
+- `tests/test_link_cable.c`: two simulated consoles with independent clocks
+  linked over simulated Wi-Fi with delay, jitter, loss, duplicates, reordering
+  and a 400 ms outage. The Pokemon guest is a line-by-line port of the pret
+  FireRed serial driver. Each run opens the link, exchanges link-player
+  blocks, plays 240 frames of link-room keys, trades a 600-byte party block
+  and closes the link, in seven game and speed combinations over five network
+  profiles. It passes only with no link error, intact blocks and identical
+  key frames on both consoles. Lockstep guests check Multiplayer and Normal
+  32-bit modes word by word.
+- `proofs/cbmc/prove_link_net.c` (`make check-cbmc`): CBMC proves that any
+  datagram up to the proof bound is parsed without out-of-bounds access or
+  overflow.
+- `make check-rom-link` (optional): two mGBA cores run your own FireRed ROM
+  with this cable's code in between. A script walks both players into the
+  Cable Club, trades the host's first Pokemon for the joiner's second and
+  leaves the room; the test then decodes both saved parties. It runs on a
+  typical ad-hoc link, a noisy one (8 ms plus up to 15 ms of jitter, 15%
+  loss, 5% duplicates) and with either console 20% slower. It needs an
+  mGBA 0.10 build and a save whose player has not yet been upstairs in a
+  Pokemon Center:
+
+  ```sh
+  make check-rom-link MGBA_DIR=/path/to/mgba ROM=firered.gba \
+    BIOS=gba_bios.bin SAVE=firered.sav
+  ```
+
+## Logs
+
+Each PSP writes binary logs under `logs/` beside the EBOOT when a session
+ends. Decode them with:
 
 ```sh
 python3 tools/decode_runtime_log.py /path/to/GBARushPSP/logs
-python3 tools/analyze_link_benchmark.py host.gbrlog joiner.gbrlog --json
 ```
 
-Use `--run-id ID` if the logs contain several common benchmark runs. Preserve
-internal error domain/code separately from the original PSP API phase and return
-value. A full log ring means packet history may be incomplete.
+`link-state` shows the role, status and chosen mode, `link-counters` the round
+trip, datagrams, frames or transfers and waits, and `link-error` why the
+session ended, including the PSP network error and the step that failed.
 
-Snapshot version 4 records the full session failure detail separately from
-packed heartbeat counters and identifies exclusive transport-health states.
-Older snapshots remain readable; ambiguous historical fields are shown as raw
-values rather than guessed states.
+## Limits
 
-The supported scope is two PSPs and the three GBA cable modes. Wireless Adapter,
-additional players, UART, JoyBus, multiboot and internet relay are separate work.
+Two players only. The Wireless Adapter, four-player multiplayer, UART, JoyBus,
+multiboot and internet play are not emulated. Running both GBAs on each PSP
+and exchanging only inputs would make any game exact but needs both ROMs and
+saves on both consoles and twice the CPU time, which the PSP does not have.
 
 ## References
 
-- [GBATEK serial registers](https://mgba-emu.github.io/gbatek/)
-- [mGBA SIO timing](https://github.com/mgba-emu/mgba/blob/master/src/gba/sio.c)
-- [FireRed link routines](https://github.com/pret/pokefirered/blob/master/src/link.c)
-- [PSPSDK ad-hoc interface](https://github.com/pspdev/pspsdk/blob/master/src/net/pspnet_adhoc.h)
+- [pret pokefirered `src/link.c`](https://github.com/pret/pokefirered/blob/master/src/link.c)
+  and [pokeemerald](https://github.com/pret/pokeemerald/blob/master/src/link.c)
+- [gpSP libretro serial backends](https://github.com/libretro/gpsp)
+- [GBATEK serial communication](https://mgba-emu.github.io/gbatek/#gbacommunicationports)
+- [GGPO network protocol](https://github.com/pond3r/ggpo)
+- K. M. Chandy and J. Misra, "Distributed Simulation: A Case Study in Design
+  and Verification of Distributed Programs", IEEE TSE, 1979 (conservative
+  synchronization with lookahead, used by the lockstep mode)
+- M. Mauve et al., "Local-lag and Timewarp: Providing Consistency for
+  Replicated Continuous Applications", IEEE Transactions on Multimedia, 2004
