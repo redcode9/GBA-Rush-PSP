@@ -107,7 +107,7 @@ typedef struct
   uint32_t finish_cycle;
   uint32_t outgoing;
   uint8_t waiting;            /* a START is out and its reply is missing */
-  uint8_t anchored;
+  uint8_t anchored;           /* local_anchor and peer_anchor are set */
   uint8_t deferred;           /* a received START waits for deferred_until */
   uint32_t deferred_until;
   uint32_t local_anchor;      /* our cycle when the last START was applied */
@@ -137,6 +137,8 @@ typedef struct
   uint32_t pacing_peer;
 } LinkCable;
 
+/* Plugs the cable into `sio` and queues HELLO. One console hosts, and the
+   two must use different local_id values. */
 void link_cable_start(LinkCable *cable, GbaSio *sio, int host,
  const char game_code[4], uint32_t local_id, uint64_t now_us);
 
@@ -157,6 +159,7 @@ int link_cable_due(const LinkCable *cable, uint32_t cycle);
    is due, or the guest is too far ahead of the other console. */
 int link_cable_blocked(const LinkCable *cable, uint32_t cycle);
 
+/* Datagrams from and to the network; see link_net.h for the format. */
 int link_cable_receive(LinkCable *cable, const uint8_t *datagram,
  size_t size, uint64_t now_us);
 size_t link_cable_build(LinkCable *cable, uint8_t *datagram,
