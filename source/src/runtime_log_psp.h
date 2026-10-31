@@ -9,6 +9,12 @@
  * the License, or (at your option) any later version.
  */
 
+/*
+ * PSP side of the runtime log: owns the three rings and writes a snapshot
+ * to logs/session-1.gbrlog beside the EBOOT at each flush, keeping the
+ * previous three sessions as session-2 to session-4.
+ */
+
 #ifndef RUNTIME_LOG_PSP_H
 #define RUNTIME_LOG_PSP_H
 
@@ -16,6 +22,7 @@
 
 #include "runtime_log.h"
 
+/* base_path is the EBOOT directory; NULL keeps the log in memory only. */
 int runtime_log_psp_init(const char *base_path);
 void runtime_log_psp_set_rom(const uint8_t *game_code, uint8_t revision,
  uint32_t rom_size, uint32_t emulated_cycle);
@@ -28,6 +35,7 @@ void runtime_log_psp_critical(RuntimeLogEventType type,
  uint32_t value1, uint32_t value2);
 void runtime_log_psp_get_drop_counts(uint32_t *main_dropped,
  uint32_t *network_dropped, uint32_t *critical_dropped);
+/* Writes the current snapshot to storage; blocks on file I/O. */
 int runtime_log_psp_flush(RuntimeLogFlushReason reason);
 
 #endif /* RUNTIME_LOG_PSP_H */
