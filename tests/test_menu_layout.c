@@ -1,3 +1,10 @@
+/*
+ * Host tests for menu_layout.c: which menu rows fit the scrolling options
+ * viewport and at what baseline they are drawn (first baseline 28 px, 12 px
+ * rows, 15 visible), and how text is clipped to a column count without
+ * splitting a GBK or Shift-JIS double-byte character.
+ */
+
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -30,6 +37,8 @@ static void test_bottom_selection_scrolls(void)
   assert(baseline == 196);
 }
 
+/* A selection far below the top scrolls it to the last visible row; an
+   empty viewport or a NULL one places nothing. */
 static void test_sparse_and_invalid_rows(void)
 {
   MenuViewport viewport = menu_viewport_for_selection(30, 15);
@@ -45,6 +54,8 @@ static void test_sparse_and_invalid_rows(void)
   assert(menu_viewport_baseline(NULL, 0, 28, 12, &baseline) == 0);
 }
 
+/* Columns are counted in bytes (a double-byte character is two columns);
+   a cut never lands inside one, and scrolling steps over it whole. */
 static void test_text_bounds(void)
 {
   static const char double_byte[] = { (char)0xA1, (char)0xF0,
@@ -66,6 +77,8 @@ static void test_text_bounds(void)
   assert(menu_text_scroll_start(double_byte, 99, MENU_TEXT_GBK) == 5);
   assert(menu_text_scroll_start(NULL, 3, MENU_TEXT_GBK) == 0);
   {
+    /* Shift-JIS: 0xB1 is a one-byte half-width katakana, 0x82 0xA0 a
+       two-byte character. */
     const char japanese[] = { (char)0xB1, (char)0x82, (char)0xA0, 'A', 0 };
     assert(menu_text_clip_length_for_encoding(japanese, 1,
      MENU_TEXT_SHIFT_JIS) == 1);
