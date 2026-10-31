@@ -9,6 +9,11 @@
 #include <string.h>
 
 #define CONFIG_MODEL_MAGIC "GBRC"
+/* decode_versioned() reads only these two layouts: bumping the version
+   drops files of the older one unless it learns that layout too.
+   Adding a setting: append it to model_to_values() and values_to_model()
+   (limit and default), add the default to config_model_defaults(), raise
+   CONFIG_MODEL_VALUE_COUNT in config_model.h and the versions here. */
 #define CONFIG_MODEL_VERSION 2U
 #define CONFIG_MODEL_PREVIOUS_VERSION 1U
 #define CONFIG_MODEL_PREVIOUS_VALUE_COUNT 39U
