@@ -2842,9 +2842,16 @@ static void get_savestate_info(char *filename, u16 *snapshot, char *timestamp)
   scePowerUnlock(0);
 }
 
+/* Slots 0-9 are the numbered savestates ("<rom>_N.svs"); the extra slot is
+   the automatic one ("<rom>_auto.svs") written on exit, sleep, ROM change
+   and before overwriting progress with a load. */
+#define AUTO_SAVESTATE_SLOT   10
+#define SAVESTATE_SLOT_COUNT  11
+
+/* Savestate file name (no directory) for a slot of the running ROM. */
 static void get_savestate_filename(u32 slot, char *name_buffer)
 {
-  if (slot == 10)
+  if (slot == AUTO_SAVESTATE_SLOT)
     change_ext(gamepak_filename, name_buffer, "_auto.svs");
   else
   {
@@ -2858,7 +2865,7 @@ void auto_savestate_sleep(void)
 {
     if (gamepak_filename[0] == '\0')
         return;
-    action_savestate_slot(10);
+    action_savestate_slot(AUTO_SAVESTATE_SLOT);
 }
 
 static u32 savestate_file_exists(u32 slot)
@@ -2933,8 +2940,8 @@ static u32 auto_savestate_exists(void)
   SceUID fd;
   u32 old_slot = savestate_slot;
 
-  savestate_slot = 10;
-  get_savestate_filename(10, savestate_filename);
+  savestate_slot = AUTO_SAVESTATE_SLOT;
+  get_savestate_filename(AUTO_SAVESTATE_SLOT, savestate_filename);
   snprintf(savestate_path, sizeof(savestate_path), "%s%s", dir_state, savestate_filename);
   FILE_OPEN(fd, savestate_path, READ);
   savestate_slot = old_slot;
@@ -2949,6 +2956,8 @@ static u32 auto_savestate_exists(void)
 
 static u32 ram_dynarec_policy_menu_prev = ~(u32)0;
 
+/* After a ROM loads, offer to resume from its auto savestate. The slot is
+   spelled out because tests/test_startup.py compiles this function alone. */
 void maybe_load_auto_savestate(void)
 {
   if (gamepak_filename[0] == '\0' || main_link_active() ||
@@ -3135,7 +3144,7 @@ static void menu_diagnostics_write_report(void)
 static void menu_quit_action(void)
 {
     if(menu_game_available())
-        action_savestate_slot(10);
+        action_savestate_slot(AUTO_SAVESTATE_SLOT);
     quit();
 }
 
@@ -3571,7 +3580,7 @@ u32 menu(void)
   u16 *savestate_screen = NULL;
 
   u32 savestate_action = 0;
-  static char savestate_timestamps[11][40];
+  static char savestate_timestamps[SAVESTATE_SLOT_COUNT][40];
 
   char time_str[40];
   char batt_str[40];
@@ -3708,8 +3717,8 @@ u32 menu(void)
     {
       main_link_disconnect(MAIN_LINK_END_ROM_CHANGE);
       update_backup_immediately();
-      /* Auto-save current game to slot 10 before loading new ROM */
-      action_savestate_slot(10);
+      /* Auto-save current game to the auto slot before loading new ROM */
+      action_savestate_slot(AUTO_SAVESTATE_SLOT);
     }
 
     if (load_file(file_ext, filename_buffer, dir_roms, 1) == 0)
@@ -3763,7 +3772,7 @@ u32 menu(void)
   {
     get_savestate_filename(savestate_slot, filename_buffer);
     get_savestate_info(filename_buffer, savestate_screen, line_buffer);
-    if (savestate_slot == 10)
+    if (savestate_slot == AUTO_SAVESTATE_SLOT)
       sprintf(savestate_timestamps[savestate_slot], "AUTO: %s", line_buffer);
     else
       sprintf(savestate_timestamps[savestate_slot], "%d: %s", (int)savestate_slot, line_buffer);
@@ -3834,7 +3843,7 @@ u32 menu(void)
 
                 /* Parse slot number for same-ROM case */
                 if (strncmp(underscore + 1, "auto.svs", 8) == 0)
-                    slot_parsed = 10;
+                    slot_parsed = AUTO_SAVESTATE_SLOT;
                 else
                     slot_parsed = (u32)atoi(underscore + 1);
             }
@@ -3863,7 +3872,7 @@ u32 menu(void)
             if (yesno_dialog(dialog_msg) == 0)
             {
                 /* Auto-save current progress before loading */
-                action_savestate_slot(10);
+                action_savestate_slot(AUTO_SAVESTATE_SLOT);
                 if (load_state_silent(filename_buffer) != 0)
                 {
                     return_value = 1;
@@ -3899,7 +3908,7 @@ u32 menu(void)
                 {
                     save_game_config_file();
                     update_backup_immediately();
-                    action_savestate_slot(10);
+                    action_savestate_slot(AUTO_SAVESTATE_SLOT);
                 }
 
                 /* Try to find and load the ROM file */
@@ -3982,7 +3991,7 @@ u32 menu(void)
     char savestate_path[MAX_PATH];
     char confirm_msg[80];
 
-    if (first_load || current_option_num >= 11)
+    if (first_load || current_option_num >= SAVESTATE_SLOT_COUNT)
       return;
 
     get_savestate_filename(savestate_slot, savestate_filename);
@@ -3996,7 +4005,7 @@ u32 menu(void)
       sceIoRemove(savestate_path);
 
       /* Refresh timestamp to empty */
-      if (savestate_slot == 10)
+      if (savestate_slot == AUTO_SAVESTATE_SLOT)
         sprintf(savestate_timestamps[savestate_slot], "AUTO: %s",
                 MSG[(date_format == 0) ? MSG_STATE_MENU_DATE_NONE_0 : MSG_STATE_MENU_DATE_NONE_1]);
       else
@@ -4346,7 +4355,7 @@ u32 menu(void)
       menu_init_flag = 0;
     }
 
-    if (current_option_num < 11)
+    if (current_option_num < SAVESTATE_SLOT_COUNT)
     {
       if (savestate_slot != current_option_num)
       {
@@ -4501,11 +4510,11 @@ u32 menu(void)
 
   void load_savestate_timestamps(void)
   {
-    for (i = 0; i < 11; i++)
+    for (i = 0; i < SAVESTATE_SLOT_COUNT; i++)
     {
       get_savestate_filename(i, filename_buffer);
       get_savestate_info(filename_buffer, NULL, line_buffer);
-      if (i == 10)
+      if (i == AUTO_SAVESTATE_SLOT)
         sprintf(savestate_timestamps[i], "AUTO: %s", line_buffer);
       else
         sprintf(savestate_timestamps[i], "%d: %s", (int)i, line_buffer);
@@ -5459,7 +5468,7 @@ u32 menu(void)
 
 
     /* Triangle: delete savestate when in savestate menu */
-    if (current_menu == &savestate_menu && !first_load && current_option_num < 11)
+    if (current_menu == &savestate_menu && !first_load && current_option_num < SAVESTATE_SLOT_COUNT)
     {
       if (get_pad_input(PSP_CTRL_TRIANGLE) != 0)
       {
@@ -5620,16 +5629,16 @@ u32 menu(void)
                     menu_load_state_file();
                     break;
                   default:
-                    if (current_option->line_number < 11)
+                    if (current_option->line_number < SAVESTATE_SLOT_COUNT)
                     {
-                      if (savestate_action == 0 && current_option->line_number < 10)
+                      if (savestate_action == 0 && current_option->line_number < AUTO_SAVESTATE_SLOT)
                       {
                         if (savestate_file_exists(current_option->line_number))
                         {
-                          action_savestate_slot(10);
-                          get_savestate_filename(10, filename_buffer);
+                          action_savestate_slot(AUTO_SAVESTATE_SLOT);
+                          get_savestate_filename(AUTO_SAVESTATE_SLOT, filename_buffer);
                           get_savestate_info(filename_buffer, NULL, line_buffer);
-                          sprintf(savestate_timestamps[10], "AUTO: %s", line_buffer);
+                          sprintf(savestate_timestamps[AUTO_SAVESTATE_SLOT], "AUTO: %s", line_buffer);
                         }
                       }
                       if ((savestate_action != 0 ? menu_save_state() : menu_load_state()) != 0)
