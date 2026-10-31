@@ -885,8 +885,22 @@ static void test_snapshot(void)
   CHECK((restored_registers[GBA_SIO_REG_CONTROL >> 1] & 0x0080) == 0);
 }
 
+static void test_interrupt_disable_counter(void)
+{
+  reset_sio();
+  select_mode(GBA_SIO_MODE_MULTIPLAYER);
+  CHECK(sio.interrupt_disables == 1);
+  gba_sio_write16(&sio, GBA_SIO_REG_CONTROL, 0x6003);
+  gba_sio_write16(&sio, GBA_SIO_REG_CONTROL, 0x6083);
+  CHECK(sio.interrupt_disables == 1);
+  /* A Pokemon game closing its link writes SIOCNT without the IRQ bit. */
+  gba_sio_write16(&sio, GBA_SIO_REG_CONTROL, 0x2000);
+  CHECK(sio.interrupt_disables == 2);
+}
+
 int main(void)
 {
+  test_interrupt_disable_counter();
   test_prepare_cold_preserves_other_registers();
   test_prepare_is_noop_for_loaded_game();
   test_prepare_rejects_invalid_storage();

@@ -15,7 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define RUNTIME_LOG_VERSION 4u
+#define RUNTIME_LOG_VERSION 5u
 #define RUNTIME_LOG_HEADER_SIZE 64u
 #define RUNTIME_LOG_RECORD_SIZE 32u
 #define RUNTIME_LOG_RING_CAPACITY 128u

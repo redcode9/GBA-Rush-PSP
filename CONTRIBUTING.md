@@ -20,8 +20,8 @@ Use a clean build after changing compiler or diagnostic flags. Release packages
 are created and checked with:
 
 ```sh
-make package VERSION=1.4.0-rc.4
-make artifact-smoke VERSION=1.4.0-rc.4
+make package VERSION=1.4.0
+make artifact-smoke VERSION=1.4.0
 ```
 
 The optional desktop launcher has its own
@@ -34,8 +34,8 @@ helper modules. Keep the vendored SDK libraries in `source/SDK/` and the artwork
 in `source/res/`. Portable tests live in `tests/`, checks and packaging scripts
 in `scripts/`. Original usage notes are retained in `docs/legacy/`.
 
-Link models are in `models/link/`, C proof harnesses in `proofs/cbmc/` and
-log-analysis utilities in `tools/`.
+C proof harnesses are in `proofs/cbmc/` and the runtime log decoder is in
+`tools/`.
 
 ## Testing changes
 
@@ -59,19 +59,18 @@ networking or file access.
 
 ## Link development
 
-See the [link implementation notes](docs/link-cable.md) and the
-[remaining work for 1.4.0](docs/ROADMAP-1.4.0.md). Run these additional checks
-for protocol, queue or recovery changes:
+See the [link cable notes](docs/link-cable.md). `tests/test_link_cable.c`
+links two simulated consoles over a simulated lossy network and runs a port of
+the Pokemon serial driver plus word-by-word lockstep guests; extend it when
+changing `link_cable.c` or `link_net.c`. Changes to packet parsing should also
+pass the bounded proof, which requires CBMC. With an mGBA 0.10 build and your
+own FireRed files, `make check-rom-link` trades between two real games:
 
 ```sh
 make check-cbmc
-make check-link-model TLA2TOOLS_JAR=/path/to/tla2tools.jar TLC_WORKERS=2
-python3 tools/generate_link_transitions.py --check
+make check-rom-link MGBA_DIR=/path/to/mgba ROM=firered.gba \
+  BIOS=gba_bios.bin SAVE=firered.sav
 ```
-
-CBMC checks require CBMC; model checks require Java and the TLA+ tools JAR.
-The four model `.cfg` files are source inputs. Journal transitions are generated
-from `models/link/link_journal_transitions.def`.
 
 Keep paired PSP logs with the build hashes and reproduction steps. Store local
 results in `artifacts/`, build output in `build/` and packages in `dist/`.

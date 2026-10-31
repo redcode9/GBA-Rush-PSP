@@ -23,7 +23,7 @@ PSP_EBOOT_TITLE = GBA Rush PSP
 EXTRA_TARGETS = EBOOT.PBP
 
 COMMON_FILE = \
- common.h adhoc_datagram.h adhoc_peer.h adhoc_recovery.h adhoc_rendezvous.h adhoc_resync.h codebreaker.h dynarec_worklist.h fast_forward_audio.h fast_forward_policy.h gba_sio.h lifecycle_teardown.h link_audio_wait.h link_benchmark.h link_clock.h link_journal.h link_journal_transitions.h link_protocol.h link_recovery_coordinator.h link_session.h link_spsc_ring.h link_stream.h link_transport.h link_transport_lanes.h link_transport_scheduler.h power_lifecycle.h runtime_log.h runtime_log_psp.h runtime_log_store.h sound_math.h video_adaptive.h video_mosaic.h perf_metrics.h perf_monitor.h perf_report.h menu_model.h menu_layout.h menu_catalog.h config_model.h config_store.h psp_adhoc.h \
+ common.h adhoc_peer.h codebreaker.h dynarec_worklist.h fast_forward_audio.h fast_forward_policy.h gba_sio.h link_audio_wait.h link_cable.h link_net.h power_lifecycle.h runtime_log.h runtime_log_psp.h runtime_log_store.h sound_math.h video_adaptive.h video_mosaic.h perf_metrics.h perf_monitor.h perf_report.h menu_model.h menu_layout.h menu_catalog.h config_model.h config_store.h psp_adhoc.h \
  cpu.h memory.h video.h psp_video.h input.h sound.h main.h message.h mh_print.h gui.h zip.h png.h \
  ku_bridge.h exception.h ch_print.h
 
@@ -35,7 +35,7 @@ MAINOBJS = \
  cpu.o memory.o video_dispatch_state.o video_dispatch.o video_cc_wrap.o video_old_wrap.o psp_video.o input.o sound.o main.o message.o mh_print.o gui.o zip.o png.o \
  mips_stub.o video_blend_mips.o \
  ku_bridge.o exception.o cheats.o codebreaker.o ch_print.o \
- adhoc_datagram.o adhoc_peer.o adhoc_recovery.o adhoc_rendezvous.o adhoc_resync.o boxart.o dynarec_worklist.o fast_forward_audio.o fast_forward_policy.o gba_sio.o lifecycle_teardown.o link_audio_wait.o link_benchmark.o link_clock.o link_journal.o link_protocol.o link_recovery_coordinator.o link_session.o link_spsc_ring.o link_stream.o link_transport_lanes.o link_transport_scheduler.o power_lifecycle.o runtime_log.o runtime_log_psp.o runtime_log_store.o sound_math.o video_adaptive.o perf_metrics.o perf_monitor.o perf_report.o menu_model.o menu_layout.o menu_catalog.o config_model.o config_store.o psp_adhoc.o
+ adhoc_peer.o boxart.o dynarec_worklist.o fast_forward_audio.o fast_forward_policy.o gba_sio.o link_audio_wait.o link_cable.o link_net.o power_lifecycle.o runtime_log.o runtime_log_psp.o runtime_log_store.o sound_math.o video_adaptive.o perf_metrics.o perf_monitor.o perf_report.o menu_model.o menu_layout.o menu_catalog.o config_model.o config_store.o psp_adhoc.o
 
 ifneq ($(DIAGNOSTIC_INPUT_TRACE),)
 COMMON_FILE += input_trace.h

@@ -25,7 +25,9 @@ included in this repository or its releases.
 - Full-scale 16-bit audio mixing and optional 2x/3x accelerated audio.
 - Plaintext and encrypted CodeBreaker support, including timed master hooks.
 - Existing GameShark, Pro Action Replay and direct-write cheat formats.
-- Experimental two-PSP GBA cable emulation over local ad-hoc Wi-Fi.
+- Two-PSP GBA link cable over local ad-hoc Wi-Fi, with a full-speed mode for
+  Pokemon trades and battles across Ruby, Sapphire, Emerald, FireRed and
+  LeafGreen.
 - Suspend and resume recovery for audio, ROM access, saves and video state.
 - Box art, recent ROMs, themes, configurable controls and per-game settings.
 - Japanese, English, Simplified Chinese, Traditional Chinese and Italian UI.
@@ -106,23 +108,29 @@ backup of important saves when testing cheats.
 
 ## Link cable
 
-Two-player cable emulation is experimental. The 1.4.0 candidate includes
-protocol v3 and a built-in no-ROM benchmark.
-The last recorded FireRed trial failed before a serial transfer; a completed
-trade and the paired hardware benchmark remain unverified.
+Two PSPs can connect as if a GBA link cable joined them. Both need this
+version of GBA Rush PSP; the games may differ.
 
-Use the same build on both PSPs with WLAN enabled. Open **Main menu > Link cable**:
-Player 1 creates a session and Player 2 joins. For gameplay, load a game on both
-systems before connecting. Fast-forward and savestates are disabled while the
-session is open; reset, ROM change, suspend and exit disconnect it.
+1. Load the game on both PSPs with WLAN on.
+2. On the first PSP open **Main menu > Link cable > Create session**.
+3. On the second PSP choose **Join session**.
 
-Normal 8-bit, Normal 32-bit and two-player Multiplayer 16-bit paths exist.
-Wireless Adapter, additional players, UART, JoyBus, multiboot and internet relay
-are outside the current scope.
+The cable chooses its technique from the two games. Ruby, Sapphire, Emerald,
+FireRed and LeafGreen, in any combination, run at full speed: each PSP
+emulates the wire locally and only the games' link frames cross the network.
+In FireRed and LeafGreen use the Cable Club on the Pokemon Center's second
+floor. Every other game exchanges each serial word with the other PSP; this
+is exact but slows down games that send many words per frame.
 
-The [implementation notes](docs/link-cable.md) describe the development protocol,
-benchmark and log tools. The [1.4.0 checklist](docs/ROADMAP-1.4.0.md) gives the
-remaining fixes and hardware tests. Keep backups of both saves during testing.
+Fast-forward and savestates are disabled while connected. Reset, ROM change,
+suspend and exit close the session. Normal 8-bit, Normal 32-bit and
+two-player Multiplayer modes are supported; the Wireless Adapter, four
+players, UART, JoyBus, multiboot and internet play are not. Back up both
+saves before trading.
+
+The [link cable notes](docs/link-cable.md) explain the design, tests and log
+decoding. The [1.4.0 checklist](docs/ROADMAP-1.4.0.md) lists the remaining
+hardware tests.
 
 ## Build and test
 
@@ -151,7 +159,7 @@ docker run --rm -v "$PWD:/workspace" -w /workspace/source pspdev/pspdev:latest m
 After a successful candidate build:
 
 ```sh
-make package VERSION=1.4.0-rc.4
+make package VERSION=1.4.0
 ```
 
 The package command creates a reproducible ZIP and SHA-256 checksum under

@@ -76,42 +76,6 @@ def fixture_v3() -> bytes:
 
 
 class RuntimeLogDecoderTests(unittest.TestCase):
-    def test_version_four_session_fields_preserve_full_detail(self):
-        packed = (12 << 24) | (15 << 16) | (3 << 8) | 0x12
-        detail = decoder.describe({"event": "link-counters", "flags": 26,
-                                   "values": [15, 3, 0x212]})
-        self.assertIn("state=recovering reason=transport", detail)
-        self.assertIn("detail=530/0x0212", detail)
-        text = decoder.describe({"event": "link-counters", "flags": 2,
-                                 "values": [7, 8, packed]})
-        self.assertIn("heartbeat-tx=7 heartbeat-rx=8", text)
-        self.assertIn("message=12 state=recovering reason=transport", text)
-
-    def test_health_is_an_exclusive_state_and_old_logs_remain_raw(self):
-        record = {"event": "link-counters", "flags": 20, "values": [0, 0, 3]}
-        self.assertIn("health=recovering", decoder.describe(record))
-        self.assertNotIn("degraded=", decoder.describe(record))
-        record["version"] = 3
-        self.assertIn("health-raw=0x00000003", decoder.describe(record))
-
-    def test_decodes_version_four_header(self):
-        data = bytearray(fixture_v3())
-        struct.pack_into(">H", data, 4, 4)
-        struct.pack_into(">I", data, 60, binascii.crc32(data[:60]) & 0xFFFFFFFF)
-        snapshot = decoder.parse_snapshot(data)
-        self.assertEqual(snapshot["version"], 4)
-        self.assertTrue(all(r["version"] == 4 for r in snapshot["records"]))
-
-    def test_link_state_names_match_enum_order(self):
-        self.assertEqual(decoder.LINK_STATES, [
-            "idle", "hosting", "joining", "negotiating", "wait-ready",
-            "wait-ready-ack", "connected", "wait-prepare", "wait-accept",
-            "wait-commit", "wait-commit-ack", "wait-commit-release",
-            "wait-release-ack", "wait-abort-ack", "wait-stream-reply",
-            "recovering", "wait-resume-ack", "wait-resume-done",
-            "disconnected", "error",
-        ])
-
     def test_decodes_header_and_record(self):
         snapshot = decoder.parse_snapshot(fixture())
 
@@ -134,154 +98,60 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         self.assertEqual(snapshot["version"], 2)
         self.assertEqual(snapshot["critical_count"], 1)
         self.assertEqual(snapshot["records"][1]["source"], "critical")
-        self.assertEqual(snapshot["records"][1]["event"], "link-checkpoint")
 
-    def test_describes_actual_sio_checkpoint(self):
-        record = {
-            "event": "link-checkpoint",
-            "flags": 9,
-            "values": [
-                2 | (1 << 8) | (2 << 16) | (1 << 24) | (1 << 25),
-                0x608B,
-                0x0007,
-            ],
-        }
-
-        description = decoder.describe(record)
-
-        self.assertIn("actual-sio mode=2 player=1 count=2", description)
-        self.assertIn("peer=True pending=True", description)
-        self.assertIn("control=0x608B rcnt=0x0007", description)
-
-    def test_describes_health_and_new_queue_diagnostics(self):
-        health = decoder.describe({
-            "event": "link-health",
-            "flags": 1,
-            "values": [7, 2034, 3],
-        })
-        critical = decoder.describe({
-            "event": "link-counters",
-            "flags": 19,
-            "values": [(6 << 16) | 2, (4 << 16) | 1, 19],
-        })
-
-        self.assertEqual(
-            health,
-            "status=degraded generation=7 pause-age-ms=2034 epoch=3 "
-            "causes=none",
-        )
-        self.assertIn("critical-handoff depth=2 high-water=6", critical)
-        self.assertIn("pending-depth=1 pending-high-water=4", critical)
-        self.assertIn("retry-suppressed=19", critical)
-
-    def test_describes_backpressure_and_clock_diagnostics(self):
-        episode = decoder.describe({
-            "event": "link-counters",
-            "flags": 21,
-            "values": [6034, 579, 2],
-        })
-        maximum = decoder.describe({
-            "event": "link-counters",
-            "flags": 22,
-            "values": [6034, 579, (3 << 16) | 3],
-        })
-        clock = decoder.describe({
-            "event": "link-counters",
-            "flags": 24,
-            "values": [4, 1811, 3],
-        })
-        health = decoder.describe({
-            "event": "link-health",
-            "flags": 7,
-            "values": [8, 6034, 2],
-        })
-
-        self.assertEqual(
-            episode,
-            "backpressure age=6034ms streak=579 episodes=2",
-        )
-        self.assertIn("last=state/clock", maximum)
-        self.assertIn("causes=ack-stall+backpressure", clock)
-        self.assertIn("causes=ack-stall+backpressure", health)
-
-    def test_missing_new_counter_records_are_backward_compatible(self):
-        snapshot = decoder.parse_snapshot(fixture_v2())
-
-        self.assertFalse(any(
-            record["event"] == "link-counters" and record["flags"] >= 21
-            for record in snapshot["records"]
-        ))
-
-    def test_decodes_v3_attribution_timeout_and_metrics(self):
+    def test_older_link_records_are_shown_raw(self):
         snapshot = decoder.parse_snapshot(fixture_v3())
-        descriptions = [decoder.describe(record) for record in snapshot["records"]]
+        description = decoder.describe(snapshot["records"][0])
 
-        self.assertEqual(snapshot["version"], 3)
-        self.assertIn(
-            "attempt=4 domain=session internal=-7/0xFFFFFFF9",
-            descriptions,
-        )
-        self.assertIn(
-            "attempt=4 api-phase=pdp-send api-error=-2143222007/0x80410709",
-            descriptions,
-        )
-        self.assertIn(
-            "attempt=4 source=active-transfer reason=timeout",
-            descriptions,
-        )
-        self.assertIn(
-            "barrier-max-us/hot-wake-max-us/audio-underruns=1234/87/0",
-            descriptions,
-        )
+        self.assertEqual(description, "flags=0x00 values=4/3/4294967289")
 
-    def test_describes_bidirectional_heartbeat_metrics(self):
-        request = decoder.describe({
-            "event": "link-stream-metrics",
-            "flags": 7,
-            "values": [41, 5, 4],
-        })
-        reply = decoder.describe({
-            "event": "link-stream-metrics",
-            "flags": 8,
-            "values": [3, 2, 1],
-        })
+    def test_decodes_version_five_header(self):
+        data = bytearray(fixture_v3())
+        struct.pack_into(">H", data, 4, 5)
+        struct.pack_into(">I", data, 60, binascii.crc32(data[:60]) & 0xFFFFFFFF)
+        snapshot = decoder.parse_snapshot(data)
+        self.assertEqual(snapshot["version"], 5)
+
+    def test_describes_link_session_events(self):
         state = decoder.describe({
-            "event": "link-stream-metrics",
-            "flags": 9,
-            "values": [14, 1, 12],
+            "event": "link-state", "flags": 1, "values": [2, 2, 5],
+        })
+        command = decoder.describe({
+            "event": "link-command", "flags": 0,
+            "values": [0x42504745, 0, 0],
+        })
+        error = decoder.describe({
+            "event": "link-error", "flags": 7,
+            "values": [2, 0x80410709, 13],
+        })
+        counters = decoder.describe({
+            "event": "link-counters", "flags": 0,
+            "values": [6200, 41000, 3],
+        })
+        pause = decoder.describe({
+            "event": "link-pause-end", "flags": 1,
+            "values": [125000, 2, 4],
         })
 
-        self.assertEqual(request, "heartbeat-request-tx/rx/reply-tx=41/5/4")
-        self.assertEqual(reply, "heartbeat-reply-rx/duplicate/unmatched=3/2/1")
-        self.assertEqual(state, "heartbeat-outstanding/pending/last-request=14/1/12")
+        self.assertEqual(
+            state, "role=host status=connected mode=pokemon adhoc=connected")
+        self.assertEqual(command, "role=join game=BPGE")
+        self.assertEqual(
+            error,
+            "end=network status=connected "
+            "adhoc-error=-2143222007/0x80410709 adhoc-phase=send")
+        self.assertEqual(counters, "rtt-us/rtt-max-us/resends=6200/41000/3")
+        self.assertEqual(
+            pause, "mode=lockstep wait=125.000ms status=connected backlog=4")
 
-    def test_old_stream_metric_flags_remain_decodable(self):
-        description = decoder.describe({
-            "event": "link-stream-metrics",
-            "flags": 6,
-            "values": [25, 80, 7],
-        })
-
-        self.assertEqual(description, "hot-ms/cold-ms/hot-wakes=25/80/7")
-
-    def test_command_description_exposes_attempt_boundary(self):
-        description = decoder.describe({
-            "event": "link-command",
-            "flags": 1,
-            "values": [2, 0, 9],
-        })
-
-        self.assertEqual(description, "role=host adhoc=2 attempt=9")
-
-    def test_ahead_pacing_pause_is_named(self):
-        description = decoder.describe({
-            "event": "link-pause-end",
-            "flags": 0x80 | 2 | 8,
-            "values": [3, 6000, 4000],
-        })
-
-        self.assertIn("causes=ahead-pacing+gameplay", description)
-        self.assertIn("mask=0x0A", description)
+    def test_link_names_match_the_c_enums(self):
+        header = (Path(__file__).parents[1] / "source" / "src" /
+                  "link_cable.h").read_text()
+        for name in ("OFF", "WAITING", "CONNECTED", "INCOMPATIBLE",
+                     "PEER_LEFT", "LOST"):
+            self.assertIn(f"LINK_CABLE_{name}", header)
+        self.assertEqual(len(decoder.LINK_STATUS), 6)
+        self.assertEqual(decoder.LINK_MODES, ["none", "lockstep", "pokemon"])
 
 
 if __name__ == "__main__":

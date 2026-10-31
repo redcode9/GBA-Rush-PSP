@@ -1,0 +1,265 @@
+# FireRed trade over the emulated cable, from a save that continues in
+# front of the Pewter City Pokemon Center (see place_save.py).
+# Title screen and Continue
+run 600
+run 8 START START
+run 150
+run 8 START START
+run 150
+run 8 A A
+run 200
+run 8 A A
+run 200
+run 8 B B
+run 150
+run 8 B B
+run 150
+# Into the Pokemon Center and up the stairs
+run 20 UP UP
+run 120
+run 60
+run 32 UP UP
+run 10
+run 112 LEFT LEFT
+run 120
+# The first visit upstairs plays a tutorial
+run 120
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 45
+run 6 A A
+run 60
+# Stand in front of the Cable Club attendant
+run 128 RIGHT RIGHT
+run 10
+run 8 UP UP
+run 10
+link
+run 60
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 50
+run 6 A A
+run 90
+run 6 A A
+run 90
+run 6 A A
+run 90
+run 6 A A
+run 90
+run 6 A A
+run 90
+run 6 A A
+run 90
+run 6 A A
+run 90
+run 6 A A
+run 90
+run 6 A A
+run 70
+run 6 A A
+run 70
+run 6 A A
+run 70
+run 6 A A
+run 70
+run 6 A A
+run 70
+run 6 A A
+run 70
+run 6 A -
+run 150
+run 6 A -
+run 150
+run 6 A -
+run 100
+run 200 A -
+run 200
+run 300
+run 16 UP -
+run 60
+run 16 - UP
+run 60
+run 16 LEFT RIGHT
+run 30
+run 32 UP UP
+run 60
+run 120
+run 300
+run 400
+run 6 - RIGHT
+run 30
+run 6 A A
+run 60
+run 6 DOWN DOWN
+run 30
+run 6 A A
+run 200
+run 6 A A
+run 400
+run 400
+run 400
+run 400
+run 400
+run 400
+run 300
+run 300
+run 300
+run 300
+run 4 UP UP
+run 30
+run 4 RIGHT RIGHT
+run 30
+run 4 RIGHT RIGHT
+run 30
+run 4 RIGHT RIGHT
+run 30
+run 4 DOWN DOWN
+run 30
+run 6 A A
+run 60
+run 6 A A
+run 300
+run 16 DOWN DOWN
+run 30
+run 16 RIGHT LEFT
+run 30
+run 48 DOWN DOWN
+run 60
+run 6 A A
+run 120
+run 6 A A
+run 120
+run 6 A A
+run 120
+run 6 A A
+run 120
+run 6 A A
+run 120
+run 6 A A
+run 120
+dump after
