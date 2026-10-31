@@ -49,6 +49,8 @@ PSP_HEAP_SIZE_KB(-2048);
 
 
 /* User settings; gui.c loads, edits and saves them. */
+/* Placeholders until load_config_file() applies the saved settings or
+   config_model_defaults(); a few differ from those factory values. */
 u32 option_screen_scale = SCALED_16X9_AUTO;
 u32 option_screen_mag = 170;
 u32 option_screen_filter = FILTER_BILINEAR;
