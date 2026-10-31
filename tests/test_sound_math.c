@@ -1,3 +1,9 @@
+/*
+ * Host tests for sound_math.c, the integer math of the GBA sound code:
+ * per-output-sample phase steps in 8.24 fixed point for the PSG channels,
+ * the timers and the 256 Hz sequencer, plus full-scale mixing helpers.
+ */
+
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -5,8 +11,9 @@
 #include "sound_math.h"
 
 #define SAMPLE_RATE 48000U
-#define FP08_24_SCALE 16777216.0
+#define FP08_24_SCALE 16777216.0   /* 1.0 in 8.24 fixed point */
 
+/* The floating-point step: events per second / output rate, in 8.24. */
 static uint32_t reference_step(double numerator, uint32_t denominator)
 {
   double result = (numerator / SAMPLE_RATE / denominator) * FP08_24_SCALE;
@@ -21,6 +28,9 @@ static void test_integer_steps_match_previous_timing(void)
   uint32_t shift;
   uint32_t reload;
 
+  /* Event rates per second: square duty steps 1048576 / (2048 - rate),
+     wave samples 2097152 / (2048 - rate), noise 524288 / r / 2^(s + 1)
+     with r = 0 counting as 0.5, timer overflows 2^24 / reload. */
   for(rate = 0; rate < 2048; rate++)
   {
     assert(sound_math_tone_step(rate, SAMPLE_RATE) ==
