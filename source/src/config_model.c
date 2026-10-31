@@ -16,10 +16,12 @@
    CONFIG_MODEL_VALUE_COUNT in config_model.h and bump the version. Keep
    every released layout readable (version 1 shipped in 1.3.0): the current
    pair becomes PREVIOUS_*, and each older one needs its own value-count
-   constant and a case in decode_versioned(); then update its note and the
-   migration test in tests/test_config_model.c. Finally map it in gui.c's
-   capture_*_config() and apply_*_config() and add its option_ global, menu
-   row and messages. */
+   constant and a clause in decode_versioned()'s version check; then update
+   the note above decode_versioned() and the migration test in
+   tests/test_config_model.c. Finally map it in gui.c's
+   capture_global_config() and apply_global_config() (the game_ pair too
+   only for per-game settings) and add its option_ global, menu row and
+   messages. */
 #define CONFIG_MODEL_VERSION 2U
 #define CONFIG_MODEL_PREVIOUS_VERSION 1U
 #define CONFIG_MODEL_PREVIOUS_VALUE_COUNT 39U
