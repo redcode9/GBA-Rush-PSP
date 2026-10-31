@@ -2416,6 +2416,7 @@ u8 read_memory8(u32 address)
   return (u8)(*mem_read8[region])(address);
 }
 
+// A signed halfword load from an odd address returns a sign-extended byte.
 s16 read_memory16_signed(u32 address)
 {
   if ((address & 0x01) != 0)
@@ -2424,7 +2425,7 @@ s16 read_memory16_signed(u32 address)
   return (s16)read_memory16(address);
 }
 
-// unaligned reads are actually 32bit
+// Unaligned reads return the aligned value rotated right, as on the ARM7.
 
 u32 read_memory16(u32 address)
 {
@@ -2634,6 +2635,7 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
 
 
 // Be sure to do this after loading ROMs.
+// The area repeats every mirror_blocks pages of 32 KiB.
 
 #define MAP_REGION(type, start, end, mirror_blocks, region)                   \
   for (i = ((start) / 0x8000); i < ((end) / 0x8000); i++)                     \
@@ -2647,6 +2649,7 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
     memory_map_##type[i] = NULL;                                              \
   }                                                                           \
 
+// Each 128 KiB VRAM window maps pages 0, 1, 2, 2: the OBJ area mirrors.
 #define MAP_VRAM(type)                                                        \
   for (i = (0x6000000 / 0x8000); i < (0x7000000 / 0x8000); i += 4)            \
   {                                                                           \
@@ -2657,6 +2660,8 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
   }                                                                           \
 
 
+// Picks the least recently loaded page of the ROM buffer and unmaps the ROM
+// page it held from all three ROM mirrors (0x08, 0x0A, 0x0C).
 static u32 evict_gamepak_page(void)
 {
   // Find the one with the smallest frame timestamp
@@ -2698,6 +2703,9 @@ static u32 evict_gamepak_page(void)
   return page_index;
 }
 
+// Reads 32 KiB ROM page physical_index from the open ROM file into an
+// evicted buffer page (0xFF past the end of the file) and maps it. Returns
+// the page even after a read error, but leaves it unmapped so it is retried.
 u8 *load_gamepak_page(u32 physical_index)
 {
   if (physical_index >= (gamepak_size >> 15))
@@ -2779,7 +2787,7 @@ static void init_memory_gamepak(void)
   if (gamepak_size > gamepak_ram_buffer_size)
   {
     // Large ROMs get special treatment because they
-    // can't fit into the 16MB ROM buffer.
+    // can't fit into the ROM buffer.
     u32 i;
     for (i = 0; i < gamepak_ram_pages; i++)
     {
@@ -2800,6 +2808,7 @@ static void init_memory_gamepak(void)
   }
 }
 
+// Allocates the largest ROM buffer available, starting from 32 MiB.
 void init_gamepak_buffer(void)
 {
   gamepak_ram_buffer_size = 32 * 1024 * 1024;
@@ -2864,6 +2873,9 @@ void init_memory(void)
   memset(oam_ram,      0, sizeof(oam_ram));
   memset(palette_ram,  0, sizeof(palette_ram));
 
+  // Forced blank, no keys pressed (P1 is active low), identity affine
+  // matrices (1.0 in 8.8). Skipping the BIOS starts at the scanline where
+  // the BIOS hands over to the cartridge.
   io_registers[REG_DISPCNT]   = 0x0080;
   io_registers[REG_DISPSTAT]  = 0x0000;
   io_registers[REG_VCOUNT]    = option_boot_mode ? 0x0000 : 0x007e;
@@ -2898,6 +2910,7 @@ void init_memory(void)
   rtc_status = 0x40;
   memset(rtc_registers, 0, sizeof(rtc_registers));
 
+  // BIOS opcode seen by protected BIOS reads once the BIOS has booted.
   bios_read_protect = 0xe129f000;
 
   enable_tilt_sensor = 0;
@@ -2907,6 +2920,7 @@ void init_memory(void)
 
   iwram_control = 0x0d000020;
 
+  // Write-only and unused I/O bytes read as open bus.
   for(i = 0; i < 0x400; i++)
     io_readable[i] = 1;
   for(i = 0x10; i < 0x48; i++)
@@ -3219,6 +3233,8 @@ static s32 filename_contains_string(const char *filename, const char *value)
 }
 
 
+// Splits a "key = value" line into trimmed key and value (256-byte
+// buffers). Returns -1 for blank, comment (#) or malformed lines.
 s32 parse_config_line(char *current_line, char *current_variable, char *current_value)
 {
   char *eq;
@@ -3237,8 +3253,9 @@ s32 parse_config_line(char *current_line, char *current_variable, char *current_
   if (eq == NULL)
     return -1;
 
-  /* Do not write *eq = 0: load_game_config may re-parse current_line after
-   * reading a block (goto resume_after_entry). Nul at '=' breaks the next parse. */
+  /* Do not write *eq = 0: load_game_config may re-parse
+   * current_line after reading a block (goto resume_after_entry). Nul at '='
+   * breaks the next parse. */
 
   ks = current_line;
   while (*ks == ' ' || *ks == '\t')
@@ -3294,6 +3311,7 @@ static void reset_game_config_options(void)
 
   iwram_stack_optimize = 1;
 
+  // Undo the optional per-game BIOS patches (bios_rom_hack_39 / _2C).
   bios.rom[0x39] = 0x00;
   bios.rom[0x2C] = 0x00;
 }
@@ -3352,6 +3370,10 @@ static s32 skip_config_to_next_game_name(FILE *config_file, char *current_line,
   return 0;
 }
 
+// Applies the game_config.txt entry whose game_name, game_code and
+// vendor_code match the ROM header. An entry's options are buffered first so
+// that a filename_match line anywhere in it can reject the whole entry, in
+// which case the search goes on with the next entry.
 static s32 load_game_config(char *gamepak_title, char *gamepak_code, char *gamepak_maker)
 {
   char current_line[256];
@@ -3469,6 +3491,9 @@ resume_after_entry:
 }
 
 
+// Reads the whole ROM if it fits the buffer; otherwise reads only the
+// header and keeps the file open for load_gamepak_page(). Returns the file
+// size or -1.
 static s32 load_gamepak_raw(char *name)
 {
   SceUID gamepak_file;
@@ -3544,6 +3569,7 @@ s32 load_gamepak(char *name)
   if (file_size > 0)
   {
     gamepak_file_size = (u32)file_size;
+    // Whole 32 KiB pages.
     gamepak_size = (file_size + 0x7FFF) & ~0x7FFF;
     memcpy(gamepak_header, gamepak_rom, sizeof(gamepak_header));
 
@@ -3557,6 +3583,7 @@ s32 load_gamepak(char *name)
     char game_code[5];
     char maker_code[3];
 
+    // Cartridge header: title at 0xA0, game code at 0xAC, maker at 0xB0.
     memcpy(game_title, gamepak_header + 0xA0, 12);
     memcpy(game_code,  gamepak_header + 0xAC,  4);
     memcpy(maker_code, gamepak_header + 0xB0,  2);
@@ -3601,6 +3628,9 @@ s32 load_bios(char *name)
 }
 
 
+// Savestate file: GBA_SCREEN_SIZE screenshot, u64 timestamp, then each
+// module's state in this order, padded to SAVESTATE_SIZE with the link
+// snapshot at the very end. The order is part of the file format.
 #define SAVESTATE_BLOCK(type)                                                 \
   cpu_##type##_savestate(savestate_file);                                     \
   input_##type##_savestate(savestate_file);                                   \
@@ -3692,6 +3722,7 @@ u32 load_state(char *savestate_filename)
   return result;
 }
 
+// load_state() without the confirmation dialog.
 u32 load_state_silent(char *savestate_filename)
 {
   SceUID savestate_file;
@@ -3793,6 +3824,7 @@ u32 save_state(char *savestate_filename, u16 *screen_capture)
   return result;
 }
 
+// save_state() without the confirmation dialog.
 u32 save_state_silent(char *savestate_filename, u16 *screen_capture)
 {
   SceUID savestate_file;
@@ -3841,6 +3873,7 @@ u32 save_state_silent(char *savestate_filename, u16 *screen_capture)
 }
 
 
+// Field order and sizes are the savestate format; keep them unchanged.
 #define MEMORY_SAVESTATE_BODY(type)                                           \
 {                                                                             \
   FILE_##type##_VARIABLE(savestate_file, backup_type);                        \
