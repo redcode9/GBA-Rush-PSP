@@ -92,6 +92,7 @@ LINK_EVENTS = {
 
 
 def _crc32(data: bytes) -> int:
+    """CRC-32 of data as an unsigned 32-bit value."""
     return binascii.crc32(data) & 0xFFFFFFFF
 
 
@@ -240,6 +241,7 @@ def iter_log_paths(arguments: Iterable[str]) -> list[Path]:
 
 
 def print_snapshot(snapshot: dict[str, Any]) -> None:
+    """Print one snapshot as text: its header line, then every record."""
     print(
         f"{snapshot['path']}: session={snapshot['session_id']:08X} "
         f"flush={snapshot['flush_reason']} PSP={snapshot['psp_model']} "
@@ -302,6 +304,7 @@ def print_summary(snapshot: dict[str, Any]) -> None:
 
 
 def main() -> int:
+    """Decode each .gbrlog given as text, a summary or JSON."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("paths", nargs="+", help=".gbrlog files or a logs directory")
     output = parser.add_mutually_exclusive_group()
