@@ -197,10 +197,10 @@ u32 cpu_ticks = 0;
    per scanline. */
 s32 video_count = 272;
 
-/* IRQ entry delay: cpu_init_state is set while an IRQ waits irq_ticks
-   cycles before it is taken. */
+/* IRQ entry delay: irq_delay_pending is set while an IRQ waits
+   irq_ticks cycles before it is taken. */
 u32 irq_ticks = 0;
-u8 cpu_init_state = 0;
+u8 irq_delay_pending = 0;
 
 /* Frameskip state, and the FPS counter (fps_window_frames, vblank_count and
    interval_skipped_frames cover a 60-frame window). */
@@ -1123,12 +1123,12 @@ u32 update_gba(void)
 
       if ((pIO_REG(REG_IE) & pIO_REG(REG_IF) & irq_mask) != 0)
       {
-        if (cpu_init_state != 0)
+        if (irq_delay_pending != 0)
         {
           if (irq_ticks == 0)
           {
             cpu_interrupt();
-            cpu_init_state = 0;
+            irq_delay_pending = 0;
           }
         }
         else
@@ -1142,7 +1142,7 @@ u32 update_gba(void)
             // IRQ delay - Tsyncmax=3, Texc=3, Tirq=2, Tldm=20
             //             Tsyncmin=2
             irq_ticks = 9;
-            cpu_init_state = 1;
+            irq_delay_pending = 1;
           }
         }
       }
@@ -1381,7 +1381,7 @@ static void init_main(void)
   video_dispatch_frame_begin();
 
   irq_ticks = 0;
-  cpu_init_state = 0;
+  irq_delay_pending = 0;
 
   if (!caches_inited)
   {
@@ -2329,7 +2329,7 @@ void *safe_malloc(size_t size)
   FILE_##type##_VARIABLE(savestate_file, cpu_ticks);                          \
   FILE_##type##_VARIABLE(savestate_file, video_count);                        \
   FILE_##type##_VARIABLE(savestate_file, irq_ticks);                          \
-  FILE_##type##_VARIABLE(savestate_file, cpu_init_state);                     \
+  FILE_##type##_VARIABLE(savestate_file, irq_delay_pending);                     \
   FILE_##type##_ARRAY(savestate_file, timer);                                 \
 }                                                                             \
 

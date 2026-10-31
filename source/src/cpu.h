@@ -103,8 +103,8 @@ typedef enum
 
   EXECUTE_CYCLES    = 60,  // length of the current run until the next event
 
-  CPU_DMA_HACK      = 61,
-  CPU_DMA_LAST      = 62,
+  CPU_DMA_HACK      = 61,  // set right after a DMA: open bus reads see
+  CPU_DMA_LAST      = 62,  // the last DMA value (read8_open, memory.c)
 
   REG_TMP           = 63
 
