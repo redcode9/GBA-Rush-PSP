@@ -1,3 +1,8 @@
+/* Crash screen for the exception.prx test program; the emulator's own copy
+ * is source/src/exception.c. initExceptionHandler() loads exception.prx from
+ * the current directory and hands it ExceptionHandler() plus the register
+ * block to fill. */
+
 #include <pspkernel.h>
 #include <pspsdk.h>
 #include <pspctrl.h>
@@ -10,6 +15,7 @@ PspDebugRegBlock exception_regs;
 extern SceModule module_info;
 extern int _ftext;
 
+/* Indexed by the Cause register's ExcCode field (bits 2-6) */
 static const char *codeTxt[32] =
 {
     "Interrupt", "TLB modification", "TLB load/inst fetch", "TLB store",
@@ -36,7 +42,7 @@ void ExceptionHandler(PspDebugRegBlock * regs)
     SceCtrlData pad;
 
     pspDebugScreenInit();
-    pspDebugScreenSetBackColor(0x00FF0000);
+    pspDebugScreenSetBackColor(0x00FF0000);   /* blue (colors are ABGR) */
     pspDebugScreenSetTextColor(0xFFFFFFFF);
     pspDebugScreenClear();
     pspDebugScreenPrintf("Your PSP has just crashed!\n");
@@ -102,6 +108,7 @@ void initExceptionHandler()
    {
       args[0] = (int)ExceptionHandler;
       args[1] = (int)&exception_regs;
+      /* 8 bytes: the two pointers exception.prx's module_start() expects */
       sceKernelStartModule(modid, 8, args, &fd, NULL);
    }
 }
