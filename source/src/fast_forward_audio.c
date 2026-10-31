@@ -13,6 +13,7 @@
 
 #include <stddef.h>
 
+/* Factors outside 1..3 fall back to normal speed. */
 static uint32_t valid_factor(uint32_t factor)
 {
   return factor >= 1 && factor <= 3 ? factor : 1;
@@ -24,6 +25,8 @@ uint32_t fast_forward_audio_required_samples(uint32_t output_frames,
   return output_frames * 2U * valid_factor(factor);
 }
 
+/* Average of factor summed samples, rounded half away from zero and
+ * clamped to s16. */
 static int16_t output_sample(int64_t sum, uint32_t factor, int audible)
 {
   int64_t sample;
