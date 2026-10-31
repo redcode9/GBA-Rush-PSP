@@ -48,6 +48,7 @@ def fix_checksum(data, off, size):
 
 
 def place(src, dst, group, mapnum, x, y):
+    """Write a copy of src to dst that continues at (x, y) on the map."""
     data = bytearray(open(src, 'rb').read())
     sections = newest_sections(data)
     data[sections[0] + 9] |= 1          # specialSaveWarpFlags: continue warp

@@ -114,6 +114,7 @@ class BenchmarkComparisonTests(unittest.TestCase):
 
     def test_reports_without_new_identity_fields_compare(self):
         def legacy():
+            """A report from a build older than the identity fields."""
             return report(psp_fw_version=None, vsync=None,
                           audio_sample_rate=None, audio_samples=None)
 
