@@ -5,6 +5,9 @@
  * row (slow frames, a skipped frame, an audio event or long GE waits)
  * degrade, five good ones recover, and a window in between resets both
  * counts. Times are microseconds; a GBA frame is about 16743 us.
+ * The limits are private to video_adaptive.c: a window is bad above 17200 us
+ * of frame time or 2500 us of GE wait (95th percentile) and good below
+ * 16900 us and 1000 us, hence the 16800/20000 and 500/3000 values below.
  */
 
 #include <assert.h>
