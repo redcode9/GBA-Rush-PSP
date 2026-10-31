@@ -467,6 +467,8 @@ static void main_link_log_state(void)
    main_adhoc_state_value());
 }
 
+/* Ends the session without telling the peer (main_link_disconnect sends
+   the goodbye): fails any SIO transfer, logs counters, stops the network. */
 static void main_link_close(MainLinkEnd reason)
 {
   uint32_t sends;
@@ -585,6 +587,8 @@ static int main_link_service(IRQ_TYPE *irq_raised)
   return restart;
 }
 
+/* Hosts or joins after stopping fast-forward and any earlier session.
+   0 if WLAN is off or the SIO or the network could not be started. */
 static int main_link_start(int host)
 {
   char game[4] = { 0, 0, 0, 0 };
@@ -647,6 +651,8 @@ int main_link_join(void)
   return main_link_start(0);
 }
 
+/* Ends the session and tells the other console. During quit it also makes
+   sure the network worker is gone when no session is open. */
 void main_link_disconnect(MainLinkEnd reason)
 {
   u8 datagram[LINK_NET_MAX_DATAGRAM];
@@ -696,6 +702,8 @@ void main_link_pump(void)
     pIO_REG(REG_IF) |= IRQ_SERIAL;
 }
 
+/* menu() reports leaving (0) and resuming (1) the game. Each change is
+   logged, and the runtime log is flushed when the menu opens. */
 void main_link_set_gameplay_active(int active)
 {
   u8 value = active != 0;
@@ -754,6 +762,8 @@ static void main_fast_forward_record_change(int was_active,
     perf_monitor_record_fast_forward_transition();
 }
 
+/* Matches sound to the policy: normal, muted fast-forward, or accelerated
+   audio at the 2x or 3x factor. */
 static void main_fast_forward_update_sound(void)
 {
   if(!fast_forward_policy_active(&fast_forward_policy))
@@ -828,6 +838,8 @@ const char *main_fast_forward_status(void)
   }
 }
 
+/* Called after the fast-forward settings change, in the menu or with a
+   loaded game config; any running fast-forward stops. */
 void main_fast_forward_apply_settings(void)
 {
   FastForwardSettings settings = main_fast_forward_settings();
@@ -1374,6 +1386,8 @@ static void init_main(void)
 }
 
 
+/* dir.ini names the ROM, save, state and other folders; a missing or bad
+   file is reported but not fatal. */
 static void load_setting_cfg(void)
 {
   char filename[MAX_FILE];
@@ -1508,6 +1522,8 @@ static int path_is_regular_file(const char *path)
   return FIO_S_ISREG(stats.st_mode) != 0;
 }
 
+/* Picks the ROM (a path argument, then roms/game.gba, then the browser or
+   menu) and runs it in the dynarec, which never returns; else quits. */
 int user_main(int argc, char *argv[])
 {
   char load_filename[MAX_FILE];
@@ -2097,6 +2113,7 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
   return 0;
 }
 
+/* Size in bytes; 0 when the file is missing. */
 u32 file_length(char *filename)
 {
   SceIoStat stats;
@@ -2120,6 +2137,8 @@ void change_ext(char *src, char *buffer, const char *extension)
   }
 }
 
+/* Shows text in a popup until any button is pressed. confirm only adds
+   the continue or quit hint; callers do the quitting themselves. */
 void error_msg(const char *text, u8 confirm)
 {
   char text_buff[512];
