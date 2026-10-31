@@ -244,6 +244,8 @@ void perf_metrics_record_audio_underrun(PerfMetrics *metrics)
      metrics->audio_underruns, 1);
 }
 
+/* Fast-forward switched on or off, or changed speed while on (see
+   main_fast_forward_record_change). */
 void perf_metrics_record_fast_forward_transition(PerfMetrics *metrics)
 {
   if(perf_metrics_active(metrics))
@@ -251,6 +253,8 @@ void perf_metrics_record_fast_forward_transition(PerfMetrics *metrics)
      metrics->fast_forward_transitions, 1);
 }
 
+/* Accelerated fast-forward audio starved and was muted until the next
+   fast-forward; counted once per fast-forward run. */
 void perf_metrics_record_fast_forward_audio_fallback(PerfMetrics *metrics)
 {
   if(perf_metrics_active(metrics))
