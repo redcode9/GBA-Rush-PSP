@@ -843,6 +843,21 @@ uint32_t link_cable_cycles_until_service(const LinkCable *cable,
   return cycles;
 }
 
+int link_cable_due(const LinkCable *cable, uint32_t cycle)
+{
+  const LinkLockstep *lockstep = &cable->lockstep;
+
+  if(cable->status != LINK_CABLE_CONNECTED)
+    return 0;
+  if(cable->mode == LINK_CABLE_MODE_LOCKSTEP)
+    return (lockstep->waiting &&
+     (int32_t)(cycle - lockstep->finish_cycle) >= 0) ||
+     (lockstep->deferred &&
+      (int32_t)(cycle - lockstep->deferred_until) >= 0);
+  return !cable->host && cable->pokemon.transfer_scheduled &&
+   (int32_t)(cycle - cable->pokemon.next_transfer) >= 0;
+}
+
 int link_cable_blocked(const LinkCable *cable, uint32_t cycle)
 {
   int32_t peer_elapsed;

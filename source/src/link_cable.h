@@ -139,9 +139,11 @@ void link_cable_leave(LinkCable *cable);
 GbaSioEvent link_cable_service(LinkCable *cable, uint32_t cycle,
  uint64_t now_us);
 
-/* Guest cycles until the cable needs link_cable_service again. */
+/* Guest cycles until the cable needs link_cable_service again, and whether
+   that moment has come. */
 uint32_t link_cable_cycles_until_service(const LinkCable *cable,
  uint32_t cycle);
+int link_cable_due(const LinkCable *cable, uint32_t cycle);
 
 /* True while the guest must not run: a reply is due, or the guest is too
    far ahead of the other console. */
