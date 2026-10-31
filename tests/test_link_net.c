@@ -1,3 +1,14 @@
+/*
+ * Host tests for link_net.c, the reliable message channel the link cable
+ * runs over unreliable ad-hoc datagrams: pairing by console id, rejection
+ * of foreign and malformed datagrams, exactly-once in-order delivery over a
+ * lossy network, flow control and the heartbeat.
+ *
+ * Datagram layout: a 40-byte header ("GR", version, message count, sender
+ * id, receiver id, first sequence, ack, consumed, clock, timestamp, echo,
+ * reserved), then one (type, size, data) record per message.
+ */
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,6 +38,7 @@ static uint32_t rng(void)
   return rng_state >> 8;
 }
 
+/* Sends whatever `from` has to say straight to `to` over a perfect link. */
 static size_t exchange(LinkNet *from, LinkNet *to, uint64_t now)
 {
   uint8_t datagram[LINK_NET_MAX_DATAGRAM];
@@ -150,6 +162,7 @@ static void test_rejects_malformed_packets(void)
   CHECK(link_net_receive(&b, datagram, size, 0));
 }
 
+/* A datagram in transit. */
 typedef struct
 {
   uint8_t data[LINK_NET_MAX_DATAGRAM];
@@ -260,12 +273,14 @@ static void test_lossy_network_in_order_once(unsigned int loss_percent,
 
   CHECK(got_a == TOTAL);
   CHECK(got_b == TOTAL);
+  /* The round-trip estimate stays near the 1 ms base delay plus jitter. */
   CHECK(a.rtt_us >= 1000u && a.rtt_us < 1000u + 2u * jitter_us + 20000u);
   printf("link_net loss=%u%% dup=%u%% jitter=%uus: %u messages each way in "
    "%.2fs, rtt %uus, %u resends\n", loss_percent, duplicate_percent,
    jitter_us, TOTAL, (double)now / 1e6, a.rtt_us, a.resends + b.resends);
 }
 
+/* At most LINK_NET_QUEUE messages may be unacknowledged at once. */
 static void test_full_window_and_inbox(void)
 {
   LinkNet a;
@@ -296,6 +311,8 @@ static void test_full_window_and_inbox(void)
   CHECK(delivered == LINK_NET_QUEUE);
 }
 
+/* With nothing to send, a datagram goes out only when the heartbeat is due;
+   a peer heard from 8 s ago or more counts as silent with an 8 s timeout. */
 static void test_silence_and_heartbeat(void)
 {
   LinkNet a;
