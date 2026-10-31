@@ -161,6 +161,8 @@ static void sound_note_audio_underrun(void)
   __builtin_allegrex_sync();
 }
 
+// Saturating count of failed PSP audio outputs (this file's underruns),
+// readable from any thread; nothing calls it at present.
 u32 sound_audio_underrun_count(void)
 {
   return __atomic_load_n(&sound_audio_underruns, __ATOMIC_ACQUIRE);
@@ -917,6 +919,8 @@ void sound_set_fast_forward(u32 enabled)
   sound_set_fast_forward_mode(enabled, 0);
 }
 
+// Audible fast-forward downmixed by factor 2 or 3; any other factor
+// gives muted fast-forward.
 void sound_set_fast_forward_audio(u32 factor)
 {
   sound_set_fast_forward_mode(1, factor);
