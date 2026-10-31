@@ -137,6 +137,8 @@ static u32 last_received;
 static NormalRole normal_role;
 #endif
 
+/* One 5-pixel row of a glyph. Only digits, capitals and - : / . have
+   glyphs; any other character draws blank. */
 static u8 glyph_row(char character, u8 row)
 {
   if(character >= '0' && character <= '9')
@@ -171,6 +173,8 @@ static void clear_screen(void)
     FRAMEBUFFER[pixel] = COLOR_BACKGROUND;
 }
 
+/* Text uses a 40x20 grid of 6x8-pixel cells. Only the glyph's set pixels
+   are written, so the screen is cleared before each redraw. */
 static void draw_character(u8 column, u8 line, char character, u16 color)
 {
   u16 x = (u16)(column * 6u);
@@ -228,6 +232,8 @@ static void draw_decimal(u8 column, u8 line, u32 value, u16 color)
     draw_character(column++, line, digits[--count], color);
 }
 
+/* Returns at the start of the next VBlank (VCOUNT 160), first waiting out
+   one already in progress, so the main loop runs once per frame. */
 static void wait_for_vblank(void)
 {
   while(REG_VCOUNT >= 160)
@@ -329,6 +335,8 @@ static void start_normal_transfer(void)
   REG_SIOCNT |= SIOCNT_START;
 }
 
+/* keys holds the buttons newly pressed this frame. Role and clock speed
+   change only while idle; each serial IRQ loads the next pattern. */
 static void update_normal(u16 keys)
 {
   if((REG_SIOCNT & SIOCNT_START) == 0)
