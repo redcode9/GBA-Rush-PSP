@@ -455,6 +455,8 @@ MainLinkEnd main_link_end_reason(void)
   return gba_link_end;
 }
 
+/* Logs a LINK_STATE record only when the link status or mode changed since
+   the last one, so the link service can call it on every pass. */
 static void main_link_log_state(void)
 {
   if(gba_link.status == gba_link_logged_status &&
@@ -802,6 +804,8 @@ void main_fast_forward_input(u32 pressed, u32 held)
   main_fast_forward_update_sound();
 }
 
+/* Ends fast-forward at once and restores normal pacing and sound; used by
+   the menu, reset, suspend, quit and link start. */
 void main_fast_forward_stop(void)
 {
   int was_active = fast_forward_policy_active(&fast_forward_policy);
@@ -824,6 +828,7 @@ FastForwardSpeed main_fast_forward_speed(void)
   return fast_forward_policy_speed(&fast_forward_policy);
 }
 
+/* The on-screen label drawn while fast-forward runs. */
 const char *main_fast_forward_status(void)
 {
   switch(fast_forward_policy_speed(&fast_forward_policy))
@@ -853,6 +858,8 @@ void main_fast_forward_apply_settings(void)
   sound_set_fast_forward(0);
 }
 
+/* Drops the per-game fast-forward override: the game values take the
+   global ones, which are then applied. */
 void main_fast_forward_reset_game_settings(void)
 {
   option_fast_forward_game_override = 0;
@@ -1401,6 +1408,8 @@ static void load_setting_cfg(void)
   }
 }
 
+/* Loads gba_bios.bin from the emulator folder; the emulator cannot run
+   without it, so a missing BIOS is reported and quits. */
 static void load_bios_file(void)
 {
   char filename[MAX_FILE];
@@ -1875,6 +1884,8 @@ static int callback_thread(SceSize args, void *argp)
   return 0;
 }
 
+/* Starts the thread that receives the exit and power callbacks; quits if
+   it cannot be created. */
 static void setup_callbacks(void)
 {
   SceUID thid = -1;
@@ -1909,6 +1920,7 @@ u64 ticker(void)
   return current_ticks;
 }
 
+/* The configured CPU clock in MHz, for the benchmark report. */
 static u32 main_perf_clock_mhz(void)
 {
   switch(option_clock_speed)
@@ -1986,6 +1998,8 @@ void main_perf_snapshot(PerfMetricsSnapshot *snapshot)
   perf_monitor_snapshot(snapshot);
 }
 
+/* Writes all length bytes, continuing after short writes; 0 if a write
+   fails. */
 static int main_perf_write_all(SceUID file, const char *data, u32 length)
 {
   u32 written = 0;
