@@ -86,7 +86,9 @@ typedef struct
 
 void link_net_init(LinkNet *net, uint32_t local_id, uint64_t now_us);
 
-/* Queues a message for reliable delivery. Returns 0 if the window is full. */
+/* Queues a message for reliable delivery. Returns 0 if the window is full,
+   type is 0 (reserved; the receiver rejects it) or size exceeds
+   LINK_NET_MAX_MESSAGE. */
 int link_net_queue(LinkNet *net, uint8_t type, const void *data,
  uint8_t size);
 

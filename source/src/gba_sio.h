@@ -170,6 +170,8 @@ int gba_sio_peek_start(const GbaSio *sio, GbaSioTransfer *transfer);
 int gba_sio_latch_remote_start(GbaSio *sio, GbaSioMode mode,
  uint8_t setting, GbaSioTransfer *transfer);
 int gba_sio_can_commit(const GbaSio *sio);
+/* Marks the waiting transfer as committed by the link, so mode changes and
+   new START writes no longer drop it; 0 if no transfer is waiting. */
 int gba_sio_lock_decision(GbaSio *sio);
 /* Tells the port the current guest cycle; while a transfer is active only
    the cycle it already has is accepted. */
