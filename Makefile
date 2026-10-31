@@ -1,13 +1,23 @@
+# Host build of the tests and checks; the PSP build lives in source/Makefile.
+#   make / make check     every host test plus the source tree checks
+#   make test-sanitize    the C tests again under ASan and UBSan
+#   make psp-build        the EBOOT (needs the PSP SDK)
+#   make package VERSION=x.y.z   build, check and zip a release
+# Each test builds the module it covers straight from source/src, so most
+# need only a host C compiler.
 HOST_CC ?= cc
 PYTHON ?= python3
 HOST_BUILD_DIR ?= build/host
 HOST_SANITIZE_DIR ?= build/sanitize
 HOST_SANITIZE_FLAGS ?= -fsanitize=address,undefined -fno-omit-frame-pointer
+# SDK headers for the two tests that compile PSP sources (memory.c and
+# psp_video.c) on the host.
 PSP_SDK_INCLUDE ?= $(shell psp-config --pspsdk-path 2>/dev/null)/include
 HOST_TEST_CODEBREAKER = $(HOST_BUILD_DIR)/test_codebreaker
 HOST_TEST_GBA_SIO = $(HOST_BUILD_DIR)/test_gba_sio
 HOST_TEST_LINK_NET = $(HOST_BUILD_DIR)/test_link_net
 HOST_TEST_LINK_CABLE = $(HOST_BUILD_DIR)/test_link_cable
+# The link cable test runs the real cable, channel and SIO code together.
 LINK_CABLE_SOURCES = tests/test_link_cable.c source/src/link_cable.c \
  source/src/link_net.c source/src/gba_sio.c
 LINK_CABLE_HEADERS = source/src/link_cable.h source/src/link_net.h \
@@ -48,6 +58,7 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
  $(HOST_TEST_RUNTIME_LOG)
+# The same C tests built with HOST_SANITIZE_FLAGS for make test-sanitize.
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_net \
  $(HOST_SANITIZE_DIR)/test_link_cable \
@@ -107,11 +118,15 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_SOUND_MATH)
 	$(HOST_TEST_RUNTIME_LOG)
 
+# Python tests. test_startup and test_browser_text also compile functions
+# cut out of main.c and gui.c with HOST_CC.
 test-tools:
 	$(PYTHON) -m unittest tests/test_compare_benchmarks.py \
 	 tests/test_decode_runtime_log.py tests/test_startup.py \
 	 tests/test_browser_text.py
 
+# The link cable test runs fewer network profiles (--quick) under the
+# sanitizers, where it is much slower.
 test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_codebreaker
 	$(HOST_SANITIZE_DIR)/test_gba_sio
@@ -155,6 +170,7 @@ $(HOST_TEST_LINK_NET): tests/test_link_net.c source/src/link_net.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_link_net.c source/src/link_net.c -o $@
 
+# -O2 keeps the long simulated link sessions fast.
 $(HOST_TEST_LINK_CABLE): $(LINK_CABLE_SOURCES) $(LINK_CABLE_HEADERS)
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -Isource/src \
@@ -166,6 +182,8 @@ $(HOST_TEST_ADHOC_PEER): tests/test_adhoc_peer.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_adhoc_peer.c source/src/adhoc_peer.c -o $@
 
+# Compiles against the bundled zlib header but links the host libz;
+# ZLIB_CONST as in the PSP build.
 $(HOST_TEST_RUNTIME_LOG): tests/test_runtime_log.c \
  source/src/runtime_log.c source/src/runtime_log.h \
  source/src/runtime_log_store.c source/src/runtime_log_store.h \
@@ -317,6 +335,7 @@ $(HOST_TEST_FAST_FORWARD_AUDIO): tests/test_fast_forward_audio.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_fast_forward_audio.c source/src/fast_forward_audio.c -o $@
 
+# video_mosaic.h is header-only.
 $(HOST_TEST_VIDEO_MOSAIC): tests/test_video_mosaic.c source/src/video_mosaic.h
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
@@ -533,6 +552,8 @@ $(HOST_SANITIZE_DIR)/test_sound_math: tests/test_sound_math.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_sound_math.c source/src/sound_math.c -o $@
 
+# Optional gates outside make check: the CBMC proof needs CBMC, the ROM link
+# trade needs mGBA plus your own FireRed ROM, BIOS and save.
 check-cbmc:
 	sh scripts/check-cbmc.sh
 
@@ -545,6 +566,8 @@ tree-check:
 psp-build:
 	$(MAKE) -C source
 
+# Rebuilds the single-game launcher EBOOT that the desktop launcher tool
+# ships in its assets.
 launcher-stub:
 	$(MAKE) -C source/single-game_launcher
 	cp source/single-game_launcher/EBOOT.PBP \
@@ -556,6 +579,7 @@ package: psp-build check
 	sh scripts/package-release.sh "$(VERSION)"
 	sh scripts/check-package.sh "$(VERSION)"
 
+# Re-checks an existing release archive without rebuilding it.
 artifact-smoke:
 	@test -n "$(VERSION)" || \
 	 (echo "Set VERSION, for example VERSION=1.4.1" >&2; exit 1)
