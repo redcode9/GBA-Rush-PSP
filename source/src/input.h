@@ -25,6 +25,7 @@
 #include "input_trace.h"
 #endif
 
+/* GBA key bits as in KEYINPUT (which stores them inverted). */
 typedef enum
 {
   BUTTON_L      = 0x200,
@@ -40,6 +41,8 @@ typedef enum
   BUTTON_NONE   = 0x00
 } INPUT_BUTTONS_TYPE;
 
+/* Actions a PSP button can be mapped to: GBA keys up to BUTTON_ID_SELECT,
+   emulator functions after. Stored in the settings. */
 typedef enum
 {
   BUTTON_ID_UP,
@@ -64,6 +67,7 @@ typedef enum
   BUTTON_ID_NONE
 } INPUT_BUTTONS_ID_TYPE;
 
+/* Menu actions returned by get_gui_input. */
 typedef enum
 {
   CURSOR_RTRIGGER,
