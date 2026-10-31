@@ -1,3 +1,6 @@
+/* Platform-independent menu navigation (menu_model.c): which row is
+   selected, moving past hidden or unselectable rows, and stepping values. */
+
 #ifndef MENU_MODEL_H
 #define MENU_MODEL_H
 
@@ -65,12 +68,14 @@ typedef struct
   size_t selected_index;
 } MenuModel;
 
+/* Rows need unique non-empty ids, and value rows a value array. */
 int menu_model_validate(const MenuRow *rows, size_t row_count);
 void menu_model_init(MenuModel *model, const MenuRow *rows, size_t row_count);
 const MenuRow *menu_model_selected(const MenuModel *model);
 int menu_model_selected_available(const MenuModel *model);
 int menu_model_select_id(MenuModel *model, const char *id);
 int menu_model_reconcile(MenuModel *model);
+/* Moves to the next selectable row up (-1) or down (+1), wrapping round. */
 int menu_model_move(MenuModel *model, int direction);
 MenuModelResult menu_model_activate(MenuModel *model);
 MenuModelResult menu_model_adjust(MenuModel *model, int direction);
