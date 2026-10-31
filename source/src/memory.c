@@ -3211,7 +3211,7 @@ s32 load_backup(char *name)
           flash_manufacturer_id = FLASH_MANUFACTURER_SANYO;
           break;
       }
-	}
+    }
 
     return 0;
   }
@@ -3648,7 +3648,7 @@ s32 load_gamepak(char *name)
   if (!strcasecmp(dot_position, ".gba") || !strcasecmp(dot_position, ".agb") || !strcasecmp(dot_position, ".bin"))
   {
     file_size = load_gamepak_raw(name);
-	print_string_gbk(MSG[MSG_SEARCHING_BACKUP_ID], X_POS_CENTER, 148, color_active_item, BG_NO_FILL);
+    print_string_gbk(MSG[MSG_SEARCHING_BACKUP_ID], X_POS_CENTER, 148, color_active_item, BG_NO_FILL);
     flip_screen(1);
   }
 
@@ -3682,7 +3682,7 @@ s32 load_gamepak(char *name)
     load_game_config_file();
     rebuild_fast_forward_button_mask();
 
-	load_backup_id();
+    load_backup_id();
     change_ext(gamepak_filename, backup_filename, ".sav");
     load_backup(backup_filename);
 
