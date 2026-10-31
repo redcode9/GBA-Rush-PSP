@@ -14,6 +14,11 @@
 #include <limits.h>
 #include <string.h>
 
+/* Encoded trace, little-endian:
+ *   0 "GBIT"  4 version  6 header size  8 event count  12 game code
+ *   16 ROM revision  17-19 zero  20 duration in frames  24 checksum
+ *   28 start frame; then 8-byte events: u32 frame offset, u16 keys, u16 0.
+ */
 #define INPUT_TRACE_CHECKSUM_OFFSET 24U
 
 static void input_trace_write_u16(uint8_t *output, uint16_t value)
@@ -41,6 +46,7 @@ static uint32_t input_trace_read_u32(const uint8_t *input)
    ((uint32_t)input[2] << 16) | ((uint32_t)input[3] << 24);
 }
 
+/* 32-bit FNV-1a over the whole trace, reading the checksum field as 0. */
 static uint32_t input_trace_checksum(const uint8_t *data, size_t size)
 {
   uint32_t checksum = 2166136261U;
@@ -129,6 +135,7 @@ int input_trace_record(InputTrace *trace, uint32_t frame, uint16_t keys)
 
   frame_offset = frame - trace->start_frame;
   keys &= INPUT_TRACE_KEY_MASK;
+  /* Only key changes are stored; the last change in a frame wins. */
   if(keys == trace->last_recorded_keys)
     return 1;
 
@@ -316,6 +323,7 @@ int input_trace_begin_record_from_header(InputTrace *trace,
      file_size < INPUT_TRACE_IDENTITY_SIZE)
     return 0;
 
+  /* Game code at 0xAC and software version at 0xBC of the header. */
   return input_trace_begin_record(trace, start_frame, header + 0xAC,
    header[0xBC], initial_keys);
 }
