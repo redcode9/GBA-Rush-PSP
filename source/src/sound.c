@@ -168,6 +168,8 @@ u32 sound_audio_underrun_count(void)
   return __atomic_load_n(&sound_audio_underruns, __ATOMIC_ACQUIRE);
 }
 
+/* The audio thread is parked (silent fast-forward or no output); not to
+   be confused with main.c's sleep_flag, which means the PSP suspends. */
 static volatile u8 sound_sleep = 0;
 static void sound_thread_wakeup(void);
 static LinkAudioWait sound_link_wait;
