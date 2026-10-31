@@ -18,6 +18,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+/* PSP controller input. update_input maps the pad to the GBA keys once per
+   frame, raises the keypad IRQ and handles hotkeys (menu, states, FPS,
+   fast-forward); get_gui_input turns the pad into menu actions with key
+   repeat. */
+
 #include "common.h"
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
@@ -32,28 +37,37 @@ static u32 diagnostic_trace_frame;
 extern u32 option_swap_confirm_buttons;
 
 
+/* The digital buttons; drops HOME, HOLD and higher bits such as the analog
+   flags below. */
 #define PSP_ALL_BUTTON_MASK 0xFFFF
 
+/* Menu key repeat delay and rate, in microseconds (SceCtrlData.TimeStamp). */
 #define BUTTON_REPEAT_START    200000
 #define BUTTON_REPEAT_CONTINUE 50000
 
+/* Stick directions as extra button bits, unused by the PSP button mask. */
 #define PSP_CTRL_ANALOG_UP    (1 << 28)
 #define PSP_CTRL_ANALOG_DOWN  (1 << 29)
 #define PSP_CTRL_ANALOG_LEFT  (1 << 30)
 #define PSP_CTRL_ANALOG_RIGHT (1 << 31)
 
 
+/* User-mode controller calls, or kubridge's kernel-mode ones after
+   init_input_kernel. */
 static int (*__sceCtrlPeekBufferPositive)(SceCtrlData *pad_data, int count);
 static int (*__sceCtrlReadBufferPositive)(SceCtrlData *pad_data, int count);
 
+/* GBA keys held this frame, as BUTTON_* bits (1 = pressed). */
 u32 key = 0;
 
+/* The BUTTON_ID_* action of each PSP button, indexed like
+   button_psp_mask_to_config. Saved with the settings. */
 u32 ALIGN_DATA gamepad_config_map[16] =
 {
-  BUTTON_ID_FASTFORWARD,		//0 BUTTON_ID_MENU
+  BUTTON_ID_FASTFORWARD,		//0
   BUTTON_ID_A,		//1
   BUTTON_ID_B,		//2
-  BUTTON_ID_FPS,	//3 BUTTON_ID_START
+  BUTTON_ID_FPS,	//3
   BUTTON_ID_L,		//4
   BUTTON_ID_R,		//5
   BUTTON_ID_DOWN,		//6
@@ -66,12 +80,9 @@ u32 ALIGN_DATA gamepad_config_map[16] =
   BUTTON_ID_DOWN,		//13
   BUTTON_ID_LEFT,		//14
   BUTTON_ID_RIGHT		//15
-//  BUTTON_ID_LOADSTATE
-//  BUTTON_ID_SAVESTATE
-//  BUTTON_ID_FASTFORWARD
-//  BUTTON_ID_FPS
 };
 
+/* PSP button for each gamepad_config_map index. */
 const u32 ALIGN_DATA button_psp_mask_to_config[] =
 {
   PSP_CTRL_TRIANGLE,		//0
@@ -106,6 +117,7 @@ void rebuild_fast_forward_button_mask(void)
   }
 }
 
+/* GBA key of each BUTTON_ID_*; IDs from BUTTON_ID_MENU on press no key. */
 const u32 ALIGN_DATA button_id_to_gba_mask[] =
 {
   BUTTON_UP,
@@ -131,6 +143,7 @@ typedef enum
   BUTTON_HELD_REPEAT
 } BUTTON_REPEAT_STATE_TYPE;
 
+/* Key repeat state for get_gui_input. */
 BUTTON_REPEAT_STATE_TYPE button_repeat_state = BUTTON_NOT_HELD;
 u32 button_repeat = 0;
 GUI_ACTION_TYPE cursor_repeat = CURSOR_NONE;
@@ -138,11 +151,15 @@ GUI_ACTION_TYPE cursor_repeat = CURSOR_NONE;
 #define BUTTON_REPEAT_MASK \
  (PSP_CTRL_UP | PSP_CTRL_RIGHT | PSP_CTRL_DOWN | PSP_CTRL_LEFT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)
 
+/* Buttons of the previous read, to detect new presses. */
 u32 last_buttons = 0;
 u32 button_repeat_timestamp;
 
+/* Flips on every rapid-fire key handled, so rapid-fire keys alternate
+   between pressed and released from frame to frame. */
 u32 rapidfire_flag = 1;
 
+/* Tilt cartridges read 12-bit values; 0x800 is level. */
 u32 enable_tilt_sensor = 0;
 u32 tilt_sensorX = 0x800;
 u32 tilt_sensorY = 0x800;
@@ -150,13 +167,16 @@ u32 tilt_sensorY = 0x800;
 static void trigger_key(u32 key);
 
 
-static void trigger_key(u32 key)
+/* Raises the keypad IRQ if KEYCNT asks for it. KEYCNT (REG_P1CNT) bits 0-9
+   select keys, bit 14 enables the IRQ, bit 15 requires all selected keys
+   (AND) instead of any (OR). In STOP mode the check runs regardless. */
+static void trigger_key(u32 keys_down)
 {
   u16 p1_cnt = pIO_REG(REG_P1CNT);
 
   if (((p1_cnt & 0x4000) != 0) || (reg[CPU_HALT_STATE] == CPU_STOP))
   {
-    u16 key_intersection = (p1_cnt & key) & 0x3FF;
+    u16 key_intersection = (p1_cnt & keys_down) & 0x3FF;
 
     if ((p1_cnt & 0x8000) != 0)
     {
@@ -185,11 +205,14 @@ u32 get_pad_input(u32 mask)
 }
 
 
+/* Menu input: one action per new press, the last match below winning, plus
+   key repeat for the d-pad and shoulder buttons. Also serves power events. */
 GUI_ACTION_TYPE get_gui_input(void)
 {
   SceCtrlData ctrl_data;
   GUI_ACTION_TYPE new_button = CURSOR_NONE;
   u32 new_buttons;
+  // Stick axes run 0-255; within this distance of either end counts as a press
   u32 analog_sensitivity = 20 + (option_analog_sensitivity * 10);
   u32 inv_analog_sensitivity = 255 - analog_sensitivity;
 
@@ -298,6 +321,8 @@ GUI_ACTION_TYPE get_gui_input(void)
   return new_button;
 }
 
+/* Like get_gui_input, but returns CURSOR_BACK once the PSP button at
+   gamepad_config_map index button_id is no longer held. */
 GUI_ACTION_TYPE get_gui_input_fs_hold(u32 button_id)
 {
   GUI_ACTION_TYPE new_button = get_gui_input();
@@ -308,6 +333,9 @@ GUI_ACTION_TYPE get_gui_input_fs_hold(u32 button_id)
   return new_button;
 }
 
+/* Called at every GBA V-blank and during link waits. Returns nonzero when
+   the menu or a state load changed the machine and update_gba must not
+   continue its pass. */
 u32 update_input(void)
 {
   SceCtrlData ctrl_data = { 0, };
@@ -325,10 +353,12 @@ u32 update_input(void)
   if (__sceCtrlPeekBufferPositive)
     (*__sceCtrlPeekBufferPositive)(&ctrl_data, 1);
 
+  // The digital buttons plus HOME (0x10000) and HOLD (0x20000)
   buttons = ctrl_data.Buttons & 0x0003FFFF;
 
   if ((option_enable_analog != 0) && ((ctrl_data.Buttons & PSP_CTRL_HOLD) == 0))
   {
+    // Tilt carts get the inverted stick position instead of d-pad presses
     if (enable_tilt_sensor != 0)
     {
       if ((ctrl_data.Lx < analog_sensitivity) || (ctrl_data.Lx > inv_analog_sensitivity))
@@ -425,10 +455,12 @@ u32 update_input(void)
   diagnostic_trace_frame++;
 #endif
 
+  // Only a newly pressed key can trigger the keypad IRQ
   if ((new_key | key) != key)
     trigger_key(new_key);
 
   key = new_key;
+  // KEYINPUT is active low
   pIO_REG(REG_P1) = (~key) & 0x3FF;
 
   return 0;
@@ -437,6 +469,7 @@ u32 update_input(void)
 
 void init_input(void)
 {
+  // Sample once per display frame, with the analog stick on
   sceCtrlSetSamplingCycle(0);
   sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
 
