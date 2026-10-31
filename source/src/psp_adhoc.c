@@ -769,6 +769,8 @@ PspAdhocState psp_adhoc_state(void)
   return psp_adhoc.state;
 }
 
+/* SCE error of the call that failed (-1 if it gave no code); 0 until a
+   failure, and cleared by psp_adhoc_start(). */
 int psp_adhoc_last_error(void)
 {
   return psp_adhoc.last_error;
