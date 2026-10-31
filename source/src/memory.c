@@ -170,6 +170,16 @@ u32 rtc_data_bytes;
 s32 rtc_bit_count;
 
 
+// Cartridge save memory in brief:
+//  - Type: load_backup_id() looks for the save library's ID string in the
+//    ROM, then load_backup() reads the .sav, whose size can override it. A
+//    type still unknown is settled by the game: its first region 0xE access
+//    means SRAM, 0xAA written to 0x5555 means Flash, and an EEPROM access
+//    means EEPROM (a 17-unit DMA to it selects the 8 KB size).
+//  - Saving: each game write arms backup_update; update_backup() writes the
+//    .sav WRITE_BACKUP_DELAY frames later when auto-save is on, and
+//    update_backup_immediately() on quit, suspend or ROM change.
+
 // Up to 128kb, store SRAM, flash ROM, or EEPROM here.
 static u8 ALIGN_DATA gamepak_backup[1024 * 128];
 
