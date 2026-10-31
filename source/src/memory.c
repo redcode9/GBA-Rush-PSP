@@ -3191,8 +3191,9 @@ s32 load_backup(char *name)
           break;
 
         // Could be Flash or SRAM. Meant to pick Flash, but this assigns
-        // sram_size, not backup_type, so the type is still settled at run
-        // time by the first access.
+        // sram_size (to 1), not backup_type, so the type is still settled at
+        // run time; a game that turns out to use SRAM and never writes above
+        // 0x8000 then has its 64 KB .sav saved back as a single byte.
         case 0x10000:
           sram_size  = BACKUP_FLASH;
           flash_size = FLASH_SIZE_64KB;
