@@ -135,6 +135,8 @@ void runtime_log_ring_emit(RuntimeLogRing *ring, uint64_t timestamp_us,
 /* Copies the newest complete records, oldest first. */
 size_t runtime_log_ring_snapshot(const RuntimeLogRing *ring,
  RuntimeLogRecord *records, size_t capacity);
+/* Records overwritten since init because the ring was full, whether or not
+   a flush had already saved them; stops at UINT_MAX. */
 uint32_t runtime_log_ring_dropped(const RuntimeLogRing *ring);
 int runtime_log_encode(const RuntimeLogRing *main_ring,
  const RuntimeLogRing *network_ring, const RuntimeLogRing *critical_ring,

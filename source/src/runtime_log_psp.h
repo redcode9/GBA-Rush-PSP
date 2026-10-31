@@ -22,14 +22,20 @@
 
 #include "runtime_log.h"
 
-/* base_path is the EBOOT directory; NULL keeps the log in memory only. */
+/* base_path is the EBOOT directory. Always returns 1: if base_path is NULL
+   or the logs directory cannot be used, the log stays in memory only;
+   otherwise the old session files are rotated and a first snapshot written. */
 int runtime_log_psp_init(const char *base_path);
 void runtime_log_psp_set_rom(const uint8_t *game_code, uint8_t revision,
  uint32_t rom_size, uint32_t emulated_cycle);
+/* Emulator thread only: each ring has a single writer (see RuntimeLogRing).
+   Ignored before runtime_log_psp_init(). */
 void runtime_log_psp_main(RuntimeLogEventType type, uint32_t emulated_cycle,
  uint8_t flags, uint32_t value0, uint32_t value1, uint32_t value2);
+/* Logs to the network ring with no emulated cycle; one writer thread only. */
 void runtime_log_psp_network(RuntimeLogEventType type, uint8_t flags,
  uint32_t value0, uint32_t value1, uint32_t value2);
+/* Logs to the 64-record critical ring; one writer thread only. */
 void runtime_log_psp_critical(RuntimeLogEventType type,
  uint32_t emulated_cycle, uint8_t flags, uint32_t value0,
  uint32_t value1, uint32_t value2);
