@@ -125,14 +125,14 @@ u32 ALIGN_DATA spsr[7];
 // opcodes and then the native code. Chained per checksum in
 // writable_checksum_hash so unchanged RAM code can be reused after an SMC
 // clear instead of being translated again.
-struct _ReuseHeader
+struct reuse_header
 {
-  struct _ReuseHeader *Next;
-  u32 PC;
-  u32 GBACodeSize;
+  struct reuse_header *next;
+  u32 start_pc;
+  u32 gba_code_size;
 };
 
-typedef struct _ReuseHeader ReuseHeader;
+typedef struct reuse_header ReuseHeader;
 
 // Per-instruction results of scan_block, indexed by position in the block.
 typedef struct
@@ -271,10 +271,10 @@ static void update_metadata_area_end(u32 pc);
 static void arm_flag_status(BlockDataArmType *block_data, u32 opcode);
 static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode);
 
-static u32 InsertUniqueSorted(u32 *Array, u32 Value, s32 Size);
-static s32 BinarySearch(u32 *Array, u32 Value, s32 Size);
+static u32 insert_unique_sorted(u32 *array, u32 value, s32 size);
+static s32 binary_search(u32 *array, u32 value, s32 size);
 
-static inline void FlushCacheLine(void *CacheLine);
+static inline void flush_cache_line(void *cache_line);
 static int process_deferred_exits(void);
 
 static void partial_clear_metadata_arm(u16 *metadata, u16 *metadata_area_start, u16 *metadata_area_end);
@@ -3224,61 +3224,61 @@ u8 *block_lookup_address_dual(u32 pc)
 #define unconditional_branch_write_thumb_no()                                 \
 
 /*
- * Inserts Value into a sorted Array of unique values (or doesn't), of
- * size Size.
- * If Value was already present, then the old size is returned, and no
- * insertions are made. Otherwise, Value is inserted into Array at the
- * proper position to maintain its total order, and Size + 1 is returned.
+ * Inserts value into a sorted array of unique values (or doesn't), of
+ * length size.
+ * If value was already present, then the old size is returned, and no
+ * insertions are made. Otherwise, value is inserted into array at the
+ * proper position to maintain its total order, and size + 1 is returned.
  */
-static u32 InsertUniqueSorted(u32 *Array, u32 Value, s32 Size)
+static u32 insert_unique_sorted(u32 *array, u32 value, s32 size)
 {
   // Gather the insertion index with a binary search.
-  s32 Min = 0, Max = Size - 1;
-  while (Min < Max) {
-    s32 Mid = Min + (Max - Min) / 2;
-    if (Array[Mid] < Value)
-      Min = Mid + 1;
+  s32 low = 0, high = size - 1;
+  while (low < high) {
+    s32 mid = low + (high - low) / 2;
+    if (array[mid] < value)
+      low = mid + 1;
     else
-      Max = Mid;
+      high = mid;
   }
 
-  // Insert at Min.
-  // Min == Size means we just insert at the end...
-  if (Min == Size) {
-    Array[Size] = Value;
-    return Size + 1;
+  // Insert at low.
+  // low == size means we just insert at the end...
+  if (low == size) {
+    array[size] = value;
+    return size + 1;
   }
   // ... otherwise it's either already in the array...
-  else if (Array[Min] == Value) {
-    return Size;
+  else if (array[low] == value) {
+    return size;
   }
   // ... or we need to move things.
   else {
-    memmove(&Array[Min + 1], &Array[Min], (size_t)(Size - Min) * sizeof(u32));
-    Array[Min] = Value;
-    return Size + 1;
+    memmove(&array[low + 1], &array[low], (size_t)(size - low) * sizeof(u32));
+    array[low] = value;
+    return size + 1;
   }
 }
 
 /*
- * Searches for the given Value in the given sorted Array of size Size.
- * If found, the index in the Array of the first element having the given
- * Value is returned.
+ * Searches for the given value in the given sorted array of size size.
+ * If found, the index in the array of the first element having the given
+ * value is returned.
  * Otherwise, -1 is returned.
  */
-static s32 BinarySearch(u32 *Array, u32 Value, s32 Size)
+static s32 binary_search(u32 *array, u32 value, s32 size)
 {
-  s32 Min = 0, Max = Size - 1;
-  while (Min < Max) {
-    s32 Mid = Min + (Max - Min) / 2;
-    if (Array[Mid] < Value)
-      Min = Mid + 1;
+  s32 low = 0, high = size - 1;
+  while (low < high) {
+    s32 mid = low + (high - low) / 2;
+    if (array[mid] < value)
+      low = mid + 1;
     else
-      Max = Mid;
+      high = mid;
   }
 
-  if (Min == Max && Array[Min] == Value)
-    return Min;
+  if (low == high && array[low] == value)
+    return low;
   else
     return -1;
 }
@@ -3292,14 +3292,14 @@ void add_smc_gate(u32 pc)
     return;
 
   if (smc_gate_targets < MAX_SMC_GATES)
-    smc_gate_targets = InsertUniqueSorted(smc_gate_pc, pc, smc_gate_targets);
+    smc_gate_targets = insert_unique_sorted(smc_gate_pc, pc, smc_gate_targets);
 }
 
 // True if pc is a game-config smc_gate. The ARM scan ends a RAM block at an
 // exit that falls through to a gate, so the gate starts a fresh block.
 static inline u32 is_smc_gate(u32 pc)
 {
-  return (BinarySearch(smc_gate_pc, pc & ~3u, smc_gate_targets) != -1);
+  return (binary_search(smc_gate_pc, pc & ~3u, smc_gate_targets) != -1);
 }
 
 // Pass 1: decode forward from block_end_pc, recording opcodes, flag usage,
@@ -3330,7 +3330,7 @@ static inline u32 is_smc_gate(u32 pc)
         if (translation_region == TRANSLATION_REGION_READONLY)                \
         {                                                                     \
           /* An exit right before this target will not end the block */       \
-          sorted_branch_count = InsertUniqueSorted(branch_targets_sorted, branch_target, sorted_branch_count); \
+          sorted_branch_count = insert_unique_sorted(branch_targets_sorted, branch_target, sorted_branch_count); \
         }                                                                     \
         block_exit_position++;                                                \
                                                                               \
@@ -3347,7 +3347,7 @@ static inline u32 is_smc_gate(u32 pc)
         if (translation_region == TRANSLATION_REGION_READONLY)                \
         {                                                                     \
           /* An exit right before this target will not end the block */       \
-          sorted_branch_count = InsertUniqueSorted(branch_targets_sorted, 0x00000008, sorted_branch_count); /* could already be in */ \
+          sorted_branch_count = insert_unique_sorted(branch_targets_sorted, 0x00000008, sorted_branch_count); /* could already be in */ \
         }                                                                     \
         block_exit_position++;                                                \
       }                                                                       \
@@ -3365,7 +3365,7 @@ static inline u32 is_smc_gate(u32 pc)
          * questions asked. We can do that, since unconditional branches that \
          * go outside the current block are made indirect. */                 \
         if (translation_region == TRANSLATION_REGION_WRITABLE ||              \
-            BinarySearch(branch_targets_sorted, block_end_pc, sorted_branch_count) == -1) \
+            binary_search(branch_targets_sorted, block_end_pc, sorted_branch_count) == -1) \
         {                                                                     \
           continue_block = 0;                                                 \
           unconditional_branch_write_##type##_##smc_write_op();               \
@@ -3421,11 +3421,11 @@ static inline u32 is_smc_gate(u32 pc)
  * Flushes a cache line in both the data cache and the instruction cache,
  * so newly written code is not executed from stale I-cache contents.
  */
-static inline void FlushCacheLine(void *CacheLine)
+static inline void flush_cache_line(void *cache_line)
 {
-  __builtin_allegrex_cache(DCACHE_HIT_WRITEBACK, (int)CacheLine);
+  __builtin_allegrex_cache(DCACHE_HIT_WRITEBACK, (int)cache_line);
   __builtin_allegrex_sync();
-  __builtin_allegrex_cache(ICACHE_HIT_INVALIDATE, (int)CacheLine);
+  __builtin_allegrex_cache(ICACHE_HIT_INVALIDATE, (int)cache_line);
 }
 
 // Links the direct exits queued by translate_block_builder: looks up (and
@@ -3450,7 +3450,7 @@ static int process_deferred_exits(void)
 
     generate_branch_patch_unconditional(item.branch_source,
      translation_target);
-    FlushCacheLine(item.branch_source);
+    flush_cache_line(item.branch_source);
   }
 
   return 1;
@@ -3550,20 +3550,20 @@ static u8 *translate_block_##type(u32 pc)                                     \
     u16 checksum = block_checksum_##type(block_data_position);                \
                                                                               \
     /* Where can we modify the address of the current header for linking? */  \
-    ReuseHeader **HeaderAddr = &writable_checksum_hash[checksum & (WRITABLE_HASH_SIZE - 1)]; \
-    ReuseHeader *Header = *HeaderAddr;                                        \
-    while (Header != NULL)                                                    \
+    ReuseHeader **header_link = &writable_checksum_hash[checksum & (WRITABLE_HASH_SIZE - 1)]; \
+    ReuseHeader *header = *header_link;                                       \
+    while (header != NULL)                                                    \
     {                                                                         \
-      if (Header->PC == block_start_pc                                        \
-       && Header->GBACodeSize == (block_end_pc - block_start_pc)              \
-       && memcmp(opcodes.type, Header + 1, Header->GBACodeSize) == 0)         \
+      if (header->start_pc == block_start_pc                                  \
+       && header->gba_code_size == (block_end_pc - block_start_pc)            \
+       && memcmp(opcodes.type, header + 1, header->gba_code_size) == 0)       \
       {                                                                       \
         if (option_ram_dynarec_policy != RAM_DYNAREC_PARTIAL_NO_REUSE)        \
         {                                                                     \
-          u8 *NativeCode = (u8 *)(Header + 1) + Header->GBACodeSize;          \
-          if ((((u32)NativeCode) & (CODE_ALIGN_SIZE - 1)) != 0)                 \
+          u8 *native_code = (u8 *)(header + 1) + header->gba_code_size;       \
+          if ((((u32)native_code) & (CODE_ALIGN_SIZE - 1)) != 0)                \
           {                                                                   \
-            NativeCode += CODE_ALIGN_SIZE - (((u32)NativeCode) & (CODE_ALIGN_SIZE - 1)); \
+            native_code += CODE_ALIGN_SIZE - (((u32)native_code) & (CODE_ALIGN_SIZE - 1)); \
           }                                                                   \
                                                                               \
           /* Adjust the Metadata Entries for the GBA Data Words that were     \
@@ -3580,25 +3580,25 @@ static u8 *translate_block_##type(u32 pc)                                     \
           update_metadata_area_end(pc);                                       \
                                                                               \
           perf_monitor_record_dynarec_reuse();                                \
-          return NativeCode;                                                  \
+          return native_code;                                                 \
         }                                                                     \
         /* Reuse disabled: drop this header from the chain so we do not       \
          * append a duplicate entry for the same GBA block (would corrupt   \
          * the reuse list). Orphaned cache bytes until the next flush. */     \
-        *HeaderAddr = Header->Next;                                           \
-        Header = *HeaderAddr;                                                 \
+        *header_link = header->next;                                          \
+        header = *header_link;                                                \
         continue;                                                             \
       }                                                                       \
                                                                               \
-      HeaderAddr = &Header->Next;                                             \
-      Header = *HeaderAddr;                                                   \
+      header_link = &header->next;                                            \
+      header = *header_link;                                                  \
     }                                                                         \
                                                                               \
     /* If we get here, we could not reuse code. */                            \
-    u32 Alignment = CODE_ALIGN_SIZE - (((u32)translation_ptr + sizeof(ReuseHeader) + (block_end_pc - block_start_pc)) & (CODE_ALIGN_SIZE - 1)); \
-    if (Alignment == CODE_ALIGN_SIZE) Alignment = 0;                          \
+    u32 alignment = CODE_ALIGN_SIZE - (((u32)translation_ptr + sizeof(ReuseHeader) + (block_end_pc - block_start_pc)) & (CODE_ALIGN_SIZE - 1)); \
+    if (alignment == CODE_ALIGN_SIZE) alignment = 0;                          \
                                                                               \
-    if (translation_ptr + sizeof(ReuseHeader) + (block_end_pc - block_start_pc) + Alignment > translation_cache_limit) \
+    if (translation_ptr + sizeof(ReuseHeader) + (block_end_pc - block_start_pc) + alignment > translation_cache_limit) \
     {                                                                         \
       /* We ran out of space for what would come before the native code.      \
        * Get out. */                                                          \
@@ -3607,18 +3607,18 @@ static u8 *translate_block_##type(u32 pc)                                     \
       return NULL;                                                            \
     }                                                                         \
                                                                               \
-    /* Fill the reuse header and link it to the linked list at HeaderAddr. */ \
-    Header = (ReuseHeader *)translation_ptr;                                  \
-    *HeaderAddr = Header;                                                     \
+    /* Fill the reuse header and link it to the linked list at header_link. */ \
+    header = (ReuseHeader *)translation_ptr;                                  \
+    *header_link = header;                                                    \
                                                                               \
-    Header->PC = block_start_pc;                                              \
-    Header->Next = NULL;                                                      \
-    Header->GBACodeSize = block_end_pc - block_start_pc;                      \
+    header->start_pc = block_start_pc;                                        \
+    header->next = NULL;                                                      \
+    header->gba_code_size = block_end_pc - block_start_pc;                    \
                                                                               \
     translation_ptr += sizeof(ReuseHeader);                                   \
     memcpy(translation_ptr, opcodes.type, block_end_pc - block_start_pc);     \
                                                                               \
-    translation_ptr += (block_end_pc - block_start_pc) + Alignment;           \
+    translation_ptr += (block_end_pc - block_start_pc) + alignment;           \
   }                                                                           \
   else                                                                        \
   {                                                                           \
@@ -3733,7 +3733,7 @@ static u8 *translate_block_##type(u32 pc)                                     \
   u8 *flush_addr;                                                             \
   for (flush_addr = update_trampoline; flush_addr < translation_ptr + CACHE_LINE_SIZE; ) \
   {                                                                           \
-    FlushCacheLine(flush_addr);                                               \
+    flush_cache_line(flush_addr);                                             \
                                                                               \
     flush_addr += CACHE_LINE_SIZE;                                            \
   }                                                                           \
