@@ -1,3 +1,10 @@
+/*
+ * Host tests for config_model.c, the settings file codec: round trip of the
+ * current versioned "GBRC" format, migration from version 1 and from the
+ * headerless word arrays older releases wrote, and fallback to defaults for
+ * out-of-range fields.
+ */
+
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -20,6 +27,8 @@ static void write_u16(uint8_t *output, uint16_t value)
   output[1] = (uint8_t)(value >> 8);
 }
 
+/* Independent copy of the codec's FNV-1a checksum; the stored checksum at
+   bytes 8-11 is hashed as zeros. Used to forge valid version 1 files. */
 static uint32_t config_checksum(const uint8_t *data, size_t size)
 {
   uint32_t value = 2166136261U;
@@ -101,6 +110,9 @@ static void test_defaults_and_versioned_round_trip(void)
   assert(decoded.screen_scale == 0xA5A5A5A5U);
 }
 
+/* A hand-built version 1 file (header: magic, version, value count,
+   checksum, payload bytes) carrying the first 39 values: the fast-forward
+   fields that version 2 added must decode as their defaults. */
 static void test_previous_versioned_migration(void)
 {
   enum { previous_count = 39, previous_size = 16 + previous_count * 4 };
@@ -132,6 +144,8 @@ static void test_previous_versioned_migration(void)
   assert(decoded.fast_forward_audio == 0);
 }
 
+/* Out-of-range fast-forward values reset only themselves to the default;
+   valid neighbours are kept. */
 static void test_fast_forward_fields_fall_back_independently(void)
 {
   ConfigModel model;
@@ -159,6 +173,9 @@ static void test_fast_forward_fields_fall_back_independently(void)
   assert(decoded.fast_forward_audio == 1);
 }
 
+/* Headerless 39-word file from the last release before the versioned
+   format: valid words are taken in place (word 9, the old RAM dynarec
+   setting, is translated), then out-of-range words fall back one by one. */
 static void test_current_binary_migration_and_field_validation(void)
 {
   uint32_t words[CONFIG_MODEL_LEGACY_CURRENT_WORDS] = { 0 };
@@ -216,6 +233,8 @@ static void test_current_binary_migration_and_field_validation(void)
   assert(decoded.gamepad[0] == 11);
 }
 
+/* 37-word and 32-word files from older releases; settings those releases
+   did not have keep their defaults. */
 static void test_older_binary_layouts(void)
 {
   uint32_t words[37] = { 0 };
@@ -276,6 +295,8 @@ static void test_older_binary_layouts(void)
   assert(decoded.gamepad[15] == 15);
 }
 
+/* The 23-word per-game file: display, frameskip, clock, volume and the 16
+   button mappings only. */
 static void test_game_binary_layout(void)
 {
   uint32_t words[23] = { 0 };
@@ -313,6 +334,7 @@ static void test_rejects_unknown_or_truncated_data(void)
   uint8_t bytes[CONFIG_MODEL_ENCODED_SIZE] = { 0 };
   ConfigModel model;
 
+  /* 7 bytes and 38 words match no known layout. */
   assert(config_model_decode(bytes, 7, &model) == CONFIG_MODEL_DECODE_INVALID);
   assert(config_model_decode(bytes, 38 * 4, &model) ==
          CONFIG_MODEL_DECODE_INVALID);
