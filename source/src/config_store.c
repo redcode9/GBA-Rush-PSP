@@ -1,3 +1,9 @@
+/* Crash-safe load and save of a ConfigModel file. File access goes through
+   ConfigStoreIo so the host tests can inject failures. Save writes and
+   checks the temporary file, keeps the last good primary as the recovery
+   copy, then renames the new file into place; load falls back to the
+   recovery copy when the primary is missing or invalid. */
+
 #include "config_store.h"
 
 static int io_valid(const ConfigStoreIo *io)
@@ -47,6 +53,8 @@ ConfigStoreResult config_store_load(const ConfigStoreIo *io,
   return CONFIG_STORE_NOT_FOUND;
 }
 
+/* Put the recovery copy back as the primary after a failed save. Returns
+   original_result if that worked, CONFIG_STORE_RESTORE_FAILED if not. */
 static ConfigStoreResult restore_recovery(const ConfigStoreIo *io,
  const char *primary_path, const char *recovery_path,
  ConfigStoreResult original_result)

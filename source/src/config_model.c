@@ -1,3 +1,9 @@
+/* Settings file format shared by tempgba.cfg and the per-game .cfg files.
+   Current files: a 16-byte header ("GBRC", u16 version, u16 value count,
+   u32 checksum, u32 payload size) then little-endian u32 values in
+   model_to_values() order. Headerless files from older releases are still
+   read. Out-of-range values decode to their defaults. */
+
 #include "config_model.h"
 
 #include <string.h>
@@ -39,6 +45,8 @@ static uint32_t read_u32(const uint8_t *input)
    ((uint32_t)input[2] << 16) | ((uint32_t)input[3] << 24);
 }
 
+/* 32-bit FNV-1a (offset basis 2166136261, prime 16777619) over the whole
+   file, reading the checksum field itself as zeros. */
 static uint32_t checksum(const uint8_t *data, size_t size)
 {
   uint32_t value = 2166136261U;
@@ -63,6 +71,8 @@ static uint32_t valid_or_default(uint32_t value, uint32_t limit,
   return value < limit ? value : default_value;
 }
 
+/* Headerless files numbered the RAM dynarec setting differently: 4-6 map to
+   policies 0-2, 0-1 to policies 1-2, anything else to the default (2). */
 static uint32_t decode_legacy_ram_policy(uint32_t value)
 {
   if(value >= 4 && value <= 6)
@@ -102,6 +112,8 @@ void config_model_defaults(ConfigModel *model)
   memcpy(model->gamepad, default_gamepad, sizeof(model->gamepad));
 }
 
+/* The value index is the on-disk position: append new settings, never
+   reorder. values_to_model() holds each setting's limit and default. */
 static void model_to_values(const ConfigModel *model, uint32_t *values)
 {
   size_t i;
@@ -202,6 +214,7 @@ int config_model_encode(const ConfigModel *model, uint8_t *output,
   return 1;
 }
 
+/* Version 1 files carry the first 39 values; the rest keep their defaults. */
 static ConfigModelDecodeResult decode_versioned(const uint8_t *data,
  size_t size, ConfigModel *model)
 {
@@ -234,6 +247,8 @@ static ConfigModelDecodeResult decode_versioned(const uint8_t *data,
   return CONFIG_MODEL_DECODE_VERSIONED;
 }
 
+/* Headerless files are bare u32 arrays: 32 to 39 words (no 38) for the
+   global config, as releases appended settings, and 23 for a per-game file. */
 static int legacy_word_count_supported(size_t word_count)
 {
   return word_count == 39 || word_count == 37 || word_count == 36 ||
@@ -259,6 +274,8 @@ static ConfigModelDecodeResult decode_legacy(const uint8_t *data, size_t size,
 
   config_model_defaults(&decoded);
   model_to_values(&decoded, values);
+  /* Per-game layout: scale, magnification, filter, frameskip type and
+     value, clock, volume, then the 16 button mappings. */
   if(word_count == 23)
   {
     values[0] = words[0];
