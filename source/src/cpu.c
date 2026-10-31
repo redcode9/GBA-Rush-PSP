@@ -268,8 +268,8 @@ static u16 block_checksum_thumb(u32 block_data_count);
 static void update_metadata_area_start(u32 pc);
 static void update_metadata_area_end(u32 pc);
 
-static void arm_flag_status(BlockDataArmType *block_data, u32 opecode);
-static void thumb_flag_status(BlockDataThumbType *block_data, u16 opecode);
+static void arm_flag_status(BlockDataArmType *block_data, u32 opcode);
+static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode);
 
 static u32 InsertUniqueSorted(u32 *Array, u32 Value, s32 Size);
 static s32 BinarySearch(u32 *Array, u32 Value, s32 Size);
