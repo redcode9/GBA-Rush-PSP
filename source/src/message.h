@@ -26,6 +26,15 @@
    (scripts/check-messages.sh checks it). */
 #define MSG  message[option_language]
 
+/* option_language values, in the order of the message[] tables (message.c).
+   Japanese text is Shift-JIS (print_string); the others are GBK
+   (print_string_gbk). */
+#define LANGUAGE_JAPANESE            0
+#define LANGUAGE_ENGLISH             1
+#define LANGUAGE_SIMPLIFIED_CHINESE  2
+#define LANGUAGE_TRADITIONAL_CHINESE 3
+#define LANGUAGE_ITALIAN             4
+
 enum MESSAGE_ITEM
 {
   MSG_TURBO,

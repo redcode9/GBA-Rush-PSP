@@ -1206,7 +1206,7 @@ static void synchronize(void)
   {
     if (psp_fps_debug != 0)
     {
-      if (option_language == 0)
+      if (option_language == LANGUAGE_JAPANESE)
         print_string(main_fast_forward_status(), 0, 12, COLOR15_WHITE,
          COLOR15_BLACK);
       else
@@ -1215,7 +1215,7 @@ static void synchronize(void)
     }
     else
     {
-      if (option_language == 0)
+      if (option_language == LANGUAGE_JAPANESE)
         print_string(main_fast_forward_status(), 0, 0, COLOR15_WHITE,
          COLOR15_BLACK);
       else

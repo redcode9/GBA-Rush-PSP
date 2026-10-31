@@ -21,6 +21,7 @@ typedef uint32_t u32;
 typedef int32_t s32;
 typedef uint16_t u16;
 u32 option_language;
+#define LANGUAGE_JAPANESE 0
 char drawn[1024];
 int font;
 void print_string(const char *s, u32 x, u32 y, u16 c, u16 b) {

@@ -694,7 +694,7 @@ static void draw_theme_preview(u16 editing_color_ptr_value)
     /* Directory entries on the right side under battery */
     u32 dir_x = px + pw - 70;
     u32 dir_y = py + 20;
-    if (option_language == 0)
+    if (option_language == LANGUAGE_JAPANESE)
     {
         print_string("..", dir_x, dir_y, color_inactive_dir, BG_NO_FILL);
         print_string("ROMs", dir_x, dir_y + 14, color_inactive_dir, BG_NO_FILL);
@@ -859,14 +859,14 @@ static void print_string_scroll(const char *str, u32 x, u32 y, u16 color, u16 bg
     if (len == 0) return;
 
     if (len <= max_chars) {
-        if (option_language == 0)
+        if (option_language == LANGUAGE_JAPANESE)
             print_string(str, x, y, color, bg);
         else
             print_string_gbk(str, x, y, color, bg);
         return;
     }
 
-    MenuTextEncoding encoding = option_language == 0 ?
+    MenuTextEncoding encoding = option_language == LANGUAGE_JAPANESE ?
         MENU_TEXT_SHIFT_JIS : MENU_TEXT_GBK;
     u32 start = menu_text_scroll_start(str,
         scroll_offset > 0 ? (u32)scroll_offset : 0, encoding);
@@ -878,7 +878,7 @@ static void print_string_scroll(const char *str, u32 x, u32 y, u16 color, u16 bg
     memcpy(buf, str + start, clip_len);
     buf[clip_len] = '\0';
 
-    if (option_language == 0)
+    if (option_language == LANGUAGE_JAPANESE)
         print_string(buf, x, y, color, bg);
     else
         print_string_gbk(buf, x, y, color, bg);
@@ -891,7 +891,7 @@ static void print_string_clipped(const char *str, u32 x, u32 y, u16 color, u16 b
     if (len == 0) return;
 
     if (len <= max_chars) {
-        if (option_language == 0)
+        if (option_language == LANGUAGE_JAPANESE)
             print_string(str, x, y, color, bg);
         else
             print_string_gbk(str, x, y, color, bg);
@@ -902,11 +902,12 @@ static void print_string_clipped(const char *str, u32 x, u32 y, u16 color, u16 b
 
     char buf[256];
     u32 clip_len = menu_text_clip_length_for_encoding(str, max_chars,
-        option_language == 0 ? MENU_TEXT_SHIFT_JIS : MENU_TEXT_GBK);
+        option_language == LANGUAGE_JAPANESE ?
+        MENU_TEXT_SHIFT_JIS : MENU_TEXT_GBK);
     memcpy(buf, str, clip_len);
     buf[clip_len] = '\0';
 
-    if (option_language == 0)
+    if (option_language == LANGUAGE_JAPANESE)
         print_string(buf, x, y, color, bg);
     else
         print_string_gbk(buf, x, y, color, bg);
@@ -982,7 +983,7 @@ static void draw_color_picker(u32 h, u32 s, u32 v, s32 cx, s32 cy, s32 hue_seg,
                   PICKER_PREV_Y + PICKER_PREV_SIZE * 2 + 20, COLOR15_WHITE);
 
     /* Labels */
-    if (option_language == 0)
+    if (option_language == LANGUAGE_JAPANESE)
     {
         print_string_gbk(MSG[MSG_PICKER_OLD], PICKER_PREV_X, PICKER_PREV_Y + PICKER_PREV_SIZE + 3, color_help_text, BG_NO_FILL);
         print_string_gbk(MSG[MSG_PICKER_NEW], PICKER_PREV_X, PICKER_PREV_Y + PICKER_PREV_SIZE * 2 + 23, color_help_text, BG_NO_FILL);
@@ -1015,7 +1016,7 @@ static void draw_status_bar(void)
     }
     status_counter++;
 
-    if (option_language == 0)
+    if (option_language == LANGUAGE_JAPANESE)
     {
         print_string_gbk(time_str, TIME_STATUS_POS_X, 2, color_help_text, BG_NO_FILL);
         print_string_gbk(batt_str, BATT_STATUS_POS_X, 2, color_batt_life, BG_NO_FILL);
@@ -2068,7 +2069,7 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
           update_file_scroll(file_hash);
       }
 
-      if (option_language == 0)
+      if (option_language == LANGUAGE_JAPANESE)
         print_string(current_dir_short, 6, 2, color_help_text, BG_NO_FILL);
       else
         print_string_gbk(current_dir_short, 6, 2, color_help_text, BG_NO_FILL);
@@ -3473,7 +3474,7 @@ static int menu_string_has_gbk(const char *str)
 
 static void print_menu_line(const char *str, s16 x, s16 y, u16 fg, s16 bg)
 {
-    if (option_language == 0 && !menu_string_has_gbk(str))
+    if (option_language == LANGUAGE_JAPANESE && !menu_string_has_gbk(str))
         print_string(str, x, y, fg, bg);
     else
         print_string_gbk(str, x, y, fg, bg);
@@ -4311,7 +4312,7 @@ u32 menu(void)
         refresh_cheat_format_strings();
         reload_cheats_page();
 
-        if(option_language == 4)
+        if(option_language == LANGUAGE_ITALIAN)
           snprintf(status_message, sizeof(status_message), "%s\n%lu trucchi caricati",
                    loaded_cheat_filename, (unsigned long)num_cheats);
         else
@@ -4322,7 +4323,7 @@ u32 menu(void)
       {
         const char *reason;
 
-        if(option_language == 4)
+        if(option_language == LANGUAGE_ITALIAN)
         {
           switch(load_result)
           {
