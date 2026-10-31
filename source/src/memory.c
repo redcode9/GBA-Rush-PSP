@@ -3237,64 +3237,64 @@ static s32 filename_contains_string(const char *filename, const char *value)
 // buffers). Returns -1 for blank, comment (#) or malformed lines.
 s32 parse_config_line(char *current_line, char *current_variable, char *current_value)
 {
-  char *eq;
-  char *ks;
-  char *ke;
-  char *vs;
-  char *ve;
-  size_t klen;
-  size_t vlen;
+  char *equals_sign;
+  char *key_start;
+  char *key_end;
+  char *value_start;
+  char *value_end;
+  size_t key_length;
+  size_t value_length;
 
   if (current_line == NULL || current_line[0] == 0 || current_line[0] == '#' ||
       current_line[0] == '\r' || current_line[0] == '\n')
     return -1;
 
-  eq = strchr(current_line, '=');
-  if (eq == NULL)
+  equals_sign = strchr(current_line, '=');
+  if (equals_sign == NULL)
     return -1;
 
-  /* Do not write *eq = 0: load_game_config may re-parse
+  /* Do not write *equals_sign = 0: load_game_config may re-parse
    * current_line after reading a block (goto resume_after_entry). Nul at '='
    * breaks the next parse. */
 
-  ks = current_line;
-  while (*ks == ' ' || *ks == '\t')
-    ks++;
+  key_start = current_line;
+  while (*key_start == ' ' || *key_start == '\t')
+    key_start++;
 
-  ke = eq - 1;
-  while (ke >= ks && (*ke == ' ' || *ke == '\t'))
-    ke--;
+  key_end = equals_sign - 1;
+  while (key_end >= key_start && (*key_end == ' ' || *key_end == '\t'))
+    key_end--;
 
-  if (ke < ks)
+  if (key_end < key_start)
     return -1;
 
-  klen = (size_t)(ke - ks + 1);
-  if (klen >= 256)
+  key_length = (size_t)(key_end - key_start + 1);
+  if (key_length >= 256)
     return -1;
 
-  memcpy(current_variable, ks, klen);
-  current_variable[klen] = 0;
+  memcpy(current_variable, key_start, key_length);
+  current_variable[key_length] = 0;
 
-  vs = eq + 1;
-  while (*vs == ' ' || *vs == '\t')
-    vs++;
+  value_start = equals_sign + 1;
+  while (*value_start == ' ' || *value_start == '\t')
+    value_start++;
 
-  ve = vs + strlen(vs);
-  while (ve > vs)
+  value_end = value_start + strlen(value_start);
+  while (value_end > value_start)
   {
-    ve--;
-    if (*ve == '\n' || *ve == '\r' || *ve == ' ' || *ve == '\t')
+    value_end--;
+    if (*value_end == '\n' || *value_end == '\r' || *value_end == ' ' || *value_end == '\t')
       continue;
-    ve++;
+    value_end++;
     break;
   }
 
-  vlen = (size_t)(ve - vs);
-  if (vlen >= 255)
-    vlen = 254;
+  value_length = (size_t)(value_end - value_start);
+  if (value_length >= 255)
+    value_length = 254;
 
-  memcpy(current_value, vs, vlen);
-  current_value[vlen] = 0;
+  memcpy(current_value, value_start, value_length);
+  current_value[value_length] = 0;
 
   return 0;
 }
