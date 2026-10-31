@@ -296,6 +296,9 @@ static void test_encode_and_validate(void)
   assert(!runtime_log_validate(encoded, written, NULL, NULL, NULL, NULL));
 }
 
+/* NULL arguments are rejected. The encode call fails on its NULL critical
+   ring before the one-byte-short buffer is checked, so that limit is not
+   covered here. */
 static void test_invalid_arguments(void)
 {
   RuntimeLogRing ring;
