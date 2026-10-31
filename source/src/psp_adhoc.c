@@ -207,6 +207,7 @@ static int psp_adhoc_network_init(PspAdhocContext *context)
     return psp_adhoc_fail(context, result);
   context->module_adhoc = 1;
 
+  /* 128 KB pool; callout and interrupt threads with 4 KB stacks. */
   context->phase = PSP_ADHOC_PHASE_NET_INIT;
   result = sceNetInit(128 * 1024, PSP_ADHOC_STACK_PRIORITY, 4 * 1024,
    PSP_ADHOC_STACK_PRIORITY, 4 * 1024);
@@ -361,7 +362,7 @@ static int psp_adhoc_scan(PspAdhocContext *context,
   if(result < 0)
     return psp_adhoc_fail(context, result);
 
-  /* A scan reports state 2 until it finishes. */
+  /* A scan reports state 2 until it finishes; wait at least 250 ms. */
   started = sceKernelGetSystemTimeWide();
   while(sceKernelGetSystemTimeWide() - started < PSP_ADHOC_SCAN_WAIT_US)
   {
@@ -646,6 +647,7 @@ static int psp_adhoc_thread(SceSize args, void *argp)
 
 /* ---- Emulator thread API ---------------------------------------------- */
 
+/* Joins the worker for at most timeout_us; 1 once it is gone. */
 static int psp_adhoc_reap(SceUInt timeout_us)
 {
   SceUInt timeout = timeout_us;
