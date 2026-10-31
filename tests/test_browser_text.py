@@ -7,10 +7,13 @@ import subprocess
 import tempfile
 import unittest
 
+# Extracts a C function from a source file (see tests/test_startup.py).
 from tests.test_startup import function
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# Drawing stubs record the last string drawn and which font drew it
+# (0 Shift-JIS, 1 GBK).
 STUBS = r'''
 #include <assert.h>
 #include <stdint.h>
@@ -32,6 +35,8 @@ void print_string_gbk(const char *s, u32 x, u32 y, u16 c, u16 b) {
 }
 '''
 
+# option_language 0 (Japanese) uses Shift-JIS, any other language GBK. A
+# clip or scroll position must never split a double-byte character.
 SCENARIOS = r'''
 int main(void) {
   char pair[] = { (char)0x81, (char)0x40, 'A', 'B', 0 };
@@ -60,6 +65,7 @@ int main(void) {
 
 class BrowserTextTests(unittest.TestCase):
     def test_production_browser_paths(self):
+        # The real gui.c functions, compiled between the stubs and scenarios.
         source = STUBS
         source += function("source/src/gui.c",
                            "static void print_string_clipped(const char *str, u32 x, u32 y, u16 color, u16 bg, u32 max_chars)")
