@@ -1,3 +1,9 @@
+/*
+ * Host tests for the CodeBreaker cheat engine (codebreaker.c): the seed and
+ * decryption tables against known-good values, and every write and condition
+ * code type executed against a small fake GBA memory.
+ */
+
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -5,6 +11,8 @@
 #include "codebreaker.h"
 
 static int failures;
+/* Fake GBA memory: addresses wrap modulo its (power of two) size, so any
+   cheat address lands inside it; KEYINPUT 0x04000130 maps to offset 0x130. */
 static uint8_t memory_image[0x400];
 
 #define CHECK(condition) \
@@ -23,6 +31,8 @@ static uint32_t memory_offset(uint32_t address)
   return address & (sizeof(memory_image) - 1);
 }
 
+/* The engine's memory hooks, little-endian over memory_image like the GBA
+   bus; unaligned addresses are rounded down to the access size. */
 uint16_t codebreaker_memory_read16(uint32_t address)
 {
   uint32_t offset = memory_offset(address) & ~1u;
@@ -84,6 +94,8 @@ static void test_unpack(void)
   CHECK(memcmp(bytes, expected, sizeof(bytes)) == 0);
 }
 
+/* Type 4 (fill) needs one extra line; type 5 (byte list) carries op2
+   halfwords packed three per extra line; other types take none. */
 static void test_payload_lengths(void)
 {
   CHECK(codebreaker_payload_lines(0x40000000, 0) == 1);
@@ -111,6 +123,7 @@ static void test_seed_and_decrypt(void)
     0x0D, 0x02, 0x08, 0x24, 0x2C, 0x2D, 0x20, 0x00
   };
 
+  /* Golden values: any drift in seeding or decryption breaks real codes. */
   codebreaker_state_reset(&state);
   codebreaker_reseed(&state, 0x9ABCDEF0, 0x1234);
 
@@ -132,6 +145,12 @@ static void test_seed_and_decrypt(void)
   CHECK(op2 == 0x0A80);
 }
 
+/*
+ * One code of each write type. The top nibble of op1 is the type, the rest
+ * the address: 2 OR, 3 byte, 4 fill (second line: repeat count | value step
+ * << 16, then address step), 5 byte list, 6 AND, 8 assign, E add (an odd
+ * address selects a 32-bit add of the sign-extended operand).
+ */
 static void test_write_operations(void)
 {
   static const uint32_t or_code[] = { 0x20000101, 0x00F0 };
@@ -189,6 +208,8 @@ static void test_write_operations(void)
   CHECK(codebreaker_memory_read32(0x100) == 1);
 }
 
+/* Runs a condition code followed by a write to 0x200; the write must land
+   exactly when the condition holds. Type D reads KEYINPUT, not its address. */
 static void check_condition(uint32_t op1, uint16_t op2,
  uint16_t memory_value, int expected_true)
 {
@@ -209,6 +230,8 @@ static void check_condition(uint32_t op1, uint16_t op2,
   CHECK((codebreaker_memory_read16(0x200) == 0xCAFE) == expected_true);
 }
 
+/* 7 equal, A not equal, B greater, C less, D all op2 keys held (KEYINPUT
+   bits read 0 when pressed), F any op2 bit set. */
 static void test_conditions(void)
 {
   check_condition(0x70000100, 5, 5, 1);
@@ -225,6 +248,8 @@ static void test_conditions(void)
   check_condition(0xF0000100, 2, 1, 0);
 }
 
+/* A false condition skips the whole next code, including the payload line of
+   a type 4 fill, so the payload is never run as a code of its own. */
 static void test_conditional_multiline_skip(void)
 {
   static const uint32_t codes[] =
@@ -243,6 +268,8 @@ static void test_conditional_multiline_skip(void)
   CHECK(codebreaker_memory_read16(0x140) == 0xBEEF);
 }
 
+/* Codes whose payload lines are cut off by the end of the list: a fill does
+   nothing and a byte list writes only the bytes it actually has. */
 static void test_truncated_multiline_operations(void)
 {
   static const uint32_t truncated_fill[] = { 0x40000100, 0x0010 };
