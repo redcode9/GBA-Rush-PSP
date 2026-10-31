@@ -232,7 +232,7 @@ def convert_audio(source_path: Path, output_path: Path, loop: bool = False,
             import shutil
             shutil.copy(str(wav_path), str(master_wav))
 
-            # Auto-trim: binary-search-like convergence for fewer iterations
+            # Auto-trim: shrink the duration in proportion to the overshoot
             while size > max_size and duration > 5:
                 # Linear estimate: if N seconds = size bytes, then target seconds = N * max_size / size
                 # Apply 0.95 safety margin to guarantee undershoot

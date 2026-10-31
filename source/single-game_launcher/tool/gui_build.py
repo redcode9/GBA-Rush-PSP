@@ -524,6 +524,7 @@ class BuildTabMixin:
         Handles Ctrl (Windows/Linux/macOS). Tkinter maps Command to Control
         on macOS for shortcuts.
         """
+        # 0x4 is the Control modifier bit in Tk's event.state
         if (event.state & 0x4) and event.keysym.lower() in ('c', 'a'):
             return None  # Let Ctrl+C/Cmd+C and Ctrl+A/Cmd+A pass through
         return "break"   # Swallow all other keys
