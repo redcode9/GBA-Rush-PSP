@@ -1541,7 +1541,8 @@ static int path_is_regular_file(const char *path)
 }
 
 /* Picks the ROM (a path argument, then roms/game.gba, then the browser or
-   menu) and runs it in the dynarec, which never returns; else quits. */
+   menu) and runs it in the dynarec, which never returns; else quits.
+   tests/test_startup.py extracts this function by its exact signature. */
 int user_main(int argc, char *argv[])
 {
   char load_filename[MAX_FILE];
