@@ -226,6 +226,8 @@ void perf_metrics_record_skipped_frame(PerfMetrics *metrics)
      metrics->skipped_frames, 1);
 }
 
+/* Audio came back: PSP output works again after a failure, or the sound
+   sync gave up waiting and dropped the queued samples. */
 void perf_metrics_record_audio_recovery(PerfMetrics *metrics)
 {
   if(perf_metrics_active(metrics))
@@ -233,6 +235,8 @@ void perf_metrics_record_audio_recovery(PerfMetrics *metrics)
      metrics->audio_recoveries, 1);
 }
 
+/* An underrun here is a failed PSP audio output or channel re-reserve in
+   sound.c, not an empty buffer. */
 void perf_metrics_record_audio_underrun(PerfMetrics *metrics)
 {
   if(perf_metrics_active(metrics))
@@ -261,6 +265,8 @@ void perf_metrics_record_dynarec_compilation(PerfMetrics *metrics)
      metrics->dynarec_compilations, 1);
 }
 
+/* A writable-RAM block matched earlier code by checksum, so its existing
+   translation was reused instead of recompiled. */
 void perf_metrics_record_dynarec_reuse(PerfMetrics *metrics)
 {
   if(perf_metrics_active(metrics))
@@ -268,6 +274,8 @@ void perf_metrics_record_dynarec_reuse(PerfMetrics *metrics)
      metrics->dynarec_reuse_hits, 1);
 }
 
+/* A translation abandoned because the code cache filled and was flushed,
+   then restarted from the top. */
 void perf_metrics_record_dynarec_retry(PerfMetrics *metrics)
 {
   if(perf_metrics_active(metrics))
@@ -415,6 +423,8 @@ void perf_metrics_record_quality_presented(PerfMetrics *metrics,
      metrics->crisp_presented_frames, 1);
 }
 
+/* One call of update_gba (main.c); the iteration counter below counts
+   the passes of its event loop. */
 void perf_metrics_record_gba_update_entry(PerfMetrics *metrics)
 {
   if(perf_metrics_active(metrics))
