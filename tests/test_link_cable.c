@@ -135,6 +135,8 @@ static void console_service(Console *console)
     console->guest->serial_irq(console);
 }
 
+/* Caps a step at the next event; a zero gap counts as one cycle so the
+   loop always moves forward. */
 static uint32_t clamp_step(uint32_t step, uint32_t limit)
 {
   if(limit == 0)
@@ -264,6 +266,7 @@ static void network_send(const NetProfile *net, int to, const uint8_t *data,
   }
 }
 
+/* Hands every datagram whose arrival time has come to its console. */
 static void network_deliver(Console *consoles[2], uint64_t now)
 {
   unsigned int i = 0;
@@ -549,6 +552,8 @@ static void StartTransfer(Console *console)
    (uint16_t)(reg_read(console, REG_SIOCNT) | SIO_START));
 }
 
+/* Master is the parent console (SI low, player 0) once SD reports every
+   console ready. */
 static void CheckMasterOrSlave(Console *console)
 {
   PokemonGame *game = game_of(console);
@@ -567,6 +572,8 @@ static void InitTimer(Console *console)
     timer_start(console, TIMER3_PERIOD);
 }
 
+/* Queues this frame's sendCmd and clears it; an all-zero command is not
+   queued, and a full queue sets queueFull instead. */
 static void EnqueueSendCmd(Console *console, uint16_t *sendCmd)
 {
   PokemonGame *game = game_of(console);
@@ -596,6 +603,8 @@ static void EnqueueSendCmd(Console *console, uint16_t *sendCmd)
   }
 }
 
+/* Pops the oldest received frame into recvCmds, one command per player;
+   with nothing queued it zeroes them and sets receivedNothing. */
 static void DequeueRecvCmds(Console *console, uint16_t recvCmds[4][CMD_LENGTH])
 {
   PokemonGame *game = game_of(console);
@@ -622,6 +631,8 @@ static void DequeueRecvCmds(Console *console, uint16_t recvCmds[4][CMD_LENGTH])
   }
 }
 
+/* The game's per-frame link step: opens the port, handshakes, then moves
+   one command through each queue per frame. Returns the LINK_STAT_* word. */
 static uint32_t LinkMain1(Console *console)
 {
   PokemonGame *game = game_of(console);
@@ -685,6 +696,9 @@ static uint32_t LinkMain1(Console *console)
   return status;
 }
 
+/* VBlank handler: the master starts each frame's transfers (every VBlank
+   while handshaking) and flags its own lag if fewer than 9 completed; a
+   slave flags lag after 10 VBlanks without a serial IRQ. */
 static void LinkVSync(Console *console)
 {
   PokemonGame *game = game_of(console);
@@ -725,6 +739,9 @@ static void LinkVSync(Console *console)
   }
 }
 
+/* Sends this side's handshake word and counts the consoles that answered
+   with one. Returns 1 once two exchanges in a row agree on more than one
+   player with the master's word in slot 0. */
 static int DoHandshake(Console *console)
 {
   PokemonGame *game = game_of(console);
@@ -763,6 +780,9 @@ static int DoHandshake(Console *console)
   return 0;
 }
 
+/* Takes the words just received. The first transfer of a frame carries
+   each player's checksum of the previous frame, checked against ours; the
+   next 8 are command words, queued per player. */
 static void DoRecv(Console *console)
 {
   PokemonGame *game = game_of(console);
@@ -809,6 +829,9 @@ static void DoRecv(Console *console)
   }
 }
 
+/* Loads the word for the next transfer: the queue head's 8 command words,
+   then the checksum, after which the head is dequeued. Sends zeros while
+   the queue is empty. */
 static void DoSend(Console *console)
 {
   PokemonGame *game = game_of(console);
@@ -847,6 +870,8 @@ static void StopTimer(Console *console)
     timer_stop(console);
 }
 
+/* After the ninth transfer, resets the word indices for the next frame;
+   otherwise the master arms timer 3 to start the next word. */
 static void SendRecvDone(Console *console)
 {
   PokemonGame *game = game_of(console);
@@ -862,6 +887,8 @@ static void SendRecvDone(Console *console)
   }
 }
 
+/* Serial IRQ handler: runs the handshake, then once connected handles one
+   word of the 9-transfer frame per interrupt. */
 static void SerialCB(Console *console)
 {
   PokemonGame *game = game_of(console);
@@ -910,6 +937,9 @@ static uint8_t block_byte(uint32_t seed, uint32_t kind, uint32_t index)
    (seed >> 3));
 }
 
+/* Starts sending a block generated from this game's seed (kind 1 player
+   record, 2 party): announced with LINKCMD_INIT_BLOCK, then 14 bytes per
+   frame from RunLinkCallback. */
 static void InitBlockSend(PokemonGame *game, uint32_t kind, uint16_t size)
 {
   uint16_t i;
@@ -929,6 +959,8 @@ static void InitBlockSend(PokemonGame *game, uint32_t kind, uint16_t size)
   game->callback = CALLBACK_BLOCK_BEGIN;
 }
 
+/* The game's per-frame link callback: fills sendCmd for the exchange
+   request, the block being sent or the held keys. */
 static void RunLinkCallback(PokemonGame *game)
 {
   int i;
@@ -973,6 +1005,9 @@ static void RunLinkCallback(PokemonGame *game)
   }
 }
 
+/* Acts on the command each player sent this frame: held keys, block data,
+   close requests, and the master's LINKCMD_SEND_LINK_TYPE, which makes
+   every console send its player record. */
 static void ProcessRecvCmds(PokemonGame *game)
 {
   int i;
@@ -1017,6 +1052,8 @@ static void ProcessRecvCmds(PokemonGame *game)
   }
 }
 
+/* Checks a player's received block against what block_byte generates from
+   that player's seed. */
 static int VerifyBlock(PokemonGame *game, int player, uint32_t seed,
  uint32_t kind, uint16_t size)
 {
@@ -1030,6 +1067,8 @@ static int VerifyBlock(PokemonGame *game, int player, uint32_t seed,
   return 1;
 }
 
+/* Opens the link as the game does on entering the Cable Club, and resets
+   the test script's per-session state. */
 static void OpenLink(Console *console)
 {
   PokemonGame *game = game_of(console);
@@ -1239,6 +1278,8 @@ static const Guest pokemon_guest =
   pokemon_vblank
 };
 
+/* Stop condition: both games have finished all their sessions, or either
+   one has hit a link error. */
 static int pokemon_done(Console *consoles[2])
 {
   PokemonGame *a = game_of(consoles[0]);
@@ -1268,6 +1309,9 @@ typedef struct
 
 static PokemonGame pokemon_games[2];
 
+/* Plays one case over `net` and checks that both games finish every
+   session without link errors, verify all blocks, process the same key
+   frames and keep the room delay under ROOM_DELAY_LIMIT. */
 static void run_pokemon_case(const PokemonCase *test, const NetProfile *net)
 {
   Console host;
@@ -1492,6 +1536,9 @@ static void lockstep_multi_timer(Console *console)
   lockstep_start_multi(console);
 }
 
+/* Sets up multiplayer mode at frame 20. From frame 40, once connected, the
+   master starts a burst of words_per_frame transfers per frame and the
+   slave counts frames past 10 without a serial IRQ as timeouts. */
 static void lockstep_multi_vblank(Console *console)
 {
   LockstepGame *game = lockstep_of(console);
@@ -1622,6 +1669,9 @@ static void normal_timer(Console *console)
   normal_start(console);
 }
 
+/* Sets up 32-bit normal mode at frame 20, the slave arming its first
+   reply. From frame 60, once connected, the master starts a burst of
+   words_per_frame transfers per frame. */
 static void normal_vblank(Console *console)
 {
   LockstepGame *game = lockstep_of(console);
