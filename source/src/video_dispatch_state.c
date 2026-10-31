@@ -16,6 +16,8 @@ void video_dispatch_state_init(VideoDispatchState *state,
   state->active_renderer = normalized;
 }
 
+/* Only records the wish; begin_frame applies it, so a frame never mixes
+   renderers. */
 void video_dispatch_state_request(VideoDispatchState *state,
  uint32_t renderer)
 {

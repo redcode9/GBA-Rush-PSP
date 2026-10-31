@@ -54,11 +54,14 @@ extern u32 option_oam_hijacking_enabled;  // Emulator option for OAM hijacking
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #endif
 
+// reg is a halfword index into the I/O registers (REG_* = byte offset / 2).
 static inline u32 read_ioreg(u32 reg)
 {
   return pIO_REG(reg);
 }
 
+// Both halfwords of a 32-bit register such as BG2X_L/H; reg * 2 is the
+// byte offset.
 static inline u32 read_ioreg32(u32 reg)
 {
   return ADDRESS32(io_registers, reg * 2);

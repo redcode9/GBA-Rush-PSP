@@ -362,6 +362,8 @@ void video_adaptive_frame_complete(int frame_skipped, int audio_event)
     apply_adaptive_quality();
 }
 
+/* Forgets the last frame time, so the next video_adaptive_frame_complete
+ * only restarts the clock instead of recording the gap (main_perf_start). */
 void video_reset_frame_timing(void)
 {
   adaptive_has_last_frame_time = 0;
@@ -480,6 +482,8 @@ static VideoAdaptiveQuality selected_manual_quality(void)
   return VIDEO_ADAPTIVE_QUALITY_SMOOTH;
 }
 
+/* The GU filter for the frame: FILTER_NEAREST/BILINEAR equal GU_NEAREST/
+ * GU_LINEAR, and 16:9 auto forces nearest while at CRISP. */
 static u32 selected_texture_filter(void)
 {
   if(option_screen_scale == SCALED_16X9_AUTO &&

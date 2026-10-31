@@ -50,6 +50,8 @@ static uint32_t video_adaptive_percentile95(const uint32_t *values)
   return sorted[((VIDEO_ADAPTIVE_WINDOW_SIZE * 95U) / 100U) - 1U];
 }
 
+/* Starts a new sample window. The samples are overwritten, not cleared,
+ * and the bad and good window streaks carry over. */
 static void video_adaptive_clear_window(VideoAdaptiveState *state)
 {
   state->sample_count = 0;
