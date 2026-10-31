@@ -141,6 +141,8 @@ static volatile u32 sound_channel_reserved = 0;
 static void fill_sound_buffer(s16 *stream, u16 frames, u32 factor);
 static int sound_update_thread(SceSize args, void *argp);
 
+// Audio thread, when PSP output fails: flags the fault for
+// synchronize_sound() to report and bumps the saturating underrun count.
 static void sound_note_audio_underrun(void)
 {
   u32 current;
@@ -370,6 +372,7 @@ void gbc_sound_tone_control_low_wave(u32 value)
   gbc_sound_update = 1;
 }
 
+// SOUND3CNT_X: rate (bits 0-10), length enable (14), restart (15).
 void gbc_sound_tone_control_high_wave(u32 value)
 {
   GBCSoundStruct *gs = gbc_sound_channel + 2;
@@ -435,6 +438,8 @@ void gbc_sound_noise_control(u32 value)
   gbc_sound_channel[channel].status = ((value >> (channel + 11)) & 0x02) |    \
                                       ((value >> (channel +  8)) & 0x01)      \
 
+// SOUNDCNT_L: PSG master volume right (bits 0-2) and left (4-6), plus the
+// channel enables above.
 void sound_control_low(u32 value)
 {
   gbc_sound_master_volume_right = value & 0x07;
@@ -547,6 +552,7 @@ static void sound_reset_fifo(u8 channel)
   memset(ds->fifo, 0, 32);
 }
 
+// Entries queued from base to top in a ring of length entries.
 static u32 buffer_length(u32 top, u32 base, u32 length)
 {
   if (top == base)
@@ -903,6 +909,8 @@ static void sound_set_fast_forward_mode(u32 enabled, u32 factor)
     sceKernelWakeupThread(sound_thread);
 }
 
+// Fast-forward here is muted (factor 0); sound_set_fast_forward_audio()
+// keeps it audible.
 void sound_set_fast_forward(u32 enabled)
 {
   sound_set_fast_forward_mode(enabled, 0);
@@ -913,6 +921,8 @@ void sound_set_fast_forward_audio(u32 factor)
   sound_set_fast_forward_mode(1, factor);
 }
 
+// Returns 1 once after the audio thread found fast-forward audio starved
+// for 100 ms, so main.c can fall back to another fast-forward mode.
 int sound_take_fast_forward_fallback(void)
 {
   if(!sound_fast_forward_fallback_pending)
@@ -923,6 +933,8 @@ int sound_take_fast_forward_fallback(void)
   return 1;
 }
 
+// Power callback thread, on suspend: ends fast-forward audio, parks the
+// audio thread and releases the output channel.
 void sound_power_suspend(void)
 {
   SceUInt timeout = SOUND_OPERATION_TIMEOUT;
@@ -942,6 +954,8 @@ void sound_power_suspend(void)
   }
 }
 
+// Power callback thread, on resume: reserves the output channel again.
+// The result (< 0 on failure) goes to sound_power_resume_finish().
 int sound_power_resume(void)
 {
   SceUInt timeout = SOUND_OPERATION_TIMEOUT;
@@ -956,6 +970,8 @@ int sound_power_resume(void)
   return result;
 }
 
+// Main thread, after resume: resyncs the ring and PSG clock to cpu_ticks and
+// wakes the audio thread, which retries the channel if audio_result < 0.
 void sound_power_resume_finish(u32 cpu_ticks, int audio_result)
 {
   sound_fast_forward = 0;
@@ -976,6 +992,8 @@ void sound_power_resume_finish(u32 cpu_ticks, int audio_result)
   sound_thread_wakeup();
 }
 
+// Silences output while emulation is blocked on the link cable peer
+// (main_link_service); the end call restores the pause state and resyncs.
 void sound_link_wait_begin(void)
 {
   u32 next_pause = sound_pause;
@@ -1224,6 +1242,8 @@ void set_sound_volume(void)
   sound_volume = PSP_AUDIO_VOLUME_MAX * (option_sound_volume * 10) / 100;
 }
 
+// Renders one output block from the ring, factor ring frames per output
+// frame; silent when the volume is 0 or the CPU is stopped (HALTCNT).
 static void fill_sound_buffer(s16 *stream, u16 frames, u32 factor)
 {
   fast_forward_audio_compress_ring(sound_buffer, RING_BUFFER_SIZE,
@@ -1231,6 +1251,8 @@ static void fill_sound_buffer(s16 *stream, u16 frames, u32 factor)
    option_sound_volume != 0 && reg[CPU_HALT_STATE] != CPU_STOP);
 }
 
+// Wakes a sleeping audio thread, except during muted fast-forward, where
+// it stays asleep unless sound is shutting down.
 static void sound_thread_wakeup(void)
 {
   if((sound_sleep != 0) &&
@@ -1369,6 +1391,9 @@ static int sound_update_thread(SceSize args, void *argp)
   return 0;
 }
 
+// Release and reserve the SRC output channel; sound_output_ready tells the
+// audio thread whether it can output. Callers hold sound_sema while the
+// audio thread runs.
 static int psp_sound_release(void)
 {
   int result;
@@ -1393,6 +1418,8 @@ static int psp_sound_reserve(u16 sample_count, u16 frequency)
   return result;
 }
 
+// Reserves the output channel again at freq Hz, which must be a rate the
+// PSP SRC channel accepts. Returns < 0 on failure.
 int psp_sound_frequency(u16 sample_count, u16 freq)
 {
   SceUInt timeout = SOUND_OPERATION_TIMEOUT;
@@ -1420,6 +1447,8 @@ int psp_sound_frequency(u16 sample_count, u16 freq)
   return ret;
 }
 
+// Creates sound_sema, reserves the output channel and starts the audio
+// thread. Shows an error and returns -1 on failure.
 static int start_sound_thread(void)
 {
   sound_active = 0;
@@ -1463,6 +1492,8 @@ static int start_sound_thread(void)
   return 0;
 }
 
+// At exit: stops the audio thread (killing it after the timeout) and frees
+// the output channel and semaphore.
 void sound_term(void)
 {
   SceUInt timeout = SOUND_OPERATION_TIMEOUT;
@@ -1493,6 +1524,8 @@ void sound_term(void)
 }
 
 
+// Power-on state of the sound hardware with an empty ring; called on every
+// GBA reset and by init_sound().
 void reset_sound(void)
 {
   u32 i;
@@ -1554,6 +1587,8 @@ void reset_sound(void)
   gbc_sound_update = 0;
 }
 
+// Once at startup: starts audio output (quitting if that fails) and builds
+// the noise tables.
 void init_sound(void)
 {
   if (start_sound_thread() < 0)
@@ -1596,6 +1631,8 @@ void init_sound(void)
   FILE_##type##_ARRAY(savestate_file, gbc_sound_channel);                   \
 }                                                                           \
 
+// The saved sample_data pointers are not reused: both square channels play
+// 50% duty until the game next writes their duty bits.
 void sound_read_savestate(SceUID savestate_file)
 {
   u32 i;
