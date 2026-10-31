@@ -25,6 +25,9 @@
 /* The emulation thread owns this monitor. Worker threads publish events to
  * their owning module and the emulation thread forwards them here. */
 void perf_monitor_init(void);
+/* start clears the metrics and returns 0 if a capture is already running;
+   stop returns 0 if none is. invalidate cuts a running capture short
+   (reset, ROM change, suspend) so its report is marked as unusable. */
 int perf_monitor_start(uint64_t now_us);
 int perf_monitor_stop(uint64_t now_us);
 void perf_monitor_invalidate(uint64_t now_us);
@@ -60,6 +63,7 @@ typedef struct
 
 void perf_monitor_set_identity(const PerfMonitorIdentity *identity);
 void perf_monitor_identity(PerfMonitorIdentity *identity);
+/* Record calls are ignored unless a capture is running. */
 void perf_monitor_record_frame(uint32_t frame_time_us, uint32_t ge_wait_us,
  int skipped, int fast_forward);
 void perf_monitor_record_audio_recovery(void);
