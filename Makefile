@@ -5,6 +5,12 @@
 #   make package VERSION=x.y.z   build, check and zip a release
 # Each test builds the module it covers straight from source/src, so most
 # need only a host C compiler.
+#
+# Adding a C test (follow test_sound_math as the example):
+#   1. a HOST_TEST_<NAME> variable below and an entry in HOST_TESTS;
+#   2. a $(HOST_SANITIZE_DIR)/test_<name> entry in HOST_SANITIZE_TESTS;
+#   3. its line in the `test` recipe and in the `test-sanitize` recipe;
+#   4. a build rule for each of the two binaries near the end of the file.
 HOST_CC ?= cc
 PYTHON ?= python3
 HOST_BUILD_DIR ?= build/host
