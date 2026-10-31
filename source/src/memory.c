@@ -3180,7 +3180,9 @@ s32 load_backup(char *name)
           sram_size   = SRAM_SIZE_32KB;
           break;
 
-        // Could be either flash or SRAM, go with flash
+        // Could be Flash or SRAM. Meant to pick Flash, but this assigns
+        // sram_size, not backup_type, so the type is still settled at run
+        // time by the first access.
         case 0x10000:
           sram_size  = BACKUP_FLASH;
           flash_size = FLASH_SIZE_64KB;
