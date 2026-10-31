@@ -25,7 +25,7 @@
 /* Bump when VideoAdaptiveProfile changes so stale profiles are ignored. */
 #define VIDEO_ADAPTIVE_PROFILE_VERSION 1
 
-/* SHARP: two-pass integer upscale then bilinear (bitbilt_sharp).
+/* SHARP: two-pass integer upscale then bilinear (blit_sharp).
  * CRISP: single pass, nearest filter. SMOOTH: single pass, user filter;
  * only reachable as a manual choice. */
 typedef enum

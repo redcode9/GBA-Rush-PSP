@@ -48,7 +48,7 @@ static void *disp_frame;
 static void *draw_frame;
 /* A frame list is queued on the GE and has not been waited for yet. */
 static u32 present_pending;
-/* Set during sleep and shutdown so bitbilt_gu/bitbilt_sharp queue nothing. */
+/* Set during sleep and shutdown so blit_gu/blit_sharp queue nothing. */
 static u32 present_blocked;
 /* One-shot: wait for the next present right away (set after resume). */
 static u32 synchronous_present;
@@ -85,9 +85,9 @@ typedef struct
 static void set_gba_resolution(void);
 static void generate_display_list(float scale_x, float scale_y,
  int clear_before_draw);
-static void bitbilt_gu(void);
-static void bitbilt_sharp(void);
-static void bitbilt_sw(void);
+static void blit_gu(void);
+static void blit_sharp(void);
+static void blit_sw(void);
 static int draw_scaled_slices(u32 source_width, u32 source_height,
  u32 destination_width, u32 destination_height, u32 slice_width);
 static void apply_adaptive_quality(void);
@@ -273,7 +273,7 @@ void init_video(int devkit_version)
   sceGuDisplay(GU_TRUE);
 
   generate_display_list(1.5f, 1.5f, 1);
-  update_screen = bitbilt_gu;
+  update_screen = blit_gu;
 
   load_volume_icon(devkit_version);
 }
@@ -407,7 +407,7 @@ static void *psp_vram_addr(void *frame, u32 x, u32 y)
 }
 
 /* Records display_list_0: the GBA frame scaled by (scale_x, scale_y) and
- * centered, drawn as SLICE-wide sprites. bitbilt_gu() replays it. */
+ * centered, drawn as SLICE-wide sprites. blit_gu() replays it. */
 static void generate_display_list(float scale_x, float scale_y,
  int clear_before_draw)
 {
@@ -520,7 +520,7 @@ static void restore_gu_state(void)
 
 /* Presents with the prebuilt call list. Returns without waiting for the
  * GE; the next video_sync_present() does. */
-static void bitbilt_gu(void)
+static void blit_gu(void)
 {
   if(present_blocked)
     return;
@@ -590,7 +590,7 @@ static int draw_scaled_slices(u32 source_width, u32 source_height,
  * sharp target, then a bilinear squeeze to 480x272. Pixels stay crisp
  * without the uneven widths of a direct nearest scale. Falls back to
  * CRISP if either pass fails. */
-static void bitbilt_sharp(void)
+static void blit_sharp(void)
 {
   int first_pass_ok;
   int second_pass_ok;
@@ -666,7 +666,7 @@ static void bitbilt_sharp(void)
 /* Software x1.5 scaler: each 2x2 GBA block becomes 3x3 PSP pixels, the
  * middle row and column being averages. The 360x240 result is centered at
  * (60, 16). */
-static void bitbilt_sw(void)
+static void blit_sw(void)
 {
   u32 x, y;
   u16 *vptr, *vptr0;
@@ -756,33 +756,33 @@ static void set_gba_resolution(void)
   {
     case SCALED_NONE:
       generate_display_list(1.0f, 1.0f, 1);
-      update_screen = bitbilt_gu;
+      update_screen = blit_gu;
       break;
 
     case SCALED_X15_GU:
       generate_display_list(1.5f, 1.5f, 1);
-      update_screen = bitbilt_gu;
+      update_screen = blit_gu;
       break;
 
     case SCALED_X15_SW:
-      update_screen = bitbilt_sw;
+      update_screen = blit_sw;
       break;
 
     case SCALED_USER:
       generate_display_list(option_screen_mag / 100.0f,
        option_screen_mag / 100.0f, 1);
-      update_screen = bitbilt_gu;
+      update_screen = blit_gu;
       break;
 
     case SCALED_16X9_GU:
       generate_display_list((float)PSP_SCREEN_WIDTH / (float)GBA_SCREEN_WIDTH,
                             (float)PSP_SCREEN_HEIGHT / (float)GBA_SCREEN_HEIGHT,
                             0);
-      update_screen = bitbilt_gu;
+      update_screen = blit_gu;
       break;
 
     case SCALED_16X9_SHARP:
-      update_screen = bitbilt_sharp;
+      update_screen = blit_sharp;
       break;
 
     case SCALED_16X9_AUTO:
@@ -796,7 +796,7 @@ static void apply_adaptive_quality(void)
 {
   if(adaptive_video.quality == VIDEO_ADAPTIVE_QUALITY_SHARP)
   {
-    update_screen = bitbilt_sharp;
+    update_screen = blit_sharp;
   }
   else
   {
@@ -810,7 +810,7 @@ static void apply_adaptive_quality(void)
     sceGuTexFilter(GU_NEAREST, GU_NEAREST);
     sceGuFinish();
     video_ge_sync_direct();
-    update_screen = bitbilt_gu;
+    update_screen = blit_gu;
   }
 }
 
