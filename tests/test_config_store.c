@@ -1,3 +1,11 @@
+/*
+ * Host tests for config_store.c, the crash-safe settings save: write a
+ * temporary file, validate it, keep the old file as a backup, promote the
+ * temporary file, validate again. An in-memory fake file system injects a
+ * failure or a corruption at each step, and the last good settings must
+ * always stay loadable.
+ */
+
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -6,6 +14,7 @@
 
 #include "config_store.h"
 
+/* config.bin (primary), config.tmp (temporary) and config.bak (backup). */
 #define FAKE_FILE_COUNT 3
 
 typedef struct
@@ -19,12 +28,13 @@ typedef struct
 typedef struct
 {
   FakeFile files[FAKE_FILE_COUNT];
+  /* Fault switches: fail one I/O step, or flip a bit in what it stores. */
   int fail_write;
   int fail_flush;
-  int fail_promote;
-  int fail_restore;
-  int corrupt_temp;
-  int corrupt_primary;
+  int fail_promote;    /* moving config.tmp fails */
+  int fail_restore;    /* moving config.bak back fails */
+  int corrupt_temp;    /* config.tmp is written damaged */
+  int corrupt_primary; /* config.tmp lands in config.bin damaged */
 } FakeStore;
 
 static FakeFile *find_file(FakeStore *store, const char *path)
@@ -216,6 +226,8 @@ static void test_failures_leave_previous_config_readable(void)
   assert(decoded.theme == 0);
 }
 
+/* The promoted file is damaged and moving the backup back also fails: the
+   save reports it, and loading still finds the old settings in the backup. */
 static void test_restore_failure_keeps_recovery_readable(void)
 {
   FakeStore store;
@@ -241,6 +253,7 @@ static void test_restore_failure_keeps_recovery_readable(void)
   assert(loaded.theme == 0);
 }
 
+/* The promoted file is damaged: the backup is moved back into place. */
 static void test_failed_post_promote_validation_restores_backup(void)
 {
   FakeStore store;
