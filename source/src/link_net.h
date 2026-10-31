@@ -36,7 +36,10 @@
 #define LINK_NET_MAX_DATAGRAM  1024u
 #define LINK_NET_HEADER_SIZE     40u
 #define LINK_NET_MAX_MESSAGE     40u
+/* Messages in flight each way. Bounded proofs build with a smaller value. */
+#ifndef LINK_NET_QUEUE
 #define LINK_NET_QUEUE          128u
+#endif
 
 typedef struct
 {

@@ -115,4 +115,8 @@ check_assumptions lifecycle 3 \
   "$repo_root/proofs/cbmc/prove_lifecycle_teardown.c" \
   "$repo_root/source/src/lifecycle_teardown.c"
 
+run_proof link-net 14 -DLINK_NET_QUEUE=4u \
+  "$repo_root/proofs/cbmc/prove_link_net.c" \
+  "$repo_root/source/src/link_net.c"
+
 echo "CBMC bounded proofs passed"
