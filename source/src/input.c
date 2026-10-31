@@ -105,6 +105,8 @@ const u32 ALIGN_DATA button_psp_mask_to_config[] =
 
 static u32 fast_forward_button_mask = PSP_CTRL_TRIANGLE;
 
+/* Collects the PSP buttons mapped to fast-forward; call after
+   gamepad_config_map changes. */
 void rebuild_fast_forward_button_mask(void)
 {
   u32 i;
@@ -192,6 +194,8 @@ static void trigger_key(u32 keys_down)
 }
 
 
+/* The PSP buttons in mask held right now, read without blocking and
+   without stick or key mapping; 0 before init_input. */
 u32 get_pad_input(u32 mask)
 {
   if (__sceCtrlPeekBufferPositive)
