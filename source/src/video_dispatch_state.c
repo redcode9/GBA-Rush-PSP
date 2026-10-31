@@ -1,5 +1,6 @@
 #include "video_dispatch_state.h"
 
+/* Any unknown value (e.g. from an old config) falls back to the new one. */
 static uint32_t video_dispatch_normalize(uint32_t renderer)
 {
   return renderer == VIDEO_DISPATCH_RENDERER_OLD ?
