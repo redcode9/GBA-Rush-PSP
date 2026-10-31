@@ -82,6 +82,8 @@ static int fake_flush(void *context)
   return !((FakeStore *)context)->fail_flush;
 }
 
+/* Rename: replaces target and leaves source absent. The promote, restore
+   and corrupt_primary fault switches act here. */
 static int fake_move(void *context, const char *source, const char *target)
 {
   FakeStore *store = (FakeStore *)context;
@@ -137,6 +139,7 @@ static void init_store(FakeStore *store, ConfigStoreIo *io)
   io->exists = fake_exists;
 }
 
+/* Puts model's encoding in path directly, bypassing config_store. */
 static void seed_file(FakeStore *store, const char *path,
  const ConfigModel *model)
 {

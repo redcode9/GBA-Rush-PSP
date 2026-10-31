@@ -29,6 +29,8 @@ typedef struct
   int fail_promote;
 } FakeLogStore;
 
+/* Finds path, or with create claims a free slot for it; NULL when it is
+   absent or all 8 slots are taken. */
 static FakeLogFile *fake_file(FakeLogStore *store, const char *path,
  int create)
 {
@@ -80,6 +82,7 @@ static int fake_remove(void *context, const char *path)
   return 1;
 }
 
+/* Moves source to target, replacing any existing target. */
 static int fake_rename(void *context, const char *source,
  const char *target)
 {
@@ -113,6 +116,7 @@ static RuntimeLogStoreIo fake_io(FakeLogStore *store)
   return io;
 }
 
+/* A one-byte file whose value shows where rotation moved it. */
 static void seed_file(FakeLogStore *store, const char *path, uint8_t value)
 {
   FakeLogFile *file = fake_file(store, path, 1);

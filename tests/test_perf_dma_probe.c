@@ -40,6 +40,8 @@ static int failures = 0;
     } \
   } while (0)
 
+/* An immediate, non-repeating channel 0 DMA with both addresses
+   incrementing and no IRQ. */
 static void setup_dma(DmaTransferType *d, u32 src, u32 dst, u32 len,
  DMA_LENGTH_TYPE lt)
 {
