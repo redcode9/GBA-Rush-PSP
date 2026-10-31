@@ -363,6 +363,7 @@ static u32 (*mem_read8[16])(u32) =
   read8_open           // f
 };
 
+// Same layout for halfwords, except region 0xD, which reads the EEPROM.
 static u32 (*mem_read16[16])(u32) =
 {
   read16_bios,         // 0
@@ -383,6 +384,7 @@ static u32 (*mem_read16[16])(u32) =
   read16_open          // f
 };
 
+// Word reads, same layout as mem_read8.
 static u32 (*mem_read32[16])(u32) =
 {
   read32_bios,         // 0
@@ -424,6 +426,7 @@ static u32 (*dma_read16[16])(u32) =
   read_null            // f
 };
 
+// Word DMA reads; unlike dma_read16, region 0xD is plain ROM here.
 static u32 (*dma_read32[16])(u32) =
 {
   read_null,           // 0
@@ -466,6 +469,7 @@ static u32 (*open_read8[16])(u32) =
   read_null            // f
 };
 
+// Halfword open-bus sources, same layout as open_read8.
 static u32 (*open_read16[16])(u32) =
 {
   read16_bios,         // 0
@@ -486,6 +490,7 @@ static u32 (*open_read16[16])(u32) =
   read_null            // f
 };
 
+// Word open-bus sources, same layout as open_read8.
 static u32 (*open_read32[16])(u32) =
 {
   read32_bios,         // 0
@@ -572,6 +577,7 @@ static CPU_ALERT_TYPE (*mem_write16[16])(u32, u32) =
   write_null            // f
 };
 
+// Word writes; unlike mem_write16, region 8 (the RTC port) ignores them.
 static CPU_ALERT_TYPE (*mem_write32[16])(u32, u32) =
 {
   write_null,           // 0
@@ -613,6 +619,7 @@ static CPU_ALERT_TYPE (*dma_write16[16])(u32, u32) =
   write_null            // f
 };
 
+// Word DMA writes; unlike dma_write16, word DMA to the EEPROM is dropped.
 static CPU_ALERT_TYPE (*dma_write32[16])(u32, u32) =
 {
   write_null,           // 0
@@ -860,6 +867,7 @@ static u32 read8_open(u32 address)
   return (*open_read8[offset >> 24])(offset);
 }
 
+// Halfword form of read8_open(); in ARM state address bit 1 picks the half.
 static u32 read16_open(u32 address)
 {
   u32 offset = 0;
@@ -2466,6 +2474,7 @@ u32 read_memory16(u32 address)
   return value;
 }
 
+// Word form of read_memory16(); misalignment rotates by 8 bits per byte.
 u32 read_memory32(u32 address)
 {
   u32 value;
@@ -2516,6 +2525,7 @@ CPU_ALERT_TYPE write_memory8(u32 address, u8 value)
   return (*mem_write8[region])(address, value);
 }
 
+// Halfword stores to region 8 reach the RTC port (see mem_write16).
 CPU_ALERT_TYPE write_memory16(u32 address, u16 value)
 {
   u32 region = address >> 24;
@@ -2526,6 +2536,7 @@ CPU_ALERT_TYPE write_memory16(u32 address, u16 value)
   return (*mem_write16[region])(address & ~0x01, value);
 }
 
+// Word stores to ROM, the RTC port included, are dropped (see mem_write32).
 CPU_ALERT_TYPE write_memory32(u32 address, u32 value)
 {
   u32 region = address >> 24;
@@ -2987,6 +2998,8 @@ void init_memory(void)
 }
 
 
+// Shutdown, from quit(): closes a streamed ROM's file and frees the ROM
+// buffer and its page map.
 void memory_term(void)
 {
   if (FILE_CHECK_VALID(gamepak_file_large))
@@ -3652,6 +3665,8 @@ s32 load_gamepak(char *name)
 }
 
 
+// Reads the 16 KB BIOS into bios.rom; -1 only if the file won't open (a
+// short file is not detected).
 s32 load_bios(char *name)
 {
   SceUID bios_file;
