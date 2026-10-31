@@ -302,22 +302,16 @@ static u32 read16_ram(u32 address);
 static u32 read32_ram(u32 address);
 
 static u32 read8_bios(u32 address);
-// static u32 read8_ewram(u32 address);
-// static u32 read8_iwram(u32 address);
 static u32 read8_io_registers(u32 address);
 static u32 read8_palette_ram(u32 address);
-// static u32 read8_vram(u32 address);
 static u32 read8_oam_ram(u32 address);
 static u32 read8_gamepak(u32 address);
 static u32 read8_backup(u32 address);
 static u32 read8_open(u32 address);
 
 static u32 read16_bios(u32 address);
-// static u32 read16_ewram(u32 address);
-// static u32 read16_iwram(u32 address);
 static u32 read16_io_registers(u32 address);
 static u32 read16_palette_ram(u32 address);
-// static u32 read16_vram(u32 address);
 static u32 read16_oam_ram(u32 address);
 static u32 read16_eeprom(u32 address);
 static u32 read16_gamepak(u32 address);
@@ -325,11 +319,8 @@ static u32 read16_backup(u32 address);
 static u32 read16_open(u32 address);
 
 static u32 read32_bios(u32 address);
-// static u32 read32_ewram(u32 address);
-// static u32 read32_iwram(u32 address);
 static u32 read32_io_registers(u32 address);
 static u32 read32_palette_ram(u32 address);
-// static u32 read32_vram(u32 address);
 static u32 read32_oam_ram(u32 address);
 static u32 read32_gamepak(u32 address);
 static u32 read32_backup(u32 address);
@@ -643,44 +634,6 @@ static u32 read32_bios(u32 address)
   READ_BIOS(32);
 }
 
-/*
-#define READ_EWRAM(type)                                                      \
-  return ADDRESS##type(ewram, address & 0x3FFFF)                              \
-
-static u32 read8_ewram(u32 address)
-{
-  READ_EWRAM(8);
-}
-
-static u32 read16_ewram(u32 address)
-{
-  READ_EWRAM(16);
-}
-
-static u32 read32_ewram(u32 address)
-{
-  READ_EWRAM(32);
-}
-
-#define READ_IWRAM(type)                                                      \
-  return ADDRESS##type(iwram, address & 0x7FFF)                               \
-
-static u32 read8_iwram(u32 address)
-{
-  READ_IWRAM(8);
-}
-
-static u32 read16_iwram(u32 address)
-{
-  READ_IWRAM(16);
-}
-
-static u32 read32_iwram(u32 address)
-{
-  READ_IWRAM(32);
-}
-*/
-
 static u32 read8_io_registers(u32 address)
 {
   if ((address & 0xFFFC) == 0x0800) // repeated each 64K
@@ -741,31 +694,6 @@ static u32 read32_palette_ram(u32 address)
 {
   READ_PALETTE_RAM(32);
 }
-
-/*
-#define READ_VRAM(type)                                                       \
-  if (((address >> 16) & 0x01) != 0)                                          \
-    address &= 0x17FFF;                                                       \
-  else                                                                        \
-    address &= 0x0FFFF;                                                       \
-                                                                              \
-  return ADDRESS##type(vram, address)                                         \
-
-static u32 read8_vram(u32 address)
-{
-  READ_VRAM(8);
-}
-
-static u32 read16_vram(u32 address)
-{
-  READ_VRAM(16);
-}
-
-static u32 read32_vram(u32 address)
-{
-  READ_VRAM(32);
-}
-*/
 
 #define READ_OAM_RAM(type)                                                    \
   return ADDRESS##type(oam_ram, address & 0x3FF);                             \
@@ -2873,13 +2801,9 @@ void init_memory(void)
 
   oam_update = 1;
 
-  //sram_size = SRAM_SIZE_32KB;//
-  //flash_size = FLASH_SIZE_64KB;//
-
   flash_mode = FLASH_BASE_MODE;
   flash_bank = 0;
   flash_command_position = 0;
-  //eeprom_size = EEPROM_512_BYTE;//
   eeprom_mode = EEPROM_BASE_MODE;
   eeprom_address = 0;
   eeprom_counter = 0;
@@ -2973,8 +2897,6 @@ static void load_backup_id(void)
   flash_size  = FLASH_SIZE_64KB;
   eeprom_size = EEPROM_512_BYTE;
 
-//  backup_id[0] = 0;
-
   for ( ; addr > 0x08000000; addr -= 4)
   {
     new_region = addr >> 15;
@@ -2998,10 +2920,6 @@ static void load_backup_id(void)
         if (memcmp(data, "EEPROM_V", 8) == 0)
         {
           backup_type = BACKUP_EEPROM;
-/*
-          memcpy(backup_id, data, 11);
-          backup_id[11] = 0;
-*/
           return;
         }
       }
@@ -3014,10 +2932,6 @@ static void load_backup_id(void)
         {
           backup_type = BACKUP_SRAM;
           sram_size   = SRAM_SIZE_32KB;
-/*
-          memcpy(backup_id, data, 9);
-          backup_id[9] = 0;
-*/
           return;
         }
 
@@ -3026,10 +2940,6 @@ static void load_backup_id(void)
         {
           backup_type = BACKUP_SRAM;
           sram_size   = SRAM_SIZE_32KB;
-/*
-          memcpy(backup_id, data, 11);
-          backup_id[11] = 0;
-*/
           return;
         }
       }
@@ -3044,10 +2954,6 @@ static void load_backup_id(void)
           flash_size  = FLASH_SIZE_64KB;
           flash_device_id = FLASH_DEVICE_PANASONIC_64KB;
           flash_manufacturer_id = FLASH_MANUFACTURER_PANASONIC;
-/*
-          memcpy(backup_id, data, 10);
-          backup_id[10] = 0;
-*/
           return;
         }
 
@@ -3058,10 +2964,6 @@ static void load_backup_id(void)
           flash_size  = FLASH_SIZE_64KB;
           flash_device_id = FLASH_DEVICE_PANASONIC_64KB;
           flash_manufacturer_id = FLASH_MANUFACTURER_PANASONIC;
-/*
-          memcpy(backup_id, data, 13);
-          backup_id[13] = 0;
-*/
           return;
         }
 
@@ -3072,10 +2974,6 @@ static void load_backup_id(void)
           flash_size  = FLASH_SIZE_128KB;
           flash_device_id = FLASH_DEVICE_SANYO_128KB;
           flash_manufacturer_id = FLASH_MANUFACTURER_SANYO;
-/*
-          memcpy(backup_id, data, 12);
-          backup_id[12] = 0;
-*/
           return;
         }
       }
@@ -3101,21 +2999,6 @@ s32 load_backup(char *name)
 
     FILE_READ(backup_file, gamepak_backup, backup_size);
     FILE_CLOSE(backup_file);
-/*
-    if (backup_type != BACKUP_NONE)
-    {
-      switch (backup_size)
-      {
-        case 0x200:
-          eeprom_size = EEPROM_512_BYTE;
-          break;
-
-        case 0x2000:
-          eeprom_size = EEPROM_8_KBYTE;
-          break;
-      }
-    }
-    else*/
     {
       // The size might give away what kind of backup it is.
       switch (backup_size)
@@ -3393,11 +3276,6 @@ static s32 load_game_config(char *gamepak_title, char *gamepak_code, char *gamep
 
   reset_game_config_options();
 
-  //translation_gate_targets = 0;
-/*fix no game_code*/
-  //flash_device_id = FLASH_DEVICE_MACRONIX_64KB;
-  //backup_type = BACKUP_NONE;
-
   sprintf(config_path, "%s%s", main_path, CONFIG_FILENAME);
 
   config_file = fopen(config_path, "rb");
@@ -3593,7 +3471,6 @@ s32 load_gamepak(char *name)
     game_title[12] = 0;
     game_code[4] = 0;
     maker_code[2] = 0;
-	//load_backup_id();//up order to fix no game_code
     load_game_config(game_title, game_code, maker_code);
     load_game_config_file();
     rebuild_fast_forward_button_mask();
