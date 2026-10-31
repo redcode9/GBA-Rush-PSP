@@ -205,6 +205,8 @@ static int png_write_datastream(SceUID fd, struct PngInfo *p)
   return 1;
 }
 
+/* Compress p->image into a new p->zimage buffer. 1.1x + 12 bytes is a safe
+   upper bound on zlib output for this input. */
 static int png_deflate_image(struct PngInfo *p)
 {
   unsigned long zbuff_size;

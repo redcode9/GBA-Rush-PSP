@@ -152,6 +152,8 @@ static u32 png_be32(const u8 *p)
  * Uses the project's existing zlib linkage — no extra dependencies. */
 #include <zlib.h>
 
+/* Inflate one complete zlib stream into dst. Returns the bytes written, or
+ * -1 on a zlib error or if the output does not fit in dst_len. */
 static int png_inflate(const u8 *src, u32 src_len, u8 *dst, u32 dst_len)
 {
     z_stream zs;
