@@ -105,6 +105,10 @@ and power events keep working.
 4. The status line shows the player number. The line below it shows which
    technique was chosen and the measured round trip.
 
+![Both PSPs at the Cable Club counter: one waits for the link, the other confirms the two-player link](images/link-cable-club.jpg)
+
+![In the trade room one PSP shows the other player's Trainer Card](images/link-trainer-card.jpg)
+
 In FireRed and LeafGreen talk to the Cable Club attendants on the Pokemon
 Center's second floor; the Wireless Club needs the Wireless Adapter, which is
 not emulated. Fast-forward
