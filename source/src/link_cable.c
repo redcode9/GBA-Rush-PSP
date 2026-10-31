@@ -430,6 +430,8 @@ static int pokemon_handshake(LinkPokemon *pokemon, const uint16_t words[4])
   return 0;
 }
 
+/* Moves our game's link layer to state and clears the old state's
+   progress; the handshake count is kept only for HANDSHAKE. */
 static void pokemon_set_local(LinkPokemon *pokemon, LinkPokemonState state)
 {
   pokemon->local = state;
@@ -730,6 +732,8 @@ static int pokemon_must_wait(LinkCable *cable, uint64_t now_us)
   return 1;
 }
 
+/* 1 when a queued Pokemon frame message will never be used here: wrong
+   mode or direction, the host's game not connected, or the joiner's closed. */
 static int pokemon_drop_frame(const LinkCable *cable, uint8_t type)
 {
   if(cable->mode != LINK_CABLE_MODE_POKEMON)
@@ -741,6 +745,8 @@ static int pokemon_drop_frame(const LinkCable *cable, uint8_t type)
    cable->pokemon.local == LINK_POKEMON_CLOSED;
 }
 
+/* Pokemon mode's part of link_cable_service: follows the game's link
+   layer, starts the host's transfers and clocks the joiner's. */
 static GbaSioEvent pokemon_service(LinkCable *cable, uint32_t cycle,
  uint64_t now_us)
 {

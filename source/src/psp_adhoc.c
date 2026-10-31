@@ -129,6 +129,8 @@ static int ring_push(PspAdhocRing *ring, const uint8_t *data, size_t size)
   return 1;
 }
 
+/* A datagram larger than capacity is discarded and returns 0, the same
+   as an empty ring. */
 static size_t ring_pop(PspAdhocRing *ring, uint8_t *data, size_t capacity)
 {
   uint32_t read = ring->read;
@@ -326,6 +328,8 @@ static int psp_adhoc_open_socket(PspAdhocContext *context,
     } \
   } while(0)
 
+/* Creates the group and opens the host socket. 1 = ready, 0 = stopped,
+   -1 = error. */
 static int psp_adhoc_host(PspAdhocContext *context)
 {
   int result;
@@ -440,6 +444,8 @@ static int psp_adhoc_find_host(PspAdhocContext *context,
   return psp_adhoc_fail(context, SCE_ADHOC_ERROR_TIMEOUT);
 }
 
+/* Finds and joins the group, then the host's address. 1 = ready,
+   0 = stopped, -1 = error. */
 static int psp_adhoc_join(PspAdhocContext *context)
 {
   struct SceNetAdhocctlScanInfo selected;
@@ -533,6 +539,8 @@ static int psp_adhoc_receive_all(PspAdhocContext *context)
   return 1;
 }
 
+/* Sends everything the emulator queued. Until the host has heard from a
+   joiner there is no peer, and the datagrams are discarded. */
 static int psp_adhoc_send_all(PspAdhocContext *context)
 {
   uint8_t data[PSP_ADHOC_MAX_DATAGRAM];
@@ -561,6 +569,8 @@ static int psp_adhoc_send_all(PspAdhocContext *context)
   return 1;
 }
 
+/* Fails at once when WLAN is switched off, or once the group has been
+   lost for PSP_ADHOC_HEALTH_GRACE_US. */
 static int psp_adhoc_check_health(PspAdhocContext *context,
  uint64_t *unhealthy_since)
 {
@@ -589,6 +599,8 @@ static int psp_adhoc_check_health(PspAdhocContext *context,
   return 1;
 }
 
+/* The worker's session loop: moves datagrams and checks health until the
+   emulator stops it or the network fails. */
 static void psp_adhoc_connected(PspAdhocContext *context)
 {
   uint64_t next_health = sceKernelGetSystemTimeWide();

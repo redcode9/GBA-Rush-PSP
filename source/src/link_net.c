@@ -94,6 +94,8 @@ void link_net_pop(LinkNet *net)
   net->ack_pending = 1;
 }
 
+/* echo is our own send time as the peer returned it, already advanced by
+   how long the peer held it, so now - echo is the network round trip. */
 static void link_net_sample_rtt(LinkNet *net, uint32_t echo,
  uint64_t now_us)
 {
