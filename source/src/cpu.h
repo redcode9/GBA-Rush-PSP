@@ -149,7 +149,9 @@ typedef enum {
 #define CACHE_FLUSH_REASON_COUNT 4
 
 typedef enum {
-  /* All metadata areas are being thoroughly cleared during initialisation. */
+  /* Used by FLUSH_REASON_CLEAR_ALL, not only at start-up: RAM areas are
+   * wiped in full rather than over their recorded code range, and keep
+   * their tag counter and code range as they were. */
   CLEAR_REASON_INITIALIZING,
   /* All metadata areas are being cleared after a new ROM has been loaded. */
   CLEAR_REASON_LOADING_ROM,
