@@ -3789,10 +3789,10 @@ u32 menu(void)
   u32 current_option_num = 0;
   u32 menu_main_option_num = 0;
 
-
-
-
-
+  /* What follows, in order: declarations of the nested handlers; the
+     handlers themselves (menu_* actions and submenu_* screen draws); one
+     MenuOptionType table plus MAKE_MENU per screen, ending with
+     main_options; then the input loop, while (repeat). */
   auto void choose_menu(MenuType *new_menu);
 
   auto void menu_init(void);
@@ -5093,6 +5093,10 @@ u32 menu(void)
 
   MAKE_MENU(theme, NULL, NULL);
 
+  /* Row arguments: ..., option count, help line, screen row, label id.
+     MSG_OPTION_MENU_HELP_7 is the generic "<- -> change, X exit" help line;
+     the MSG_OPTION_MENU_<n> ids are plain labels, numbered by history.
+     Magnification takes 201 values (0-200 %). */
   MenuOptionType graphics_options[] =
   {
     STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_0], scale_options, &option_screen_scale, SCREEN_SCALE_COUNT, MSG_OPTION_MENU_HELP_0, 0, MSG_OPTION_MENU_0),
@@ -5110,6 +5114,7 @@ u32 menu(void)
 
   MAKE_MENU(graphics, NULL, NULL);
 
+  /* The H-blank IRQ window bounds are scanlines, 228 of them (0-227). */
   MenuOptionType performance_advanced_options[] =
   {
     STRING_SELECTION_OPTION_TT(menu_passive_ram_dynarec_policy, MSG[MSG_OPTION_MENU_BLOCK_CHECKSUM_REUSE], ram_dynarec_options, &option_ram_dynarec_policy, 3, MSG_OPTION_MENU_HELP_BLOCK_CHECKSUM_REUSE, 0, MSG_TOOLTIP_RAM_DYNAREC_MODE, MSG_OPTION_MENU_BLOCK_CHECKSUM_REUSE),
@@ -5138,6 +5143,9 @@ u32 menu(void)
     ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 15, MSG_OPTION_MENU_11)
   };
 
+  /* Row positions in emulator_options[] above: 0 profile, 1 per-game
+     override, 2 activation, 3 speed, 4 presentation, 5 audio. Keep them in
+     step if rows are added or moved. */
   fast_forward_profile_option = &emulator_options[0];
   fast_forward_activation_option = &emulator_options[2];
   fast_forward_speed_option = &emulator_options[3];
