@@ -64,8 +64,13 @@ game. Each serial transfer goes to the other console, which latches it into
 its own serial registers and answers with its outgoing word. The console that
 clocks the transfer keeps running for as long as the transfer would take on
 real hardware and only stops if the answer is still missing at that moment.
-The receiving console keeps the spacing the sender's game used between
-transfers, so its interrupt handler has time to load the next word.
+The receiving console sees every transfer at the point of its own timeline
+the sender chose, as on a real cable: it keeps the spacing the sender's game
+used between transfers and never runs past the clock the sender last
+reported, which the sender sends every 8 ms while the link is in use. A
+receiver left free would run ahead while the sender waits for replies and
+go whole frames without a transfer; Mario Kart: Super Circuit reports a
+communication error when that happens.
 
 Normal 8-bit, Normal 32-bit and Multiplayer 16-bit modes are supported. This
 is exact for any game but its speed depends on how many words the game sends
@@ -133,7 +138,9 @@ exit close the session and tell the other PSP.
   combinations over five network profiles. It passes only with no link
   error, intact blocks, identical key frames on both consoles and each
   player's own keys coming back within 20 frames on average in the room.
-  Lockstep guests check Multiplayer and Normal 32-bit modes word by word.
+  Lockstep guests check Multiplayer and Normal 32-bit modes word by word;
+  the Multiplayer slave reports a link error after two frames in a row
+  without a transfer.
 - `proofs/cbmc/prove_link_net.c` (`make check-cbmc`): CBMC proves that any
   datagram up to the proof bound is parsed without out-of-bounds access or
   overflow.
@@ -146,12 +153,15 @@ exit close the session and tell the other PSP.
   conditions measured between two PSPs: frames emulated in bursts, a 70 ms
   round trip losing a third of the datagrams, radio dropouts and a joiner
   that freezes now and then. `ROM2` and `SAVE2` run a different game on the
-  joiner, such as LeafGreen. It needs an mGBA 0.10 build and a save whose
-  player has not yet been upstairs in a Pokemon Center:
+  joiner, such as LeafGreen. With `MKSC` set to Mario Kart: Super Circuit
+  (European release) it also races two games in Multi-Pak mode, which uses
+  lockstep mode, and checks that both race clocks run in step. It needs an
+  mGBA 0.10 build and a save whose player has not yet been upstairs in a
+  Pokemon Center:
 
   ```sh
   make check-rom-link MGBA_DIR=/path/to/mgba ROM=firered.gba \
-    BIOS=gba_bios.bin SAVE=firered.sav
+    BIOS=gba_bios.bin SAVE=firered.sav MKSC=mariokart.gba
   ```
 
 ## Logs
