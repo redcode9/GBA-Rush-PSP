@@ -18,6 +18,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+// Guest ARM7TDMI state shared by C code, the dynarec (cpu.c, mips_emit.h)
+// and the runtime stubs (mips_stub.S): the reg[] layout, CPU modes, I/O alert
+// codes, and the translation cache and metadata API implemented in cpu.c.
+
 #ifndef CPU_H
 #define CPU_H
 
@@ -34,6 +38,8 @@ typedef enum
   MODE_INVALID
 } CPU_MODE_TYPE;
 
+// Returned by I/O register write handlers; write_io_epilogue in mips_stub.S
+// decides from these bits whether to flush code or run update_gba.
 typedef enum
 {
   CPU_ALERT_NONE    = 0,
@@ -53,6 +59,7 @@ typedef enum
   CPU_STOP
 } CPU_HALT_TYPE;
 
+// Bits of the GBA IE / IF registers.
 typedef enum
 {
   IRQ_NONE    = 0x0000,
@@ -72,6 +79,10 @@ typedef enum
   IRQ_GAMEPAK = 0x2000,
 } IRQ_TYPE;
 
+// Indices into reg[]: 0-15 are r0-r15, the rest is emulator state.
+// mips_stub.S hardcodes the same slots as byte offsets (.equ REG_*), and
+// also uses slot 32 (GP_SAVE). N/Z/C/V hold each flag as 0 or 1; the CPSR
+// flag bits are only current after the stubs collapse them back in.
 typedef enum
 {
   REG_SP            = 13,
@@ -82,7 +93,7 @@ typedef enum
   REG_C_FLAG        = 18,
   REG_V_FLAG        = 19,
   REG_CPSR          = 20,
-  REG_SAVE          = 21,
+  REG_SAVE          = 21,  // REG_SAVE..3: scratch for the stubs
   REG_SAVE2         = 22,
   REG_SAVE3         = 23,
 
@@ -90,7 +101,7 @@ typedef enum
   CPU_HALT_STATE    = 30,
   CHANGED_PC_STATUS = 31,
 
-  EXECUTE_CYCLES    = 60,
+  EXECUTE_CYCLES    = 60,  // length of the current run until the next event
 
   CPU_DMA_HACK      = 61,
   CPU_DMA_LAST      = 62,
@@ -99,6 +110,8 @@ typedef enum
 
 } EXT_REG_NUMBERS;
 
+// Code caches: read-only holds BIOS and Game Pak ROM code, writable holds
+// EWRAM/IWRAM/VRAM code that self-modifying writes can invalidate.
 typedef enum
 {
   TRANSLATION_REGION_READONLY,
@@ -177,11 +190,15 @@ u8 *block_lookup_address_thumb(u32 pc);
 u8 *block_lookup_address_dual(u32 pc);
 
 
+// Per-game config: branches at these PCs call update_gba right away instead
+// of spinning until the cycle budget runs out.
 #define MAX_IDLE_LOOPS 16
 
 extern s32 idle_loop_targets;
 extern u32 idle_loop_target_pc[MAX_IDLE_LOOPS];
 
+// Per-game config: IWRAM PCs where RAM blocks are split so code at the gate
+// is always translated as a block of its own (see scan_block).
 #define MAX_SMC_GATES 16
 
 extern s32 smc_gate_targets;
@@ -198,6 +215,8 @@ void dump_translation_cache(void);
 
 extern u32 reg[64];
 
+// Banked registers per CPU_MODE_TYPE: [0..4] r8-r12 (FIQ swap), [5] r13,
+// [6] r14. spsr[] is indexed by CPU_MODE_TYPE too.
 extern u32 reg_mode[7][7];
 extern u32 spsr[7];
 
@@ -207,6 +226,7 @@ void cpu_write_mem_savestate(SceUID savestate_file);
 void cpu_read_savestate(SceUID savestate_file);
 
 
+// CPSR.I (bit 7) clear: IRQs enabled.
 #define ARM_IRQ_STATE  ((reg[REG_CPSR] & 0x80) == 0)
 
 #endif /* CPU_H */
