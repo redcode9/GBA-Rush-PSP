@@ -1,3 +1,11 @@
+/*
+ * Host tests for the diagnostic runtime log: the fixed-size event rings of
+ * runtime_log.c (main, network and the smaller critical ring), the
+ * big-endian file they are encoded into (read by
+ * tools/decode_runtime_log.py), and runtime_log_store.c, which replaces a
+ * log file safely and rotates the logs of the last four sessions.
+ */
+
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -14,6 +22,7 @@ typedef struct
   int valid;
 } FakeLogFile;
 
+/* In-memory file system; fail_promote makes renaming current.tmp fail. */
 typedef struct
 {
   FakeLogFile files[8];
@@ -169,6 +178,8 @@ static void test_critical_ring_tracks_its_smaller_retention_window(void)
   assert(runtime_log_ring_dropped(&ring) == 7u);
 }
 
+/* The critical ring is already full when the link benchmark summary and
+   then the teardown checkpoints arrive: the summary must still be kept. */
 static void test_benchmark_survives_shutdown_checkpoint(void)
 {
   RuntimeLogRing ring;
@@ -202,6 +213,8 @@ static void test_benchmark_survives_shutdown_checkpoint(void)
   }
 }
 
+/* A ring forged so that its record ordinals end at UINT32_MAX: the
+   snapshot must stop there instead of wrapping around. */
 static void test_snapshot_at_ordinal_limit_is_bounded(void)
 {
   RuntimeLogRecord records[2];
@@ -270,6 +283,7 @@ static void test_encode_and_validate(void)
   assert(critical_count == 1);
   assert(decoded.session_id == metadata.session_id);
   assert(decoded.rom_identity == metadata.rom_identity);
+  /* value[0] of the first record, 20 bytes into it. */
   assert(read_u32(encoded + RUNTIME_LOG_HEADER_SIZE + 20) == 6u);
 
   encoded[written - 1] ^= 1u;
@@ -292,6 +306,7 @@ static void test_invalid_arguments(void)
   assert(!runtime_log_validate(NULL, 0, NULL, NULL, NULL, NULL));
 }
 
+/* Full rings encode to exactly RUNTIME_LOG_MAX_FILE_SIZE. */
 static void test_maximum_current_snapshot_size(void)
 {
   uint8_t encoded[RUNTIME_LOG_MAX_FILE_SIZE];
@@ -356,6 +371,7 @@ static void test_store_preserves_previous_log_on_failed_promote(void)
   assert(!fake_exists(&store, "current.bak"));
 }
 
+/* Rotation shifts each log one slot later and drops the oldest. */
 static void test_store_rotates_four_sessions(void)
 {
   const char *slots[] = { "log1", "log2", "log3", "log4" };
