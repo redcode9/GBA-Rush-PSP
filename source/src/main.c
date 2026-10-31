@@ -98,7 +98,9 @@ u32 enable_home_menu = 1;
 volatile u32 sleep_flag = 0;
 volatile u32 sleep_auto_saved = 0;
 
-/* 0 while fast-forward runs: synchronize() then never waits for VBlank. */
+/* 0 while fast-forward runs: synchronize() skips its VBlank wait,
+   synchronize_sound() stops holding emulation back unless audio is
+   accelerated, and the benchmark counts the frame as fast-forward. */
 u32 synchronize_flag = 1;
 u32 psp_fps_debug = 0;
 
@@ -883,6 +885,11 @@ u32 update_gba(void)
 
   perf_monitor_record_gba_update_entry();
 
+  /* One pass per timed event until the CPU is running. A `continue` (the
+     menu or the link service replaced the machine state) goes straight to
+     the halt test, so a running CPU resumes with the EXECUTE_CYCLES budget
+     it had. The goto below repeats a pass while a DMA stalls the CPU,
+     without clearing CPU_DMA_HACK. */
   do
   {
     reg[CPU_DMA_HACK] = 0;
@@ -1382,6 +1389,8 @@ static void init_main(void)
   else
   {
     flush_translation_cache(TRANSLATION_REGION_READONLY, FLUSH_REASON_LOADING_ROM);
+    /* Already done by the writable flush that the read-only one triggers;
+       these clears find empty ranges and do nothing. */
     clear_metadata_area(METADATA_AREA_EWRAM, CLEAR_REASON_LOADING_ROM);
     clear_metadata_area(METADATA_AREA_IWRAM, CLEAR_REASON_LOADING_ROM);
     clear_metadata_area(METADATA_AREA_VRAM,  CLEAR_REASON_LOADING_ROM);
