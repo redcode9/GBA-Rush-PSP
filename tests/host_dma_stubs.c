@@ -35,6 +35,7 @@ uint32_t sceKernelGetSystemTimeLow(void)
   return host_stub_t0;
 }
 
+/* main.c's microsecond clock; reads as the later of the two stub times. */
 uint64_t ticker(void)
 {
   return host_stub_t1;
