@@ -3295,6 +3295,8 @@ void add_smc_gate(u32 pc)
     smc_gate_targets = InsertUniqueSorted(smc_gate_pc, pc, smc_gate_targets);
 }
 
+// True if pc is a game-config smc_gate. The ARM scan ends a RAM block at an
+// exit that falls through to a gate, so the gate starts a fresh block.
 static inline u32 is_smc_gate(u32 pc)
 {
   return (BinarySearch(smc_gate_pc, pc & ~3u, smc_gate_targets) != -1);
