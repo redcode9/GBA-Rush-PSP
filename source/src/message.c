@@ -21,6 +21,8 @@
 #include "common.h"
 
 
+/* Indexed by option_language: 0 Japanese (Shift-JIS), 1 English,
+   2 Simplified Chinese, 3 Traditional Chinese, 4 Italian. */
 const char *message[5][MSG_END] =
 {
 #include "text/message_jpn.h"

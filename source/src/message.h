@@ -21,6 +21,9 @@
 #ifndef MESSAGE_H
 #define MESSAGE_H
 
+/* UI text ids. MSG[id] is the string for the current language; the tables
+   in text/message_*.h list the strings in exactly this enum order
+   (scripts/check-messages.sh checks it). */
 #define MSG  message[option_language]
 
 enum MESSAGE_ITEM
