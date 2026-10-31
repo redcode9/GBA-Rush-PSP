@@ -13,11 +13,12 @@
    drops files of the older one unless it learns that layout too.
    Adding a setting: append it to model_to_values() and values_to_model()
    (limit and default), add the default to config_model_defaults(), raise
-   CONFIG_MODEL_VALUE_COUNT in config_model.h, then bump the version and
-   set the PREVIOUS_* values here to the old ones (fixing the "Version 1"
-   note on decode_versioned and the migration test in
-   tests/test_config_model.c). Then map it in gui.c's capture_*_config() and
-   apply_*_config() and add its option_ global, menu row and messages. */
+   CONFIG_MODEL_VALUE_COUNT in config_model.h and bump the version. Keep
+   every released layout readable (version 1 shipped in 1.3.0): make the
+   current pair the PREVIOUS_* one and teach decode_versioned() any older
+   one, then update its note and the migration test in
+   tests/test_config_model.c. Finally map it in gui.c's capture_*_config()
+   and apply_*_config() and add its option_ global, menu row and messages. */
 #define CONFIG_MODEL_VERSION 2U
 #define CONFIG_MODEL_PREVIOUS_VERSION 1U
 #define CONFIG_MODEL_PREVIOUS_VALUE_COUNT 39U
