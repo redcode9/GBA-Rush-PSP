@@ -2976,6 +2976,8 @@ static void get_savestate_filename(u32 slot, char *name_buffer)
   }
 }
 
+/* Saves the auto slot before the PSP suspends (menu_suspend or main.c's
+   power service); does nothing when no ROM is loaded. */
 void auto_savestate_sleep(void)
 {
     if (gamepak_filename[0] == '\0')
@@ -3230,6 +3232,8 @@ static int menu_diagnostics_stop_available(void)
     return snapshot.state == PERF_METRICS_ACTIVE;
 }
 
+/* A capture cut short (reset, ROM change, suspend) can still be written;
+   its report is marked invalidated. */
 static int menu_diagnostics_report_available(void)
 {
     PerfMetricsSnapshot snapshot;
@@ -3239,6 +3243,8 @@ static int menu_diagnostics_report_available(void)
            snapshot.state == PERF_METRICS_INVALIDATED;
 }
 
+/* Status row shared by perf reports and input trace results; hidden until
+   one of them writes diagnostics_report_line. */
 static int menu_diagnostics_report_visible(void)
 {
     return diagnostics_report_line[0] != '\0';
@@ -3373,6 +3379,8 @@ static int menu_trace_replay_available(void)
            state != INPUT_TRACE_REPLAYING;
 }
 
+/* Offered in every non-idle state, so a held recording, a finished replay
+   or an error can also be cleared back to idle. */
 static int menu_trace_cancel_available(void)
 {
     return input_diagnostic_trace_state() != INPUT_TRACE_IDLE;
@@ -3522,6 +3530,8 @@ static int menu_string_has_gbk(const char *str)
     return 0;
 }
 
+/* Japanese menus draw with the Shift-JIS font unless the text has GBK
+   bytes; every other language draws with the GBK font. */
 static void print_menu_line(const char *str, s16 x, s16 y, u16 fg, s16 bg)
 {
     if (option_language == LANGUAGE_JAPANESE && !menu_string_has_gbk(str))
