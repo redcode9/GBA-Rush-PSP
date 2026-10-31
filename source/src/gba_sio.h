@@ -138,8 +138,9 @@ typedef struct
   uint32_t incoming[4];
   uint16_t peer_control;
   uint16_t peer_rcnt;
-  /* Counts SIOCNT writes that switch the serial interrupt off. Games do
-     this when they close or reopen their link layer. */
+  /* Counts SIOCNT writes with the serial interrupt bit clear, even when it
+     was already off. Games write those when they close or reopen their
+     link layer. */
   uint32_t interrupt_disables;
 } GbaSio;
 
