@@ -2,13 +2,16 @@
  * GBA Rush PSP — Boxart module with transparent on-device cache + Carousel
  * ============================================================================
  *
+ * Box art for the file browser (gui.c load_file): <rom name>.png from
+ * dir_boxart for ROMs, <folder name>.png from dir_boxart_folders for folders.
+ *
  * Problem:
- *   Savestate screenshots load instantly because they are raw RGB565 data.
+ *   Savestate screenshots load instantly because they are raw 15-bit pixels.
  *   Boxart PNGs are slow because every scroll triggers: file open → zlib
  *   inflate → filter undo → color conversion → nearest-neighbour downscale.
  *
  * Solution:
- *   After the first PNG decode, write the final 141×141 RGB565 pixels to a
+ *   After the first PNG decode, write the final 141×141 ABGR5551 pixels to a
  *   .raw cache file. On every subsequent load, fread() the raw pixels directly
  *   — same speed as a savestate screenshot.
  *
@@ -18,7 +21,8 @@
  *   mismatch auto-deletes the stale cache and rebuilds it.
  *
  * Memory safety:
- *   No LRU cache (crashed on real hardware). One buffer at a time.
+ *   No LRU cache (crashed on real hardware). The list view holds one buffer,
+ *   the carousel a fixed window of five.
  *   All decode temporaries are freed before returning.
  * ============================================================================ */
 
@@ -32,7 +36,7 @@ extern char dir_boxart_folders[MAX_PATH];
 /*  Module state — standard list view                                 */
 /* ------------------------------------------------------------------ */
 
-static u16 *boxart_buffer = NULL;   /* 141×141 RGB565 pixels, ready to blit */
+static u16 *boxart_buffer = NULL;   /* 141×141 ABGR5551 pixels, ready to blit */
 static u32 boxart_loaded = 0;       /* 0 = nothing loaded, 1 = buffer valid */
 
 /* Magic number for cache file header — 'BOXR' in little-endian */
@@ -700,7 +704,7 @@ void boxart_load(const char *rom_name)
 /* Draw the currently loaded boxart to the screen.
  *
  * pos_x, pos_y : top-left corner on the PSP framebuffer
- * border_color : RGB565 colour for the 1-pixel border around the image
+ * border_color : 15-bit colour for the 1-pixel border around the image
  *
  * Safe to call even if no boxart is loaded — does nothing in that case. */
 void boxart_draw(u16 pos_x, u16 pos_y, u16 border_color)
@@ -730,7 +734,7 @@ void boxart_free(void)
  *
  * Use case: User wants to force a rebuild (e.g., they bulk-replaced
  * boxart images and some happened to have the same size + mtime).
- * Wire this to a menu option in gui.c under Customization or Tools. */
+ * No menu option calls this yet. */
 void boxart_clear_cache(void)
 {
     SceUID dir;
@@ -890,8 +894,8 @@ void boxart_carousel_draw(u16 *buffer, u16 x, u16 y, u16 w, u16 h, u8 brightness
 /* Draw a lightweight folder frame (tab + body) for carousel slots.
  * Zero extra memory — uses existing primitive draw calls.
  *
- * The tab is a small rectangle on the top-left (1/3 width, 1/5 height)
- * sitting on top of the main body rectangle. */
+ * The tab is a small rectangle on the top-left (1/3 width, 1/10 of the
+ * body height) sitting on top of the main body rectangle. */
 void boxart_carousel_draw_folder_frame(u16 x, u16 y, u16 w, u16 h,
                                        u16 fill_color, u16 border_color)
 {
@@ -899,7 +903,7 @@ void boxart_carousel_draw_folder_frame(u16 x, u16 y, u16 w, u16 h,
     u16 folder_h = (h * 3) / 4;
     u16 folder_y = y + h - folder_h;
     u16 tab_w = w / 3;
-    u16 tab_h = folder_h / 10;          /* tab height (~25% of folder body) */
+    u16 tab_h = folder_h / 10;          /* tab height (10% of folder body) */
 
     /* Tab sits flush on top of the folder body */
     u16 tab_y = folder_y - tab_h;
