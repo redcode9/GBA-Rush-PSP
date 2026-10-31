@@ -33,12 +33,23 @@ static uint32_t get32(const uint8_t *in)
    ((uint32_t)in[2] << 16) | ((uint32_t)in[3] << 24);
 }
 
+/* Datagram layout, little-endian u32 fields:
+ *    0 'G' 'R', version, message count
+ *    4 sender id         8 receiver id (0 until the peer is known)
+ *   12 sequence number of the first message (the oldest unacknowledged)
+ *   16 ack: messages received in order
+ *   20 messages the emulator has consumed (used for pacing)
+ *   24 guest clock      28 send time (us)   32 echo of the peer's send time
+ *   36 reserved (0)
+ * then `count` messages, each [type, size, data]. */
+
 /* Sequence numbers wrap, so compare them as signed distances. */
 static int32_t seq_diff(uint32_t a, uint32_t b)
 {
   return (int32_t)(a - b);
 }
 
+/* local_id identifies this console in every header; 0 is reserved. */
 void link_net_init(LinkNet *net, uint32_t local_id, uint64_t now_us)
 {
   memset(net, 0, sizeof(*net));
@@ -91,6 +102,7 @@ static void link_net_sample_rtt(LinkNet *net, uint32_t echo,
   /* Ignore samples that cannot be real, such as a stale echo. */
   if(echo == 0 || sample > 5000000u)
     return;
+  /* Smoothed like TCP's SRTT: each sample moves the estimate by 1/8. */
   net->rtt_us = net->rtt_us == 0 ? sample :
    (net->rtt_us * 7u + sample) / 8u;
   if(sample > net->rtt_max_us)
@@ -217,6 +229,8 @@ size_t link_net_build(LinkNet *net, uint8_t *datagram, size_t capacity,
   if(resend_us < LINK_NET_MIN_RESEND_US)
     resend_us = LINK_NET_MIN_RESEND_US;
 
+  /* Send at once when a message was queued; otherwise only for a delayed
+     ack, a resend after about three round trips, or the heartbeat. */
   if(!net->send_now)
   {
     int ack_due = net->ack_pending &&
@@ -227,6 +241,8 @@ size_t link_net_build(LinkNet *net, uint8_t *datagram, size_t capacity,
       return 0;
   }
 
+  /* The echo adds how long we held the peer's stamp, so the peer's
+     round-trip sample leaves out our own delay. */
   if(net->peer_seen)
     echo = net->peer_stamp + (uint32_t)(now_us - net->peer_stamp_received_us);
 

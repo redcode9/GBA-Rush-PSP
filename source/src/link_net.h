@@ -108,7 +108,9 @@ void link_net_set_heartbeat(LinkNet *net, uint32_t interval_us);
 
 /* Messages sent that the peer's emulator has not consumed yet. */
 uint32_t link_net_backlog(const LinkNet *net);
+/* Messages sent that the peer has not acknowledged receiving yet. */
 uint32_t link_net_unacked(const LinkNet *net);
+/* True when nothing has arrived from the peer for timeout_us. */
 int link_net_peer_silent(const LinkNet *net, uint64_t now_us,
  uint32_t timeout_us);
 
