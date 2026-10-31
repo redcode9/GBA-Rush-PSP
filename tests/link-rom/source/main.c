@@ -194,6 +194,7 @@ static void draw_character(u8 column, u8 line, char character, u16 color)
   }
 }
 
+/* Draws a string from a grid cell; it is cut off at column 40, not wrapped. */
 static void draw_text(u8 column, u8 line, const char *text, u16 color)
 {
   while(*text != 0 && column < 40)
@@ -204,6 +205,8 @@ static void draw_text(u8 column, u8 line, const char *text, u16 color)
   }
 }
 
+/* Draws value in hex, zero-padded to digits characters (higher digits are
+   dropped). */
 static void draw_hex(u8 column, u8 line, u32 value, u8 digits, u16 color)
 {
   static const char hexadecimal[] = "0123456789ABCDEF";
@@ -217,6 +220,7 @@ static void draw_hex(u8 column, u8 line, u32 value, u8 digits, u16 color)
   }
 }
 
+/* Draws value in decimal without padding, starting at column. */
 static void draw_decimal(u8 column, u8 line, u32 value, u16 color)
 {
   char digits[10];
@@ -309,6 +313,8 @@ static void write_normal_data(void)
 #endif
 }
 
+/* Rewrites SIOCNT from the width, speed and clock role, leaving START clear,
+   and reloads the outgoing data register. */
 static void configure_normal(void)
 {
   u16 control = SIOCNT_IRQ;
@@ -364,6 +370,8 @@ static void update_normal(u16 keys)
   }
 }
 
+/* Redraws the normal-mode screen. STATE reads ARMED when the external-clock
+   side has START set and is waiting for the peer's clock. */
 static void draw_normal(void)
 {
   const char *state = (REG_SIOCNT & SIOCNT_START) != 0 ?
@@ -429,6 +437,8 @@ static void configure_multiplayer(void)
   prepare_next_data();
 }
 
+/* Multiplayer twin of update_normal(): UP/DOWN cycle the baud rate while
+   idle, A starts a transfer on the parent, each IRQ loads the next word. */
 static void update_multiplayer(u16 keys)
 {
   if((REG_SIOCNT & SIOCNT_START) == 0)
@@ -457,6 +467,8 @@ static void update_multiplayer(u16 keys)
   }
 }
 
+/* Redraws the multiplayer screen: player number, baud rate, SIOCNT flags
+   and the four SIOMULTI words of the last transfer. */
 static void draw_multiplayer(void)
 {
   static const u32 rates[4] = { 9600, 38400, 57600, 115200 };
@@ -503,6 +515,8 @@ static void draw_multiplayer(void)
 }
 #endif
 
+/* Masks interrupts, sets up the mode the ROM was built for, then polls,
+   updates and redraws once per frame. */
 int main(void)
 {
   u16 previous_keys = 0;
