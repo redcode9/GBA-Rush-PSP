@@ -2390,6 +2390,8 @@ fill_line_builder(color32);
 extern void expand_blend_mips(u32 *screen_src_ptr, u16 *screen_dest_ptr, u32 start, u32 end);
 #endif
 
+// Alpha blend of the two stacked layers with BLDALPHA; the PSP build uses
+// the hand-written expand_blend_mips().
 static void expand_blend(u32 *screen_src_ptr, u16 *screen_dest_ptr, u32 start, u32 end, u16 bldcnt)
 {
 #ifdef __mips__
@@ -2401,6 +2403,8 @@ static void expand_blend(u32 *screen_src_ptr, u16 *screen_dest_ptr, u32 start, u
 }
 
 #ifndef __mips__
+// C reference for expand_blend_mips(), built only off the PSP; BLDALPHA sums
+// over 16 take the slower saturating loop.
 static void expand_blend_c(u32 *screen_src_ptr, u16 *screen_dest_ptr,
  u32 start, u32 end, u16 bldcnt)
 {
@@ -2480,6 +2484,7 @@ static void expand_darken_partial_alpha(u32 *screen_src_ptr, u16 *screen_dest_pt
 }
 
 
+// Like expand_darken_partial_alpha(), fading toward white instead.
 static void expand_brighten_partial_alpha(u32 *screen_src_ptr, u16 *screen_dest_ptr, u32 start, u32 end, u16 bldcnt)
 {
   s32 blend = pIO_REG(REG_BLDY) & 0x1F;
@@ -2720,6 +2725,8 @@ static void render_scanline_tile(u16 *scanline, u16 dispcnt)
   render_layers_color_effect(render_layers, layer_count, render_condition_alpha, render_condition_fade, 0, 240);
 }
 
+// Modes 3-5 without windows: BG2 and OBJ in priority order. Unlike
+// render_scanline_tile(), no color effects are applied.
 static void render_scanline_bitmap(u16 *scanline, u16 dispcnt)
 {
   render_scanline_layer_functions_bitmap();

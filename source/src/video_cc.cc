@@ -350,6 +350,8 @@ static inline void render_tile_Nbpp(
 }
 
 
+// Draws columns start..end of a text BG line a tile at a time; mosaic layers
+// use render_scanline_text_mosaic() instead.
 template<typename stype, rendtype rdtype, bool isbase, bool is8bpp>
 static void render_scanline_text_fast(u32 layer,
  u32 start, u32 end, void *scanline, const u16 * paltbl)
@@ -617,6 +619,7 @@ static void render_scanline_text_mosaic(u32 layer,
   }
 }
 
+// Picks the mosaic or fast text renderer, 4 or 8 bpp, from BGxCNT and MOSAIC.
 template<typename stype, rendtype rdtype, bool isbase>
 static void render_scanline_text(u32 layer,
  u32 start, u32 end, void *scanline, const u16 * paltbl)
@@ -2330,8 +2333,7 @@ static const bitmap_layer_render_struct idx32_bmrend[3][2] =
 };
 
 // Render the BG and OBJ in a bitmap scanline from start to end ONLY if
-// enable_flag allows that layer/OBJ.
-
+// enable_flags allows that layer/OBJ.
 template<rendtype bgmode, rendtype objmode, typename dsttype>
 static void bitmap_render_layers(
   u32 start, u32 end, dsttype *scanline, u32 enable_flags)
@@ -2611,6 +2613,8 @@ static const u8 active_layers[] = {
   0,
 };
 
+// Built as update_scanline_new (video_cc_wrap.cc). Unless the frame is
+// skipped, draws line VCOUNT and steps the BG2/BG3 affine reference points.
 void update_scanline(void)
 {
   u32 pitch = get_screen_pitch();
