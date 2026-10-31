@@ -36,6 +36,8 @@ static const unsigned char regName[32][5] =
     "t8", "t9", "k0", "k1", "gp", "sp", "fp", "ra"
 };
 
+/* Called by exception.prx with the faulting registers: shows them; X also
+ * writes exception.log to the current directory. X or O then exits. */
 void ExceptionHandler(PspDebugRegBlock * regs)
 {
     int i;
