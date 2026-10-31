@@ -1,3 +1,8 @@
+/* ARM version of the blend loop from upstream gpSP, kept for reference
+ * only: the PSP build assembles video_blend_mips.S instead. Its masks assume
+ * RGB565 colors (palette_ram_converted), not the PSP's 5:5:5 layout.
+ */
+
 .align 2
 
 .global expand_blend

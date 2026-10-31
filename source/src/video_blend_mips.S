@@ -1,3 +1,11 @@
+/* MIPS version of video.c's expand_blend_c, used by the old renderer on
+ * PSP. Alpha-blends a scanline of stacked pixel pairs (top palette index
+ * and target flags in bits 0-15, the pixel below in bits 16-31) into final
+ * colors using BLDALPHA. Must stay bit-exact with the C macros
+ * blend_pixel and blend_saturate_pixel. Branch delay slots are filled by
+ * hand (noreorder).
+ */
+
 .set noreorder
 .set noat
 
@@ -39,6 +47,9 @@ expand_blend_mips:
   addu   $t6, $t4, $t5
   slti   $t7, $t6, 17            # 1 if no saturation path
 
+  /* t9: top is a 1st target (bit 9) and bottom a 2nd target (bit 26).
+   * v0: the three 5-bit channels after c | (c << 16).
+   * v1: the bit just above each channel, set when it overflows. */
   lui    $t8, %hi(palette_ram)
   addiu  $t8, $t8, %lo(palette_ram)
   li     $t9, 0x04000200         # combine mask
