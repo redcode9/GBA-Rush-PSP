@@ -131,10 +131,10 @@ typedef enum {
 #define METADATA_AREA_COUNT 5
 
 typedef enum {
-  /* Clear the whole region and every metadata area in it. Used at the first
-   * start-up, after loading cheats, on a RAM dynarec policy change and by the
-   * full-flush RAM policy, not only during initialisation. */
-  FLUSH_REASON_INITIALIZING,
+  /* Clear the whole region and every metadata area in it: at the first
+   * start-up, after loading cheats, on a RAM dynarec policy change and under
+   * the full-flush RAM policy. */
+  FLUSH_REASON_CLEAR_ALL,
   /* The read-only code cache is being cleared after a new ROM has been
    * loaded. */
   FLUSH_REASON_LOADING_ROM,

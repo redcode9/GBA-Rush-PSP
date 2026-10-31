@@ -3107,7 +3107,7 @@ static void menu_passive_ram_dynarec_policy(void)
   if (option_ram_dynarec_policy != ram_dynarec_policy_menu_prev)
   {
     ram_dynarec_policy_menu_prev = option_ram_dynarec_policy;
-    flush_translation_cache(TRANSLATION_REGION_WRITABLE, FLUSH_REASON_INITIALIZING);
+    flush_translation_cache(TRANSLATION_REGION_WRITABLE, FLUSH_REASON_CLEAR_ALL);
   }
 }
 

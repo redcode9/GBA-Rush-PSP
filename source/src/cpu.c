@@ -3842,7 +3842,7 @@ void partial_clear_metadata(u32 offset, u8 region)
 {
   if (option_ram_dynarec_policy == RAM_DYNAREC_FULL_FLUSH)
   {
-    flush_translation_cache(TRANSLATION_REGION_WRITABLE, FLUSH_REASON_INITIALIZING);
+    flush_translation_cache(TRANSLATION_REGION_WRITABLE, FLUSH_REASON_CLEAR_ALL);
     return;
   }
 
@@ -4048,8 +4048,9 @@ void clear_metadata_area(METADATA_AREA_TYPE metadata_area, METADATA_CLEAR_REASON
   }
 }
 
-// Empties a code cache and the metadata that points into it. Flushing the
-// read-only cache also flushes the writable one, which may jump into it.
+// Empties a code cache and the metadata that points into it. A read-only
+// flush for a new ROM or a full cache also flushes the writable cache, which
+// may jump into it; FLUSH_REASON_CLEAR_ALL clears only the region given.
 void flush_translation_cache(TRANSLATION_REGION_TYPE translation_region, CACHE_FLUSH_REASON_TYPE flush_reason)
 {
   if(flush_reason == FLUSH_REASON_FULL_CACHE)
@@ -4062,7 +4063,7 @@ void flush_translation_cache(TRANSLATION_REGION_TYPE translation_region, CACHE_F
       readonly_next_code = readonly_code_cache;
       switch (flush_reason)
       {
-        case FLUSH_REASON_INITIALIZING:
+        case FLUSH_REASON_CLEAR_ALL:
           clear_metadata_area(METADATA_AREA_ROM,  CLEAR_REASON_INITIALIZING);
           clear_metadata_area(METADATA_AREA_BIOS, CLEAR_REASON_INITIALIZING);
           break;
@@ -4086,7 +4087,7 @@ void flush_translation_cache(TRANSLATION_REGION_TYPE translation_region, CACHE_F
       memset(writable_checksum_hash, 0, sizeof(writable_checksum_hash));
       switch (flush_reason)
       {
-        case FLUSH_REASON_INITIALIZING:
+        case FLUSH_REASON_CLEAR_ALL:
           clear_metadata_area(METADATA_AREA_IWRAM, CLEAR_REASON_INITIALIZING);
           clear_metadata_area(METADATA_AREA_EWRAM, CLEAR_REASON_INITIALIZING);
           clear_metadata_area(METADATA_AREA_VRAM,  CLEAR_REASON_INITIALIZING);

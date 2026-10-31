@@ -578,9 +578,9 @@ CHEAT_LOAD_RESULT load_cheats(const char *cheats_path, u32 *error_line)
   rebuild_configured_hook_index();
   rebuild_active_cheat_indexes();
   flush_translation_cache(TRANSLATION_REGION_READONLY,
-   FLUSH_REASON_INITIALIZING);
+   FLUSH_REASON_CLEAR_ALL);
   flush_translation_cache(TRANSLATION_REGION_WRITABLE,
-   FLUSH_REASON_INITIALIZING);
+   FLUSH_REASON_CLEAR_ALL);
   return CHEAT_LOAD_OK;
 }
 

@@ -1376,8 +1376,8 @@ static void init_main(void)
 
   if (!caches_inited)
   {
-    flush_translation_cache(TRANSLATION_REGION_READONLY, FLUSH_REASON_INITIALIZING);
-    flush_translation_cache(TRANSLATION_REGION_WRITABLE, FLUSH_REASON_INITIALIZING);
+    flush_translation_cache(TRANSLATION_REGION_READONLY, FLUSH_REASON_CLEAR_ALL);
+    flush_translation_cache(TRANSLATION_REGION_WRITABLE, FLUSH_REASON_CLEAR_ALL);
   }
   else
   {
