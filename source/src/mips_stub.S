@@ -2385,7 +2385,7 @@ execute_load_open_u32u2:
   open_load32_align32 2, 2, patch_load_u32
   ror $2, $2, 16                  # rotate value by 16bits
 
-# Unsigned unaligned (by 1) 32bit load handlers
+# Unsigned unaligned (by 3) 32bit load handlers
 
 execute_load_bios_u32u3:
   region_check_align 0, 2, 3, patch_load_u32
@@ -3129,7 +3129,6 @@ write_io_epilogue:
   bne $4, $0, io_smc_write        # is it an SMC alert?
   andi $4, $2, 0x3e
 
-#  blez $17, io_update_gba         # if cycle counter <= 0
   blez $17, io_alert              # if cycle counter <= 0
   nop
 
