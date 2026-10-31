@@ -2011,11 +2011,6 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
           print_swap_aware(MSG[MSG_BROWSER_HELP], 30, 258,
            color_help_text, BG_NO_FILL);
       }
-/*
-      char str_buffer_size[32];
-      sprintf(str_buffer_size, MSG[MSG_BUFFER], gamepak_ram_buffer_size >> 20);
-		print_string_gbk(str_buffer_size, 384, 258, color_help_text, BG_NO_FILL);
-*/
       // PSP controller - hold
       if (get_pad_input(PSP_CTRL_HOLD) != 0)
 		{
@@ -3565,7 +3560,6 @@ u32 menu(void)
   SceCtrlData ctrl_data;
 
   char game_title[MAX_FILE];
-  //char backup_id[16];
   u16 *screen_image_ptr = NULL;
   u16 *current_screen   = NULL;
   u16 *savestate_screen = NULL;
@@ -3611,11 +3605,8 @@ u32 menu(void)
   auto void menu_init(void);
   auto void menu_term(void);
   auto void menu_exit(void);
-//  auto void menu_quit(void);
   auto void menu_reset(void);
   auto void menu_suspend(void);
-
-//  auto void menu_screen_capture(void);
 
   auto void menu_change_state(void);
   auto u32 menu_save_state(void);
@@ -3623,7 +3614,6 @@ u32 menu(void)
   auto void menu_load_state_file(void);
   auto void menu_delete_state(void);
 
-//  auto void menu_default(void);
   auto void menu_load_cheat_file(void);
   auto void submenu_cheats_misc(void);
 
@@ -3685,12 +3675,6 @@ u32 menu(void)
     if (!first_load)
       repeat = 0;
   }
-
-/*   void menu_quit(void)
-  {
-    menu_term();
-    quit();
-  } */
 
   void menu_suspend(void)
   {
@@ -3768,29 +3752,6 @@ u32 menu(void)
       repeat = 0;
     }
   }
-
-/*   void menu_screen_capture(void)
-  {
-    if (!first_load)
-    {
-      scePowerLock(0);
-      set_cpu_clock(PSP_CLOCK_333);
-
-      if (option_screen_capture_format != 0)
-      {
-        get_snapshot_filename(filename_buffer, "bmp");
-        save_bmp(filename_buffer, current_screen);
-      }
-      else
-      {
-        get_snapshot_filename(filename_buffer, "png");
-        save_png(filename_buffer, current_screen);
-      }
-
-      set_cpu_clock(PSP_CLOCK_222);
-      scePowerUnlock(0);
-    }
-  } */
 
   void menu_change_state(void)
   {
@@ -4045,45 +4006,6 @@ u32 menu(void)
       screen_image_ptr = savestate_screen;
     }
   }
-
-  /* void menu_default(void)
-  {
-	option_screen_scale = SCALED_16X9_AUTO;
-	option_screen_mag = 170;
-	option_screen_filter = FILTER_BILINEAR;
-	psp_fps_debug = 0;
-	option_frameskip_type = FRAMESKIP_AUTO;
-	option_frameskip_value = 9;
-	option_clock_speed = PSP_CLOCK_333;
-	option_sound_volume = 10;
-	option_stack_optimize = 1;
-	option_ram_dynarec_policy = RAM_DYNAREC_PARTIAL_WITH_REUSE;
-	option_video_renderer = VIDEO_RENDERER_NEW;
-	option_oam_hijacking_enabled = 0;
-	option_boot_mode = 0;
-	option_update_backup = 1;		//auto
-	option_screen_capture_format = 0;
-	option_enable_analog = 0;
-	option_analog_sensitivity = 4;
-	option_hblank_irq_window_start = 1;
-	option_hblank_irq_window_end = 160;
-  option_psp_vsync = 0;
-	//int id_language;
-	sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_LANGUAGE, &id_language);
-	if (id_language == PSP_SYSTEMPARAM_LANGUAGE_JAPANESE)
-		option_language = 0;
-	else if (id_language == PSP_SYSTEMPARAM_LANGUAGE_CHINESE_SIMPLIFIED)
-		option_language = 2;
-	else if (id_language == PSP_SYSTEMPARAM_LANGUAGE_CHINESE_TRADITIONAL)
-		option_language = 3;
-  else if (id_language == PSP_SYSTEMPARAM_LANGUAGE_ITALIAN)
-		option_language = 4;
-	else
-		option_language = 1; // english
-
-    flush_translation_cache(TRANSLATION_REGION_WRITABLE, FLUSH_REASON_INITIALIZING);
-    ram_dynarec_policy_menu_prev = ~(u32)0;
-  } */
 
   void menu_graphics_default(void)
   {
@@ -5280,9 +5202,8 @@ u32 menu(void)
      (u32)navigation_model.selected_index : 0;
     current_option = new_menu->options + current_option_num;
 
-    /* Enable PSP OS exit dialog only in the main menu.
-       In submenus and in-game, HOME is handled by the emulator. */
-    //sceImposeSetHomePopup((current_menu == &main_menu) ? 1 : 0);
+    /* The PSP OS exit dialog is allowed on every menu screen; menu()
+       turns it off again before returning to the game. */
     sceImposeSetHomePopup(1); // enable in all menus but not game
   }
 
@@ -5364,8 +5285,6 @@ u32 menu(void)
                       color_inactive_item);
         // --- End border ---
     }
-
-    //print_string(backup_id, 228, 208, color_inactive_item, BG_NO_FILL);
 
     if (current_menu && current_menu->init_function != NULL)
     {
@@ -5524,8 +5443,6 @@ u32 menu(void)
     print_swap_aware_clipped(MSG[current_option->help_string], 30, 258,
      color_help_text, BG_NO_FILL, footer_max_chars);
   }
-
-/* 	print_string_gbk(MSG[current_option->help_string], 30, 258, color_help_text, BG_NO_FILL); */
 
     // PSP controller - hold
     if (get_pad_input(PSP_CTRL_HOLD) != 0)
@@ -5783,7 +5700,6 @@ u32 menu(void)
   video_resolution_small();
 
   sound_pause = 0;
-  //menu_cheat_page = 0;//
 
   scePowerUnlock(0);
 
