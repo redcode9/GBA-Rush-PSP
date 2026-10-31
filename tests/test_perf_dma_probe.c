@@ -9,6 +9,7 @@
  *     while(length--) counter;
  *   - the gamepak-pair class must cover GBA ROM regions 0x08-0x0D on BOTH
  *     source and destination, and nothing else.
+ * It also checks paged ROM loading (test_paged_rom_cache_and_io).
  *
  * The system clock is stubbed (host_stub_set_time) so each transfer
  * observes a deterministic measured duration.
@@ -55,6 +56,12 @@ static void setup_dma(DmaTransferType *d, u32 src, u32 dst, u32 len,
   d->irq = DMA_NO_IRQ;
 }
 
+/*
+ * A ROM file larger than its one-page (32 KiB) buffer, read through the
+ * stubbed file I/O: bytes survive page eviction in every ROM mirror (0x08,
+ * 0x0A, 0x0C); a failed or short read pads with 0xFF, is not cached and
+ * counts as an I/O error; a short last page of the file is valid.
+ */
 static void test_paged_rom_cache_and_io(void)
 {
   u32 base;
@@ -142,7 +149,7 @@ int main(void)
   CHECK_EQ(snap.dma_gamepak_pairs, 0, "A dma_gamepak_pairs");
   for (i = 0; i < 10; i++)
   {
-    /* 16-bit words land in IWRAM, GBA big-endian byte order. */
+    /* IWRAM must hold the ROM bytes unchanged and in the same order. */
     u16 expect = (u16)((gamepak_rom[2 * i] << 8) | gamepak_rom[2 * i + 1]);
     u16 got = (u16)((iwram[2 * i] << 8) | iwram[2 * i + 1]);
     CHECK_EQ(got, expect, "A iwram data");
@@ -200,6 +207,7 @@ int main(void)
   CHECK_EQ(snap.dma32_elements, 20, "F dma32_elements");
   CHECK_EQ(snap.dma_gamepak_pairs, 2, "F dma_gamepak_pairs");
 
+  /* 0x0E is SRAM, outside the ROM regions. */
   setup_dma(&d, 0x0E000020, 0x08000020, 1, DMA_16BIT);
   dma_transfer(&d);
   perf_monitor_snapshot(&snap);

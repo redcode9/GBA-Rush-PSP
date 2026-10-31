@@ -5,10 +5,11 @@
 // outside its own translation unit is stubbed here so the production
 // dma_transfer() path can be exercised in a host test.
 //
-// The only stub with behavior is the system clock: host_stub_set_time()
-// arms two timestamps, so the first sceKernelGetSystemTimeLow() call of a
-// transfer returns t0 and the second returns t1, giving a deterministic
-// measured DMA duration of (t1 - t0) microseconds.
+// Two stubs have behavior. The system clock: host_stub_set_time() arms two
+// timestamps, so the first sceKernelGetSystemTimeLow() call of a transfer
+// returns t0 and the second returns t1, giving a deterministic measured DMA
+// duration of (t1 - t0) microseconds. And the ROM file reads used by the
+// paged ROM test, controlled by host_stub_rom_io().
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,7 +64,7 @@ char dir_state[512] = { 0 };
 char main_path[512] = { 0 };
 unsigned char bios[0x20000] = { 0 };
 
-/* --- File I/O (never reached by the DMA test path) ----------------------- */
+/* --- File I/O (only the paged ROM reads are reached) --------------------- */
 
 void *psp_fopen(const char *path, const char *mode)
 {
@@ -78,6 +79,8 @@ int psp_fclose(void *file)
   return 0;
 }
 
+/* Fake ROM file: every byte of 32 KiB page n reads as n + 1. A negative
+   read limit fails every read; a smaller one makes reads short. */
 static int64_t host_rom_offset;
 static int host_rom_limit = -1;
 static int host_rom_seek_fails;
