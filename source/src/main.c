@@ -18,6 +18,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+/* Emulator entry point and main loop. update_gba is the hardware scheduler
+   the dynarec calls between slices (timers, LCD timing, DMA, IRQs); around it
+   live frame pacing, startup, the PSP power and exit callbacks, and the
+   link cable, fast-forward and benchmark glue used by gui.c and input.c. */
+
 #include <limits.h>
 
 #include <pspsysmem.h>
@@ -45,9 +50,11 @@ extern void add_recent_rom(const char *filename);
 PSP_MODULE_INFO("GBA Rush PSP", PSP_MODULE_USER, 1, 0);
 PSP_MAIN_THREAD_PARAMS(PRIORITY, STACK_SIZE_KB, ATTRIBUTE);
 PSP_HEAP_THRESHOLD_SIZE_KB(1024);
+/* Negative: the heap takes all free user memory except 2 MB. */
 PSP_HEAP_SIZE_KB(-2048);
 
 
+/* User settings; gui.c loads, edits and saves them. */
 u32 option_screen_scale = SCALED_16X9_AUTO;
 u32 option_screen_mag = 170;
 u32 option_screen_filter = FILTER_BILINEAR;
@@ -92,12 +99,17 @@ char main_path[MAX_PATH];
 int date_format = 0;
 u32 enable_home_menu = 1;
 
+/* sleep_flag: set by the power callback while the PSP suspends.
+   sleep_auto_saved: the suspend savestate of this suspend is written. */
 volatile u32 sleep_flag = 0;
 volatile u32 sleep_auto_saved = 0;
 
+/* 0 while fast-forward runs: synchronize() then never waits for VBlank. */
 u32 synchronize_flag = 1;
 u32 psp_fps_debug = 0;
 
+/* PSP VBlanks seen and GBA frames emulated since the last resync; their
+   difference drives frameskip in synchronize(). */
 u32 real_frame_count = 0;
 u32 virtual_frame_count = 0;
 
@@ -123,37 +135,46 @@ typedef enum
   TIMER_DS_CHANNEL_BOTH
 } TIMER_DS_CHANNEL_TYPE;
 
+/* One GBA timer (TM0-TM3). Part of the savestate. */
 typedef struct
 {
-  TIMER_DS_CHANNEL_TYPE direct_sound_channels;
+  TIMER_DS_CHANNEL_TYPE direct_sound_channels; /* FIFOs it clocks (0 and 1) */
   TIMER_IRQ_TYPE irq;
   TIMER_STATUS_TYPE status;
-  FIXED08_24 frequency_step;
-  s32 count;
-  u32 reload;
-  u32 reload_update;
-  u32 prescale;
+  FIXED08_24 frequency_step;  /* Direct Sound sample step per overflow */
+  s32 count;                  /* CPU cycles left until overflow */
+  u32 reload;                 /* ticks per overflow: 0x10000 - TMxCNT_L */
+  u32 reload_update;          /* reload changed; recompute frequency_step */
+  u32 prescale;               /* log2 of CPU cycles per tick */
 } TimerType;
 
+/* TMxCNT_H bits 0-1: 1, 64, 256 or 1024 cycles per tick, as shifts. */
 const u8 ALIGN_DATA prescale_table[] = { 0, 6, 8, 10 };
 TimerType ALIGN_DATA timer[4];
 
+/* CPU cycles a running DMA still stalls the CPU for (set by memory.c). */
 u32 dma_cycle_count = 0;
 LinkCable gba_link;
 static u8 gba_link_open = 0;
 static MainLinkEnd gba_link_end = MAIN_LINK_END_NONE;
 static u8 gba_link_gameplay_active = 1;
+/* Last link state written to the runtime log, so only changes are logged. */
 static u8 gba_link_logged_status = LINK_CABLE_OFF;
 static u8 gba_link_logged_mode = LINK_CABLE_MODE_NONE;
 static u32 gba_link_service_ticks = 0;
+/* Statistics of the waits for the other console, logged at session end. */
 static u32 gba_link_waits = 0;
 static u32 gba_link_wait_max_us = 0;
 static u64 gba_link_wait_total_us = 0;
 static PowerLifecycle psp_power_lifecycle;
 static FastForwardPolicy fast_forward_policy;
+/* The ROM file was closed for suspend and must be reopened on resume. */
 static u32 sleep_reopen_gamepak = 0;
+/* Game code of the ROM the runtime log currently describes. */
 static u8 runtime_log_rom_active = 0;
 static u32 runtime_log_rom_identity = 0;
+/* Shutdown handshake between quit() on the main thread and the exit
+   callback thread. */
 static volatile int quit_started = 0;
 static volatile int exit_requested = 0;
 static volatile int quit_cleanup_complete = 0;
@@ -172,12 +193,19 @@ static volatile int quit_cleanup_complete = 0;
    While a link is open, each late frame gives up this much time. */
 #define MAIN_LINK_YIELD_US 2000u
 
+/* Guest CPU cycles since reset; wraps. The guest clock for sound and link. */
 u32 cpu_ticks = 0;
+/* Cycles left in the current LCD phase: 960 of H-draw, then 272 of H-blank
+   per scanline. */
 s32 video_count = 272;
 
+/* IRQ entry delay: cpu_init_state is set while an IRQ waits irq_ticks
+   cycles before it is taken. */
 u32 irq_ticks = 0;
 u8 cpu_init_state = 0;
 
+/* Frameskip state, and the FPS counter (frames, vblank_count and
+   interval_skipped_frames cover a 60-frame window). */
 u32 skip_next_frame = 0;
 u32 num_skipped_frames = 0;
 u32 frameskip_counter = 0;
@@ -185,6 +213,8 @@ u32 interval_skipped_frames = 0;
 u32 frames = 0;
 u32 vblank_count = 0;
 
+/* The first init_main flushes both translation caches; later ROM loads
+   flush the read-only one and clear the RAM block metadata instead. */
 static u8 caches_inited = 0;
 
 static void cpu_interrupt(void);
@@ -210,6 +240,8 @@ static void main_power_save_if_pending(void);
 static void main_power_reopen_gamepak(void);
 static void main_link_close(MainLinkEnd reason);
 
+/* The clock call under the NID newer firmware exports; setup_main picks
+   which one to use. */
 #define scePowerSetClockFrequency371  scePower_EBD177D6
 static int (*__scePowerSetClockFrequency)(int pllfreq, int cpufreq, int busfreq);
 
@@ -217,6 +249,8 @@ static int (*__scePowerSetClockFrequency)(int pllfreq, int cpufreq, int busfreq)
 #define SOUND_UPDATE_FREQUENCY_STEP                                           \
   sound_math_timer_step(timer_reload, SOUND_FREQUENCY)                        \
 
+/* Shortens the next CPU slice so the dynarec returns to update_gba by the
+   time this event is due. */
 #define CHECK_COUNT(count_var)                                                \
   if (count_var < reg[EXECUTE_CYCLES])                                        \
   {                                                                           \
@@ -230,6 +264,8 @@ static int (*__scePowerSetClockFrequency)(int pllfreq, int cpufreq, int busfreq)
   }                                                                           \
 
 
+/* TMxCNT_L write: the new reload value applies at the next start or
+   overflow. */
 void timer_control_low(u8 timer_number, u32 value)
 {
   TimerType *tm = timer + timer_number;
@@ -238,6 +274,9 @@ void timer_control_low(u8 timer_number, u32 value)
   tm->reload_update = 1;
 }
 
+/* TMxCNT_H write: bit 7 enables, bit 2 selects count-up (cascade) mode,
+   bit 6 enables the overflow IRQ, bits 0-1 pick the prescaler. Only an
+   enable edge is acted on; writes to a running timer are ignored. */
 CPU_ALERT_TYPE timer_control_high(u8 timer_number, u32 value)
 {
   TimerType *tm = timer + timer_number;
@@ -261,11 +300,13 @@ CPU_ALERT_TYPE timer_control_high(u8 timer_number, u32 value)
 
       u32 timer_reload = tm->reload;
 
+      // TMxCNT_L reads back the reload value; timers are 4 bytes apart
       pIO_REG(REG_TM0D + (timer_number << 1)) = 0x10000 - timer_reload;
 
       timer_reload <<= tm->prescale;
       tm->count = timer_reload;
 
+      // Only timers 0 and 1 can clock the Direct Sound FIFOs
       if (timer_number < 2)
       {
         tm->frequency_step = SOUND_UPDATE_FREQUENCY_STEP;
@@ -289,6 +330,8 @@ CPU_ALERT_TYPE timer_control_high(u8 timer_number, u32 value)
   return CPU_ALERT_NONE;
 }
 
+/* SOUNDCNT_H write: bits 10 and 14 pick timer 0 or 1 for Direct Sound A
+   and B. In the resulting masks bit 0 is channel A and bit 1 channel B. */
 void direct_sound_timer_select(u32 value)
 {
   TIMER_DS_CHANNEL_TYPE timer_select;
@@ -300,21 +343,26 @@ void direct_sound_timer_select(u32 value)
 }
 
 
+/* Takes an IRQ: enters the BIOS IRQ vector in IRQ mode, as the ARM7 does. */
 static void cpu_interrupt(void)
 {
-  // Interrupt handler in BIOS
+  // Interrupt handler in BIOS; lr_irq = return address + 4
   reg_mode[MODE_IRQ][6] = reg[REG_PC] + 4;
   spsr[MODE_IRQ] = reg[REG_CPSR];
   reg[REG_CPSR] = (reg[REG_CPSR] & ~0xFF) | 0x92; // set mode IRQ & disable IRQ
   reg[REG_PC] = 0x00000018;
   set_cpu_mode(MODE_IRQ);
 
+  // What a protected BIOS read returns while the BIOS IRQ handler runs
   bios_read_protect = 0xe55ec002;
 
   reg[CPU_HALT_STATE] = CPU_ACTIVE;
   reg[CHANGED_PC_STATUS] = 1;
 }
 
+/* Runs a timer for the cycles just executed. On overflow it raises the IRQ,
+   ticks a cascaded next timer, clocks its Direct Sound FIFOs and reloads.
+   TMxCNT_L then reads back the current count. */
 #define UPDATE_TIMER(timer_number)                                            \
 {                                                                             \
   TimerType *tm = timer + timer_number;                                       \
@@ -529,6 +577,7 @@ static int main_link_service(IRQ_TYPE *irq_raised)
   gba_link_wait_total_us += waited;
   if(waited > gba_link_wait_max_us)
     gba_link_wait_max_us = waited;
+  /* Log only pauses of 100 ms or more. */
   if(waited >= 100000u)
     runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_PAUSE_END, cpu_ticks,
      (u8)gba_link.mode, waited, (u32)gba_link.status,
@@ -553,6 +602,7 @@ static int main_link_start(int host)
   main_fast_forward_stop();
   main_link_disconnect(MAIN_LINK_END_USER);
 
+  /* The game code sits at 0xAC in the 0xC0-byte cartridge header. */
   if(gamepak_filename[0] != '\0' && gamepak_file_size >= 0xC0u)
     memcpy(game, gamepak_header + 0xAC, sizeof(game));
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COMMAND, cpu_ticks,
@@ -572,6 +622,8 @@ static int main_link_start(int host)
     return 0;
   }
 
+  /* Session id from the clock, salted with "HOST" or "JOIN" so the two
+     consoles differ; never 0. */
   now = sceKernelGetSystemTimeWide();
   id = (u32)now ^ (u32)(now >> 32) ^ (host ? 0x484F5354u : 0x4A4F494Eu);
   link_cable_start(&gba_link, &gba_sio, host, game, id != 0 ? id : 1u,
@@ -657,6 +709,11 @@ void main_link_set_gameplay_active(int active)
     runtime_log_psp_flush(RUNTIME_LOG_FLUSH_MENU);
 }
 
+/* ---- Fast-forward ------------------------------------------------------
+ * fast_forward_policy.c decides speed and which frames to show; this glue
+ * feeds it the button state and applies its decisions to sync and sound. */
+
+/* The game's own settings replace the global ones when it has an override. */
 static FastForwardSettings main_fast_forward_settings(void)
 {
   FastForwardSettings settings;
@@ -686,6 +743,7 @@ static FastForwardSettings main_fast_forward_settings(void)
   return settings;
 }
 
+/* Counts on/off and speed changes for the benchmark report. */
 static void main_fast_forward_record_change(int was_active,
  FastForwardSpeed was_speed)
 {
@@ -712,6 +770,8 @@ static void main_fast_forward_update_sound(void)
     sound_set_fast_forward(1);
 }
 
+/* Called from update_input every frame with the fast-forward button's new
+   press and held state. Fast-forward is unavailable during a link session. */
 void main_fast_forward_input(u32 pressed, u32 held)
 {
   int was_active;
@@ -792,6 +852,12 @@ void main_fast_forward_reset_game_settings(void)
   main_fast_forward_apply_settings();
 }
 
+/* The hardware scheduler. The dynarec calls it when a slice of
+   reg[EXECUTE_CYCLES] cycles has run: it advances serial, timers, LCD timing
+   and DMA by that amount, raises IRQs, and returns the length of the next
+   slice (cycles to the next event). While the CPU is halted it keeps
+   advancing time itself. Once per frame it also runs input, rendering,
+   sound sync and frame pacing. */
 u32 update_gba(void)
 {
   s32 i;
@@ -836,12 +902,14 @@ u32 update_gba(void)
 
     if (video_count <= 0)
     {
+      /* DISPSTAT bits: 0 V-blank, 1 H-blank, 2 VCOUNT match flags;
+         3-5 their IRQ enables; 8-15 the VCOUNT match line. */
       u16 dispstat = pIO_REG(REG_DISPSTAT);
       u16 vcount   = pIO_REG(REG_VCOUNT);
 
       if ((dispstat & 0x02) == 0)
       {
-        // Transition from hrefresh to hblank
+        // Transition from hdraw to hblank (272 cycles)
         video_count += 272;
         dispstat |= 0x02;
 
@@ -862,6 +930,7 @@ u32 update_gba(void)
         {
           u32 allow_hblank_irq = 1;
 
+          // Optional scanline window; H-blank IRQs outside it are dropped
           if (option_hblank_irq_window_start != 0 &&
               option_hblank_irq_window_end != 0)
           {
@@ -878,7 +947,7 @@ u32 update_gba(void)
       }
       else
       {
-        // Transition from hblank to next line
+        // Transition from hblank to next line (960 cycles of hdraw)
         video_count += 960;
         dispstat &= ~0x02;
 
@@ -886,9 +955,10 @@ u32 update_gba(void)
 
         if (vcount == 160)
         {
-          // Transition from vrefresh to vblank
+          // Transition from vrefresh to vblank (lines 160-227)
           dispstat |= 0x01;
 
+          // The menu or a state load replaced the machine; drop this pass
           if (update_input() != 0)
             continue;
 
@@ -909,6 +979,8 @@ u32 update_gba(void)
           update_gbc_sound(cpu_ticks);
           gbc_sound_update = 0;
 
+          // Reload the BG2/BG3 affine reference points from BG2X/Y and
+          // BG3X/Y (0x28, 0x2C, 0x38, 0x3C), sign-extending 28 bits
           affine_reference_x[0] = (s32)(ADDRESS32(io_registers, 0x28) << 4) >> 4;
           affine_reference_y[0] = (s32)(ADDRESS32(io_registers, 0x2C) << 4) >> 4;
           affine_reference_x[1] = (s32)(ADDRESS32(io_registers, 0x38) << 4) >> 4;
@@ -928,7 +1000,7 @@ u32 update_gba(void)
 
         if (vcount > 227)
         {
-          // Transition from vblank to next screen
+          // Transition from vblank to next screen; the frame ends here
           dispstat &= ~0x01;
 
           if (option_update_backup != 0)
@@ -954,7 +1026,7 @@ u32 update_gba(void)
 
         if (vcount == (dispstat >> 8))
         {
-          // vcount trigger
+          // vcount trigger (line set in DISPSTAT bits 8-15)
           dispstat |= 0x04;
 
           if ((dispstat & 0x20) != 0)
@@ -973,6 +1045,8 @@ u32 update_gba(void)
       pIO_REG(REG_DISPSTAT) = dispstat;
     }
 
+    // Serve the link when the game starts a transfer, the cable asks for
+    // it, or about every millisecond of guest time
     if(gba_link_open &&
        (gba_sio.pending_start || link_cable_due(&gba_link, cpu_ticks) ||
         cpu_ticks - gba_link_service_ticks >= MAIN_LINK_SERVICE_CYCLES))
@@ -1001,6 +1075,7 @@ u32 update_gba(void)
       CHECK_COUNT(link_cycles);
     }
 
+    // A DMA stalls the CPU: spend its cycles here without running code
     if (dma_cycle_count != 0)
     {
       CHECK_COUNT(dma_cycle_count);
@@ -1017,6 +1092,7 @@ u32 update_gba(void)
 
     if ((pIO_REG(REG_IF) != 0) && GBA_IME_STATE && ARM_IRQ_STATE)
     {
+      // Only serial, keypad and game pak IRQs wake the GBA from STOP
       u16 irq_mask = (reg[CPU_HALT_STATE] == CPU_STOP) ? 0x3080 : 0x3FFF;
 
       if ((pIO_REG(REG_IE) & pIO_REG(REG_IF) & irq_mask) != 0)
@@ -1058,12 +1134,17 @@ u32 update_gba(void)
 }
 
 
+/* PSP VBlank interrupt (about 60 Hz): the real-time clock for pacing. */
 static void vblank_interrupt_handler(u32 sub, u32 *parg)
 {
   real_frame_count++;
   vblank_count++;
 }
 
+/* Runs once per GBA frame, at the end of V-blank. Draws the on-screen
+   status, decides whether the next frame is rendered (frameskip or the
+   fast-forward policy), and waits for the PSP VBlank when emulation is
+   ahead of real time. */
 static void synchronize(void)
 {
   static s32 fps = 60;
@@ -1076,6 +1157,7 @@ static void synchronize(void)
 
   if (frames == 60)
   {
+    // 60 GBA frames took vblank_count PSP frames at 60 Hz
     fps = vblank_count ? (3600 / vblank_count) : 0;
     frames_drawn = 60 - interval_skipped_frames;
 
@@ -1116,7 +1198,6 @@ static void synchronize(void)
         sprintf(print_buffer, "%02ld(%02ld)", (long)fps,
          (long)frames_drawn);
       }
-//    sprintf(print_buffer, "%02d(%02d)", fps % 100, frames_drawn);
       print_string(print_buffer, 0, 0, COLOR15_WHITE, COLOR15_BLACK);
     }
   }
@@ -1166,6 +1247,7 @@ static void synchronize(void)
     return;
   }
 
+  // Fast-forward stopped or was reconfigured: restart pacing from now
   if(fast_forward_policy_take_force_present(&fast_forward_policy))
   {
     skip_next_frame = 0;
@@ -1178,6 +1260,8 @@ static void synchronize(void)
   skip_next_frame = 0;
   virtual_frame_count++;
 
+  // Behind real time: auto frameskip skips up to option_frameskip_value
+  // frames in a row, then resyncs. Ahead: wait for the PSP VBlank.
   if (real_frame_count >= virtual_frame_count)
   {
     if(gba_link_open)
@@ -1234,6 +1318,8 @@ static void synchronize(void)
 }
 
 
+/* Resets the CPU and the scheduler state in this file (timers, DMA, LCD
+   timing, IRQ delay) for reset_gba, and flushes translated code. */
 static void init_main(void)
 {
   s32 i;
@@ -1262,6 +1348,8 @@ static void init_main(void)
 
   cpu_ticks = 0;
 
+  // BIOS boot starts at the top of line 0; a direct boot starts mid-frame
+  // (init_memory sets VCOUNT to 126)
   video_count = option_boot_mode ? 960 : 272;
   reg[EXECUTE_CYCLES] = video_count;
   video_dispatch_frame_begin();
@@ -1348,6 +1436,8 @@ static void find_main_path(const char *eboot_path)
     }
 }
 
+/* One-time startup: platform services, settings, BIOS, sound and the
+   power callbacks. The power lock keeps the PSP from suspending meanwhile. */
 static void setup_main(const char *eboot_path)
 {
   FastForwardSettings fast_forward_settings;
@@ -1361,6 +1451,7 @@ static void setup_main(const char *eboot_path)
 
   int devkit_version = sceKernelDevkitVersion();
 
+  // Firmware 5.00 and later get the clock call by its newer NID
   if (devkit_version < 0x05000010)
     __scePowerSetClockFrequency = scePowerSetClockFrequency;
   else
@@ -1389,6 +1480,7 @@ static void setup_main(const char *eboot_path)
   load_theme_config();
   load_recent_roms();
 
+  // HOME opens the emulator menu, so hide the system HOME popup
   sceImposeSetHomePopup(enable_home_menu ^ 1);
 
   load_setting_cfg();
@@ -1510,6 +1602,9 @@ int main(int argc, char *argv[])
 }
 
 
+/* The one shutdown path: saves, closes the link, writes the logs and exits.
+   The exit callback only requests it (see main_power_service); a second
+   caller returns at once. */
 void quit(void)
 {
   if(!__sync_bool_compare_and_swap(&quit_started, 0, 1))
@@ -1535,11 +1630,15 @@ void quit(void)
 
   scePowerUnregisterCallback(0);
 
+  /* Lets a waiting exit callback return. */
   quit_cleanup_complete = 1;
   __sync_synchronize();
   sceKernelExitGame();
 }
 
+/* Resets the GBA with the loaded ROM. Ends fast-forward, benchmark capture,
+   input traces and the link first; flushes the runtime log if the ROM
+   changed. */
 void reset_gba(void)
 {
   u32 new_identity = 0;
@@ -1551,6 +1650,7 @@ void reset_gba(void)
 #endif
   main_link_disconnect(MAIN_LINK_END_ROM_CHANGE);
 
+  /* Cartridge header: 4-byte game code at 0xAC, software version at 0xBC. */
   if(gamepak_file_size >= 0xC0u)
   {
     new_identity = ((u32)gamepak_header[0xAC] << 24) |
@@ -1574,6 +1674,11 @@ void reset_gba(void)
 }
 
 
+/* ---- Power ------------------------------------------------------------
+ * The power callback only records suspend and resume in psp_power_lifecycle.
+ * The emulator thread acts on them here, from main_power_service. */
+
+/* Writes the suspend auto-savestate once per suspend, if one was asked for. */
 static void main_power_save_if_pending(void)
 {
   if(power_lifecycle_take_save(&psp_power_lifecycle) &&
@@ -1584,6 +1689,8 @@ static void main_power_save_if_pending(void)
   }
 }
 
+/* File handles do not survive suspend. The Memory Stick can take a moment
+   to return after resume, so retry for about 2.5 s before giving up. */
 static void main_power_reopen_gamepak(void)
 {
   s32 i;
@@ -1609,6 +1716,8 @@ static void main_power_reopen_gamepak(void)
   quit();
 }
 
+/* Suspend is under way: stop fast-forward, video and the link, auto-save,
+   close the ROM file and flush the logs, then park until the PSP resumes. */
 static void psp_sleep_loop(void)
 {
   runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_SUSPEND, cpu_ticks, 0,
@@ -1640,6 +1749,9 @@ static void psp_sleep_loop(void)
   while (sleep_flag != 0);
 }
 
+/* Polled by the emulator thread from update_gba, menus and link waits.
+   Quits on an exit request, sleeps through a suspend, and after resume
+   reopens the ROM and restores video and audio. */
 void main_power_service(void)
 {
   PowerLifecycleState state;
@@ -1678,6 +1790,9 @@ void main_power_service(void)
 }
 
 
+/* Runs on the callback thread when the user picks Exit in the HOME menu.
+   It asks the main thread to shut down and waits up to 2 s for that,
+   then exits regardless. */
 static int exit_callback(int arg1, int arg2, void *common)
 {
   u64 started;
@@ -1700,6 +1815,9 @@ static int exit_callback(int arg1, int arg2, void *common)
   return 0;
 }
 
+/* Runs on the callback thread. It must not do slow or file work, so it only
+   releases or re-reserves the audio channel and records the event for
+   main_power_service. */
 static int power_callback(int unknown, int powerInfo, void *arg)
 {
   if ((powerInfo & PSP_POWER_CB_SUSPENDING) != 0)
@@ -1724,6 +1842,8 @@ static int power_callback(int unknown, int powerInfo, void *arg)
   return 0;
 }
 
+/* Hosts the exit and power callbacks: it sleeps in a callback-enabled wait
+   so the system can run them. */
 static int callback_thread(SceSize args, void *argp)
 {
   SceUID cbid;
@@ -1743,6 +1863,7 @@ static void setup_callbacks(void)
 {
   SceUID thid = -1;
 
+  // Priority 0x11 runs well above the emulator thread (32)
   thid = sceKernelCreateThread("Update Thread",
                                callback_thread,
                                0x11,
@@ -1762,6 +1883,7 @@ static void setup_callbacks(void)
 }
 
 
+/* Current RTC tick count (microseconds on the PSP). */
 u64 ticker(void)
 {
   u64 current_ticks;
@@ -1786,6 +1908,11 @@ static u32 main_perf_clock_mhz(void)
   }
 }
 
+/* ---- Benchmark capture ------------------------------------------------
+ * The diagnostics menu starts and stops a capture; perf_monitor.c collects
+ * it and perf_report.c formats the report written here. */
+
+/* Starts a capture and pins the settings it runs under for the report. */
 int main_perf_start(void)
 {
   FastForwardSettings fast_forward_settings;
@@ -1813,6 +1940,7 @@ int main_perf_start(void)
   identity.gamepak_file_size = gamepak_file_size;
   identity.gamepak_ram_buffer_size = gamepak_ram_buffer_size;
   identity.gamepak_ram_pages = gamepak_ram_pages;
+  /* Cartridge header: title at 0xA0, game code at 0xAC, version at 0xBC. */
   if(gamepak_file_size >= 0xC0U)
   {
     memcpy(identity.rom_title, gamepak_header + 0xA0,
@@ -1858,6 +1986,9 @@ static int main_perf_write_all(SceUID file, const char *data, u32 length)
   return 1;
 }
 
+/* Writes a finished capture to benchmarks/perf-<local time>.txt beside the
+   EBOOT and returns its path. 0 on success, -1 on failure or while idle or
+   still recording. */
 int main_perf_write_report(char *output_path, size_t output_path_size)
 {
   PerfMetricsSnapshot metrics;
@@ -2031,6 +2162,7 @@ u32 yesno_dialog(const char *text)
   const int popup_x = (PSP_SCREEN_WIDTH - popup_w) / 2;
   const int popup_y = (PSP_SCREEN_HEIGHT - popup_h) / 2;
 
+  // Wait for release, so the press that opened the dialog cannot answer it
   while (get_pad_input(PSP_CTRL_CROSS | PSP_CTRL_CIRCLE) != 0)
   {
     main_power_service();
@@ -2056,6 +2188,7 @@ u32 yesno_dialog(const char *text)
 }
 
 
+/* Sets PLL, CPU and bus clocks in MHz; the bus runs at half the CPU. */
 int set_cpu_clock(u32 psp_clock)
 {
   int ret = -1;
@@ -2087,6 +2220,8 @@ int set_cpu_clock(u32 psp_clock)
 }
 
 
+/* Minimal fopen for the FILE_OPEN macros: "r" opens read-only, "w" creates
+   or truncates. Returns a negative id on failure. */
 SceUID psp_fopen(const char *filename, const char *mode)
 {
   SceUID tag;
@@ -2126,6 +2261,8 @@ void psp_fclose(SceUID filename_tag)
 }
 
 
+/* MEM_ALIGN-aligned allocation that reports the error and quits instead of
+   returning NULL. */
 void *safe_malloc(size_t size)
 {
   void *p;
