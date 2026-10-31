@@ -189,6 +189,7 @@ typedef enum
 extern "C" s32 affine_reference_x[2];
 extern "C" s32 affine_reference_y[2];
 
+/* BGxX/BGxY are 28-bit signed values: extend bit 27 through bit 31. */
 static inline s32 signext28(u32 value)
 {
   s32 ret = (s32)(value << 4);

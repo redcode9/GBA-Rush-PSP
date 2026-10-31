@@ -1792,6 +1792,7 @@ static void savestate_preview_clear(void)
     }
 }
 
+/* The trampoline cache flush GCC expects (see the prototype above). */
 void _flush_cache(void)
 {
   invalidate_all_cache();
@@ -3118,6 +3119,8 @@ static char cheat_page_format_str[64];
 static u32 inactive_cheat_dummy = 0;
 static MenuOptionType *cheats_misc_options_ptr = NULL;
 
+/* Called when a cheat row is switched on or off; see
+   rebuild_active_cheat_indexes() for the lists it refreshes. */
 static void menu_passive_cheat_toggle(void)
 {
     rebuild_active_cheat_indexes();
