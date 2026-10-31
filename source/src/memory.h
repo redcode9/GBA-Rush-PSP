@@ -268,7 +268,11 @@ void update_backup_immediately(void);
 
 extern u8 *write_mem_ptr;
 
-/* Returns 1 if the user confirmed and the operation completed, else 0. */
+/* Ask, then load or save savestate_filename in dir_state; the prompt names
+   savestate_slot (10 is gui.c's AUTO_SAVESTATE_SLOT). Both refuse while
+   the link cable is active. The file starts with screen_capture and a
+   ticker() timestamp, which load_state skips. Returns 1 if the user
+   confirmed and the operation completed, else 0. */
 u32 load_state(char *savestate_filename);
 u32 save_state(char *savestate_filename, u16 *screen_capture);
 
