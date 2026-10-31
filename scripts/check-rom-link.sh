@@ -43,6 +43,8 @@ ${CC:-cc} -O2 -std=gnu99 -I"$MGBA_DIR/include" -I"$MGBA_DIR/build/include" \
 rom0=$(absolute "$ROM")
 rom1=$(absolute "$ROM2")
 bios=$(absolute "$BIOS")
+# Each save continues in front of its last Pokemon Center, where the
+# script's walk to the Cable Club starts.
 save_tool="python3 tests/rom_link/firered_save.py"
 $save_tool place-heal "$SAVE" "$out/start-0.sav"
 $save_tool place-heal "$SAVE2" "$out/start-1.sav"
