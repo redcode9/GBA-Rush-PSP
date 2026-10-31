@@ -36,12 +36,6 @@
 #include "runtime_log_psp.h"
 #include "sound_math.h"
 
-/* Forward declarations for recent ROMs functions (defined in gui.c) */
-extern void load_recent_roms(void);
-extern void add_recent_rom(const char *filename);
-
-
-
 // Main Thread Params
 #define PRIORITY       (32)
 #define STACK_SIZE_KB  (512)
