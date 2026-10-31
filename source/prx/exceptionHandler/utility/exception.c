@@ -64,22 +64,22 @@ void ExceptionHandler(PspDebugRegBlock * regs)
         if (pad.Buttons & PSP_CTRL_CROSS){
             FILE *log = fopen("exception.log", "w");
             if (log != NULL){
-                char testo[512];
-                sprintf(testo, "Exception details:\n\n");
-                fwrite(testo, 1, strlen(testo), log);
-                sprintf(testo, "Exception - %s\n", codeTxt[(regs->cause >> 2) & 31]);
-                fwrite(testo, 1, strlen(testo), log);
-                sprintf(testo, "EPC       - %08X / %s.text + %08X\n", (int)regs->epc, module_info.modname, (unsigned int)(regs->epc-(int)&_ftext));
-                fwrite(testo, 1, strlen(testo), log);
-                sprintf(testo, "Cause     - %08X\n", (int)regs->cause);
-                fwrite(testo, 1, strlen(testo), log);
-                sprintf(testo, "Status    - %08X\n", (int)regs->status);
-                fwrite(testo, 1, strlen(testo), log);
-                sprintf(testo, "BadVAddr  - %08X\n", (int)regs->badvaddr);
-                fwrite(testo, 1, strlen(testo), log);
+                char log_line[512];
+                sprintf(log_line, "Exception details:\n\n");
+                fwrite(log_line, 1, strlen(log_line), log);
+                sprintf(log_line, "Exception - %s\n", codeTxt[(regs->cause >> 2) & 31]);
+                fwrite(log_line, 1, strlen(log_line), log);
+                sprintf(log_line, "EPC       - %08X / %s.text + %08X\n", (int)regs->epc, module_info.modname, (unsigned int)(regs->epc-(int)&_ftext));
+                fwrite(log_line, 1, strlen(log_line), log);
+                sprintf(log_line, "Cause     - %08X\n", (int)regs->cause);
+                fwrite(log_line, 1, strlen(log_line), log);
+                sprintf(log_line, "Status    - %08X\n", (int)regs->status);
+                fwrite(log_line, 1, strlen(log_line), log);
+                sprintf(log_line, "BadVAddr  - %08X\n", (int)regs->badvaddr);
+                fwrite(log_line, 1, strlen(log_line), log);
                 for(i=0; i<32; i+=4){
-                    sprintf(testo, "%s:%08X %s:%08X %s:%08X %s:%08X\n", regName[i], (int)regs->r[i], regName[i+1], (int)regs->r[i+1], regName[i+2], (int)regs->r[i+2], regName[i+3], (int)regs->r[i+3]);
-                    fwrite(testo, 1, strlen(testo), log);
+                    sprintf(log_line, "%s:%08X %s:%08X %s:%08X %s:%08X\n", regName[i], (int)regs->r[i], regName[i+1], (int)regs->r[i+1], regName[i+2], (int)regs->r[i+2], regName[i+3], (int)regs->r[i+3]);
+                    fwrite(log_line, 1, strlen(log_line), log);
                 }
                 fclose(log);
             }
