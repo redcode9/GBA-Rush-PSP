@@ -529,6 +529,8 @@ static CPU_ALERT_TYPE write32_palette_ram(u32 address, u32 value);
 static CPU_ALERT_TYPE write32_vram(u32 address, u32 value);
 static CPU_ALERT_TYPE write32_oam_ram(u32 address, u32 value);
 
+// Write handlers by region (address >> 24). They return CPU_ALERT_* bits
+// (cpu.h) for the caller to act on.
 static CPU_ALERT_TYPE (*mem_write8[16])(u32, u32) =
 {
   write_null,           // 0
@@ -671,6 +673,7 @@ static u32 read8_io_registers(u32 address)
   return read8_open(address);
 }
 
+// An unreadable upper half of a readable register reads 0, not open bus.
 static u32 read16_io_registers(u32 address)
 {
   if ((address & 0xFFFC) == 0x0800)
@@ -687,6 +690,7 @@ static u32 read16_io_registers(u32 address)
   return read16_open(address);
 }
 
+// A word whose upper half is unreadable returns only the lower half.
 static u32 read32_io_registers(u32 address)
 {
   if ((address & 0xFFFC) == 0x0800)
@@ -871,6 +875,7 @@ static u32 read16_open(u32 address)
   return (*open_read16[offset >> 24])(offset);
 }
 
+// In Thumb state the prefetched halfword fills both halves of the word.
 static u32 read32_open(u32 address)
 {
   if (reg[CPU_DMA_HACK] != 0)
@@ -886,6 +891,8 @@ static u32 read32_open(u32 address)
 }
 
 
+// After a RAM store: if the word holds translated code, invalidates it
+// (partial_clear_metadata) and returns CPU_ALERT_SMC.
 inline static CPU_ALERT_TYPE check_smc_write(u16 *metadata, u32 offset, u8 region)
 {
   /* Get the Metadata Entry's [3], bits 0-1, to see if there's code at this
@@ -1372,6 +1379,9 @@ static void waitstate_control(u32 value)
   value = value | (ADDRESS16(io_registers, address + 2) << 16);               \
 
 
+// I/O register stores, also called from mips_stub.S; address is the offset
+// in the 1 KiB I/O block. Byte stores other than POSTFLG/HALTCNT become
+// halfword stores merged with the neighbouring byte.
 CPU_ALERT_TYPE write_io_register8(u32 address, u32 value)
 {
   switch (address)
@@ -1408,6 +1418,8 @@ CPU_ALERT_TYPE write_io_register8(u32 address, u32 value)
 }
 
 
+// Stores a halfword register and applies its side effects (video, sound,
+// DMA, timers, IRQ, link). Returns CPU_ALERT_* bits for the caller.
 CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
 {
   switch (address)
@@ -1739,6 +1751,8 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
 }
 
 
+// Registers that must take the whole word at once are handled here; the
+// rest become two halfword stores, low half first.
 CPU_ALERT_TYPE write_io_register32(u32 address, u32 value)
 {
   switch (address)
@@ -1917,6 +1931,8 @@ CPU_ALERT_TYPE write_eeprom(u32 address, u32 value)
   return CPU_ALERT_NONE;
 }
 
+// One bit per halfword read: 1 (ready) when idle; after a read request,
+// 4 dummy bits and then the 64 data bits.
 u32 read_eeprom(void)
 {
   u32 value;
@@ -2203,6 +2219,8 @@ static u32 encode_bcd(u8 value)
                                                                               \
   ADDRESS16(map, update_address & 0x7FFF) = _value;                           \
 
+// Halfword stores to ROM space. Only the GPIO port offsets matter: they
+// drive the RTC's serial protocol, which reads its time from the PSP clock.
 CPU_ALERT_TYPE write_rtc(u32 address, u32 value)
 {
   u32 rtc_page_index;
@@ -2406,6 +2424,8 @@ CPU_ALERT_TYPE write_rtc(u32 address, u32 value)
 }
 
 
+// Whole-address-space accessors for C code (cheats). Addresses of
+// 0x10000000 and above read as open bus.
 u8 read_memory8(u32 address)
 {
   u32 region = address >> 24;
@@ -2466,6 +2486,8 @@ u32 read_memory32(u32 address)
 }
 
 
+// Opcode reads for the dynarec's open-bus loads (mips_stub.S); address is
+// already the prefetch address near PC.
 u8 read_open_memory8(u32 address)
 {
   return (u8)(*open_read8[address >> 24])(address);
@@ -2482,6 +2504,8 @@ u32 read_open_memory32(u32 address)
 }
 
 
+// Stores for C code (cheats), aligned down to their size; addresses of
+// 0x10000000 and above are ignored. Returns the handler's CPU_ALERT_* bits.
 CPU_ALERT_TYPE write_memory8(u32 address, u8 value)
 {
   u32 region = address >> 24;
@@ -2780,6 +2804,9 @@ u8 *load_gamepak_page(u32 physical_index)
   return swap_location;
 }
 
+// Maps the three ROM mirrors (0x08, 0x0A, 0x0C) straight to the buffer if
+// the ROM fits; otherwise unmaps them so reads page in through
+// load_gamepak_page().
 static void init_memory_gamepak(void)
 {
   u32 i = 0;
@@ -2838,6 +2865,8 @@ void init_gamepak_buffer(void)
 }
 
 
+// Power-on state of the memory system, on every GBA reset: page maps, RAM,
+// I/O reset values, backup and RTC state, and which I/O bytes read back.
 void init_memory(void)
 {
   u32 i = 0;
@@ -3146,6 +3175,9 @@ s32 load_backup(char *name)
     return -1;
 }
 
+// Writes the backup at the detected save type's size, under a power lock so
+// a suspend can't cut the write. Nothing is written while the type is
+// unknown.
 static u32 save_backup(char *name)
 {
   SceUID backup_file;
@@ -3193,6 +3225,8 @@ static u32 save_backup(char *name)
   return backup_size;
 }
 
+// Called each frame by main.c when auto-save (option_update_backup) is on:
+// saves once WRITE_BACKUP_DELAY frames pass without a new backup write.
 void update_backup(void)
 {
   if (backup_update != (WRITE_BACKUP_DELAY + 1))
@@ -3216,6 +3250,8 @@ void update_backup_immediately(void)
 }
 
 
+// Case-insensitive substring test for filename_match; an empty value
+// matches any name.
 static s32 filename_contains_string(const char *filename, const char *value)
 {
   size_t value_len = strlen(value);
@@ -3299,6 +3335,7 @@ s32 parse_config_line(char *current_line, char *current_variable, char *current_
   return 0;
 }
 
+// Defaults for the per-game options that game_config.txt can override.
 static void reset_game_config_options(void)
 {
   u32 i;
@@ -3316,6 +3353,8 @@ static void reset_game_config_options(void)
   bios.rom[0x2C] = 0x00;
 }
 
+// Applies one option from a matched game_config.txt entry; other keys are
+// ignored.
 static void apply_game_config_option(const char *current_variable, const char *current_value)
 {
   if (!strcasecmp(current_variable, "idle_loop_eliminate_target"))
@@ -3537,6 +3576,9 @@ static s32 load_gamepak_raw(char *name)
   return -1;
 }
 
+// Loads a .gba/.agb/.bin or .zip/.gbz ROM, then its game_config.txt entry,
+// per-game settings, save type and .sav. Returns the file size or a
+// negative value; the caller resets the GBA afterwards.
 s32 load_gamepak(char *name)
 {
   char *dot_position = strrchr(name, '.');
@@ -3639,6 +3681,8 @@ s32 load_bios(char *name)
   sound_##type##_savestate(savestate_file);                                   \
   video_##type##_savestate(savestate_file);                                   \
 
+// Restores the link cable state from the end of the savestate; a short read
+// loads an empty snapshot.
 static void read_gba_sio_snapshot(SceUID savestate_file)
 {
   GbaSioSnapshot snapshot;
@@ -3654,6 +3698,8 @@ static void read_gba_sio_snapshot(SceUID savestate_file)
   gba_sio_state_dirty = 1;
 }
 
+// Stores the link snapshot at its fixed offset at the end of the savestate
+// buffer. Returns 0 if the module data already reaches that offset.
 static int write_gba_sio_snapshot(u8 *savestate_buffer)
 {
   GbaSioSnapshot snapshot;
