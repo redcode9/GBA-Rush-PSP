@@ -2632,7 +2632,8 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
   u32 thumb = 1;                                                              \
   pc &= ~0x01;                                                                \
 
-/* mem_type is unused here; callers pass an empty argument. */
+/* mem_type is unused here and in block_lookup_translate below; callers
+   pass an empty argument or the region name. */
 #define block_lookup_translate_arm(mem_type)                                  \
   translation_result = translate_block_arm(pc)                                \
 
@@ -2666,7 +2667,9 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
  * A tag indexes {metadata_area}_block_ptrs, which holds the native address
  * of the block. translate_block_{arm,thumb} returns that address: fresh code
  * at {region}_next_code, or an older identical RAM block found through
- * writable_checksum_hash. Each metadata area has its own tag counter
+ * writable_checksum_hash. The BIOS and ROM paths take the address from
+ * readonly_next_code before translating and use the result only as a
+ * success flag. Each metadata area has its own tag counter
  * ({area}_block_tag_top) and limit ({area}_max_tag).
  */
 
@@ -2837,6 +2840,10 @@ static void thumb_flag_status(BlockDataThumbType *block_data, u16 opcode)
         __label__ redo;                                                       \
         u8 *translation_result;                                               \
                                                                               \
+        /* A retry after a flush reuses block_ptr_address from                \
+           before it, so the new block may stay out of                        \
+           rom_branch_hash; a later lookup then translates it                 \
+           again. */                                                          \
         redo:                                                                 \
                                                                               \
         translation_recursion_level++;                                        \
@@ -4044,8 +4051,8 @@ void clear_metadata_area(METADATA_AREA_TYPE metadata_area, METADATA_CLEAR_REASON
 // Translated code is thrown away by a flush of a whole region: the cache
 // filled up (FULL_CACHE), every reset_gba (LOADING_ROM), or a full clear
 // (CLEAR_ALL: start-up, cheat load, RAM policy change, full-flush RAM
-// policy). A metadata area that runs out of tags drops its own blocks
-// (CLEAR_REASON_LAST_TAG), loading a savestate forgets the RAM blocks
+// policy). A metadata area that runs out of tags forgets its own blocks
+// (CLEAR_REASON_LAST_TAG; their code stays until a flush), loading a savestate forgets the RAM blocks
 // (CLEAR_REASON_LOADING_STATE), and a store over RAM code clears just the
 // blocks around it (partial_clear_metadata).
 //
