@@ -19,6 +19,8 @@ static PerfMetricsSnapshot snapshot(const PerfMetrics *metrics)
   return result;
 }
 
+/* Frames count only while ACTIVE; starting again after a stop clears the
+   counters, and invalidate or reset end the session. */
 static void test_session_states(void)
 {
   PerfMetrics metrics;

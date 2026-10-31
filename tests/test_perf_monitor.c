@@ -19,6 +19,8 @@ static PerfMetricsSnapshot snapshot(void)
   return result;
 }
 
+/* Duration reads 0 while a session runs and is fixed by stop or
+   invalidate; an invalidated session keeps its counters but stops counting. */
 static void test_duration_and_states(void)
 {
   PerfMetricsSnapshot result;
@@ -99,6 +101,8 @@ static void test_events_and_watermarks(void)
   assert(perf_monitor_duration_us() == 0);
 }
 
+/* With no session running every probe is dropped; inside one each lands
+   in its own counter, and perf_monitor_init() clears them all. */
 static void test_wait_and_frame_wrappers(void)
 {
   PerfMetricsSnapshot result;
