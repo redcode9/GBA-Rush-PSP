@@ -1,3 +1,10 @@
+/*
+ * Host tests for perf_metrics.c, the counters behind the performance
+ * report: session states (only an active session records), counters,
+ * high and low watermarks, histogram percentiles and saturation of every
+ * counter at its type's maximum.
+ */
+
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -82,6 +89,8 @@ static void test_counters_and_watermarks(void)
   perf_metrics_record_dynarec_retry(&metrics);
   perf_metrics_record_dynarec_flush(&metrics, 0);
   perf_metrics_record_dynarec_flush(&metrics, 1);
+  /* Cache high water is the largest read-only + writable total seen
+     (2048 + 256), not the sum of the two separate maxima. */
   perf_metrics_observe_dynarec_cache(&metrics, 1024, 512);
   perf_metrics_observe_dynarec_cache(&metrics, 900, 400);
   perf_metrics_observe_dynarec_cache(&metrics, 2048, 256);
@@ -118,6 +127,9 @@ static void test_counters_and_watermarks(void)
   assert(result.memory_low_water == 0);
 }
 
+/* Percentiles come from histograms with 250 us (frame time) and 50 us (GE
+   wait) buckets and report a bucket's upper edge, so the samples sit on
+   both sides of the edges. */
 static void test_percentiles_and_totals(void)
 {
   static const uint32_t frame_times[] =
@@ -154,6 +166,8 @@ static void test_percentiles_and_totals(void)
   assert(result.ge_wait_p99_us == 100);
 }
 
+/* No samples report 0; a sample past the last bucket reports the true
+   maximum instead of the bucket edge. */
 static void test_empty_and_overflow_percentiles(void)
 {
   PerfMetrics metrics;
@@ -196,6 +210,7 @@ static void test_saturating_counters(void)
   assert(result.frame_time_samples == UINT64_MAX);
 }
 
+/* Probes recorded before the session starts are dropped. */
 static void test_wait_and_frame_probes(void)
 {
   PerfMetrics metrics;

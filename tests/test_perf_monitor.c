@@ -1,3 +1,9 @@
+/*
+ * Host tests for perf_monitor.c, the emulator-wide performance session: a
+ * single PerfMetrics wrapped with start and stop times (in microseconds)
+ * and the identity of the game the session measured.
+ */
+
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -71,6 +77,8 @@ static void test_events_and_watermarks(void)
   perf_monitor_observe_dynarec_cache(4096, 1024);
   perf_monitor_observe_memory_available(8192);
   perf_monitor_observe_memory_available(6144);
+  /* Stopping before the start time (a clock that went backwards) still
+     works and gives a zero duration. */
   assert(perf_monitor_stop(400));
 
   result = snapshot();
@@ -170,6 +178,9 @@ static void test_wait_and_frame_wrappers(void)
   assert(result.gamepak_miss_count == 0);
 }
 
+/* The identity is copied in and frozen once the session ends, so loading
+   another ROM afterwards cannot change the report; a new session starts
+   with an empty identity. */
 static void test_capture_identity_survives_rom_change(void)
 {
   PerfMonitorIdentity original = { 0 };
