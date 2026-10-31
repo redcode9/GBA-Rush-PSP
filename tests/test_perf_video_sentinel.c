@@ -1,13 +1,14 @@
-/* Host test for the psp_video.c frame-time timestamp sentinel
+/* Host test for the psp_video.c frame-time sampling.
  * psp_video.c, perf_monitor.c, perf_metrics.c and
  * video_adaptive.c are linked unmodified; only the PSP SDK entry
  * points are stubbed (tests/host_psp_video_stubs.c), including a
  * controllable sceKernelGetSystemTimeLow().
  *
- * The frame-time probe seeds "last frame time" with the value 0 as a
- * "no previous frame" sentinel: the first sample after init/reset seeds
- * the clock without recording, and any later read of exactly 0 (or a
- * 32-bit wrap that lands on 0) re-seeds and silently drops the sample.
+ * The first sample after init/reset only seeds the last frame time;
+ * every later sample is recorded. A last frame time of 0 must not be
+ * taken as "no previous frame" (psp_video.c keeps a separate flag),
+ * or a clock read of exactly 0, e.g. after a 32-bit wrap, would
+ * re-seed and silently drop the sample.
  * Scenarios:
  *   A baseline (no wrap): seeds, then records exactly one frame time;
  *   B wrap 0xFFFFFFFF -> 0 -> 1000: both samples survive;
@@ -77,7 +78,7 @@ int main(void)
   host_video_time_push(0);
   video_adaptive_frame_complete(0, 0); /* records 1, stores 0 */
   host_video_time_push(1000);
-  video_adaptive_frame_complete(0, 0); /* dropped pre-fix */
+  video_adaptive_frame_complete(0, 0); /* records 1000, no re-seed */
   snapshot = take_snapshot();
   check(snapshot.emulated_frames == 2,
    "B emulated_frames==2 (wrap sample kept)");
@@ -93,7 +94,7 @@ int main(void)
   host_video_time_push(0);
   video_adaptive_frame_complete(0, 0); /* seeds with clock == 0 */
   host_video_time_push(50000);
-  video_adaptive_frame_complete(0, 0); /* dropped pre-fix */
+  video_adaptive_frame_complete(0, 0); /* records 50000, no re-seed */
   snapshot = take_snapshot();
   check(snapshot.emulated_frames == 1,
    "C emulated_frames==1 (seed-at-zero)");

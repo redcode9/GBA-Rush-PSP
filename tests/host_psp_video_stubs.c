@@ -1,4 +1,4 @@
-/* Host link stubs for psp_video.c in the ticket 035 sentinel test.
+/* Host link stubs for psp_video.c in tests/test_perf_video_sentinel.c.
  * psp_video.c is compiled unmodified against the real PSP SDK headers
  * (host build, -w); this TU satisfies its external references on the
  * 64-bit host. sceKernelGetSystemTimeLow() is backed by a controllable
@@ -21,6 +21,8 @@ static size_t host_video_time_head = 0;
 static size_t host_video_time_count = 0;
 static u32 host_video_time_last = 0;
 
+/* Each clock read pops the next pushed value; once the queue is empty it
+   keeps returning the last one. */
 void host_video_time_reset(void)
 {
   host_video_time_head = 0;
