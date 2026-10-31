@@ -421,6 +421,8 @@ static void cpu_interrupt(void)
     dma_transfer(dma + channel);                                              \
   }                                                                           \
 
+/* The ad-hoc worker's state and failure phase as plain u32 fields for
+   runtime log records. */
 static u32 main_adhoc_state_value(void)
 {
   PspAdhocState state = psp_adhoc_state();
@@ -450,6 +452,8 @@ int main_link_connected(void)
   return gba_link_open && gba_link.status == LINK_CABLE_CONNECTED;
 }
 
+/* Why the last session ended or failed to start, for the link menu;
+   kept after it closes, NONE once a new one starts. */
 MainLinkEnd main_link_end_reason(void)
 {
   return gba_link_end;
@@ -2284,6 +2288,8 @@ SceUID psp_fopen(const char *filename, const char *mode)
   return tag;
 }
 
+/* FILE_CLOSE's close; negative (invalid) ids are ignored. The -1 store
+   only clears this local copy, not the caller's handle. */
 void psp_fclose(SceUID filename_tag)
 {
   if (filename_tag < 0)

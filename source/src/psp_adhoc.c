@@ -185,6 +185,8 @@ static void psp_adhoc_delete_flags(PspAdhocContext *context)
   context->wake_receive = -1;
 }
 
+/* Enters FAILED, keeping the error (-1 when the call returned 0) and the
+   phase it failed in for the menu and log; returns -1. */
 static int psp_adhoc_fail(PspAdhocContext *context, int error)
 {
   context->last_error = error != 0 ? error : -1;

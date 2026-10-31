@@ -13,6 +13,8 @@
 
 #include <string.h>
 
+/* Full barrier between the power callback and the emulator thread:
+   Allegrex SYNC on the PSP, the GCC builtin in host tests. */
 static void power_lifecycle_memory_barrier(void)
 {
 #ifdef __PSP__
