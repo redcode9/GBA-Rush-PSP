@@ -18,6 +18,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+/* Entry points of the PSP user interface in gui.c: the file browser, the
+   in-game menu, savestate actions, settings files, the user folders and
+   the theme colours. */
+
 #ifndef GUI_H
 #define GUI_H
 

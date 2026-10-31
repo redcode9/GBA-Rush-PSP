@@ -59,6 +59,8 @@ typedef enum
   PSP_ADHOC_PHASE_GROUP_LOST
 } PspAdhocPhase;
 
+/* Starts the worker that creates (host) or joins the group; 0 if the
+   WLAN switch is off or the worker cannot start. */
 int psp_adhoc_start(int host);
 /* Asks the worker to close the connection; returns at once. */
 void psp_adhoc_stop(void);
