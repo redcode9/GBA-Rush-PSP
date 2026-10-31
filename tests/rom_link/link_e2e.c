@@ -561,6 +561,8 @@ static void write_bmp(Side *side, const char *name)
   fclose(f);
 }
 
+/* The status command, also run when the script ends: cable counters for
+   each console, plus the lockstep state while in lockstep mode. */
 static void print_status(void)
 {
   int s;
@@ -592,6 +594,8 @@ static void print_status(void)
   fflush(stdout);
 }
 
+/* Boots both consoles and executes the script ("-" reads stdin) line by
+   line; exits 1 on too few arguments or an unreadable savestate. */
 int main(int argc, char **argv)
 {
   char line[512];
