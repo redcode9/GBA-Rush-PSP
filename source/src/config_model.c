@@ -14,10 +14,10 @@
    Adding a setting: append it to model_to_values() and values_to_model()
    (limit and default), add the default to config_model_defaults(), raise
    CONFIG_MODEL_VALUE_COUNT in config_model.h and bump the version. Keep
-   every released layout readable (version 1 shipped in 1.3.0): make the
-   current pair the PREVIOUS_* one and teach decode_versioned() any older
-   one, then update its note and the migration test in
-   tests/test_config_model.c. Finally map it in gui.c's capture_*_config()
+   every released layout readable (version 1 shipped in 1.3.0): the current
+   pair becomes PREVIOUS_*, and each older one needs its own value-count
+   constant and a case in decode_versioned(); then update its note and the
+   migration test in tests/test_config_model.c. Finally map it in gui.c's capture_*_config()
    and apply_*_config() and add its option_ global, menu row and messages. */
 #define CONFIG_MODEL_VERSION 2U
 #define CONFIG_MODEL_PREVIOUS_VERSION 1U
