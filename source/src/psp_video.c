@@ -48,7 +48,7 @@ static void *disp_frame;
 static void *draw_frame;
 /* A frame list is queued on the GE and has not been waited for yet. */
 static u32 present_pending;
-/* Set during sleep and shutdown so presenters queue nothing. */
+/* Set during sleep and shutdown so bitbilt_gu/bitbilt_sharp queue nothing. */
 static u32 present_blocked;
 /* One-shot: wait for the next present right away (set after resume). */
 static u32 synchronous_present;
@@ -705,13 +705,13 @@ static void bitbilt_sw(void)
   }
 }
 
-/* Called when entering the menu; nothing to change on PSP. */
+/* Called at startup and when entering the menu; nothing to do on PSP. */
 void video_resolution_large(void)
 {
 }
 
-/* Called when returning to the game: applies the screen scale option and
- * restarts the adaptive governor. */
+/* Called before gameplay starts or resumes: applies the screen scale
+ * option and restarts the adaptive governor. */
 void video_resolution_small(void)
 {
   u32 gameplay_filter = option_screen_filter;
