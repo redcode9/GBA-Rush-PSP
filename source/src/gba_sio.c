@@ -408,6 +408,9 @@ static GbaSioEvent gba_sio_write_control(GbaSio *sio, uint16_t value)
     event = GBA_SIO_EVENT_MODE_CHANGE;
   }
 
+  if((value & GBA_SIO_CONTROL_IRQ) == 0)
+    sio->interrupt_disables++;
+
   switch(new_mode)
   {
     case GBA_SIO_MODE_NORMAL_8:

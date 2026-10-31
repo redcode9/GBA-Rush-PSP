@@ -22,10 +22,10 @@
 #define MAIN_H
 
 #include "fast_forward_policy.h"
-#include "link_session.h"
+#include "link_cable.h"
 #include "perf_metrics.h"
 
-#define GBA_RUSH_VERSION "1.4.0-rc.4"
+#define GBA_RUSH_VERSION "1.4.0"
 
 // video scale type
 #define SCALED_NONE    0
@@ -122,19 +122,29 @@ void timer_control_low(u8 timer_number, u32 value);
 CPU_ALERT_TYPE timer_control_high(u8 timer_number, u32 value);
 
 extern u32 dma_cycle_count;
-extern LinkSession gba_link_session;
+
+/* Why the last link session ended, for the link menu. */
+typedef enum
+{
+  MAIN_LINK_END_NONE,
+  MAIN_LINK_END_USER,
+  MAIN_LINK_END_SUSPEND,
+  MAIN_LINK_END_ROM_CHANGE,
+  MAIN_LINK_END_PEER_LEFT,
+  MAIN_LINK_END_LOST,
+  MAIN_LINK_END_INCOMPATIBLE,
+  MAIN_LINK_END_NETWORK
+} MainLinkEnd;
+
+extern LinkCable gba_link;
 
 int main_link_host(void);
 int main_link_join(void);
-void main_link_disconnect(LinkSessionReason reason);
+void main_link_disconnect(MainLinkEnd reason);
 void main_link_pump(void);
 int main_link_active(void);
 int main_link_connected(void);
-int main_link_benchmark_available(void);
-int main_link_benchmark_active(void);
-int main_link_benchmark_start(void);
-void main_link_benchmark_stop(void);
-void main_link_benchmark_summary(LinkBenchmarkSummary *summary);
+MainLinkEnd main_link_end_reason(void);
 void main_link_set_gameplay_active(int active);
 void main_power_service(void);
 
