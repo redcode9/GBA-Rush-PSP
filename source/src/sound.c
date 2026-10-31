@@ -542,6 +542,7 @@ void sound_timer_queue(u8 channel)
   ds->fifo_top = fifo_top;
 }
 
+// SOUNDCNT_H FIFO reset (bit 11 for A, 15 for B): empties the sample queue.
 static void sound_reset_fifo(u8 channel)
 {
   DirectSoundStruct *ds = direct_sound_channel + channel;
@@ -1005,6 +1006,8 @@ void sound_link_wait_begin(void)
   sound_buffer_base = gbc_sound_buffer_index;
 }
 
+// Ends sound_link_wait_begin(): rebases sample timing on cpu_ticks, drops
+// queued samples and wakes the audio thread.
 void sound_link_wait_end(u32 cpu_ticks)
 {
   u32 next_pause = sound_pause;
@@ -1408,6 +1411,8 @@ static int psp_sound_release(void)
   return result;
 }
 
+// Reserves the stereo SRC channel at frequency Hz; both flags follow the
+// result, which is returned as-is.
 static int psp_sound_reserve(u16 sample_count, u16 frequency)
 {
   int result = sceAudioSRCChReserve(sample_count, frequency, 2);
