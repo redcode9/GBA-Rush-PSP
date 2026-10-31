@@ -28,7 +28,8 @@ int menu_viewport_baseline(const MenuViewport *viewport,
 size_t menu_layout_max_columns(uint32_t screen_width, uint32_t start_x,
  uint32_t glyph_width);
 /* Byte lengths and offsets for drawing text within a column budget;
-   none of them splits a double-byte character. */
+   none of them splits a double-byte character. menu_text_clip_length
+   assumes GBK; the _for_encoding variant also takes Shift-JIS. */
 size_t menu_text_clip_length(const char *text, size_t max_columns);
 size_t menu_text_clip_length_for_encoding(const char *text,
  size_t max_columns, MenuTextEncoding encoding);

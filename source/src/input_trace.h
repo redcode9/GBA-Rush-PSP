@@ -99,7 +99,9 @@ int input_trace_begin_replay_from_header(InputTrace *trace,
  const uint8_t header[INPUT_TRACE_IDENTITY_SIZE], uint32_t file_size,
  uint32_t start_frame);
 /* Called once per frame: records physical_keys while recording, returns the
-   replayed keys while replaying, and physical_keys otherwise. */
+   replayed keys while replaying, and physical_keys otherwise. A replay
+   turns INPUT_TRACE_FINISHED once frame passes start_frame +
+   duration_frames. */
 uint16_t input_trace_apply(InputTrace *trace, uint32_t frame,
  uint16_t physical_keys);
 

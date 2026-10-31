@@ -113,6 +113,8 @@ FastForwardFrameDecision fast_forward_policy_frame(FastForwardPolicy *policy,
    then restarts normal frame pacing. */
 int fast_forward_policy_take_force_present(FastForwardPolicy *policy);
 int fast_forward_policy_active(const FastForwardPolicy *policy);
+/* Speed in effect: CLASSIC from its step, MODERN always MAXIMUM, CUSTOM as
+   set. MAXIMUM too while inactive, so check fast_forward_policy_active(). */
 FastForwardSpeed fast_forward_policy_speed(const FastForwardPolicy *policy);
 FastForwardAudio fast_forward_policy_audio(const FastForwardPolicy *policy);
 /* 2 or 3 for a limited speed; 0 when unlimited or inactive. */

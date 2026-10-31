@@ -32,6 +32,8 @@ int perf_monitor_start(uint64_t now_us);
 int perf_monitor_stop(uint64_t now_us);
 void perf_monitor_invalidate(uint64_t now_us);
 int perf_monitor_active(void);
+/* Length of the last capture, set by stop or invalidate; 0 while a capture
+   is running. */
 uint64_t perf_monitor_duration_us(void);
 void perf_monitor_snapshot(PerfMetricsSnapshot *snapshot);
 
