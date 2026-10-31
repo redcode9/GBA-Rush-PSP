@@ -30,6 +30,8 @@ void host_video_time_reset(void)
   host_video_time_last = 0;
 }
 
+/* Queues one clock reading (also the value repeated once the queue drains);
+   push at most HOST_VIDEO_TIME_CAPACITY per reset, as reads don't check. */
 void host_video_time_push(u32 value)
 {
   if(host_video_time_count < HOST_VIDEO_TIME_CAPACITY)
@@ -133,6 +135,7 @@ void *sceGuGetMemory(int memsz)
   return host_ge_memory;
 }
 
+/* A dummy back buffer; the sentinel test never draws into it. */
 void *sceGuSwapBuffers(void)
 {
   return host_ge_memory + (1 << 19);
