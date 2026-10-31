@@ -18,13 +18,6 @@ Use one PSP-1000 and one PSP-2000 with the same 1.4.0 EBOOT. Copy both
 `logs/` folders after each run and decode them with
 `tools/decode_runtime_log.py`.
 
-First paired run, 2026-10-31: FireRed with FireRed, a PSP-2000 hosting a
-PSP-1000. Both games linked in Pokemon mode and stayed in the Cable Club for
-two and a half minutes until the player left, with every frame delivered in
-both directions. The consoles stalled for about 40 seconds in total, and
-about 30 frames, half a second, stayed queued in each direction once the room
-was busy.
-
 - [ ] FireRed with FireRed: enter the Cable Club trade room, trade one Pokemon
   each way, save in-game, reload and check both Pokemon. Repeat with the other
   PSP as host.
