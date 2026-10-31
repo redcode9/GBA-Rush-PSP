@@ -6316,13 +6316,13 @@ static s32 load_global_config(void)
                                  &system_language) >= 0)
   {
     if(system_language == PSP_SYSTEMPARAM_LANGUAGE_JAPANESE)
-      model.language = 0;
+      model.language = LANGUAGE_JAPANESE;
     else if(system_language == PSP_SYSTEMPARAM_LANGUAGE_CHINESE_SIMPLIFIED)
-      model.language = 2;
+      model.language = LANGUAGE_SIMPLIFIED_CHINESE;
     else if(system_language == PSP_SYSTEMPARAM_LANGUAGE_CHINESE_TRADITIONAL)
-      model.language = 3;
+      model.language = LANGUAGE_TRADITIONAL_CHINESE;
     else if(system_language == PSP_SYSTEMPARAM_LANGUAGE_ITALIAN)
-      model.language = 4;
+      model.language = LANGUAGE_ITALIAN;
   }
   apply_global_config(&model);
   return -1;
