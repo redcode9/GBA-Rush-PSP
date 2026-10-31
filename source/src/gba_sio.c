@@ -14,20 +14,27 @@
 #include <stddef.h>
 #include <string.h>
 
+/* SIOCNT bits. START is also the busy flag. Normal mode: CLOCK selects the
+   internal clock, FAST 2 MHz instead of 256 kHz, SI is the input line, SO
+   the output level while idle. Multiplayer: SLAVE (SI) is set on children,
+   READY (SD) when all consoles are connected, ID is this console's number. */
 #define GBA_SIO_CONTROL_START 0x0080u
 #define GBA_SIO_CONTROL_IRQ   0x4000u
 #define GBA_SIO_NORMAL_CLOCK  0x0001u
 #define GBA_SIO_NORMAL_FAST   0x0002u
 #define GBA_SIO_NORMAL_SI     0x0004u
+#define GBA_SIO_NORMAL_SO     0x0008u
 #define GBA_SIO_MULTI_SLAVE   0x0004u
 #define GBA_SIO_MULTI_READY   0x0008u
 #define GBA_SIO_MULTI_ID      0x0030u
 #define GBA_SIO_MULTI_ERROR   0x0040u
 
+/* RCNT pin levels. */
 #define GBA_SIO_RCNT_SC       0x0001u
 #define GBA_SIO_RCNT_SD       0x0002u
 #define GBA_SIO_RCNT_SI       0x0004u
 
+/* SIOCNT bits the game can write in each mode; the rest are status. */
 #define GBA_SIO_NORMAL_WRITABLE 0x708Bu
 #define GBA_SIO_MULTI_WRITABLE  0x7083u
 
@@ -42,6 +49,8 @@ static const uint16_t *gba_sio_const_register(const GbaSio *sio,
   return sio->registers + (address >> 1);
 }
 
+/* RCNT bit 15 clear: SIOCNT bits 12-13 pick the mode. Set: RCNT bit 14
+   picks JOY Bus or GPIO. */
 static GbaSioMode gba_sio_decode_mode(uint16_t control, uint16_t rcnt)
 {
   if((rcnt & 0x8000u) == 0)
@@ -86,6 +95,7 @@ static int gba_sio_peer_ready(const GbaSio *sio, GbaSioMode mode)
    sio->peer_mode == mode;
 }
 
+/* Recomputes the RCNT pin levels the game would see on the wire. */
 static void gba_sio_refresh_pins(GbaSio *sio)
 {
   uint16_t *rcnt = gba_sio_register(sio, GBA_SIO_REG_RCNT);
@@ -115,10 +125,11 @@ static void gba_sio_refresh_pins(GbaSio *sio)
 
     if(!gba_sio_transfer_busy(sio))
       pins |= GBA_SIO_RCNT_SC;
-    if((control & 0x0008u) != 0)
+    if((control & GBA_SIO_NORMAL_SO) != 0)
       pins |= GBA_SIO_RCNT_SD;
+    /* SI is the other console's SO, pulled high while nobody drives it. */
     if(!gba_sio_peer_ready(sio, sio->mode) ||
-       (sio->peer_control & 0x0008u) != 0)
+       (sio->peer_control & GBA_SIO_NORMAL_SO) != 0)
       pins |= GBA_SIO_RCNT_SI;
   }
 
@@ -139,6 +150,7 @@ static void gba_sio_clear_transient(GbaSio *sio)
   memset(sio->incoming, 0, sizeof(sio->incoming));
 }
 
+/* Rebuilds the SIOCNT status bits from the port and peer state. */
 static void gba_sio_refresh_control(GbaSio *sio)
 {
   uint16_t control = *gba_sio_register(sio, GBA_SIO_REG_CONTROL);
@@ -149,7 +161,7 @@ static void gba_sio_refresh_control(GbaSio *sio)
     case GBA_SIO_MODE_NORMAL_32:
       control &= GBA_SIO_NORMAL_WRITABLE;
       if(!gba_sio_peer_ready(sio, sio->mode) ||
-         (sio->peer_control & 0x0008u) != 0)
+         (sio->peer_control & GBA_SIO_NORMAL_SO) != 0)
         control |= GBA_SIO_NORMAL_SI;
       else
         control &= (uint16_t)~GBA_SIO_NORMAL_SI;
@@ -207,6 +219,8 @@ static uint32_t gba_sio_read_outgoing(const GbaSio *sio)
   return 0;
 }
 
+/* Captures the outgoing word and marks the transfer busy. A transfer this
+   console clocks waits as pending_start for the link to take it. */
 static void gba_sio_latch_transfer(GbaSio *sio, uint8_t setting,
  uint8_t internal_clock)
 {
@@ -249,6 +263,8 @@ static void gba_sio_fill_transfer(const GbaSio *sio,
   transfer->outgoing = sio->outgoing;
 }
 
+/* Completes the transfer: stores the received data, clears START and
+   reports the serial IRQ if SIOCNT enables it. */
 static GbaSioEvent gba_sio_finish(GbaSio *sio)
 {
   uint16_t control = *gba_sio_register(sio, GBA_SIO_REG_CONTROL);
@@ -330,6 +346,7 @@ void gba_sio_reset(GbaSio *sio)
   if(registers == NULL)
     return;
 
+  /* RCNT in GPIO mode with all four pins high; SIOCNT shows SI high. */
   *gba_sio_register(sio, GBA_SIO_REG_RCNT) = 0x800Fu;
   *gba_sio_register(sio, GBA_SIO_REG_CONTROL) = 0x0004u;
   sio->mode = gba_sio_decode_mode(
@@ -422,6 +439,8 @@ static GbaSioEvent gba_sio_write_control(GbaSio *sio, uint16_t value)
       start_edge = (value & GBA_SIO_CONTROL_START) != 0 &&
        ((old_control & GBA_SIO_CONTROL_START) == 0 || old_mode != new_mode);
 
+      /* Only the internal-clock side starts a transfer by itself; with an
+         external clock START just arms the port for the other console. */
       if(start_edge && !sio->decision_locked &&
          (value & GBA_SIO_NORMAL_CLOCK) != 0)
       {
@@ -442,6 +461,7 @@ static GbaSioEvent gba_sio_write_control(GbaSio *sio, uint16_t value)
       start_edge = (value & GBA_SIO_CONTROL_START) != 0 &&
        ((old_control & GBA_SIO_CONTROL_START) == 0 || old_mode != new_mode);
 
+      /* Only the parent (player 0) can start a Multiplayer transfer. */
       if(start_edge && !sio->decision_locked && sio->player_id == 0)
       {
         gba_sio_latch_transfer(sio, (uint8_t)(value & 0x0003u), 1);
@@ -466,6 +486,9 @@ static GbaSioEvent gba_sio_write_control(GbaSio *sio, uint16_t value)
 static GbaSioEvent gba_sio_write_rcnt(GbaSio *sio, uint16_t value)
 {
   uint16_t old_rcnt = *gba_sio_register(sio, GBA_SIO_REG_RCNT);
+  /* Bits 14-15 select the mode. In GPIO mode the game owns bits 0-8 (pin
+     data, directions, SI IRQ); otherwise the pin levels (bits 0-3) stay
+     emulated and only bits 4-8 are written. */
   uint16_t rcnt = (uint16_t)((old_rcnt & 0x01FFu) | (value & 0xC000u));
   GbaSioMode new_mode = gba_sio_decode_mode(
    *gba_sio_register(sio, GBA_SIO_REG_CONTROL), rcnt);
@@ -537,6 +560,8 @@ GbaSioEvent gba_sio_write16(GbaSio *sio, uint32_t address,
   return GBA_SIO_EVENT_NONE;
 }
 
+/* A 32-bit write to SIODATA32 in Normal 32-bit mode stores both halves at
+   once; anything else is two 16-bit writes. */
 GbaSioEvent gba_sio_write32(GbaSio *sio, uint32_t address,
  uint32_t value)
 {
@@ -612,6 +637,8 @@ int gba_sio_latch_remote_start(GbaSio *sio, GbaSioMode mode,
 uint32_t gba_sio_transfer_cycles(GbaSioMode mode, uint8_t setting,
  uint8_t player_count)
 {
+  /* Cycles per Multiplayer transfer by baud rate (9600, 38400, 57600,
+     115200 bps) and number of consoles (1-4). */
   static const uint32_t multiplayer_cycles[4][4] =
   {
     { 31976, 63427, 94884, 125829 },
@@ -622,6 +649,7 @@ uint32_t gba_sio_transfer_cycles(GbaSioMode mode, uint8_t setting,
 
   switch(mode)
   {
+    /* 8 or 64 CPU cycles per bit at 2 MHz or 256 kHz. */
     case GBA_SIO_MODE_NORMAL_8:
       return setting != 0 ? 64u : 512u;
 
@@ -685,6 +713,7 @@ static int gba_sio_commit_at_internal(GbaSio *sio,
     player_count = 4;
   expected_cycles = gba_sio_transfer_cycles(sio->transfer_mode,
    sio->transfer_setting, player_count);
+  /* elapsed >= 2^31 means start_cycle lies in the future. */
   elapsed = sio->current_cycle - start_cycle;
   if(expected_cycles == 0 || finish_cycle - start_cycle != expected_cycles ||
      (!allow_elapsed && elapsed != 0) || elapsed >= 0x80000000u)
@@ -827,6 +856,9 @@ void gba_sio_save_snapshot(const GbaSio *sio, GbaSioSnapshot *snapshot)
   memcpy(snapshot->incoming, sio->incoming, sizeof(snapshot->incoming));
 }
 
+/* Restores the transfer state but not the connection (player_count stays
+   0). A malformed snapshot leaves the port idle; one whose mode does not
+   match the loaded registers is rejected. */
 int gba_sio_load_snapshot(GbaSio *sio, const GbaSioSnapshot *snapshot)
 {
   GbaSioMode register_mode;

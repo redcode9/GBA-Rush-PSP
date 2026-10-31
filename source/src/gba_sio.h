@@ -9,14 +9,25 @@
  * the License, or (at your option) any later version.
  */
 
+/*
+ * The GBA serial port (SIOCNT, SIODATA, SIOMULTI, RCNT) as seen by the game.
+ * memory.c forwards register writes here and update_gba advances running
+ * transfers; link_cable.c takes the transfers the game starts and supplies
+ * what the other console sent. Normal 8/32-bit and Multiplayer modes are
+ * emulated; in UART, GPIO and JOY Bus modes the registers are only stored.
+ */
+
 #ifndef GBA_SIO_H
 #define GBA_SIO_H
 
 #include <stdint.h>
 
+/* Size of the I/O register bank the port works on. */
 #define GBA_SIO_REGISTER_BYTES 0x400u
+/* gba_sio_next_event: no transfer is running. */
 #define GBA_SIO_NO_EVENT       UINT32_MAX
 
+/* Register offsets in the I/O bank. SEND is SIOMLT_SEND / SIODATA8. */
 enum
 {
   GBA_SIO_REG_DATA32_L = 0x120,
@@ -48,6 +59,9 @@ typedef enum
   GBA_SIO_EVENT_MODE_CHANGE = 1u << 2
 } GbaSioEvent;
 
+/* A transfer the game started. setting is the baud rate index in
+   Multiplayer mode and the 2 MHz flag in Normal mode; internal_clock means
+   this console drives the clock. */
 typedef struct
 {
   GbaSioMode mode;
@@ -58,6 +72,8 @@ typedef struct
   uint32_t outgoing;
 } GbaSioTransfer;
 
+/* What a transfer received: one word per player in Multiplayer mode,
+   data[0] otherwise. error sets the Multiplayer error bit. */
 typedef struct
 {
   uint32_t data[4];
@@ -65,6 +81,7 @@ typedef struct
   uint8_t error;
 } GbaSioResult;
 
+/* Savestate form of GbaSio ("SIO1"); its layout is part of the file. */
 #define GBA_SIO_SNAPSHOT_MAGIC   0x53494F31u
 #define GBA_SIO_SNAPSHOT_VERSION 1u
 
@@ -93,10 +110,16 @@ typedef struct
 {
   uint16_t *registers;
   GbaSioMode mode;
+  /* The other console's port, as last reported by the link. */
   GbaSioMode peer_mode;
   uint8_t player_id;
   uint8_t player_count;
   uint8_t peer_active;
+  /* A transfer moves through pending_start (started by this game as clock
+     master, not yet taken by the link), waiting (taken, result not yet
+     known) and active (result known, completes after cycles_remaining).
+     decision_locked: the link committed to it, so mode changes and new
+     starts no longer cancel it. */
   uint8_t pending_start;
   uint8_t waiting;
   uint8_t active;
@@ -106,6 +129,7 @@ typedef struct
   GbaSioMode transfer_mode;
   uint8_t transfer_setting;
   uint8_t transfer_players;
+  /* Guest cycle the port has been advanced to. */
   uint32_t current_cycle;
   uint32_t transfer_start_cycle;
   uint32_t transfer_finish_cycle;
@@ -137,25 +161,39 @@ GbaSioEvent gba_sio_write16(GbaSio *sio, uint32_t address,
 GbaSioEvent gba_sio_write32(GbaSio *sio, uint32_t address,
  uint32_t value);
 
+/* Link side. take_start moves a pending transfer to waiting; peek_start
+   only reads it. latch_remote_start starts a transfer here because the other
+   console clocked one (Normal mode external clock, or a Multiplayer child). */
 int gba_sio_take_start(GbaSio *sio, GbaSioTransfer *transfer);
 int gba_sio_peek_start(const GbaSio *sio, GbaSioTransfer *transfer);
 int gba_sio_latch_remote_start(GbaSio *sio, GbaSioMode mode,
  uint8_t setting, GbaSioTransfer *transfer);
 int gba_sio_can_commit(const GbaSio *sio);
 int gba_sio_lock_decision(GbaSio *sio);
+/* Tells the port the current guest cycle; while a transfer is active only
+   the cycle it already has is accepted. */
 int gba_sio_set_cycle(GbaSio *sio, uint32_t cycle);
+/* Deliver the result of a waiting transfer that runs from start_cycle to
+   finish_cycle, a span that must equal the hardware duration. commit_at
+   needs start_cycle == the current cycle. commit_at_horizon also accepts a
+   start in the past and, if finish_cycle has passed too, completes at once
+   and returns the event. commit starts the transfer now. */
 int gba_sio_commit_at(GbaSio *sio, const GbaSioResult *result,
  uint32_t start_cycle, uint32_t finish_cycle);
 int gba_sio_commit_at_horizon(GbaSio *sio, const GbaSioResult *result,
  uint32_t start_cycle, uint32_t finish_cycle, GbaSioEvent *event);
 int gba_sio_commit(GbaSio *sio, const GbaSioResult *result);
+/* cancel drops a transfer without an IRQ; abort completes it as failed
+   (receive registers all ones, IRQ if enabled). */
 GbaSioEvent gba_sio_cancel(GbaSio *sio);
 GbaSioEvent gba_sio_abort(GbaSio *sio);
+/* Runs an active transfer for cycles; may complete it. */
 GbaSioEvent gba_sio_advance(GbaSio *sio, uint32_t cycles);
 uint32_t gba_sio_next_event(const GbaSio *sio);
 int gba_sio_is_waiting(const GbaSio *sio);
 int gba_sio_is_busy(const GbaSio *sio);
 
+/* Hardware duration of a transfer in CPU cycles; 0 if not emulated. */
 uint32_t gba_sio_transfer_cycles(GbaSioMode mode, uint8_t setting,
  uint8_t player_count);
 
