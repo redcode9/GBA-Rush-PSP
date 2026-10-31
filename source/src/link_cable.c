@@ -89,6 +89,7 @@ static uint32_t get32(const uint8_t *in)
   return (uint32_t)get16(in) | ((uint32_t)get16(in + 2) << 16);
 }
 
+/* Guest cycles from `cycle` until `target`; at least 1, even if it passed. */
 static uint32_t cycles_until(uint32_t target, uint32_t cycle)
 {
   int32_t distance = (int32_t)(target - cycle);
@@ -96,6 +97,8 @@ static uint32_t cycles_until(uint32_t target, uint32_t cycle)
   return distance > 0 ? (uint32_t)distance : 1u;
 }
 
+/* Matches the first three letters of the game code; the last is the
+   region, so every language version counts. */
 int link_cable_is_pokemon_game(const char game_code[4])
 {
   static const char codes[][3] =
@@ -149,6 +152,8 @@ static GbaSioEvent link_cable_complete_alone(LinkCable *cable,
   return GBA_SIO_EVENT_NONE;
 }
 
+/* Records why the session ended (unless it already had) and unplugs the
+   guest's cable. */
 static GbaSioEvent link_cable_end(LinkCable *cable, LinkCableStatus status)
 {
   if(cable->status == LINK_CABLE_CONNECTED ||
@@ -186,6 +191,8 @@ void link_cable_leave(LinkCable *cable)
   link_net_queue(&cable->net, LINK_MSG_BYE, NULL, 0);
 }
 
+/* The peer's HELLO: protocol, whether it hosts (exactly one side must)
+   and its game code. Both games decide the mode: Pokemon or lockstep. */
 static void link_cable_hello(LinkCable *cable, const LinkNetMessage *message)
 {
   if(cable->hello_received)
@@ -215,6 +222,7 @@ static void link_cable_hello(LinkCable *cable, const LinkNetMessage *message)
 
 /* ---- Lockstep mode ---------------------------------------------------- */
 
+/* Sends SIO_STATE (mode, SO level, RCNT) whenever one of them changes. */
 static void lockstep_publish_state(LinkCable *cable)
 {
   LinkLockstep *lockstep = &cable->lockstep;
@@ -237,6 +245,8 @@ static void lockstep_publish_state(LinkCable *cable)
   link_cable_queue(cable, LINK_MSG_SIO_STATE, message, sizeof(message));
 }
 
+/* Our guest clocked a transfer: send START with its word and wait for the
+   REPLY, which real hardware would deliver by finish_cycle. */
 static void lockstep_begin(LinkCable *cable, uint32_t cycle)
 {
   LinkLockstep *lockstep = &cable->lockstep;
@@ -263,6 +273,8 @@ static void lockstep_begin(LinkCable *cable, uint32_t cycle)
   link_cable_queue(cable, LINK_MSG_START, message, sizeof(message));
 }
 
+/* The peer's REPLY to our latest START (older ones are ignored): hand its
+   word to the guest. A peer that was not ready reads as all ones. */
 static GbaSioEvent lockstep_reply(LinkCable *cable,
  const LinkNetMessage *message, uint32_t cycle)
 {
@@ -377,6 +389,7 @@ static int lockstep_remote_start(LinkCable *cable,
 
 /* ---- Pokemon mode ----------------------------------------------------- */
 
+/* The master's handshake, or a slave's with its player id in bits 0-1. */
 static int pokemon_is_handshake(uint16_t word)
 {
   return (word & ~3u) == POKEMON_SLAVE_HANDSHAKE ||
@@ -428,6 +441,8 @@ static void pokemon_set_local(LinkPokemon *pokemon, LinkPokemonState state)
     pokemon->handshake_count = 0;
 }
 
+/* A connected game that sends the slave handshake again and again has
+   restarted its link layer; follow it back to the handshake. */
 static void pokemon_watch_restart(LinkPokemon *pokemon, uint16_t word)
 {
   if(word != POKEMON_SLAVE_HANDSHAKE)
@@ -436,6 +451,7 @@ static void pokemon_watch_restart(LinkPokemon *pokemon, uint16_t word)
     pokemon_set_local(pokemon, LINK_POKEMON_HANDSHAKE);
 }
 
+/* Tells the peer whenever our game's link layer changes state. */
 static void pokemon_report(LinkCable *cable)
 {
   LinkPokemon *pokemon = &cable->pokemon;
@@ -864,6 +880,9 @@ static GbaSioEvent link_cable_drain(LinkCable *cable, uint32_t cycle)
   return events;
 }
 
+/* A Pokemon link layer is open on either side, or a lockstep transfer
+   happened in the last second. Only then do pacing and fast heartbeats
+   apply. */
 static int link_cable_in_use(const LinkCable *cable, uint32_t cycle)
 {
   if(cable->mode == LINK_CABLE_MODE_POKEMON)
