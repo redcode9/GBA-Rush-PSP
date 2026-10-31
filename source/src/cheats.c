@@ -330,6 +330,8 @@ static void trim_line_end(char *line)
     line[--length] = '\0';
 }
 
+// fgets filled the buffer before a newline: the line is too long. A last
+// line without a newline at end of file is not truncated.
 static u32 line_is_truncated(const char *line, FILE *file)
 {
   return (strchr(line, '\n') == NULL) && !feof(file);
@@ -831,6 +833,8 @@ static u32 codebreaker_hook_address(u32 op1)
   return 0x08000000 | (op1 & 0x01FFFFFF);
 }
 
+// True if pc (Thumb bit ignored) is the hook of any CodeBreaker cheat,
+// enabled or not; cpu.c then ends the block and emits a hook call there.
 u32 cheat_hook_configured(u32 pc)
 {
   return hook_address_present(configured_hook_addresses,

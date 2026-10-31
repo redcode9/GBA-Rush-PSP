@@ -96,6 +96,8 @@ static uint32_t codebreaker_swap_index(CODEBREAKER_STATE *state)
   return roll;
 }
 
+/* All zero means master 0: lines are read unencrypted until a 9xxxxxxx
+ * code reseeds the state. */
 void codebreaker_state_reset(CODEBREAKER_STATE *state)
 {
   memset(state, 0, sizeof(*state));
