@@ -31,6 +31,9 @@ enum
 #define LINK_SILENCE_TIMEOUT_US 8000000u
 #define LINK_HEARTBEAT_IDLE_US   250000u
 #define LINK_HEARTBEAT_ACTIVE_US  16000u
+/* A lockstep receiver may only run up to the clock the sender last
+   reported, so the sender reports it more often while the link is used. */
+#define LINK_HEARTBEAT_LOCKSTEP_US 8000u
 
 /* Lockstep pacing: while the link is in use, a console may run at most
    this far ahead of the other one's guest clock. The figure covers network
@@ -321,12 +324,14 @@ static int lockstep_remote_start(LinkCable *cable,
   word = get32(message->data + 8);
 
   /* Keep the spacing the other guest saw between two transfers, so this
-     guest's interrupt handler has time to load its next word. */
+     guest sees each one at the same point of its own frames as on a real
+     cable and its interrupt handler has time to load the next word. Only
+     after the link has been idle does a transfer start a new timeline. */
   if(lockstep->anchored)
   {
     uint32_t gap = host_cycle - lockstep->peer_anchor;
 
-    if(gap < LINK_CYCLES_PER_FRAME &&
+    if(gap < LINK_LOCKSTEP_ACTIVE &&
        (int32_t)(cycle - (lockstep->local_anchor + gap)) < 0)
     {
       lockstep->deferred = 1;
@@ -914,14 +919,59 @@ GbaSioEvent link_cable_service(LinkCable *cable, uint32_t cycle,
     link_net_set_heartbeat(&cable->net, LINK_HEARTBEAT_IDLE_US);
   }
   else
-    link_net_set_heartbeat(&cable->net, LINK_HEARTBEAT_ACTIVE_US);
+    link_net_set_heartbeat(&cable->net,
+     cable->mode == LINK_CABLE_MODE_LOCKSTEP ?
+     LINK_HEARTBEAT_LOCKSTEP_US : LINK_HEARTBEAT_ACTIVE_US);
 
   return events;
+}
+
+/* The console that cannot start transfers: the Multiplayer child, or a
+   Normal-mode console running on the other one's clock. */
+static int lockstep_is_receiver(const LinkCable *cable)
+{
+  const GbaSio *sio = cable->sio;
+
+  if(sio->mode == GBA_SIO_MODE_MULTIPLAYER)
+    return sio->player_id != 0;
+  return (sio->mode == GBA_SIO_MODE_NORMAL_8 ||
+   sio->mode == GBA_SIO_MODE_NORMAL_32) &&
+   (sio->registers[GBA_SIO_REG_CONTROL >> 1] & 0x0001u) == 0;
+}
+
+/* On a real cable the receiving console sees the sender's transfers at the
+   pace the sender makes them. Here the sender waits a network round trip
+   for every reply, so a receiver left free would run ahead and go whole
+   frames without a transfer; Mario Kart: Super Circuit then reports a
+   communication error. A receiving console therefore never runs past the
+   sender's latest reported clock, mapped through the transfer it applied
+   last; the sender reports its clock often while the link is in use (see
+   LINK_HEARTBEAT_LOCKSTEP_US). Guessing further ahead is not safe: Mario
+   Kart breaks on a single transfer applied late. The transfer it holds
+   back is always within that limit, so the sender, which waits for our
+   reply, is never kept waiting by it. Returns 0 when the console is not
+   held this way. */
+static int lockstep_receiver_limit(const LinkCable *cable, uint32_t cycle,
+ uint32_t *limit)
+{
+  const LinkLockstep *lockstep = &cable->lockstep;
+  int32_t peer_elapsed;
+
+  if(cable->mode != LINK_CABLE_MODE_LOCKSTEP || !lockstep->anchored ||
+     lockstep->deferred || !link_cable_in_use(cable, cycle) ||
+     !lockstep_is_receiver(cable))
+    return 0;
+  peer_elapsed = (int32_t)(cable->net.peer_clock - lockstep->peer_anchor);
+  if(peer_elapsed < 0)
+    peer_elapsed = 0;
+  *limit = lockstep->local_anchor + (uint32_t)peer_elapsed;
+  return 1;
 }
 
 uint32_t link_cable_cycles_until_service(const LinkCable *cable,
  uint32_t cycle)
 {
+  uint32_t limit;
   uint32_t cycles = UINT32_MAX;
 
   if(cable->status != LINK_CABLE_CONNECTED)
@@ -944,12 +994,20 @@ uint32_t link_cable_cycles_until_service(const LinkCable *cable,
     if(next < cycles)
       cycles = next;
   }
+  if(lockstep_receiver_limit(cable, cycle, &limit))
+  {
+    uint32_t next = cycles_until(limit, cycle);
+
+    if(next < cycles)
+      cycles = next;
+  }
   return cycles;
 }
 
 int link_cable_due(const LinkCable *cable, uint32_t cycle)
 {
   const LinkLockstep *lockstep = &cable->lockstep;
+  uint32_t limit;
 
   if(cable->status != LINK_CABLE_CONNECTED)
     return 0;
@@ -957,7 +1015,9 @@ int link_cable_due(const LinkCable *cable, uint32_t cycle)
     return (lockstep->waiting &&
      (int32_t)(cycle - lockstep->finish_cycle) >= 0) ||
      (lockstep->deferred &&
-      (int32_t)(cycle - lockstep->deferred_until) >= 0);
+      (int32_t)(cycle - lockstep->deferred_until) >= 0) ||
+     (lockstep_receiver_limit(cable, cycle, &limit) &&
+      (int32_t)(cycle - limit) >= 0);
   return !cable->host && cable->pokemon.transfer_scheduled &&
    (int32_t)(cycle - cable->pokemon.next_transfer) >= 0;
 }
@@ -980,6 +1040,7 @@ int link_cable_blocked(const LinkCable *cable, uint32_t cycle)
 {
   int32_t peer_elapsed;
   int32_t lead;
+  uint32_t limit;
 
   if(cable->status != LINK_CABLE_CONNECTED)
     return 0;
@@ -989,6 +1050,9 @@ int link_cable_blocked(const LinkCable *cable, uint32_t cycle)
   if(cable->mode == LINK_CABLE_MODE_LOCKSTEP && cable->lockstep.waiting &&
      gba_sio_is_waiting(cable->sio) &&
      (int32_t)(cycle - cable->lockstep.finish_cycle) >= 0)
+    return 1;
+  if(lockstep_receiver_limit(cable, cycle, &limit) &&
+     (int32_t)(cycle - limit) >= 0)
     return 1;
 
   /* The other console is waiting for our reply to a START we hold back

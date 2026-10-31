@@ -1395,8 +1395,10 @@ static void test_pokemon_trades(void)
 /* A generic multiplayer game: the master sends a burst of words every
    frame, and the slave answers each word with a value derived from the
    previous one. Real games are free to do this, so only a true word for
-   word exchange can satisfy it. The slave also treats ten frames without
-   a serial interrupt as a link error, like many games do. */
+   word exchange can satisfy it. The slave also treats two frames in a row
+   without a serial interrupt as a link error, as strict as games such as
+   Mario Kart: Super Circuit: on a real cable the slave hears from the
+   master on every frame the master sends one. */
 typedef struct
 {
   int master;
@@ -1482,7 +1484,7 @@ static void lockstep_multi_vblank(Console *console)
       lockstep_start_multi(console);
     }
   }
-  else if(game->transfers != 0 && ++game->frames_without_irq > 10)
+  else if(game->transfers != 0 && ++game->frames_without_irq > 1)
     game->timeouts++;
 }
 
