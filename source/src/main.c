@@ -36,7 +36,7 @@
 #include "runtime_log_psp.h"
 #include "sound_math.h"
 
-// Main Thread Params
+// Main thread params; on the PSP a lower priority number runs first.
 #define PRIORITY       (32)
 #define STACK_SIZE_KB  (512)
 #define ATTRIBUTE      (THREAD_ATTR_USER | PSP_THREAD_ATTR_CLEAR_STACK)
@@ -193,7 +193,8 @@ static volatile int quit_cleanup_complete = 0;
 /* While waiting for VBlank in lockstep mode, check for VBlank this often. */
 #define MAIN_LINK_VBLANK_POLL_US 500u
 /* A frame that runs late never waits for VBlank, and then no thread below
-   the emulator gets the CPU. Part of the PSP's Wi-Fi stack sits there:
+   the emulator gets the CPU. psp_adhoc.c puts the network threads it sets
+   up above the emulator, but part of the PSP's Wi-Fi stack sits below:
    starving it held every datagram for seconds until the link was lost.
    While a link is open, each late frame gives up this much time. */
 #define MAIN_LINK_YIELD_US 2000u
@@ -202,10 +203,9 @@ static volatile int quit_cleanup_complete = 0;
    clock and STARTs as they happen, so the emulator pauses this long after
    each one to let the stack send it. */
 #define MAIN_LINK_SEND_YIELD_US 200u
-/* While a lockstep link is connected the emulator thread also runs at a
-   lower priority. The pauses above are still needed, as the part of the
-   stack that sends sits lower still, but with both the replies the other
-   console announces in advance reach us in time far more often. */
+/* While a lockstep link is connected the emulator thread also drops to
+   this lower priority. The pause after each datagram is what matters: the
+   lower priority alone still left the stack refusing datagrams. */
 #define MAIN_LINK_LOCKSTEP_PRIORITY 0x40
 
 /* Guest CPU cycles since reset; wraps. The guest clock for sound and link. */

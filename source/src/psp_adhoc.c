@@ -44,9 +44,11 @@
 #define PSP_ADHOC_EXIT_WAIT_US        250000u
 
 /* The PSP scheduler is strictly preemptive and never time-slices threads
-   of equal priority. The network stack and this worker must outrank the
+   of equal priority. The stack threads started here (sceNetInit's callout
+   and interrupt threads, ad hoc control) and this worker must outrank the
    emulator thread (0x20), which runs flat out while it catches up, or
-   reception stops during gameplay. Lower numbers run first. */
+   reception stops during gameplay. Lower numbers run first. Part of the
+   stack still runs below the emulator; see main.c's MAIN_LINK_YIELD_US. */
 #define PSP_ADHOC_STACK_PRIORITY   0x1C
 #define PSP_ADHOC_CONTROL_PRIORITY 0x1D
 #define PSP_ADHOC_WORKER_PRIORITY  0x1E
