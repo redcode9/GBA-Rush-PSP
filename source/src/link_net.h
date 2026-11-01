@@ -77,6 +77,7 @@ typedef struct
   uint8_t ack_pending;
 
   uint32_t rtt_us;
+  uint32_t rtt_min_us;        /* the network's floor: both sides idle */
   uint32_t rtt_max_us;
   uint32_t datagrams_sent;
   uint32_t datagrams_received;

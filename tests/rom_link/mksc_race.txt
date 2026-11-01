@@ -1,0 +1,115 @@
+# Mario Kart: Super Circuit, two-player Multi-Pak race over the emulated
+# cable, from blank saves. Mario Kart is not a Pokemon game, so the cable
+# runs in the word-by-word lockstep mode used for every other game.
+link
+# Intro, then switch the title screen to MULTIPLAYER and pick MULTI-PAK LINK
+run 1100
+run 8 DOWN DOWN
+run 40
+run 8 START START
+run 120
+run 8 A A
+run 120
+# Both games find each other and confirm the 2-player game
+run 8 A A
+run 120
+run 8 A A
+run 120
+run 8 A A
+run 120
+run 8 A A
+run 180
+# Both screens show the game selection, only the player badges differ
+same 90
+linked 100
+# 50cc, characters, cup and course: keep pressing A like a player would,
+# however long each screen takes to answer over the network
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+run 6 A A
+run 40
+# Race with the accelerator held on both consoles, as fast as the case
+# requires
+pace start
+run 900 A A
+pace end
+# Both games are in the same race, their race clocks (in frames, at this
+# address in the European release) at least ten seconds in and in step
+ram16 0x030068FC 2 600
+linked 1000

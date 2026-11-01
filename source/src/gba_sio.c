@@ -546,6 +546,10 @@ GbaSioEvent gba_sio_write16(GbaSio *sio, uint32_t address,
      address >= GBA_SIO_REGISTER_BYTES || (address & 1u) != 0)
     return GBA_SIO_EVENT_NONE;
 
+  if(address == GBA_SIO_REG_CONTROL || address == GBA_SIO_REG_SEND ||
+     address == GBA_SIO_REG_DATA32_L || address == GBA_SIO_REG_DATA32_H)
+    sio->outgoing_writes++;
+
   switch(address)
   {
     case GBA_SIO_REG_CONTROL:
@@ -627,30 +631,40 @@ int gba_sio_peek_start(const GbaSio *sio, GbaSioTransfer *transfer)
   return 1;
 }
 
-int gba_sio_latch_remote_start(GbaSio *sio, GbaSioMode mode,
- uint8_t setting, GbaSioTransfer *transfer)
+int gba_sio_remote_reply(const GbaSio *sio, GbaSioMode mode,
+ uint32_t *outgoing)
 {
   uint16_t control;
 
-  if(sio == NULL || transfer == NULL || sio->mode != mode ||
-     !gba_sio_supported_mode(mode) || gba_sio_transfer_busy(sio))
+  if(sio == NULL || sio->mode != mode || !gba_sio_supported_mode(mode) ||
+     gba_sio_transfer_busy(sio))
     return 0;
 
-  control = *gba_sio_register(sio, GBA_SIO_REG_CONTROL);
-
+  control = *gba_sio_const_register(sio, GBA_SIO_REG_CONTROL);
   if(mode == GBA_SIO_MODE_MULTIPLAYER)
   {
     if(sio->player_count < 2 || sio->player_id == 0)
       return 0;
+  }
+  else if((control & GBA_SIO_NORMAL_CLOCK) != 0 ||
+          (control & GBA_SIO_CONTROL_START) == 0)
+    return 0;
+
+  if(outgoing != NULL)
+    *outgoing = gba_sio_read_outgoing(sio);
+  return 1;
+}
+
+int gba_sio_latch_remote_start(GbaSio *sio, GbaSioMode mode,
+ uint8_t setting, GbaSioTransfer *transfer)
+{
+  if(transfer == NULL || !gba_sio_remote_reply(sio, mode, NULL))
+    return 0;
+
+  if(mode == GBA_SIO_MODE_MULTIPLAYER)
     setting &= 0x03u;
-  }
   else
-  {
-    if((control & GBA_SIO_NORMAL_CLOCK) != 0 ||
-       (control & GBA_SIO_CONTROL_START) == 0)
-      return 0;
     setting = setting != 0;
-  }
 
   gba_sio_latch_transfer(sio, setting, 0);
   sio->waiting = 1;

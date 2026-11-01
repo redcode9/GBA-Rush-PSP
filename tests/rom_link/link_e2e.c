@@ -23,6 +23,27 @@
  *                                       the console waits for VBlank
  *   hiccup <side> <period_ms> <length_ms>  freeze the console, link
  *                                       included, once per period
+ *   stack <side> <send_yield_us>        model the PSP's network stack, part
+ *                                       of which runs below the emulator:
+ *                                       datagrams move only while the
+ *                                       console sleeps. It sleeps 2 ms after
+ *                                       each late frame, and send_yield_us
+ *                                       after each datagram it sends while
+ *                                       emulating
+ *   linked <transfers>                  fail unless both cables are connected
+ *                                       and this many transfers went through
+ *   same <percent> [x y w h]            fail unless at least this share of
+ *                                       the two screens' pixels match, or of
+ *                                       the given area, such as a race clock
+ *   minfps <fps>                        the speed `pace end` must reach
+ *   pace <start|end>                    measure frames per simulated second
+ *                                       between the two lines and fail
+ *                                       below minfps on either console
+ *   ram16 <address> <tolerance> <min>   fail unless the 16-bit value at
+ *                                       this work RAM address is at least
+ *                                       min on both consoles and differs by
+ *                                       at most tolerance, such as a race
+ *                                       clock both games keep
  *   shot <name>                         write <name>-0.bmp and <name>-1.bmp
  *   dump <name>                         write both saves to <name>-N.sav
  *   state <save|load> <name>            savestates, before linking only
@@ -76,7 +97,19 @@ typedef struct
   uint32_t burst_cycles;    /* per tick in PSP mode, 0 for smooth running */
   uint64_t hiccup_period_us;
   uint64_t hiccup_us;
+  int stack;                /* datagrams wait while the console emulates */
+  uint32_t send_yield_us;
+  uint64_t sleep_until;
+  int ran;                  /* emulated during the last tick */
+  uint32_t frame_seen;
+  struct
+  {
+    uint8_t data[LINK_NET_MAX_DATAGRAM];
+    size_t size;
+  } outbox[256];
+  unsigned outbox_count;
   uint32_t max_backlog;
+  int rehalt;               /* woken only to stop the run loop, see below */
   uint64_t backlog_sum;     /* per tick while the games are linked */
   uint64_t linked_ticks;
   uint32_t keys;
@@ -151,7 +184,9 @@ static void network_deliver(void)
 
   while(i < flight_count)
   {
-    if(flights[i].arrival <= sim_now)
+    /* A PSP's stack hands datagrams over only while the console sleeps. */
+    if(flights[i].arrival <= sim_now &&
+       !(sides[flights[i].to].stack && sides[flights[i].to].ran))
     {
       link_cable_receive(&sides[flights[i].to].cable, flights[i].data,
        flights[i].size, sim_now);
@@ -196,13 +231,33 @@ static void side_schedule_finish(Side *side)
 }
 
 static int trace_transfers;
+static int mismatched_screens;
+static double min_fps;
+static uint64_t pace_since;
+static uint32_t pace_frames[2];
 
-/* Shows a finished transfer's words (SIOMULTI0-3) to the guest and raises
-   the serial interrupt, `late` cycles after it was due. */
-static void side_deliver_irq(Side *side, uint32_t late)
+/* Copies the words a finished transfer received into the guest's memory.
+   Games that poll the busy bit instead of taking the serial interrupt
+   read them from there too. */
+static void side_copy_received(Side *side)
 {
   int i;
 
+  for(i = 0; i < 4; i++)
+    side->gba->memory.io[(GBA_SIO_REG_MULTI0 >> 1) + i] =
+     side->registers[(GBA_SIO_REG_MULTI0 >> 1) + i];
+  if(side->sio.transfer_mode == GBA_SIO_MODE_NORMAL_8)
+    side->gba->memory.io[REG_SIODATA8 >> 1] =
+     side->registers[GBA_SIO_REG_SEND >> 1];
+}
+
+static int side_busy(const Side *side)
+{
+  return side->sio.active || side->sio.waiting || side->sio.pending_start;
+}
+
+static void side_deliver_irq(Side *side, uint32_t late)
+{
   if(trace_transfers)
     fprintf(stderr, "t=%llu side %d out %04X in %04X %04X %04X %04X cnt %04X local %d peer %d off %u\n",
      (unsigned long long)sim_now, side->index, side->sio.outgoing & 0xFFFF,
@@ -211,17 +266,33 @@ static void side_deliver_irq(Side *side, uint32_t late)
      side->registers[0x128 >> 1], side->cable.pokemon.local,
      side->cable.pokemon.peer, side->cable.pokemon.offset);
 
-  for(i = 0; i < 4; i++)
-    side->gba->memory.io[(GBA_SIO_REG_MULTI0 >> 1) + i] =
-     side->registers[(GBA_SIO_REG_MULTI0 >> 1) + i];
+  side_copy_received(side);
   side_sync_registers(side);
   GBARaiseIRQ(side->gba, GBA_IRQ_SIO, late);
 }
 
-/* Runs one console's cable and applies the events it returns. */
+/* Games that poll the busy bit instead of taking the serial interrupt:
+   print their received words whenever a transfer has completed. */
+static void side_trace_polled(Side *side)
+{
+  static uint32_t last[2];
+  uint32_t transfers = side->cable.lockstep.transfers;
+
+  if(transfers == last[side->index] || side->sio.waiting || side->sio.active)
+    return;
+  last[side->index] = transfers;
+  fprintf(stderr, "t=%llu side %d cycle %u polled in %04X %04X %04X %04X "
+   "cnt %04X transfers %u\n", (unsigned long long)sim_now, side->index,
+   side_cycle(side),
+   side->registers[0x120 >> 1], side->registers[0x122 >> 1],
+   side->registers[0x124 >> 1], side->registers[0x126 >> 1],
+   side->registers[0x128 >> 1], transfers);
+}
+
 static void side_service(Side *side)
 {
   GbaSioEvent event;
+  int was_busy;
 
   if(!side->linked)
     return;
@@ -235,9 +306,17 @@ static void side_service(Side *side)
     side->registers[GBA_SIO_REG_DATA32_H >> 1] =
      side->gba->memory.io[REG_SIODATA32_HI >> 1];
   }
+  was_busy = side_busy(side);
   event = link_cable_service(&side->cable, side_cycle(side), side->now);
   if(event & GBA_SIO_EVENT_SERIAL_IRQ)
     side_deliver_irq(side, 0);
+  else
+  {
+    if(was_busy && !side_busy(side))
+      side_copy_received(side);
+    if(trace_transfers)
+      side_trace_polled(side);
+  }
   side_schedule_finish(side);
   side_sync_registers(side);
 }
@@ -254,7 +333,11 @@ static void finish_callback(struct mTiming *timing, void *context,
   if(event & GBA_SIO_EVENT_SERIAL_IRQ)
     side_deliver_irq(side, late);
   else
+  {
+    if(!side_busy(side))
+      side_copy_received(side);
     side_sync_registers(side);
+  }
 }
 
 /* mGBA timing event: services the cable every SERVICE_CYCLES, or sooner
@@ -268,6 +351,18 @@ static void service_callback(struct mTiming *timing, void *context,
 
   (void)late;
   side_service(side);
+  /* While the guest is halted, mGBA runs event after event inside one run
+     loop until an interrupt wakes it, so a guest that must wait for the
+     other console would sail past the point it has to stop at. gpSP checks
+     the link at every event; here the halt is lifted to end the run loop
+     and restored before the guest runs again. */
+  if(side->gba->cpu->halted &&
+     link_cable_blocked(&side->cable, side_cycle(side)))
+  {
+    side->gba->cpu->halted = 0;
+    side->gba->cpu->nextEvent = side->gba->cpu->cycles;
+    side->rehalt = 1;
+  }
   until = link_cable_cycles_until_service(&side->cable, side_cycle(side));
   if(until < next)
     next = until;
@@ -284,6 +379,11 @@ static uint16_t driver_write(struct GBASIODriver *driver, uint32_t address,
 
   side->registers[GBA_SIO_REG_SEND >> 1] =
    side->gba->memory.io[REG_SIOMLT_SEND >> 1];
+  if(trace_transfers && (address == REG_SIOMLT_SEND || address == REG_SIOCNT))
+    fprintf(stderr, "t=%llu side %d frame %u cycle %u writes %s %04X\n",
+     (unsigned long long)sim_now, side->index,
+     side->core->frameCounter(side->core), side_cycle(side),
+     address == REG_SIOCNT ? "SIOCNT" : "SEND", value);
   event = gba_sio_write16(&side->sio, address, value);
   if(event & GBA_SIO_EVENT_START)
     side_service(side);
@@ -390,8 +490,16 @@ static void side_link(Side *side, int generic)
   mTimingSchedule(&side->gba->timing, &side->service_event, SERVICE_CYCLES);
 }
 
-/* Moves one console's emulation target on by a tick: smoothly at its
-   speed, or a whole frame per VBlank in PSP burst mode. */
+/* Datagrams a PSP queued while emulating leave once it sleeps. */
+static void side_flush_outbox(Side *side)
+{
+  unsigned i;
+
+  for(i = 0; i < side->outbox_count; i++)
+    network_send(1 - side->index, side->outbox[i].data, side->outbox[i].size);
+  side->outbox_count = 0;
+}
+
 static void side_advance(Side *side)
 {
   if(side->burst_cycles == 0)
@@ -422,16 +530,26 @@ static void run_tick(void)
     Side *side = &sides[s];
     uint8_t datagram[LINK_NET_MAX_DATAGRAM];
     uint64_t limit;
+    uint64_t before;
+    uint32_t frame;
     size_t size;
 
     side->now = sim_now;
     side->core->setKeys(side->core, side->keys);
+    side->ran = 0;
+    if(sim_now < side->sleep_until)
+    {
+      side_advance(side);
+      side_flush_outbox(side);
+      continue;
+    }
     if(side->hiccup_period_us != 0 &&
        sim_now % side->hiccup_period_us < side->hiccup_us)
     {
       /* Frozen, like a PSP writing to the memory stick: nothing runs and
          the lost time is never made up. */
       side->target = side_clock(side);
+      side_flush_outbox(side);
       continue;
     }
     /* A PSP that has finished its frame sleeps until VBlank without
@@ -440,7 +558,10 @@ static void run_tick(void)
     {
       side_advance(side);
       if(side_clock(side) >= side->target)
+      {
+        side_flush_outbox(side);
         continue;
+      }
     }
     else
       side_advance(side);
@@ -458,12 +579,25 @@ static void run_tick(void)
      side_clock(side) + side->burst_cycles : side->target;
     if(limit > side->target)
       limit = side->target;
+    before = side_clock(side);
     while(side_clock(side) < limit)
     {
       if(side->linked && link_cable_blocked(&side->cable, side_cycle(side)))
         break;
+      if(side->rehalt)
+      {
+        side->rehalt = 0;
+        side->gba->cpu->halted = 1;
+        side->gba->cpu->nextEvent = side->gba->cpu->cycles;
+      }
       side->core->runLoop(side->core);
     }
+    side->ran = side_clock(side) != before;
+    frame = side->core->frameCounter(side->core);
+    if(side->stack && side->linked && frame != side->frame_seen &&
+       side_clock(side) < side->target)
+      side->sleep_until = sim_now + 2000u;
+    side->frame_seen = frame;
     if(side->linked)
     {
       uint32_t backlog = link_net_backlog(&side->cable.net);
@@ -477,9 +611,23 @@ static void run_tick(void)
       }
       size = link_cable_build(&side->cable, datagram, sizeof(datagram),
        side_cycle(side), sim_now);
-      if(size)
+      if(size && side->stack && side->ran &&
+         side->outbox_count < sizeof(side->outbox) / sizeof(side->outbox[0]))
+      {
+        memcpy(side->outbox[side->outbox_count].data, datagram, size);
+        side->outbox[side->outbox_count++].size = size;
+        if(side->send_yield_us != 0 && sim_now + side->send_yield_us >
+           side->sleep_until)
+          side->sleep_until = sim_now + side->send_yield_us;
+      }
+      else if(size)
+      {
+        side_flush_outbox(side);
         network_send(1 - s, datagram, size);
+      }
     }
+    if(!side->ran)
+      side_flush_outbox(side);
   }
 }
 
@@ -567,6 +715,8 @@ static void print_status(void)
 {
   int s;
 
+  printf("time %.1fs\n", (double)sim_now / 1e6);
+
   for(s = 0; s < 2; s++)
   {
     Side *side = &sides[s];
@@ -582,14 +732,17 @@ static void print_status(void)
     if(side->cable.mode == LINK_CABLE_MODE_LOCKSTEP)
       printf("  lockstep waiting %d deferred %d transfers %u cycle %u "
        "finish %u deferred-until %u peer-clock %u pacing %u/%u sio %d%d%d "
-       "control %04X inbox %u\n", side->cable.lockstep.waiting,
+       "control %04X inbox %u early %u mispredicted %u streak %u/%u\n",
+       side->cable.lockstep.waiting,
        side->cable.lockstep.deferred, side->cable.lockstep.transfers,
        side_cycle(side), side->cable.lockstep.finish_cycle,
        side->cable.lockstep.deferred_until, side->cable.net.peer_clock,
        side->cable.pacing_local, side->cable.pacing_peer,
        side->sio.pending_start, side->sio.waiting, side->sio.active,
        side->registers[GBA_SIO_REG_CONTROL >> 1],
-       side->cable.net.in_write - side->cable.net.in_read);
+       side->cable.net.in_write - side->cable.net.in_read,
+       side->cable.lockstep.answered_early, side->cable.lockstep.mispredicted,
+       side->cable.lockstep.streak, side->cable.lockstep.trust_after);
   }
   fflush(stdout);
 }
@@ -697,10 +850,85 @@ int main(int argc, char **argv)
     else if(strcmp(cmd, "psp") == 0)
       sides[atoi(a)].burst_cycles = (uint32_t)((double)FRAME_CYCLES *
        TICK_US / (atof(b) * 1000.0));
+    else if(strcmp(cmd, "linked") == 0)
+    {
+      int s;
+
+      for(s = 0; s < 2; s++)
+      {
+        uint32_t transfers = sides[s].cable.lockstep.transfers +
+         sides[s].cable.pokemon.frames_received;
+
+        printf("side %d: %u transfers\n", s, transfers);
+        if(sides[s].cable.status != LINK_CABLE_CONNECTED ||
+           transfers < (uint32_t)atoi(a))
+          mismatched_screens = 1;
+      }
+    }
+    else if(strcmp(cmd, "same") == 0)
+    {
+      int left = b ? atoi(b) : 0;
+      int top = c ? atoi(c) : 0;
+      int width = d ? atoi(d) : 240;
+      char *e = strtok(NULL, " \t\n");
+      int height = e ? atoi(e) : 160;
+      unsigned matching = 0;
+      int x, y;
+
+      for(y = top; y < top + height; y++)
+        for(x = left; x < left + width; x++)
+          matching += sides[0].video[y * 256 + x] ==
+           sides[1].video[y * 256 + x];
+      printf("screens match: %.1f%%\n",
+       matching * 100.0 / (width * height));
+      if(matching * 100.0 / (width * height) < atof(a))
+        mismatched_screens = 1;
+    }
+    else if(strcmp(cmd, "ram16") == 0)
+    {
+      uint32_t address = (uint32_t)strtoul(a, NULL, 0);
+      uint16_t value[2];
+      int s;
+
+      for(s = 0; s < 2; s++)
+        value[s] = (uint16_t)sides[s].core->rawRead16(sides[s].core,
+         address, -1);
+      printf("ram %08X: %u / %u\n", address, value[0], value[1]);
+      if(abs((int)value[0] - (int)value[1]) > atoi(b) ||
+         value[0] < atoi(c) || value[1] < atoi(c))
+        mismatched_screens = 1;
+    }
     else if(strcmp(cmd, "hiccup") == 0)
     {
       sides[atoi(a)].hiccup_period_us = (uint64_t)atoi(b) * 1000u;
       sides[atoi(a)].hiccup_us = (uint64_t)atoi(c) * 1000u;
+    }
+    else if(strcmp(cmd, "minfps") == 0)
+      min_fps = atof(a);
+    else if(strcmp(cmd, "pace") == 0)
+    {
+      int s;
+
+      for(s = 0; s < 2; s++)
+      {
+        uint32_t frames = sides[s].core->frameCounter(sides[s].core);
+        double fps = sim_now > pace_since ? (frames - pace_frames[s]) *
+         1e6 / (double)(sim_now - pace_since) : 0.0;
+
+        if(strcmp(a, "end") == 0)
+        {
+          printf("side %d: %.1f fps\n", s, fps);
+          if(fps < min_fps)
+            mismatched_screens = 1;
+        }
+        pace_frames[s] = frames;
+      }
+      pace_since = sim_now;
+    }
+    else if(strcmp(cmd, "stack") == 0)
+    {
+      sides[atoi(a)].stack = 1;
+      sides[atoi(a)].send_yield_us = (uint32_t)atoi(b);
     }
     else if(strcmp(cmd, "status") == 0)
       print_status();
@@ -725,5 +953,5 @@ int main(int argc, char **argv)
     }
   }
   print_status();
-  return 0;
+  return mismatched_screens;
 }

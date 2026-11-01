@@ -107,6 +107,8 @@ static void link_net_sample_rtt(LinkNet *net, uint32_t echo,
   /* Smoothed like TCP's SRTT: each sample moves the estimate by 1/8. */
   net->rtt_us = net->rtt_us == 0 ? sample :
    (net->rtt_us * 7u + sample) / 8u;
+  if(net->rtt_min_us == 0 || sample < net->rtt_min_us)
+    net->rtt_min_us = sample;
   if(sample > net->rtt_max_us)
     net->rtt_max_us = sample;
 }
