@@ -108,10 +108,10 @@ typedef struct
 
 typedef struct
 {
-  uint32_t sequence;
-  uint32_t start_cycle;
-  uint32_t finish_cycle;
-  uint32_t outgoing;
+  uint32_t sequence;          /* number of the latest START we sent */
+  uint32_t start_cycle;       /* our cycle when that transfer started */
+  uint32_t finish_cycle;      /* when it would finish on real hardware */
+  uint32_t outgoing;          /* our word in that transfer */
   uint8_t waiting;            /* a START is out and its reply is missing */
   uint8_t anchored;           /* local_anchor and peer_anchor are set */
   uint8_t deferred;           /* a received START waits for deferred_until */
@@ -119,10 +119,10 @@ typedef struct
   uint32_t local_anchor;      /* our cycle when the last START was applied */
   uint32_t peer_anchor;       /* the sender's cycle carried by that START */
   uint32_t last_transfer;     /* our cycle at the latest transfer */
-  uint8_t state_mode;
-  uint16_t state_control;
-  uint8_t state_sent;
-  uint32_t transfers;
+  uint8_t state_mode;         /* mode and SIOCNT bit 3 in the last */
+  uint16_t state_control;     /* SIO_STATE we sent, if state_sent */
+  uint8_t state_sent;         /* (see lockstep_publish_state) */
+  uint32_t transfers;         /* transfers clocked or answered here */
 
   /* Receiving side: the START applied last, whether the game has loaded
      its next word since (and when it last touched the registers), and the
@@ -138,8 +138,9 @@ typedef struct
   uint32_t announced_word;
 
   /* Clocking side: the other console's latest announcement (predicted_*,
-     from LINK_MSG_NEXT_REPLY), the one used for the transfer whose reply
-     is still to come (verify_*), and how far announcements are trusted. */
+     LINK_MSG_NEXT_REPLY in link_cable.c), the one used for the transfer
+     whose reply is still to come (verify_*), and how far announcements are
+     trusted. */
   uint8_t predicted;
   uint8_t predicted_ready;
   uint32_t predicted_sequence;
