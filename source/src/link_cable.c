@@ -13,7 +13,8 @@
 
 #include <string.h>
 
-/* Message types and payloads (little-endian). */
+/* Message types and payloads (little-endian). The values go on the wire:
+   append new types only, and keep 0 free (link_net rejects it). */
 enum
 {
   LINK_MSG_HELLO = 1,      /* protocol, host flag, 4-letter game code */

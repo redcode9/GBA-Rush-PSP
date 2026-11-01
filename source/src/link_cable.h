@@ -52,6 +52,9 @@
 #include "gba_sio.h"
 #include "link_net.h"
 
+/* Sent in HELLO; a peer with another value is INCOMPATIBLE. Bump it when a
+   message changes or a new one must be understood. A new message the peer
+   may ignore needs no bump: older peers drop unknown types. */
 #define LINK_CABLE_PROTOCOL 2u
 
 typedef enum
