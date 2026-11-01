@@ -14,7 +14,8 @@ set -eu
 # then checks both saved parties, under several network conditions and once
 # in the lockstep mode used for every non-Pokemon game. With MKSC it also
 # races two Mario Kart games in Multi-Pak mode, which use lockstep mode,
-# and checks that both race clocks run in step.
+# and checks that both race clocks run in step and, under PSP conditions,
+# that the race runs near full speed.
 
 : "${MGBA_DIR:?Set MGBA_DIR to an mGBA 0.10 tree built in build/}"
 : "${ROM:?Set ROM to a FireRed ROM}"
@@ -122,6 +123,9 @@ if [ -n "${MKSC:-}" ]; then
   mksc=$(absolute "$MKSC")
   race_case mksc-adhoc "net 3000 4000 3 1"
   race_case mksc-noisy "net 8000 15000 15 5"
-  race_case mksc-psp "net 20000 30000 35 1" "$psp"
+  race_case mksc-psp-slow "net 20000 30000 35 1" "$psp"
+  # Two PSPs side by side, about 6 ms apart: the race must stay near full
+  # speed.
+  race_case mksc-psp "net 2500 1000 5 1" "$psp" "minfps 59"
 fi
 echo "ROM link checks passed"

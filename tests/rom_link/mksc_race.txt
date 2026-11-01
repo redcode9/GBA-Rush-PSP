@@ -104,8 +104,11 @@ run 6 A A
 run 40
 run 6 A A
 run 40
-# Race with the accelerator held on both consoles
+# Race with the accelerator held on both consoles, as fast as the case
+# requires
+pace start
 run 900 A A
+pace end
 # Both games are in the same race, their race clocks (in frames, at this
 # address in the European release) at least ten seconds in and in step
 ram16 0x030068FC 2 600

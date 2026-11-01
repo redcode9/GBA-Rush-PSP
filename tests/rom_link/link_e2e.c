@@ -35,6 +35,10 @@
  *   same <percent> [x y w h]            fail unless at least this share of
  *                                       the two screens' pixels match, or of
  *                                       the given area, such as a race clock
+ *   minfps <fps>                        the speed `pace end` must reach
+ *   pace <start|end>                    measure frames per simulated second
+ *                                       between the two lines and fail
+ *                                       below minfps on either console
  *   ram16 <address> <tolerance> <min>   fail unless the 16-bit value at
  *                                       this work RAM address is at least
  *                                       min on both consoles and differs by
@@ -221,6 +225,9 @@ static void side_schedule_finish(Side *side)
 
 static int trace_transfers;
 static int mismatched_screens;
+static double min_fps;
+static uint64_t pace_since;
+static uint32_t pace_frames[2];
 
 /* Copies the words a finished transfer received into the guest's memory.
    Games that poll the busy bit instead of taking the serial interrupt
@@ -869,6 +876,28 @@ int main(int argc, char **argv)
     {
       sides[atoi(a)].hiccup_period_us = (uint64_t)atoi(b) * 1000u;
       sides[atoi(a)].hiccup_us = (uint64_t)atoi(c) * 1000u;
+    }
+    else if(strcmp(cmd, "minfps") == 0)
+      min_fps = atof(a);
+    else if(strcmp(cmd, "pace") == 0)
+    {
+      int s;
+
+      for(s = 0; s < 2; s++)
+      {
+        uint32_t frames = sides[s].core->frameCounter(sides[s].core);
+        double fps = sim_now > pace_since ? (frames - pace_frames[s]) *
+         1e6 / (double)(sim_now - pace_since) : 0.0;
+
+        if(strcmp(a, "end") == 0)
+        {
+          printf("side %d: %.1f fps\n", s, fps);
+          if(fps < min_fps)
+            mismatched_screens = 1;
+        }
+        pace_frames[s] = frames;
+      }
+      pace_since = sim_now;
     }
     else if(strcmp(cmd, "stack") == 0)
     {
