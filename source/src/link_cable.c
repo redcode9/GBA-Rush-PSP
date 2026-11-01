@@ -22,7 +22,8 @@ enum
   LINK_MSG_REPLY,
   LINK_MSG_POKEMON_STATE,
   LINK_MSG_POKEMON_PAIR,   /* host to joiner: both players' words of a frame */
-  LINK_MSG_POKEMON_WORDS   /* joiner to host: the joiner's words of a frame */
+  LINK_MSG_POKEMON_WORDS,  /* joiner to host: the joiner's words of a frame */
+  LINK_MSG_NEXT_REPLY      /* lockstep receiver: its reply to the next START */
 };
 
 #define LINK_SIO_CONTROL_IRQ 0x4000u
@@ -42,6 +43,17 @@ enum
 #define LINK_MAX_LEAD (4u * LINK_CYCLES_PER_FRAME)
 /* A lockstep link counts as in use for one second after a transfer. */
 #define LINK_LOCKSTEP_ACTIVE (60u * LINK_CYCLES_PER_FRAME)
+/* The clocking console completes a transfer with the other console's
+   announced reply only once this many announcements in a row matched the
+   real reply, about five seconds of a game that sends a word per frame.
+   Each announcement that was used and turned out wrong doubles the figure,
+   so a game that keeps changing its word late goes back to waiting. */
+#define LINK_TRUST_AFTER     300u
+#define LINK_TRUST_AFTER_MAX (1u << 20)
+/* The receiving console announces its next reply once the game has loaded
+   its next word and left the serial registers alone for this long. Games
+   often write SIOCNT and a placeholder word just before the real one. */
+#define LINK_ANNOUNCE_QUIET 4096u
 
 /* Pokemon link layer constants, from the pret decompilations. */
 #define POKEMON_MASTER_HANDSHAKE 0x8FFFu
@@ -171,6 +183,7 @@ void link_cable_start(LinkCable *cable, GbaSio *sio, int host,
   cable->host = host != 0;
   cable->status = LINK_CABLE_WAITING;
   memcpy(cable->local_game, game_code, sizeof(cable->local_game));
+  cable->lockstep.trust_after = LINK_TRUST_AFTER;
   link_net_init(&cable->net, local_id, now_us);
   link_net_set_heartbeat(&cable->net, LINK_HEARTBEAT_IDLE_US);
   gba_sio_disconnect(sio);
@@ -218,6 +231,8 @@ static void link_cable_hello(LinkCable *cable, const LinkNetMessage *message)
 
 /* ---- Lockstep mode ---------------------------------------------------- */
 
+static int lockstep_is_receiver(const LinkCable *cable);
+
 static void lockstep_publish_state(LinkCable *cable)
 {
   LinkLockstep *lockstep = &cable->lockstep;
@@ -240,14 +255,45 @@ static void lockstep_publish_state(LinkCable *cable)
   link_cable_queue(cable, LINK_MSG_SIO_STATE, message, sizeof(message));
 }
 
-static void lockstep_begin(LinkCable *cable, uint32_t cycle)
+/* Completes the transfer we clocked with the other console's reply. The
+   guest kept running while the reply travelled; the transfer finishes at
+   the cycle it would have finished on real hardware, or now if that moment
+   has already passed. */
+static GbaSioEvent lockstep_finish(LinkCable *cable, uint32_t word,
+ int ready, uint32_t cycle)
+{
+  LinkLockstep *lockstep = &cable->lockstep;
+  GbaSioResult result;
+  GbaSioEvent event = GBA_SIO_EVENT_NONE;
+
+  memset(&result, 0, sizeof(result));
+  if(cable->sio->transfer_mode == GBA_SIO_MODE_MULTIPLAYER)
+  {
+    result.data[0] = lockstep->outgoing;
+    result.data[1] = ready ? (word & 0xFFFFu) : 0xFFFFu;
+    result.data[2] = 0xFFFFu;
+    result.data[3] = 0xFFFFu;
+  }
+  else
+  {
+    result.data[0] = ready ? word : 0xFFFFFFFFu;
+  }
+
+  gba_sio_set_cycle(cable->sio, cycle);
+  gba_sio_commit_at_horizon(cable->sio, &result, lockstep->start_cycle,
+   lockstep->finish_cycle, &event);
+  return event;
+}
+
+static GbaSioEvent lockstep_begin(LinkCable *cable, uint32_t cycle)
 {
   LinkLockstep *lockstep = &cable->lockstep;
   GbaSioTransfer transfer;
   uint8_t message[14];
+  int same_mode;
 
   if(lockstep->waiting || !gba_sio_take_start(cable->sio, &transfer))
-    return;
+    return GBA_SIO_EVENT_NONE;
 
   lockstep->sequence++;
   lockstep->waiting = 1;
@@ -264,45 +310,142 @@ static void lockstep_begin(LinkCable *cable, uint32_t cycle)
   message[12] = (uint8_t)transfer.mode;
   message[13] = transfer.setting;
   link_cable_queue(cable, LINK_MSG_START, message, sizeof(message));
+
+  /* Once the other console's announcements have proved right, finish the
+     transfer with the one it made after applying our previous START. */
+  same_mode = lockstep->start_mode == (uint8_t)transfer.mode;
+  lockstep->start_mode = (uint8_t)transfer.mode;
+  if(!same_mode || lockstep->streak < lockstep->trust_after ||
+     !lockstep->predicted ||
+     lockstep->predicted_sequence + 1u != lockstep->sequence)
+    return GBA_SIO_EVENT_NONE;
+  lockstep->verify_used = 1;
+  lockstep->verify_sequence = lockstep->sequence;
+  lockstep->verify_word = lockstep->predicted_word;
+  lockstep->verify_ready = lockstep->predicted_ready;
+  lockstep->waiting = 0;
+  lockstep->answered_early++;
+  return lockstep_finish(cable, lockstep->predicted_word,
+   lockstep->predicted_ready, cycle);
+}
+
+/* Compares the real reply to a START with the announcement for it: the one
+   used to finish the transfer, or else the latest one, which on an ordered
+   channel arrived before the reply. Only an announcement that was used and
+   turned out wrong raises the bar for trusting them again. */
+static void lockstep_check(LinkLockstep *lockstep, uint32_t sequence,
+ uint32_t word, uint8_t ready)
+{
+  uint32_t expected_word;
+  uint8_t expected_ready;
+  int used = lockstep->verify_used && sequence == lockstep->verify_sequence;
+
+  if(used)
+  {
+    expected_word = lockstep->verify_word;
+    expected_ready = lockstep->verify_ready;
+    lockstep->verify_used = 0;
+  }
+  else if(lockstep->predicted &&
+          lockstep->predicted_sequence + 1u == sequence)
+  {
+    expected_word = lockstep->predicted_word;
+    expected_ready = lockstep->predicted_ready;
+  }
+  else
+    return;
+
+  if((ready != 0) == (expected_ready != 0) &&
+     (ready == 0 || word == expected_word))
+  {
+    if(lockstep->streak < UINT32_MAX)
+      lockstep->streak++;
+    return;
+  }
+  lockstep->streak = 0;
+  if(!used)
+    return;
+  lockstep->mispredicted++;
+  if(lockstep->trust_after < LINK_TRUST_AFTER_MAX)
+    lockstep->trust_after *= 2u;
 }
 
 static GbaSioEvent lockstep_reply(LinkCable *cable,
  const LinkNetMessage *message, uint32_t cycle)
 {
   LinkLockstep *lockstep = &cable->lockstep;
-  GbaSioResult result;
-  GbaSioEvent event = GBA_SIO_EVENT_NONE;
-  uint32_t word;
+  uint32_t sequence;
 
-  if(message->size < 9 || !lockstep->waiting ||
-     get32(message->data) != lockstep->sequence)
+  if(message->size < 9)
+    return GBA_SIO_EVENT_NONE;
+  sequence = get32(message->data);
+  lockstep_check(lockstep, sequence, get32(message->data + 4),
+   message->data[8]);
+  if(!lockstep->waiting || sequence != lockstep->sequence)
     return GBA_SIO_EVENT_NONE;
 
   lockstep->waiting = 0;
   if(!gba_sio_is_waiting(cable->sio))
     return GBA_SIO_EVENT_NONE;
+  return lockstep_finish(cable, get32(message->data + 4),
+   message->data[8] != 0, cycle);
+}
 
-  word = message->data[8] ? get32(message->data + 4) : 0xFFFFFFFFu;
-  memset(&result, 0, sizeof(result));
-  if(cable->sio->transfer_mode == GBA_SIO_MODE_MULTIPLAYER)
-  {
-    result.data[0] = lockstep->outgoing;
-    result.data[1] = message->data[8] ? (word & 0xFFFFu) : 0xFFFFu;
-    result.data[2] = 0xFFFFu;
-    result.data[3] = 0xFFFFu;
-  }
-  else
-  {
-    result.data[0] = word;
-  }
+/* Receiving side: once the game has loaded its next word after a transfer
+   and left the serial registers alone for a moment, tells the clocking
+   console the reply its next START would get. Most games do this right
+   after a transfer, long before the next START arrives. */
+static int lockstep_announce_due(const LinkCable *cable, uint32_t *at)
+{
+  const LinkLockstep *lockstep = &cable->lockstep;
 
-  /* The guest kept running while the reply travelled; finish the
-     transfer at the cycle it would have finished on real hardware, or
-     now if that moment has already passed. */
-  gba_sio_set_cycle(cable->sio, cycle);
-  gba_sio_commit_at_horizon(cable->sio, &result, lockstep->start_cycle,
-   lockstep->finish_cycle, &event);
-  return event;
+  if(cable->mode != LINK_CABLE_MODE_LOCKSTEP || !lockstep->loaded ||
+     !lockstep->anchored || lockstep->deferred ||
+     !lockstep_is_receiver(cable))
+    return 0;
+  *at = lockstep->quiet_since + LINK_ANNOUNCE_QUIET;
+  return 1;
+}
+
+static void lockstep_announce(LinkCable *cable, uint32_t cycle)
+{
+  LinkLockstep *lockstep = &cable->lockstep;
+  uint32_t word = 0xFFFFFFFFu;
+  uint32_t at;
+  uint8_t message[9];
+  uint8_t ready;
+
+  if(cable->sio->outgoing_writes != lockstep->writes_seen)
+  {
+    lockstep->writes_seen = cable->sio->outgoing_writes;
+    lockstep->loaded = 1;
+    lockstep->quiet_since = cycle;
+  }
+  if(!lockstep_announce_due(cable, &at) || (int32_t)(cycle - at) < 0)
+    return;
+  if(gba_sio_is_busy(cable->sio))
+  {
+    lockstep->quiet_since = cycle;
+    return;
+  }
+  lockstep->loaded = 0;
+  ready = (uint8_t)gba_sio_remote_reply(cable->sio,
+   (GbaSioMode)lockstep->applied_mode, &word);
+  if(!ready)
+    word = 0xFFFFFFFFu;
+  if(lockstep->announced &&
+     lockstep->announced_sequence == lockstep->applied_sequence &&
+     lockstep->announced_ready == ready && lockstep->announced_word == word)
+    return;
+
+  lockstep->announced = 1;
+  lockstep->announced_sequence = lockstep->applied_sequence;
+  lockstep->announced_ready = ready;
+  lockstep->announced_word = word;
+  put32(message, lockstep->applied_sequence);
+  put32(message + 4, word);
+  message[8] = ready;
+  link_cable_queue(cable, LINK_MSG_NEXT_REPLY, message, sizeof(message));
 }
 
 /* Returns 0 if the START must wait for a later guest cycle. */
@@ -383,6 +526,10 @@ static int lockstep_remote_start(LinkCable *cable,
   lockstep->local_anchor = anchor;
   lockstep->peer_anchor = host_cycle;
   lockstep->last_transfer = cycle;
+  lockstep->applied_sequence = get32(message->data);
+  lockstep->applied_mode = message->data[12];
+  lockstep->loaded = 0;
+  lockstep->writes_seen = cable->sio->outgoing_writes;
   lockstep->transfers++;
   return 1;
 }
@@ -852,6 +999,16 @@ static GbaSioEvent link_cable_drain(LinkCable *cable, uint32_t cycle)
           events |= lockstep_reply(cable, message, cycle);
         break;
 
+      case LINK_MSG_NEXT_REPLY:
+        if(message->size >= 9)
+        {
+          cable->lockstep.predicted = 1;
+          cable->lockstep.predicted_sequence = get32(message->data);
+          cable->lockstep.predicted_word = get32(message->data + 4);
+          cable->lockstep.predicted_ready = message->data[8];
+        }
+        break;
+
       case LINK_MSG_POKEMON_STATE:
         if(message->size >= 1 && message->data[0] <= LINK_POKEMON_CONNECTED)
           cable->pokemon.peer = (LinkPokemonState)message->data[0];
@@ -914,7 +1071,8 @@ GbaSioEvent link_cable_service(LinkCable *cable, uint32_t cycle,
   {
     lockstep_publish_state(cable);
     if(cable->sio->pending_start)
-      lockstep_begin(cable, cycle);
+      events |= lockstep_begin(cable, cycle);
+    lockstep_announce(cable, cycle);
   }
 
   /* While idle, keep the pacing reference current so a long pause before
@@ -1008,6 +1166,13 @@ uint32_t link_cable_cycles_until_service(const LinkCable *cable,
     if(next < cycles)
       cycles = next;
   }
+  if(lockstep_announce_due(cable, &limit))
+  {
+    uint32_t next = cycles_until(limit, cycle);
+
+    if(next < cycles)
+      cycles = next;
+  }
   return cycles;
 }
 
@@ -1024,6 +1189,8 @@ int link_cable_due(const LinkCable *cable, uint32_t cycle)
      (lockstep->deferred &&
       (int32_t)(cycle - lockstep->deferred_until) >= 0) ||
      (lockstep_receiver_limit(cable, cycle, &limit) &&
+      (int32_t)(cycle - limit) >= 0) ||
+     (lockstep_announce_due(cable, &limit) &&
       (int32_t)(cycle - limit) >= 0);
   return !cable->host && cable->pokemon.transfer_scheduled &&
    (int32_t)(cycle - cable->pokemon.next_transfer) >= 0;
