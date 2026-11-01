@@ -91,7 +91,9 @@ run_case slow-host-noisy "net 8000 15000 15 5" "speed 0 0.8"
 # a frame in a burst and leaves the link alone while it waits for VBlank,
 # its network stack only moves datagrams while the emulator sleeps, and the
 # round trip is 70 ms and loses a third of the datagrams. The second case
-# adds radio dropouts and a joiner that freezes now and then.
+# adds radio dropouts and a joiner that freezes now and then. The stack
+# sleeps 200 us after each datagram sent while emulating, main.c's
+# MAIN_LINK_SEND_YIELD_US.
 psp="psp 0 10
 psp 1 10
 stack 0 200
@@ -110,6 +112,7 @@ race_case()
     echo "$condition"
   done > "$out/$name.txt"
   cat tests/rom_link/mksc_race.txt >> "$out/$name.txt"
+  # 64 KB of 0xFF, as erased save memory reads.
   dd if=/dev/zero bs=1024 count=64 2>/dev/null | tr '\000' '\377' \
     > "$out/mksc-0.sav"
   cp "$out/mksc-0.sav" "$out/mksc-1.sav"
