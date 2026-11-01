@@ -171,6 +171,11 @@ static volatile int quit_cleanup_complete = 0;
    starving it held every datagram for seconds until the link was lost.
    While a link is open, each late frame gives up this much time. */
 #define MAIN_LINK_YIELD_US 2000u
+/* For the same reason a datagram queued while the guest runs would wait
+   for the end of the frame. In lockstep mode the other console needs our
+   clock and STARTs as they happen, so the emulator pauses this long after
+   each one to let the stack send it. */
+#define MAIN_LINK_SEND_YIELD_US 200u
 
 u32 cpu_ticks = 0;
 s32 video_count = 272;
@@ -499,14 +504,22 @@ static int main_link_exchange(void)
    start over, as it does after the menu at VBlank. */
 static int main_link_service(IRQ_TYPE *irq_raised)
 {
+  u32 sent = gba_link.net.datagrams_sent;
   u64 started;
   u32 waited;
   int restart = 0;
 
   if(main_link_exchange())
     *irq_raised |= IRQ_SERIAL;
-  if(!gba_link_open || !link_cable_blocked(&gba_link, cpu_ticks))
+  if(!gba_link_open)
     return 0;
+  if(!link_cable_blocked(&gba_link, cpu_ticks))
+  {
+    if(gba_link.mode == LINK_CABLE_MODE_LOCKSTEP &&
+       gba_link.net.datagrams_sent != sent)
+      sceKernelDelayThread(MAIN_LINK_SEND_YIELD_US);
+    return 0;
+  }
 
   started = sceKernelGetSystemTimeWide();
   sound_link_wait_begin();
