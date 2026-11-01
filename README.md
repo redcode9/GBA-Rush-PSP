@@ -121,8 +121,10 @@ The cable chooses its technique from the two games. Ruby, Sapphire, Emerald,
 FireRed and LeafGreen, in any combination, run at full speed: each PSP
 emulates the wire locally and only the games' link frames cross the network.
 In FireRed and LeafGreen use the Cable Club on the Pokemon Center's second
-floor. Every other game exchanges each serial word with the other PSP; this
-is exact but slows down games that send many words per frame.
+floor. Every other game exchanges each serial word with the other PSP. Once
+the other PSP has proved it can announce its next word in advance, as Mario
+Kart: Super Circuit allows, the PSP that clocks the transfers stops waiting
+for each reply; games that send many words per frame still slow down.
 
 Fast-forward and savestates are disabled while connected. Reset, ROM change,
 suspend and exit close the session. Normal 8-bit, Normal 32-bit and
