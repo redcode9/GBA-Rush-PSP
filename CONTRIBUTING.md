@@ -85,12 +85,14 @@ links two simulated consoles over a simulated lossy network and runs a port of
 the Pokemon serial driver plus word-by-word lockstep guests; extend it when
 changing `link_cable.c` or `link_net.c`. Changes to packet parsing should also
 pass the bounded proof, which requires CBMC. With an mGBA 0.10 build and your
-own FireRed files, `make check-rom-link` trades between two real games:
+own FireRed files, `make check-rom-link` runs the harness in `tests/rom_link/`
+to trade between two real games and, with `MKSC` set to a Mario Kart: Super
+Circuit ROM (European release), to race two of them in lockstep mode:
 
 ```sh
 make check-cbmc
 make check-rom-link MGBA_DIR=/path/to/mgba ROM=firered.gba \
-  BIOS=gba_bios.bin SAVE=firered.sav
+  BIOS=gba_bios.bin SAVE=firered.sav MKSC=mariokart.gba
 ```
 
 Keep paired PSP logs with the build hashes and reproduction steps. Store local

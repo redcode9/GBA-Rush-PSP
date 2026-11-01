@@ -559,7 +559,8 @@ $(HOST_SANITIZE_DIR)/test_sound_math: tests/test_sound_math.c \
 	 -Isource/src tests/test_sound_math.c source/src/sound_math.c -o $@
 
 # Optional gates outside make check: the CBMC proof needs CBMC, the ROM link
-# trade needs mGBA plus your own FireRed ROM, BIOS and save.
+# trade needs mGBA plus your own FireRed ROM, BIOS and save, and races Mario
+# Kart: Super Circuit as well when MKSC names its ROM.
 check-cbmc:
 	sh scripts/check-cbmc.sh
 
