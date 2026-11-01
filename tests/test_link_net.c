@@ -273,7 +273,8 @@ static void test_lossy_network_in_order_once(unsigned int loss_percent,
 
   CHECK(got_a == TOTAL);
   CHECK(got_b == TOTAL);
-  /* The round-trip estimate stays near the 1 ms base delay plus jitter. */
+  /* The round-trip estimate stays near the 1 ms base delay plus jitter,
+     between the shortest and the longest sample. */
   CHECK(a.rtt_us >= 1000u && a.rtt_us < 1000u + 2u * jitter_us + 20000u);
   CHECK(a.rtt_min_us >= 1000u && a.rtt_min_us <= a.rtt_us &&
    a.rtt_us <= a.rtt_max_us);

@@ -360,12 +360,19 @@ static uint64_t run_link(Console *consoles[2], const NetProfile *net,
 #define REG_SIOCNT 0x128
 #define REG_SIOMLT_SEND 0x12A
 #define REG_RCNT 0x134
+/* The same registers in Normal mode. */
+#define REG_SIODATA32_L 0x120
+#define REG_SIODATA32_H 0x122
+#define REG_SIODATA8 0x12A
 #define SIO_MULTI_MODE 0x2000
 #define SIO_115200_BPS 0x0003
 #define SIO_INTR_ENABLE 0x4000
 #define SIO_START 0x0080
 #define SIO_MULTI_SI 0x0004
 #define SIO_MULTI_SD 0x0008
+/* Normal mode SIOCNT: 32-bit transfers, and this console drives the clock. */
+#define SIO_32BIT_MODE 0x1000u
+#define SIO_INTERNAL_CLOCK 0x0001u
 
 enum
 {
@@ -1553,7 +1560,8 @@ static void lockstep_multi_timer(Console *console)
 
 /* Sets up multiplayer mode at frame 20. From frame 40, once connected, the
    master starts a burst of words_per_frame transfers per frame and the
-   slave counts frames past 10 without a serial IRQ as timeouts. */
+   slave counts a timeout for every frame past the first in a row without a
+   serial IRQ. */
 static void lockstep_multi_vblank(Console *console)
 {
   LockstepGame *game = lockstep_of(console);
@@ -1638,29 +1646,34 @@ static uint32_t normal_word(const LockstepGame *game, uint32_t counter)
   return (counter & 0xFFFFu) | ((counter & 0xFFFFu) >> 4) << 16;
 }
 
+/* The word the last transfer received: SIODATA8, or both halves of
+   SIODATA32. */
 static uint32_t normal_read(Console *console)
 {
   if(lockstep_of(console)->normal_8bit)
-    return reg_read(console, REG_SIOMLT_SEND) & 0xFFu;
-  return reg_read(console, 0x120) | ((uint32_t)reg_read(console, 0x122) << 16);
+    return reg_read(console, REG_SIODATA8) & 0xFFu;
+  return reg_read(console, REG_SIODATA32_L) |
+   ((uint32_t)reg_read(console, REG_SIODATA32_H) << 16);
 }
 
+/* Loads the word for the next transfer into the same registers. */
 static void normal_write(Console *console, uint32_t value)
 {
   if(lockstep_of(console)->normal_8bit)
-    reg_write(console, REG_SIOMLT_SEND, (uint16_t)value);
+    reg_write(console, REG_SIODATA8, (uint16_t)value);
   else
   {
-    reg_write(console, 0x120, (uint16_t)value);
-    reg_write(console, 0x122, (uint16_t)(value >> 16));
+    reg_write(console, REG_SIODATA32_L, (uint16_t)value);
+    reg_write(console, REG_SIODATA32_H, (uint16_t)(value >> 16));
   }
 }
 
-/* SIOCNT with the interrupt enabled and the game's transfer length. */
+/* SIOCNT with the interrupt enabled (0x4000) and the game's transfer
+   length. */
 static uint16_t normal_control(Console *console)
 {
   return (uint16_t)(0x4000u | (lockstep_of(console)->normal_8bit ? 0u :
-   0x1000u));
+   SIO_32BIT_MODE));
 }
 
 static void normal_start(Console *console)
@@ -1669,7 +1682,7 @@ static void normal_start(Console *console)
 
   normal_write(console, normal_word(game, game->next_word));
   reg_write(console, REG_SIOCNT, (uint16_t)(normal_control(console) |
-   0x0001u | SIO_START));
+   SIO_INTERNAL_CLOCK | SIO_START));
 }
 
 /* The master checks the echo of its last value; the slave checks the
@@ -1715,8 +1728,8 @@ static void normal_timer(Console *console)
   normal_start(console);
 }
 
-/* Sets up 32-bit normal mode at frame 20, the slave arming its first
-   reply. From frame 60, once connected, the master starts a burst of
+/* Sets up Normal mode, 8 or 32-bit, at frame 20, the slave arming its
+   first reply. From frame 60, once connected, the master starts a burst of
    words_per_frame transfers per frame. */
 static void normal_vblank(Console *console)
 {
@@ -1727,7 +1740,7 @@ static void normal_vblank(Console *console)
     reg_write(console, REG_RCNT, 0);
     if(game->master)
       reg_write(console, REG_SIOCNT, (uint16_t)(normal_control(console) |
-       0x0001u));
+       SIO_INTERNAL_CLOCK));
     else
     {
       reg_write(console, REG_SIOCNT, normal_control(console));
