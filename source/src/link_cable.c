@@ -1036,6 +1036,8 @@ static GbaSioEvent link_cable_drain(LinkCable *cable, uint32_t cycle)
         break;
 
       case LINK_MSG_START:
+        /* A deferred START stays at the head of the queue: BYE and every
+           later message wait behind it. */
         if(cable->mode == LINK_CABLE_MODE_LOCKSTEP &&
            !lockstep_remote_start(cable, message, cycle))
           return events;

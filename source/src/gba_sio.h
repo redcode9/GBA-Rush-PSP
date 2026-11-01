@@ -116,8 +116,9 @@ typedef struct
   uint8_t player_count;
   uint8_t peer_active;
   /* A transfer moves through pending_start (started by this game as clock
-     master, not yet taken by the link), waiting (taken, result not yet
-     known) and active (result known, completes after cycles_remaining).
+     master, not yet taken by the link), waiting (taken, or started by the
+     other console's clock; result not yet known) and active (result known,
+     completes after cycles_remaining).
      decision_locked: the link committed to it, so mode changes and new
      starts no longer cancel it. */
   uint8_t pending_start;
