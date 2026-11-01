@@ -20,7 +20,9 @@ enum
   LINK_MSG_HELLO = 1,      /* protocol, host flag, 4-letter game code */
   LINK_MSG_BYE,            /* empty */
   LINK_MSG_SIO_STATE,      /* mode, SIOCNT SO bit (u16), RCNT (u16) */
-  LINK_MSG_START,          /* sequence, cycle, word (u32 each), mode, setting */
+  LINK_MSG_START,          /* sequence, cycle, word (u32 each), mode,
+                              setting (baud rate index in Multiplayer, 2 MHz
+                              flag in Normal) */
   LINK_MSG_REPLY,          /* sequence, word (u32 each), ready flag */
   LINK_MSG_POKEMON_STATE,  /* the sender's LinkPokemonState */
   LINK_MSG_POKEMON_PAIR,   /* host to joiner: both players' words of a frame */
@@ -251,6 +253,7 @@ static void link_cable_hello(LinkCable *cable, const LinkNetMessage *message)
 
 /* ---- Lockstep mode ---------------------------------------------------- */
 
+/* Defined with the shared helpers near the end of this file. */
 static int lockstep_is_receiver(const LinkCable *cable);
 
 /* Sends SIO_STATE (mode, SIOCNT bit 3, RCNT) whenever the mode or bit 3
