@@ -180,9 +180,10 @@ static volatile int quit_cleanup_complete = 0;
    clock and STARTs as they happen, so the emulator pauses this long after
    each one to let the stack send it. */
 #define MAIN_LINK_SEND_YIELD_US 200u
-/* While a lockstep link is connected the emulator thread runs below the
-   Wi-Fi stack instead, so the stack moves datagrams as soon as they come
-   and go rather than when the emulator next sleeps. */
+/* While a lockstep link is connected the emulator thread also runs at a
+   lower priority. The pauses above are still needed, as the part of the
+   stack that sends sits lower still, but with both the replies the other
+   console announces in advance reach us in time far more often. */
 #define MAIN_LINK_LOCKSTEP_PRIORITY 0x40
 
 u32 cpu_ticks = 0;
