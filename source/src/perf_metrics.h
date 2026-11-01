@@ -9,15 +9,25 @@
  * the License, or (at your option) any later version.
  */
 
+/*
+ * Counters and histograms of one benchmark capture. Plain data with no I/O
+ * or allocation, so recording is cheap on hot paths and testable on the
+ * host. Every record call is ignored unless a capture is active, and all
+ * counters saturate instead of wrapping.
+ */
+
 #ifndef PERF_METRICS_H
 #define PERF_METRICS_H
 
 #include <stdint.h>
 
+/* Frame times in 250 us buckets (to 128 ms) and GE waits in 50 us buckets
+   (to 25.6 ms); longer samples land in the last bucket. */
 #define PERF_METRICS_HISTOGRAM_BUCKETS 512U
 #define PERF_METRICS_FRAME_BUCKET_US 250U
 #define PERF_METRICS_GE_BUCKET_US 50U
 
+/* INVALIDATED: a reset, ROM change or suspend cut the capture short. */
 typedef enum
 {
   PERF_METRICS_IDLE,
@@ -35,6 +45,8 @@ typedef struct
   uint32_t bucket_width_us;
 } PerfMetricsHistogram;
 
+/* Where the emulator thread waited for the PSP VBlank: frame pacing in
+   synchronize(), before presenting a frame, or in the sound sync. */
 typedef enum
 {
   PERF_METRICS_WAIT_BACKPRESSURE,
@@ -102,6 +114,7 @@ typedef struct
   PerfMetricsHistogram ge_wait;
 } PerfMetrics;
 
+/* PerfMetrics with the histograms reduced to totals and percentiles. */
 typedef struct
 {
   PerfMetricsState state;

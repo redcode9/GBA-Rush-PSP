@@ -1,3 +1,9 @@
+/*
+ * Host tests for perf_report.c, which writes a performance session as
+ * key=value lines for scripts/compare-benchmarks.py. The golden report
+ * pins every key, its order and the format version.
+ */
+
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -7,6 +13,8 @@
 
 static void test_golden_report(void)
 {
+  /* NUL, '/' and newline in the cartridge title come out as '_', so a
+     title can neither break a line nor look like a path. */
   static const uint8_t rom_title[] =
   {
     'P', 'O', 'K', 'E', 0, '/', 'X', '\n'
@@ -262,6 +270,8 @@ static void test_invalid_arguments_and_small_buffer(void)
   assert(report[0] == '\0');
 }
 
+/* Every field at its longest fills PERF_REPORT_CAPACITY exactly, so the
+   capacity is proven sufficient and one byte less is refused cleanly. */
 static void test_worst_case_capacity(void)
 {
   static char version[64];
@@ -387,6 +397,7 @@ static void test_worst_case_capacity(void)
   assert(report[0] == '\0');
 }
 
+/* Runs every report case; a failing assert aborts the run. */
 int main(void)
 {
   test_golden_report();

@@ -1,9 +1,27 @@
+/* PSP display output. Sets up the GU, owns the two 512x272 RGBA5551
+ * framebuffers and presents the GBA texture (screen_texture) through the
+ * scaler that option_screen_scale selects (update_screen). Also draws the
+ * menu boxes and text for gui.c. Presents are queued without waiting;
+ * video_sync_present() waits for the GE before the CPU touches VRAM again.
+ */
+
 #include "common.h"
 #include "perf_monitor.h"
 #include "psp_video.h"
+/* Icon bitmaps for draw_volume(). */
 #include "volume_icon.c"
 
+/* VRAM layout, as offsets from the 2 MiB EDRAM base (CPU 0x04000000):
+ *   0x000000  framebuffer 0 (PSP_FRAME_SIZE bytes)
+ *   0x044000  framebuffer 1
+ *   0x088000  GBA texture, 256x256 16-bit (screen_texture); its rows from
+ *             VOLICON_OFFSET down hold the volume icons
+ *   0x0A8000  sharp mode render target, 512x512 (480x320 used)
+ * The GU takes these offsets as is; CPU pointers add the VRAM base.
+ */
 #define VOLICON_OFFSET (GBA_SCREEN_HEIGHT + 32)
+/* Frames are drawn as sprites 64 texels wide, which suits the GE texture
+ * cache better than one large sprite; each strip needs two vertices. */
 #define SLICE (64)
 #define VERTEX_COUNT (2 * ((u16)(GBA_SCREEN_WIDTH / SLICE) + ((GBA_SCREEN_WIDTH % SLICE) ? 1 : 0)))
 #define GBA_TEXTURE_BACKING_BYTES (256 * 256 * 2)
@@ -20,22 +38,32 @@
 #error Sharp video texture exceeds PSP EDRAM
 #endif
 
+/* GU_DIRECT list reused by every immediate draw. */
 static u32 ALIGN_PSPDATA display_list[512];
+/* Call list holding the scaled frame blit, built by generate_display_list(). */
 static u32 ALIGN_PSPDATA display_list_0[256];
 
+/* Front and back framebuffers, as VRAM offsets. */
 static void *disp_frame;
 static void *draw_frame;
+/* A frame list is queued on the GE and has not been waited for yet. */
 static u32 present_pending;
+/* Set during sleep and shutdown so blit_gu/blit_sharp queue nothing. */
 static u32 present_blocked;
+/* One-shot: wait for the next present right away (set after resume). */
 static u32 synchronous_present;
+/* Time spent in the last video_sync_present() wait. */
 static u32 last_ge_wait_us;
 static u32 adaptive_last_frame_time;
 static int adaptive_has_last_frame_time;
 static VideoAdaptiveState adaptive_video;
 
+/* The same buffer seen by the GU (as a render target) and the CPU. */
 static void *sharp_draw_frame = (void *)SHARP_TEXTURE_OFFSET;
 static u16 *sharp_texture = (u16 *)(0x04000000 + SHARP_TEXTURE_OFFSET);
 
+/* Vertex layouts for the GU_VERTEX_16BIT draws below: textured, and
+ * untextured with a 5551 or 8888 color. */
 typedef struct
 {
   u16 u, v;
@@ -57,9 +85,9 @@ typedef struct
 static void set_gba_resolution(void);
 static void generate_display_list(float scale_x, float scale_y,
  int clear_before_draw);
-static void bitbilt_gu(void);
-static void bitbilt_sharp(void);
-static void bitbilt_sw(void);
+static void blit_gu(void);
+static void blit_sharp(void);
+static void blit_sw(void);
 static int draw_scaled_slices(u32 source_width, u32 source_height,
  u32 destination_width, u32 destination_height, u32 slice_width);
 static void apply_adaptive_quality(void);
@@ -161,6 +189,7 @@ void draw_popup_frame_auto(int x, int y, int w, int h)
     draw_popup_frame(x, y, w, h, popup_bg);
 }
 
+/* Waits for a GU_DIRECT list to finish, timed when perf capture is on. */
 static void video_ge_sync_direct(void)
 {
   int measuring = perf_monitor_active();
@@ -176,6 +205,7 @@ static void video_ge_sync_direct(void)
      sceKernelGetSystemTimeLow() - sync_start);
 }
 
+/* Flushes CPU-drawn pixels (screen_texture) so the GE reads fresh data. */
 static void video_dcache_writeback(void)
 {
   int measuring = perf_monitor_active();
@@ -191,6 +221,12 @@ static void video_dcache_writeback(void)
      sceKernelGetSystemTimeLow() - writeback_start);
 }
 
+/* Center of the GE's 4096x4096 virtual screen; sceGuOffset and
+ * sceGuViewport place the visible area around it. */
+#define GU_COORD_CENTER 2048
+
+/* Called once by main.c at startup. Starts with the x1.5 GU presenter;
+ * video_resolution_small() applies the screen scale option later. */
 void init_video(int devkit_version)
 {
   disp_frame = (void *)0;
@@ -211,14 +247,17 @@ void init_video(int devkit_version)
   sceGuDrawBuffer(GU_PSM_5551, draw_frame, PSP_LINE_SIZE);
   sceGuDispBuffer(PSP_SCREEN_WIDTH, PSP_SCREEN_HEIGHT, disp_frame, PSP_LINE_SIZE);
 
-  sceGuOffset(2048 - (PSP_SCREEN_WIDTH / 2), 2048 - (PSP_SCREEN_HEIGHT / 2));
-  sceGuViewport(2048, 2048, PSP_SCREEN_WIDTH, PSP_SCREEN_HEIGHT);
+  sceGuOffset(GU_COORD_CENTER - (PSP_SCREEN_WIDTH / 2),
+   GU_COORD_CENTER - (PSP_SCREEN_HEIGHT / 2));
+  sceGuViewport(GU_COORD_CENTER, GU_COORD_CENTER, PSP_SCREEN_WIDTH,
+   PSP_SCREEN_HEIGHT);
 
   sceGuScissor(0, 0, PSP_SCREEN_WIDTH, PSP_SCREEN_HEIGHT);
   sceGuEnable(GU_SCISSOR_TEST);
 
   sceGuTexFunc(GU_TFX_REPLACE, GU_TCC_RGBA);
   sceGuTexMode(GU_PSM_5551, 0, 0, GU_FALSE);
+  /* The 240x160 frame sits in a 256x256 texture (GE sizes are powers of 2). */
   sceGuTexImage(0, 256, 256, GBA_LINE_SIZE, screen_texture);
   sceGuTexFlush();
   sceGuTexWrap(GU_CLAMP, GU_CLAMP);
@@ -234,7 +273,7 @@ void init_video(int devkit_version)
   sceGuDisplay(GU_TRUE);
 
   generate_display_list(1.5f, 1.5f, 1);
-  update_screen = bitbilt_gu;
+  update_screen = blit_gu;
 
   load_volume_icon(devkit_version);
 }
@@ -247,6 +286,7 @@ void video_term(void)
   sceGuTerm();
 }
 
+/* Waits for the queued frame list, if any, and records how long it took. */
 void video_sync_present(void)
 {
   u32 wait_start;
@@ -265,12 +305,16 @@ u32 video_last_ge_wait_us(void)
   return last_ge_wait_us;
 }
 
+/* Called from main.c's foreground power handling, never from the power
+ * callback itself (scripts/check-video.sh enforces this). */
 void video_power_suspend(void)
 {
   present_blocked = 1;
   video_sync_present();
 }
 
+/* After sleep: reset timing, rebuild the GU state and wait on the next
+ * present. */
 void video_power_resume(void)
 {
   video_sync_present();
@@ -289,6 +333,8 @@ VideoAdaptiveQuality video_active_quality(void)
   return adaptive_video.quality;
 }
 
+/* Called by main.c once per emulated frame; feeds the frame-to-frame time
+ * to the perf monitor and, in 16:9 auto mode, to the quality governor. */
 void video_adaptive_frame_complete(int frame_skipped, int audio_event)
 {
   u32 frame_time;
@@ -316,12 +362,16 @@ void video_adaptive_frame_complete(int frame_skipped, int audio_event)
     apply_adaptive_quality();
 }
 
+/* Forgets the last frame time, so the next video_adaptive_frame_complete
+ * only restarts the clock instead of recording the gap (main_perf_start). */
 void video_reset_frame_timing(void)
 {
   adaptive_has_last_frame_time = 0;
   adaptive_last_frame_time = 0;
 }
 
+/* Shows the back buffer: waits for queued GE work and, when vsync is
+ * nonzero, for vblank, then swaps the framebuffers. */
 void flip_screen(u32 vsync)
 {
   video_sync_present();
@@ -345,11 +395,19 @@ void flip_screen(u32 vsync)
   draw_frame = sceGuSwapBuffers();
 }
 
+/* VRAM through its uncached mirror (0x40000000 | 0x04000000): CPU writes
+ * reach the GE without a dcache flush. */
+#define PSP_VRAM_UNCACHED 0x44000000
+
+/* CPU pointer to pixel (x, y) of a framebuffer given as a VRAM offset;
+ * y << 9 is y * PSP_LINE_SIZE. */
 static void *psp_vram_addr(void *frame, u32 x, u32 y)
 {
-  return (void *)(((u32)frame | 0x44000000) + ((x + (y << 9)) << 1));
+  return (void *)(((u32)frame | PSP_VRAM_UNCACHED) + ((x + (y << 9)) << 1));
 }
 
+/* Records display_list_0: the GBA frame scaled by (scale_x, scale_y) and
+ * centered, drawn as SLICE-wide sprites. blit_gu() replays it. */
 static void generate_display_list(float scale_x, float scale_y,
  int clear_before_draw)
 {
@@ -411,6 +469,8 @@ static void generate_display_list(float scale_x, float scale_y,
   sceGuFinish();
 }
 
+/* Quality that the fixed screen options amount to; the governor holds it
+ * while 16:9 auto is off. */
 static VideoAdaptiveQuality selected_manual_quality(void)
 {
   if(option_screen_scale == SCALED_16X9_SHARP)
@@ -422,6 +482,8 @@ static VideoAdaptiveQuality selected_manual_quality(void)
   return VIDEO_ADAPTIVE_QUALITY_SMOOTH;
 }
 
+/* The GU filter for the frame: FILTER_NEAREST/BILINEAR equal GU_NEAREST/
+ * GU_LINEAR, and 16:9 auto forces nearest while at CRISP. */
 static u32 selected_texture_filter(void)
 {
   if(option_screen_scale == SCALED_16X9_AUTO &&
@@ -431,15 +493,17 @@ static u32 selected_texture_filter(void)
   return option_screen_filter;
 }
 
+/* Reapplies the render state that init_video() set up. */
 static void restore_gu_state(void)
 {
   u32 texture_filter = selected_texture_filter();
 
   sceGuStart(GU_DIRECT, display_list);
   sceGuDrawBufferList(GU_PSM_5551, draw_frame, PSP_LINE_SIZE);
-  sceGuOffset(2048 - (PSP_SCREEN_WIDTH / 2),
-   2048 - (PSP_SCREEN_HEIGHT / 2));
-  sceGuViewport(2048, 2048, PSP_SCREEN_WIDTH, PSP_SCREEN_HEIGHT);
+  sceGuOffset(GU_COORD_CENTER - (PSP_SCREEN_WIDTH / 2),
+   GU_COORD_CENTER - (PSP_SCREEN_HEIGHT / 2));
+  sceGuViewport(GU_COORD_CENTER, GU_COORD_CENTER, PSP_SCREEN_WIDTH,
+   PSP_SCREEN_HEIGHT);
   sceGuScissor(0, 0, PSP_SCREEN_WIDTH, PSP_SCREEN_HEIGHT);
   sceGuEnable(GU_SCISSOR_TEST);
   sceGuTexMode(GU_PSM_5551, 0, 0, GU_FALSE);
@@ -454,7 +518,9 @@ static void restore_gu_state(void)
   video_ge_sync_direct();
 }
 
-static void bitbilt_gu(void)
+/* Presents with the prebuilt call list. Returns without waiting for the
+ * GE; the next video_sync_present() does. */
+static void blit_gu(void)
 {
   if(present_blocked)
     return;
@@ -480,6 +546,8 @@ static void bitbilt_gu(void)
   }
 }
 
+/* Draws the bound texture's top-left source rectangle stretched to the
+ * destination size at (0, 0). Returns 0 if the GU ran out of list memory. */
 static int draw_scaled_slices(u32 source_width, u32 source_height,
  u32 destination_width, u32 destination_height, u32 slice_width)
 {
@@ -518,7 +586,11 @@ static int draw_scaled_slices(u32 source_width, u32 source_height,
   return 1;
 }
 
-static void bitbilt_sharp(void)
+/* Two-pass 16:9 scaler: an exact 2x nearest upscale into the 480x320
+ * sharp target, then a bilinear squeeze to 480x272. Pixels stay crisp
+ * without the uneven widths of a direct nearest scale. Falls back to
+ * CRISP if either pass fails. */
+static void blit_sharp(void)
 {
   int first_pass_ok;
   int second_pass_ok;
@@ -533,9 +605,10 @@ static void bitbilt_sharp(void)
   sceGuStart(GU_DIRECT, display_list);
 
   sceGuDrawBufferList(GU_PSM_5551, sharp_draw_frame, SHARP_TEXTURE_WIDTH);
-  sceGuOffset(2048 - (SHARP_ACTIVE_WIDTH / 2),
-   2048 - (SHARP_ACTIVE_HEIGHT / 2));
-  sceGuViewport(2048, 2048, SHARP_ACTIVE_WIDTH, SHARP_ACTIVE_HEIGHT);
+  sceGuOffset(GU_COORD_CENTER - (SHARP_ACTIVE_WIDTH / 2),
+   GU_COORD_CENTER - (SHARP_ACTIVE_HEIGHT / 2));
+  sceGuViewport(GU_COORD_CENTER, GU_COORD_CENTER, SHARP_ACTIVE_WIDTH,
+   SHARP_ACTIVE_HEIGHT);
   sceGuScissor(0, 0, SHARP_ACTIVE_WIDTH, SHARP_ACTIVE_HEIGHT);
   sceGuTexMode(GU_PSM_5551, 0, 0, GU_FALSE);
   sceGuTexImage(0, 256, 256, GBA_LINE_SIZE, screen_texture);
@@ -549,9 +622,10 @@ static void bitbilt_sharp(void)
 
   sceGuTexFlush();
   sceGuDrawBufferList(GU_PSM_5551, draw_frame, PSP_LINE_SIZE);
-  sceGuOffset(2048 - (PSP_SCREEN_WIDTH / 2),
-   2048 - (PSP_SCREEN_HEIGHT / 2));
-  sceGuViewport(2048, 2048, PSP_SCREEN_WIDTH, PSP_SCREEN_HEIGHT);
+  sceGuOffset(GU_COORD_CENTER - (PSP_SCREEN_WIDTH / 2),
+   GU_COORD_CENTER - (PSP_SCREEN_HEIGHT / 2));
+  sceGuViewport(GU_COORD_CENTER, GU_COORD_CENTER, PSP_SCREEN_WIDTH,
+   PSP_SCREEN_HEIGHT);
   sceGuScissor(0, 0, PSP_SCREEN_WIDTH, PSP_SCREEN_HEIGHT);
   sceGuTexImage(0, SHARP_TEXTURE_WIDTH, SHARP_TEXTURE_HEIGHT,
    SHARP_TEXTURE_WIDTH, sharp_texture);
@@ -585,9 +659,14 @@ static void bitbilt_sharp(void)
   }
 }
 
+/* Average of two 5:5:5 colors without unpacking; 0x7bde drops each
+ * channel's low bit so the shift cannot borrow from the next channel. */
 #define NORMAL_BLEND(c0, c1) ((c0 & c1) + (((c0 ^ c1) & 0x7bde) >> 1))
 
-static void bitbilt_sw(void)
+/* Software x1.5 scaler: each 2x2 GBA block becomes 3x3 PSP pixels, the
+ * middle row and column being averages. The 360x240 result is centered at
+ * (60, 16). */
+static void blit_sw(void)
 {
   u32 x, y;
   u16 *vptr, *vptr0;
@@ -636,10 +715,13 @@ static void bitbilt_sw(void)
   }
 }
 
+/* Called at startup and when entering the menu; nothing to do on PSP. */
 void video_resolution_large(void)
 {
 }
 
+/* Called before gameplay starts or resumes: applies the screen scale
+ * option and restarts the adaptive governor. */
 void video_resolution_small(void)
 {
   u32 gameplay_filter = option_screen_filter;
@@ -667,39 +749,40 @@ void video_resolution_small(void)
   video_ge_sync_direct();
 }
 
+/* Picks the presenter (update_screen) for option_screen_scale. */
 static void set_gba_resolution(void)
 {
   switch (option_screen_scale)
   {
     case SCALED_NONE:
       generate_display_list(1.0f, 1.0f, 1);
-      update_screen = bitbilt_gu;
+      update_screen = blit_gu;
       break;
 
     case SCALED_X15_GU:
       generate_display_list(1.5f, 1.5f, 1);
-      update_screen = bitbilt_gu;
+      update_screen = blit_gu;
       break;
 
     case SCALED_X15_SW:
-      update_screen = bitbilt_sw;
+      update_screen = blit_sw;
       break;
 
     case SCALED_USER:
       generate_display_list(option_screen_mag / 100.0f,
        option_screen_mag / 100.0f, 1);
-      update_screen = bitbilt_gu;
+      update_screen = blit_gu;
       break;
 
     case SCALED_16X9_GU:
       generate_display_list((float)PSP_SCREEN_WIDTH / (float)GBA_SCREEN_WIDTH,
                             (float)PSP_SCREEN_HEIGHT / (float)GBA_SCREEN_HEIGHT,
                             0);
-      update_screen = bitbilt_gu;
+      update_screen = blit_gu;
       break;
 
     case SCALED_16X9_SHARP:
-      update_screen = bitbilt_sharp;
+      update_screen = blit_sharp;
       break;
 
     case SCALED_16X9_AUTO:
@@ -708,11 +791,12 @@ static void set_gba_resolution(void)
   }
 }
 
+/* SHARP uses the two-pass scaler; CRISP a single pass with nearest. */
 static void apply_adaptive_quality(void)
 {
   if(adaptive_video.quality == VIDEO_ADAPTIVE_QUALITY_SHARP)
   {
-    update_screen = bitbilt_sharp;
+    update_screen = blit_sharp;
   }
   else
   {
@@ -726,10 +810,11 @@ static void apply_adaptive_quality(void)
     sceGuTexFilter(GU_NEAREST, GU_NEAREST);
     sceGuFinish();
     video_ge_sync_direct();
-    update_screen = bitbilt_gu;
+    update_screen = blit_gu;
   }
 }
 
+/* color is a COLOR32 value, stored as 5551 with the alpha bit set. */
 void clear_screen(u32 color)
 {
   u32 r8 = (color >>  0) & 0xFF;
@@ -741,7 +826,7 @@ void clear_screen(u32 color)
   u32 pixels = PSP_LINE_SIZE * PSP_SCREEN_HEIGHT;
 
   video_sync_present();
-  vram_ptr = (u16 *)((u32)draw_frame | 0x44000000);
+  vram_ptr = (u16 *)((u32)draw_frame | PSP_VRAM_UNCACHED);
 
   for (u32 i = 0; i < pixels; i++)
   {
@@ -749,6 +834,8 @@ void clear_screen(u32 color)
   }
 }
 
+/* Fills the 240x160 GBA area of screen_texture with one color; reset_gba()
+ * blanks the previous game's frame with it. */
 void clear_texture(u16 color)
 {
   u32 x, y;
@@ -768,6 +855,8 @@ void clear_texture(u16 color)
   }
 }
 
+/* Returns a malloc'd 240x160 copy of the last GBA frame for the menu
+ * background; the caller frees it. */
 u16 *copy_screen(void)
 {
   u32 x, y;
@@ -800,6 +889,8 @@ u16 *copy_screen(void)
   return copy;
 }
 
+/* CPU copy of a packed w x h 16-bit image (box art, the menu's game
+ * screenshot) into the back framebuffer at (dest_x, dest_y). */
 void blit_to_screen(u16 *src, u16 w, u16 h, u16 dest_x, u16 dest_y)
 {
   u32 x, y;
@@ -820,6 +911,9 @@ void blit_to_screen(u16 *src, u16 w, u16 h, u16 dest_x, u16 dest_y)
   }
 }
 
+/* The box and line helpers below draw with the GE into the back
+ * framebuffer and wait for it before returning. Coordinates are inclusive;
+ * colors are RGBA5551 except for draw_box_alpha. */
 void draw_box_line(u16 x1, u16 y1, u16 x2, u16 y2, u16 color)
 {
   VertexLineCol16 *vertices;
@@ -864,6 +958,8 @@ void draw_box_line(u16 x1, u16 y1, u16 x2, u16 y2, u16 color)
   video_ge_sync_direct();
 }
 
+/* Solid rectangle as a two-triangle strip; x2 + 1 and y2 + 1 because the GE
+ * leaves out the far edges. */
 void draw_box_fill(u16 x1, u16 y1, u16 x2, u16 y2, u16 color)
 {
   VertexLineCol16 *vertices;
@@ -904,6 +1000,7 @@ void draw_box_fill(u16 x1, u16 y1, u16 x2, u16 y2, u16 color)
   video_ge_sync_direct();
 }
 
+/* Alpha-blended fill; color is a GU 8888 value, 0xAABBGGRR. */
 void draw_box_alpha(u16 x1, u16 y1, u16 x2, u16 y2, u32 color)
 {
   VertexLineCol32 *vertices;
@@ -946,6 +1043,8 @@ void draw_box_alpha(u16 x1, u16 y1, u16 x2, u16 y2, u32 color)
   video_ge_sync_direct();
 }
 
+/* sx to ex inclusive; the end gets + 1 since the GE skips a line's last
+ * pixel. */
 void draw_hline(u16 sx, u16 ex, u16 y, u16 color)
 {
   VertexLineCol16 *vertices;
@@ -978,6 +1077,7 @@ void draw_hline(u16 sx, u16 ex, u16 y, u16 color)
   video_ge_sync_direct();
 }
 
+/* Like draw_hline(), vertical, from sy to ey inclusive. */
 void draw_vline(u16 x, u16 sy, u16 ey, u16 color)
 {
   VertexLineCol16 *vertices;
@@ -1010,12 +1110,15 @@ void draw_vline(u16 x, u16 sy, u16 ey, u16 color)
   video_ge_sync_direct();
 }
 
+/* Text in the back framebuffer; x < 0 centers it. The _ext forms draw into
+ * any 16-bit buffer (centered on its pitch); the _gbk forms use the GBK
+ * font (ch_print) instead of Shift-JIS (mh_print). */
 void print_string(const char *str, s16 x, u16 y, u16 fg_color, s16 bg_color)
 {
   video_sync_present();
   if (x < 0) x = (PSP_SCREEN_WIDTH - (strlen(str) * FONTWIDTH)) >> 1;
 
-  mh_print(str, x, y, fg_color, bg_color, (u16 *)((u32)draw_frame | 0x44000000), PSP_LINE_SIZE);
+  mh_print(str, x, y, fg_color, bg_color, (u16 *)((u32)draw_frame | PSP_VRAM_UNCACHED), PSP_LINE_SIZE);
 }
 
 void print_string_ext(const char *str, s16 x, u16 y, u16 fg_color, s16 bg_color, void *_dest_ptr, u16 pitch)
@@ -1030,7 +1133,7 @@ void print_string_gbk(const char *str, s16 x, u16 y, u16 fg_color, s16 bg_color)
   video_sync_present();
   if (x < 0) x = (PSP_SCREEN_WIDTH - (strlen(str) * FONTWIDTH)) >> 1;
 
-  ch_print(str, x, y, fg_color, bg_color, (u16 *)((u32)draw_frame | 0x44000000), PSP_LINE_SIZE);
+  ch_print(str, x, y, fg_color, bg_color, (u16 *)((u32)draw_frame | PSP_VRAM_UNCACHED), PSP_LINE_SIZE);
 }
 
 void print_string_ext_gbk(const char *str, s16 x, u16 y, u16 fg_color, s16 bg_color, void *_dest_ptr, u16 pitch)
@@ -1040,6 +1143,9 @@ void print_string_ext_gbk(const char *str, s16 x, u16 y, u16 fg_color, s16 bg_co
   ch_print(str, x, y, fg_color, bg_color, _dest_ptr, pitch);
 }
 
+/* Expands the 4-bit icon masks from volume_icon.c into RGBA4444 texels
+ * below the GBA frame in screen_texture: white for icons, black for their
+ * shadows. Only on firmware 3.52 and later (devkit 0x03050210). */
 static void load_volume_icon(int devkit_version)
 {
   if (devkit_version >= 0x03050210)
@@ -1141,6 +1247,9 @@ static void load_volume_icon(int devkit_version)
   }
 }
 
+/* Draws the speaker icon and a 30-step bar at the bottom left (y 230),
+ * each element as a shadow sprite offset by 3 pixels plus the icon:
+ * (1 speaker + 30 steps) x 2 sprites x 2 vertices = 2 * 31 * 2. */
 static void draw_volume(int volume)
 {
   Vertex *vertices, *vertices_tmp;
@@ -1258,6 +1367,8 @@ static void draw_volume(int volume)
   video_ge_sync_direct();
 }
 
+/* Volume overlay, shown for 2 s after a volume key press. main.c installs
+ * draw_volume_status_null in __draw_volume_status, so it is currently off. */
 int draw_volume_status(int draw)
 {
   static u64 disp_end = 0;

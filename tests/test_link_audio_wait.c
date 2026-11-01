@@ -1,9 +1,17 @@
+/*
+ * Host tests for link_audio_wait.c, used by sound.c to pause audio while
+ * the emulator is stopped waiting for the link cable. A repeated begin is
+ * ignored so it cannot overwrite the saved pause state, and end restores it.
+ */
+
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 
 #include "link_audio_wait.h"
 
+/* Only the first begin reports a change (sound.c drops queued samples just
+   then); the nested one keeps saved_pause, and only the first end reports. */
 static void test_wait_drains_once_and_restores(void)
 {
   LinkAudioWait wait;

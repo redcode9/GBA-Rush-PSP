@@ -18,6 +18,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+/* Entry points of the PSP user interface in gui.c: the file browser, the
+   in-game menu, savestate actions, settings files, the user folders and
+   the theme colours. */
+
 #ifndef GUI_H
 #define GUI_H
 
@@ -47,6 +51,9 @@ extern u32 savestate_slot;
 u32 action_loadstate(void);
 u32 action_savestate(void);
 void maybe_load_auto_savestate(void);
+/* Recent ROMs list (recent.cfg): read at boot, updated after each load. */
+void load_recent_roms(void);
+void add_recent_rom(const char *filename);
 
 /* Theme colors — defined in gui.c, accessible everywhere via common.h */
 extern u16 color_bg;

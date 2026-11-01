@@ -1,3 +1,6 @@
+/* Platform-independent menu layout maths (menu_layout.c): list scrolling
+   and clipping double-byte text by screen columns. */
+
 #ifndef MENU_LAYOUT_H
 #define MENU_LAYOUT_H
 
@@ -16,6 +19,7 @@ typedef enum
   MENU_TEXT_SHIFT_JIS
 } MenuTextEncoding;
 
+/* Scrolls just enough to keep selected_line among visible_lines. */
 MenuViewport menu_viewport_for_selection(uint32_t selected_line,
  uint32_t visible_lines);
 int menu_viewport_baseline(const MenuViewport *viewport,
@@ -23,6 +27,9 @@ int menu_viewport_baseline(const MenuViewport *viewport,
  uint32_t *baseline);
 size_t menu_layout_max_columns(uint32_t screen_width, uint32_t start_x,
  uint32_t glyph_width);
+/* Byte lengths and offsets for drawing text within a column budget;
+   none of them splits a double-byte character. menu_text_clip_length
+   assumes GBK; the _for_encoding variant also takes Shift-JIS. */
 size_t menu_text_clip_length(const char *text, size_t max_columns);
 size_t menu_text_clip_length_for_encoding(const char *text,
  size_t max_columns, MenuTextEncoding encoding);

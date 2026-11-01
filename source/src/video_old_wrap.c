@@ -1,3 +1,9 @@
+/* Builds the old C scanline renderer (video.c, gpSP kai).
+ * video.c and video_cc.cc define the same global names, so each is compiled
+ * through a wrapper that adds a suffix (_old here, _new in video_cc_wrap.cc).
+ * video_dispatch.c owns the unsuffixed names and calls one renderer per frame.
+ */
+
 #define update_scanline update_scanline_old
 #define video_read_savestate video_read_savestate_old
 #define video_write_mem_savestate video_write_mem_savestate_old

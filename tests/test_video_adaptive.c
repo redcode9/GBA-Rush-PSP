@@ -1,9 +1,23 @@
+/*
+ * Host tests for video_adaptive.c, which lowers the video quality from
+ * sharp to crisp under sustained load and restores it later. Frames are
+ * judged in windows of VIDEO_ADAPTIVE_WINDOW_SIZE: two bad windows in a
+ * row (slow frames, a skipped frame, an audio event or long GE waits)
+ * degrade, five good ones recover, and a window in between resets both
+ * counts. Times are microseconds; a GBA frame is about 16743 us.
+ * The limits are private to video_adaptive.c: a window is bad above 17200 us
+ * of frame time or 2500 us of GE wait (95th percentile) and good below
+ * 16900 us and 1000 us, hence the 16800/20000 and 500/3000 values below.
+ */
+
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "video_adaptive.h"
 
+/* Feeds one window of identical frames; a skip or audio event is flagged
+   on its first frame only. Returns how many quality changes happened. */
 static int feed_window(VideoAdaptiveState *state, uint32_t frame_time_us,
  uint32_t ge_wait_us, int skipped_frame, int audio_event)
 {
@@ -19,6 +33,8 @@ static int feed_window(VideoAdaptiveState *state, uint32_t frame_time_us,
   return changed;
 }
 
+/* Disabled, the manual quality holds through bad frames and reset;
+   re-enabling restarts at SHARP whatever quality is passed. */
 static void test_initial_and_manual_state(void)
 {
   VideoAdaptiveState state;
@@ -93,6 +109,7 @@ static void test_skip_audio_and_ge_wait_are_bad_windows(void)
   assert(state.reason == VIDEO_ADAPTIVE_REASON_GE_WAIT);
 }
 
+/* Bad windows separated by in-between windows never add up. */
 static void test_neutral_windows_prevent_oscillation(void)
 {
   VideoAdaptiveState state;
@@ -125,6 +142,8 @@ static void test_reset_discards_observations(void)
   assert(!feed_window(&state, 20000, 0, 0, 0));
 }
 
+/* A saved quality profile applies only to the same ROM CRC, PSP model and
+   clock speed, with the current version and an automatic quality. */
 static void test_profile_validation(void)
 {
   VideoAdaptiveState state;
@@ -155,6 +174,7 @@ static void test_profile_validation(void)
   assert(!video_adaptive_apply_profile(&state, &profile, 0x12345678, 4, 222));
 }
 
+/* Runs every adaptive video case; a failing assert aborts the run. */
 int main(void)
 {
   test_initial_and_manual_state();

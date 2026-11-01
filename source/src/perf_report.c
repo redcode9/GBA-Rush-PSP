@@ -31,6 +31,9 @@ static int perf_report_character_allowed(uint8_t value)
    value == '_' || value == '.';
 }
 
+/* Copies at most destination_size - 1 bytes, replacing anything but
+   [A-Za-z0-9 ._-] with '_', so cartridge header bytes cannot break the
+   report's line format. */
 static void perf_report_sanitize_bytes(const uint8_t *source,
  size_t source_length, char *destination, size_t destination_size)
 {
@@ -58,6 +61,8 @@ static void perf_report_sanitize_bytes(const uint8_t *source,
   destination[count] = '\0';
 }
 
+/* Like perf_report_sanitize_bytes(), for a NUL-terminated string such as
+   the emulator version. */
 static void perf_report_sanitize_string(const char *source,
  char *destination, size_t destination_size)
 {
@@ -73,6 +78,8 @@ static void perf_report_sanitize_string(const char *source,
    destination_size);
 }
 
+/* Appends formatted text; once anything does not fit, the writer stays
+   failed and later appends do nothing. */
 static void perf_report_append(PerfReportWriter *writer,
  const char *format, ...)
 {
@@ -98,6 +105,8 @@ static void perf_report_append(PerfReportWriter *writer,
   writer->length += (size_t)written;
 }
 
+/* The report's state= value; compare-benchmarks.py only accepts a
+   "stopped" capture. */
 static const char *perf_report_state_name(PerfMetricsState state)
 {
   switch(state)

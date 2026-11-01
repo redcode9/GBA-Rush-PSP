@@ -9,6 +9,10 @@
  * the License, or (at your option) any later version.
  */
 
+/* PSP ad-hoc worker for the link cable: network start-up and teardown, the
+   PDP socket and the two lock-free datagram queues. psp_adhoc.h describes
+   the threading contract. */
+
 #include <string.h>
 
 #include <pspkernel.h>
@@ -40,9 +44,11 @@
 #define PSP_ADHOC_EXIT_WAIT_US        250000u
 
 /* The PSP scheduler is strictly preemptive and never time-slices threads
-   of equal priority. The network stack and this worker must outrank the
+   of equal priority. The stack threads started here (sceNetInit's callout
+   and interrupt threads, ad hoc control) and this worker must outrank the
    emulator thread (0x20), which runs flat out while it catches up, or
-   reception stops during gameplay. Lower numbers run first. */
+   reception stops during gameplay. Lower numbers run first. Part of the
+   stack still runs below the emulator; see main.c's MAIN_LINK_YIELD_US. */
 #define PSP_ADHOC_STACK_PRIORITY   0x1C
 #define PSP_ADHOC_CONTROL_PRIORITY 0x1D
 #define PSP_ADHOC_WORKER_PRIORITY  0x1E
@@ -113,6 +119,8 @@ static PspAdhocContext psp_adhoc =
   .socket_id = -1
 };
 
+/* Producer side: 0 for an empty or oversized datagram or a full ring. The
+   barrier makes the slot visible before the new write index. */
 static int ring_push(PspAdhocRing *ring, const uint8_t *data, size_t size)
 {
   uint32_t write = ring->write;
@@ -129,6 +137,8 @@ static int ring_push(PspAdhocRing *ring, const uint8_t *data, size_t size)
   return 1;
 }
 
+/* A datagram larger than capacity is discarded and returns 0, the same
+   as an empty ring. */
 static size_t ring_pop(PspAdhocRing *ring, uint8_t *data, size_t capacity)
 {
   uint32_t read = ring->read;
@@ -153,6 +163,8 @@ static void psp_adhoc_wake(SceUID flag)
     sceKernelSetEventFlag(flag, 1);
 }
 
+/* Waits up to timeout_us for psp_adhoc_wake() on flag; a plain delay when
+   the flag was never created. */
 static void psp_adhoc_sleep(SceUID flag, unsigned int timeout_us)
 {
   SceUInt timeout = timeout_us;
@@ -167,6 +179,8 @@ static void psp_adhoc_sleep(SceUID flag, unsigned int timeout_us)
    &matched, &timeout);
 }
 
+/* Deletes both wake flags and marks them -1, which turns later wakes into
+   no-ops and sleeps into plain delays. */
 static void psp_adhoc_delete_flags(PspAdhocContext *context)
 {
   if(context->wake_send >= 0)
@@ -177,6 +191,8 @@ static void psp_adhoc_delete_flags(PspAdhocContext *context)
   context->wake_receive = -1;
 }
 
+/* Enters FAILED, keeping the error (-1 when the call returned 0) and the
+   phase it failed in for the menu and log; returns -1. */
 static int psp_adhoc_fail(PspAdhocContext *context, int error)
 {
   context->last_error = error != 0 ? error : -1;
@@ -207,6 +223,7 @@ static int psp_adhoc_network_init(PspAdhocContext *context)
     return psp_adhoc_fail(context, result);
   context->module_adhoc = 1;
 
+  /* 128 KB pool; callout and interrupt threads with 4 KB stacks. */
   context->phase = PSP_ADHOC_PHASE_NET_INIT;
   result = sceNetInit(128 * 1024, PSP_ADHOC_STACK_PRIORITY, 4 * 1024,
    PSP_ADHOC_STACK_PRIORITY, 4 * 1024);
@@ -231,6 +248,8 @@ static int psp_adhoc_network_init(PspAdhocContext *context)
   return 0;
 }
 
+/* Undoes psp_adhoc_network_init() in reverse, socket and group first;
+   only the steps that succeeded are undone, so a partial bring-up is safe. */
 static void psp_adhoc_network_term(PspAdhocContext *context)
 {
   if(context->socket_id >= 0)
@@ -288,6 +307,8 @@ static int psp_adhoc_wait_group(PspAdhocContext *context)
   return psp_adhoc_fail(context, SCE_ADHOC_ERROR_TIMEOUT);
 }
 
+/* Opens the PDP (datagram) socket on this PSP's MAC and the given port;
+   1 on success, -1 with the failure recorded. */
 static int psp_adhoc_open_socket(PspAdhocContext *context,
  unsigned short port)
 {
@@ -325,6 +346,8 @@ static int psp_adhoc_open_socket(PspAdhocContext *context,
     } \
   } while(0)
 
+/* Creates the group and opens the host socket. 1 = ready, 0 = stopped,
+   -1 = error. */
 static int psp_adhoc_host(PspAdhocContext *context)
 {
   int result;
@@ -361,7 +384,7 @@ static int psp_adhoc_scan(PspAdhocContext *context,
   if(result < 0)
     return psp_adhoc_fail(context, result);
 
-  /* A scan reports state 2 until it finishes. */
+  /* A scan reports state 2 until it finishes; wait at least 250 ms. */
   started = sceKernelGetSystemTimeWide();
   while(sceKernelGetSystemTimeWide() - started < PSP_ADHOC_SCAN_WAIT_US)
   {
@@ -439,6 +462,8 @@ static int psp_adhoc_find_host(PspAdhocContext *context,
   return psp_adhoc_fail(context, SCE_ADHOC_ERROR_TIMEOUT);
 }
 
+/* Finds and joins the group, then the host's address. 1 = ready,
+   0 = stopped, -1 = error. */
 static int psp_adhoc_join(PspAdhocContext *context)
 {
   struct SceNetAdhocctlScanInfo selected;
@@ -532,6 +557,8 @@ static int psp_adhoc_receive_all(PspAdhocContext *context)
   return 1;
 }
 
+/* Sends everything the emulator queued. Until the host has heard from a
+   joiner there is no peer, and the datagrams are discarded. */
 static int psp_adhoc_send_all(PspAdhocContext *context)
 {
   uint8_t data[PSP_ADHOC_MAX_DATAGRAM];
@@ -560,6 +587,8 @@ static int psp_adhoc_send_all(PspAdhocContext *context)
   return 1;
 }
 
+/* Fails at once when WLAN is switched off, or once the group has been
+   lost for PSP_ADHOC_HEALTH_GRACE_US. */
 static int psp_adhoc_check_health(PspAdhocContext *context,
  uint64_t *unhealthy_since)
 {
@@ -588,6 +617,8 @@ static int psp_adhoc_check_health(PspAdhocContext *context,
   return 1;
 }
 
+/* The worker's session loop: moves datagrams and checks health until the
+   emulator stops it or the network fails. */
 static void psp_adhoc_connected(PspAdhocContext *context)
 {
   uint64_t next_health = sceKernelGetSystemTimeWide();
@@ -620,6 +651,8 @@ static void psp_adhoc_connected(PspAdhocContext *context)
   psp_adhoc_send_all(context);
 }
 
+/* The worker thread: brings the network up, hosts or joins, runs the
+   session, then tears everything down and leaves STOPPED or FAILED. */
 static int psp_adhoc_thread(SceSize args, void *argp)
 {
   PspAdhocContext *context = &psp_adhoc;
@@ -646,6 +679,7 @@ static int psp_adhoc_thread(SceSize args, void *argp)
 
 /* ---- Emulator thread API ---------------------------------------------- */
 
+/* Joins the worker for at most timeout_us; 1 once it is gone. */
 static int psp_adhoc_reap(SceUInt timeout_us)
 {
   SceUInt timeout = timeout_us;
@@ -737,6 +771,8 @@ PspAdhocState psp_adhoc_state(void)
   return psp_adhoc.state;
 }
 
+/* SCE error of the call that failed (-1 if it gave no code); 0 until a
+   failure, and cleared by psp_adhoc_start(). */
 int psp_adhoc_last_error(void)
 {
   return psp_adhoc.last_error;
@@ -747,6 +783,7 @@ PspAdhocPhase psp_adhoc_failure_phase(void)
   return psp_adhoc.failure_phase;
 }
 
+/* Short phase label for the link error line in the menu. */
 const char *psp_adhoc_phase_name(PspAdhocPhase phase)
 {
   switch(phase)

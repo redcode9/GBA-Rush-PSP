@@ -26,6 +26,7 @@ int dynarec_worklist_push(DynarecWorklist *worklist, void *branch_source,
 
   if(worklist->count == worklist->capacity)
   {
+    /* Double the capacity, refusing sizes whose byte count overflows. */
     capacity = worklist->capacity == 0
      ? DYNAREC_WORKLIST_INITIAL_CAPACITY : worklist->capacity * 2;
     if(capacity < worklist->capacity ||

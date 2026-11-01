@@ -21,7 +21,7 @@
 #ifndef CHEATS_H
 #define CHEATS_H
 
-#define CHEAT_NAME_LENGTH (25)//(24*5)
+#define CHEAT_NAME_LENGTH (25)
 #define MAX_CHEATS_PAGE 64
 #define MAX_CHEATS (MAX_CHEATS_PAGE * 10)
 #define MAX_CHEAT_HOOKS MAX_CHEATS
@@ -40,7 +40,7 @@ typedef struct
 {
   char cheat_name[CHEAT_NAME_LENGTH];
   u32 cheat_active;
-  u32 cheat_codes[256];
+  u32 cheat_codes[256]; // (address, value) pair per code line, decrypted
   u32 num_cheat_lines;
   CHEAT_VARIANT_ENUM cheat_variant;
 } CHEAT_TYPE;
@@ -54,13 +54,13 @@ typedef enum
   CHEAT_LOAD_ERROR_EMPTY
 } CHEAT_LOAD_RESULT;
 
-// グローバル変数宣言
+// Global variables
 
 extern CHEAT_TYPE cheats[MAX_CHEATS];
 extern u32 num_cheats;
 extern char loaded_cheat_filename[MAX_FILE];
 
-// 関数宣言
+// Functions
 
 void process_cheats(void);
 u32 cheat_hook_configured(u32 pc);

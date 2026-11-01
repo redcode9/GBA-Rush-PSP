@@ -1,9 +1,18 @@
+/*
+ * Host tests for fast_forward_policy.c: how the fast-forward button turns
+ * on the feature per profile, how fast emulation runs and which frames are
+ * shown. Times are microseconds on the PSP's 32-bit clock. One GBA frame is
+ * 280896 cycles at 16.78 MHz = 16742.7 us, so 2x paces frames 8371 us apart
+ * and 3x 5581 us apart. "Present" means the frame is drawn to the screen.
+ */
+
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 
 #include "fast_forward_policy.h"
 
+/* Defaults switched to the Custom profile with the four given choices. */
 static FastForwardSettings custom_settings(FastForwardActivation activation,
  FastForwardSpeed speed, FastForwardPresentation presentation,
  FastForwardAudio audio)
@@ -43,6 +52,8 @@ static void test_defaults_and_invalid_fields(void)
   assert(settings.audio == FAST_FORWARD_AUDIO_SILENT);
 }
 
+/* Modern profile: active while held, unlimited speed (multiplier 0), and
+   frames drawn at 30 Hz (every 33333 us). Releasing forces one redraw. */
 static void test_modern_hold_and_presentation(void)
 {
   FastForwardPolicy policy;
@@ -69,6 +80,8 @@ static void test_modern_hold_and_presentation(void)
   assert(!fast_forward_policy_take_force_present(&policy));
 }
 
+/* Classic profile: each press cycles 2x, 3x, off, and draws every 2nd or
+   3rd emulated frame instead of pacing by time. */
 static void test_classic_cycle_and_frame_divisors(void)
 {
   FastForwardSettings settings;
@@ -105,6 +118,8 @@ static void test_classic_cycle_and_frame_divisors(void)
   assert(fast_forward_policy_take_force_present(&policy));
 }
 
+/* Toggle latches on a press and stays on after release until the next
+   press; configure() then switches the live policy to hold at 3x. */
 static void test_custom_hold_toggle_and_reconfigure(void)
 {
   FastForwardSettings settings = custom_settings(
@@ -131,6 +146,8 @@ static void test_custom_hold_toggle_and_reconfigure(void)
   assert(!fast_forward_policy_active(&policy));
 }
 
+/* Performance presentation draws at 15 Hz (every 66667 us); at maximum
+   speed accelerated audio is not offered, so the policy reports silence. */
 static void test_custom_presentation_rates(void)
 {
   FastForwardSettings settings = custom_settings(
@@ -150,6 +167,7 @@ static void test_custom_presentation_rates(void)
   assert(frame.present);
 }
 
+/* When emulation falls behind the 2x schedule, no catch-up delay is added. */
 static void test_limited_speed_never_delays_when_behind(void)
 {
   FastForwardSettings settings = custom_settings(
@@ -168,6 +186,7 @@ static void test_limited_speed_never_delays_when_behind(void)
   assert(frame.delay_us == 0);
 }
 
+/* Pacing and presentation keep working across the 32-bit clock wrap. */
 static void test_clock_wrap(void)
 {
   FastForwardSettings settings = custom_settings(
@@ -188,6 +207,9 @@ static void test_clock_wrap(void)
   assert(frame.present);
 }
 
+/* A fallback request from the sound code switches audio to silent and is
+   counted once; a forced stop (main_fast_forward_stop) also clears the
+   classic step and forces a redraw. */
 static void test_forced_stop_and_audio_fallback(void)
 {
   FastForwardSettings settings = custom_settings(
@@ -212,6 +234,7 @@ static void test_forced_stop_and_audio_fallback(void)
   assert(!fast_forward_policy_active(&policy));
 }
 
+/* Runs every profile and timing case; a failing assert aborts the run. */
 int main(void)
 {
   test_defaults_and_invalid_fields();

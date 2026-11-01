@@ -1,3 +1,11 @@
+/*
+ * Host tests for the diagnostic runtime log: the fixed-size event rings of
+ * runtime_log.c (main, network and the smaller critical ring), the
+ * big-endian file they are encoded into (read by
+ * tools/decode_runtime_log.py), and runtime_log_store.c, which replaces a
+ * log file safely and rotates the logs of the last four sessions.
+ */
+
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -14,12 +22,15 @@ typedef struct
   int valid;
 } FakeLogFile;
 
+/* In-memory file system; fail_promote makes renaming current.tmp fail. */
 typedef struct
 {
   FakeLogFile files[8];
   int fail_promote;
 } FakeLogStore;
 
+/* Finds path, or with create claims a free slot for it; NULL when it is
+   absent or all 8 slots are taken. */
 static FakeLogFile *fake_file(FakeLogStore *store, const char *path,
  int create)
 {
@@ -47,6 +58,7 @@ static int fake_exists(void *context, const char *path)
   return fake_file((FakeLogStore *)context, path, 0) != NULL;
 }
 
+/* Creates or replaces path; fails over 64 bytes or with all slots taken. */
 static int fake_write(void *context, const char *path,
  const uint8_t *data, size_t size)
 {
@@ -71,6 +83,7 @@ static int fake_remove(void *context, const char *path)
   return 1;
 }
 
+/* Moves source to target, replacing any existing target. */
 static int fake_rename(void *context, const char *source,
  const char *target)
 {
@@ -92,6 +105,7 @@ static int fake_rename(void *context, const char *source,
   return 1;
 }
 
+/* The store's I/O callbacks, wired to the in-memory file system. */
 static RuntimeLogStoreIo fake_io(FakeLogStore *store)
 {
   RuntimeLogStoreIo io;
@@ -104,6 +118,7 @@ static RuntimeLogStoreIo fake_io(FakeLogStore *store)
   return io;
 }
 
+/* A one-byte file whose value shows where rotation moved it. */
 static void seed_file(FakeLogStore *store, const char *path, uint8_t value)
 {
   FakeLogFile *file = fake_file(store, path, 1);
@@ -169,6 +184,8 @@ static void test_critical_ring_tracks_its_smaller_retention_window(void)
   assert(runtime_log_ring_dropped(&ring) == 7u);
 }
 
+/* The critical ring is already full when the link benchmark summary and
+   then the teardown checkpoints arrive: the summary must still be kept. */
 static void test_benchmark_survives_shutdown_checkpoint(void)
 {
   RuntimeLogRing ring;
@@ -202,6 +219,8 @@ static void test_benchmark_survives_shutdown_checkpoint(void)
   }
 }
 
+/* A ring forged so that its record ordinals end at UINT32_MAX: the
+   snapshot must stop there instead of wrapping around. */
 static void test_snapshot_at_ordinal_limit_is_bounded(void)
 {
   RuntimeLogRecord records[2];
@@ -224,6 +243,9 @@ static void test_snapshot_at_ordinal_limit_is_bounded(void)
   assert(records[1].ordinal == UINT32_MAX);
 }
 
+/* One record per ring survives encode and validate, and a flipped
+   payload byte fails the CRC. The version is pinned so that a format
+   change also updates VERSIONS in tools/decode_runtime_log.py. */
 static void test_encode_and_validate(void)
 {
   uint8_t encoded[RUNTIME_LOG_MAX_FILE_SIZE];
@@ -270,12 +292,16 @@ static void test_encode_and_validate(void)
   assert(critical_count == 1);
   assert(decoded.session_id == metadata.session_id);
   assert(decoded.rom_identity == metadata.rom_identity);
+  /* value[0] of the first record, 20 bytes into it. */
   assert(read_u32(encoded + RUNTIME_LOG_HEADER_SIZE + 20) == 6u);
 
   encoded[written - 1] ^= 1u;
   assert(!runtime_log_validate(encoded, written, NULL, NULL, NULL, NULL));
 }
 
+/* NULL arguments are rejected. The encode call fails on its NULL critical
+   ring before the one-byte-short buffer is checked, so that limit is not
+   covered here. */
 static void test_invalid_arguments(void)
 {
   RuntimeLogRing ring;
@@ -292,6 +318,7 @@ static void test_invalid_arguments(void)
   assert(!runtime_log_validate(NULL, 0, NULL, NULL, NULL, NULL));
 }
 
+/* Full rings encode to exactly RUNTIME_LOG_MAX_FILE_SIZE. */
 static void test_maximum_current_snapshot_size(void)
 {
   uint8_t encoded[RUNTIME_LOG_MAX_FILE_SIZE];
@@ -356,6 +383,7 @@ static void test_store_preserves_previous_log_on_failed_promote(void)
   assert(!fake_exists(&store, "current.bak"));
 }
 
+/* Rotation shifts each log one slot later and drops the oldest. */
 static void test_store_rotates_four_sessions(void)
 {
   const char *slots[] = { "log1", "log2", "log3", "log4" };
@@ -375,6 +403,8 @@ static void test_store_rotates_four_sessions(void)
   assert(fake_file(&store, "log4", 0)->data[0] == 3);
 }
 
+/* Runs every ring, encoding and store case; a failing assert aborts the
+   run. */
 int main(void)
 {
   test_ring_retains_latest_records();

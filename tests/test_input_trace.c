@@ -1,3 +1,11 @@
+/*
+ * Host tests for input_trace.c, the diagnostic input recorder (built with
+ * DIAGNOSTIC_INPUT_TRACE): key states are stored per frame as change
+ * events, encoded as a "GBIT" file tied to the game code and ROM revision,
+ * and replayed in place of the physical keys from a chosen start frame.
+ * Key masks use the 10 GBA button bits (0x3FF = all of them).
+ */
+
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -8,6 +16,8 @@
 static const uint8_t game_code[INPUT_TRACE_GAME_CODE_SIZE] =
  { 'B', 'P', 'R', 'E' };
 
+/* Encodes a five-frame recording (frames 100-104, revision 1) of four
+   events: the initial state plus three changes. Returns its size. */
 static size_t make_trace(uint8_t *encoded, size_t encoded_size)
 {
   InputTraceEvent events[8];
@@ -36,6 +46,8 @@ static void test_record_and_replay(void)
   assert(size == INPUT_TRACE_HEADER_SIZE + 4 * INPUT_TRACE_EVENT_SIZE);
   assert(memcmp(encoded, INPUT_TRACE_MAGIC, 4) == 0);
 
+  /* Replayed from frame 500: recorded keys replace the physical ones
+     (0x3FF) until the trace ends; before and after it they pass through. */
   input_trace_init(&replay, events, 8);
   assert(input_trace_begin_replay(&replay, encoded, size, game_code, 1, 500));
   assert(replay.state == INPUT_TRACE_REPLAYING);
@@ -57,6 +69,9 @@ static void test_duplicate_states_and_capacity(void)
   InputTraceEvent events[2];
   InputTrace trace;
 
+  /* The initial state fills one of the two slots, an unchanged state adds
+     nothing, and the second change overflows. A frame before the start is
+     out of order. */
   input_trace_init(&trace, events, 2);
   assert(input_trace_begin_record(&trace, 10, game_code, 0, 0));
   assert(input_trace_record(&trace, 11, 0));
@@ -95,6 +110,8 @@ static void test_identity_and_checksum_rejection(void)
   assert(replay.error == INPUT_TRACE_ERROR_CHECKSUM);
 }
 
+/* Replay refuses a short header, a bad magic, an unknown version (byte 4),
+   a truncated event list and more events than its buffer holds. */
 static void test_malformed_traces(void)
 {
   uint8_t encoded[INPUT_TRACE_HEADER_SIZE + 8 * INPUT_TRACE_EVENT_SIZE];
@@ -171,6 +188,8 @@ static void test_paged_header_identity(void)
   for(i = 0; i < sizeof(rom_page); i++)
     rom_page[i] = (uint8_t)(i ^ 0xA5);
 
+  /* Cartridge header: title at 0xA0, game code at 0xAC, revision at 0xBC.
+     0x1000000 is the 16 MiB ROM file size. */
   memset(header, 0, sizeof(header));
   memcpy(header + 0xA0, "BPREREPLAY", 10);
   memcpy(header + 0xAC, game_code, sizeof(game_code));
@@ -214,6 +233,7 @@ static void test_paged_header_identity(void)
   assert(memcmp(rom_page + 0xAC, game_code, sizeof(game_code)) != 0);
 }
 
+/* A ROM file too small to contain the 0xC0-byte header has no identity. */
 static void test_header_file_size_gate(void)
 {
   uint8_t header[INPUT_TRACE_IDENTITY_SIZE];
@@ -255,6 +275,8 @@ static void test_header_file_size_gate(void)
   assert(replay.state == INPUT_TRACE_FINISHED);
 }
 
+/* Runs every recording, file and replay case; a failing assert aborts the
+   run. */
 int main(void)
 {
   test_record_and_replay();

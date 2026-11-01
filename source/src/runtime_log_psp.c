@@ -22,6 +22,7 @@
 #include "ku_bridge.h"
 #include "runtime_log_store.h"
 
+/* Session files kept: session-1 is the current one. */
 #define RUNTIME_LOG_SESSION_COUNT 4u
 
 typedef struct
@@ -31,6 +32,7 @@ typedef struct
   RuntimeLogRing critical_ring;
   RuntimeLogMetadata metadata;
   char directory[MAX_PATH];
+  /* "ms0:"-style device prefix of the log path, for sceIoSync. */
   char device[8];
   char slots[RUNTIME_LOG_SESSION_COUNT][MAX_PATH];
   char temporary[MAX_PATH];
@@ -42,6 +44,8 @@ typedef struct
 
 static RuntimeLogPsp runtime_log_psp;
 
+/* sceIo versions of the runtime_log_store file callbacks, gathered by
+   runtime_log_psp_io; context is unused. */
 static int runtime_log_psp_exists(void *context, const char *path)
 {
   SceIoStat status;
@@ -50,6 +54,8 @@ static int runtime_log_psp_exists(void *context, const char *path)
   return sceIoGetstat(path, &status) >= 0 && FIO_S_ISREG(status.st_mode);
 }
 
+/* Creates or truncates path and writes all of data; 0 if any write or the
+   close fails. */
 static int runtime_log_psp_write(void *context, const char *path,
  const uint8_t *data, size_t size)
 {
@@ -88,6 +94,8 @@ static int runtime_log_psp_rename(void *context, const char *source,
   return sceIoRename(source, target) >= 0;
 }
 
+/* The callbacks above as the table runtime_log_store's recover, rotate and
+   save take; context stays NULL. */
 static RuntimeLogStoreIo runtime_log_psp_io(void)
 {
   RuntimeLogStoreIo io;
@@ -100,6 +108,8 @@ static RuntimeLogStoreIo runtime_log_psp_io(void)
   return io;
 }
 
+/* Builds the session, temporary and backup paths under <base_path>logs
+   and the device prefix; 0 if any path does not fit. */
 static int runtime_log_psp_paths(const char *base_path)
 {
   const char *separator;
@@ -188,6 +198,8 @@ int runtime_log_psp_init(const char *base_path)
     return 1;
   }
 
+  /* Finish any save cut short last time, then shift the old sessions
+     down so this run starts a fresh session-1. */
   io = runtime_log_psp_io();
   for(index = 0; index < RUNTIME_LOG_SESSION_COUNT; index++)
     slots[index] = runtime_log_psp.slots[index];
@@ -285,6 +297,7 @@ int runtime_log_psp_flush(RuntimeLogFlushReason reason)
    runtime_log_psp.encoded, encoded_size);
   if(!saved)
     return 0;
+  /* Flush the device so the log survives a crash or power loss. */
   return runtime_log_psp.device[0] == '\0' ||
    sceIoSync(runtime_log_psp.device, 0) >= 0;
 }

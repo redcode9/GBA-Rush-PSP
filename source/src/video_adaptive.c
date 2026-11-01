@@ -14,6 +14,10 @@
 #include <stddef.h>
 #include <string.h>
 
+/* A GBA frame lasts about 16743 us (59.73 Hz). A window is bad if its 95th
+ * percentile frame time or GE wait exceeds the BAD limit, or if any frame
+ * was skipped or an audio event reported; good if all stay under GOOD.
+ * Two bad windows in a row drop to CRISP, five good ones restore SHARP. */
 #define VIDEO_ADAPTIVE_BAD_FRAME_US 17200U
 #define VIDEO_ADAPTIVE_GOOD_FRAME_US 16900U
 #define VIDEO_ADAPTIVE_BAD_GE_WAIT_US 2500U
@@ -21,6 +25,7 @@
 #define VIDEO_ADAPTIVE_BAD_WINDOWS 2U
 #define VIDEO_ADAPTIVE_GOOD_WINDOWS 5U
 
+/* Insertion sort on a copy; 120 samples is small enough. */
 static uint32_t video_adaptive_percentile95(const uint32_t *values)
 {
   uint32_t sorted[VIDEO_ADAPTIVE_WINDOW_SIZE];
@@ -45,6 +50,8 @@ static uint32_t video_adaptive_percentile95(const uint32_t *values)
   return sorted[((VIDEO_ADAPTIVE_WINDOW_SIZE * 95U) / 100U) - 1U];
 }
 
+/* Starts a new sample window. The samples are overwritten, not cleared,
+ * and the bad and good window streaks carry over. */
 static void video_adaptive_clear_window(VideoAdaptiveState *state)
 {
   state->sample_count = 0;
@@ -52,6 +59,8 @@ static void video_adaptive_clear_window(VideoAdaptiveState *state)
   state->audio_events = 0;
 }
 
+/* Starts at SHARP with empty windows; while disabled, frames are not
+ * recorded and only video_adaptive_set_enabled() changes the quality. */
 void video_adaptive_init(VideoAdaptiveState *state, int enabled)
 {
   if(state == NULL)
@@ -63,6 +72,8 @@ void video_adaptive_init(VideoAdaptiveState *state, int enabled)
   state->enabled = enabled != 0;
 }
 
+/* After resume: drops the collected windows. An enabled governor restarts
+ * at SHARP; a disabled one keeps its manual quality. */
 void video_adaptive_reset(VideoAdaptiveState *state)
 {
   int enabled;
@@ -79,6 +90,8 @@ void video_adaptive_reset(VideoAdaptiveState *state)
   state->reason = VIDEO_ADAPTIVE_REASON_RESET;
 }
 
+/* Enabled (16:9 auto): start a fresh run at SHARP. Disabled: hold
+ * manual_quality, with out-of-range values treated as SMOOTH. */
 void video_adaptive_set_enabled(VideoAdaptiveState *state, int enabled,
  VideoAdaptiveQuality manual_quality)
 {
@@ -104,6 +117,8 @@ void video_adaptive_set_enabled(VideoAdaptiveState *state, int enabled,
   }
 }
 
+/* Cause reported for a drop to CRISP, most specific first; a bad window
+ * that none of the others explain was caused by GE wait. */
 static VideoAdaptiveReason video_adaptive_bad_reason(
  const VideoAdaptiveState *state)
 {
@@ -116,6 +131,8 @@ static VideoAdaptiveReason video_adaptive_bad_reason(
   return VIDEO_ADAPTIVE_REASON_GE_WAIT;
 }
 
+/* Rates a full window bad, good or neither (neither breaks both streaks)
+ * and steps the quality; returns 1 when it changed. */
 static int video_adaptive_evaluate_window(VideoAdaptiveState *state)
 {
   int bad;

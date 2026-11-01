@@ -18,6 +18,13 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+// Cheat lists: loading a cheat file and applying the enabled codes every
+// frame. GameShark / Action Replay v1-v3 codes are TEA-encrypted, "direct"
+// codes are the same formats unencrypted, and CodeBreaker codes are decoded
+// and run by codebreaker.c. A CodeBreaker 1xxxxxxx code instead runs the
+// codes when the CPU reaches a ROM address: cpu.c checks
+// cheat_hook_configured() and mips_stub.S calls process_cheats_at_hook().
+
 #include "common.h"
 #include "codebreaker.h"
 
@@ -25,11 +32,15 @@ CHEAT_TYPE ALIGN_DATA cheats[MAX_CHEATS];
 u32 num_cheats = 0;
 char loaded_cheat_filename[MAX_FILE] = { 0 };
 
+// Enabled cheats, rebuilt by rebuild_active_cheat_indexes().
 static u16 ALIGN_DATA active_cheat_indexes[MAX_CHEATS];
 static u16 ALIGN_DATA active_codebreaker_indexes[MAX_CHEATS];
 static u32 active_cheat_count = 0;
 static u32 active_codebreaker_count = 0;
 
+// Sorted hook addresses of every CodeBreaker cheat in the file, enabled or
+// not, where the dynarec emits a hook call; active_dispatch_hook is the one
+// hook that currently runs codes (0 = run them once per frame instead).
 static u32 ALIGN_DATA configured_hook_addresses[MAX_CHEAT_HOOKS];
 static u32 configured_hook_count = 0;
 static u32 active_dispatch_hook = 0;
@@ -43,6 +54,8 @@ static u32 codebreaker_hook_address(u32 op1);
 static u32 codebreaker_entry_hook(const CHEAT_TYPE *cheat);
 static u32 codebreaker_operation_lines(const CHEAT_TYPE *cheat, u32 line);
 
+// Memory access hooks for codebreaker.c, which is built without the
+// emulator headers so it can be tested on the host.
 u16 codebreaker_memory_read16(u32 address)
 {
   return read_memory16(address);
@@ -68,6 +81,7 @@ void codebreaker_memory_write32(u32 address, u32 value)
   write_memory32(address, value);
 }
 
+// Binary search of a sorted hook address list.
 static u32 hook_address_present(const u32 *addresses, u32 count, u32 address)
 {
   u32 low = 0;
@@ -86,6 +100,7 @@ static u32 hook_address_present(const u32 *addresses, u32 count, u32 address)
   return (low < count) && (addresses[low] == address);
 }
 
+// Inserts address keeping the list sorted; returns 0 only when it is full.
 static u32 add_hook_address(u32 *addresses, u32 *count, u32 address)
 {
   u32 low = 0;
@@ -115,6 +130,8 @@ static u32 add_hook_address(u32 *addresses, u32 *count, u32 address)
   return 1;
 }
 
+// Recollects the hook addresses of every loaded CodeBreaker cheat. Also
+// restores them after a failed load, whose check pass cleared the list.
 static void rebuild_configured_hook_index(void)
 {
   u32 i;
@@ -139,6 +156,7 @@ static void rebuild_configured_hook_index(void)
   }
 }
 
+// Hook address of the first 1xxxxxxx code in a CodeBreaker cheat, or 0.
 static u32 codebreaker_entry_hook(const CHEAT_TYPE *cheat)
 {
   u32 line;
@@ -158,6 +176,9 @@ static u32 codebreaker_entry_hook(const CHEAT_TYPE *cheat)
   return 0;
 }
 
+// Rebuilds the enabled-cheat lists after a load or a menu toggle. Only one
+// CodeBreaker hook can be active: enabling a cheat with a new hook switches
+// to it and disables the enabled cheats on any other hook.
 void rebuild_active_cheat_indexes(void)
 {
   u32 i;
@@ -221,6 +242,7 @@ void rebuild_active_cheat_indexes(void)
   }
 }
 
+// Drops every cheat and hook so none runs until a cheat file is loaded again.
 void clear_cheats(void)
 {
   memset(cheats, 0, sizeof(cheats));
@@ -233,6 +255,8 @@ void clear_cheats(void)
 }
 
 
+// TEA decryption (32 rounds) with the GameShark v1 or v3 key. r is the TEA
+// sum, starting at 32 * 0x9e3779b9.
 static void decrypt_gsa_code(int *address_ptr, int *value_ptr,
  CHEAT_VARIANT_ENUM cheat_variant)
 {
@@ -265,6 +289,8 @@ static void decrypt_gsa_code(int *address_ptr, int *value_ptr,
   *value_ptr = value;
 }
 
+// Maps the first word of a cheat header line to its type. v1 and v2 codes
+// share a key and format; a bare "#" means unencrypted v3.
 static CHEAT_VARIANT_ENUM parse_cheat_variant(const char *variant)
 {
   if(!strcasecmp(variant, "gameshark_v1") ||
@@ -293,6 +319,7 @@ static CHEAT_VARIANT_ENUM parse_cheat_variant(const char *variant)
   return CHEAT_TYPE_INVALID;
 }
 
+// Strips trailing whitespace in place, CR included, so CRLF files parse too.
 static void trim_line_end(char *line)
 {
   u32 length = strlen(line);
@@ -303,11 +330,16 @@ static void trim_line_end(char *line)
     line[--length] = '\0';
 }
 
+// fgets filled the buffer before a newline: the line is too long. A last
+// line without a newline at end of file is not truncated.
 static u32 line_is_truncated(const char *line, FILE *file)
 {
   return (strchr(line, '\n') == NULL) && !feof(file);
 }
 
+// Cheat file format: a "<variant> <name>" line, then one "<hex> <hex>" code
+// per line until a blank line. With store = 0 the file is only validated
+// (and its hooks collected), so a bad file leaves the current list intact.
 static CHEAT_LOAD_RESULT parse_cheats_file(FILE *cheats_file, u32 store,
  u32 collect_hooks, u32 *parsed_count, u32 *error_line)
 {
@@ -444,6 +476,7 @@ static CHEAT_LOAD_RESULT parse_cheats_file(FILE *cheats_file, u32 store,
 
           pending_codebreaker_data = codebreaker_payload_lines(cb_address,
            cb_value);
+          // Only the D0000020 button condition is supported.
           if((opcode == 0xD) &&
            ((cb_address & 0x0FFFFFFF) != 0x20))
           {
@@ -494,6 +527,9 @@ static CHEAT_LOAD_RESULT parse_cheats_file(FILE *cheats_file, u32 store,
   return cheat_count ? CHEAT_LOAD_OK : CHEAT_LOAD_ERROR_EMPTY;
 }
 
+// Loads a cheat file with all cheats disabled. The file is checked before
+// the list is replaced, *error_line gets the failing line, and translated
+// code is flushed because hook calls are compiled into it.
 CHEAT_LOAD_RESULT load_cheats(const char *cheats_path, u32 *error_line)
 {
   FILE *cheats_file;
@@ -542,12 +578,14 @@ CHEAT_LOAD_RESULT load_cheats(const char *cheats_path, u32 *error_line)
   rebuild_configured_hook_index();
   rebuild_active_cheat_indexes();
   flush_translation_cache(TRANSLATION_REGION_READONLY,
-   FLUSH_REASON_INITIALIZING);
+   FLUSH_REASON_CLEAR_ALL);
   flush_translation_cache(TRANSLATION_REGION_WRITABLE,
-   FLUSH_REASON_INITIALIZING);
+   FLUSH_REASON_CLEAR_ALL);
   return CHEAT_LOAD_OK;
 }
 
+// Runs one GameShark / Action Replay v1-v2 (or direct v1) cheat. The opcode
+// is the address's top nibble; 0x3 takes the next lines as address pairs.
 static void process_cheat_gs1(CHEAT_TYPE *cheat)
 {
   u32 cheat_opcode;
@@ -599,12 +637,12 @@ static void process_cheat_gs1(CHEAT_TYPE *cheat)
         break;
       }
 
-      // ROM patch not supported yet
+      // ROM patch, only when the whole ROM is in memory
       case 0x6:
-        if(gamepak_file_large == -1)  // オンメモリのROMの場合だけ
+        if(gamepak_file_large == GAMEPAK_FILE_NONE)
         {
           ADDRESS16(gamepak_rom, (address * 2) - 0x08000000)
-           = (value & 0xFFFF);  // データの書込み
+           = (value & 0xFFFF);
         }
         break;
 
@@ -612,7 +650,8 @@ static void process_cheat_gs1(CHEAT_TYPE *cheat)
       case 0x8:
         break;
 
-      // Reencryption (DEADFACE) not supported yet
+      // Run the next line only if the halfword matches. Reencryption
+      // (DEADFACE) is not supported.
       case 0xD:
         if(read_memory16(address) != (value & 0xFFFF))
         {
@@ -621,6 +660,7 @@ static void process_cheat_gs1(CHEAT_TYPE *cheat)
         }
         break;
 
+      // Skip the next 0-3 lines unless the halfword matches.
       case 0xE:
         if(read_memory16(value & 0xFFFFFFF) != (address & 0xFFFF))
         {
@@ -656,6 +696,7 @@ static void process_cheat_gs3(CHEAT_TYPE *cheat)
     cheat_opcode = address >> 28;
     address &= 0xFFFFFFF;
 
+    // v3 codes pack the region nibble into bits 20-23 of the address.
     switch(cheat_opcode)
     {
       case 0x0:
@@ -764,6 +805,8 @@ static void process_cheat_gs3(CHEAT_TYPE *cheat)
   }
 }
 
+// Lines the code at line spans with its data lines, clipped to the cheat;
+// 0 past the end. Same as the codebreaker.c helper, for a stored cheat.
 static u32 codebreaker_operation_lines(const CHEAT_TYPE *cheat, u32 line)
 {
   u32 lines = 1;
@@ -784,17 +827,22 @@ static void process_cheat_codebreaker(CHEAT_TYPE *cheat)
   codebreaker_execute(cheat->cheat_codes, cheat->num_cheat_lines);
 }
 
+// Address of a 1xxxxxxx hook code, in the ROM at 0x08000000.
 static u32 codebreaker_hook_address(u32 op1)
 {
   return 0x08000000 | (op1 & 0x01FFFFFF);
 }
 
+// True if pc (Thumb bit ignored) is the hook of any CodeBreaker cheat,
+// enabled or not; cpu.c then ends the block and emits a hook call there.
 u32 cheat_hook_configured(u32 pc)
 {
   return hook_address_present(configured_hook_addresses,
    configured_hook_count, pc & ~1u);
 }
 
+// Runs the enabled CodeBreaker cheats when pc is the active hook. Called
+// from translated code through execute_cheat_hook in mips_stub.S.
 void process_cheats_at_hook(u32 pc)
 {
   u32 i;
@@ -808,6 +856,8 @@ void process_cheats_at_hook(u32 pc)
 }
 
 
+// Applies the enabled cheats once per frame, as VBlank ends (main.c).
+// CodeBreaker cheats run here only when no hook address is active.
 void process_cheats(void)
 {
   u32 i;

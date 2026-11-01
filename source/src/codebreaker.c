@@ -14,6 +14,8 @@
 
 #include "codebreaker.h"
 
+/* Three steps of the 0x41C64E6D / 0x3039 LCG folded into one 32-bit
+ * value. */
 static uint32_t codebreaker_rand(CODEBREAKER_STATE *state)
 {
   uint32_t roll = state->rng_state * 0x41C64E6D + 0x3039;
@@ -27,6 +29,8 @@ static uint32_t codebreaker_rand(CODEBREAKER_STATE *state)
   return mix;
 }
 
+/* Next random value modulo the 48-entry table, computed with a
+ * shift-and-subtract remainder. */
 static uint32_t codebreaker_swap_index(CODEBREAKER_STATE *state)
 {
   uint32_t roll = codebreaker_rand(state);
@@ -92,11 +96,15 @@ static uint32_t codebreaker_swap_index(CODEBREAKER_STATE *state)
   return roll;
 }
 
+/* All zero means master 0: lines are read unencrypted until a 9xxxxxxx
+ * code reseeds the state. */
 void codebreaker_state_reset(CODEBREAKER_STATE *state)
 {
   memset(state, 0, sizeof(*state));
 }
 
+/* Builds the decryption state from a 9xxxxxxx code: shuffles the bit table,
+ * then derives the four XOR keys from op1 bits 24-27 and op2. */
 void codebreaker_reseed(CODEBREAKER_STATE *state, uint32_t op1,
  uint16_t op2)
 {
@@ -131,6 +139,7 @@ void codebreaker_reseed(CODEBREAKER_STATE *state, uint32_t op1,
   state->master = op1;
 }
 
+/* A code line as 6 big-endian bytes: 4 from op1, then 2 from op2. */
 void codebreaker_unpack(uint8_t *buffer, uint32_t op1, uint16_t op2)
 {
   buffer[0] = op1 >> 24;
@@ -141,6 +150,8 @@ void codebreaker_unpack(uint8_t *buffer, uint32_t op1, uint16_t op2)
   buffer[5] = op2;
 }
 
+/* Data lines that follow a code: one for a 4xxxxxxx slide, and op2 * 2
+ * bytes at 6 per line for a 5xxxxxxx byte string. */
 uint32_t codebreaker_payload_lines(uint32_t op1, uint16_t op2)
 {
   switch(op1 >> 28)
@@ -156,6 +167,8 @@ uint32_t codebreaker_payload_lines(uint32_t op1, uint16_t op2)
   }
 }
 
+/* Lines the code at line spans with its data lines, clipped to line_count;
+ * 0 past the end. */
 static uint32_t codebreaker_operation_lines(const uint32_t *codes,
  uint32_t line_count, uint32_t line)
 {
@@ -171,6 +184,8 @@ static uint32_t codebreaker_operation_lines(const uint32_t *codes,
   return lines;
 }
 
+/* Runs decrypted (op1, op2) lines. A false condition code skips the next
+ * code together with its data lines. */
 void codebreaker_execute(const uint32_t *codes, uint32_t line_count)
 {
   uint32_t i;
@@ -191,17 +206,17 @@ void codebreaker_execute(const uint32_t *codes, uint32_t line_count)
       case 0x9: /* Encryption seed */
         break;
 
-      case 0x2:
+      case 0x2: /* OR halfword */
         address &= ~1u;
         codebreaker_memory_write16(address,
          codebreaker_memory_read16(address) | op2);
         break;
 
-      case 0x3:
+      case 0x3: /* Write byte */
         codebreaker_memory_write8(address, (uint8_t)op2);
         break;
 
-      case 0x4:
+      case 0x4: /* Slide: halfword writes stepping address and value */
         if((i + 1) < line_count)
         {
           uint32_t parameters = codes[(i + 1) * 2];
@@ -222,7 +237,7 @@ void codebreaker_execute(const uint32_t *codes, uint32_t line_count)
         }
         break;
 
-      case 0x5:
+      case 0x5: /* Write the bytes carried by the following lines */
       {
         uint32_t remaining = (uint32_t)op2 * 2;
         uint32_t next_line = i + 1;
@@ -246,48 +261,48 @@ void codebreaker_execute(const uint32_t *codes, uint32_t line_count)
         break;
       }
 
-      case 0x6:
+      case 0x6: /* AND halfword */
         address &= ~1u;
         codebreaker_memory_write16(address,
          codebreaker_memory_read16(address) & op2);
         break;
 
-      case 0x7:
+      case 0x7: /* If equal */
         address &= ~1u;
         condition = codebreaker_memory_read16(address) == op2;
         is_condition = 1;
         break;
 
-      case 0x8:
+      case 0x8: /* Write halfword */
         address &= ~1u;
         codebreaker_memory_write16(address, op2);
         break;
 
-      case 0xA:
+      case 0xA: /* If not equal */
         address &= ~1u;
         condition = codebreaker_memory_read16(address) != op2;
         is_condition = 1;
         break;
 
-      case 0xB:
+      case 0xB: /* If greater */
         address &= ~1u;
         condition = codebreaker_memory_read16(address) > op2;
         is_condition = 1;
         break;
 
-      case 0xC:
+      case 0xC: /* If less */
         address &= ~1u;
         condition = codebreaker_memory_read16(address) < op2;
         is_condition = 1;
         break;
 
-      case 0xD:
+      case 0xD: /* If keys pressed (KEYINPUT at 0x4000130 is active low) */
         condition = (address == 0x20) &&
          ((codebreaker_memory_read16(0x04000130) & op2) == 0);
         is_condition = 1;
         break;
 
-      case 0xE:
+      case 0xE: /* Add; an odd address adds signed op2 to a word */
         if(address & 1)
         {
           address &= ~1u;
@@ -301,7 +316,7 @@ void codebreaker_execute(const uint32_t *codes, uint32_t line_count)
         }
         break;
 
-      case 0xF:
+      case 0xF: /* If the halfword has any bit of op2 set */
         address &= ~1u;
         condition = (codebreaker_memory_read16(address) & op2) != 0;
         is_condition = 1;
@@ -321,6 +336,8 @@ static void codebreaker_pack(const uint8_t *buffer, uint32_t *op1,
   *op2 = ((uint16_t)buffer[4] << 8) | buffer[5];
 }
 
+/* Undoes the bit permutation, XORs with the first key pair, unchains the
+ * bytes using the master code, then XORs with the second key pair. */
 void codebreaker_decrypt(CODEBREAKER_STATE *state, uint32_t *op1,
  uint16_t *op2)
 {

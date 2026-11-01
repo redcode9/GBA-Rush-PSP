@@ -8,6 +8,9 @@
 
 /* copy from njemu */
 
+/* Only the writer is kept: save_png() stores a 240x160 15-bit GBA screenshot
+   as a 24-bit RGB PNG. It has no caller at the moment. */
+
 #include "common.h"
 
 extern void print_swap_aware(const char *src, u32 x, u32 y, u16 color, u16 bg);
@@ -50,6 +53,7 @@ struct PngInfo
 
 ********************************************************************************/
 
+/* Modal error box: number 0 = out of memory, 1 = encode or write failed. */
 static void png_error_msg(int number)
 {
   GUI_ACTION_TYPE gui_action = CURSOR_NONE;
@@ -90,6 +94,8 @@ static void convert_to_network_order(u32 i, u8 *v)
   v[3] = (i >>  0) & 0xff;
 }
 
+/* Queue a tEXt chunk ("keyword\0text"); png_write_datastream() writes and
+   frees the queue. */
 static int png_add_text(const char *keyword, const char *text)
 {
   struct PngText *pt;
@@ -109,6 +115,8 @@ static int png_add_text(const char *keyword, const char *text)
   return 1;
 }
 
+/* One chunk: big-endian length, type, data, then the CRC-32 of type and
+   data. */
 static int write_chunk(SceUID fd, u32 chunk_type, u8 *chunk_data, u32 chunk_length)
 {
   u32 crc;
@@ -145,6 +153,7 @@ static int write_chunk(SceUID fd, u32 chunk_type, u8 *chunk_data, u32 chunk_leng
   return 1;
 }
 
+/* The 8-byte signature that starts every PNG; 0 on a short write. */
 static int png_write_sig(SceUID fd)
 {
   /* PNG Signature */
@@ -157,6 +166,8 @@ static int png_write_sig(SceUID fd)
   return 1;
 }
 
+/* Every chunk after the signature: IHDR (8-bit RGB), IDAT, the queued tEXt
+   chunks (freed as written), IEND. Returns 0 on the first failed write. */
 static int png_write_datastream(SceUID fd, struct PngInfo *p)
 {
   u8 ihdr[13];
@@ -168,7 +179,7 @@ static int png_write_datastream(SceUID fd, struct PngInfo *p)
   *(ihdr +  8) = 8;  // bit depth;
   *(ihdr +  9) = 2;  // color type
   *(ihdr + 10) = 0;  // compression method;
-  *(ihdr + 11) = 0;  // fliter
+  *(ihdr + 11) = 0;  // filter
   *(ihdr + 12) = 0;  // interlace
 
   if (write_chunk(fd, PNG_CN_IHDR, ihdr, 13) == 0)
@@ -197,6 +208,8 @@ static int png_write_datastream(SceUID fd, struct PngInfo *p)
   return 1;
 }
 
+/* Compress p->image into a new p->zimage buffer. 1.1x + 12 bytes is a safe
+   upper bound on zlib output for this input. */
 static int png_deflate_image(struct PngInfo *p)
 {
   unsigned long zbuff_size;
@@ -233,6 +246,7 @@ static int png_deflate_image(struct PngInfo *p)
   return 0;
 }
 
+/* Each row starts with filter byte 0 (none), then 8-bit R, G, B per pixel. */
 static int png_create_datastream(SceUID fd, u16 *screen_image)
 {
   u32 x, y;
@@ -286,7 +300,7 @@ static int png_create_datastream(SceUID fd, u16 *screen_image)
 
 
 /*--------------------------------------------------------
-  PNG•Û‘¶
+  Save a screenshot as PNG; returns nonzero on success
 --------------------------------------------------------*/
 
 int save_png(const char *path, u16 *screen_image)

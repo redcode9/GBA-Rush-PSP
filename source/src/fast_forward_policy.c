@@ -14,10 +14,12 @@
 #include <stddef.h>
 #include <string.h>
 
+/* 228 lines of 1232 cycles: one GBA frame lasts about 16.74 ms. */
 #define GBA_FRAME_CYCLES 280896ULL
 #define GBA_CLOCK_HZ 16777216ULL
 #define MICROSECONDS_PER_SECOND 1000000ULL
 
+/* A valid copy of settings; the defaults when settings is NULL. */
 static FastForwardSettings sanitized_settings(
  const FastForwardSettings *settings)
 {
@@ -30,6 +32,8 @@ static FastForwardSettings sanitized_settings(
   return result;
 }
 
+/* Forgets the pacing and presentation deadlines so the next frame
+   re-anchors them to the current time instead of catching up. */
 static void reset_schedule(FastForwardPolicy *policy)
 {
   policy->pacing_ready = 0;
@@ -38,6 +42,8 @@ static void reset_schedule(FastForwardPolicy *policy)
   policy->pacing_remainder = 0;
 }
 
+/* A real on/off change is counted, clears the audio fallback and shows the
+   next frame with fresh pacing; setting the same state does nothing. */
 static void set_active(FastForwardPolicy *policy, int active)
 {
   uint32_t next = active != 0;
@@ -52,6 +58,8 @@ static void set_active(FastForwardPolicy *policy, int active)
   policy->force_present = 1;
 }
 
+/* The settings used until a config is read: MODERN, hold for maximum
+   speed, silent audio. */
 void fast_forward_settings_defaults(FastForwardSettings *settings)
 {
   if(settings == NULL)
@@ -64,6 +72,8 @@ void fast_forward_settings_defaults(FastForwardSettings *settings)
   settings->audio = FAST_FORWARD_AUDIO_SILENT;
 }
 
+/* Resets each out-of-range field (an old or damaged config value) to its
+   default. */
 void fast_forward_settings_sanitize(FastForwardSettings *settings)
 {
   if(settings == NULL)
@@ -81,6 +91,8 @@ void fast_forward_settings_sanitize(FastForwardSettings *settings)
     settings->audio = FAST_FORWARD_AUDIO_SILENT;
 }
 
+/* Starts inactive with sanitized settings (the defaults when settings is
+   NULL); the first frame is always shown. */
 void fast_forward_policy_init(FastForwardPolicy *policy,
  const FastForwardSettings *settings)
 {
@@ -92,6 +104,7 @@ void fast_forward_policy_init(FastForwardPolicy *policy,
   policy->force_present = 1;
 }
 
+/* Takes new settings from the menu; a running fast-forward stops. */
 void fast_forward_policy_configure(FastForwardPolicy *policy,
  const FastForwardSettings *settings)
 {
@@ -104,6 +117,8 @@ void fast_forward_policy_configure(FastForwardPolicy *policy,
   policy->classic_step = 0;
 }
 
+/* Called every frame: pressed is a new press of the fast-forward button,
+   held its current state. Hold modes follow held, the others presses. */
 void fast_forward_policy_input(FastForwardPolicy *policy, int pressed,
  int held)
 {
@@ -123,6 +138,7 @@ void fast_forward_policy_input(FastForwardPolicy *policy, int pressed,
       {
         policy->classic_step = (policy->classic_step + 1) % 3;
         set_active(policy, policy->classic_step != 0);
+        /* 2x to 3x is no on/off change, so restart the pacing here. */
         if(policy->active)
         {
           reset_schedule(policy);
@@ -144,6 +160,8 @@ void fast_forward_policy_input(FastForwardPolicy *policy, int pressed,
   }
 }
 
+/* Turns fast-forward off and clears the held button, CLASSIC step and audio
+   fallback so the next start is fresh (menu, reset, suspend, link). */
 void fast_forward_policy_stop(FastForwardPolicy *policy)
 {
   if(policy == NULL)
@@ -157,6 +175,8 @@ void fast_forward_policy_stop(FastForwardPolicy *policy)
   policy->force_present = 1;
 }
 
+/* Called when sound reports that accelerated audio cannot keep up: audio
+   goes silent until fast-forward next starts. Counted once per run. */
 void fast_forward_policy_audio_fallback(FastForwardPolicy *policy)
 {
   if(policy == NULL || !policy->active || policy->audio_fallback ||
@@ -167,6 +187,7 @@ void fast_forward_policy_audio_fallback(FastForwardPolicy *policy)
   policy->audio_fallback_count++;
 }
 
+/* MODERN is always unlimited; CLASSIC takes its speed from the step. */
 static FastForwardSpeed effective_speed(const FastForwardPolicy *policy)
 {
   if(policy->settings.profile == FAST_FORWARD_PROFILE_MODERN)
@@ -177,6 +198,8 @@ static FastForwardSpeed effective_speed(const FastForwardPolicy *policy)
   return policy->settings.speed;
 }
 
+/* Microseconds between shown frames (about 60, 30 or 15 per second);
+   MODERN always uses BALANCED. */
 static uint32_t presentation_interval_us(const FastForwardPolicy *policy)
 {
   FastForwardPresentation presentation = policy->settings.presentation;
@@ -196,6 +219,9 @@ static uint32_t presentation_interval_us(const FastForwardPolicy *policy)
   }
 }
 
+/* Shows at most one frame per interval. The signed differences keep the
+   32-bit clock comparisons valid across wraparound; after falling four
+   intervals behind it restarts the schedule instead of catching up. */
 static uint32_t time_based_presentation(FastForwardPolicy *policy,
  uint32_t now_us)
 {
@@ -218,6 +244,8 @@ static uint32_t time_based_presentation(FastForwardPolicy *policy,
   return 1;
 }
 
+/* CLASSIC shows every second or third frame; the other profiles show
+   frames on a timer. */
 static uint32_t should_present(FastForwardPolicy *policy, uint32_t now_us)
 {
   uint32_t divisor;
@@ -242,6 +270,9 @@ static uint32_t should_present(FastForwardPolicy *policy, uint32_t now_us)
   return 1;
 }
 
+/* Each emulated frame moves the deadline on by one GBA frame time divided
+   by the multiplier, carrying the fractional microseconds. Returns how long
+   to sleep until the deadline; 0 when running late. */
 static uint32_t pace_limited_speed(FastForwardPolicy *policy,
  uint32_t now_us, uint32_t multiplier)
 {
@@ -270,6 +301,8 @@ static uint32_t pace_limited_speed(FastForwardPolicy *policy,
   return policy->next_deadline_us - now_us;
 }
 
+/* Called once per emulated frame. While inactive every frame is shown with
+   no delay and main.c's normal pacing applies. */
 FastForwardFrameDecision fast_forward_policy_frame(FastForwardPolicy *policy,
  uint32_t now_us)
 {
@@ -307,6 +340,7 @@ FastForwardSpeed fast_forward_policy_speed(const FastForwardPolicy *policy)
   return effective_speed(policy);
 }
 
+/* Accelerated audio is only offered by CUSTOM at 2x or 3x. */
 FastForwardAudio fast_forward_policy_audio(const FastForwardPolicy *policy)
 {
   if(policy == NULL || !policy->active || policy->audio_fallback ||

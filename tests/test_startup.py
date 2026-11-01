@@ -12,6 +12,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def function(source, signature):
+    """Return one C function from a repository file, verbatim.
+
+    The signature must be followed by a newline and "{" (the repo's style);
+    the body ends at the matching brace, so braces inside string or
+    character literals would throw the count off.
+    """
     text = (ROOT / source).read_text()
     start = text.index(signature + "\n{")
     end = text.index("{", start) + 1
@@ -22,6 +28,9 @@ def function(source, signature):
     return text[start:end]
 
 
+# Host stand-ins for everything user_main() and maybe_load_auto_savestate()
+# call. Counters record what ran, and quit() longjmps back to the scenario
+# instead of exiting.
 STUBS = r'''
 #include <assert.h>
 #include <setjmp.h>
@@ -82,6 +91,12 @@ u32 action_loadstate_slot(u32 slot) { restored_slot = slot; return 1; }
 '''
 
 
+# Launch orders in user_main(): a ROM path argument (argc 2), else
+# roms/game.gba (regular_file), else the file browser, else the menu. A ROM
+# picked in the menu runs without reset_gba() or the auto-state prompt; any
+# other loaded ROM is reset and offers the auto state (slot 10). The last
+# lines check that the prompt is skipped with no ROM, during a link session
+# and without a saved state.
 SCENARIOS = r'''
 static void clear_test(void) {
   regular_file = menu_result = active_link = 0;
@@ -130,6 +145,7 @@ int main(void) {
 
 class StartupTests(unittest.TestCase):
     def test_production_startup_paths(self):
+        # Splice the real functions between the stubs and the scenarios.
         source = STUBS + function("source/src/gui.c",
                                  "void maybe_load_auto_savestate(void)")
         source += function("source/src/main.c", "int user_main(int argc, char *argv[])")

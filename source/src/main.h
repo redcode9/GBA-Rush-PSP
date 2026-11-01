@@ -161,19 +161,25 @@ int main_perf_stop(void);
 void main_perf_snapshot(PerfMetricsSnapshot *snapshot);
 int main_perf_write_report(char *output_path, size_t output_path_size);
 
+/* Hardware scheduler called by the dynarec; returns the next slice length
+   in CPU cycles. */
 u32 update_gba(void);
 
 void reset_gba(void);
 void quit(void);
 
 void error_msg(const char *text, u8 confirm);
-/* Returns 0 to proceed (O), 1 to cancel (X). */
+/* Shows text and waits: returns 0 on the confirm button (O, or X with
+   option_swap_confirm_buttons) or START, 1 on the cancel button. */
 u32 yesno_dialog(const char *text);
+/* Copies src to buffer, replacing everything from its last '.' with
+   extension ("" strips it); a name without a '.' is copied unchanged. */
 void change_ext(char *src, char *buffer, const char *extension);
 
 u64 ticker(void);
 u32 file_length(char *filename);
 
+/* psp_clock is a PSP_CLOCK_* value. */
 int set_cpu_clock(u32 psp_clock);
 
 SceUID psp_fopen(const char *filename, const char *mode);
@@ -184,6 +190,7 @@ void *safe_malloc(size_t size);
 void main_write_mem_savestate(SceUID savestate_file);
 void main_read_savestate(SceUID savestate_file);
 
+/* Defined in memory.c and gui.c. */
 u32 load_state_silent(char *savestate_filename);
 u32 save_state_silent(char *savestate_filename, u16 *screen_capture);
 

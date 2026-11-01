@@ -1,3 +1,17 @@
+/*
+ * Host tests for gba_sio.c, the emulated GBA serial port. Each test writes
+ * the registers the way a game does and checks what the game reads back,
+ * the transfer length in GBA cycles and the serial IRQ. The test plays the
+ * link itself: it takes the transfer the game started and commits the data
+ * the other console would have sent.
+ *
+ * Register values used throughout (GBATEK names):
+ *   SIOCNT  bits 0-1 clock (normal) or baud (multiplayer), 2 SI, 3 SD,
+ *           4-5 multiplayer ID, 6 error, 7 start/busy, 12-13 mode
+ *           (normal 8, normal 32, multiplayer, UART), 14 IRQ enable
+ *   RCNT    0x8000 GPIO, 0xC000 JOY bus, bit 15 clear lets SIOCNT choose
+ */
+
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -30,6 +44,8 @@ static void reset_sio(void)
   gba_sio_init(&sio, registers);
 }
 
+/* Puts the port in mode as a game would: RCNT alone for GPIO and JOY bus,
+   else RCNT 0 and SIOCNT with only the mode bits set. */
 static void select_mode(GbaSioMode mode)
 {
   uint16_t control = 0;
@@ -56,6 +72,8 @@ static void select_mode(GbaSioMode mode)
   gba_sio_write16(&sio, GBA_SIO_REG_CONTROL, control);
 }
 
+/* Power-on state is GPIO: RCNT 0x800F (all four pins high), SIOCNT 0x0004
+   (SI high). select_mode() then reaches every mode. */
 static void test_reset_and_modes(void)
 {
   reset_sio();
@@ -77,6 +95,8 @@ static void test_reset_and_modes(void)
   CHECK(gba_sio_mode(&sio) == GBA_SIO_MODE_JOYBUS);
 }
 
+/* gba_sio_prepare() binds the register bank on first use only; it must
+   leave a running game's serial state and the other I/O registers alone. */
 static void test_prepare_cold_preserves_other_registers(void)
 {
   uint32_t index;
@@ -97,6 +117,8 @@ static void test_prepare_cold_preserves_other_registers(void)
   }
 }
 
+/* 0x6083 leaves a 115200-baud multiplayer start pending; prepare on the
+   bound bank must change nothing, then again right after gba_sio_reset(). */
 static void test_prepare_is_noop_for_loaded_game(void)
 {
   GbaSio before;
@@ -126,6 +148,8 @@ static void test_prepare_is_noop_for_loaded_game(void)
   CHECK(memcmp(registers_before, registers, sizeof(registers)) == 0);
 }
 
+/* NULL pointers, and a bank other than the one already bound, are refused
+   without touching the GbaSio or either bank. */
 static void test_prepare_rejects_invalid_storage(void)
 {
   GbaSio before;
@@ -156,6 +180,7 @@ static void test_control_masks(void)
 {
   GbaSioEvent event;
 
+  /* Writing every bit: only writable bits and the line state read back. */
   reset_sio();
   select_mode(GBA_SIO_MODE_NORMAL_8);
   event = gba_sio_write16(&sio, GBA_SIO_REG_CONTROL, 0xCFFF);
@@ -178,6 +203,8 @@ static void test_control_masks(void)
   CHECK(reg16(GBA_SIO_REG_MULTI1) == 0);
 }
 
+/* GPIO mode lets the game write RCNT bits 0-8; in SIO and JOY bus modes
+   only bits 4-8 are written and the emulated pin levels (0-3) remain. */
 static void test_rcnt_masks(void)
 {
   reset_sio();
@@ -191,6 +218,8 @@ static void test_rcnt_masks(void)
   CHECK(reg16(GBA_SIO_REG_RCNT) == 0xC1FD);
 }
 
+/* SIOCNT SI/SD/ID (mask 0x003C) and the RCNT line bits report this
+   console's player slot and whether the other console is ready. */
 static void test_multiplayer_connection_state(void)
 {
   reset_sio();
@@ -214,6 +243,7 @@ static void test_multiplayer_connection_state(void)
   CHECK((reg16(GBA_SIO_REG_CONTROL) & 0x003C) == 0x0004);
 }
 
+/* Normal mode moves 8 or 32 bits at 256 KHz (setting 0) or 2 MHz (1). */
 static void test_normal_timing(void)
 {
   CHECK(gba_sio_transfer_cycles(GBA_SIO_MODE_NORMAL_8, 0, 2) == 512);
@@ -222,6 +252,8 @@ static void test_normal_timing(void)
   CHECK(gba_sio_transfer_cycles(GBA_SIO_MODE_NORMAL_32, 1, 2) == 256);
 }
 
+/* One multiplayer word between two players at 9600, 38400, 57600 and
+   115200 bps (baud setting 0-3). */
 static void test_multiplayer_timing(void)
 {
   static const uint32_t expected[4] = { 63427, 16241, 10998, 5755 };
@@ -360,6 +392,8 @@ static void test_reference_timing_and_register_traces(void)
   }
 }
 
+/* With the IRQ bit clear a transfer still completes and stores the
+   received byte, but raises no interrupt. */
 static void test_reference_irq_disabled_trace(void)
 {
   GbaSioTransfer transfer;
@@ -380,6 +414,9 @@ static void test_reference_irq_disabled_trace(void)
   CHECK((reg16(GBA_SIO_REG_CONTROL) & 0x0080u) == 0);
 }
 
+/* The IRQ enable bit counts at completion, not at start. A mode change
+   cancels a transfer in flight, unless the link already locked in the
+   decision to complete it (gba_sio_lock_decision). */
 static void test_reference_irq_toggle_and_mode_change_traces(void)
 {
   GbaSioTransfer transfer;
@@ -444,6 +481,8 @@ static void test_reference_irq_toggle_and_mode_change_traces(void)
   CHECK(sio.decision_locked == 0);
 }
 
+/* 0x4083 = IRQ | START | 2 MHz | internal clock: the low byte of SIODATA8
+   goes out and the IRQ lands 64 cycles later (8 bits, 8 cycles each). */
 static void test_normal8_transfer(void)
 {
   GbaSioTransfer transfer;
@@ -479,6 +518,8 @@ static void test_normal8_transfer(void)
   CHECK((reg16(GBA_SIO_REG_CONTROL) & 0x0080) == 0);
 }
 
+/* 0x5081 = IRQ | 32-bit | START | internal clock at 256 KHz: 32 bits at
+   64 cycles each take 2048 cycles. */
 static void test_normal32_transfer(void)
 {
   GbaSioTransfer transfer;
@@ -503,6 +544,8 @@ static void test_normal32_transfer(void)
   CHECK(reg16(GBA_SIO_REG_DATA32_H) == 0x89AB);
 }
 
+/* With the external clock (bit 0 clear) the game only arms the transfer;
+   it runs when the other console supplies the clock. */
 static void test_external_clock_transfer(void)
 {
   GbaSioTransfer transfer;
@@ -529,6 +572,8 @@ static void test_external_clock_transfer(void)
   CHECK(reg16(GBA_SIO_REG_SEND) == 0x003C);
 }
 
+/* Parent side of one multiplayer word at 115200 bps: SIOMULTI0-3 read
+   0xFFFF while busy, and slots without a player stay 0xFFFF afterwards. */
 static void test_multiplayer_transfer(void)
 {
   GbaSioTransfer transfer;
@@ -566,6 +611,7 @@ static void test_multiplayer_transfer(void)
   CHECK((reg16(GBA_SIO_REG_RCNT) & 0x0001u) != 0);
 }
 
+/* A child cannot start a transfer itself; the parent's start latches it. */
 static void test_multiplayer_remote_start(void)
 {
   GbaSioTransfer transfer;
@@ -587,6 +633,7 @@ static void test_multiplayer_remote_start(void)
   CHECK((reg16(GBA_SIO_REG_RCNT) & 0x0001u) == 0);
 }
 
+/* Runs one 115200 bps word between two wired GbaSio instances. */
 static void complete_multiplayer_word(GbaSio *parent, GbaSio *child,
  uint16_t parent_word, uint16_t child_word)
 {
@@ -616,6 +663,8 @@ static void complete_multiplayer_word(GbaSio *parent, GbaSio *child,
   CHECK(gba_sio_advance(child, cycles) == GBA_SIO_EVENT_SERIAL_IRQ);
 }
 
+/* FireRed's link handshake on two GbaSio instances: 0xB9A0 and 0x8FFF are
+   the slave and master handshake words of the pret src/link.c driver. */
 static void test_firered_master_driven_handshake(void)
 {
   uint16_t parent_registers[GBA_SIO_REGISTER_BYTES / 2] = {0};
@@ -651,6 +700,7 @@ static void test_firered_master_driven_handshake(void)
   CHECK(child_registers[GBA_SIO_REG_MULTI1 >> 1] == 0xB9A0u);
 }
 
+/* Losing the link mid-transfer ends it with the error bit and an IRQ. */
 static void test_abort_and_disconnect(void)
 {
   GbaSioTransfer transfer;
@@ -670,6 +720,7 @@ static void test_abort_and_disconnect(void)
   CHECK((reg16(GBA_SIO_REG_CONTROL) & 0x0080) == 0);
 }
 
+/* An aborted normal transfer reads back all ones, like an idle line. */
 static void test_normal_abort_values(void)
 {
   GbaSioTransfer transfer;
@@ -690,6 +741,8 @@ static void test_normal_abort_values(void)
   CHECK(reg16(GBA_SIO_REG_DATA32_H) == 0xFFFF);
 }
 
+/* A multiplayer transfer that completes with an error sets SIOCNT bit 6;
+   switching to normal mode clears the error and busy bits. */
 static void test_error_completion_and_mode_change(void)
 {
   GbaSioTransfer transfer;
@@ -714,6 +767,7 @@ static void test_error_completion_and_mode_change(void)
   CHECK((reg16(GBA_SIO_REG_CONTROL) & 0x00C0) == 0);
 }
 
+/* A bogus player count is clamped to 4: four players at 9600 bps. */
 static void test_result_player_clamp(void)
 {
   GbaSioTransfer transfer;
@@ -730,6 +784,8 @@ static void test_result_player_clamp(void)
   CHECK(gba_sio_next_event(&sio) == 125829);
 }
 
+/* A second START write while busy is ignored, and gba_sio_reset cancels
+   the pending transfer. */
 static void test_repeated_start_and_reset(void)
 {
   GbaSioEvent event;
@@ -746,6 +802,8 @@ static void test_repeated_start_and_reset(void)
   CHECK((reg16(GBA_SIO_REG_CONTROL) & 0x0080) == 0);
 }
 
+/* The link commits with absolute cycle stamps; the IRQ lands exactly on
+   the finish cycle. */
 static void test_absolute_cycle_deadline(void)
 {
   GbaSioTransfer transfer;
@@ -770,6 +828,7 @@ static void test_absolute_cycle_deadline(void)
   CHECK(sio.current_cycle == start + 64u);
 }
 
+/* A plain commit whose start already lies in the past is refused. */
 static void test_absolute_deadline_rejects_late_release(void)
 {
   GbaSioTransfer transfer;
@@ -789,6 +848,9 @@ static void test_absolute_deadline_rejects_late_release(void)
   CHECK(gba_sio_next_event(&sio) == GBA_SIO_NO_EVENT);
 }
 
+/* commit_at_horizon (used by lockstep mode) accepts a start in the past:
+   the transfer still ends on its original deadline, or at once if that
+   deadline has already been reached. */
 static void test_localized_horizon_commit(void)
 {
   GbaSioTransfer transfer;
@@ -825,6 +887,7 @@ static void test_localized_horizon_commit(void)
   CHECK(reg16(GBA_SIO_REG_SEND) == 0xA5u);
 }
 
+/* A finish cycle that wraps past 2^32 is still hit exactly. */
 static void test_absolute_deadline_wrap(void)
 {
   GbaSioTransfer transfer;
@@ -844,6 +907,8 @@ static void test_absolute_deadline_wrap(void)
   CHECK(sio.current_cycle == finish);
 }
 
+/* A save state taken mid-transfer finishes on the same cycle with the same
+   data after loading; invalid snapshots are refused and leave no busy bit. */
 static void test_snapshot(void)
 {
   GbaSioSnapshot snapshot;
@@ -885,6 +950,8 @@ static void test_snapshot(void)
   CHECK((restored_registers[GBA_SIO_REG_CONTROL >> 1] & 0x0080) == 0);
 }
 
+/* Every SIOCNT write with the IRQ bit clear is counted: link_cable uses
+   the count to notice a game closing or reopening its link layer. */
 static void test_interrupt_disable_counter(void)
 {
   reset_sio();
@@ -898,6 +965,8 @@ static void test_interrupt_disable_counter(void)
   CHECK(sio.interrupt_disables == 2);
 }
 
+/* Runs every case; failed CHECKs are printed and counted, and any failure
+   makes the exit status 1. */
 int main(void)
 {
   test_interrupt_disable_counter();

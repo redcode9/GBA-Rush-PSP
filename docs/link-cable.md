@@ -179,7 +179,9 @@ exit close the session and tell the other PSP.
   (European release) it also races two games in Multi-Pak mode, which uses
   lockstep mode, and checks that both race clocks run in step and that,
   under PSP conditions with a short round trip, announced replies keep the
-  race at full speed.
+  race at full speed. The scripts, `tests/rom_link/firered_trade.txt` and
+  `tests/rom_link/mksc_race.txt`, use the commands listed at the top of
+  `tests/rom_link/link_e2e.c`.
   It needs an mGBA 0.10 build and a save whose player has not yet been
   upstairs in a Pokemon Center:
 

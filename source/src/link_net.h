@@ -87,7 +87,9 @@ typedef struct
 
 void link_net_init(LinkNet *net, uint32_t local_id, uint64_t now_us);
 
-/* Queues a message for reliable delivery. Returns 0 if the window is full. */
+/* Queues a message for reliable delivery. Returns 0 if the window is full,
+   type is 0 (reserved; the receiver rejects it) or size exceeds
+   LINK_NET_MAX_MESSAGE. */
 int link_net_queue(LinkNet *net, uint8_t type, const void *data,
  uint8_t size);
 
@@ -109,7 +111,9 @@ void link_net_set_heartbeat(LinkNet *net, uint32_t interval_us);
 
 /* Messages sent that the peer's emulator has not consumed yet. */
 uint32_t link_net_backlog(const LinkNet *net);
+/* Messages sent that the peer has not acknowledged receiving yet. */
 uint32_t link_net_unacked(const LinkNet *net);
+/* True when nothing has arrived from the peer for timeout_us. */
 int link_net_peer_silent(const LinkNet *net, uint64_t now_us,
  uint32_t timeout_us);
 

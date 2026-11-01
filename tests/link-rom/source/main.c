@@ -9,6 +9,13 @@
  * the License, or (at your option) any later version.
  */
 
+/*
+ * Bare-metal GBA ROM for checking a link cable, real or emulated. The
+ * Makefile builds it once per mode (normal 8-bit, normal 32-bit,
+ * multiplayer); it prints SIOCNT, the words sent and received and the IRQ
+ * count on a bitmap screen. Interrupts stay masked: IF is polled per frame.
+ */
+
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned int u32;
@@ -69,6 +76,7 @@ typedef enum
   ROLE_EXTERNAL
 } NormalRole;
 
+/* 5x7 glyphs, one byte per row; bit 4 is the leftmost pixel. */
 static const u8 digit_font[10][7] =
 {
   { 14, 17, 19, 21, 25, 17, 14 },
@@ -129,6 +137,8 @@ static u32 last_received;
 static NormalRole normal_role;
 #endif
 
+/* One 5-pixel row of a glyph. Only digits, capitals and - : / . have
+   glyphs; any other character draws blank. */
 static u8 glyph_row(char character, u8 row)
 {
   if(character >= '0' && character <= '9')
@@ -163,6 +173,8 @@ static void clear_screen(void)
     FRAMEBUFFER[pixel] = COLOR_BACKGROUND;
 }
 
+/* Text uses a 40x20 grid of 6x8-pixel cells. Only the glyph's set pixels
+   are written, so the screen is cleared before each redraw. */
 static void draw_character(u8 column, u8 line, char character, u16 color)
 {
   u16 x = (u16)(column * 6u);
@@ -182,6 +194,7 @@ static void draw_character(u8 column, u8 line, char character, u16 color)
   }
 }
 
+/* Draws a string from a grid cell; it is cut off at column 40, not wrapped. */
 static void draw_text(u8 column, u8 line, const char *text, u16 color)
 {
   while(*text != 0 && column < 40)
@@ -192,6 +205,8 @@ static void draw_text(u8 column, u8 line, const char *text, u16 color)
   }
 }
 
+/* Draws value in hex, zero-padded to digits characters (higher digits are
+   dropped). */
 static void draw_hex(u8 column, u8 line, u32 value, u8 digits, u16 color)
 {
   static const char hexadecimal[] = "0123456789ABCDEF";
@@ -205,6 +220,7 @@ static void draw_hex(u8 column, u8 line, u32 value, u8 digits, u16 color)
   }
 }
 
+/* Draws value in decimal without padding, starting at column. */
 static void draw_decimal(u8 column, u8 line, u32 value, u16 color)
 {
   char digits[10];
@@ -220,6 +236,8 @@ static void draw_decimal(u8 column, u8 line, u32 value, u16 color)
     draw_character(column++, line, digits[--count], color);
 }
 
+/* Returns at the start of the next VBlank (VCOUNT 160), first waiting out
+   one already in progress, so the main loop runs once per frame. */
 static void wait_for_vblank(void)
 {
   while(REG_VCOUNT >= 160)
@@ -230,6 +248,8 @@ static void wait_for_vblank(void)
   }
 }
 
+/* With IME off the serial IRQ is never taken; its IF bit still latches and
+   is acknowledged by writing it back. */
 static void poll_serial_interrupt(void)
 {
   if((REG_IF & IRQ_SERIAL) == 0)
@@ -270,6 +290,9 @@ static const char *normal_role_name(void)
   return "NOT SELECTED";
 }
 
+/* Easy-to-read patterns that differ by side and count up per transfer:
+   8-bit 0x40-0x7F (the external-clock side starts 0x20 ahead), 32-bit an
+   0xA1 or 0xB2 tag in the top byte above the transfer count. */
 static void prepare_next_data(void)
 {
 #if LINK_DIAGNOSTIC_MODE == LINK_TEST_NORMAL_8
@@ -290,6 +313,8 @@ static void write_normal_data(void)
 #endif
 }
 
+/* Rewrites SIOCNT from the width, speed and clock role, leaving START clear,
+   and reloads the outgoing data register. */
 static void configure_normal(void)
 {
   u16 control = SIOCNT_IRQ;
@@ -316,6 +341,8 @@ static void start_normal_transfer(void)
   REG_SIOCNT |= SIOCNT_START;
 }
 
+/* keys holds the buttons newly pressed this frame. Role and clock speed
+   change only while idle; each serial IRQ loads the next pattern. */
 static void update_normal(u16 keys)
 {
   if((REG_SIOCNT & SIOCNT_START) == 0)
@@ -343,6 +370,8 @@ static void update_normal(u16 keys)
   }
 }
 
+/* Redraws the normal-mode screen. STATE reads ARMED when the external-clock
+   side has START set and is waiting for the peer's clock. */
 static void draw_normal(void)
 {
   const char *state = (REG_SIOCNT & SIOCNT_START) != 0 ?
@@ -391,6 +420,8 @@ static void draw_normal(void)
 #endif
 
 #if LINK_DIAGNOSTIC_MODE == LINK_TEST_MULTIPLAYER
+/* SIOCNT bits 4-5 hold this console's player number: player 1 sends
+   0x1000 + count, the others 0x2000 + count. */
 static void prepare_next_data(void)
 {
   next_data = ((REG_SIOCNT >> 4) & 3u) == 0 ?
@@ -398,13 +429,18 @@ static void prepare_next_data(void)
   REG_SIOMLT_SEND = (u16)next_data;
 }
 
+/* Rewrites SIOCNT for multiplayer at the current baud rate (RCNT 0 lets
+   SIOCNT pick the mode) and reloads the outgoing word. */
 static void configure_multiplayer(void)
 {
   REG_RCNT = 0;
+  /* speed_setting is the baud rate field, SIOCNT bits 0-1. */
   REG_SIOCNT = (u16)(SIOCNT_MULTIPLAYER | SIOCNT_IRQ | speed_setting);
   prepare_next_data();
 }
 
+/* Multiplayer twin of update_normal(): UP/DOWN cycle the baud rate while
+   idle, A starts a transfer on the parent, each IRQ loads the next word. */
 static void update_multiplayer(u16 keys)
 {
   if((REG_SIOCNT & SIOCNT_START) == 0)
@@ -416,6 +452,7 @@ static void update_multiplayer(u16 keys)
     configure_multiplayer();
   }
 
+  /* Only the parent (SI low) can start a multiplayer transfer. */
   if((keys & KEY_A) != 0 &&
      (REG_SIOCNT & (SIOCNT_MULTI_CHILD | SIOCNT_START)) == 0)
   {
@@ -432,6 +469,8 @@ static void update_multiplayer(u16 keys)
   }
 }
 
+/* Redraws the multiplayer screen: player number, baud rate, SIOCNT flags
+   and the four SIOMULTI words of the last transfer. */
 static void draw_multiplayer(void)
 {
   static const u32 rates[4] = { 9600, 38400, 57600, 115200 };
@@ -478,6 +517,8 @@ static void draw_multiplayer(void)
 }
 #endif
 
+/* Masks interrupts, sets up the mode the ROM was built for, then polls,
+   updates and redraws once per frame. */
 int main(void)
 {
   u16 previous_keys = 0;
@@ -485,7 +526,7 @@ int main(void)
   REG_IME = 0;
   REG_IE = IRQ_SERIAL;
   REG_IF = 0xFFFFu;
-  REG_DISPCNT = 0x0403u;
+  REG_DISPCNT = 0x0403u;   /* mode 3 (240x160 bitmap), BG2 on */
 
 #if LINK_DIAGNOSTIC_MODE == LINK_TEST_MULTIPLAYER
   speed_setting = 3;
@@ -504,6 +545,7 @@ int main(void)
     wait_for_vblank();
     frame_count++;
     poll_serial_interrupt();
+    /* KEYINPUT bits read 0 while a button is held. */
     held_keys = (u16)(~REG_KEYINPUT) & 0x03FFu;
     pressed_keys = (u16)(held_keys & ~previous_keys);
     previous_keys = held_keys;

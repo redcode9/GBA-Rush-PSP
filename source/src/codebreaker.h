@@ -9,11 +9,20 @@
  * the License, or (at your option) any later version.
  */
 
+/*
+ * CodeBreaker codes: decryption, payload line counts and execution, used by
+ * cheats.c. Free of emulator headers so tests/test_codebreaker.c runs it on
+ * the host; memory goes through the codebreaker_memory_* functions, which
+ * cheats.c defines.
+ */
+
 #ifndef CODEBREAKER_H
 #define CODEBREAKER_H
 
 #include <stdint.h>
 
+/* Decryption state set up by a 9xxxxxxx seed code; master is that code
+ * (0 = lines are not encrypted). table permutes the 48 bits of a line. */
 typedef struct
 {
   uint32_t master;

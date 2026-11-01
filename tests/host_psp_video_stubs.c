@@ -1,4 +1,4 @@
-/* Host link stubs for psp_video.c in the ticket 035 sentinel test.
+/* Host link stubs for psp_video.c in tests/test_perf_video_sentinel.c.
  * psp_video.c is compiled unmodified against the real PSP SDK headers
  * (host build, -w); this TU satisfies its external references on the
  * 64-bit host. sceKernelGetSystemTimeLow() is backed by a controllable
@@ -21,6 +21,8 @@ static size_t host_video_time_head = 0;
 static size_t host_video_time_count = 0;
 static u32 host_video_time_last = 0;
 
+/* Each clock read pops the next pushed value; once the queue is empty it
+   keeps returning the last one. */
 void host_video_time_reset(void)
 {
   host_video_time_head = 0;
@@ -28,6 +30,8 @@ void host_video_time_reset(void)
   host_video_time_last = 0;
 }
 
+/* Queues one clock reading (also the value repeated once the queue drains);
+   push at most HOST_VIDEO_TIME_CAPACITY per reset, as reads don't check. */
 void host_video_time_push(u32 value)
 {
   if(host_video_time_count < HOST_VIDEO_TIME_CAPACITY)
@@ -131,6 +135,7 @@ void *sceGuGetMemory(int memsz)
   return host_ge_memory;
 }
 
+/* A dummy back buffer; the sentinel test never draws into it. */
 void *sceGuSwapBuffers(void)
 {
   return host_ge_memory + (1 << 19);
@@ -271,6 +276,7 @@ int kuImposeGetParam(SceImposeParam param)
   return 0;
 }
 
+/* No-op GBK text printer: the sentinel test never draws text. */
 void ch_print(const char *str, u16 x, u16 y, u16 col, s16 bg_col,
  u16 *base_vram, u16 bufferwidth)
 {
@@ -283,6 +289,7 @@ void ch_print(const char *str, u16 x, u16 y, u16 col, s16 bg_col,
   (void)bufferwidth;
 }
 
+/* Like ch_print(), for the Shift-JIS printer. */
 void mh_print(const char *str, u16 x, u16 y, u16 col, s16 bg_col,
  u16 *base_vram, u16 bufferwidth)
 {

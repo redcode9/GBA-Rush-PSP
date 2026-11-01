@@ -1,3 +1,6 @@
+# Builds the link diagnostic ROM (source/main.c) once per serial mode with
+# devkitARM: link-normal8.gba, link-normal32.gba and link-multiplayer.gba.
+
 .SUFFIXES:
 
 ifeq ($(strip $(DEVKITARM)),)
@@ -22,6 +25,7 @@ MAKER_CODE := 00
 
 all: $(addsuffix .gba,$(TARGETS))
 
+# Target-specific TEST_MODE selects LINK_DIAGNOSTIC_MODE in main.c.
 $(BUILD)/link-normal8.o: TEST_MODE=0
 $(BUILD)/link-normal32.o: TEST_MODE=1
 $(BUILD)/link-multiplayer.o: TEST_MODE=2

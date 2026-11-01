@@ -1,3 +1,9 @@
+/* Builds the new C++ scanline renderer (video_cc.cc, the default).
+ * video.c and video_cc.cc define the same global names, so each is compiled
+ * through a wrapper that adds a suffix (_new here, _old in video_old_wrap.c).
+ * video_dispatch.c owns the unsuffixed names and calls one renderer per frame.
+ */
+
 #define update_scanline update_scanline_new
 #define video_read_savestate video_read_savestate_new
 #define video_write_mem_savestate video_write_mem_savestate_new

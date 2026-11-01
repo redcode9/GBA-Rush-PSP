@@ -18,6 +18,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+// GBA memory map and I/O: read/write handlers per region, I/O register side
+// effects, DMA, ROM paging for ROMs larger than the buffer, cartridge backup
+// memory (SRAM/Flash/EEPROM) and its save type detection, the cartridge RTC,
+// per-game config (game_config.txt) and savestate files. The dynarec reads
+// memory_map_read/write directly and calls back into these handlers.
+
 #include "common.h"
 #include "perf_monitor.h"
 
@@ -27,6 +33,8 @@ extern void draw_popup_frame_auto(int x, int y, int w, int h);
 #define CONFIG_FILENAME  "game_config.txt"
 
 
+// Wait cycles per region (address >> 24); waitstate_control() rewrites the
+// gamepak entries (0x08-0x0E) when WAITCNT changes.
 u8 ALIGN_DATA memory_waitstate_n[2][16] =
 {
   { 0, 0, 2, 0, 0, 0, 0, 0, 4, 4, 4, 4, 4, 4, 4, 0 }, // 8,16bit accesses
@@ -67,8 +75,8 @@ struct BiosData bios;        // BIOS ROM and code tags  (00000000h)     48 KiB
 /*
  * These are Metadata Areas corresponding to the Data Areas above. They
  * contain information about the native code compilation status of each
- * Data Word in that Data Area. For more information about these, see
- * "doc/partial flushing of RAM code.txt" in your source tree.
+ * Data Word in that Data Area: 4 u16 per GBA word, laid out as described
+ * above the *_block_ptrs tables in cpu.c.
  */
 u16 ewram_metadata[0x40000]; // External Working RAM code metadata     512 KiB
 u16 iwram_metadata[ 0x8000]; // Internal Working RAM code metadata      64 KiB
@@ -78,22 +86,26 @@ u16 vram_metadata [0x18000]; // Video RAM code metadata                192 KiB
 
 u32 bios_read_protect;
 
+// Internal memory control register (0x4000800).
 u32 iwram_control;
+// One flag per I/O byte offset: nonzero if it reads back (see init_memory).
 u8 *io_readable = (u8 *)io_registers + 0x400;
 
 u32 obj_address = 0x10000; // OBJ Tiles Address
 
 DmaTransferType ALIGN_DATA dma[4];
+// Address step per 16-bit unit for DMA_INCREMENT, DECREMENT, FIXED and
+// RELOAD (which increments); doubled for 32-bit transfers.
 const ALIGN_DATA s32 dma_addr_control[4] = { 2, -2, 0, 2 };
 
 
-// Keeps us knowing how much we have left.
+// ROM buffer: the whole ROM, or a cache of 32 KiB pages if it does not fit.
 u8 *gamepak_rom;
 u8 gamepak_header[GAMEPAK_HEADER_SIZE];
 u32 gamepak_size;
 u32 gamepak_file_size;
 
-// Picks a page to evict
+// Page load counter, used as the LRU timestamp when evicting a ROM page.
 u32 page_time = 0;
 
 typedef struct
@@ -105,14 +117,14 @@ typedef struct
 u32 gamepak_ram_buffer_size;
 u32 gamepak_ram_pages;
 
-// Enough to map the gamepak RAM space.
+// One entry per 32 KiB page of the ROM buffer: which ROM page it holds.
 GamepakSwapEntryType *gamepak_memory_map;
 
 // This is global so that it can be kept open for large ROMs to swap
 // pages from, so there's no slowdown with opening and closing the file
 // a lot.
 
-SceUID gamepak_file_large = -1;
+SceUID gamepak_file_large = GAMEPAK_FILE_NONE;
 
 // Writes to these respective locations should trigger an update
 // so the related subsystem may react to it.
@@ -153,19 +165,31 @@ RTC_WRITE_MODE_TYPE rtc_write_mode;
 u16 ALIGN_DATA rtc_registers[3];
 u32 ALIGN_DATA rtc_data[12];
 u32 rtc_command;
-u32 rtc_status = 0x40;
+u32 rtc_status = 0x40; // 24-hour mode
 u32 rtc_data_bytes;
 s32 rtc_bit_count;
 
 
+// Cartridge save memory in brief:
+//  - Type: load_backup_id() looks for the save library's ID string in the
+//    ROM, then load_backup() reads the .sav, whose size can override it. A
+//    type still unknown is settled by the game: its first region 0xE access
+//    means SRAM, 0xAA written to 0x5555 means Flash, and an EEPROM access
+//    means EEPROM (a 17-unit DMA to it selects the 8 KB size).
+//  - Saving: each game write arms backup_update; update_backup() writes the
+//    .sav WRITE_BACKUP_DELAY frames later when auto-save is on, and
+//    update_backup_immediately() on quit, ROM change or a suspend from the
+//    menu (a power-button suspend writes only a savestate).
+
 // Up to 128kb, store SRAM, flash ROM, or EEPROM here.
 static u8 ALIGN_DATA gamepak_backup[1024 * 128];
 
-// Write out backup file this many cycles after the most recent
-// backup write.
+// Write out backup file this many frames after the most recent
+// backup write (update_backup() runs once per VBlank).
 #define WRITE_BACKUP_DELAY  (10)
 
-// If the backup space is written (only update once this hits 0)
+// Frames until a pending backup write is saved (only update once this hits
+// 0); WRITE_BACKUP_DELAY + 1 means nothing is pending.
 s32 backup_update = WRITE_BACKUP_DELAY + 1;
 
 typedef enum
@@ -182,7 +206,8 @@ typedef enum
   SRAM_SIZE_64KB = 0x10000
 } SRAM_SIZE_TYPE;
 
-// Keep it 32KB until the upper 64KB is accessed, then make it 64KB.
+// Keep it 32KB until the upper half of the 64KB space is written, then make
+// it 64KB.
 
 BACKUP_TYPE_TYPE backup_type = BACKUP_NONE;
 SRAM_SIZE_TYPE sram_size = SRAM_SIZE_32KB;
@@ -276,6 +301,7 @@ static u32 save_backup(char *name);
 static u32 encode_bcd(u8 value);
 
 #define SAVESTATE_SIZE  0x80000 // 512K Byte (524288 Byte)
+// The link cable snapshot occupies the last bytes of the savestate.
 #define SAVESTATE_SIO_OFFSET (SAVESTATE_SIZE - sizeof(GbaSioSnapshot))
 u8 *write_mem_ptr;
 static void memory_write_mem_savestate(SceUID savestate_file);
@@ -287,6 +313,7 @@ typedef char GbaSioSnapshotMustFit[
  sizeof(GbaSioSnapshot) < SAVESTATE_SIZE ? 1 : -1];
 
 
+// Last page looked up by the ROM and RAM read handlers (one-entry cache).
 u8 *read_rom_block = NULL;
 u8 *read_ram_block = NULL;
 
@@ -302,22 +329,16 @@ static u32 read16_ram(u32 address);
 static u32 read32_ram(u32 address);
 
 static u32 read8_bios(u32 address);
-// static u32 read8_ewram(u32 address);
-// static u32 read8_iwram(u32 address);
 static u32 read8_io_registers(u32 address);
 static u32 read8_palette_ram(u32 address);
-// static u32 read8_vram(u32 address);
 static u32 read8_oam_ram(u32 address);
 static u32 read8_gamepak(u32 address);
 static u32 read8_backup(u32 address);
 static u32 read8_open(u32 address);
 
 static u32 read16_bios(u32 address);
-// static u32 read16_ewram(u32 address);
-// static u32 read16_iwram(u32 address);
 static u32 read16_io_registers(u32 address);
 static u32 read16_palette_ram(u32 address);
-// static u32 read16_vram(u32 address);
 static u32 read16_oam_ram(u32 address);
 static u32 read16_eeprom(u32 address);
 static u32 read16_gamepak(u32 address);
@@ -325,16 +346,14 @@ static u32 read16_backup(u32 address);
 static u32 read16_open(u32 address);
 
 static u32 read32_bios(u32 address);
-// static u32 read32_ewram(u32 address);
-// static u32 read32_iwram(u32 address);
 static u32 read32_io_registers(u32 address);
 static u32 read32_palette_ram(u32 address);
-// static u32 read32_vram(u32 address);
 static u32 read32_oam_ram(u32 address);
 static u32 read32_gamepak(u32 address);
 static u32 read32_backup(u32 address);
 static u32 read32_open(u32 address);
 
+// Handler tables indexed by region (address >> 24).
 static u32 (*mem_read8[16])(u32) =
 {
   read8_bios,          // 0
@@ -355,6 +374,7 @@ static u32 (*mem_read8[16])(u32) =
   read8_open           // f
 };
 
+// Same layout for halfwords, except region 0xD, which reads the EEPROM.
 static u32 (*mem_read16[16])(u32) =
 {
   read16_bios,         // 0
@@ -375,6 +395,7 @@ static u32 (*mem_read16[16])(u32) =
   read16_open          // f
 };
 
+// Word reads, same layout as mem_read8.
 static u32 (*mem_read32[16])(u32) =
 {
   read32_bios,         // 0
@@ -395,6 +416,7 @@ static u32 (*mem_read32[16])(u32) =
   read32_open          // f
 };
 
+// DMA reads from the BIOS, SRAM and unused regions return 0.
 static u32 (*dma_read16[16])(u32) =
 {
   read_null,           // 0
@@ -415,6 +437,7 @@ static u32 (*dma_read16[16])(u32) =
   read_null            // f
 };
 
+// Word DMA reads; unlike dma_read16, region 0xD is plain ROM here.
 static u32 (*dma_read32[16])(u32) =
 {
   read_null,           // 0
@@ -435,6 +458,8 @@ static u32 (*dma_read32[16])(u32) =
   read_null            // f
 };
 
+// Open-bus reads return the opcode being prefetched, so only regions that
+// code can run from are readable here.
 static u32 (*open_read8[16])(u32) =
 {
   read8_bios,          // 0
@@ -455,6 +480,7 @@ static u32 (*open_read8[16])(u32) =
   read_null            // f
 };
 
+// Halfword open-bus sources, same layout as open_read8.
 static u32 (*open_read16[16])(u32) =
 {
   read16_bios,         // 0
@@ -475,6 +501,7 @@ static u32 (*open_read16[16])(u32) =
   read_null            // f
 };
 
+// Word open-bus sources, same layout as open_read8.
 static u32 (*open_read32[16])(u32) =
 {
   read32_bios,         // 0
@@ -518,6 +545,8 @@ static CPU_ALERT_TYPE write32_palette_ram(u32 address, u32 value);
 static CPU_ALERT_TYPE write32_vram(u32 address, u32 value);
 static CPU_ALERT_TYPE write32_oam_ram(u32 address, u32 value);
 
+// Write handlers by region (address >> 24). They return CPU_ALERT_* bits
+// (cpu.h) for the caller to act on.
 static CPU_ALERT_TYPE (*mem_write8[16])(u32, u32) =
 {
   write_null,           // 0
@@ -538,6 +567,7 @@ static CPU_ALERT_TYPE (*mem_write8[16])(u32, u32) =
   write_null            // f
 };
 
+// Halfword writes to ROM (region 8) reach the RTC's GPIO port.
 static CPU_ALERT_TYPE (*mem_write16[16])(u32, u32) =
 {
   write_null,           // 0
@@ -558,6 +588,7 @@ static CPU_ALERT_TYPE (*mem_write16[16])(u32, u32) =
   write_null            // f
 };
 
+// Word writes; unlike mem_write16, region 8 (the RTC port) ignores them.
 static CPU_ALERT_TYPE (*mem_write32[16])(u32, u32) =
 {
   write_null,           // 0
@@ -578,6 +609,7 @@ static CPU_ALERT_TYPE (*mem_write32[16])(u32, u32) =
   write_null            // f
 };
 
+// EEPROM (region 0xD) is written through DMA only.
 static CPU_ALERT_TYPE (*dma_write16[16])(u32, u32) =
 {
   write_null,           // 0
@@ -598,6 +630,7 @@ static CPU_ALERT_TYPE (*dma_write16[16])(u32, u32) =
   write_null            // f
 };
 
+// Word DMA writes; unlike dma_write16, word DMA to the EEPROM is dropped.
 static CPU_ALERT_TYPE (*dma_write32[16])(u32, u32) =
 {
   write_null,           // 0
@@ -619,6 +652,8 @@ static CPU_ALERT_TYPE (*dma_write32[16])(u32, u32) =
 };
 
 
+// The BIOS reads back only while executing inside it; elsewhere a read
+// returns the last BIOS opcode fetched (bios_read_protect).
 #define READ_BIOS(type)                                                       \
   if ((address >> 14) != 0)                                                   \
     return read##type##_open(address);                                        \
@@ -643,44 +678,8 @@ static u32 read32_bios(u32 address)
   READ_BIOS(32);
 }
 
-/*
-#define READ_EWRAM(type)                                                      \
-  return ADDRESS##type(ewram, address & 0x3FFFF)                              \
-
-static u32 read8_ewram(u32 address)
-{
-  READ_EWRAM(8);
-}
-
-static u32 read16_ewram(u32 address)
-{
-  READ_EWRAM(16);
-}
-
-static u32 read32_ewram(u32 address)
-{
-  READ_EWRAM(32);
-}
-
-#define READ_IWRAM(type)                                                      \
-  return ADDRESS##type(iwram, address & 0x7FFF)                               \
-
-static u32 read8_iwram(u32 address)
-{
-  READ_IWRAM(8);
-}
-
-static u32 read16_iwram(u32 address)
-{
-  READ_IWRAM(16);
-}
-
-static u32 read32_iwram(u32 address)
-{
-  READ_IWRAM(32);
-}
-*/
-
+// Registers live in the first 1 KiB; 0x4000800 (internal memory control)
+// repeats every 64 KiB. Unreadable offsets fall through to open bus.
 static u32 read8_io_registers(u32 address)
 {
   if ((address & 0xFFFC) == 0x0800) // repeated each 64K
@@ -692,6 +691,7 @@ static u32 read8_io_registers(u32 address)
   return read8_open(address);
 }
 
+// An unreadable upper half of a readable register reads 0, not open bus.
 static u32 read16_io_registers(u32 address)
 {
   if ((address & 0xFFFC) == 0x0800)
@@ -708,6 +708,7 @@ static u32 read16_io_registers(u32 address)
   return read16_open(address);
 }
 
+// A word whose upper half is unreadable returns only the lower half.
 static u32 read32_io_registers(u32 address)
 {
   if ((address & 0xFFFC) == 0x0800)
@@ -727,6 +728,7 @@ static u32 read32_io_registers(u32 address)
 #define READ_PALETTE_RAM(type)                                                \
   return ADDRESS##type(palette_ram, address & 0x3FF);                         \
 
+// Palette RAM is 1 KiB, mirrored every 0x400 through region 5.
 static u32 read8_palette_ram(u32 address)
 {
   READ_PALETTE_RAM(8);
@@ -742,34 +744,10 @@ static u32 read32_palette_ram(u32 address)
   READ_PALETTE_RAM(32);
 }
 
-/*
-#define READ_VRAM(type)                                                       \
-  if (((address >> 16) & 0x01) != 0)                                          \
-    address &= 0x17FFF;                                                       \
-  else                                                                        \
-    address &= 0x0FFFF;                                                       \
-                                                                              \
-  return ADDRESS##type(vram, address)                                         \
-
-static u32 read8_vram(u32 address)
-{
-  READ_VRAM(8);
-}
-
-static u32 read16_vram(u32 address)
-{
-  READ_VRAM(16);
-}
-
-static u32 read32_vram(u32 address)
-{
-  READ_VRAM(32);
-}
-*/
-
 #define READ_OAM_RAM(type)                                                    \
   return ADDRESS##type(oam_ram, address & 0x3FF);                             \
 
+// OAM is 1 KiB, mirrored every 0x400 through region 7.
 static u32 read8_oam_ram(u32 address)
 {
   READ_OAM_RAM(8);
@@ -785,6 +763,8 @@ static u32 read32_oam_ram(u32 address)
   READ_OAM_RAM(32);
 }
 
+// ROM pages may be missing when the ROM is larger than the buffer; they are
+// loaded from the file on first touch.
 #define READ_GAMEPAK(type)                                                    \
   if ((address & 0x1FFFFFF) < gamepak_size)                                   \
   {                                                                           \
@@ -802,6 +782,7 @@ static u32 read32_oam_ram(u32 address)
     return ADDRESS##type(read_rom_block, address & 0x7FFF);                   \
   }                                                                           \
 
+// Addresses past the end of the ROM fall through READ_GAMEPAK to open bus.
 static u32 read8_gamepak(u32 address)
 {
   READ_GAMEPAK(8);
@@ -823,6 +804,7 @@ static u32 read32_gamepak(u32 address)
   return read32_open(address);
 }
 
+// Region 0xD is ROM if the ROM reaches that far, otherwise EEPROM data.
 static u32 read16_eeprom(u32 address)
 {
   READ_GAMEPAK(16);
@@ -835,6 +817,7 @@ static u32 read8_backup(u32 address)
   return read_backup(address);
 }
 
+// The backup bus is 8 bits wide: wider reads repeat the byte.
 static u32 read16_backup(u32 address)
 {
   u32 value = read_backup(address);
@@ -874,6 +857,8 @@ static u32 read32_ram(u32 address)
   READ_RAM(32);
 }
 
+// Only the DMA and open-bus tables use it; a CPU read of an unmapped region
+// goes to read*_open instead.
 static u32 read_null(u32 address)
 {
   return 0;
@@ -881,6 +866,8 @@ static u32 read_null(u32 address)
 
 #define THUMB_STATE (reg[REG_CPSR] & 0x20)
 
+// Open bus: the opcode being prefetched (PC + 2 in Thumb, PC + 4 in ARM),
+// or the last DMA value just after a DMA (CPU_DMA_HACK).
 static u32 read8_open(u32 address)
 {
   u32 offset = 0;
@@ -896,6 +883,7 @@ static u32 read8_open(u32 address)
   return (*open_read8[offset >> 24])(offset);
 }
 
+// Halfword form of read8_open(); in ARM state address bit 1 picks the half.
 static u32 read16_open(u32 address)
 {
   u32 offset = 0;
@@ -911,6 +899,7 @@ static u32 read16_open(u32 address)
   return (*open_read16[offset >> 24])(offset);
 }
 
+// In Thumb state the prefetched halfword fills both halves of the word.
 static u32 read32_open(u32 address)
 {
   if (reg[CPU_DMA_HACK] != 0)
@@ -926,10 +915,12 @@ static u32 read32_open(u32 address)
 }
 
 
+// After a RAM store: if the word holds translated code, invalidates it
+// (partial_clear_metadata) and returns CPU_ALERT_SMC.
 inline static CPU_ALERT_TYPE check_smc_write(u16 *metadata, u32 offset, u8 region)
 {
-  /* Get the Metadata Entry's [3], bits 0-1, to see if there's code at this
-   * location. See "doc/partial flushing of RAM code.txt" for more info. */
+  /* Entry [3], bits 0-1: Thumb or ARM code was translated from this word
+   * (layout above the *_block_ptrs tables in cpu.c). */
   u16 smc = metadata[offset | 3] & 0x03;
   if (smc != 0) {
     /* Policy is applied inside partial_clear_metadata():
@@ -945,6 +936,8 @@ inline static CPU_ALERT_TYPE check_smc_write(u16 *metadata, u32 offset, u8 regio
   ADDRESS##type(ewram, address) = value;                                      \
   return check_smc_write(ewram_metadata, address, 0x02);                      \
 
+// EWRAM is 256 KiB, mirrored through region 2; a store over translated code
+// invalidates it (check_smc_write).
 static CPU_ALERT_TYPE write8_ewram(u32 address, u32 value)
 {
   WRITE_EWRAM(8);
@@ -965,6 +958,8 @@ static CPU_ALERT_TYPE write32_ewram(u32 address, u32 value)
   ADDRESS##type(iwram, address) = value;                                      \
   return check_smc_write(iwram_metadata, address, 0x03);                      \
 
+// IWRAM is 32 KiB, mirrored through region 3; a store over translated code
+// invalidates it (check_smc_write).
 static CPU_ALERT_TYPE write8_iwram(u32 address, u32 value)
 {
   WRITE_IWRAM(8);
@@ -980,6 +975,7 @@ static CPU_ALERT_TYPE write32_iwram(u32 address, u32 value)
   WRITE_IWRAM(32);
 }
 
+// Only the first 1 KiB of region 4 holds registers.
 #define WRITE_IO_REGISTERS(type)                                              \
   if (((address >> 10) & 0x3FFF) != 0)                                        \
     return CPU_ALERT_NONE;                                                    \
@@ -1001,6 +997,8 @@ static CPU_ALERT_TYPE write32_io_registers(u32 address, u32 value)
   WRITE_IO_REGISTERS(32);
 }
 
+// 8-bit writes to palette RAM store the byte in both halves of the
+// halfword.
 static CPU_ALERT_TYPE write8_palette_ram(u32 address, u32 value)
 {
   ADDRESS16(palette_ram, address & 0x3Fe) = value | (value << 8);
@@ -1022,6 +1020,8 @@ static CPU_ALERT_TYPE write32_palette_ram(u32 address, u32 value)
   return CPU_ALERT_NONE;
 }
 
+// VRAM is 96 KiB in a 128 KiB window; 0x18000-0x1FFFF mirrors the OBJ area
+// at 0x10000-0x17FFF.
 #define WRITE_VRAM(type)                                                      \
   if (((address >> 16) & 0x01) != 0)                                          \
     address &= 0x17FFF;                                                       \
@@ -1031,6 +1031,8 @@ static CPU_ALERT_TYPE write32_palette_ram(u32 address, u32 value)
   ADDRESS##type(vram, address) = value;                                       \
   return check_smc_write(vram_metadata, address, 0x06);                       \
 
+// 8-bit writes to BG VRAM fill both bytes of the halfword; writes to OBJ
+// VRAM are ignored.
 static CPU_ALERT_TYPE write8_vram(u32 address, u32 value)
 {
   if (((address >> 16) & 0x01) != 0)
@@ -1061,6 +1063,8 @@ static CPU_ALERT_TYPE write32_vram(u32 address, u32 value)
                                                                               \
   return  CPU_ALERT_NONE;                                                     \
 
+// Sets oam_update so the renderer re-sorts its sprite lists. Byte writes to
+// OAM are dropped: mem_write8 maps region 7 to write_null.
 static CPU_ALERT_TYPE write16_oam_ram(u32 address, u32 value)
 {
   WRITE_OAM_RAM(16);
@@ -1079,6 +1083,8 @@ static CPU_ALERT_TYPE write_null(u32 address, u32 value)
 
 // write io registers
 
+// Turns link cable events into CPU alerts: raises the serial IRQ and flags
+// SIO state changes for the link layer.
 static CPU_ALERT_TYPE gba_sio_alert(GbaSioEvent event)
 {
   CPU_ALERT_TYPE alert = CPU_ALERT_NONE;
@@ -1097,9 +1103,13 @@ static CPU_ALERT_TYPE gba_sio_alert(GbaSioEvent event)
   return alert;
 }
 
+// WAITCNT: SRAM wait (bits 0-1), WS0/WS1/WS2 first access (2-3, 5-6, 8-9)
+// and second access (4, 7, 10), gamepak prefetch (14).
 static void waitstate_control(u32 value)
 {
   u32 i;
+  // Wait cycles for the 2-bit first-access codes, then per wait state for
+  // the 1-bit second-access codes.
   const u8 waitstate_table[4] = { 4, 3, 2, 8 };
   const u8 gamepak_ws0_seq[2] = { 2, 1 };
   const u8 gamepak_ws1_seq[2] = { 4, 1 };
@@ -1152,15 +1162,27 @@ static void waitstate_control(u32 value)
     }
   }
 
+  // Bit 15 (cartridge type) is read-only.
   pIO_REG(REG_WAITCNT) = (pIO_REG(REG_WAITCNT) & 0x8000) | (value & 0x7FFF);
 }
 
+
+// DMA control (DMAxCNT_H) write handlers. Channel n's registers start at
+// 0xB0 + n * 12: source (SAD), destination (DAD), word count (CNT_L) and
+// control (CNT_H). CNT_H: destination control (bits 5-6), source control
+// (7-8), repeat (9), 32-bit (10), start timing (12-13), IRQ (14), enable
+// (15). A word count of 0 means the maximum: 0x4000, or 0x10000 on DMA3.
+// Addresses and count latch only on the enable edge; rewriting CNT_H while
+// enabled just updates the mode bits.
+#define DMA_CNT_ENABLE 0x8000
+// Special-timing DMA1/2 feed sound FIFO B when aimed here, else FIFO A.
+#define FIFO_B_ADDRESS 0x40000A4
 
 #define TRIGGER_DMA0()                                                        \
 {                                                                             \
   DmaTransferType *dma0 = dma + 0;                                            \
                                                                               \
-  if ((value & 0x8000) != 0)                                                  \
+  if ((value & DMA_CNT_ENABLE) != 0)                                          \
   {                                                                           \
     dma0->dma_channel = 0;                                                    \
     dma0->source_direction = (value >> 7) & 0x03;                             \
@@ -1201,7 +1223,7 @@ static void waitstate_control(u32 value)
 {                                                                             \
   DmaTransferType *dma1 = dma + 1;                                            \
                                                                               \
-  if ((value & 0x8000) != 0)                                                  \
+  if ((value & DMA_CNT_ENABLE) != 0)                                          \
   {                                                                           \
     dma1->dma_channel = 1;                                                    \
     dma1->source_direction = (value >> 7) & 0x03;                             \
@@ -1221,7 +1243,7 @@ static void waitstate_control(u32 value)
         dma1->length_type = DMA_32BIT;                                        \
         dma1->length = 4;                                                     \
                                                                               \
-        if (dma1->dest_address == 0x40000A4)                                  \
+        if (dma1->dest_address == FIFO_B_ADDRESS)                             \
           dma1->direct_sound_channel = DMA_DIRECT_SOUND_B;                    \
         else                                                                  \
           dma1->direct_sound_channel = DMA_DIRECT_SOUND_A;                    \
@@ -1265,7 +1287,7 @@ static void waitstate_control(u32 value)
 {                                                                             \
   DmaTransferType *dma2 = dma + 2;                                            \
                                                                               \
-  if ((value & 0x8000) != 0)                                                  \
+  if ((value & DMA_CNT_ENABLE) != 0)                                          \
   {                                                                           \
     dma2->dma_channel = 2;                                                    \
     dma2->source_direction = (value >> 7) & 0x03;                             \
@@ -1285,7 +1307,7 @@ static void waitstate_control(u32 value)
         dma2->length_type = DMA_32BIT;                                        \
         dma2->length = 4;                                                     \
                                                                               \
-        if (dma2->dest_address == 0x40000A4)                                  \
+        if (dma2->dest_address == FIFO_B_ADDRESS)                             \
           dma2->direct_sound_channel = DMA_DIRECT_SOUND_B;                    \
         else                                                                  \
           dma2->direct_sound_channel = DMA_DIRECT_SOUND_A;                    \
@@ -1325,11 +1347,13 @@ static void waitstate_control(u32 value)
   }                                                                           \
 }                                                                             \
 
+// DMA3 also detects 8 KB EEPROM: a 17-bit transfer to region 0xD is a read
+// request with a 14-bit address (2 command + 14 address + 1 stop bits).
 #define TRIGGER_DMA3()                                                        \
 {                                                                             \
   DmaTransferType *dma3 = dma + 3;                                            \
                                                                               \
-  if ((value & 0x8000) != 0)                                                  \
+  if ((value & DMA_CNT_ENABLE) != 0)                                          \
   {                                                                           \
     dma3->dma_channel = 3;                                                    \
     dma3->source_direction = (value >> 7) & 0x03;                             \
@@ -1370,6 +1394,8 @@ static void waitstate_control(u32 value)
 }                                                                             \
 
 
+// Merge an 8-bit or 16-bit write with the other half of the current
+// register so the wider handler below sees the whole value.
 #define ACCESS_REGISTER8_HIGH(address)                                        \
   value = ADDRESS8(io_registers, address) | (value << 8);                     \
 
@@ -1383,6 +1409,9 @@ static void waitstate_control(u32 value)
   value = value | (ADDRESS16(io_registers, address + 2) << 16);               \
 
 
+// I/O register stores, also called from mips_stub.S; address is the offset
+// in the 1 KiB I/O block. Byte stores other than POSTFLG/HALTCNT become
+// halfword stores merged with the neighbouring byte.
 CPU_ALERT_TYPE write_io_register8(u32 address, u32 value)
 {
   switch (address)
@@ -1419,12 +1448,18 @@ CPU_ALERT_TYPE write_io_register8(u32 address, u32 value)
 }
 
 
+// Stores a halfword register and applies its side effects (video, sound,
+// DMA, timers, IRQ, link). Returns CPU_ALERT_* bits for the caller.
 CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
 {
+  /* Cases are byte offsets from 0x4000000; the REG_* names in memory.h are
+     halfword indexes (offset / 2). Each case names its GBA register. A new
+     write-only register must also be cleared in io_readable (init_memory),
+     or reads return the stored value instead of open bus. */
   switch (address)
   {
     // DISPCNT
-    case 0x00:
+    case 0x00:  // DISPCNT
     {
       u16 bg_mode = value & 0x07;
       u16 dispcnt = pIO_REG(REG_DISPCNT);
@@ -1432,6 +1467,7 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       if (bg_mode > 5)
         value &= 0x07;
 
+      // Bitmap modes 3-5 use VRAM up to 0x14000, so OBJ tiles start there.
       if (bg_mode < 3)
         obj_address = 0x10000;
       else
@@ -1440,6 +1476,8 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       if (bg_mode != (dispcnt & 0x07))
         oam_update = 1;
 
+      // Leaving forced blank (bit 7) outside VBlank clears the HBlank
+      // status flag.
       if ((((dispcnt ^ value) & 0x80) != 0) && ((value & 0x80) == 0))
       {
         if ((pIO_REG(REG_DISPSTAT) & 0x01) == 0)
@@ -1450,278 +1488,278 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       break;
     }
 
-    // DISPSTAT
-    case 0x04:
+    // DISPSTAT (bits 0-2, the blank and VCount match flags, are read-only)
+    case 0x04:  // DISPSTAT
       ADDRESS16(io_registers, 0x04) = (ADDRESS16(io_registers, 0x04) & 0x07) | (value & ~0x07);
       break;
 
     // VCOUNT
-    case 0x06:
+    case 0x06:  // VCOUNT
       /* Read only */
       break;
 
-    // BG2 reference X
-    case 0x28:
+    // BG2 reference X (28-bit signed fixed point, sign-extended here)
+    case 0x28:  // BG2X_L
       ACCESS_REGISTER16_LOW(0x28);
       affine_reference_x[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x28) = value;
       break;
 
-    case 0x2A:
+    case 0x2A:  // BG2X_H
       ACCESS_REGISTER16_HIGH(0x28);
       affine_reference_x[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x28) = value;
       break;
 
     // BG2 reference Y
-    case 0x2C:
+    case 0x2C:  // BG2Y_L
       ACCESS_REGISTER16_LOW(0x2C);
       affine_reference_y[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x2C) = value;
       break;
 
-    case 0x2E:
+    case 0x2E:  // BG2Y_H
       ACCESS_REGISTER16_HIGH(0x2C);
       affine_reference_y[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x2C) = value;
       break;
 
     // BG3 reference X
-    case 0x38:
+    case 0x38:  // BG3X_L
       ACCESS_REGISTER16_LOW(0x38);
       affine_reference_x[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x38) = value;
       break;
 
-    case 0x3A:
+    case 0x3A:  // BG3X_H
       ACCESS_REGISTER16_HIGH(0x38);
       affine_reference_x[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x38) = value;
       break;
 
     // BG3 reference Y
-    case 0x3C:
+    case 0x3C:  // BG3Y_L
       ACCESS_REGISTER16_LOW(0x3C);
       affine_reference_y[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x3C) = value;
       break;
 
-    case 0x3E:
+    case 0x3E:  // BG3Y_H
       ACCESS_REGISTER16_HIGH(0x3C);
       affine_reference_y[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x3C) = value;
       break;
 
     // Sound 1 control sweep
-    case 0x60:
+    case 0x60:  // SOUND1CNT_L
       value &= 0x007F;
       gbc_sound_tone_control_sweep(value);
       ADDRESS16(io_registers, 0x60) = value;
       break;
 
     // Sound 1 control duty/length/envelope
-    case 0x62:
+    case 0x62:  // SOUND1CNT_H
       gbc_sound_tone_control_low(0, value);
       ADDRESS16(io_registers, 0x62) = value;
       break;
 
     // Sound 1 control frequency
-    case 0x64:
+    case 0x64:  // SOUND1CNT_X
       gbc_sound_tone_control_high(0, value);
       ADDRESS16(io_registers, 0x64) = value & 0x47FF;
       break;
 
     // Sound 2 control duty/length/envelope
-    case 0x68:
+    case 0x68:  // SOUND2CNT_L
       gbc_sound_tone_control_low(1, value);
       ADDRESS16(io_registers, 0x68) = value;
       break;
 
     // Sound 2 control frequency
-    case 0x6C:
+    case 0x6C:  // SOUND2CNT_H
       gbc_sound_tone_control_high(1, value);
       ADDRESS16(io_registers, 0x6C) = value & 0x47FF;
       break;
 
     // Sound 3 control wave
-    case 0x70:
+    case 0x70:  // SOUND3CNT_L
       gbc_sound_wave_control(value);
       ADDRESS16(io_registers, 0x70) = value & 0x00E0;
       break;
 
     // Sound 3 control length/volume
-    case 0x72:
+    case 0x72:  // SOUND3CNT_H
       gbc_sound_tone_control_low_wave(value);
       ADDRESS16(io_registers, 0x72) = value;
       break;
 
     // Sound 3 control frequency
-    case 0x74:
+    case 0x74:  // SOUND3CNT_X
       gbc_sound_tone_control_high_wave(value);
       ADDRESS16(io_registers, 0x74) = value;
       break;
 
     // Sound 4 control length/envelope
-    case 0x78:
+    case 0x78:  // SOUND4CNT_L
       gbc_sound_tone_control_low(3, value);
       ADDRESS16(io_registers, 0x78) = value;
       break;
 
     // Sound 4 control frequency
-    case 0x7C:
+    case 0x7C:  // SOUND4CNT_H
       gbc_sound_noise_control(value);
       ADDRESS16(io_registers, 0x7C) = value & 0x40FF;
       break;
 
     // Sound control L
-    case 0x80:
+    case 0x80:  // SOUNDCNT_L
       sound_control_low(value);
       ADDRESS16(io_registers, 0x80) = value & 0xFF77;
       break;
 
     // Sound control H
-    case 0x82:
+    case 0x82:  // SOUNDCNT_H
       sound_control_high(value);
       ADDRESS16(io_registers, 0x82) = value & 0x770F;
       break;
 
     // Sound control X
-    case 0x84:
+    case 0x84:  // SOUNDCNT_X
       sound_control_x(value);
       ADDRESS16(io_registers, 0x84) = (ADDRESS16(io_registers, 0x84) & 0x000F) | (value & 0xFFF0);
       break;
 
     // Sound wave RAM
-    case 0x90: case 0x92: case 0x94: case 0x96:
-    case 0x98: case 0x9A: case 0x9C: case 0x9E:
+    case 0x90: case 0x92: case 0x94: case 0x96:  // WAVE_RAM
+    case 0x98: case 0x9A: case 0x9C: case 0x9E:  // WAVE_RAM
       gbc_sound_wave_pattern_ram16(address, value);
       ADDRESS16(io_registers, address) = value;
       break;
 
     // Sound FIFO A
-    case 0xA0:
-    case 0xA2:
+    case 0xA0:  // FIFO_A
+    case 0xA2:  // FIFO_A
       ADDRESS16(io_registers, address) = value;
       sound_timer_queue(0);
       break;
 
     // Sound FIFO B
-    case 0xA4:
-    case 0xA6:
+    case 0xA4:  // FIFO_B
+    case 0xA6:  // FIFO_B
       ADDRESS16(io_registers, address) = value;
       sound_timer_queue(1);
       break;
 
     // DMA Source Address High (internal memory)
-    case 0xB2:
+    case 0xB2:  // DMA0SAD_H
     // DMA Destination Address High (internal memory)
-    case 0xB6: case 0xC2: case 0xCe:
+    case 0xB6: case 0xC2: case 0xCE:  // DMA0DAD_H, DMA1DAD_H, DMA2DAD_H
       ADDRESS16(io_registers, address) = value & 0x07FF;
       break;
 
     // DMA Source Address High (any memory)
-    case 0xBe: case 0xCA: case 0xD6:
+    case 0xBE: case 0xCA: case 0xD6:  // DMA1SAD_H, DMA2SAD_H, DMA3SAD_H
     // DMA Destination Address High (any memory)
-    case 0xDA:
+    case 0xDA:  // DMA3DAD_H
       ADDRESS16(io_registers, address) = value & 0x0FFF;
       break;
 
     // DMA Word Count (14 bit)
-    case 0xB8: case 0xC4: case 0xD0:
+    case 0xB8: case 0xC4: case 0xD0:  // DMA0CNT_L, DMA1CNT_L, DMA2CNT_L
       ADDRESS16(io_registers, address) = value & 0x3FFF;
       break;
 
     // DMA control
-    case 0xBA:
+    case 0xBA:  // DMA0CNT_H
       ADDRESS16(io_registers, 0xBA) = value;
       TRIGGER_DMA0();
       break;
 
-    case 0xC6:
+    case 0xC6:  // DMA1CNT_H
       ADDRESS16(io_registers, 0xC6) = value;
       TRIGGER_DMA1();
       break;
 
-    case 0xD2:
+    case 0xD2:  // DMA2CNT_H
       ADDRESS16(io_registers, 0xD2) = value;
       TRIGGER_DMA2();
       break;
 
-    case 0xDE:
+    case 0xDE:  // DMA3CNT_H
       ADDRESS16(io_registers, 0xDE) = value;
       TRIGGER_DMA3();
       break;
 
     // Timer counts
-    case 0x100:
+    case 0x100:  // TM0CNT_L
       timer_control_low(0, value);
       break;
 
-    case 0x104:
+    case 0x104:  // TM1CNT_L
       timer_control_low(1, value);
       break;
 
-    case 0x108:
+    case 0x108:  // TM2CNT_L
       timer_control_low(2, value);
       break;
 
-    case 0x10C:
+    case 0x10C:  // TM3CNT_L
       timer_control_low(3, value);
       break;
 
     // Timer control
-    case 0x102:
+    case 0x102:  // TM0CNT_H
       ADDRESS16(io_registers, 0x102) = value;
       return timer_control_high(0, value);
 
-    case 0x106:
+    case 0x106:  // TM1CNT_H
       ADDRESS16(io_registers, 0x106) = value;
       return timer_control_high(1, value);
 
-    case 0x10A:
+    case 0x10A:  // TM2CNT_H
       ADDRESS16(io_registers, 0x10A) = value;
       return timer_control_high(2, value);
 
-    case 0x10E:
+    case 0x10E:  // TM3CNT_H
       ADDRESS16(io_registers, 0x10e) = value;
       return timer_control_high(3, value);
 
     // GBA serial registers
-    case 0x120: case 0x122: case 0x124: case 0x126:
-    case 0x128:
-    case 0x12A:
-    case 0x134:
+    case 0x120: case 0x122: case 0x124: case 0x126:  // SIOMULTI0-3
+    case 0x128:  // SIOCNT
+    case 0x12A:  // SIOMLT_SEND
+    case 0x134:  // RCNT
       if(address == GBA_SIO_REG_CONTROL || address == GBA_SIO_REG_RCNT)
         gba_sio_state_dirty = 1;
       return gba_sio_alert(gba_sio_write16(&gba_sio, address,
        (u16)value));
 
     // P1
-    case 0x130:
+    case 0x130:  // KEYINPUT
       /* Read only */
       break;
 
-    // IE - Interrupt Enable Register
-    case 0x200:
+    // IE - Interrupt Enable Register (14 interrupt sources)
+    case 0x200:  // IE
       value &= 0x3FFF;
       ADDRESS16(io_registers, 0x200) = value;
       if (((value & pIO_REG(REG_IF)) != 0) && GBA_IME_STATE && ARM_IRQ_STATE)
         return CPU_ALERT_IRQ;
       break;
 
-    // IF - Interrupt Request flags
-    case 0x202:
+    // IF - Interrupt Request flags (writing 1 acknowledges a request)
+    case 0x202:  // IF
       value = ~value & 0x3FFF;
       ADDRESS16(io_registers, 0x202) &= value;
       break;
 
     // WAITCNT
-    case 0x204:
+    case 0x204:  // WAITCNT
       waitstate_control(value);
       break;
 
     // IME - Interrupt Master Enable Register
-    case 0x208:
+    case 0x208:  // IME
       value &= 0x0001;
       ADDRESS16(io_registers, 0x208) = value;
       if (((pIO_REG(REG_IE) & pIO_REG(REG_IF)) != 0) && (value != 0) && ARM_IRQ_STATE)
@@ -1729,7 +1767,7 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       break;
 
     // Halt
-    case 0x300:
+    case 0x300:  // POSTFLG/HALTCNT
       if ((value & 0x8000) != 0)
         reg[CPU_HALT_STATE] = CPU_STOP;
       else
@@ -1747,6 +1785,8 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
 }
 
 
+// Registers that must take the whole word at once are handled here; the
+// rest become two halfword stores, low half first.
 CPU_ALERT_TYPE write_io_register32(u32 address, u32 value)
 {
   switch (address)
@@ -1823,8 +1863,12 @@ CPU_ALERT_TYPE write_io_register32(u32 address, u32 value)
 }
 
 
-// EEPROM is 512 bytes by default; it is autodetecte as 8KB if
+// EEPROM is 512 bytes by default; it is autodetected as 8KB if
 // 14bit address DMAs are made (this is done in the DMA handler).
+// Serial protocol, one bit per halfword access: a 2-bit command (11 read,
+// 10 write), the 6- or 14-bit number of an 8-byte block, 64 data bits for
+// a write, then a stop bit. A read then returns 4 dummy bits and 64 data
+// bits.
 
 CPU_ALERT_TYPE write_eeprom(u32 address, u32 value)
 {
@@ -1921,6 +1965,8 @@ CPU_ALERT_TYPE write_eeprom(u32 address, u32 value)
   return CPU_ALERT_NONE;
 }
 
+// One bit per halfword read: 1 (ready) when idle; after a read request,
+// 4 dummy bits and then the 64 data bits.
 u32 read_eeprom(void)
 {
   u32 value;
@@ -1960,6 +2006,9 @@ u32 read_eeprom(void)
 }
 
 
+// Byte reads from region 0xE: SRAM, Flash (or its ID codes in ID mode) or,
+// on EEPROM carts, the tilt sensor. The first access with no detected type
+// settles on SRAM.
 u32 read_backup(u32 address)
 {
   address &= 0xFFFF;
@@ -2028,12 +2077,19 @@ u32 read_backup(u32 address)
   return value & 0xFF;
 }
 
+// Flash commands: 0xAA to 0x5555, 0x55 to 0x2AAA, then a command byte to
+// 0x5555: 0x90 ID mode, 0xF0 leave ID mode, 0xA0 write one byte, 0xB0 bank
+// switch (then the bank to 0x0000, 128KB chips), 0x80 erase (then a second
+// unlock and 0x10 for the chip, or 0x30 to a sector). The first unlock
+// write marks the backup as Flash; until then writes go to SRAM.
 CPU_ALERT_TYPE write_backup(u32 address, u32 value)
 {
   address &= 0xFFFF;
   value &= 0xFF;
 
-  // Tilt Sensor
+  // Tilt-sensor carts save to EEPROM and map the sensor into this region:
+  // writing 0x55 to 0x8000 and 0xAA to 0x8100 starts a sample. Any other
+  // write on an EEPROM cart is ignored.
   if (backup_type == BACKUP_EEPROM)
   {
     // start sampling
@@ -2177,7 +2233,7 @@ CPU_ALERT_TYPE write_backup(u32 address, u32 value)
 }
 
 
-// RTC code derived from VBA's (due to lack of any real publically available
+// RTC code derived from VBA's (due to lack of any real publicly available
 // documentation...)
 
 static u32 encode_bcd(u8 value)
@@ -2185,6 +2241,9 @@ static u32 encode_bcd(u8 value)
   return ((value / 10) << 4) | (value % 10);
 }
 
+// The RTC sits behind a GPIO port in ROM space: data at 0x80000C4,
+// direction at 0xC6 and control at 0xC8 (rtc_registers[0..2]). Each write is
+// mirrored into the ROM page so the game reads it back.
 #define WRITE_RTC_REGISTER(index, _value)                                     \
   update_address = 0x80000C4 + (index << 1);                                  \
   rtc_registers[index] = _value;                                              \
@@ -2196,6 +2255,8 @@ static u32 encode_bcd(u8 value)
                                                                               \
   ADDRESS16(map, update_address & 0x7FFF) = _value;                           \
 
+// Halfword stores to ROM space. Only the GPIO port offsets matter: they
+// drive the RTC's serial protocol, which reads its time from the PSP clock.
 CPU_ALERT_TYPE write_rtc(u32 address, u32 value)
 {
   u32 rtc_page_index;
@@ -2207,10 +2268,10 @@ CPU_ALERT_TYPE write_rtc(u32 address, u32 value)
 
   switch (address)
   {
-    // RTC command
-    // Bit 0: SCHK, perform action
-    // Bit 1: IO, input/output command data
-    // Bit 2: CS, select input/output? If high make I/O write only
+    // RTC command (GPIO data)
+    // Bit 0: SCK, serial clock
+    // Bit 1: SIO, serial data in or out
+    // Bit 2: CS, chip select; while low the SIO bit is left unchanged
     case 0xC4:
       if (rtc_state == RTC_DISABLED)
         rtc_state = RTC_IDLE;
@@ -2384,12 +2445,12 @@ CPU_ALERT_TYPE write_rtc(u32 address, u32 value)
       }
       break;
 
-    // Write parameter A
+    // Write parameter A (GPIO direction)
     case 0xC6:
       WRITE_RTC_REGISTER(1, value);
       break;
 
-    // Write parameter B
+    // Write parameter B (GPIO control; bit 0 enables the port)
     case 0xC8:
       WRITE_RTC_REGISTER(2, value);
       break;
@@ -2399,6 +2460,8 @@ CPU_ALERT_TYPE write_rtc(u32 address, u32 value)
 }
 
 
+// Whole-address-space accessors for C code (cheats). Addresses of
+// 0x10000000 and above read as open bus.
 u8 read_memory8(u32 address)
 {
   u32 region = address >> 24;
@@ -2409,6 +2472,7 @@ u8 read_memory8(u32 address)
   return (u8)(*mem_read8[region])(address);
 }
 
+// A signed halfword load from an odd address returns a sign-extended byte.
 s16 read_memory16_signed(u32 address)
 {
   if ((address & 0x01) != 0)
@@ -2417,7 +2481,7 @@ s16 read_memory16_signed(u32 address)
   return (s16)read_memory16(address);
 }
 
-// unaligned reads are actually 32bit
+// Unaligned reads return the aligned value rotated right, as on the ARM7.
 
 u32 read_memory16(u32 address)
 {
@@ -2438,6 +2502,7 @@ u32 read_memory16(u32 address)
   return value;
 }
 
+// Word form of read_memory16(); misalignment rotates by 8 bits per byte.
 u32 read_memory32(u32 address)
 {
   u32 value;
@@ -2458,6 +2523,8 @@ u32 read_memory32(u32 address)
 }
 
 
+// Opcode reads for the dynarec's open-bus loads (mips_stub.S); address is
+// already the prefetch address near PC.
 u8 read_open_memory8(u32 address)
 {
   return (u8)(*open_read8[address >> 24])(address);
@@ -2474,6 +2541,8 @@ u32 read_open_memory32(u32 address)
 }
 
 
+// Stores for C code (cheats), aligned down to their size; addresses of
+// 0x10000000 and above are ignored. Returns the handler's CPU_ALERT_* bits.
 CPU_ALERT_TYPE write_memory8(u32 address, u8 value)
 {
   u32 region = address >> 24;
@@ -2484,6 +2553,7 @@ CPU_ALERT_TYPE write_memory8(u32 address, u8 value)
   return (*mem_write8[region])(address, value);
 }
 
+// Halfword stores to region 8 reach the RTC port (see mem_write16).
 CPU_ALERT_TYPE write_memory16(u32 address, u16 value)
 {
   u32 region = address >> 24;
@@ -2494,6 +2564,7 @@ CPU_ALERT_TYPE write_memory16(u32 address, u16 value)
   return (*mem_write16[region])(address & ~0x01, value);
 }
 
+// Word stores to ROM, the RTC port included, are dropped (see mem_write32).
 CPU_ALERT_TYPE write_memory32(u32 address, u32 value)
 {
   u32 region = address >> 24;
@@ -2528,6 +2599,9 @@ CPU_ALERT_TYPE write_memory32(u32 address, u32 value)
     dest_ptr += dest_increment;                                               \
   }                                                                           \
 
+// Runs a whole DMA transfer at once, then reloads or stops the channel.
+// Returns CPU_ALERT_DMA plus alerts raised by the writes (SMC) and the
+// completion IRQ.
 CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
 {
   u32 read_value = 0;
@@ -2583,10 +2657,12 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
   }
 
 
+  // Open-bus reads now return the last DMA value (see read8_open).
   reg[CPU_DMA_HACK] = 1;
 
   dma->source_address = src_ptr;
 
+  // DMA_RELOAD restores the destination from DMAxDAD.
   if (dma->dest_direction == DMA_RELOAD)
     dma->dest_address = ADDRESS32(io_registers, 0xB4 + (dma->dma_channel * 12));
   else
@@ -2595,6 +2671,7 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
   if ((dma->repeat_type == DMA_REPEAT) && (dma->start_type != DMA_START_SPECIAL))
   {
     u32 length_max;
+    // Reload the word count from DMAxCNT_L.
     length = ADDRESS16(io_registers, 0xB8 + (dma->dma_channel * 12));
     length_max = (dma->dma_channel == 3) ? 0x10000 : 0x4000;
 
@@ -2606,6 +2683,7 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
     dma->start_type = DMA_INACTIVE;
     dma->direct_sound_channel = DMA_NO_DIRECT_SOUND;
 
+    // Clear the enable bit in DMAxCNT_H.
     ADDRESS16(io_registers, 0xBA + (dma->dma_channel * 12)) &= 0x7FFF;
   }
 
@@ -2620,6 +2698,7 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
 
 
 // Be sure to do this after loading ROMs.
+// The area repeats every mirror_blocks pages of 32 KiB.
 
 #define MAP_REGION(type, start, end, mirror_blocks, region)                   \
   for (i = ((start) / 0x8000); i < ((end) / 0x8000); i++)                     \
@@ -2633,6 +2712,7 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
     memory_map_##type[i] = NULL;                                              \
   }                                                                           \
 
+// Each 128 KiB VRAM window maps pages 0, 1, 2, 2: the OBJ area mirrors.
 #define MAP_VRAM(type)                                                        \
   for (i = (0x6000000 / 0x8000); i < (0x7000000 / 0x8000); i += 4)            \
   {                                                                           \
@@ -2643,6 +2723,8 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
   }                                                                           \
 
 
+// Picks the least recently loaded page of the ROM buffer and unmaps the ROM
+// page it held from all three ROM mirrors (0x08, 0x0A, 0x0C).
 static u32 evict_gamepak_page(void)
 {
   // Find the one with the smallest frame timestamp
@@ -2684,6 +2766,9 @@ static u32 evict_gamepak_page(void)
   return page_index;
 }
 
+// Reads 32 KiB ROM page physical_index from the open ROM file into an
+// evicted buffer page (0xFF past the end of the file) and maps it. Returns
+// the page even after a read error, but leaves it unmapped so it is retried.
 u8 *load_gamepak_page(u32 physical_index)
 {
   if (physical_index >= (gamepak_size >> 15))
@@ -2758,6 +2843,9 @@ u8 *load_gamepak_page(u32 physical_index)
   return swap_location;
 }
 
+// Maps the three ROM mirrors (0x08, 0x0A, 0x0C) straight to the buffer if
+// the ROM fits; otherwise unmaps them so reads page in through
+// load_gamepak_page().
 static void init_memory_gamepak(void)
 {
   u32 i = 0;
@@ -2765,7 +2853,7 @@ static void init_memory_gamepak(void)
   if (gamepak_size > gamepak_ram_buffer_size)
   {
     // Large ROMs get special treatment because they
-    // can't fit into the 16MB ROM buffer.
+    // can't fit into the ROM buffer.
     u32 i;
     for (i = 0; i < gamepak_ram_pages; i++)
     {
@@ -2786,6 +2874,7 @@ static void init_memory_gamepak(void)
   }
 }
 
+// Allocates the largest ROM buffer available, starting from 32 MiB.
 void init_gamepak_buffer(void)
 {
   gamepak_ram_buffer_size = 32 * 1024 * 1024;
@@ -2815,6 +2904,8 @@ void init_gamepak_buffer(void)
 }
 
 
+// Power-on state of the memory system, on every GBA reset: page maps, RAM,
+// I/O reset values, backup and RTC state, and which I/O bytes read back.
 void init_memory(void)
 {
   u32 i = 0;
@@ -2850,6 +2941,9 @@ void init_memory(void)
   memset(oam_ram,      0, sizeof(oam_ram));
   memset(palette_ram,  0, sizeof(palette_ram));
 
+  // Forced blank, no keys pressed (P1 is active low), identity affine
+  // matrices (1.0 in 8.8). Skipping the BIOS starts at the scanline where
+  // the BIOS hands over to the cartridge.
   io_registers[REG_DISPCNT]   = 0x0080;
   io_registers[REG_DISPSTAT]  = 0x0000;
   io_registers[REG_VCOUNT]    = option_boot_mode ? 0x0000 : 0x007e;
@@ -2873,13 +2967,9 @@ void init_memory(void)
 
   oam_update = 1;
 
-  //sram_size = SRAM_SIZE_32KB;//
-  //flash_size = FLASH_SIZE_64KB;//
-
   flash_mode = FLASH_BASE_MODE;
   flash_bank = 0;
   flash_command_position = 0;
-  //eeprom_size = EEPROM_512_BYTE;//
   eeprom_mode = EEPROM_BASE_MODE;
   eeprom_address = 0;
   eeprom_counter = 0;
@@ -2888,6 +2978,7 @@ void init_memory(void)
   rtc_status = 0x40;
   memset(rtc_registers, 0, sizeof(rtc_registers));
 
+  // BIOS opcode seen by protected BIOS reads once the BIOS has booted.
   bios_read_protect = 0xe129f000;
 
   enable_tilt_sensor = 0;
@@ -2897,6 +2988,7 @@ void init_memory(void)
 
   iwram_control = 0x0d000020;
 
+  // Write-only and unused I/O bytes read as open bus.
   for(i = 0; i < 0x400; i++)
     io_readable[i] = 1;
   for(i = 0x10; i < 0x48; i++)
@@ -2934,6 +3026,8 @@ void init_memory(void)
 }
 
 
+// Shutdown, from quit(): closes a streamed ROM's file and frees the ROM
+// buffer and its page map.
 void memory_term(void)
 {
   if (FILE_CHECK_VALID(gamepak_file_large))
@@ -2955,6 +3049,9 @@ void memory_term(void)
 }
 
 
+// Resets the backup state, then scans the ROM backwards for the save library
+// ID string (EEPROM_V, SRAM_V, SRAM_F_V, FLASH_V, FLASH512_V, FLASH1M_V)
+// that names the save type.
 static void load_backup_id(void)
 {
   u32 addr = 0x08000000 + gamepak_size - 4;
@@ -2972,8 +3069,6 @@ static void load_backup_id(void)
   sram_size   = SRAM_SIZE_32KB;
   flash_size  = FLASH_SIZE_64KB;
   eeprom_size = EEPROM_512_BYTE;
-
-//  backup_id[0] = 0;
 
   for ( ; addr > 0x08000000; addr -= 4)
   {
@@ -2998,10 +3093,6 @@ static void load_backup_id(void)
         if (memcmp(data, "EEPROM_V", 8) == 0)
         {
           backup_type = BACKUP_EEPROM;
-/*
-          memcpy(backup_id, data, 11);
-          backup_id[11] = 0;
-*/
           return;
         }
       }
@@ -3014,10 +3105,6 @@ static void load_backup_id(void)
         {
           backup_type = BACKUP_SRAM;
           sram_size   = SRAM_SIZE_32KB;
-/*
-          memcpy(backup_id, data, 9);
-          backup_id[9] = 0;
-*/
           return;
         }
 
@@ -3026,10 +3113,6 @@ static void load_backup_id(void)
         {
           backup_type = BACKUP_SRAM;
           sram_size   = SRAM_SIZE_32KB;
-/*
-          memcpy(backup_id, data, 11);
-          backup_id[11] = 0;
-*/
           return;
         }
       }
@@ -3044,10 +3127,6 @@ static void load_backup_id(void)
           flash_size  = FLASH_SIZE_64KB;
           flash_device_id = FLASH_DEVICE_PANASONIC_64KB;
           flash_manufacturer_id = FLASH_MANUFACTURER_PANASONIC;
-/*
-          memcpy(backup_id, data, 10);
-          backup_id[10] = 0;
-*/
           return;
         }
 
@@ -3058,10 +3137,6 @@ static void load_backup_id(void)
           flash_size  = FLASH_SIZE_64KB;
           flash_device_id = FLASH_DEVICE_PANASONIC_64KB;
           flash_manufacturer_id = FLASH_MANUFACTURER_PANASONIC;
-/*
-          memcpy(backup_id, data, 13);
-          backup_id[13] = 0;
-*/
           return;
         }
 
@@ -3072,10 +3147,6 @@ static void load_backup_id(void)
           flash_size  = FLASH_SIZE_128KB;
           flash_device_id = FLASH_DEVICE_SANYO_128KB;
           flash_manufacturer_id = FLASH_MANUFACTURER_SANYO;
-/*
-          memcpy(backup_id, data, 12);
-          backup_id[12] = 0;
-*/
           return;
         }
       }
@@ -3084,6 +3155,8 @@ static void load_backup_id(void)
   }
 }
 
+// Loads the .sav file into gamepak_backup (0xFF fills the rest); a known
+// file size can override the save type found from the ROM's ID string.
 s32 load_backup(char *name)
 {
   SceUID backup_file;
@@ -3101,21 +3174,6 @@ s32 load_backup(char *name)
 
     FILE_READ(backup_file, gamepak_backup, backup_size);
     FILE_CLOSE(backup_file);
-/*
-    if (backup_type != BACKUP_NONE)
-    {
-      switch (backup_size)
-      {
-        case 0x200:
-          eeprom_size = EEPROM_512_BYTE;
-          break;
-
-        case 0x2000:
-          eeprom_size = EEPROM_8_KBYTE;
-          break;
-      }
-    }
-    else*/
     {
       // The size might give away what kind of backup it is.
       switch (backup_size)
@@ -3135,7 +3193,10 @@ s32 load_backup(char *name)
           sram_size   = SRAM_SIZE_32KB;
           break;
 
-        // Could be either flash or SRAM, go with flash
+        // Could be Flash or SRAM. Meant to pick Flash, but this assigns
+        // sram_size (to 1), not backup_type, so the type is still settled at
+        // run time; a game that turns out to use SRAM and never writes above
+        // 0x8000 then has its 64 KB .sav saved back as a single byte.
         case 0x10000:
           sram_size  = BACKUP_FLASH;
           flash_size = FLASH_SIZE_64KB;
@@ -3150,7 +3211,7 @@ s32 load_backup(char *name)
           flash_manufacturer_id = FLASH_MANUFACTURER_SANYO;
           break;
       }
-	}
+    }
 
     return 0;
   }
@@ -3158,6 +3219,9 @@ s32 load_backup(char *name)
     return -1;
 }
 
+// Writes the backup at the detected save type's size, under a power lock so
+// a suspend can't cut the write. Nothing is written while the type is
+// unknown.
 static u32 save_backup(char *name)
 {
   SceUID backup_file;
@@ -3205,6 +3269,8 @@ static u32 save_backup(char *name)
   return backup_size;
 }
 
+// Called each frame by main.c when auto-save (option_update_backup) is on:
+// saves once WRITE_BACKUP_DELAY frames pass without a new backup write.
 void update_backup(void)
 {
   if (backup_update != (WRITE_BACKUP_DELAY + 1))
@@ -3217,6 +3283,7 @@ void update_backup(void)
   }
 }
 
+// Saves a pending backup write now instead of after the delay.
 void update_backup_immediately(void)
 {
   if (backup_update != (WRITE_BACKUP_DELAY + 1))
@@ -3227,6 +3294,8 @@ void update_backup_immediately(void)
 }
 
 
+// Case-insensitive substring test for filename_match; an empty value
+// matches any name.
 static s32 filename_contains_string(const char *filename, const char *value)
 {
   size_t value_len = strlen(value);
@@ -3244,69 +3313,73 @@ static s32 filename_contains_string(const char *filename, const char *value)
 }
 
 
+// Splits a "key = value" line into trimmed key and value (256-byte
+// buffers). Returns -1 for blank, comment (#) or malformed lines.
 s32 parse_config_line(char *current_line, char *current_variable, char *current_value)
 {
-  char *eq;
-  char *ks;
-  char *ke;
-  char *vs;
-  char *ve;
-  size_t klen;
-  size_t vlen;
+  char *equals_sign;
+  char *key_start;
+  char *key_end;
+  char *value_start;
+  char *value_end;
+  size_t key_length;
+  size_t value_length;
 
   if (current_line == NULL || current_line[0] == 0 || current_line[0] == '#' ||
       current_line[0] == '\r' || current_line[0] == '\n')
     return -1;
 
-  eq = strchr(current_line, '=');
-  if (eq == NULL)
+  equals_sign = strchr(current_line, '=');
+  if (equals_sign == NULL)
     return -1;
 
-  /* Do not write *eq = 0: load_game_config may re-parse current_line after
-   * reading a block (goto resume_after_entry). Nul at '=' breaks the next parse. */
+  /* Do not write *equals_sign = 0: load_game_config may re-parse
+   * current_line after reading a block (goto resume_after_entry). Nul at '='
+   * breaks the next parse. */
 
-  ks = current_line;
-  while (*ks == ' ' || *ks == '\t')
-    ks++;
+  key_start = current_line;
+  while (*key_start == ' ' || *key_start == '\t')
+    key_start++;
 
-  ke = eq - 1;
-  while (ke >= ks && (*ke == ' ' || *ke == '\t'))
-    ke--;
+  key_end = equals_sign - 1;
+  while (key_end >= key_start && (*key_end == ' ' || *key_end == '\t'))
+    key_end--;
 
-  if (ke < ks)
+  if (key_end < key_start)
     return -1;
 
-  klen = (size_t)(ke - ks + 1);
-  if (klen >= 256)
+  key_length = (size_t)(key_end - key_start + 1);
+  if (key_length >= 256)
     return -1;
 
-  memcpy(current_variable, ks, klen);
-  current_variable[klen] = 0;
+  memcpy(current_variable, key_start, key_length);
+  current_variable[key_length] = 0;
 
-  vs = eq + 1;
-  while (*vs == ' ' || *vs == '\t')
-    vs++;
+  value_start = equals_sign + 1;
+  while (*value_start == ' ' || *value_start == '\t')
+    value_start++;
 
-  ve = vs + strlen(vs);
-  while (ve > vs)
+  value_end = value_start + strlen(value_start);
+  while (value_end > value_start)
   {
-    ve--;
-    if (*ve == '\n' || *ve == '\r' || *ve == ' ' || *ve == '\t')
+    value_end--;
+    if (*value_end == '\n' || *value_end == '\r' || *value_end == ' ' || *value_end == '\t')
       continue;
-    ve++;
+    value_end++;
     break;
   }
 
-  vlen = (size_t)(ve - vs);
-  if (vlen >= 255)
-    vlen = 254;
+  value_length = (size_t)(value_end - value_start);
+  if (value_length >= 255)
+    value_length = 254;
 
-  memcpy(current_value, vs, vlen);
-  current_value[vlen] = 0;
+  memcpy(current_value, value_start, value_length);
+  current_value[value_length] = 0;
 
   return 0;
 }
 
+// Defaults for the per-game options that game_config.txt can override.
 static void reset_game_config_options(void)
 {
   u32 i;
@@ -3319,10 +3392,13 @@ static void reset_game_config_options(void)
 
   iwram_stack_optimize = 1;
 
+  // Undo the optional per-game BIOS patches (bios_rom_hack_39 / _2C).
   bios.rom[0x39] = 0x00;
   bios.rom[0x2C] = 0x00;
 }
 
+// Applies one option from a matched game_config.txt entry; other keys are
+// ignored.
 static void apply_game_config_option(const char *current_variable, const char *current_value)
 {
   if (!strcasecmp(current_variable, "idle_loop_eliminate_target"))
@@ -3377,6 +3453,10 @@ static s32 skip_config_to_next_game_name(FILE *config_file, char *current_line,
   return 0;
 }
 
+// Applies the game_config.txt entry whose game_name, game_code and
+// vendor_code match the ROM header. An entry's options are buffered first so
+// that a filename_match line anywhere in it can reject the whole entry, in
+// which case the search goes on with the next entry.
 static s32 load_game_config(char *gamepak_title, char *gamepak_code, char *gamepak_maker)
 {
   char current_line[256];
@@ -3392,11 +3472,6 @@ static s32 load_game_config(char *gamepak_title, char *gamepak_code, char *gamep
   u32 filename_ok;
 
   reset_game_config_options();
-
-  //translation_gate_targets = 0;
-/*fix no game_code*/
-  //flash_device_id = FLASH_DEVICE_MACRONIX_64KB;
-  //backup_type = BACKUP_NONE;
 
   sprintf(config_path, "%s%s", main_path, CONFIG_FILENAME);
 
@@ -3499,6 +3574,9 @@ resume_after_entry:
 }
 
 
+// Reads the whole ROM if it fits the buffer; otherwise reads only the
+// header and keeps the file open for load_gamepak_page(). Returns the file
+// size or -1.
 static s32 load_gamepak_raw(char *name)
 {
   SceUID gamepak_file;
@@ -3542,12 +3620,15 @@ static s32 load_gamepak_raw(char *name)
   return -1;
 }
 
+// Loads a .gba/.agb/.bin or .zip/.gbz ROM, then its game_config.txt entry,
+// per-game settings, save type and .sav. Returns the file size or a
+// negative value; the caller resets the GBA afterwards.
 s32 load_gamepak(char *name)
 {
   char *dot_position = strrchr(name, '.');
 
   s32 file_size = -1;
-  gamepak_file_large = -1;
+  gamepak_file_large = GAMEPAK_FILE_NONE;
 
   draw_popup_frame_auto(110, 50, 260, 170);
   print_string_gbk(MSG[MSG_LOADING_ROM], X_POS_CENTER, 100, color_active_item, BG_NO_FILL);
@@ -3567,13 +3648,14 @@ s32 load_gamepak(char *name)
   if (!strcasecmp(dot_position, ".gba") || !strcasecmp(dot_position, ".agb") || !strcasecmp(dot_position, ".bin"))
   {
     file_size = load_gamepak_raw(name);
-	print_string_gbk(MSG[MSG_SEARCHING_BACKUP_ID], X_POS_CENTER, 148, color_active_item, BG_NO_FILL);
+    print_string_gbk(MSG[MSG_SEARCHING_BACKUP_ID], X_POS_CENTER, 148, color_active_item, BG_NO_FILL);
     flip_screen(1);
   }
 
   if (file_size > 0)
   {
     gamepak_file_size = (u32)file_size;
+    // Whole 32 KiB pages.
     gamepak_size = (file_size + 0x7FFF) & ~0x7FFF;
     memcpy(gamepak_header, gamepak_rom, sizeof(gamepak_header));
 
@@ -3587,18 +3669,20 @@ s32 load_gamepak(char *name)
     char game_code[5];
     char maker_code[3];
 
+    // Cartridge header: title at 0xA0, game code at 0xAC, maker at 0xB0.
     memcpy(game_title, gamepak_header + 0xA0, 12);
     memcpy(game_code,  gamepak_header + 0xAC,  4);
     memcpy(maker_code, gamepak_header + 0xB0,  2);
     game_title[12] = 0;
     game_code[4] = 0;
     maker_code[2] = 0;
-	//load_backup_id();//up order to fix no game_code
+    // game_config.txt: per-ROM emulation fixes (idle loops, SMC gates...)
     load_game_config(game_title, game_code, maker_code);
+    // gui.c: the user's saved settings for this game
     load_game_config_file();
     rebuild_fast_forward_button_mask();
 
-	load_backup_id();
+    load_backup_id();
     change_ext(gamepak_filename, backup_filename, ".sav");
     load_backup(backup_filename);
 
@@ -3614,6 +3698,8 @@ s32 load_gamepak(char *name)
 }
 
 
+// Reads the 16 KB BIOS into bios.rom; -1 only if the file won't open (a
+// short file is not detected).
 s32 load_bios(char *name)
 {
   SceUID bios_file;
@@ -3632,6 +3718,9 @@ s32 load_bios(char *name)
 }
 
 
+// Savestate file: GBA_SCREEN_SIZE screenshot, u64 timestamp, then each
+// module's state in this order, padded to SAVESTATE_SIZE with the link
+// snapshot at the very end. The order is part of the file format.
 #define SAVESTATE_BLOCK(type)                                                 \
   cpu_##type##_savestate(savestate_file);                                     \
   input_##type##_savestate(savestate_file);                                   \
@@ -3640,6 +3729,8 @@ s32 load_bios(char *name)
   sound_##type##_savestate(savestate_file);                                   \
   video_##type##_savestate(savestate_file);                                   \
 
+// Restores the link cable state from the end of the savestate; a short read
+// loads an empty snapshot.
 static void read_gba_sio_snapshot(SceUID savestate_file)
 {
   GbaSioSnapshot snapshot;
@@ -3655,6 +3746,8 @@ static void read_gba_sio_snapshot(SceUID savestate_file)
   gba_sio_state_dirty = 1;
 }
 
+// Stores the link snapshot at its fixed offset at the end of the savestate
+// buffer. Returns 0 if the module data already reaches that offset.
 static int write_gba_sio_snapshot(u8 *savestate_buffer)
 {
   GbaSioSnapshot snapshot;
@@ -3723,6 +3816,7 @@ u32 load_state(char *savestate_filename)
   return result;
 }
 
+// load_state() without the confirmation dialog.
 u32 load_state_silent(char *savestate_filename)
 {
   SceUID savestate_file;
@@ -3824,6 +3918,7 @@ u32 save_state(char *savestate_filename, u16 *screen_capture)
   return result;
 }
 
+// save_state() without the confirmation dialog.
 u32 save_state_silent(char *savestate_filename, u16 *screen_capture)
 {
   SceUID savestate_file;
@@ -3872,6 +3967,7 @@ u32 save_state_silent(char *savestate_filename, u16 *screen_capture)
 }
 
 
+// Field order and sizes are the savestate format; keep them unchanged.
 #define MEMORY_SAVESTATE_BODY(type)                                           \
 {                                                                             \
   FILE_##type##_VARIABLE(savestate_file, backup_type);                        \

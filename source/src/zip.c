@@ -19,10 +19,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+/* Loads a ROM from a .zip for load_gamepak() in memory.c. Only the first
+ * entry is read, only if it is a .gba, .agb or .bin file, stored or
+ * deflated, straight into gamepak_rom. */
+
 #include "common.h"
 
 
-#define ZIP_BUFFER_SIZE (128 * 1024)
+#define ZIP_BUFFER_SIZE (128 * 1024)   // compressed input chunk size
 
 struct SZIPFileDataDescriptor
 {
@@ -31,6 +35,7 @@ struct SZIPFileDataDescriptor
   s32 UncompressedSize;
 } __attribute__((packed));
 
+/* ZIP local file header, little-endian on disk like the PSP. */
 struct SZIPFileHeader
 {
   char Sig[4];
@@ -47,6 +52,8 @@ struct SZIPFileHeader
 void draw_progress(u32 output_size, u32 total_size);
 
 
+/* Returns the ROM size in bytes, -1 on error, or -2 if the ROM does not fit
+   in gamepak_ram_buffer_size. */
 s32 load_file_zip(char *filename)
 {
   SceUID fd;
@@ -64,6 +71,7 @@ s32 load_file_zip(char *filename)
 
   FILE_READ(fd, &data, sizeof(struct SZIPFileHeader));
 
+  // local file header signature "PK\3\4"
   if ((data.Sig[0] != 0x50) || (data.Sig[1] != 0x4B) || (data.Sig[2] != 0x03) || (data.Sig[3] != 0x04))
   {
     goto outcode;
@@ -85,6 +93,7 @@ s32 load_file_zip(char *filename)
     FILE_SEEK(fd, data.ExtraFieldLength, SEEK_CUR);
   }
 
+  // flag bit 3: the sizes are in a data descriptor, not in this header
   if ((data.GeneralBitFlag & 0x0008) != 0)
   {
     FILE_READ(fd, &data.DataDescriptor, sizeof(struct SZIPFileDataDescriptor));
@@ -131,6 +140,7 @@ s32 load_file_zip(char *filename)
         stream.zfree     = (free_func)Z_NULL;
         stream.opaque    = (voidpf)Z_NULL;
 
+        // negative window bits: raw deflate data, no zlib header
         err = inflateInit2(&stream, -MAX_WBITS);
 
         FILE_READ(fd, cbuffer, ZIP_BUFFER_SIZE);
@@ -171,6 +181,7 @@ outcode:
   return retval;
 }
 
+/* 200-pixel progress bar centred on the 480x272 screen. */
 void draw_progress(u32 output_size, u32 total_size)
 {
   draw_box_line(140 - 4, 140 - 4, 340 + 4, 165 + 4, COLOR15_WHITE);

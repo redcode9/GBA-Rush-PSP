@@ -1,3 +1,11 @@
+/*
+ * Host tests for config_store.c, the crash-safe settings save: write a
+ * temporary file, validate it, keep the old file as a backup, promote the
+ * temporary file, validate again. An in-memory fake file system injects a
+ * failure or a corruption at each step, and the last good settings must
+ * always stay loadable.
+ */
+
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -6,6 +14,7 @@
 
 #include "config_store.h"
 
+/* config.bin (primary), config.tmp (temporary) and config.bak (backup). */
 #define FAKE_FILE_COUNT 3
 
 typedef struct
@@ -19,14 +28,16 @@ typedef struct
 typedef struct
 {
   FakeFile files[FAKE_FILE_COUNT];
+  /* Fault switches: fail one I/O step, or flip a bit in what it stores. */
   int fail_write;
   int fail_flush;
-  int fail_promote;
-  int fail_restore;
-  int corrupt_temp;
-  int corrupt_primary;
+  int fail_promote;    /* moving config.tmp fails */
+  int fail_restore;    /* moving config.bak back fails */
+  int corrupt_temp;    /* config.tmp is written damaged */
+  int corrupt_primary; /* config.tmp lands in config.bin damaged */
 } FakeStore;
 
+/* The slot for one of the three known paths, or NULL for any other name. */
 static FakeFile *find_file(FakeStore *store, const char *path)
 {
   size_t i;
@@ -39,6 +50,7 @@ static FakeFile *find_file(FakeStore *store, const char *path)
   return NULL;
 }
 
+/* ConfigStoreIo read: fails for an absent file or one over capacity. */
 static int fake_read(void *context, const char *path, uint8_t *data,
  size_t capacity, size_t *size)
 {
@@ -51,6 +63,8 @@ static int fake_read(void *context, const char *path, uint8_t *data,
   return 1;
 }
 
+/* ConfigStoreIo write: fail_write fails it, and corrupt_temp flips a bit in
+   the last byte stored to config.tmp. */
 static int fake_write(void *context, const char *path, const uint8_t *data,
  size_t size)
 {
@@ -72,6 +86,8 @@ static int fake_flush(void *context)
   return !((FakeStore *)context)->fail_flush;
 }
 
+/* Rename: replaces target and leaves source absent. The promote, restore
+   and corrupt_primary fault switches act here. */
 static int fake_move(void *context, const char *source, const char *target)
 {
   FakeStore *store = (FakeStore *)context;
@@ -94,6 +110,7 @@ static int fake_move(void *context, const char *source, const char *target)
   return 1;
 }
 
+/* Removing an absent file still succeeds; only an unknown path fails. */
 static int fake_remove(void *context, const char *path)
 {
   FakeFile *file = find_file((FakeStore *)context, path);
@@ -112,6 +129,8 @@ static int fake_exists(void *context, const char *path)
   return file != NULL && file->present;
 }
 
+/* Empties the three files, clears every fault switch and points io at the
+   fakes. */
 static void init_store(FakeStore *store, ConfigStoreIo *io)
 {
   memset(store, 0, sizeof(*store));
@@ -127,6 +146,7 @@ static void init_store(FakeStore *store, ConfigStoreIo *io)
   io->exists = fake_exists;
 }
 
+/* Puts model's encoding in path directly, bypassing config_store. */
 static void seed_file(FakeStore *store, const char *path,
  const ConfigModel *model)
 {
@@ -139,6 +159,7 @@ static void seed_file(FakeStore *store, const char *path,
   file->present = 1;
 }
 
+/* Decodes what path holds now; asserts it exists and is not invalid. */
 static ConfigModel decode_file(FakeStore *store, const char *path)
 {
   FakeFile *file = find_file(store, path);
@@ -216,6 +237,8 @@ static void test_failures_leave_previous_config_readable(void)
   assert(decoded.theme == 0);
 }
 
+/* The promoted file is damaged and moving the backup back also fails: the
+   save reports it, and loading still finds the old settings in the backup. */
 static void test_restore_failure_keeps_recovery_readable(void)
 {
   FakeStore store;
@@ -241,6 +264,7 @@ static void test_restore_failure_keeps_recovery_readable(void)
   assert(loaded.theme == 0);
 }
 
+/* The promoted file is damaged: the backup is moved back into place. */
 static void test_failed_post_promote_validation_restores_backup(void)
 {
   FakeStore store;
@@ -292,6 +316,7 @@ static void test_load_uses_recovery_only_when_needed(void)
   assert(used_recovery == 1);
 }
 
+/* Runs every save and recovery case; a failing assert aborts the run. */
 int main(void)
 {
   test_atomic_save_and_recovery_copy();

@@ -18,23 +18,31 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+/* Shared GBA video interface: screen geometry, 15-bit color helpers and the
+ * entry points implemented by video_dispatch.c (which forwards to video.c or
+ * video_cc.cc). PSP display output is declared in psp_video.h.
+ */
+
 #ifndef VIDEO_H
 #define VIDEO_H
 
 #include <psptypes.h>
 
 
+/* GBA_LINE_SIZE is the pitch of the 256x256 GBA texture, in pixels. */
 #define GBA_SCREEN_WIDTH  (240)
 #define GBA_SCREEN_HEIGHT (160)
 #define GBA_LINE_SIZE     (256)
 #define GBA_SCREEN_SIZE   (GBA_SCREEN_WIDTH * GBA_SCREEN_HEIGHT * 2)
 
+/* PSP_LINE_SIZE is the framebuffer pitch; a frame is 512x272 16-bit. */
 #define PSP_SCREEN_WIDTH  (480)
 #define PSP_SCREEN_HEIGHT (272)
 #define PSP_LINE_SIZE     (512)
 #define PSP_FRAME_SIZE    (PSP_LINE_SIZE * PSP_SCREEN_HEIGHT * 2)
 
 
+/* GBA and the PSP 5551 format share the 5:5:5 layout with red in bits 0-4. */
 #define COLOR15(red, green, blue)  (((blue) << 10) | ((green) << 5) | (red))
 
 #define COLOR15_WHITE   COLOR15(31, 31, 31)
@@ -50,10 +58,12 @@
 #define COL15_GET_G5(col15) (((col15) >> 5) & 0x1F)
 #define COL15_GET_B5(col15) (((col15) >>10) & 0x1F)
 
+/* Widen 5 to 8 bits by copying the top 3 bits into the low bits. */
 #define COL15_GET_R8(col15) ((((col15) << 3) & 0xF8) | (((col15) >>  2) & 0x07))
 #define COL15_GET_G8(col15) ((((col15) >> 2) & 0xF8) | (((col15) >>  7) & 0x07))
 #define COL15_GET_B8(col15) ((((col15) >> 7) & 0xF8) | (((col15) >> 12) & 0x07))
 
+/* PSP 8888 color as 0xAABBGGRR, fully opaque. */
 #define COLOR32(red, green, blue)  (((blue) << 16) | ((green) << 8) | (red) | 0xFF000000)
 
 #define COLOR32_WHITE  COLOR32(255, 255, 255)
@@ -65,6 +75,7 @@
 
 #define COLOR15_TO_32(col15)  COLOR32(COL15_GET_R8(col15), COL15_GET_G8(col15), COL15_GET_B8(col15))
 
+/* Pass as x to print_string() to center the text horizontally. */
 #define X_POS_CENTER  (-1)
 
 
@@ -75,6 +86,7 @@ extern void (*update_screen)(void);
 extern s32 affine_reference_x[2];
 extern s32 affine_reference_y[2];
 
+/* Per-layer renderer tables used by the old renderer (video.c). */
 typedef void (*tile_render_function)(u32 layer_number, u32 start, u32 end, void *dest_ptr);
 typedef void (*bitmap_render_function)(u32 start, u32 end, void *dest_ptr);
 

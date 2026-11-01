@@ -47,6 +47,8 @@ ${CC:-cc} -O2 -std=gnu99 -I"$MGBA_DIR/include" -I"$MGBA_DIR/build/include" \
 rom0=$(absolute "$ROM")
 rom1=$(absolute "$ROM2")
 bios=$(absolute "$BIOS")
+# Each save continues in front of its last Pokemon Center, where the
+# script's walk to the Cable Club starts.
 save_tool="python3 tests/rom_link/firered_save.py"
 $save_tool place-heal "$SAVE" "$out/start-0.sav"
 $save_tool place-heal "$SAVE2" "$out/start-1.sav"
@@ -89,7 +91,10 @@ run_case slow-host-noisy "net 8000 15000 15 5" "speed 0 0.8"
 # a frame in a burst and leaves the link alone while it waits for VBlank,
 # its network stack only moves datagrams while the emulator sleeps, and the
 # round trip is 70 ms and loses a third of the datagrams. The second case
-# adds radio dropouts and a joiner that freezes now and then.
+# adds radio dropouts and a joiner that freezes now and then. Each console
+# also sleeps 200 us after each datagram it sends while emulating, like
+# main.c's MAIN_LINK_SEND_YIELD_US, which a PSP applies only in lockstep
+# mode; the model applies it in every mode.
 psp="psp 0 10
 psp 1 10
 stack 0 200
@@ -108,6 +113,7 @@ race_case()
     echo "$condition"
   done > "$out/$name.txt"
   cat tests/rom_link/mksc_race.txt >> "$out/$name.txt"
+  # 64 KB of 0xFF, as erased save memory reads.
   dd if=/dev/zero bs=1024 count=64 2>/dev/null | tr '\000' '\377' \
     > "$out/mksc-0.sav"
   cp "$out/mksc-0.sav" "$out/mksc-1.sav"
@@ -123,6 +129,8 @@ if [ -n "${MKSC:-}" ]; then
   mksc=$(absolute "$MKSC")
   race_case mksc-adhoc "net 3000 4000 3 1"
   race_case mksc-noisy "net 8000 15000 15 5"
+  # "slow" is the slow network of the psp trade cases, while slow-joiner and
+  # slow-host-noisy have a slow console.
   race_case mksc-psp-slow "net 20000 30000 35 1" "$psp"
   # Two PSPs side by side, about 6 ms apart: the race must stay near full
   # speed.
