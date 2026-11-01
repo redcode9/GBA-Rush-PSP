@@ -453,6 +453,9 @@ static void main_link_close(MainLinkEnd reason)
   psp_adhoc_counters(&sends, &send_errors, &receive_drops);
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 4,
    sends, send_errors, receive_drops);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 5,
+   gba_link.lockstep.answered_early, gba_link.lockstep.mispredicted,
+   gba_link.lockstep.streak);
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_ERROR, cpu_ticks,
    (u8)reason, (u32)gba_link.status, (u32)psp_adhoc_last_error(),
    main_adhoc_phase_value());
