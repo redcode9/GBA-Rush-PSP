@@ -65,9 +65,10 @@ enum
 #define LINK_TRUST_AFTER     300u
 #define LINK_TRUST_AFTER_MAX (1u << 20)
 /* The receiving console announces its next reply once the game has loaded
-   its next word and left the serial registers alone for this long. Games
-   often write SIOCNT and a placeholder word just before the real one. */
-#define LINK_ANNOUNCE_QUIET 4096u
+   its next word and left the serial registers alone for this long, about a
+   millisecond. Games often write SIOCNT and a placeholder word first, and
+   Mario Kart sometimes replaces its word a little later in its menus. */
+#define LINK_ANNOUNCE_QUIET 16384u
 /* A receiving console runs ahead of the clocking console's last reported
    clock once this many STARTs in a row have come at least a given spacing
    apart, up to 7/8 of that spacing past the START it applied last. Games
