@@ -489,7 +489,7 @@ static int lockstep_remote_start(LinkCable *cable,
   GbaSioTransfer transfer;
   GbaSioResult result;
   uint8_t reply[9];
-  uint32_t host_cycle;
+  uint32_t sender_cycle;
   uint32_t anchor;
   uint32_t word;
   int ready;
@@ -497,7 +497,7 @@ static int lockstep_remote_start(LinkCable *cable,
   if(message->size < 14)
     return 1;
 
-  host_cycle = get32(message->data + 4);
+  sender_cycle = get32(message->data + 4);
   word = get32(message->data + 8);
   anchor = cycle;
 
@@ -507,7 +507,7 @@ static int lockstep_remote_start(LinkCable *cable,
      after the link has been idle does a transfer start a new timeline. */
   if(lockstep->anchored)
   {
-    uint32_t gap = host_cycle - lockstep->peer_anchor;
+    uint32_t gap = sender_cycle - lockstep->peer_anchor;
 
     if(gap < LINK_LOCKSTEP_ACTIVE)
     {
@@ -557,7 +557,7 @@ static int lockstep_remote_start(LinkCable *cable,
 
   lockstep->anchored = 1;
   lockstep->local_anchor = anchor;
-  lockstep->peer_anchor = host_cycle;
+  lockstep->peer_anchor = sender_cycle;
   lockstep->last_transfer = cycle;
   lockstep->applied_sequence = get32(message->data);
   lockstep->applied_mode = message->data[12];
