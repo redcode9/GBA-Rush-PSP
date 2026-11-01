@@ -149,6 +149,8 @@ static u32 gba_link_service_ticks = 0;
 static u32 gba_link_waits = 0;
 static u32 gba_link_wait_max_us = 0;
 static u64 gba_link_wait_total_us = 0;
+static SceUID gba_link_thread = -1;
+static int gba_link_priority = PRIORITY;
 static PowerLifecycle psp_power_lifecycle;
 static FastForwardPolicy fast_forward_policy;
 static u32 sleep_reopen_gamepak = 0;
@@ -176,6 +178,10 @@ static volatile int quit_cleanup_complete = 0;
    clock and STARTs as they happen, so the emulator pauses this long after
    each one to let the stack send it. */
 #define MAIN_LINK_SEND_YIELD_US 200u
+/* While a lockstep link is connected the emulator thread runs below the
+   Wi-Fi stack instead, so the stack moves datagrams as soon as they come
+   and go rather than when the emulator next sleeps. */
+#define MAIN_LINK_LOCKSTEP_PRIORITY 0x40
 
 u32 cpu_ticks = 0;
 s32 video_count = 272;
@@ -412,11 +418,24 @@ MainLinkEnd main_link_end_reason(void)
   return gba_link_end;
 }
 
+static void main_link_set_priority(void)
+{
+  int priority = gba_link_open && gba_link.status == LINK_CABLE_CONNECTED &&
+   gba_link.mode == LINK_CABLE_MODE_LOCKSTEP ?
+   MAIN_LINK_LOCKSTEP_PRIORITY : PRIORITY;
+
+  if(priority == gba_link_priority || gba_link_thread < 0)
+    return;
+  sceKernelChangeThreadPriority(gba_link_thread, priority);
+  gba_link_priority = priority;
+}
+
 static void main_link_log_state(void)
 {
   if(gba_link.status == gba_link_logged_status &&
      gba_link.mode == gba_link_logged_mode)
     return;
+  main_link_set_priority();
   gba_link_logged_status = (u8)gba_link.status;
   gba_link_logged_mode = (u8)gba_link.mode;
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_STATE, cpu_ticks,
@@ -435,6 +454,7 @@ static void main_link_close(MainLinkEnd reason)
 
   gba_link_open = 0;
   gba_link_end = reason;
+  main_link_set_priority();
   if(gba_sio_disconnect(&gba_sio) & GBA_SIO_EVENT_SERIAL_IRQ)
     pIO_REG(REG_IF) |= IRQ_SERIAL;
 
@@ -597,6 +617,7 @@ static int main_link_start(int host)
   gba_link_waits = 0;
   gba_link_wait_max_us = 0;
   gba_link_wait_total_us = 0;
+  gba_link_thread = sceKernelGetThreadId();
   main_link_log_state();
   return 1;
 }
