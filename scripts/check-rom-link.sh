@@ -141,6 +141,6 @@ if [ -n "${MKSC:-}" ]; then
   race_case mksc-psp-slow "net 20000 30000 35 1" "$psp"
   # Two PSPs side by side, a 4 ms round trip at best: the race must keep
   # the speed that announced replies and the learned lookahead give it.
-  race_case mksc-psp "net 2000 1000 5 1" "$psp" "minfps 45"
+  race_case mksc-psp "net 2000 1000 5 1" "$psp" "minfps 55"
 fi
 echo "ROM link checks passed"
