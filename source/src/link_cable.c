@@ -314,6 +314,7 @@ static int lockstep_remote_start(LinkCable *cable,
   GbaSioResult result;
   uint8_t reply[9];
   uint32_t host_cycle;
+  uint32_t anchor;
   uint32_t word;
   int ready;
 
@@ -322,6 +323,7 @@ static int lockstep_remote_start(LinkCable *cable,
 
   host_cycle = get32(message->data + 4);
   word = get32(message->data + 8);
+  anchor = cycle;
 
   /* Keep the spacing the other guest saw between two transfers, so this
      guest sees each one at the same point of its own frames as on a real
@@ -331,12 +333,17 @@ static int lockstep_remote_start(LinkCable *cable,
   {
     uint32_t gap = host_cycle - lockstep->peer_anchor;
 
-    if(gap < LINK_LOCKSTEP_ACTIVE &&
-       (int32_t)(cycle - (lockstep->local_anchor + gap)) < 0)
+    if(gap < LINK_LOCKSTEP_ACTIVE)
     {
-      lockstep->deferred = 1;
-      lockstep->deferred_until = lockstep->local_anchor + gap;
-      return 0;
+      /* A transfer applied a little late must not shift the ones after
+         it, or the delays add up until a frame goes without one. */
+      anchor = lockstep->local_anchor + gap;
+      if((int32_t)(cycle - anchor) < 0)
+      {
+        lockstep->deferred = 1;
+        lockstep->deferred_until = anchor;
+        return 0;
+      }
     }
   }
   if(cable->sio->active)
@@ -373,7 +380,7 @@ static int lockstep_remote_start(LinkCable *cable,
   link_cable_queue(cable, LINK_MSG_REPLY, reply, sizeof(reply));
 
   lockstep->anchored = 1;
-  lockstep->local_anchor = cycle;
+  lockstep->local_anchor = anchor;
   lockstep->peer_anchor = host_cycle;
   lockstep->last_transfer = cycle;
   lockstep->transfers++;
