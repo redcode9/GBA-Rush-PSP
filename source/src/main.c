@@ -172,6 +172,10 @@ static u64 gba_link_yield_total_us = 0;
    connected, and the priority it has now. */
 static SceUID gba_link_thread = -1;
 static int gba_link_priority = PRIORITY;
+/* What the last switch to MAIN_LINK_LOCKSTEP_PRIORITY returned and the
+   priority the emulator thread then reported, for the session log. */
+static int gba_link_priority_result = 0;
+static int gba_link_priority_seen = 0;
 static PowerLifecycle psp_power_lifecycle;
 static FastForwardPolicy fast_forward_policy;
 /* The ROM file was closed for suspend and must be reopened on resume. */
@@ -481,14 +485,21 @@ MainLinkEnd main_link_end_reason(void)
    and from main_link_log_state, on each link status or mode change. */
 static void main_link_set_priority(void)
 {
+  int result;
   int priority = gba_link_open && gba_link.status == LINK_CABLE_CONNECTED &&
    gba_link.mode == LINK_CABLE_MODE_LOCKSTEP ?
    MAIN_LINK_LOCKSTEP_PRIORITY : PRIORITY;
 
   if(priority == gba_link_priority || gba_link_thread < 0)
     return;
-  sceKernelChangeThreadPriority(gba_link_thread, priority);
+  result = sceKernelChangeThreadPriority(gba_link_thread, priority);
   gba_link_priority = priority;
+  if(priority == MAIN_LINK_LOCKSTEP_PRIORITY)
+  {
+    gba_link_priority_result = result;
+    gba_link_priority_seen = sceKernelGetThreadId() == gba_link_thread ?
+     sceKernelGetThreadCurrentPriority() : -1;
+  }
 }
 
 /* Logs a LINK_STATE record only when the link status or mode changed since
@@ -546,6 +557,9 @@ static void main_link_close(MainLinkEnd reason)
    gba_link.net.rtt_min_us, gba_link_yields,
    gba_link_yield_total_us > UINT_MAX ? UINT_MAX :
     (u32)gba_link_yield_total_us);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 7,
+   MAIN_LINK_LOCKSTEP_PRIORITY, (u32)gba_link_priority_seen,
+   (u32)gba_link_priority_result);
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_ERROR, cpu_ticks,
    (u8)reason, (u32)gba_link.status, (u32)psp_adhoc_last_error(),
    main_adhoc_phase_value());
@@ -704,6 +718,8 @@ static int main_link_start(int host)
   gba_link_yields = 0;
   gba_link_yield_total_us = 0;
   gba_link_thread = sceKernelGetThreadId();
+  gba_link_priority_result = 0;
+  gba_link_priority_seen = 0;
   main_link_log_state();
   return 1;
 }
