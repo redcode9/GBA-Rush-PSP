@@ -328,8 +328,9 @@ static GbaSioEvent lockstep_begin(LinkCable *cable, uint32_t cycle)
 {
   LinkLockstep *lockstep = &cable->lockstep;
   GbaSioTransfer transfer;
-  uint8_t message[14];
+  uint8_t message[15];
   int same_mode;
+  int early;
 
   if(lockstep->waiting || !gba_sio_take_start(cable->sio, &transfer))
     return GBA_SIO_EVENT_NONE;
@@ -343,20 +344,23 @@ static GbaSioEvent lockstep_begin(LinkCable *cable, uint32_t cycle)
   lockstep->last_transfer = cycle;
   lockstep->transfers++;
 
+  /* Once the other console's announcements have proved right, finish the
+     transfer with the one it made after applying our previous START. The
+     START tells it so, since its reply then only serves as a check. */
+  same_mode = lockstep->start_mode == (uint8_t)transfer.mode;
+  lockstep->start_mode = (uint8_t)transfer.mode;
+  early = same_mode && lockstep->streak >= lockstep->trust_after &&
+   lockstep->predicted &&
+   lockstep->predicted_sequence + 1u == lockstep->sequence;
+
   put32(message, lockstep->sequence);
   put32(message + 4, cycle);
   put32(message + 8, transfer.outgoing);
   message[12] = (uint8_t)transfer.mode;
   message[13] = transfer.setting;
+  message[14] = (uint8_t)early;
   link_cable_queue(cable, LINK_MSG_START, message, sizeof(message));
-
-  /* Once the other console's announcements have proved right, finish the
-     transfer with the one it made after applying our previous START. */
-  same_mode = lockstep->start_mode == (uint8_t)transfer.mode;
-  lockstep->start_mode = (uint8_t)transfer.mode;
-  if(!same_mode || lockstep->streak < lockstep->trust_after ||
-     !lockstep->predicted ||
-     lockstep->predicted_sequence + 1u != lockstep->sequence)
+  if(!early)
     return GBA_SIO_EVENT_NONE;
   lockstep->verify_used = 1;
   lockstep->verify_sequence = lockstep->sequence;
@@ -591,7 +595,18 @@ static int lockstep_remote_start(LinkCable *cable,
   memcpy(reply, message->data, 4);
   put32(reply + 4, ready ? transfer.outgoing : 0xFFFFFFFFu);
   reply[8] = (uint8_t)(ready != 0);
-  link_cable_queue(cable, LINK_MSG_REPLY, reply, sizeof(reply));
+  if(message->size >= 15 && message->data[14])
+  {
+    /* The other console finished this transfer with our announcement and
+       only checks this reply: it rides with our next datagram, which is
+       usually the next announcement. */
+    uint8_t send_now = cable->net.send_now;
+
+    link_cable_queue(cable, LINK_MSG_REPLY, reply, sizeof(reply));
+    cable->net.send_now = send_now;
+  }
+  else
+    link_cable_queue(cable, LINK_MSG_REPLY, reply, sizeof(reply));
 
   if(timeline)
     lockstep_learn_spacing(lockstep, gap,
