@@ -102,6 +102,12 @@ stack 1 200 900"
 run_case psp "net 20000 30000 35 1" "$psp"
 run_case psp-stalls "net 20000 30000 35 1" "$psp" "outage 7000 250" \
   "hiccup 1 9000 600"
+# Other network seeds time the dropouts differently against the games'
+# own steps; these three once ended with both games waiting for good.
+for seed in 4 9 21; do
+  run_case "psp-stalls-$seed" "net 20000 30000 35 1" "$psp" \
+    "outage 7000 250" "hiccup 1 9000 600" "seed $seed"
+done
 run_case lockstep "net 3000 4000 3 1" lockstep
 
 # Mario Kart starts from blank saves; its script checks the race itself.
