@@ -138,9 +138,9 @@ exit close the session and tell the other PSP.
   combinations over five network profiles. It passes only with no link
   error, intact blocks, identical key frames on both consoles and each
   player's own keys coming back within 20 frames on average in the room.
-  Lockstep guests check Multiplayer and Normal 32-bit modes word by word;
-  the Multiplayer slave reports a link error after two frames in a row
-  without a transfer.
+  Lockstep guests check Multiplayer, Normal 8-bit and Normal 32-bit modes
+  word by word; the Multiplayer slave reports a link error after two frames
+  in a row without a transfer.
 - `proofs/cbmc/prove_link_net.c` (`make check-cbmc`): CBMC proves that any
   datagram up to the proof bound is parsed without out-of-bounds access or
   overflow.
