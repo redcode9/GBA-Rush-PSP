@@ -582,14 +582,14 @@ launcher-stub:
 
 package: psp-build check
 	@test -n "$(VERSION)" || \
-	 (echo "Set VERSION, for example VERSION=1.4.2" >&2; exit 1)
+	 (echo "Set VERSION, for example VERSION=1.4.3" >&2; exit 1)
 	sh scripts/package-release.sh "$(VERSION)"
 	sh scripts/check-package.sh "$(VERSION)"
 
 # Re-checks an existing release archive without rebuilding it.
 artifact-smoke:
 	@test -n "$(VERSION)" || \
-	 (echo "Set VERSION, for example VERSION=1.4.2" >&2; exit 1)
+	 (echo "Set VERSION, for example VERSION=1.4.3" >&2; exit 1)
 	sh scripts/check-package.sh "$(VERSION)"
 
 clean:
