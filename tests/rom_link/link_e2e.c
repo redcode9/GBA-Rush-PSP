@@ -23,6 +23,13 @@
  *                                       the console waits for VBlank
  *   hiccup <side> <period_ms> <length_ms>  freeze the console, link
  *                                       included, once per period
+ *   stack <side> <send_yield_us>        model the PSP's network stack, part
+ *                                       of which runs below the emulator:
+ *                                       datagrams move only while the
+ *                                       console sleeps. It sleeps 2 ms after
+ *                                       each late frame, and send_yield_us
+ *                                       after each datagram it sends while
+ *                                       emulating
  *   linked <transfers>                  fail unless both cables are connected
  *                                       and this many transfers went through
  *   same <percent> [x y w h]            fail unless at least this share of
@@ -86,6 +93,17 @@ typedef struct
   uint32_t burst_cycles;    /* per tick in PSP mode, 0 for smooth running */
   uint64_t hiccup_period_us;
   uint64_t hiccup_us;
+  int stack;                /* datagrams wait while the console emulates */
+  uint32_t send_yield_us;
+  uint64_t sleep_until;
+  int ran;                  /* emulated during the last tick */
+  uint32_t frame_seen;
+  struct
+  {
+    uint8_t data[LINK_NET_MAX_DATAGRAM];
+    size_t size;
+  } outbox[256];
+  unsigned outbox_count;
   uint32_t max_backlog;
   int rehalt;               /* woken only to stop the run loop, see below */
   uint64_t backlog_sum;     /* per tick while the games are linked */
@@ -157,7 +175,9 @@ static void network_deliver(void)
 
   while(i < flight_count)
   {
-    if(flights[i].arrival <= sim_now)
+    /* A PSP's stack hands datagrams over only while the console sleeps. */
+    if(flights[i].arrival <= sim_now &&
+       !(sides[flights[i].to].stack && sides[flights[i].to].ran))
     {
       link_cable_receive(&sides[flights[i].to].cable, flights[i].data,
        flights[i].size, sim_now);
@@ -447,6 +467,16 @@ static void side_link(Side *side, int generic)
   mTimingSchedule(&side->gba->timing, &side->service_event, SERVICE_CYCLES);
 }
 
+/* Datagrams a PSP queued while emulating leave once it sleeps. */
+static void side_flush_outbox(Side *side)
+{
+  unsigned i;
+
+  for(i = 0; i < side->outbox_count; i++)
+    network_send(1 - side->index, side->outbox[i].data, side->outbox[i].size);
+  side->outbox_count = 0;
+}
+
 static void side_advance(Side *side)
 {
   if(side->burst_cycles == 0)
@@ -474,16 +504,26 @@ static void run_tick(void)
     Side *side = &sides[s];
     uint8_t datagram[LINK_NET_MAX_DATAGRAM];
     uint64_t limit;
+    uint64_t before;
+    uint32_t frame;
     size_t size;
 
     side->now = sim_now;
     side->core->setKeys(side->core, side->keys);
+    side->ran = 0;
+    if(sim_now < side->sleep_until)
+    {
+      side_advance(side);
+      side_flush_outbox(side);
+      continue;
+    }
     if(side->hiccup_period_us != 0 &&
        sim_now % side->hiccup_period_us < side->hiccup_us)
     {
       /* Frozen, like a PSP writing to the memory stick: nothing runs and
          the lost time is never made up. */
       side->target = side_clock(side);
+      side_flush_outbox(side);
       continue;
     }
     /* A PSP that has finished its frame sleeps until VBlank without
@@ -492,7 +532,10 @@ static void run_tick(void)
     {
       side_advance(side);
       if(side_clock(side) >= side->target)
+      {
+        side_flush_outbox(side);
         continue;
+      }
     }
     else
       side_advance(side);
@@ -510,6 +553,7 @@ static void run_tick(void)
      side_clock(side) + side->burst_cycles : side->target;
     if(limit > side->target)
       limit = side->target;
+    before = side_clock(side);
     while(side_clock(side) < limit)
     {
       if(side->linked && link_cable_blocked(&side->cable, side_cycle(side)))
@@ -522,6 +566,12 @@ static void run_tick(void)
       }
       side->core->runLoop(side->core);
     }
+    side->ran = side_clock(side) != before;
+    frame = side->core->frameCounter(side->core);
+    if(side->stack && side->linked && frame != side->frame_seen &&
+       side_clock(side) < side->target)
+      side->sleep_until = sim_now + 2000u;
+    side->frame_seen = frame;
     if(side->linked)
     {
       uint32_t backlog = link_net_backlog(&side->cable.net);
@@ -535,9 +585,23 @@ static void run_tick(void)
       }
       size = link_cable_build(&side->cable, datagram, sizeof(datagram),
        side_cycle(side), sim_now);
-      if(size)
+      if(size && side->stack && side->ran &&
+         side->outbox_count < sizeof(side->outbox) / sizeof(side->outbox[0]))
+      {
+        memcpy(side->outbox[side->outbox_count].data, datagram, size);
+        side->outbox[side->outbox_count++].size = size;
+        if(side->send_yield_us != 0 && sim_now + side->send_yield_us >
+           side->sleep_until)
+          side->sleep_until = sim_now + side->send_yield_us;
+      }
+      else if(size)
+      {
+        side_flush_outbox(side);
         network_send(1 - s, datagram, size);
+      }
     }
+    if(!side->ran)
+      side_flush_outbox(side);
   }
 }
 
@@ -637,14 +701,17 @@ static void print_status(void)
     if(side->cable.mode == LINK_CABLE_MODE_LOCKSTEP)
       printf("  lockstep waiting %d deferred %d transfers %u cycle %u "
        "finish %u deferred-until %u peer-clock %u pacing %u/%u sio %d%d%d "
-       "control %04X inbox %u\n", side->cable.lockstep.waiting,
+       "control %04X inbox %u early %u mispredicted %u streak %u/%u\n",
+       side->cable.lockstep.waiting,
        side->cable.lockstep.deferred, side->cable.lockstep.transfers,
        side_cycle(side), side->cable.lockstep.finish_cycle,
        side->cable.lockstep.deferred_until, side->cable.net.peer_clock,
        side->cable.pacing_local, side->cable.pacing_peer,
        side->sio.pending_start, side->sio.waiting, side->sio.active,
        side->registers[GBA_SIO_REG_CONTROL >> 1],
-       side->cable.net.in_write - side->cable.net.in_read);
+       side->cable.net.in_write - side->cable.net.in_read,
+       side->cable.lockstep.answered_early, side->cable.lockstep.mispredicted,
+       side->cable.lockstep.streak, side->cable.lockstep.trust_after);
   }
   fflush(stdout);
 }
@@ -802,6 +869,11 @@ int main(int argc, char **argv)
     {
       sides[atoi(a)].hiccup_period_us = (uint64_t)atoi(b) * 1000u;
       sides[atoi(a)].hiccup_us = (uint64_t)atoi(c) * 1000u;
+    }
+    else if(strcmp(cmd, "stack") == 0)
+    {
+      sides[atoi(a)].stack = 1;
+      sides[atoi(a)].send_yield_us = (uint32_t)atoi(b);
     }
     else if(strcmp(cmd, "status") == 0)
       print_status();
