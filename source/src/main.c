@@ -149,6 +149,8 @@ static u32 gba_link_service_ticks = 0;
 static u32 gba_link_waits = 0;
 static u32 gba_link_wait_max_us = 0;
 static u64 gba_link_wait_total_us = 0;
+static u32 gba_link_yields = 0;
+static u64 gba_link_yield_total_us = 0;
 static SceUID gba_link_thread = -1;
 static int gba_link_priority = PRIORITY;
 static PowerLifecycle psp_power_lifecycle;
@@ -476,6 +478,10 @@ static void main_link_close(MainLinkEnd reason)
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 5,
    gba_link.lockstep.answered_early, gba_link.lockstep.mispredicted,
    gba_link.lockstep.streak);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 6,
+   gba_link.net.rtt_min_us, gba_link_yields,
+   gba_link_yield_total_us > UINT_MAX ? UINT_MAX :
+    (u32)gba_link_yield_total_us);
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_ERROR, cpu_ticks,
    (u8)reason, (u32)gba_link.status, (u32)psp_adhoc_last_error(),
    main_adhoc_phase_value());
@@ -540,7 +546,13 @@ static int main_link_service(IRQ_TYPE *irq_raised)
   {
     if(gba_link.mode == LINK_CABLE_MODE_LOCKSTEP &&
        gba_link.net.datagrams_sent != sent)
+    {
+      u64 slept = sceKernelGetSystemTimeWide();
+
       sceKernelDelayThread(MAIN_LINK_SEND_YIELD_US);
+      gba_link_yields++;
+      gba_link_yield_total_us += sceKernelGetSystemTimeWide() - slept;
+    }
     return 0;
   }
 
@@ -617,6 +629,8 @@ static int main_link_start(int host)
   gba_link_waits = 0;
   gba_link_wait_max_us = 0;
   gba_link_wait_total_us = 0;
+  gba_link_yields = 0;
+  gba_link_yield_total_us = 0;
   gba_link_thread = sceKernelGetThreadId();
   main_link_log_state();
   return 1;
