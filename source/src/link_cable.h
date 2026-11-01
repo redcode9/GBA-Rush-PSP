@@ -160,6 +160,7 @@ typedef struct
   uint32_t predicted_sequence;
   uint32_t predicted_word;
   uint8_t start_mode;         /* mode of the START we sent last */
+  uint8_t same_mode;          /* ...and the START before was in it too */
   uint8_t verify_used;        /* a transfer was finished with it */
   uint8_t verify_ready;
   uint32_t verify_sequence;

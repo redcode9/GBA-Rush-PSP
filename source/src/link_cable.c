@@ -347,6 +347,32 @@ static GbaSioEvent lockstep_finish(LinkCable *cable, uint32_t word,
   return event;
 }
 
+/* Whether the transfer in flight can finish with the other console's
+   announcement: its announcements have proved right often enough, and it
+   made this one after applying our previous START, in the same mode. */
+static int lockstep_announced(const LinkLockstep *lockstep)
+{
+  return lockstep->same_mode && lockstep->streak >= lockstep->trust_after &&
+   lockstep->predicted &&
+   lockstep->predicted_sequence + 1u == lockstep->sequence;
+}
+
+/* Finishes the transfer in flight with the announcement, keeping it to
+   check against the real reply. */
+static GbaSioEvent lockstep_answer_early(LinkCable *cable, uint32_t cycle)
+{
+  LinkLockstep *lockstep = &cable->lockstep;
+
+  lockstep->verify_used = 1;
+  lockstep->verify_sequence = lockstep->sequence;
+  lockstep->verify_word = lockstep->predicted_word;
+  lockstep->verify_ready = lockstep->predicted_ready;
+  lockstep->waiting = 0;
+  lockstep->answered_early++;
+  return lockstep_finish(cable, lockstep->predicted_word,
+   lockstep->predicted_ready, cycle);
+}
+
 /* Our guest clocked a transfer: send START with its word and wait for the
    REPLY, which real hardware would deliver by finish_cycle, unless a
    trusted announcement already gives the reply. */
@@ -355,7 +381,6 @@ static GbaSioEvent lockstep_begin(LinkCable *cable, uint32_t cycle)
   LinkLockstep *lockstep = &cable->lockstep;
   GbaSioTransfer transfer;
   uint8_t message[15];
-  int same_mode;
   int early;
 
   if(lockstep->waiting || !gba_sio_take_start(cable->sio, &transfer))
@@ -373,11 +398,9 @@ static GbaSioEvent lockstep_begin(LinkCable *cable, uint32_t cycle)
   /* Once the other console's announcements have proved right, finish the
      transfer with the one it made after applying our previous START. The
      START tells it so, since its reply then only serves as a check. */
-  same_mode = lockstep->start_mode == (uint8_t)transfer.mode;
+  lockstep->same_mode = lockstep->start_mode == (uint8_t)transfer.mode;
   lockstep->start_mode = (uint8_t)transfer.mode;
-  early = same_mode && lockstep->streak >= lockstep->trust_after &&
-   lockstep->predicted &&
-   lockstep->predicted_sequence + 1u == lockstep->sequence;
+  early = lockstep_announced(lockstep);
 
   put32(message, lockstep->sequence);
   put32(message + 4, cycle);
@@ -388,14 +411,7 @@ static GbaSioEvent lockstep_begin(LinkCable *cable, uint32_t cycle)
   link_cable_queue(cable, LINK_MSG_START, message, sizeof(message));
   if(!early)
     return GBA_SIO_EVENT_NONE;
-  lockstep->verify_used = 1;
-  lockstep->verify_sequence = lockstep->sequence;
-  lockstep->verify_word = lockstep->predicted_word;
-  lockstep->verify_ready = lockstep->predicted_ready;
-  lockstep->waiting = 0;
-  lockstep->answered_early++;
-  return lockstep_finish(cable, lockstep->predicted_word,
-   lockstep->predicted_ready, cycle);
+  return lockstep_answer_early(cable, cycle);
 }
 
 /* Compares the real reply to a START with the announcement for it: the one
@@ -1166,6 +1182,14 @@ static GbaSioEvent link_cable_drain(LinkCable *cable, uint32_t cycle)
           cable->lockstep.predicted_sequence = get32(message->data);
           cable->lockstep.predicted_word = get32(message->data + 4);
           cable->lockstep.predicted_ready = message->data[8];
+          /* An announcement that comes after our START still beats the
+             real reply, which the other console sends only once it has
+             reached that START. */
+          if(cable->mode == LINK_CABLE_MODE_LOCKSTEP &&
+             cable->lockstep.waiting &&
+             lockstep_announced(&cable->lockstep) &&
+             gba_sio_is_waiting(cable->sio))
+            events |= lockstep_answer_early(cable, cycle);
         }
         break;
 
