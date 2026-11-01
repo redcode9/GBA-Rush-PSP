@@ -357,7 +357,8 @@ static GbaSioEvent lockstep_begin(LinkCable *cable, uint32_t cycle)
 /* Compares the real reply to a START with the announcement for it: the one
    used to finish the transfer, or else the latest one, which on an ordered
    channel arrived before the reply. Only an announcement that was used and
-   turned out wrong raises the bar for trusting them again. */
+   turned out wrong raises the bar for trusting them again. The guest has
+   already received a used announcement's word; a wrong one is not undone. */
 static void lockstep_check(LinkLockstep *lockstep, uint32_t sequence,
  uint32_t word, uint8_t ready)
 {

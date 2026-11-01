@@ -137,9 +137,9 @@ typedef struct
   uint32_t announced_sequence;
   uint32_t announced_word;
 
-  /* Clocking side: the other console's latest announcement, the
-     announcement used for the transfer whose reply is still to come, and
-     how far announcements are trusted. */
+  /* Clocking side: the other console's latest announcement (predicted_*,
+     from LINK_MSG_NEXT_REPLY), the one used for the transfer whose reply
+     is still to come (verify_*), and how far announcements are trusted. */
   uint8_t predicted;
   uint8_t predicted_ready;
   uint32_t predicted_sequence;
@@ -152,7 +152,7 @@ typedef struct
   uint32_t streak;            /* announcements in a row that were right */
   uint32_t trust_after;       /* streak needed before using them */
   uint32_t answered_early;    /* transfers completed from an announcement */
-  uint32_t mispredicted;
+  uint32_t mispredicted;      /* ...of which the reply proved wrong */
 } LinkLockstep;
 
 typedef struct
