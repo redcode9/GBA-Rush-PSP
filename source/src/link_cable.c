@@ -44,11 +44,12 @@ enum
 #define LINK_HEARTBEAT_IDLE_US   250000u
 #define LINK_HEARTBEAT_ACTIVE_US  16000u
 /* A lockstep receiver may only run up to the clock the sender last
-   reported, and its announced reply must reach the sender before the next
-   START, so the sender reports its clock often while the link is used. The
-   receiver's clock only paces the sender, which allows four frames of lead,
-   so it keeps the ordinary rate. */
-#define LINK_HEARTBEAT_LOCKSTEP_US 2000u
+   reported, beyond what it learned of the sender's START spacing, so the
+   sender reports its clock more often while the link is used. Every
+   datagram costs a PSP close to a millisecond of processor time, so not
+   much more often. The receiver's clock only paces the sender, which allows
+   four frames of lead, so it keeps the ordinary rate. */
+#define LINK_HEARTBEAT_LOCKSTEP_US 8000u
 
 /* Lockstep pacing: while the link is in use, a console may run at most
    this far ahead of the other one's guest clock. The figure covers network
