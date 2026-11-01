@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.3 - Unreleased
+
+### Changed
+
+- Linked games other than Pokemon, such as a Mario Kart: Super Circuit race,
+  need far fewer datagrams, each of which costs a PSP close to a millisecond
+  of processor time. The PSP that receives transfers learns how far apart
+  the other one's transfers come and keeps running on its own in between,
+  so the other PSP reports its clock four times less often; replies that
+  only serve as a check and acknowledgements ride with other datagrams; and
+  a reply is announced only once the game has stopped changing it.
+- The session log records the priority the emulator runs at during such a
+  link.
+
 ## 1.4.2 - 2026-11-01
 
 ### Fixed

@@ -67,23 +67,37 @@ real hardware and only stops if the answer is still missing at that moment.
 The receiving console sees every transfer at the point of its own timeline
 the sender chose, as on a real cable: it keeps the spacing the sender's game
 used between transfers and never runs past the clock the sender last
-reported, which the sender sends every 2 ms while the link is in use. A
+reported, which the sender sends every 8 ms while the link is in use. A
 receiver left free would run ahead while the sender waits for replies and
 go whole frames without a transfer; Mario Kart: Super Circuit reports a
 communication error when that happens.
+
+Waiting for the sender's clock would make the receiver stop after every
+transfer, and each clock report costs both PSPs a datagram. The receiver
+therefore learns how far apart the sender's STARTs come. Once 300 STARTs in
+a row have come at least a given spacing apart, it runs up to 7/8 of that
+spacing past the last START on its own, which is the lookahead of
+conservative parallel simulation. Mario Kart starts about one transfer per
+frame, sometimes two in quick succession, so the receiver keeps running for
+a while after each transfer instead of stopping. A START that comes sooner
+than the learned spacing withdraws it and doubles the run needed to learn it
+again.
 
 Waiting a round trip for every reply still halves the speed of a game that
 sends a word per frame. Most games, Mario Kart included, load the word for
 the next transfer right after the last one, long before the next START. The
 receiving console therefore announces its next reply once its game has
-written the serial registers after a transfer and left them alone for a
-moment. The sender compares each announcement with the real reply that
-follows it. Once 300 announcements in a row have been right, it completes
-its transfers with the announcement instead of waiting, and keeps checking
-each one. An announcement that was used and turned out wrong sends it back
-to waiting and doubles the number of right ones it needs next time, so a
-game that changes its word late keeps the exact behaviour. A transfer whose
-announcement has not arrived yet waits for the reply as before.
+written the serial registers after a transfer and left them alone for about
+a millisecond. The sender compares each announcement with the real reply
+that follows it. Once 300 announcements in a row have been right, it
+completes its transfers with the announcement instead of waiting, says so in
+the START, and keeps checking each one; the receiver's real reply then only
+serves as a check and rides with its next datagram. An announcement that
+was used and turned out wrong sends it back to waiting and doubles the
+number of right ones it needs next time, so a game that changes its word
+late keeps the exact behaviour. A transfer whose announcement has not
+arrived yet waits for the reply as before. In lockstep mode an
+acknowledgement also waits up to 8 ms for a datagram to ride on.
 
 Normal 8-bit, Normal 32-bit and Multiplayer 16-bit modes are supported. A
 game that sends many words per frame still waits for most replies and slows
@@ -171,15 +185,16 @@ exit close the session and tell the other PSP.
   leaves the room; the test then decodes both saved parties. It runs on a
   typical ad-hoc link, a noisy one (8 ms plus up to 15 ms of jitter, 15%
   loss, 5% duplicates), with either console 20% slower, and under the
-  conditions measured between two PSPs: frames emulated in bursts, a network
-  stack that only moves datagrams while the emulator sleeps, a 70 ms round
-  trip losing a third of the datagrams, radio dropouts and a joiner that
-  freezes now and then. `ROM2` and `SAVE2` run a different game on the
+  conditions measured between two PSPs: frames emulated in bursts of 12 ms,
+  a network stack that only moves datagrams while the emulator sleeps and
+  spends 0.9 ms of that per datagram, a 70 ms round trip losing a third of
+  the datagrams, radio dropouts and a joiner that freezes now and then. `ROM2` and `SAVE2` run a different game on the
   joiner, such as LeafGreen. With `MKSC` set to Mario Kart: Super Circuit
   (European release) it also races two games in Multi-Pak mode, which uses
   lockstep mode, and checks that both race clocks run in step and that,
-  under PSP conditions with a short round trip, announced replies keep the
-  race at full speed. The scripts, `tests/rom_link/firered_trade.txt` and
+  under PSP conditions with a 4 ms round trip, announced replies and the
+  learned lookahead keep the race above 45 fps; without them it runs at
+  about 35. The scripts, `tests/rom_link/firered_trade.txt` and
   `tests/rom_link/mksc_race.txt`, use the commands listed at the top of
   `tests/rom_link/link_e2e.c`.
   It needs an mGBA 0.10 build and a save whose player has not yet been
@@ -204,8 +219,9 @@ trip, datagrams, frames or transfers, waits, datagrams the PSP network stack
 refused or dropped, the shortest round trip, and in lockstep mode the time
 spent pausing for the stack, the transfers completed with an announced
 reply, the announcements used that turned out wrong and the current run of
-right ones. `link-error` tells why the session ended, including the PSP
-network error and the step that failed.
+right ones, and the priority the emulator thread ran at. `link-error` tells
+why the session ended, including the PSP network error and the step that
+failed.
 
 ## Limits
 
