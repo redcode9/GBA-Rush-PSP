@@ -34,6 +34,15 @@ frames that arrive a few frames late. GBA Rush PSP uses that:
   the exact pair. Both games therefore process identical frames in the same
   order, which keeps the Cable Club room (where every frame carries both
   players' keys) identical on both screens.
+- The joiner's game sees the host's frames no closer together than the
+  host's game sent them, give or take a frame, as on a real cable. The trade
+  screen asks for the first part of the other party a dozen frames after
+  both games have exchanged player records and counts on the other game
+  having cleared its old block flags by then; a radio dropout or a frozen
+  PSP followed by a burst used to squeeze those frames together, and the
+  joining game threw that part of the party away and waited for good. Gaps
+  longer than 16 frames count as 16, so the joiner still catches up after a
+  pause.
 - Each game's checksum word is echoed back to it, so the checksum always
   matches what the game computed over the words it received.
 - The handshake words (0xB9A0 and 0x8FFF) are mirrored exactly as the game's
@@ -167,9 +176,11 @@ exit close the session and tell the other PSP.
   and a 400 ms outage. The Pokemon guest is a line-by-line port of the pret
   FireRed serial driver, including the link room's key stream that keeps
   sending while the game skips frames. Each run opens the link, exchanges
-  link-player blocks, plays 240 frames of link-room keys, trades a 600-byte
-  party block and closes the link, in nine game, speed and console-freeze
-  combinations over five network profiles. It passes only with no link
+  link-player blocks, swaps the parties in three blocks the host asks for
+  one at a time, as the trade screen's `BufferTradeParties` does, plays 240
+  frames of link-room keys and closes the link, in nine game, speed and
+  console-freeze combinations over six network profiles, one with a radio
+  dropout every 1.3 seconds. It passes only with no link
   error, intact blocks, identical key frames on both consoles and each
   player's own keys coming back within 20 frames on average in the room.
   Lockstep guests check Multiplayer, Normal 8-bit and Normal 32-bit modes
@@ -188,7 +199,8 @@ exit close the session and tell the other PSP.
   conditions measured between two PSPs: frames emulated in bursts of 12 ms,
   a network stack that only moves datagrams while the emulator sleeps and
   spends 0.9 ms of that per datagram, a 70 ms round trip losing a third of
-  the datagrams, radio dropouts and a joiner that freezes now and then. `ROM2` and `SAVE2` run a different game on the
+  the datagrams, radio dropouts and a joiner that freezes now and then,
+  the latter under four network seeds. `ROM2` and `SAVE2` run a different game on the
   joiner, such as LeafGreen. With `MKSC` set to Mario Kart: Super Circuit
   (European release) it also races two games in Multi-Pak mode, which uses
   lockstep mode, and checks that both race clocks run in step and that,

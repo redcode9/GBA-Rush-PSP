@@ -2,6 +2,15 @@
 
 ## 1.4.3 - Unreleased
 
+### Fixed
+
+- A Pokemon trade could stop for good at "Please wait" when the joining
+  PSP froze for a moment or the radio dropped out just as the trade screen
+  opened. A burst of delayed frames reached the joining game closer together
+  than the hosting game had sent them, so it threw away the first part of
+  the other player's party. The joining PSP now keeps the hosting game's
+  spacing between frames.
+
 ### Changed
 
 - Linked games other than Pokemon, such as a Mario Kart: Super Circuit race,
