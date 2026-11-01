@@ -227,9 +227,11 @@ typedef struct
   uint32_t jitter_us;
   uint32_t loss_percent;
   uint32_t duplicate_percent;
-  /* Window, from the start of the run, in which every datagram is lost. */
+  /* Window, from the start of the run, in which every datagram is lost,
+  and the period it repeats with (0 for once). */
   uint64_t outage_start_us;
   uint64_t outage_end_us;
+  uint64_t outage_period_us;
 } NetProfile;
 
 /* A datagram on its way to console `to`. */
@@ -251,9 +253,11 @@ static void network_send(const NetProfile *net, int to, const uint8_t *data,
  size_t size, uint64_t now)
 {
   unsigned int copies = 1;
+  uint64_t since = now - run_start;
 
-  if(now - run_start >= net->outage_start_us &&
-     now - run_start < net->outage_end_us)
+  if(net->outage_period_us != 0)
+    since %= net->outage_period_us;
+  if(since >= net->outage_start_us && since < net->outage_end_us)
     return;
   if(rng() % 100u < net->loss_percent)
     return;
@@ -352,6 +356,7 @@ static uint64_t run_link(Console *consoles[2], const NetProfile *net,
 #define LINKCMD_CONT_BLOCK 0x8888
 #define LINKCMD_INIT_BLOCK 0xBBBB
 #define LINKCMD_SEND_HELD_KEYS 0xCAFE
+#define LINKCMD_SEND_BLOCK_REQ 0xCCCC
 
 #define REG_SIOMULTI0 0x120
 #define REG_SIOMULTI1 0x122
@@ -389,11 +394,14 @@ enum { LAG_NONE, LAG_MASTER, LAG_SLAVE };
    master's words. */
 #define TIMER3_PERIOD (197u * 64u)
 
-/* The script's two block transfers (player record, then party), the frames
-   of held keys each side sends in the link room, and the capacity of the
-   per-frame key log compared between the consoles. */
+/* The script's block transfers (the player record, then the party in
+   TRADE_BLOCKS blocks that the host asks for one at a time, as FireRed's
+   trade menu sends it two Pokemon at a time), the frames of held keys each
+   side sends in the link room, and the capacity of the per-frame key log
+   compared between the consoles. */
 #define LINK_PLAYER_BLOCK_SIZE 60u
-#define PARTY_BLOCK_SIZE 600u
+#define PARTY_BLOCK_SIZE 200u
+#define TRADE_BLOCKS 3u
 #define KEY_FRAMES 240u
 #define MAX_TUPLES 4096u
 #define LINK_KEY_CODE_EMPTY 0x11
@@ -506,6 +514,9 @@ typedef struct
   uint32_t seed;
   uint32_t peerSeed;
   uint32_t blocksVerified;
+  uint8_t tradeStep;
+  uint8_t tradeTimer;
+  uint8_t tradeBlock;
   uint32_t tupleCount;
   uint16_t tuples[MAX_TUPLES][2];
   uint32_t closeFrame;
@@ -1039,6 +1050,10 @@ static void ProcessRecvCmds(PokemonGame *game)
       case LINKCMD_SEND_LINK_TYPE:
         InitBlockSend(game, 1, LINK_PLAYER_BLOCK_SIZE);
         break;
+      case LINKCMD_SEND_BLOCK_REQ:
+        /* Ignored while a block is still going out, as in the game. */
+        InitBlockSend(game, game->recvCmds[i][1], PARTY_BLOCK_SIZE);
+        break;
       case LINKCMD_SEND_HELD_KEYS:
         game->heldKeys[i] = game->recvCmds[i][1];
         break;
@@ -1238,8 +1253,60 @@ static void PokemonFrame(Console *console)
            VerifyBlock(game, self, game->seed, 1, LINK_PLAYER_BLOCK_SIZE))
           game->blocksVerified++;
         game->blockReceived = 0;
-        game->callback = CALLBACK_HELD_KEYS;
-        game->phase = SCRIPT_ROOM;
+        game->tradeStep = 0;
+        game->tradeBlock = 0;
+        game->phase = SCRIPT_TRADE;
+      }
+      break;
+
+    case SCRIPT_TRADE:
+      /* BufferTradeParties in pret's src/trade.c, which the trade menu
+         runs as soon as the player records are in. The host asks for the
+         first block a dozen frames later; a block that completes before
+         this game has dropped its old block flags is wiped with them, and
+         both games then wait for good. So the joiner's game must see the
+         host's request no sooner than the host sent it. */
+      switch(game->tradeStep)
+      {
+        case 0:
+          if(game->callback == CALLBACK_NONE)
+          {
+            game->blockReceived = 0;
+            game->tradeTimer = 0;
+            game->tradeStep = 1;
+          }
+          break;
+        case 1:
+          if(++game->tradeTimer > 10)
+            game->tradeStep = 2;
+          break;
+        case 2:
+          if(game->isMaster)
+          {
+            game->sendCmd[0] = LINKCMD_SEND_BLOCK_REQ;
+            game->sendCmd[1] = (uint16_t)(2u + game->tradeBlock);
+          }
+          game->tradeStep = 3;
+          break;
+        case 3:
+          if(game->blockReceived == 3)
+          {
+            uint32_t kind = 2u + game->tradeBlock;
+
+            if(VerifyBlock(game, peer, game->peerSeed, kind,
+               PARTY_BLOCK_SIZE) &&
+               VerifyBlock(game, self, game->seed, kind, PARTY_BLOCK_SIZE))
+              game->blocksVerified++;
+            game->blockReceived = 0;
+            game->tradeTimer = 0;
+            game->tradeStep = 1;
+            if(++game->tradeBlock == TRADE_BLOCKS)
+            {
+              game->callback = CALLBACK_HELD_KEYS;
+              game->phase = SCRIPT_ROOM;
+            }
+          }
+          break;
       }
       break;
 
@@ -1247,18 +1314,6 @@ static void PokemonFrame(Console *console)
       if(keys_done && game->peerKeysSeen >= KEY_FRAMES &&
          !game->blockSend.active)
       {
-        game->callback = CALLBACK_NONE;
-        InitBlockSend(game, 2, PARTY_BLOCK_SIZE);
-        game->phase = SCRIPT_TRADE;
-      }
-      break;
-
-    case SCRIPT_TRADE:
-      if(game->blockReceived == 3 && !game->blockSend.active)
-      {
-        if(VerifyBlock(game, peer, game->peerSeed, 2, PARTY_BLOCK_SIZE) &&
-           VerifyBlock(game, self, game->seed, 2, PARTY_BLOCK_SIZE))
-          game->blocksVerified++;
         game->sendCmd[0] = LINKCMD_READY_CLOSE_LINK;
         game->callback = CALLBACK_WAIT_CLOSE;
         game->phase = SCRIPT_CLOSING;
@@ -1372,8 +1427,8 @@ static void run_pokemon_case(const PokemonCase *test, const NetProfile *net)
   CHECK(b->errors == 0);
   CHECK(a->sessions == test->sessions);
   CHECK(b->sessions == test->sessions);
-  CHECK(a->blocksVerified == 2u * test->sessions);
-  CHECK(b->blocksVerified == 2u * test->sessions);
+  CHECK(a->blocksVerified == (1u + TRADE_BLOCKS) * test->sessions);
+  CHECK(b->blocksVerified == (1u + TRADE_BLOCKS) * test->sessions);
 
   /* Both games must have processed the same key frames in the same
      order, or the link room would differ between the two screens. */
@@ -1414,7 +1469,7 @@ static int joiner_waits_in_room(Console *consoles[2])
    joiner must not stay stuck waiting for a frame that will never come. */
 static void test_pokemon_peer_closes_in_room(void)
 {
-  static const NetProfile net = { "adhoc", 3000u, 4000u, 3u, 1u, 0u, 0u };
+  static const NetProfile net = { "adhoc", 3000u, 4000u, 3u, 1u, 0u, 0u, 0u };
   Console host;
   Console joiner;
   Console *consoles[2] = { &host, &joiner };
@@ -1448,11 +1503,11 @@ static void test_pokemon_peer_closes_in_room(void)
 /* Latency, jitter (us), loss and duplicate (%), outage window (us). */
 static const NetProfile net_profiles[] =
 {
-  { "lan",       1500u,  1000u,  0u, 0u, 0u, 0u },
-  { "adhoc",     3000u,  4000u,  3u, 1u, 0u, 0u },
-  { "noisy",     8000u, 15000u, 15u, 5u, 0u, 0u },
-  { "outage",    3000u,  4000u,  3u, 1u, 3000000u, 3400000u },
-  { "terrible", 20000u, 40000u, 30u, 10u, 0u, 0u }
+  { "lan",       1500u,  1000u,  0u, 0u, 0u, 0u, 0u },
+  { "adhoc",     3000u,  4000u,  3u, 1u, 0u, 0u, 0u },
+  { "noisy",     8000u, 15000u, 15u, 5u, 0u, 0u, 0u },
+  { "outage",    3000u,  4000u,  3u, 1u, 3000000u, 3400000u, 0u },
+  { "terrible", 20000u, 40000u, 30u, 10u, 0u, 0u, 0u }
 };
 
 /* Game codes: BPRE/BPRI FireRed (US/Italian), BPGE LeafGreen, BPEE Emerald,
@@ -1473,12 +1528,18 @@ static void test_pokemon_trades(void)
     { "host freezes",           "BPGE", "BPRE", 1.00, 1.00, 30, 30, 2,
       0, 1300, 250 }
   };
+  /* Radio dropouts of a quarter second, after which a burst of frames
+     arrives at once. */
+  static const NetProfile dropouts =
+   { "dropouts", 3000u, 4000u, 3u, 1u, 0u, 250000u, 1300000u };
   size_t c;
   size_t n;
 
   for(n = 0; n < sizeof(net_profiles) / sizeof(net_profiles[0]); n++)
     for(c = 0; c < sizeof(cases) / sizeof(cases[0]); c++)
       run_pokemon_case(&cases[c], &net_profiles[n]);
+  for(c = 0; c < sizeof(cases) / sizeof(cases[0]); c++)
+    run_pokemon_case(&cases[c], &dropouts);
   test_pokemon_peer_closes_in_room();
 }
 
@@ -1819,7 +1880,7 @@ static void test_mode_selection_and_roles(void)
 
 static void test_session_lifecycle(void)
 {
-  static const NetProfile net = { "lan", 1500u, 1000u, 0u, 0u, 0u, 0u };
+  static const NetProfile net = { "lan", 1500u, 1000u, 0u, 0u, 0u, 0u, 0u };
   Console a;
   Console b;
   Console *consoles[2] = { &a, &b };
@@ -1850,7 +1911,7 @@ static void test_session_lifecycle(void)
   /* A peer that disappears is detected, and the guest is released. */
   {
     static const NetProfile dead = { "dead", 1500u, 0u, 0u, 0u, 300000u,
-     100000000u };
+     100000000u, 0u };
 
     console_init(&a, 0, 1, "BPRE", &idle_guest, NULL, 1.0);
     console_init(&b, 1, 0, "BPRE", &idle_guest, NULL, 1.0);

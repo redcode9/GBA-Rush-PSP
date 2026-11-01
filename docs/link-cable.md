@@ -34,6 +34,15 @@ frames that arrive a few frames late. GBA Rush PSP uses that:
   the exact pair. Both games therefore process identical frames in the same
   order, which keeps the Cable Club room (where every frame carries both
   players' keys) identical on both screens.
+- The joiner's game sees the host's frames no closer together than the
+  host's game sent them, give or take a frame, as on a real cable. The trade
+  screen asks for the first part of the other party a dozen frames after
+  both games have exchanged player records and counts on the other game
+  having cleared its old block flags by then; a radio dropout or a frozen
+  PSP followed by a burst used to squeeze those frames together, and the
+  joining game threw that part of the party away and waited for good. Gaps
+  longer than 16 frames count as 16, so the joiner still catches up after a
+  pause.
 - Each game's checksum word is echoed back to it, so the checksum always
   matches what the game computed over the words it received.
 - The handshake words (0xB9A0 and 0x8FFF) are mirrored exactly as the game's
@@ -67,23 +76,43 @@ real hardware and only stops if the answer is still missing at that moment.
 The receiving console sees every transfer at the point of its own timeline
 the sender chose, as on a real cable: it keeps the spacing the sender's game
 used between transfers and never runs past the clock the sender last
-reported, which the sender sends every 2 ms while the link is in use. A
+reported, which the sender sends every 8 ms while the link is in use. A
 receiver left free would run ahead while the sender waits for replies and
 go whole frames without a transfer; Mario Kart: Super Circuit reports a
 communication error when that happens.
+
+Waiting for the sender's clock would make the receiver stop after every
+transfer, and each clock report costs both PSPs a datagram. The receiver
+therefore learns how far apart the sender's STARTs come. Once 300 STARTs in
+a row have come at least a given spacing apart, it runs up to 7/8 of that
+spacing past the last START on its own, which is the lookahead of
+conservative parallel simulation. Mario Kart starts about one transfer per
+frame, sometimes two in quick succession, so the receiver keeps running for
+a while after each transfer instead of stopping. A START that comes sooner
+than the learned spacing withdraws it and doubles the run needed to learn it
+again.
 
 Waiting a round trip for every reply still halves the speed of a game that
 sends a word per frame. Most games, Mario Kart included, load the word for
 the next transfer right after the last one, long before the next START. The
 receiving console therefore announces its next reply once its game has
-written the serial registers after a transfer and left them alone for a
-moment. The sender compares each announcement with the real reply that
-follows it. Once 300 announcements in a row have been right, it completes
-its transfers with the announcement instead of waiting, and keeps checking
-each one. An announcement that was used and turned out wrong sends it back
-to waiting and doubles the number of right ones it needs next time, so a
-game that changes its word late keeps the exact behaviour. A transfer whose
-announcement has not arrived yet waits for the reply as before.
+written the serial registers after a transfer and left them alone for about
+a millisecond. The sender compares each announcement with the real reply
+that follows it. Once 300 announcements in a row have been right, it
+completes its transfers with the announcement instead of waiting, says so in
+the START, and keeps checking each one; the receiver's real reply then only
+serves as a check and rides with its next datagram. An announcement that
+was used and turned out wrong sends it back to waiting and doubles the
+number of right ones it needs next time, so a game that changes its word
+late keeps the exact behaviour. A transfer whose announcement has not
+arrived yet finishes as soon as it does, which is still well before the
+real reply: the other console only sends that once it reaches the START.
+No announcement follows a START that came less than a quarter of a frame
+after the one before. In such a burst, like the one that sets up a Mario
+Kart link, an announcement could not arrive in time anyway, and a
+millisecond of quiet does not tell a settled word from one the game is
+about to replace. In lockstep mode an acknowledgement also waits up to
+8 ms for a datagram to ride on.
 
 Normal 8-bit, Normal 32-bit and Multiplayer 16-bit modes are supported. A
 game that sends many words per frame still waits for most replies and slows
@@ -153,9 +182,11 @@ exit close the session and tell the other PSP.
   and a 400 ms outage. The Pokemon guest is a line-by-line port of the pret
   FireRed serial driver, including the link room's key stream that keeps
   sending while the game skips frames. Each run opens the link, exchanges
-  link-player blocks, plays 240 frames of link-room keys, trades a 600-byte
-  party block and closes the link, in nine game, speed and console-freeze
-  combinations over five network profiles. It passes only with no link
+  link-player blocks, swaps the parties in three blocks the host asks for
+  one at a time, as the trade screen's `BufferTradeParties` does, plays 240
+  frames of link-room keys and closes the link, in nine game, speed and
+  console-freeze combinations over six network profiles, one with a radio
+  dropout every 1.3 seconds. It passes only with no link
   error, intact blocks, identical key frames on both consoles and each
   player's own keys coming back within 20 frames on average in the room.
   Lockstep guests check Multiplayer, Normal 8-bit and Normal 32-bit modes
@@ -171,15 +202,17 @@ exit close the session and tell the other PSP.
   leaves the room; the test then decodes both saved parties. It runs on a
   typical ad-hoc link, a noisy one (8 ms plus up to 15 ms of jitter, 15%
   loss, 5% duplicates), with either console 20% slower, and under the
-  conditions measured between two PSPs: frames emulated in bursts, a network
-  stack that only moves datagrams while the emulator sleeps, a 70 ms round
-  trip losing a third of the datagrams, radio dropouts and a joiner that
-  freezes now and then. `ROM2` and `SAVE2` run a different game on the
+  conditions measured between two PSPs: frames emulated in bursts of 12 ms,
+  a network stack that only moves datagrams while the emulator sleeps and
+  spends 0.9 ms of that per datagram, a 70 ms round trip losing a third of
+  the datagrams, radio dropouts and a joiner that freezes now and then,
+  the latter under four network seeds. `ROM2` and `SAVE2` run a different game on the
   joiner, such as LeafGreen. With `MKSC` set to Mario Kart: Super Circuit
   (European release) it also races two games in Multi-Pak mode, which uses
   lockstep mode, and checks that both race clocks run in step and that,
-  under PSP conditions with a short round trip, announced replies keep the
-  race at full speed. The scripts, `tests/rom_link/firered_trade.txt` and
+  under PSP conditions with a 4 ms round trip, announced replies and the
+  learned lookahead keep the race above 55 fps; without them it runs at
+  about 35. The scripts, `tests/rom_link/firered_trade.txt` and
   `tests/rom_link/mksc_race.txt`, use the commands listed at the top of
   `tests/rom_link/link_e2e.c`.
   It needs an mGBA 0.10 build and a save whose player has not yet been
@@ -204,8 +237,9 @@ trip, datagrams, frames or transfers, waits, datagrams the PSP network stack
 refused or dropped, the shortest round trip, and in lockstep mode the time
 spent pausing for the stack, the transfers completed with an announced
 reply, the announcements used that turned out wrong and the current run of
-right ones. `link-error` tells why the session ended, including the PSP
-network error and the step that failed.
+right ones, and the priority the emulator thread ran at. `link-error` tells
+why the session ended, including the PSP network error and the step that
+failed.
 
 ## Limits
 

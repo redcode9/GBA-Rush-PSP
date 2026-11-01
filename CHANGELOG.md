@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.4.3 - Unreleased
+
+### Fixed
+
+- A Pokemon trade could stop for good at "Please wait" when the joining
+  PSP froze for a moment or the radio dropped out just as the trade screen
+  opened. A burst of delayed frames reached the joining game closer together
+  than the hosting game had sent them, so it threw away the first part of
+  the other player's party. The joining PSP now keeps the hosting game's
+  spacing between frames.
+
+### Changed
+
+- Linked games other than Pokemon, such as a Mario Kart: Super Circuit race,
+  need far fewer datagrams, each of which costs a PSP close to a millisecond
+  of processor time. The PSP that receives transfers learns how far apart
+  the other one's transfers come and keeps running on its own in between,
+  so the other PSP reports its clock four times less often; replies that
+  only serve as a check and acknowledgements ride with other datagrams; and
+  a reply is announced only once the game has stopped changing it.
+- The PSP that clocks transfers no longer waits for the real reply when the
+  other PSP's announcement of it arrives a moment after the transfer
+  started; it finishes the transfer as soon as the announcement is in.
+  Replies are no longer announced during quick bursts of transfers, where
+  an announcement cannot arrive in time and is more likely to be wrong.
+- The session log records the priority the emulator runs at during such a
+  link.
+
 ## 1.4.2 - 2026-11-01
 
 ### Fixed
