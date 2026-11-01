@@ -76,6 +76,9 @@
 #define FRAME_CYCLES 280896u
 #define FRAME_US 16743u
 #define SERVICE_CYCLES 4096
+/* main.c MAIN_LINK_YIELD_US: a linked PSP sleeps this long after each late
+   frame. */
+#define LATE_FRAME_SLEEP_US 2000u
 
 typedef struct
 {
@@ -98,10 +101,11 @@ typedef struct
   uint64_t hiccup_period_us;
   uint64_t hiccup_us;
   int stack;                /* datagrams wait while the console emulates */
-  uint32_t send_yield_us;
-  uint64_t sleep_until;
+  uint32_t send_yield_us;   /* sleep after each datagram sent while running */
+  uint64_t sleep_until;     /* asleep, letting the stack work, until then */
   int ran;                  /* emulated during the last tick */
-  uint32_t frame_seen;
+  uint32_t frame_seen;      /* frame counter after the last tick */
+  /* Datagrams sent while emulating, which leave when the console sleeps. */
   struct
   {
     uint8_t data[LINK_NET_MAX_DATAGRAM];
@@ -231,7 +235,9 @@ static void side_schedule_finish(Side *side)
 }
 
 static int trace_transfers;
-static int mismatched_screens;
+/* A linked, same, ram16 or pace check failed; the exit status. */
+static int check_failed;
+/* The pace check: minfps, and the time and frame counters it started at. */
 static double min_fps;
 static uint64_t pace_since;
 static uint32_t pace_frames[2];
@@ -256,14 +262,18 @@ static int side_busy(const Side *side)
   return side->sio.active || side->sio.waiting || side->sio.pending_start;
 }
 
+/* Shows a finished transfer's words to the guest and raises the serial
+   interrupt, `late` cycles after it was due. */
 static void side_deliver_irq(Side *side, uint32_t late)
 {
   if(trace_transfers)
     fprintf(stderr, "t=%llu side %d out %04X in %04X %04X %04X %04X cnt %04X local %d peer %d off %u\n",
      (unsigned long long)sim_now, side->index, side->sio.outgoing & 0xFFFF,
-     side->registers[0x120 >> 1], side->registers[0x122 >> 1],
-     side->registers[0x124 >> 1], side->registers[0x126 >> 1],
-     side->registers[0x128 >> 1], side->cable.pokemon.local,
+     side->registers[GBA_SIO_REG_MULTI0 >> 1],
+     side->registers[GBA_SIO_REG_MULTI1 >> 1],
+     side->registers[GBA_SIO_REG_MULTI2 >> 1],
+     side->registers[GBA_SIO_REG_MULTI3 >> 1],
+     side->registers[GBA_SIO_REG_CONTROL >> 1], side->cable.pokemon.local,
      side->cable.pokemon.peer, side->cable.pokemon.offset);
 
   side_copy_received(side);
@@ -284,11 +294,16 @@ static void side_trace_polled(Side *side)
   fprintf(stderr, "t=%llu side %d cycle %u polled in %04X %04X %04X %04X "
    "cnt %04X transfers %u\n", (unsigned long long)sim_now, side->index,
    side_cycle(side),
-   side->registers[0x120 >> 1], side->registers[0x122 >> 1],
-   side->registers[0x124 >> 1], side->registers[0x126 >> 1],
-   side->registers[0x128 >> 1], transfers);
+   side->registers[GBA_SIO_REG_MULTI0 >> 1],
+   side->registers[GBA_SIO_REG_MULTI1 >> 1],
+   side->registers[GBA_SIO_REG_MULTI2 >> 1],
+   side->registers[GBA_SIO_REG_MULTI3 >> 1],
+   side->registers[GBA_SIO_REG_CONTROL >> 1], transfers);
 }
 
+/* Runs one console's cable and applies the events it returns. A game that
+   polls instead of taking the interrupt gets the received words once the
+   transfer is over. */
 static void side_service(Side *side)
 {
   GbaSioEvent event;
@@ -500,6 +515,8 @@ static void side_flush_outbox(Side *side)
   side->outbox_count = 0;
 }
 
+/* Moves one console's emulation target on by a tick: smoothly at its
+   speed, or a whole frame per VBlank in PSP burst mode. */
 static void side_advance(Side *side)
 {
   if(side->burst_cycles == 0)
@@ -517,8 +534,9 @@ static void side_advance(Side *side)
 }
 
 /* Advances the simulation by TICK_US: delivers due datagrams, then runs
-   each console towards its target unless frozen, asleep until VBlank or
-   blocked by the cable, and sends the cable's next datagram. */
+   each console towards its target unless frozen, asleep (until VBlank, or
+   for its network stack) or blocked by the cable, and sends the cable's
+   next datagram, which a console with a stack holds until it sleeps. */
 static void run_tick(void)
 {
   int s;
@@ -537,6 +555,7 @@ static void run_tick(void)
     side->now = sim_now;
     side->core->setKeys(side->core, side->keys);
     side->ran = 0;
+    /* Asleep for the stack: time passes and held datagrams leave. */
     if(sim_now < side->sleep_until)
     {
       side_advance(side);
@@ -593,10 +612,11 @@ static void run_tick(void)
       side->core->runLoop(side->core);
     }
     side->ran = side_clock(side) != before;
+    /* A new frame while still behind the target is a late frame. */
     frame = side->core->frameCounter(side->core);
     if(side->stack && side->linked && frame != side->frame_seen &&
        side_clock(side) < side->target)
-      side->sleep_until = sim_now + 2000u;
+      side->sleep_until = sim_now + LATE_FRAME_SLEEP_US;
     side->frame_seen = frame;
     if(side->linked)
     {
@@ -748,7 +768,8 @@ static void print_status(void)
 }
 
 /* Boots both consoles and executes the script ("-" reads stdin) line by
-   line; exits 1 on too few arguments or an unreadable savestate. */
+   line; exits 1 on too few arguments, an unreadable savestate or a failed
+   check. */
 int main(int argc, char **argv)
 {
   char line[512];
@@ -862,11 +883,12 @@ int main(int argc, char **argv)
         printf("side %d: %u transfers\n", s, transfers);
         if(sides[s].cable.status != LINK_CABLE_CONNECTED ||
            transfers < (uint32_t)atoi(a))
-          mismatched_screens = 1;
+          check_failed = 1;
       }
     }
     else if(strcmp(cmd, "same") == 0)
     {
+      /* The whole 240x160 screen by default; video rows are 256 wide. */
       int left = b ? atoi(b) : 0;
       int top = c ? atoi(c) : 0;
       int width = d ? atoi(d) : 240;
@@ -882,7 +904,7 @@ int main(int argc, char **argv)
       printf("screens match: %.1f%%\n",
        matching * 100.0 / (width * height));
       if(matching * 100.0 / (width * height) < atof(a))
-        mismatched_screens = 1;
+        check_failed = 1;
     }
     else if(strcmp(cmd, "ram16") == 0)
     {
@@ -896,7 +918,7 @@ int main(int argc, char **argv)
       printf("ram %08X: %u / %u\n", address, value[0], value[1]);
       if(abs((int)value[0] - (int)value[1]) > atoi(b) ||
          value[0] < atoi(c) || value[1] < atoi(c))
-        mismatched_screens = 1;
+        check_failed = 1;
     }
     else if(strcmp(cmd, "hiccup") == 0)
     {
@@ -919,7 +941,7 @@ int main(int argc, char **argv)
         {
           printf("side %d: %.1f fps\n", s, fps);
           if(fps < min_fps)
-            mismatched_screens = 1;
+            check_failed = 1;
         }
         pace_frames[s] = frames;
       }
@@ -953,5 +975,5 @@ int main(int argc, char **argv)
     }
   }
   print_status();
-  return mismatched_screens;
+  return check_failed;
 }
