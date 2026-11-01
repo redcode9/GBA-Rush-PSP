@@ -25,7 +25,9 @@ enum
                               flag in Normal) */
   LINK_MSG_REPLY,          /* sequence, word (u32 each), ready flag */
   LINK_MSG_POKEMON_STATE,  /* the sender's LinkPokemonState */
-  LINK_MSG_POKEMON_PAIR,   /* host to joiner: both players' words of a frame */
+  LINK_MSG_POKEMON_PAIR,   /* host to joiner: both players' words of a
+                              frame, then the host's cycle at its first
+                              word (u32) */
   LINK_MSG_POKEMON_WORDS,  /* joiner to host: its words of a frame, then
                               how many host frames it has seen (u32) */
   LINK_MSG_NEXT_REPLY      /* lockstep receiver: sequence of the START it
@@ -107,6 +109,18 @@ enum
 #define POKEMON_LOOP_MAX    15u
 /* A console never waits longer than this for the other one's frame. */
 #define POKEMON_WAIT_LIMIT_US 1000000u
+/* The joiner's game must never see two host frames closer together than
+   the host's game sent them. FireRed's trade screen, for one, asks for the
+   first part of the other party a dozen frames after both games received
+   the player records, and counts on the other game having cleared its old
+   block flags by then; a radio delay followed by a burst would squeeze
+   those frames together and the part would be thrown away with the flags.
+   The joiner therefore takes each host frame at most one frame sooner
+   after the previous one than the host sent it. A longer gap than this
+   counts as this long, a little more than the longest such wait in these
+   games, so the joiner still catches up after a radio delay or a freeze
+   whenever the host's game pauses for longer. */
+#define POKEMON_SPACING_MAX (16u * LINK_CYCLES_PER_FRAME)
 /* Messages the other console may leave unconsumed before this one waits,
    which keeps a long outage from overflowing the channel. */
 #define POKEMON_MAX_BACKLOG 64u
@@ -709,6 +723,22 @@ static void pokemon_report(LinkCable *cable)
 
 static GbaSioEvent link_cable_drain(LinkCable *cable, uint32_t cycle);
 
+/* Joiner: true while the host frame the host sent at cycle `sent` would
+   reach our game sooner after the last one than the host sent it, less
+   one frame (see POKEMON_SPACING_MAX). */
+static int pokemon_pair_early(const LinkPokemon *pokemon, uint32_t sent,
+ uint32_t cycle)
+{
+  int32_t gap = (int32_t)(sent - pokemon->pair_sent);
+
+  if(!pokemon->pair_spaced || gap <= (int32_t)LINK_CYCLES_PER_FRAME)
+    return 0;
+  if(gap > (int32_t)POKEMON_SPACING_MAX)
+    gap = (int32_t)POKEMON_SPACING_MAX;
+  return cycle - pokemon->pair_taken <
+   (uint32_t)gap - LINK_CYCLES_PER_FRAME;
+}
+
 /* Loads the other console's next frame, or an empty frame. */
 static void pokemon_take_pair(LinkCable *cable, uint32_t cycle)
 {
@@ -725,6 +755,16 @@ static void pokemon_take_pair(LinkCable *cable, uint32_t cycle)
   message = link_net_peek(&cable->net);
   if(message == NULL || message->type != expected)
     return;
+  if(!cable->host && message->size >= 36)
+  {
+    uint32_t sent = get32(message->data + 32);
+
+    if(pokemon_pair_early(pokemon, sent, cycle))
+      return;
+    pokemon->pair_spaced = 1;
+    pokemon->pair_sent = sent;
+    pokemon->pair_taken = cycle;
+  }
 
   for(i = 0; i < 8; i++)
   {
@@ -773,6 +813,7 @@ static void pokemon_frame_word(LinkCable *cable, uint16_t local_word,
        computed itself, so echo its own word into every slot. */
     words[0] = local_word;
     words[1] = local_word;
+    pokemon->frame_start = cycle;
     pokemon_take_pair(cable, cycle);
     pokemon->offset = 1;
     return;
@@ -805,13 +846,14 @@ static void pokemon_frame_word(LinkCable *cable, uint16_t local_word,
   {
     if(pokemon_words_nonzero(pokemon->local_words) || pokemon->pair_valid)
     {
-      uint8_t message[32];
+      uint8_t message[36];
 
       for(i = 0; i < 8; i++)
       {
         put16(message + i * 2, pokemon->local_words[i]);
         put16(message + 16 + i * 2, pokemon->pair[1][i]);
       }
+      put32(message + 32, pokemon->frame_start);
       link_cable_queue(cable, LINK_MSG_POKEMON_PAIR, message,
        sizeof(message));
       pokemon->frames_sent++;

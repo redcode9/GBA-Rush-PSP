@@ -97,8 +97,13 @@ typedef struct
   uint16_t local_words[8];
   uint16_t pair[2][8];        /* words delivered this frame, per player */
   uint32_t next_transfer;     /* joiner: cycle of the next local transfer */
-  uint32_t frame_start;       /* joiner: cycle of this frame's first word */
+  uint32_t frame_start;       /* cycle of this frame's first word */
   uint32_t pairs_seen;        /* joiner: host frames taken or dropped */
+  /* Joiner: the host's cycle at the last host frame taken and ours when
+     it was taken, once one has been (see pokemon_pair_early). */
+  uint8_t pair_spaced;
+  uint32_t pair_sent;
+  uint32_t pair_taken;
   uint32_t answered;          /* host: pairs_seen in the joiner's last frame */
   uint64_t wait_since_us;
   uint32_t interrupt_disables;
