@@ -129,6 +129,14 @@ typedef struct
      reply announced for the next START. */
   uint32_t applied_sequence;
   uint8_t applied_mode;
+  /* How far past the START applied last this console may run without word
+   from the clocking console: learned from how far apart that console's
+   STARTs come, 0 while not trusted. */
+  uint32_t lookahead;
+  uint32_t lookahead_after;   /* STARTs in a row needed to trust it */
+  uint32_t spacing_run;
+  uint32_t spacing_min;       /* closest pair of STARTs in that run */
+  uint32_t late_starts;       /* applied after this console passed them */
   uint8_t loaded;
   uint32_t writes_seen;
   uint32_t quiet_since;

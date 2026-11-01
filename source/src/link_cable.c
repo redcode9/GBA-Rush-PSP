@@ -68,6 +68,16 @@ enum
    its next word and left the serial registers alone for this long. Games
    often write SIOCNT and a placeholder word just before the real one. */
 #define LINK_ANNOUNCE_QUIET 4096u
+/* A receiving console runs ahead of the clocking console's last reported
+   clock once this many STARTs in a row have come at least a given spacing
+   apart, up to 7/8 of that spacing past the START it applied last. Games
+   such as Mario Kart start one transfer per frame. A START that comes
+   sooner while this is trusted doubles the figure. */
+#define LINK_LOOKAHEAD_AFTER     300u
+#define LINK_LOOKAHEAD_AFTER_MAX (1u << 20)
+/* A START applied this many cycles after its time counts as late; less is
+   the granularity at which the emulator checks the link. */
+#define LINK_LATE_START 1024u
 
 /* Pokemon link layer constants, from the pret decompilations. */
 #define POKEMON_MASTER_HANDSHAKE 0x8FFFu
@@ -204,6 +214,7 @@ void link_cable_start(LinkCable *cable, GbaSio *sio, int host,
   cable->status = LINK_CABLE_WAITING;
   memcpy(cable->local_game, game_code, sizeof(cable->local_game));
   cable->lockstep.trust_after = LINK_TRUST_AFTER;
+  cable->lockstep.lookahead_after = LINK_LOOKAHEAD_AFTER;
   link_net_init(&cable->net, local_id, now_us);
   link_net_set_heartbeat(&cable->net, LINK_HEARTBEAT_IDLE_US);
   gba_sio_disconnect(sio);
@@ -484,6 +495,28 @@ static void lockstep_announce(LinkCable *cable, uint32_t cycle)
   link_cable_queue(cable, LINK_MSG_NEXT_REPLY, message, sizeof(message));
 }
 
+/* Receiving side: learns how far apart the clocking console's STARTs
+   come, so this console can run that far ahead on its own. */
+static void lockstep_learn_spacing(LinkLockstep *lockstep, uint32_t gap,
+ int late)
+{
+  if(late)
+    lockstep->late_starts++;
+  if(lockstep->lookahead != 0 && gap < lockstep->lookahead)
+  {
+    lockstep->lookahead = 0;
+    lockstep->spacing_run = 0;
+    if(late && lockstep->lookahead_after < LINK_LOOKAHEAD_AFTER_MAX)
+      lockstep->lookahead_after *= 2u;
+  }
+  if(lockstep->spacing_run == 0 || gap < lockstep->spacing_min)
+    lockstep->spacing_min = gap;
+  if(lockstep->spacing_run < UINT32_MAX)
+    lockstep->spacing_run++;
+  if(lockstep->spacing_run >= lockstep->lookahead_after)
+    lockstep->lookahead = lockstep->spacing_min - lockstep->spacing_min / 8u;
+}
+
 /* Returns 0 if the START must wait for a later guest cycle. */
 static int lockstep_remote_start(LinkCable *cable,
  const LinkNetMessage *message, uint32_t cycle)
@@ -494,7 +527,9 @@ static int lockstep_remote_start(LinkCable *cable,
   uint8_t reply[9];
   uint32_t sender_cycle;
   uint32_t anchor;
+  uint32_t gap = 0;
   uint32_t word;
+  int timeline = 0;
   int ready;
 
   if(message->size < 14)
@@ -510,9 +545,9 @@ static int lockstep_remote_start(LinkCable *cable,
      after the link has been idle does a transfer start a new timeline. */
   if(lockstep->anchored)
   {
-    uint32_t gap = sender_cycle - lockstep->peer_anchor;
-
-    if(gap < LINK_LOCKSTEP_ACTIVE)
+    gap = sender_cycle - lockstep->peer_anchor;
+    timeline = gap < LINK_LOCKSTEP_ACTIVE;
+    if(timeline)
     {
       /* A transfer applied a little late must not shift the ones after
          it, or the delays add up until a frame goes without one. */
@@ -558,6 +593,9 @@ static int lockstep_remote_start(LinkCable *cable,
   reply[8] = (uint8_t)(ready != 0);
   link_cable_queue(cable, LINK_MSG_REPLY, reply, sizeof(reply));
 
+  if(timeline)
+    lockstep_learn_spacing(lockstep, gap,
+     (int32_t)(cycle - anchor) > (int32_t)LINK_LATE_START);
   lockstep->anchored = 1;
   lockstep->local_anchor = anchor;
   lockstep->peer_anchor = sender_cycle;
@@ -1182,8 +1220,8 @@ static int lockstep_receiver_limit(const LinkCable *cable, uint32_t cycle,
      !lockstep_is_receiver(cable))
     return 0;
   peer_elapsed = (int32_t)(cable->net.peer_clock - lockstep->peer_anchor);
-  if(peer_elapsed < 0)
-    peer_elapsed = 0;
+  if(peer_elapsed < (int32_t)lockstep->lookahead)
+    peer_elapsed = (int32_t)lockstep->lookahead;
   *limit = lockstep->local_anchor + (uint32_t)peer_elapsed;
   return 1;
 }
