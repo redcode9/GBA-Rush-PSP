@@ -33,8 +33,11 @@ enum
 #define LINK_HEARTBEAT_IDLE_US   250000u
 #define LINK_HEARTBEAT_ACTIVE_US  16000u
 /* A lockstep receiver may only run up to the clock the sender last
-   reported, so the sender reports it more often while the link is used. */
-#define LINK_HEARTBEAT_LOCKSTEP_US 8000u
+   reported, and its announced reply must reach the sender before the next
+   START, so the sender reports its clock often while the link is used. The
+   receiver's clock only paces the sender, which allows four frames of lead,
+   so it keeps the ordinary rate. */
+#define LINK_HEARTBEAT_LOCKSTEP_US 2000u
 
 /* Lockstep pacing: while the link is in use, a console may run at most
    this far ahead of the other one's guest clock. The figure covers network
@@ -1085,7 +1088,7 @@ GbaSioEvent link_cable_service(LinkCable *cable, uint32_t cycle,
   }
   else
     link_net_set_heartbeat(&cable->net,
-     cable->mode == LINK_CABLE_MODE_LOCKSTEP ?
+     cable->mode == LINK_CABLE_MODE_LOCKSTEP && !lockstep_is_receiver(cable) ?
      LINK_HEARTBEAT_LOCKSTEP_US : LINK_HEARTBEAT_ACTIVE_US);
 
   return events;
