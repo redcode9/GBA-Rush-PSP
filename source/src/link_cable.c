@@ -34,6 +34,8 @@ enum
 #define LINK_SIO_CONTROL_IRQ 0x4000u
 /* SIOCNT bit 0 in Normal mode: this console drives the clock. */
 #define LINK_SIO_CONTROL_CLOCK 0x0001u
+/* SIOCNT bit 3: SO in Normal mode, READY in Multiplayer. */
+#define LINK_SIO_CONTROL_SO 0x0008u
 
 #define LINK_CYCLES_PER_FRAME 280896u
 #define LINK_SILENCE_TIMEOUT_US 8000000u
@@ -251,8 +253,8 @@ static void link_cable_hello(LinkCable *cable, const LinkNetMessage *message)
 
 static int lockstep_is_receiver(const LinkCable *cable);
 
-/* Sends SIO_STATE (mode, SO level, RCNT) whenever the mode or SO level
-   changes. */
+/* Sends SIO_STATE (mode, SIOCNT bit 3, RCNT) whenever the mode or bit 3
+   changes; bit 3 is SO in Normal mode and READY in Multiplayer. */
 static void lockstep_publish_state(LinkCable *cable)
 {
   LinkLockstep *lockstep = &cable->lockstep;
@@ -261,7 +263,7 @@ static void lockstep_publish_state(LinkCable *cable)
 
   /* The peer needs our mode for its ready bit and, in normal mode, our
      SO output, which it reads as SI. */
-  control &= 0x0008u;
+  control &= LINK_SIO_CONTROL_SO;
   if(lockstep->state_sent && lockstep->state_mode == cable->sio->mode &&
      lockstep->state_control == control)
     return;
