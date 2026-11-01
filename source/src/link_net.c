@@ -13,8 +13,6 @@
 
 #include <string.h>
 
-/* Acknowledgements wait briefly so they can ride on a data packet. */
-#define LINK_NET_ACK_DELAY_US     2000u
 /* Unacknowledged data is repeated after this long without any send. */
 #define LINK_NET_MIN_RESEND_US   15000u
 #define LINK_NET_DEFAULT_HEARTBEAT_US 250000u
@@ -55,6 +53,7 @@ void link_net_init(LinkNet *net, uint32_t local_id, uint64_t now_us)
   memset(net, 0, sizeof(*net));
   net->local_id = local_id != 0 ? local_id : 1u;
   net->heartbeat_us = LINK_NET_DEFAULT_HEARTBEAT_US;
+  net->ack_delay_us = LINK_NET_ACK_DELAY_US;
   net->last_receive_us = now_us;
   net->send_now = 1;
 }
@@ -238,7 +237,7 @@ size_t link_net_build(LinkNet *net, uint8_t *datagram, size_t capacity,
   if(!net->send_now)
   {
     int ack_due = net->ack_pending &&
-     now_us - net->peer_stamp_received_us >= LINK_NET_ACK_DELAY_US;
+     now_us - net->peer_stamp_received_us >= net->ack_delay_us;
 
     resend = net->out_next != net->out_acked && since_send >= resend_us;
     if(!ack_due && !resend && since_send < net->heartbeat_us)
@@ -290,6 +289,11 @@ size_t link_net_build(LinkNet *net, uint8_t *datagram, size_t capacity,
 void link_net_set_heartbeat(LinkNet *net, uint32_t interval_us)
 {
   net->heartbeat_us = interval_us;
+}
+
+void link_net_set_ack_delay(LinkNet *net, uint32_t delay_us)
+{
+  net->ack_delay_us = delay_us;
 }
 
 uint32_t link_net_backlog(const LinkNet *net)
