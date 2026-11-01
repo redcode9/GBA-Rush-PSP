@@ -37,6 +37,7 @@
 #include "sound_math.h"
 
 // Main thread params; on the PSP a lower priority number runs first.
+// 32 is 0x20, so MAIN_LINK_LOCKSTEP_PRIORITY (0x40) is lower.
 #define PRIORITY       (32)
 #define STACK_SIZE_KB  (512)
 #define ATTRIBUTE      (THREAD_ATTR_USER | PSP_THREAD_ATTR_CLEAR_STACK)
@@ -204,8 +205,9 @@ static volatile int quit_cleanup_complete = 0;
    each one to let the stack send it. */
 #define MAIN_LINK_SEND_YIELD_US 200u
 /* While a lockstep link is connected the emulator thread also drops to
-   this lower priority. The pause after each datagram is what matters: the
-   lower priority alone still left the stack refusing datagrams. */
+   this lower priority. It shipped together with the pause above as the
+   fix for consoles taking turns; on its own it still left the stack
+   refusing datagrams, so the pause is what matters. */
 #define MAIN_LINK_LOCKSTEP_PRIORITY 0x40
 
 /* Guest CPU cycles since reset; wraps. The guest clock for sound and link. */
