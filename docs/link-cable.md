@@ -105,8 +105,14 @@ serves as a check and rides with its next datagram. An announcement that
 was used and turned out wrong sends it back to waiting and doubles the
 number of right ones it needs next time, so a game that changes its word
 late keeps the exact behaviour. A transfer whose announcement has not
-arrived yet waits for the reply as before. In lockstep mode an
-acknowledgement also waits up to 8 ms for a datagram to ride on.
+arrived yet finishes as soon as it does, which is still well before the
+real reply: the other console only sends that once it reaches the START.
+No announcement follows a START that came less than a quarter of a frame
+after the one before. In such a burst, like the one that sets up a Mario
+Kart link, an announcement could not arrive in time anyway, and a
+millisecond of quiet does not tell a settled word from one the game is
+about to replace. In lockstep mode an acknowledgement also waits up to
+8 ms for a datagram to ride on.
 
 Normal 8-bit, Normal 32-bit and Multiplayer 16-bit modes are supported. A
 game that sends many words per frame still waits for most replies and slows
@@ -205,7 +211,7 @@ exit close the session and tell the other PSP.
   (European release) it also races two games in Multi-Pak mode, which uses
   lockstep mode, and checks that both race clocks run in step and that,
   under PSP conditions with a 4 ms round trip, announced replies and the
-  learned lookahead keep the race above 45 fps; without them it runs at
+  learned lookahead keep the race above 55 fps; without them it runs at
   about 35. The scripts, `tests/rom_link/firered_trade.txt` and
   `tests/rom_link/mksc_race.txt`, use the commands listed at the top of
   `tests/rom_link/link_e2e.c`.

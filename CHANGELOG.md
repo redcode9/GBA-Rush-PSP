@@ -20,6 +20,11 @@
   so the other PSP reports its clock four times less often; replies that
   only serve as a check and acknowledgements ride with other datagrams; and
   a reply is announced only once the game has stopped changing it.
+- The PSP that clocks transfers no longer waits for the real reply when the
+  other PSP's announcement of it arrives a moment after the transfer
+  started; it finishes the transfer as soon as the announcement is in.
+  Replies are no longer announced during quick bursts of transfers, where
+  an announcement cannot arrive in time and is more likely to be wrong.
 - The session log records the priority the emulator runs at during such a
   link.
 
