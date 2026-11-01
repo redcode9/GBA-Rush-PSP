@@ -23,11 +23,16 @@ enum
   LINK_MSG_REPLY,          /* sequence, word (u32 each), ready flag */
   LINK_MSG_POKEMON_STATE,  /* the sender's LinkPokemonState */
   LINK_MSG_POKEMON_PAIR,   /* host to joiner: both players' words of a frame */
-  LINK_MSG_POKEMON_WORDS,  /* joiner to host: the joiner's words of a frame */
-  LINK_MSG_NEXT_REPLY      /* lockstep receiver: its reply to the next START */
+  LINK_MSG_POKEMON_WORDS,  /* joiner to host: its words of a frame, then
+                              how many host frames it has seen (u32) */
+  LINK_MSG_NEXT_REPLY      /* lockstep receiver: sequence of the START it
+                              applied last, then its reply to the next one:
+                              word (u32), ready flag */
 };
 
 #define LINK_SIO_CONTROL_IRQ 0x4000u
+/* SIOCNT bit 0 in Normal mode: this console drives the clock. */
+#define LINK_SIO_CONTROL_CLOCK 0x0001u
 
 #define LINK_CYCLES_PER_FRAME 280896u
 #define LINK_SILENCE_TIMEOUT_US 8000000u
@@ -245,6 +250,8 @@ static void link_cable_hello(LinkCable *cable, const LinkNetMessage *message)
 
 static int lockstep_is_receiver(const LinkCable *cable);
 
+/* Sends SIO_STATE (mode, SO level, RCNT) whenever the mode or SO level
+   changes. */
 static void lockstep_publish_state(LinkCable *cable)
 {
   LinkLockstep *lockstep = &cable->lockstep;
@@ -270,7 +277,7 @@ static void lockstep_publish_state(LinkCable *cable)
 /* Completes the transfer we clocked with the other console's reply. The
    guest kept running while the reply travelled; the transfer finishes at
    the cycle it would have finished on real hardware, or now if that moment
-   has already passed. */
+   has already passed. A reply that was not ready reads as all ones. */
 static GbaSioEvent lockstep_finish(LinkCable *cable, uint32_t word,
  int ready, uint32_t cycle)
 {
@@ -297,6 +304,9 @@ static GbaSioEvent lockstep_finish(LinkCable *cable, uint32_t word,
   return event;
 }
 
+/* Our guest clocked a transfer: send START with its word and wait for the
+   REPLY, which real hardware would deliver by finish_cycle, unless a
+   trusted announcement already gives the reply. */
 static GbaSioEvent lockstep_begin(LinkCable *cable, uint32_t cycle)
 {
   LinkLockstep *lockstep = &cable->lockstep;
@@ -382,8 +392,9 @@ static void lockstep_check(LinkLockstep *lockstep, uint32_t sequence,
     lockstep->trust_after *= 2u;
 }
 
-/* The peer's REPLY to our latest START (older ones are ignored): hand its
-   word to the guest. A peer that was not ready reads as all ones. */
+/* The peer's REPLY to one of our STARTs. Every reply scores the
+   announcement made for it; only the one to the START still waiting (our
+   latest) goes to the guest. */
 static GbaSioEvent lockstep_reply(LinkCable *cable,
  const LinkNetMessage *message, uint32_t cycle)
 {
@@ -405,10 +416,8 @@ static GbaSioEvent lockstep_reply(LinkCable *cable,
    message->data[8] != 0, cycle);
 }
 
-/* Receiving side: once the game has loaded its next word after a transfer
-   and left the serial registers alone for a moment, tells the clocking
-   console the reply its next START would get. Most games do this right
-   after a transfer, long before the next START arrives. */
+/* Whether the receiving side has an announcement pending, and in *at the
+   cycle it falls due: LINK_ANNOUNCE_QUIET after the game's last write. */
 static int lockstep_announce_due(const LinkCable *cable, uint32_t *at)
 {
   const LinkLockstep *lockstep = &cable->lockstep;
@@ -421,6 +430,12 @@ static int lockstep_announce_due(const LinkCable *cable, uint32_t *at)
   return 1;
 }
 
+/* Receiving side: once the game has loaded its next word after a transfer
+   and left the serial registers alone for a moment, tells the clocking
+   console the reply its next START would get. Most games do this right
+   after a transfer, long before the next START arrives. Runs on every
+   service; a busy port restarts the wait, and an unchanged reply is not
+   announced twice. */
 static void lockstep_announce(LinkCable *cable, uint32_t cycle)
 {
   LinkLockstep *lockstep = &cable->lockstep;
@@ -1132,7 +1147,7 @@ static int lockstep_is_receiver(const LinkCable *cable)
     return sio->player_id != 0;
   return (sio->mode == GBA_SIO_MODE_NORMAL_8 ||
    sio->mode == GBA_SIO_MODE_NORMAL_32) &&
-   (sio->registers[GBA_SIO_REG_CONTROL >> 1] & 0x0001u) == 0;
+   (sio->registers[GBA_SIO_REG_CONTROL >> 1] & LINK_SIO_CONTROL_CLOCK) == 0;
 }
 
 /* On a real cable the receiving console sees the sender's transfers at the
