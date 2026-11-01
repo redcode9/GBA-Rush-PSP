@@ -19,8 +19,10 @@ run 8 A A
 run 120
 run 8 A A
 run 180
-# Both screens show the game selection, only the player badges differ
-same 90
+# Both screens show the same menu: the game selection, or already the
+# character selection on a fast link. Only the player badges and cursor
+# colours differ, which leaves about 89% of the pixels alike.
+same 85
 linked 100
 # 50cc, characters, cup and course: keep pressing A like a player would,
 # however long each screen takes to answer over the network
