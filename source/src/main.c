@@ -475,7 +475,8 @@ MainLinkEnd main_link_end_reason(void)
 }
 
 /* Gives the emulator thread MAIN_LINK_LOCKSTEP_PRIORITY while a lockstep
-   link is connected and PRIORITY otherwise. */
+   link is connected and PRIORITY otherwise. Called when the session closes
+   and from main_link_log_state, on each link status or mode change. */
 static void main_link_set_priority(void)
 {
   int priority = gba_link_open && gba_link.status == LINK_CABLE_CONNECTED &&
@@ -574,6 +575,7 @@ static int main_link_exchange(void)
    now);
   if(size != 0)
     psp_adhoc_send(datagram, size);
+  /* Also sets the thread priority when the status or mode changed. */
   main_link_log_state();
 
   if(gba_link.status == LINK_CABLE_PEER_LEFT)
