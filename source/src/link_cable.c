@@ -76,6 +76,12 @@ enum
    millisecond. Games often write SIOCNT and a placeholder word first, and
    Mario Kart sometimes replaces its word a little later in its menus. */
 #define LINK_ANNOUNCE_QUIET 16384u
+/* No announcement follows a START that came sooner than this after the
+   one before. In a burst of transfers, such as the one that sets up a
+   Mario Kart link, the next START comes before an announcement could
+   reach the clocking console, and a millisecond of quiet does not tell a
+   settled word from one the game is about to replace. */
+#define LINK_ANNOUNCE_MIN_GAP (LINK_CYCLES_PER_FRAME / 4u)
 /* A receiving console runs ahead of the clocking console's last reported
    clock once this many STARTs in a row have come at least a given spacing
    apart, up to 7/8 of that spacing past the START it applied last. Games
@@ -465,7 +471,7 @@ static int lockstep_announce_due(const LinkCable *cable, uint32_t *at)
   const LinkLockstep *lockstep = &cable->lockstep;
 
   if(cable->mode != LINK_CABLE_MODE_LOCKSTEP || !lockstep->loaded ||
-     !lockstep->anchored || lockstep->deferred ||
+     !lockstep->anchored || lockstep->deferred || lockstep->bursting ||
      !lockstep_is_receiver(cable))
     return 0;
   *at = lockstep->quiet_since + LINK_ANNOUNCE_QUIET;
@@ -631,6 +637,7 @@ static int lockstep_remote_start(LinkCable *cable,
   if(timeline)
     lockstep_learn_spacing(lockstep, gap,
      (int32_t)(cycle - anchor) > (int32_t)LINK_LATE_START);
+  lockstep->bursting = timeline && gap < LINK_ANNOUNCE_MIN_GAP;
   lockstep->anchored = 1;
   lockstep->local_anchor = anchor;
   lockstep->peer_anchor = sender_cycle;

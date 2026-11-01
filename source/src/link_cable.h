@@ -142,6 +142,7 @@ typedef struct
   uint32_t spacing_run;
   uint32_t spacing_min;       /* closest pair of STARTs in that run */
   uint32_t late_starts;       /* applied after this console passed them */
+  uint8_t bursting;           /* that START came close after the last */
   uint8_t loaded;
   uint32_t writes_seen;
   uint32_t quiet_since;
