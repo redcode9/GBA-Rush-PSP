@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.4.2 - 2026-10-31
+## 1.4.2 - 2026-11-01
 
 ### Fixed
 
@@ -9,15 +9,16 @@
   The console that receives transfers follows the sender's timing as on a
   real cable instead of running ahead while the sender waits for replies.
 - Linked games other than Pokemon, such as a Mario Kart: Super Circuit race,
-  no longer stutter at half speed. The two PSPs used to take turns, each
-  emulating its frame while the other waited for its clock, because the PSP
-  network stack only sends while the emulator sleeps. The emulator now pauses
-  briefly after each datagram, and the PSP that clocks the transfers no
-  longer waits for replies it can already predict: the other PSP announces
-  its next word in advance, and announcements are only used after hundreds
-  of them have matched the real replies.
-- The session log counts the transfers completed with an announced reply and
-  any announcement that turned out wrong.
+  run faster over Wi-Fi. The two PSPs used to take turns, each emulating its
+  frame while the other waited for its clock, because the PSP network stack
+  only sends while the emulator sleeps. During such a link the emulator now
+  pauses briefly after each datagram and runs at a lower priority, and
+  the PSP that clocks the transfers stops waiting for replies the other PSP
+  has announced in advance, once hundreds of announcements in a row have
+  matched the real replies.
+- The session log also records the shortest round trip, the time spent
+  letting the network stack send, the transfers completed with an announced
+  reply and any announcement that turned out wrong.
 
 ## 1.4.1 - 2026-10-31
 

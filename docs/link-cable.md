@@ -101,9 +101,12 @@ is open every frame that runs late still sleeps for 2 ms; a console that
 never slept held datagrams for seconds too, until the link was lost. For the
 same reason a datagram queued while the guest runs only leaves when the
 emulator next sleeps. In lockstep mode the emulator therefore pauses for
-0.2 ms after each datagram it queues while running; without that the two
-consoles took turns, each emulating its frame while the other waited for
-its clock.
+0.2 ms after each datagram it queues while running, and its thread drops to
+a lower priority; without that the two consoles took turns, each emulating
+its frame while the other waited for its clock. The pause is what matters:
+the lower priority alone still left the stack refusing datagrams. Each datagram
+costs the PSP close to a millisecond of processor time in the stack, so
+every datagram saved counts.
 
 `link_net.c` makes the datagrams reliable and ordered. Every datagram repeats
 all messages the other side has not acknowledged yet, as GGPO does with
@@ -175,7 +178,8 @@ exit close the session and tell the other PSP.
   joiner, such as LeafGreen. With `MKSC` set to Mario Kart: Super Circuit
   (European release) it also races two games in Multi-Pak mode, which uses
   lockstep mode, and checks that both race clocks run in step and that,
-  under PSP conditions with a short round trip, the race runs at full speed.
+  under PSP conditions with a short round trip, announced replies keep the
+  race at full speed.
   It needs an mGBA 0.10 build and a save whose player has not yet been
   upstairs in a Pokemon Center:
 
@@ -195,10 +199,11 @@ python3 tools/decode_runtime_log.py /path/to/GBARushPSP/logs
 
 `link-state` shows the role, status and chosen mode, `link-counters` the round
 trip, datagrams, frames or transfers, waits, datagrams the PSP network stack
-refused or dropped, and in lockstep mode the transfers completed with an
-announced reply, the announcements used that turned out wrong and the
-current run of right ones. `link-error` tells why the session ended,
-including the PSP network error and the step that failed.
+refused or dropped, the shortest round trip, and in lockstep mode the time
+spent pausing for the stack, the transfers completed with an announced
+reply, the announcements used that turned out wrong and the current run of
+right ones. `link-error` tells why the session ended, including the PSP
+network error and the step that failed.
 
 ## Limits
 
