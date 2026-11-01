@@ -20,7 +20,9 @@ enum
   LINK_MSG_HELLO = 1,      /* protocol, host flag, 4-letter game code */
   LINK_MSG_BYE,            /* empty */
   LINK_MSG_SIO_STATE,      /* mode, SIOCNT SO bit (u16), RCNT (u16) */
-  LINK_MSG_START,          /* sequence, cycle, word (u32 each), mode, setting */
+  LINK_MSG_START,          /* sequence, cycle, word (u32 each), mode,
+                              setting (baud rate index in Multiplayer, 2 MHz
+                              flag in Normal) */
   LINK_MSG_REPLY,          /* sequence, word (u32 each), ready flag */
   LINK_MSG_POKEMON_STATE,  /* the sender's LinkPokemonState */
   LINK_MSG_POKEMON_PAIR,   /* host to joiner: both players' words of a frame */
@@ -251,6 +253,7 @@ static void link_cable_hello(LinkCable *cable, const LinkNetMessage *message)
 
 /* ---- Lockstep mode ---------------------------------------------------- */
 
+/* Defined with the shared helpers near the end of this file. */
 static int lockstep_is_receiver(const LinkCable *cable);
 
 /* Sends SIO_STATE (mode, SIOCNT bit 3, RCNT) whenever the mode or bit 3
@@ -489,7 +492,7 @@ static int lockstep_remote_start(LinkCable *cable,
   GbaSioTransfer transfer;
   GbaSioResult result;
   uint8_t reply[9];
-  uint32_t host_cycle;
+  uint32_t sender_cycle;
   uint32_t anchor;
   uint32_t word;
   int ready;
@@ -497,7 +500,7 @@ static int lockstep_remote_start(LinkCable *cable,
   if(message->size < 14)
     return 1;
 
-  host_cycle = get32(message->data + 4);
+  sender_cycle = get32(message->data + 4);
   word = get32(message->data + 8);
   anchor = cycle;
 
@@ -507,7 +510,7 @@ static int lockstep_remote_start(LinkCable *cable,
      after the link has been idle does a transfer start a new timeline. */
   if(lockstep->anchored)
   {
-    uint32_t gap = host_cycle - lockstep->peer_anchor;
+    uint32_t gap = sender_cycle - lockstep->peer_anchor;
 
     if(gap < LINK_LOCKSTEP_ACTIVE)
     {
@@ -557,7 +560,7 @@ static int lockstep_remote_start(LinkCable *cable,
 
   lockstep->anchored = 1;
   lockstep->local_anchor = anchor;
-  lockstep->peer_anchor = host_cycle;
+  lockstep->peer_anchor = sender_cycle;
   lockstep->last_transfer = cycle;
   lockstep->applied_sequence = get32(message->data);
   lockstep->applied_mode = message->data[12];

@@ -129,8 +129,9 @@ if [ -n "${MKSC:-}" ]; then
   mksc=$(absolute "$MKSC")
   race_case mksc-adhoc "net 3000 4000 3 1"
   race_case mksc-noisy "net 8000 15000 15 5"
-  # "slow" is the slow network of the psp trade cases, while slow-joiner and
-  # slow-host-noisy have a slow console.
+  # mksc-psp-slow runs on the psp trade cases' network (20 ms delay, up to
+  # 30 ms jitter, 35% loss): "slow" names that network here, while
+  # slow-joiner and slow-host-noisy have a slow console.
   race_case mksc-psp-slow "net 20000 30000 35 1" "$psp"
   # Two PSPs side by side, about 6 ms apart: the race must stay near full
   # speed.

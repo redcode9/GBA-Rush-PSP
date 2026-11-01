@@ -102,8 +102,8 @@ never slept held datagrams for seconds too, until the link was lost. For the
 same reason a datagram queued while the guest runs only leaves when the
 emulator next sleeps. In lockstep mode the emulator therefore pauses for
 0.2 ms after each datagram it queues while running, and its thread drops to
-a lower priority; without that the two consoles took turns, each emulating
-its frame while the other waited for its clock. The pause is what matters:
+a lower priority; without these two changes the two consoles took turns,
+each emulating its frame while the other waited for its clock. The pause is what matters:
 the lower priority alone still left the stack refusing datagrams. Each datagram
 costs the PSP close to a millisecond of processor time in the stack, so
 every datagram saved counts.
