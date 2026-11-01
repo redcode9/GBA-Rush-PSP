@@ -33,8 +33,11 @@
  *   clocks the transfer waits for the reply before the guest can see the
  *   result. The guest keeps running while the transfer would still be in
  *   flight on real hardware, which hides part of the round trip. The
- *   joiner is kept within a few frames of the host's guest clock so that
- *   neither game sees the other fall silent.
+ *   receiving console never runs past the clocking console's guest clock.
+ *   Most games load the word for the next transfer right after the last
+ *   one, so the receiving console announces that word in advance; once its
+ *   announcements have matched its replies for long enough, the clocking
+ *   console completes transfers with them and no longer waits.
  *
  * The cable owns no platform resources: the caller moves datagrams between
  * link_cable_receive / link_cable_build and the network.
@@ -117,6 +120,36 @@ typedef struct
   uint16_t state_control;
   uint8_t state_sent;
   uint32_t transfers;
+
+  /* Receiving side: the START applied last, whether the game has loaded
+     its next word since (and when it last touched the registers), and the
+     reply announced for the next START. */
+  uint32_t applied_sequence;
+  uint8_t applied_mode;
+  uint8_t loaded;
+  uint32_t writes_seen;
+  uint32_t quiet_since;
+  uint8_t announced;
+  uint8_t announced_ready;
+  uint32_t announced_sequence;
+  uint32_t announced_word;
+
+  /* Clocking side: the other console's latest announcement, the
+     announcement used for the transfer whose reply is still to come, and
+     how far announcements are trusted. */
+  uint8_t predicted;
+  uint8_t predicted_ready;
+  uint32_t predicted_sequence;
+  uint32_t predicted_word;
+  uint8_t start_mode;         /* mode of the START we sent last */
+  uint8_t verify_used;        /* a transfer was finished with it */
+  uint8_t verify_ready;
+  uint32_t verify_sequence;
+  uint32_t verify_word;
+  uint32_t streak;            /* announcements in a row that were right */
+  uint32_t trust_after;       /* streak needed before using them */
+  uint32_t answered_early;    /* transfers completed from an announcement */
+  uint32_t mispredicted;
 } LinkLockstep;
 
 typedef struct

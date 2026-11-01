@@ -1395,8 +1395,10 @@ static void test_pokemon_trades(void)
 /* A generic multiplayer game: the master sends a burst of words every
    frame, and the slave answers each word with a value derived from the
    previous one. Real games are free to do this, so only a true word for
-   word exchange can satisfy it. The slave also treats ten frames without
-   a serial interrupt as a link error, like many games do. */
+   word exchange can satisfy it. The slave also treats two frames in a row
+   without a serial interrupt as a link error, as strict as games such as
+   Mario Kart: Super Circuit: on a real cable the slave hears from the
+   master on every frame the master sends one. */
 typedef struct
 {
   int master;
@@ -1408,7 +1410,7 @@ typedef struct
   uint32_t frames_without_irq;
   uint32_t timeouts;
   uint16_t last_received;
-  uint32_t normal_mode;
+  uint32_t normal_8bit;
   uint32_t last_value;
 } LockstepGame;
 
@@ -1482,7 +1484,7 @@ static void lockstep_multi_vblank(Console *console)
       lockstep_start_multi(console);
     }
   }
-  else if(game->transfers != 0 && ++game->frames_without_irq > 10)
+  else if(game->transfers != 0 && ++game->frames_without_irq > 1)
     game->timeouts++;
 }
 
@@ -1536,22 +1538,54 @@ static void test_lockstep_multiplayer(const NetProfile *net,
 }
 
 /* A normal-mode game: the clocking side sends a counter and the other side
-   answers with the last value it received, set after every interrupt. */
+   answers with the last value it received, set after every interrupt. In
+   32-bit mode counter n goes out as n | (n >> 4) << 16 through SIODATA32,
+   in 8-bit mode as its low byte through SIODATA8. */
+static uint32_t normal_word(const LockstepGame *game, uint32_t counter)
+{
+  if(game->normal_8bit)
+    return counter & 0xFFu;
+  return (counter & 0xFFFFu) | ((counter & 0xFFFFu) >> 4) << 16;
+}
+
+static uint32_t normal_read(Console *console)
+{
+  if(lockstep_of(console)->normal_8bit)
+    return reg_read(console, REG_SIOMLT_SEND) & 0xFFu;
+  return reg_read(console, 0x120) | ((uint32_t)reg_read(console, 0x122) << 16);
+}
+
+static void normal_write(Console *console, uint32_t value)
+{
+  if(lockstep_of(console)->normal_8bit)
+    reg_write(console, REG_SIOMLT_SEND, (uint16_t)value);
+  else
+  {
+    reg_write(console, 0x120, (uint16_t)value);
+    reg_write(console, 0x122, (uint16_t)(value >> 16));
+  }
+}
+
+/* SIOCNT with the interrupt enabled and the game's transfer length. */
+static uint16_t normal_control(Console *console)
+{
+  return (uint16_t)(0x4000u | (lockstep_of(console)->normal_8bit ? 0u :
+   0x1000u));
+}
+
 static void normal_start(Console *console)
 {
   LockstepGame *game = lockstep_of(console);
 
-  reg_write(console, 0x120, (uint16_t)game->next_word);
-  reg_write(console, 0x122, (uint16_t)(game->next_word >> 4));
-  reg_write(console, REG_SIOCNT, (uint16_t)(0x1000u | 0x4000u | 0x0001u |
-   SIO_START));
+  normal_write(console, normal_word(game, game->next_word));
+  reg_write(console, REG_SIOCNT, (uint16_t)(normal_control(console) |
+   0x0001u | SIO_START));
 }
 
 static void normal_irq(Console *console)
 {
   LockstepGame *game = lockstep_of(console);
-  uint32_t received = reg_read(console, 0x120) |
-   ((uint32_t)reg_read(console, 0x122) << 16);
+  uint32_t received = normal_read(console);
 
   game->frames_without_irq = 0;
   game->transfers++;
@@ -1561,25 +1595,24 @@ static void normal_irq(Console *console)
 
     if(game->transfers > 1 && received != sent_before)
       game->mismatches++;
-    game->last_value = (uint32_t)game->next_word |
-     ((uint32_t)(game->next_word >> 4) << 16);
+    game->last_value = normal_word(game, game->next_word);
     game->next_word++;
     if(game->burst_left != 0 && --game->burst_left != 0)
       timer_start(console, 3000u);
   }
   else
   {
-    uint32_t counter = received & 0xFFFFu;
+    uint32_t mask = game->normal_8bit ? 0xFFu : 0xFFFFu;
+    uint32_t counter = received & mask;
 
-    /* The host sends counter n as n | (n >> 4) << 16, counting up. */
-    if(received != (counter | ((counter >> 4) << 16)) ||
-       (game->last_value != 0 && counter != game->last_value + 1u))
+    /* The host counts up by one per transfer. */
+    if(received != normal_word(game, counter) ||
+       (game->transfers > 1 && counter != ((game->last_value + 1u) & mask)))
       game->mismatches++;
     game->last_value = counter;
     /* Answer with what we just got, then wait for the next clock. */
-    reg_write(console, 0x120, (uint16_t)received);
-    reg_write(console, 0x122, (uint16_t)(received >> 16));
-    reg_write(console, REG_SIOCNT, (uint16_t)(0x1000u | 0x4000u |
+    normal_write(console, received);
+    reg_write(console, REG_SIOCNT, (uint16_t)(normal_control(console) |
      SIO_START));
   }
 }
@@ -1598,12 +1631,14 @@ static void normal_vblank(Console *console)
   {
     reg_write(console, REG_RCNT, 0);
     if(game->master)
-      reg_write(console, REG_SIOCNT, 0x1000u | 0x4000u | 0x0001u);
+      reg_write(console, REG_SIOCNT, (uint16_t)(normal_control(console) |
+       0x0001u));
     else
     {
-      reg_write(console, 0x120, 0);
-      reg_write(console, 0x122, 0);
-      reg_write(console, REG_SIOCNT, 0x1000u | 0x4000u | SIO_START);
+      reg_write(console, REG_SIOCNT, normal_control(console));
+      normal_write(console, 0);
+      reg_write(console, REG_SIOCNT, (uint16_t)(normal_control(console) |
+       SIO_START));
     }
   }
   if(game->master && console->frames >= 60 && game->burst_left == 0 &&
@@ -1621,7 +1656,7 @@ static const Guest normal_guest =
   normal_vblank
 };
 
-static void test_lockstep_normal32(const NetProfile *net)
+static void test_lockstep_normal(const NetProfile *net, int eight_bit)
 {
   Console host;
   Console joiner;
@@ -1633,6 +1668,8 @@ static void test_lockstep_normal32(const NetProfile *net)
   lockstep_games[0].master = 1;
   lockstep_games[0].next_word = 1;
   lockstep_games[0].words_per_frame = 4;
+  lockstep_games[0].normal_8bit = (uint32_t)eight_bit;
+  lockstep_games[1].normal_8bit = (uint32_t)eight_bit;
   console_init(&host, 0, 1, "BZME", &normal_guest, &lockstep_games[0], 1.0);
   console_init(&joiner, 1, 0, "BZME", &normal_guest, &lockstep_games[1],
    1.0);
@@ -1642,8 +1679,9 @@ static void test_lockstep_normal32(const NetProfile *net)
   CHECK(lockstep_games[0].transfers >= 3000u);
   CHECK(lockstep_games[0].mismatches == 0);
   CHECK(lockstep_games[1].mismatches == 0);
-  printf("lockstep normal 32-bit %-8s: %u transfers in %.1fs, "
-   "mismatches %u/%u\n", net->name, lockstep_games[0].transfers,
+  printf("lockstep normal %2s-bit %-8s: %u transfers in %.1fs, "
+   "mismatches %u/%u\n", eight_bit ? "8" : "32", net->name,
+   lockstep_games[0].transfers,
    (double)elapsed / 1e6, lockstep_games[0].mismatches,
    lockstep_games[1].mismatches);
 }
@@ -1731,7 +1769,8 @@ int main(int argc, char **argv)
     /* A fast joiner reaches the pacing limit while the host waits for its
        reply; the joiner must still be able to answer. */
     test_lockstep_multiplayer(&net_profiles[n], 9, 1.0, 1.1);
-    test_lockstep_normal32(&net_profiles[n]);
+    test_lockstep_normal(&net_profiles[n], 0);
+    test_lockstep_normal(&net_profiles[n], 1);
   }
 
   if(failures != 0)

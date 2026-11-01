@@ -77,6 +77,8 @@ LINK_COUNTERS = {
     2: "pokemon-frames-sent/received/lockstep-transfers",
     3: "waits/wait-max-us/wait-total-us",
     4: "adhoc-sends/send-errors/receive-drops",
+    5: "early-replies/mispredicted/trusted-streak",
+    6: "rtt-min-us/send-yields/send-yield-us",
 }
 LINK_EVENTS = {
     "link-command", "link-state", "link-pause-end", "link-error",

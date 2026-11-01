@@ -117,6 +117,9 @@ typedef struct
   /* Counts SIOCNT writes that switch the serial interrupt off. Games do
      this when they close or reopen their link layer. */
   uint32_t interrupt_disables;
+  /* Counts writes to the registers that make up this console's next
+     transfer: its outgoing words and SIOCNT. */
+  uint32_t outgoing_writes;
 } GbaSio;
 
 void gba_sio_init(GbaSio *sio, uint16_t *registers);
@@ -139,6 +142,10 @@ GbaSioEvent gba_sio_write32(GbaSio *sio, uint32_t address,
 
 int gba_sio_take_start(GbaSio *sio, GbaSioTransfer *transfer);
 int gba_sio_peek_start(const GbaSio *sio, GbaSioTransfer *transfer);
+/* Whether a START from the other console in `mode` would be accepted
+   now, and the word this console would answer with. Changes nothing. */
+int gba_sio_remote_reply(const GbaSio *sio, GbaSioMode mode,
+ uint32_t *outgoing);
 int gba_sio_latch_remote_start(GbaSio *sio, GbaSioMode mode,
  uint8_t setting, GbaSioTransfer *transfer);
 int gba_sio_can_commit(const GbaSio *sio);
