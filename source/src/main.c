@@ -160,12 +160,15 @@ static u8 gba_link_gameplay_active = 1;
 static u8 gba_link_logged_status = LINK_CABLE_OFF;
 static u8 gba_link_logged_mode = LINK_CABLE_MODE_NONE;
 static u32 gba_link_service_ticks = 0;
-/* Statistics of the waits for the other console, logged at session end. */
+/* Statistics of the waits for the other console and of the pauses that
+   let the network stack send, logged at session end. */
 static u32 gba_link_waits = 0;
 static u32 gba_link_wait_max_us = 0;
 static u64 gba_link_wait_total_us = 0;
 static u32 gba_link_yields = 0;
 static u64 gba_link_yield_total_us = 0;
+/* The emulator thread, whose priority drops while a lockstep link is
+   connected, and the priority it has now. */
 static SceUID gba_link_thread = -1;
 static int gba_link_priority = PRIORITY;
 static PowerLifecycle psp_power_lifecycle;
@@ -471,6 +474,8 @@ MainLinkEnd main_link_end_reason(void)
   return gba_link_end;
 }
 
+/* Gives the emulator thread MAIN_LINK_LOCKSTEP_PRIORITY while a lockstep
+   link is connected and PRIORITY otherwise. */
 static void main_link_set_priority(void)
 {
   int priority = gba_link_open && gba_link.status == LINK_CABLE_CONNECTED &&
@@ -483,6 +488,9 @@ static void main_link_set_priority(void)
   gba_link_priority = priority;
 }
 
+/* Logs a LINK_STATE record only when the link status or mode changed since
+   the last one, so the link service can call it on every pass. Such a
+   change also updates the thread priority. */
 static void main_link_log_state(void)
 {
   if(gba_link.status == gba_link_logged_status &&
@@ -597,6 +605,7 @@ static int main_link_service(IRQ_TYPE *irq_raised)
     return 0;
   if(!link_cable_blocked(&gba_link, cpu_ticks))
   {
+    /* This pass built a datagram: sleep so the stack sends it now. */
     if(gba_link.mode == LINK_CABLE_MODE_LOCKSTEP &&
        gba_link.net.datagrams_sent != sent)
     {
