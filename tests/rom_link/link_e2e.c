@@ -29,7 +29,8 @@
  *                                       console sleeps. It sleeps 2 ms after
  *                                       each late frame, and send_yield_us
  *                                       after each datagram it sends while
- *                                       emulating
+ *                                       emulating, in every mode; a PSP
+ *                                       does so only in lockstep mode
  *   linked <transfers>                  fail unless both cables are connected
  *                                       and this many transfers went through
  *   same <percent> [x y w h]            fail unless at least this share of
@@ -75,6 +76,8 @@
 #define TICK_US 100u
 #define FRAME_CYCLES 280896u
 #define FRAME_US 16743u
+/* Guest cycles between the run loop's link services (service_callback);
+   main.c's idle interval, MAIN_LINK_SERVICE_CYCLES, is 16384. */
 #define SERVICE_CYCLES 4096
 /* main.c MAIN_LINK_YIELD_US: a linked PSP sleeps this long after each late
    frame. */
@@ -101,7 +104,8 @@ typedef struct
   uint64_t hiccup_period_us;
   uint64_t hiccup_us;
   int stack;                /* datagrams wait while the console emulates */
-  uint32_t send_yield_us;   /* sleep after each datagram sent while running */
+  uint32_t send_yield_us;   /* sleep after each datagram sent while running,
+                               in every mode (a PSP: lockstep only) */
   uint64_t sleep_until;     /* asleep, letting the stack work, until then */
   int ran;                  /* emulated during the last tick */
   uint32_t frame_seen;      /* frame counter after the last tick */
@@ -768,8 +772,8 @@ static void print_status(void)
 }
 
 /* Boots both consoles and executes the script ("-" reads stdin) line by
-   line; exits 1 on too few arguments, an unreadable savestate or a failed
-   check. */
+   line; exits 1 on too few arguments, a ROM that does not load, an
+   unreadable save or savestate, or a failed check. */
 int main(int argc, char **argv)
 {
   char line[512];

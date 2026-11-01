@@ -91,9 +91,10 @@ run_case slow-host-noisy "net 8000 15000 15 5" "speed 0 0.8"
 # a frame in a burst and leaves the link alone while it waits for VBlank,
 # its network stack only moves datagrams while the emulator sleeps, and the
 # round trip is 70 ms and loses a third of the datagrams. The second case
-# adds radio dropouts and a joiner that freezes now and then. The stack
-# sleeps 200 us after each datagram sent while emulating, main.c's
-# MAIN_LINK_SEND_YIELD_US.
+# adds radio dropouts and a joiner that freezes now and then. Each console
+# also sleeps 200 us after each datagram it sends while emulating, like
+# main.c's MAIN_LINK_SEND_YIELD_US, which a PSP applies only in lockstep
+# mode; the model applies it in every mode.
 psp="psp 0 10
 psp 1 10
 stack 0 200
@@ -128,6 +129,8 @@ if [ -n "${MKSC:-}" ]; then
   mksc=$(absolute "$MKSC")
   race_case mksc-adhoc "net 3000 4000 3 1"
   race_case mksc-noisy "net 8000 15000 15 5"
+  # "slow" is the slow network of the psp trade cases, while slow-joiner and
+  # slow-host-noisy have a slow console.
   race_case mksc-psp-slow "net 20000 30000 35 1" "$psp"
   # Two PSPs side by side, about 6 ms apart: the race must stay near full
   # speed.
