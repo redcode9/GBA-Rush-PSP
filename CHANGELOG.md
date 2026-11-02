@@ -25,6 +25,16 @@
   started; it finishes the transfer as soon as the announcement is in.
   Replies are no longer announced during quick bursts of transfers, where
   an announcement cannot arrive in time and is more likely to be wrong.
+- The PSP that receives transfers learns again every few seconds how far
+  apart they come, so the burst of transfers that sets up a Mario Kart race
+  no longer holds it back for the whole race.
+- Once announcements have proved right, a real reply always rides with the
+  next announcement, and both PSPs report their clock and acknowledge less
+  often, so a Mario Kart race needs about one datagram per frame in each
+  direction.
+- During such a link the emulator pauses for 1 ms instead of 0.2 ms after
+  each datagram, long enough for the PSP network stack to send it at once
+  instead of at the end of the frame.
 - The session log records the priority the emulator runs at during such a
   link.
 

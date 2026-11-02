@@ -76,7 +76,8 @@ real hardware and only stops if the answer is still missing at that moment.
 The receiving console sees every transfer at the point of its own timeline
 the sender chose, as on a real cable: it keeps the spacing the sender's game
 used between transfers and never runs past the clock the sender last
-reported, which the sender sends every 8 ms while the link is in use. A
+reported, which the sender sends every 8 ms while the link is in use, or
+every 16 ms once it trusts the receiver's announcements (see below). A
 receiver left free would run ahead while the sender waits for replies and
 go whole frames without a transfer; Mario Kart: Super Circuit reports a
 communication error when that happens.
@@ -88,9 +89,12 @@ a row have come at least a given spacing apart, it runs up to 7/8 of that
 spacing past the last START on its own, which is the lookahead of
 conservative parallel simulation. Mario Kart starts about one transfer per
 frame, sometimes two in quick succession, so the receiver keeps running for
-a while after each transfer instead of stopping. A START that comes sooner
-than the learned spacing withdraws it and doubles the run needed to learn it
-again.
+a while after each transfer instead of stopping. The receiver learns the
+spacing again over every run of 300 STARTs, so the burst of transfers that
+sets up a Mario Kart link no longer holds it at a tenth of a frame for the
+whole race. A START that comes sooner than the learned spacing withdraws it,
+and if the receiver had already run past it, doubles the run needed to
+learn it again.
 
 Waiting a round trip for every reply still halves the speed of a game that
 sends a word per frame. Most games, Mario Kart included, load the word for
@@ -101,7 +105,11 @@ a millisecond. The sender compares each announcement with the real reply
 that follows it. Once 300 announcements in a row have been right, it
 completes its transfers with the announcement instead of waiting, says so in
 the START, and keeps checking each one; the receiver's real reply then only
-serves as a check and rides with its next datagram. An announcement that
+serves as a check and rides with its next datagram. The START also says when
+the sender trusts announcements but has not received this one yet: the
+announcement is on its way and finishes the transfer when it arrives, so the
+real reply rides with the next datagram as well, unless it differs from what
+was announced. An announcement that
 was used and turned out wrong sends it back to waiting and doubles the
 number of right ones it needs next time, so a game that changes its word
 late keeps the exact behaviour. A transfer whose announcement has not
@@ -112,7 +120,10 @@ after the one before. In such a burst, like the one that sets up a Mario
 Kart link, an announcement could not arrive in time anyway, and a
 millisecond of quiet does not tell a settled word from one the game is
 about to replace. In lockstep mode an acknowledgement also waits up to
-8 ms for a datagram to ride on.
+20 ms for a datagram to ride on, longer than a frame, so the next START or
+announcement carries it, and the receiver, whose clock only paces the sender
+within four frames, reports it every 32 ms. On two PSPs side by side a
+Mario Kart race then needs about one datagram per frame in each direction.
 
 Normal 8-bit, Normal 32-bit and Multiplayer 16-bit modes are supported. A
 game that sends many words per frame still waits for most replies and slows
@@ -130,12 +141,15 @@ is open every frame that runs late still sleeps for 2 ms; a console that
 never slept held datagrams for seconds too, until the link was lost. For the
 same reason a datagram queued while the guest runs only leaves when the
 emulator next sleeps. In lockstep mode the emulator therefore pauses for
-0.2 ms after each datagram it queues while running, and its thread drops to
+1 ms after each datagram it queues while running, and its thread drops to
 a lower priority; without these two changes the two consoles took turns,
-each emulating its frame while the other waited for its clock. The pause is what matters:
-the lower priority alone still left the stack refusing datagrams. Each datagram
-costs the PSP close to a millisecond of processor time in the stack, so
-every datagram saved counts.
+each emulating its frame while the other waited for its clock. The pause is
+what matters: the lower priority alone still left the stack refusing
+datagrams. Each datagram costs the PSP close to a millisecond of processor
+time in the stack, outside the send call itself, so every datagram saved
+counts, and a shorter pause leaves a START or an announcement waiting for
+the end of the frame. A PSP's short sleeps last about 0.35 ms longer than
+asked: the 0.2 ms pause of earlier versions lasted 0.56 ms on average.
 
 `link_net.c` makes the datagrams reliable and ordered. Every datagram repeats
 all messages the other side has not acknowledged yet, as GGPO does with
@@ -210,9 +224,13 @@ exit close the session and tell the other PSP.
   joiner, such as LeafGreen. With `MKSC` set to Mario Kart: Super Circuit
   (European release) it also races two games in Multi-Pak mode, which uses
   lockstep mode, and checks that both race clocks run in step and that,
-  under PSP conditions with a 4 ms round trip, announced replies and the
-  learned lookahead keep the race above 55 fps; without them it runs at
-  about 35. The scripts, `tests/rom_link/firered_trade.txt` and
+  under PSP conditions with a 4 ms round trip, the race runs above 58 fps.
+  Those conditions come from a race between a PSP-2000 and a PSP-1000 that
+  ran at 40 fps on the build before 1.4.3: the simulation gives the same
+  40 fps for that build with 15 ms bursts, 1.2 ms of stack time per
+  datagram and datagrams that take 1.9 us per byte on air. The speed is
+  measured from the start of the race, without the frames a console fell
+  behind in the menus. The scripts, `tests/rom_link/firered_trade.txt` and
   `tests/rom_link/mksc_race.txt`, use the commands listed at the top of
   `tests/rom_link/link_e2e.c`.
   It needs an mGBA 0.10 build and a save whose player has not yet been
