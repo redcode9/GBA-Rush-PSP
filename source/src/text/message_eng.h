@@ -668,7 +668,7 @@
   "Works when Display mode is USER GU.",
 
   // MSG_TOOLTIP_VIDEO_RENDERER
-  "Old: Original TempGBA+fixes, can be faster but has a few bugs.\nNew: Rewritten for Libretro gpsp, more accurate.",
+  "Old: Original TempGBA+fixes, can be faster but has a few bugs.\nNew: Rewritten for Libretro gpsp, more accurate.\nExact: new, matches mGBA pixel for pixel; slower, being tested.",
 
   // MSG_TOOLTIP_OAM_HIJACKING
   "Can be applied only to the New renderer.\nCorrects some display errors in certain games.",
@@ -807,6 +807,9 @@
 
   // MSG_RENDERER_NEW
   "New",
+
+  // MSG_RENDERER_PPU
+  "Exact",
 
   // MSG_FMT_PNG
   "PNG",

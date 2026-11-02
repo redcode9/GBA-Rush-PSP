@@ -183,7 +183,7 @@ static void values_to_model(const uint32_t *values, ConfigModel *model)
   model->sound_volume = valid_or_default(values[7], 11, 10);
   model->stack_optimize = valid_or_default(values[8], 2, 1);
   model->ram_dynarec_policy = valid_or_default(values[9], 3, 2);
-  model->video_renderer = valid_or_default(values[10], 2, 1);
+  model->video_renderer = valid_or_default(values[10], 3, 1);
   model->oam_hijacking = valid_or_default(values[11], 2, 0);
   model->boot_mode = valid_or_default(values[12], 2, 0);
   model->update_backup = valid_or_default(values[13], 2, 1);

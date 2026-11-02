@@ -88,6 +88,7 @@ static void test_defaults_and_versioned_round_trip(void)
   assert(original.gamepad[0] == 11);
 
   original.screen_filter = 0;
+  original.video_renderer = 2;
   original.language = 4;
   original.theme = 8;
   original.gamepad[15] = 19;
@@ -223,6 +224,7 @@ static void test_current_binary_migration_and_field_validation(void)
   words[0] = 99;
   words[5] = 99;
   words[9] = 99;
+  words[10] = 3;
   words[17] = 99;
   words[23] = 99;
   encode_legacy_words(encoded, words, CONFIG_MODEL_LEGACY_CURRENT_WORDS);
@@ -231,6 +233,7 @@ static void test_current_binary_migration_and_field_validation(void)
   assert(decoded.screen_scale == 6);
   assert(decoded.frameskip_value == 9);
   assert(decoded.ram_dynarec_policy == 2);
+  assert(decoded.video_renderer == 1);
   assert(decoded.language == 1);
   assert(decoded.gamepad[0] == 11);
 }
