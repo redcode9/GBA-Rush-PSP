@@ -37,7 +37,7 @@
 #include "sound_math.h"
 
 // Main thread params; on the PSP a lower priority number runs first.
-// 32 is 0x20, so MAIN_LINK_LOCKSTEP_PRIORITY (0x40) is lower.
+// 32 is 0x20, so MAIN_LINK_LOCKSTEP_PRIORITY (0x77) is lower.
 #define PRIORITY       (32)
 #define STACK_SIZE_KB  (512)
 #define ATTRIBUTE      (THREAD_ATTR_USER | PSP_THREAD_ATTR_CLEAR_STACK)
@@ -220,10 +220,12 @@ static volatile int quit_cleanup_complete = 0;
    1.4 ms, which the link test's PSP profile uses. */
 #define MAIN_LINK_SEND_YIELD_US 1000u
 /* While a lockstep link is connected the emulator thread also drops to
-   this lower priority. It shipped together with the pause above as the
-   fix for consoles taking turns; on its own it still left the stack
-   refusing datagrams, so the pause is what matters. */
-#define MAIN_LINK_LOCKSTEP_PRIORITY 0x40
+   the lowest priority a user thread can have, so every part of the PSP's
+   Wi-Fi stack runs as soon as it has work instead of waiting for the
+   emulator to sleep: at 0x40 a datagram still waited about 12 ms on
+   average, the round trip being 16 ms against 4 ms when both consoles
+   idle. This build's own threads all run above it. */
+#define MAIN_LINK_LOCKSTEP_PRIORITY 0x77
 /* During a lockstep link the other console sets the pace, so skipping the
    drawing of frames never catches up with real time: AUTO frameskip would
    skip nine frames in a row and show a few frames a second. The link
