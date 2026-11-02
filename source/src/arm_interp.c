@@ -170,6 +170,9 @@ static void write_psr(ArmCore *core, uint32_t value, unsigned fields)
   for(i = 0; i < 4; i++)
     if(fields & (1u << i))
       mask |= 0xFFu << (8 * i);
+  /* Mode bit 4 is always set: the ARM7TDMI has no 26-bit modes. */
+  if(fields & 1)
+    value |= 0x10u;
   if(fields & 16)
   {
     if(has_spsr(core))
@@ -178,9 +181,7 @@ static void write_psr(ArmCore *core, uint32_t value, unsigned fields)
   }
   if((core->cpsr & ARM_CPSR_MODE) == ARM_MODE_USER)
     mask &= 0xFF000000u;
-  /* Mode bit 4 is always set: the ARM7TDMI has no 26-bit modes. */
-  arm_core_set_cpsr(core,
-   (arm_core_cpsr(core) & ~mask) | (value & mask) | 0x10u);
+  arm_core_set_cpsr(core, (arm_core_cpsr(core) & ~mask) | (value & mask));
 }
 
 static void exception(ArmCore *core, unsigned mode, uint32_t vector,

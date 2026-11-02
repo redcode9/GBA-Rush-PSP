@@ -386,7 +386,7 @@ static int unpredictable(const Test *test)
          (!(op & (1u << 22)) && rm == 15) ||
          ((!(op & (1u << 24)) || (op & (1u << 21))) && rn == rd);
       if((op & 0x01900000u) == 0x01000000u)
-        return rd == 15 || ((op & (1u << 21)) && rm == 15);
+        return (op & (1u << 21)) ? rm == 15 : rd == 15;
       if(op & 0x10)
         return pc;
       return 0;
@@ -403,10 +403,12 @@ static int unpredictable(const Test *test)
   }
 }
 
-/* Two behaviours the core leaves as mGBA has them, where the reference
+/* Behaviours the core leaves as mGBA has them, where the reference
    (NanoBoyAdvance) differs:
    - an ARM r15 written with bit 1 or 0 set keeps them there, while the
      core aligns it, as it does for every write to r15;
+   - MSR to an SPSR keeps mode bit 4 clear, while the core sets it as
+     for the CPSR;
    - MUL and MULL set C from the multiplier's last carry, which the
      manual calls meaningless and the core leaves unchanged. */
 static int known_difference(const State *got, const Test *test)
@@ -414,9 +416,15 @@ static int known_difference(const State *got, const Test *test)
   State a = *got;
   State b = test->final;
   uint32_t align = (b.cpsr & ARM_CPSR_T) ? ~1u : ~3u;
+  unsigned i;
 
   a.r[15] &= align;
   b.r[15] &= align;
+  for(i = 0; i < 5; i++)
+  {
+    a.spsr[i] |= 0x10u;
+    b.spsr[i] |= 0x10u;
+  }
   if(compare(&a, &b, NULL, 0))
     return 1;
   if(is_multiply(test))
