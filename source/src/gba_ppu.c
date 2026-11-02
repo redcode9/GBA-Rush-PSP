@@ -235,7 +235,7 @@ static void advance_affine(GbaPpu *ppu, unsigned drawn)
    edge of the screen; the returned line starts at the screen's left edge. */
 static const uint16_t *draw_text_bg(GbaPpu *ppu, int bg, int y)
 {
-  const uint8_t *vram = (const uint8_t *)ppu->vram;
+  const uint16_t *vram = ppu->vram;
   uint16_t control = IO(ppu, REG_BG0CNT + bg * 2);
   unsigned scroll_x = IO(ppu, REG_BG0HOFS + bg * 4) & 0x1FF;
   unsigned scroll_y = IO(ppu, REG_BG0HOFS + bg * 4 + 2) & 0x1FF;
@@ -260,18 +260,20 @@ static const uint16_t *draw_text_bg(GbaPpu *ppu, int bg, int y)
   tile_y = map_y & 7;
   column = scroll_x >> 3;
 
+  /* The pixel loops are unrolled: on the PSP a tile row then costs a few
+     instructions per pixel, with no loop counter and no flip arithmetic. */
   for(i = 0; i < 31; i++, column++, out += 8)
   {
     unsigned x = column & (wide ? 63 : 31);
-    unsigned entry = ppu->vram[(map + (x & 31) * 2 +
-     (x & 32 ? 0x800 : 0)) >> 1];
+    unsigned entry = vram[(map + (x & 31) * 2 + (x & 32 ? 0x800 : 0)) >> 1];
     unsigned row = entry & 0x800 ? 7 - tile_y : tile_y;
-    int flip = entry & 0x400 ? 7 : 0;
     unsigned address;
     int n;
 
     if(control & 0x80)
     {
+      const uint8_t *pixels;
+
       address = chars + (entry & 0x3FF) * 64 + row * 8;
       /* Background tiles cannot reach the sprite tiles. */
       if(address >= 0x10000)
@@ -279,13 +281,24 @@ static const uint16_t *draw_text_bg(GbaPpu *ppu, int bg, int y)
         memset(out, 0, 8 * sizeof(*out));
         continue;
       }
-      for(n = 0; n < 8; n++)
-        out[n ^ flip] = vram[address + n];
+      pixels = (const uint8_t *)vram + address;
+      if(entry & 0x400)
+      {
+#pragma GCC unroll 8
+        for(n = 0; n < 8; n++)
+          out[n] = pixels[7 - n];
+      }
+      else
+      {
+#pragma GCC unroll 8
+        for(n = 0; n < 8; n++)
+          out[n] = pixels[n];
+      }
     }
     else
     {
+      uint16_t palette = (uint16_t)((entry >> 12) << 4);
       uint32_t pixels;
-      unsigned palette = (entry >> 12) << 4;
 
       address = chars + (entry & 0x3FF) * 32 + row * 4;
       if(address >= 0x10000)
@@ -293,15 +306,18 @@ static const uint16_t *draw_text_bg(GbaPpu *ppu, int bg, int y)
         memset(out, 0, 8 * sizeof(*out));
         continue;
       }
-      pixels = vram[address] | vram[address + 1] << 8 |
-       (uint32_t)vram[address + 2] << 16 | (uint32_t)vram[address + 3] << 24;
-      if(!pixels)
+      /* Eight 4-bit pixels, the leftmost in the low bits; a flipped tile
+         has its nibbles reversed. */
+      pixels = vram[address >> 1] | (uint32_t)vram[(address >> 1) + 1] << 16;
+      if(entry & 0x400)
       {
-        memset(out, 0, 8 * sizeof(*out));
-        continue;
+        pixels = pixels >> 16 | pixels << 16;
+        pixels = (pixels >> 8 & 0x00FF00FFu) | (pixels & 0x00FF00FFu) << 8;
+        pixels = (pixels >> 4 & 0x0F0F0F0Fu) | (pixels & 0x0F0F0F0Fu) << 4;
       }
+#pragma GCC unroll 8
       for(n = 0; n < 8; n++, pixels >>= 4)
-        out[n ^ flip] = pixels & 15 ? palette | (pixels & 15) : 0;
+        out[n] = pixels & 15 ? palette | (pixels & 15) : 0;
     }
   }
   return ppu->layer + (scroll_x & 7);
