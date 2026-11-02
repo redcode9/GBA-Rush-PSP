@@ -716,22 +716,20 @@ static void compose(GbaPpu *ppu, uint16_t *row)
     uint32_t top = ppu->top[x], below = ppu->below[x];
     unsigned colour = colour_of(ppu, top);
 
-    if(ppu->window[x] & WINDOW_EFFECTS)
+    /* A semi-transparent sprite is always a 1st target. It blends with
+       any 2nd target behind it whatever the effect and the window say (as
+       in mGBA); otherwise the effect applies to it as to any 1st target. */
+    if(top & PIXEL_SEMI && below & second)
+      colour = blend(colour, colour_of(ppu, below), eva, evb);
+    else if(ppu->window[x] & WINDOW_EFFECTS && top & (first | PIXEL_SEMI))
     {
-      /* A semi-transparent sprite blends with any 2nd target behind it,
-         whatever the effect; without one it is an ordinary sprite. */
-      if(top & PIXEL_SEMI && below & second)
-        colour = blend(colour, colour_of(ppu, below), eva, evb);
-      else if(top & first)
+      if(effect == 1)
       {
-        if(effect == 1)
-        {
-          if(below & second)
-            colour = blend(colour, colour_of(ppu, below), eva, evb);
-        }
-        else if(effect >= 2)
-          colour = fade(colour, evy, effect == 2);
+        if(below & second)
+          colour = blend(colour, colour_of(ppu, below), eva, evb);
       }
+      else if(effect >= 2)
+        colour = fade(colour, evy, effect == 2);
     }
     row[x] = (uint16_t)colour;
   }
