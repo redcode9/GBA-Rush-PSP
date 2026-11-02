@@ -41,7 +41,10 @@
  *   minfps <fps>                        the speed `pace end` must reach
  *   pace <start|end>                    measure frames per simulated second
  *                                       between the two lines and fail
- *                                       below minfps on either console
+ *                                       below minfps on either console;
+ *                                       start drops any frames a console
+ *                                       is behind, so the figure never
+ *                                       exceeds the GBA's 59.7 fps
  *   ram16 <address> <tolerance> <min>   fail unless the 16-bit value at
  *                                       this work RAM address is at least
  *                                       min on both consoles and differs by
@@ -1000,6 +1003,12 @@ int main(int argc, char **argv)
           printf("side %d: %.1f fps\n", s, fps);
           if(fps < min_fps)
             check_failed = 1;
+        }
+        else
+        {
+          /* Forgive the frames this console fell behind before: catching
+             up on them would count as speed the game never shows. */
+          sides[s].target = side_clock(&sides[s]);
         }
         pace_frames[s] = frames;
       }
