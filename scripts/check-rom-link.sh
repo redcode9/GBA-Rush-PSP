@@ -88,17 +88,25 @@ run_case noisy "net 8000 15000 15 5"
 run_case slow-joiner "net 3000 4000 3 1" "speed 1 0.8"
 run_case slow-host-noisy "net 8000 15000 15 5" "speed 0 0.8"
 # Conditions measured between a PSP-2000 and a PSP-1000: each console needs
-# about 12 ms to emulate a frame, runs it in a burst and leaves the link
-# alone while it waits for VBlank; its network stack only moves datagrams
-# while the emulator sleeps and spends 0.9 ms of that per datagram either
-# way; in lockstep mode the console sleeps 200 us after each datagram it
-# sends while emulating, like main.c's MAIN_LINK_SEND_YIELD_US. The trade
+# about 12 ms to emulate a FireRed frame, runs it in a burst and leaves the
+# link alone while it waits for VBlank; its network stack only moves
+# datagrams while the emulator sleeps and spends 0.9 ms of that per datagram
+# either way; in lockstep mode the console sleeps after each datagram it
+# sends while emulating, 1.4 ms for main.c's 1 ms MAIN_LINK_SEND_YIELD_US,
+# since a PSP's short sleeps last about 0.35 ms longer than asked. The trade
 # cases add a 70 ms round trip that loses a third of the datagrams, and the
 # second one radio dropouts and a joiner that freezes now and then.
 psp="psp 0 12
 psp 1 12
-stack 0 200 900
-stack 1 200 900"
+stack 0 1400 900
+stack 1 1400 900"
+# Mario Kart on the same two PSPs: the race that ran at 40 fps there on the
+# build before 1.4.3 runs at 40 fps here with 15 ms bursts and 1.2 ms of
+# stack time per datagram.
+mksc_psp="psp 0 15
+psp 1 15
+stack 0 1400 1200
+stack 1 1400 1200"
 run_case psp "net 20000 30000 35 1" "$psp"
 run_case psp-stalls "net 20000 30000 35 1" "$psp" "outage 7000 250" \
   "hiccup 1 9000 600"
@@ -138,9 +146,9 @@ if [ -n "${MKSC:-}" ]; then
   # mksc-psp-slow runs on the psp trade cases' network (20 ms delay, up to
   # 30 ms jitter, 35% loss): "slow" names that network here, while
   # slow-joiner and slow-host-noisy have a slow console.
-  race_case mksc-psp-slow "net 20000 30000 35 1" "$psp"
-  # Two PSPs side by side, a 4 ms round trip at best: the race must keep
-  # the speed that announced replies and the learned lookahead give it.
-  race_case mksc-psp "net 2000 1000 5 1" "$psp" "minfps 55"
+  race_case mksc-psp-slow "net 20000 30000 35 1" "$mksc_psp"
+  # Two PSPs side by side, a 4 ms round trip at best: the race must run at
+  # full speed.
+  race_case mksc-psp "net 2000 1000 5 1" "$mksc_psp" "minfps 58"
 fi
 echo "ROM link checks passed"
