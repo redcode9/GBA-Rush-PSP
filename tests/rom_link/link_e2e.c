@@ -116,6 +116,8 @@ typedef struct
   uint64_t target;
   uint64_t blocked_us;
   uint32_t burst_cycles;    /* per tick in PSP mode, 0 for smooth running */
+  int64_t burst_credit;     /* cycles this tick may still run; negative
+                               while mGBA's last run loop went past it */
   uint64_t hiccup_period_us;
   uint64_t hiccup_us;
   int stack;                /* datagrams wait while the console emulates */
@@ -647,10 +649,19 @@ static void side_tick(Side *side)
           side->target = side_clock(side);
       }
     }
-    limit = side->burst_cycles != 0 ?
-     side_clock(side) + side->burst_cycles : side->target;
-    if(limit > side->target)
-      limit = side->target;
+    limit = side->target;
+    if(side->burst_cycles != 0)
+    {
+      /* One run loop can go well past a tick's cycles; the ticks after it
+         pay them back, so a frame takes burst_ms however mGBA splits it. */
+      side->burst_credit += side->burst_cycles;
+      if(side->burst_credit > (int64_t)side->burst_cycles)
+        side->burst_credit = side->burst_cycles;
+      if(side->burst_credit <= 0)
+        limit = side_clock(side);
+      else if(side_clock(side) + (uint64_t)side->burst_credit < limit)
+        limit = side_clock(side) + (uint64_t)side->burst_credit;
+    }
     before = side_clock(side);
     while(side_clock(side) < limit)
     {
@@ -665,6 +676,12 @@ static void side_tick(Side *side)
       side->core->runLoop(side->core);
     }
     side->ran = side_clock(side) != before;
+    if(side->burst_cycles != 0)
+    {
+      side->burst_credit -= (int64_t)(side_clock(side) - before);
+      if(side->burst_credit < 0)
+        side->ran = 1;
+    }
     /* A new frame while still behind the target is a late frame. */
     frame = side->core->frameCounter(side->core);
     if(side->stack && side->linked && frame != side->frame_seen &&
