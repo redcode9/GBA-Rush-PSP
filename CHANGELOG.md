@@ -35,6 +35,11 @@
 - During such a link the emulator pauses for 1 ms instead of 0.2 ms after
   each datagram, long enough for the PSP network stack to send it at once
   instead of at the end of the frame.
+- A frame that runs late during such a link no longer also pauses for 2 ms
+  when the emulator already slept for the link during it; below full speed
+  that pause cost every frame.
+- A PSP no longer sends its unacknowledged messages again before the other
+  PSP has had time to acknowledge them along with its next datagram.
 - The session log records the priority the emulator runs at during such a
   link.
 

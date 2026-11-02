@@ -138,24 +138,32 @@ A datagram the PSP network stack refuses is dropped, since the next one
 repeats its messages; retrying at once made the stack hold datagrams for
 seconds. Part of that stack runs below the emulator thread, so while a link
 is open every frame that runs late still sleeps for 2 ms; a console that
-never slept held datagrams for seconds too, until the link was lost. For the
+never slept held datagrams for seconds too, until the link was lost. In
+lockstep mode a frame skips that pause if the emulator already slept for the
+link during it, after a datagram or while the cable held the guest: below
+full speed every frame runs late, and the pause cost each one 2 ms. For the
 same reason a datagram queued while the guest runs only leaves when the
 emulator next sleeps. In lockstep mode the emulator therefore pauses for
 1 ms after each datagram it queues while running, and its thread drops to
 a lower priority; without these two changes the two consoles took turns,
 each emulating its frame while the other waited for its clock. The pause is
 what matters: the lower priority alone still left the stack refusing
-datagrams. Each datagram costs the PSP close to a millisecond of processor
-time in the stack, outside the send call itself, so every datagram saved
-counts, and a shorter pause leaves a START or an announcement waiting for
-the end of the frame. A PSP's short sleeps last about 0.35 ms longer than
-asked: the 0.2 ms pause of earlier versions lasted 0.56 ms on average.
+datagrams. Each datagram costs the PSP processor time in the stack, outside
+the send call itself, so every datagram saved counts. A PSP's short sleeps
+last longer than asked: the 0.2 ms pause of earlier versions lasted 0.56 ms
+on average, and that was too short to let the stack send a datagram, which
+then waited for the end of the frame; the 1 ms pause lasts 1.12 ms. In the
+simulation a pause much shorter than that lets STARTs and announcements
+queue up again, so it keeps a margin.
 
 `link_net.c` makes the datagrams reliable and ordered. Every datagram repeats
 all messages the other side has not acknowledged yet, as GGPO does with
-inputs, so a lost packet is repaired by the next one instead of a timer. Each
-header also carries the guest clock, the number of consumed messages and a
-timestamp echo used to measure the round trip.
+inputs, so a lost packet is repaired by the next one instead of a timer.
+Only when nothing else goes out are unacknowledged messages sent again, after
+three round trips plus the acknowledgement delay, since the other side holds
+its acknowledgements as long as this one does. Each header also carries the
+guest clock, the number of consumed messages and a timestamp echo used to
+measure the round trip.
 
 In lockstep mode a console may run at most four frames ahead of the other
 one's guest clock while the link is in use. Only the console that is ahead
@@ -224,13 +232,16 @@ exit close the session and tell the other PSP.
   joiner, such as LeafGreen. With `MKSC` set to Mario Kart: Super Circuit
   (European release) it also races two games in Multi-Pak mode, which uses
   lockstep mode, and checks that both race clocks run in step and that,
-  under PSP conditions with a 4 ms round trip, the race runs above 58 fps.
-  Those conditions come from a race between a PSP-2000 and a PSP-1000 that
-  ran at 40 fps on the build before 1.4.3: the simulation gives the same
-  40 fps for that build with 15 ms bursts, 1.2 ms of stack time per
-  datagram and datagrams that take 1.9 us per byte on air. The speed is
-  measured from the start of the race, without the frames a console fell
-  behind in the menus. The scripts, `tests/rom_link/firered_trade.txt` and
+  under PSP conditions with a 4 ms round trip, the race runs above 57 fps.
+  Those conditions come from two races between a PSP-2000 and a PSP-1000,
+  at 40 fps on the build before 1.4.3's lockstep changes and at 45.5 fps on
+  the first build with them. With 14 ms of emulation per frame, 0.3 ms of
+  stack time per datagram and datagrams that take 1.9 us per byte on air,
+  the simulation runs them at 39.7 and 52.7 fps, and the clocking console
+  sends and waits about as much as it did there. The speed is measured from
+  the start of the race, without the frames a console fell behind in the
+  menus, and a simulated frame takes its whole emulation time however mGBA
+  splits it. The scripts, `tests/rom_link/firered_trade.txt` and
   `tests/rom_link/mksc_race.txt`, use the commands listed at the top of
   `tests/rom_link/link_e2e.c`.
   It needs an mGBA 0.10 build and a save whose player has not yet been
