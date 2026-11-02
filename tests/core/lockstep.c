@@ -359,7 +359,6 @@ static void replay_write32(void *c, uint32_t a, uint32_t v)
 {
   (void)c;
   replay_write(a, 4, v);
-  /* WAITCNT changes the core's timing tables. */
 }
 
 static uint32_t code32(void *c, uint32_t address)
