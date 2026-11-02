@@ -74,6 +74,10 @@
 #define OBJ_PIXEL      0x00FFFFFFu
 #define OBJ_COLOUR     0x0000FFFFu
 
+/* Background visibility states, see layer_shown. */
+#define LAYER_SHOWN        4
+#define LAYER_OFF_ONE_LINE 5
+
 /* Window bits per column: BG0-BG3 and OBJ shown, then special effects. */
 #define WINDOW_OBJ     0x10
 #define WINDOW_EFFECTS 0x20
@@ -136,16 +140,17 @@ void gba_ppu_write_io(GbaPpu *ppu, uint32_t offset, uint16_t value)
   if(offset >= GBA_PPU_IO_BYTES)
     return;
   /* A background switched on while the screen is being drawn appears
-     only some lines later (as mGBA has it: three in tile modes, two in
-     bitmap modes); one switched on during V-Blank is there at once. */
-  if(offset == REG_DISPCNT && ppu->in_frame)
+     only some lines later (see layer_shown); one switched on during
+     V-Blank is there at once. */
+  if(offset == REG_DISPCNT)
   {
-    unsigned switched_on = (value & ~IO(ppu, REG_DISPCNT)) >> 8;
     int bg;
 
     for(bg = 0; bg < 4; bg++)
-      if(switched_on & (1u << bg))
-        ppu->enable_delay[bg] = (value & 7) >= 3 ? 2 : 3;
+      if(!ppu->in_frame)
+        ppu->layer_state[bg] = value & (0x100 << bg) ? LAYER_SHOWN : 0;
+      else if(value & (0x100 << bg) && !ppu->layer_state[bg])
+        ppu->layer_state[bg] = (value & 7) >= 3 ? 2 : 1;
   }
   ppu->io[offset >> 1] = value;
 
@@ -168,13 +173,34 @@ void gba_ppu_start_frame(GbaPpu *ppu)
   int bg;
 
   ppu->in_frame = 0;
-  memset(ppu->enable_delay, 0, sizeof(ppu->enable_delay));
+  for(bg = 0; bg < 4; bg++)
+    ppu->layer_state[bg] = IO(ppu, REG_DISPCNT) & (0x100 << bg) ?
+     LAYER_SHOWN : 0;
   for(bg = 0; bg < 2; bg++)
   {
     ppu->affine_x[bg] = reference_point(ppu, REG_BG2X + bg * AFFINE_STRIDE);
     ppu->affine_y[bg] = reference_point(ppu,
      REG_BG2X + 4 + bg * AFFINE_STRIDE);
   }
+}
+
+/* Whether a background shows on the line being drawn, as mGBA has it: one
+   switched on mid-frame counts up from 1 (2 in bitmap modes) by one per
+   line and shows once it reaches LAYER_SHOWN; switched off for a single
+   line it shows again at once, for longer it starts over. Lines in forced
+   blank do not count. */
+static int layer_shown(GbaPpu *ppu, int bg, int on)
+{
+  uint8_t *state = &ppu->layer_state[bg];
+  int shown = on && *state >= LAYER_SHOWN;
+
+  if(!on)
+    *state = *state == LAYER_SHOWN ? LAYER_OFF_ONE_LINE : 0;
+  else if(*state == LAYER_OFF_ONE_LINE)
+    *state = LAYER_SHOWN;
+  else if(*state && *state < LAYER_SHOWN)
+    ++*state;
+  return shown;
 }
 
 /* BG2 and BG3's reference points move on only after lines that drew them
@@ -751,11 +777,8 @@ void gba_ppu_draw_line(GbaPpu *ppu, int y, uint16_t *row)
     return;
   }
   for(bg = 0; bg < 4; bg++)
-    if(ppu->enable_delay[bg])
-    {
+    if(!layer_shown(ppu, bg, dispcnt & (0x100 << bg)))
       backgrounds &= ~(1u << bg);
-      ppu->enable_delay[bg]--;
-    }
 
   for(x = 0; x < GBA_PPU_WIDTH; x++)
     ppu->obj[x] = OBJ_EMPTY;

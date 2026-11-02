@@ -52,9 +52,9 @@ typedef struct
   int32_t affine_x[2];
   int32_t affine_y[2];
 
-  /* Lines each background still stays hidden after being switched on,
-     and whether a line of this frame was drawn yet. */
-  uint8_t enable_delay[4];
+  /* How far each background is from showing after being switched on
+     (see gba_ppu.c), and whether a line of this frame was drawn yet. */
+  uint8_t layer_state[4];
   uint8_t in_frame;
 
   /* Work space for the line being drawn. */
