@@ -48,9 +48,14 @@ typedef struct
 
   /* BG2 and BG3's internal reference points in 1/256 pixel: loaded from
      BGxX and BGxY when V-Blank starts and whenever the game writes those
-     registers, and moved by PB and PD after each line. */
+     registers, and moved by PB and PD after each line that draws them. */
   int32_t affine_x[2];
   int32_t affine_y[2];
+
+  /* Lines each background still stays hidden after being switched on,
+     and whether a line of this frame was drawn yet. */
+  uint8_t enable_delay[4];
+  uint8_t in_frame;
 
   /* Work space for the line being drawn. */
   uint32_t top[GBA_PPU_WIDTH];      /* front pixel at each column */

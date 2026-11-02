@@ -135,6 +135,18 @@ void gba_ppu_write_io(GbaPpu *ppu, uint32_t offset, uint16_t value)
   offset &= ~1u;
   if(offset >= GBA_PPU_IO_BYTES)
     return;
+  /* A background switched on while the screen is being drawn appears
+     only some lines later (as mGBA has it: three in tile modes, two in
+     bitmap modes); one switched on during V-Blank is there at once. */
+  if(offset == REG_DISPCNT && ppu->in_frame)
+  {
+    unsigned switched_on = (value & ~IO(ppu, REG_DISPCNT)) >> 8;
+    int bg;
+
+    for(bg = 0; bg < 4; bg++)
+      if(switched_on & (1u << bg))
+        ppu->enable_delay[bg] = (value & 7) >= 3 ? 2 : 3;
+  }
   ppu->io[offset >> 1] = value;
 
   /* BG2X/BG2Y at 0x28-0x2F, BG3X/BG3Y at 0x38-0x3F: a write to either half
@@ -155,6 +167,8 @@ void gba_ppu_start_frame(GbaPpu *ppu)
 {
   int bg;
 
+  ppu->in_frame = 0;
+  memset(ppu->enable_delay, 0, sizeof(ppu->enable_delay));
   for(bg = 0; bg < 2; bg++)
   {
     ppu->affine_x[bg] = reference_point(ppu, REG_BG2X + bg * AFFINE_STRIDE);
@@ -163,15 +177,18 @@ void gba_ppu_start_frame(GbaPpu *ppu)
   }
 }
 
-static void advance_affine(GbaPpu *ppu)
+/* BG2 and BG3's reference points move on only after lines that drew them
+   as rotation/scaling or bitmap backgrounds. */
+static void advance_affine(GbaPpu *ppu, unsigned drawn)
 {
   int bg;
 
   for(bg = 0; bg < 2; bg++)
-  {
-    ppu->affine_x[bg] += (int16_t)IO(ppu, REG_BG2PB + bg * AFFINE_STRIDE);
-    ppu->affine_y[bg] += (int16_t)IO(ppu, REG_BG2PD + bg * AFFINE_STRIDE);
-  }
+    if(drawn & (4u << bg))
+    {
+      ppu->affine_x[bg] += (int16_t)IO(ppu, REG_BG2PB + bg * AFFINE_STRIDE);
+      ppu->affine_y[bg] += (int16_t)IO(ppu, REG_BG2PD + bg * AFFINE_STRIDE);
+    }
 }
 
 /* Text background: whole tiles of 8 pixels from the one under the left
@@ -689,13 +706,19 @@ void gba_ppu_draw_line(GbaPpu *ppu, int y, uint16_t *row)
   unsigned mosaic = (IO(ppu, REG_MOSAIC) & 15) + 1;
   int x, bg, priority;
 
+  ppu->in_frame = 1;
   if(dispcnt & DISPCNT_BLANK)
   {
     for(x = 0; x < GBA_PPU_WIDTH; x++)
       row[x] = WHITE;
-    advance_affine(ppu);
     return;
   }
+  for(bg = 0; bg < 4; bg++)
+    if(ppu->enable_delay[bg])
+    {
+      backgrounds &= ~(1u << bg);
+      ppu->enable_delay[bg]--;
+    }
 
   for(x = 0; x < GBA_PPU_WIDTH; x++)
     ppu->obj[x] = OBJ_EMPTY;
@@ -731,5 +754,6 @@ void gba_ppu_draw_line(GbaPpu *ppu, int y, uint16_t *row)
       lay_sprites(ppu, priority);
   }
   compose(ppu, row);
-  advance_affine(ppu);
+  if(mode)
+    advance_affine(ppu, backgrounds);
 }
