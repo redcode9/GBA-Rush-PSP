@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Opening the Performance page could crash the emulator with a blue
+  "Reserved instruction" screen. The build now fails instead of producing
+  code that runs from the stack.
 - Performance reports saved on a PSP showed meaningless numbers for frame
   counts, durations and every other 64-bit counter.
 - A Pokemon trade could stop for good at "Please wait" when the joining
