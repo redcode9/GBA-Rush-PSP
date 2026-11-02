@@ -360,32 +360,55 @@ static void unlink_block(ArmCore *core, unsigned index)
   }
 }
 
-/* Forgets every block translated from a page. The block running may be
-   one of them, so it is left at the next instruction boundary. */
-static void invalidate_page(ArmCore *core, unsigned page)
+/* Offset of a work RAM address within its RAM, whichever mirror it is
+   seen through. */
+static uint32_t ram_offset(uint32_t address)
 {
-  unsigned index = core->page_blocks[page];
+  return address & (region_of(address) == 2 ? 0x3FFFFu : 0x7FFFu);
+}
 
-  while(index != ARM_NO_BLOCK)
+/* Forgets the blocks of a page whose code overlaps [offset, offset +
+   size), offsets within the RAM. Blocks never cross a page, so data
+   stored next to code (a stack, say) leaves the code alone. The block
+   running may be one of those forgotten, so it is left at the next
+   instruction boundary. */
+static void invalidate_page(ArmCore *core, unsigned page, uint32_t offset,
+ uint32_t size)
+{
+  uint16_t *link = &core->page_blocks[page];
+
+  while(*link != ARM_NO_BLOCK)
   {
-    unlink_block(core, index);
-    index = core->blocks[index].next_page;
+    ArmBlock *block = &core->blocks[*link];
+    uint32_t start = ram_offset(block->key & ~1u);
+    uint32_t end = start + block->insns * ((block->key & 1) ? 2u : 4u);
+
+    if(offset < end && offset + size > start)
+    {
+      unlink_block(core, *link);
+      *link = block->next_page;
+      core->exit_request |= ARM_EXIT_LEAVE_BLOCK;
+    }
+    else
+      link = &block->next_page;
   }
-  core->page_blocks[page] = ARM_NO_BLOCK;
-  core->exit_request |= ARM_EXIT_LEAVE_BLOCK;
 }
 
 void arm_core_invalidate(ArmCore *core, uint32_t address, uint32_t size)
 {
   uint32_t end = address + size;
 
-  address &= ~(ARM_CODE_PAGE_SIZE - 1);
-  for(; address < end; address += ARM_CODE_PAGE_SIZE)
+  while(address < end)
   {
+    uint32_t page_end = (address | (ARM_CODE_PAGE_SIZE - 1)) + 1;
+    uint32_t length = (page_end < end ? page_end : end) - address;
     int page = code_page(address);
 
     if(page >= 0 && core->page_blocks[page] != ARM_NO_BLOCK)
-      invalidate_page(core, (unsigned)page);
+      invalidate_page(core, (unsigned)page, ram_offset(address), length);
+    if(page_end == 0)
+      break;
+    address = page_end;
   }
 }
 
@@ -495,18 +518,19 @@ static uint32_t read8(ArmCore *core, uint32_t address)
 }
 
 /* A write to work RAM holding translated code drops those translations. */
-static const ArmRegion *write_region(ArmCore *core, uint32_t address)
+static const ArmRegion *write_region(ArmCore *core, uint32_t address,
+ unsigned size)
 {
   int page = code_page(address);
 
   if(page >= 0 && core->page_blocks[page] != ARM_NO_BLOCK)
-    invalidate_page(core, (unsigned)page);
+    invalidate_page(core, (unsigned)page, ram_offset(address), size);
   return &core->map[region_of(address)];
 }
 
 static void write32(ArmCore *core, uint32_t address, uint32_t value)
 {
-  const ArmRegion *map = write_region(core, address);
+  const ArmRegion *map = write_region(core, address, 4);
 
   if(map->write)
     memcpy(map->write + (address & map->mask), &value, 4);
@@ -516,7 +540,7 @@ static void write32(ArmCore *core, uint32_t address, uint32_t value)
 
 static void write16(ArmCore *core, uint32_t address, uint32_t value)
 {
-  const ArmRegion *map = write_region(core, address);
+  const ArmRegion *map = write_region(core, address, 2);
   uint16_t half = (uint16_t)value;
 
   if(map->write)
@@ -527,7 +551,7 @@ static void write16(ArmCore *core, uint32_t address, uint32_t value)
 
 static void write8(ArmCore *core, uint32_t address, uint32_t value)
 {
-  const ArmRegion *map = write_region(core, address);
+  const ArmRegion *map = write_region(core, address, 1);
 
   if(map->write)
     map->write[address & map->mask] = (uint8_t)value;

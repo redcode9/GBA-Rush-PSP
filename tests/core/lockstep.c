@@ -866,11 +866,12 @@ static int compare_once(int block_mode)
   {
     uint32_t start = core.instructions;
 
-    /* A store to translated code makes the core leave the block early;
-       it then goes on with a block starting there. */
-    do
-      arm_core_run_block(&core);
-    while(core.instructions - start < insns && !diverged);
+    /* A store to translated code makes the core leave the block early; a
+       block starting there could run past this one's end, so the rest
+       goes one instruction at a time. */
+    arm_core_run_block(&core);
+    while(core.instructions - start < insns && !diverged)
+      arm_core_step(&core);
   }
   else
     arm_core_step(&core);
