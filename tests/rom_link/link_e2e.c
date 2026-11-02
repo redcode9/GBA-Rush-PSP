@@ -87,6 +87,11 @@
 /* main.c MAIN_LINK_YIELD_US: a linked PSP sleeps this long after each late
    frame. */
 #define LATE_FRAME_SLEEP_US 2000u
+/* A PSP ad hoc link carries about a byte every 1.9 us: on real consoles a
+   16-byte datagram comes back from an echo in 4.2 ms and a 1024-byte one in
+   8.0 ms (pspautotests, tests/net/adhoc/pair). Bigger datagrams arrive
+   later, on top of the network's own delay. */
+#define AIRTIME_NS_PER_BYTE 1900u
 /* Datagrams a PSP's network stack holds in both directions, and how many
    of them may be outgoing before it refuses to send: a real PSP refuses
    most of a quick burst of sends. */
@@ -217,7 +222,8 @@ static void network_send(int to, const uint8_t *data, size_t size)
     memcpy(f->data, data, size);
     f->size = size;
     f->to = to;
-    f->arrival = sim_now + net_latency + (net_jitter ? rng() % net_jitter : 0);
+    f->arrival = sim_now + net_latency + size * AIRTIME_NS_PER_BYTE / 1000u +
+     (net_jitter ? rng() % net_jitter : 0);
   }
 }
 
