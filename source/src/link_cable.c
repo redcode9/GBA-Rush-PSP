@@ -68,6 +68,11 @@ enum
    frame, so the next START or announcement carries it. Pokemon mode keeps
    the short default: under heavy loss its rooms need them prompt. */
 #define LINK_ACK_DELAY_LOCKSTEP_US 20000u
+/* A clocking console still waiting for a reply this long after its last
+   datagram asks the other console to answer at once (link_net_set_probe):
+   a START or an announcement lost on the radio would otherwise hold both
+   consoles until the next datagram that happens to repeat it. */
+#define LINK_PROBE_LOCKSTEP_US 10000u
 
 /* Lockstep pacing: while the link is in use, a console may run at most
    this far ahead of the other one's guest clock. The figure covers network
@@ -1296,6 +1301,7 @@ GbaSioEvent link_cable_service(LinkCable *cable, uint32_t cycle,
     cable->pacing_peer = cable->net.peer_clock;
     link_net_set_heartbeat(&cable->net, LINK_HEARTBEAT_IDLE_US);
     link_net_set_ack_delay(&cable->net, LINK_NET_ACK_DELAY_US);
+    link_net_set_probe(&cable->net, 0u);
   }
   else if(cable->mode == LINK_CABLE_MODE_LOCKSTEP)
   {
@@ -1304,11 +1310,16 @@ GbaSioEvent link_cable_service(LinkCable *cable, uint32_t cycle,
      cable->lockstep.streak < cable->lockstep.trust_after ?
      LINK_HEARTBEAT_LOCKSTEP_US : LINK_HEARTBEAT_ACTIVE_US);
     link_net_set_ack_delay(&cable->net, LINK_ACK_DELAY_LOCKSTEP_US);
+    link_net_set_probe(&cable->net, cable->lockstep.waiting &&
+     gba_sio_is_waiting(cable->sio) &&
+     (int32_t)(cycle - cable->lockstep.finish_cycle) >= 0 ?
+     LINK_PROBE_LOCKSTEP_US : 0u);
   }
   else
   {
     link_net_set_heartbeat(&cable->net, LINK_HEARTBEAT_ACTIVE_US);
     link_net_set_ack_delay(&cable->net, LINK_NET_ACK_DELAY_US);
+    link_net_set_probe(&cable->net, 0u);
   }
 
   return events;
