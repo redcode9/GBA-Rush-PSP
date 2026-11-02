@@ -156,6 +156,13 @@ then waited for the end of the frame; the 1 ms pause lasts 1.12 ms. In the
 simulation a pause much shorter than that lets STARTs and announcements
 queue up again, so it keeps a margin.
 
+AUTO frameskip skips the drawing of up to nine frames in a row to catch up
+with real time. A lockstep link never lets it catch up, since the other
+console sets the pace, so a Mario Kart race showed about nine frames a second
+while running at 52. During a lockstep link the emulator therefore skips at
+most one frame in a row, whatever the frameskip setting, which is left
+untouched and applies again when the link closes.
+
 `link_net.c` makes the datagrams reliable and ordered. Every datagram repeats
 all messages the other side has not acknowledged yet, as GGPO does with
 inputs, so a lost packet is repaired by the next one instead of a timer.

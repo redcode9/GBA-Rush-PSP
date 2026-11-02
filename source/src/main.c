@@ -224,6 +224,12 @@ static volatile int quit_cleanup_complete = 0;
    fix for consoles taking turns; on its own it still left the stack
    refusing datagrams, so the pause is what matters. */
 #define MAIN_LINK_LOCKSTEP_PRIORITY 0x40
+/* During a lockstep link the other console sets the pace, so skipping the
+   drawing of frames never catches up with real time: AUTO frameskip would
+   skip nine frames in a row and show a few frames a second. The link
+   therefore skips at most this many frames in a row, whatever the frameskip
+   setting, which applies again once the link closes. */
+#define MAIN_LINK_FRAMESKIP_RUN 1u
 
 /* Guest CPU cycles since reset; wraps. The guest clock for sound and link. */
 u32 cpu_ticks = 0;
@@ -1300,6 +1306,11 @@ static void synchronize(void)
     gba_link_frames++;
     if(!skip_next_frame)
       gba_link_frames_drawn++;
+    if(gba_link.mode == LINK_CABLE_MODE_LOCKSTEP)
+    {
+      used_frameskip_type = FRAMESKIP_AUTO;
+      used_frameskip_value = MAIN_LINK_FRAMESKIP_RUN;
+    }
   }
 
   if (fps_window_frames == 60)
