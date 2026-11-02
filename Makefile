@@ -50,8 +50,11 @@ HOST_TEST_DYNAREC_WORKLIST = $(HOST_BUILD_DIR)/test_dynarec_worklist
 HOST_TEST_SOUND_MATH = $(HOST_BUILD_DIR)/test_sound_math
 HOST_TEST_RUNTIME_LOG = $(HOST_BUILD_DIR)/test_runtime_log
 HOST_TEST_ARM_CORE = $(HOST_BUILD_DIR)/test_arm_core
-ARM_CORE_SOURCES = source/src/arm_decode.c source/src/arm_interp.c
-ARM_CORE_HEADERS = source/src/arm_core.h source/src/arm_ir.h
+# arm_mips.c is only compiled here (its tests need Unicorn: make check-core).
+ARM_CORE_SOURCES = source/src/arm_decode.c source/src/arm_interp.c \
+ source/src/arm_mips.c
+ARM_CORE_HEADERS = source/src/arm_core.h source/src/arm_ir.h \
+ source/src/arm_mips.h
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_LINK_NET) $(HOST_TEST_LINK_CABLE) \
  $(HOST_TEST_ADHOC_PEER) \
