@@ -154,5 +154,9 @@ if [ -n "${MKSC:-}" ]; then
   # Two PSPs side by side, a 4 ms round trip at best: the race must run at
   # full speed.
   race_case mksc-psp "net 2000 1000 5 1" "$mksc_psp" "minfps 57"
+  # The frame times both PSPs reported in that race match this test's at
+  # about a tenth of the datagrams lost: most frames on time, one in twenty
+  # held 30 ms or more by a lost START or announcement.
+  race_case mksc-psp-lossy "net 2000 1000 10 1" "$mksc_psp" "minfps 53"
 fi
 echo "ROM link checks passed"
