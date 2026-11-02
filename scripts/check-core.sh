@@ -5,7 +5,10 @@ set -eu
 # outside the repository. Each part runs only when its inputs are set:
 #   SST_DIR   the v1 directory of the SingleStepTests ARM7TDMI suite
 #             (github.com/SingleStepTests/ARM7TDMI, the .json.bin files)
-#   MGBA_DIR  an mGBA 0.10 source tree with libmgba.a built in build/, and
+#   MGBA_DIR  an mGBA 0.10 source tree with libmgba.a built in build/
+#             (with CMAKE_C_FLAGS=-fwrapv: mGBA's flag code relies on
+#             signed overflow wrapping, and clang otherwise gets V wrong
+#             in places, such as gba-tests' thumb test 102), and
 #   BIOS      a GBA BIOS, for lockstep runs (instruction by instruction,
 #             then block by block) of
 #   MKSC      Mario Kart: Super Circuit (Europe), tests/core/mksc_race.txt

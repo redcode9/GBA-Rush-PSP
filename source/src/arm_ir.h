@@ -20,10 +20,11 @@
  * Values. Every operand is a one-byte slot. Slots 0 to 14 are the guest
  * registers r0 to r14 of the current mode, which a backend can keep in
  * host registers for the whole block (MIPS has room for all of them).
- * Slots from ARM_IR_FIRST_TEMP up are temporaries, each written once and
- * normally read within the same guest instruction, so a backend can give
- * them the few scratch registers left with a trivial allocator. Slot 15
- * is never read: reading r15 becomes a constant at translate time, and
+ * Slots from ARM_IR_FIRST_TEMP up are temporaries local to one guest
+ * instruction (numbering starts again with the next), each written once,
+ * so a backend can give them the few scratch registers left with a
+ * trivial allocator, and a block's length is never limited by them. Slot
+ * 15 is never read: reading r15 becomes a constant at translate time, and
  * writing it becomes an exit op.
  *
  * Flags. Ops carry explicit flag effects (ARM_IR_SET_NZ and so on), and
@@ -33,7 +34,10 @@
  * remembering which register holds the last result instead of computing
  * anything. The guest flags live in ArmCore in the shapes MIPS produces
  * cheaply: N is bit 31 of flag_n, Z is set when flag_z is zero, C is 0 or
- * 1 (what sltu yields) and V is bit 31 of flag_v.
+ * 1 (what sltu yields) and V is bit 31 of flag_v. N and Z are two words
+ * rather than one result value because MSR and exception returns can set
+ * both at once, which no single value expresses; an ALU result is simply
+ * stored to both.
  *
  * Timing. Every guest instruction starts with an ARM_IR_INSN op holding
  * the cycles known at translate time: its code fetches from the region it
