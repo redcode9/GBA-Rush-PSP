@@ -241,6 +241,12 @@ typedef struct
   unsigned access;         /* prefetch: the code's sequential halfword */
   unsigned full;           /* a full prefetch buffer */
   int32_t pending;         /* cycles not yet added to t9 */
+  unsigned fetches;        /* prefetch buffer fetches not yet emitted */
+  int32_t fill;            /* and fill, constant part */
+  int filled;              /* a fill waits for its cap */
+  int level_known;         /* the prefetch level is level, whatever the
+                              register holds */
+  unsigned level;
   unsigned insns;          /* INSN ops so far */
   uint32_t pc;
   int dead;                /* nothing reaches the ops until the section
@@ -251,6 +257,9 @@ typedef struct
   unsigned section_end;    /* op index ending the open section, or 0 */
   unsigned section_label;
   int32_t section_pending;
+  int section_settled;     /* N and Z were settled when it opened */
+  unsigned section_n;      /* and where they were */
+  unsigned section_z;
   uint8_t temp_reg[ARM_IR_SLOTS];   /* 0: kept in core.v */
   uint16_t last_use[ARM_IR_SLOTS];
   unsigned temps_free;     /* free registers among a0-a3 */
@@ -765,6 +774,8 @@ static void bail(Builder *b, unsigned index, int spilled, int exact,
   count_instructions(b);
   if(!exact)
     add_cycles(b, b->pending);
+  if(!spilled && b->level_known)
+    load_constant(b, REG_PREFETCH, b->level);
   if(index_in_a1)
   {
     load_constant(b, V0, b->op_base);
@@ -1368,30 +1379,98 @@ static void alu(Builder *b, unsigned i)
 
 /* ---- Timing ops --------------------------------------------------------- */
 
-/* One opcode fetch through the prefetch buffer: a buffered halfword costs
-   a cycle (its fetch filling the buffer by one), otherwise the CPU waits
-   for the rest of it. With t = level + 1 - access, the cost is
-   1 - min(t, 0) and the level becomes max(t, 0). */
-static void prefetch_fetch(Builder *b)
+/* The opcode fetches through the prefetch buffer since the last op that
+   used it. A buffered halfword costs a cycle (its fetch filling the buffer
+   by one, so the level drops by access - 1); otherwise the CPU waits for
+   the rest of it and the buffer is empty. k fetches in a row therefore
+   cost max(k, k * access - level) and leave max(0, level - k * (access -
+   1)): with t = level - k * (access - 1), k cycles plus -min(t, 0), and the
+   level max(t, 0). One sequence covers a run of instructions that touch
+   neither memory nor the buffer. */
+static void emit_fetches(Builder *b)
 {
-  emit(b, ADDIU(V0, REG_PREFETCH, 1 - (int)b->access));
+  emit(b, ADDIU(V0, REG_PREFETCH, -(int)(b->fetches * (b->access - 1))));
   emit(b, MIN(V1, V0, ZERO));
   emit(b, MAX(REG_PREFETCH, V0, ZERO));
   emit(b, SUBU(REG_CYCLES, REG_CYCLES, V1));
-  b->pending++;
+  b->fetches = 0;
 }
 
-/* The prefetch buffer fills by cycles (a register, or a constant). */
+/* Fills add up the same way, capped once at the end, since
+   min(min(level + x, full) + y, full) = min(level + x + y, full). A fill
+   has added to the register already (the part known only at run time) or
+   waits in fill; capping completes them. At most one kind waits. */
+static void emit_fill(Builder *b)
+{
+  if(b->fill)
+    emit(b, ADDIU(REG_PREFETCH, REG_PREFETCH, b->fill));
+  emit(b, ORI(V1, ZERO, b->full));
+  emit(b, MIN(REG_PREFETCH, REG_PREFETCH, V1));
+  b->fill = 0;
+  b->filled = 0;
+}
+
+/* Brings the prefetch register up to date, for an op that uses it. */
+static void prefetch_settle(Builder *b)
+{
+  if(b->level_known)
+    load_constant(b, REG_PREFETCH, b->level);
+  b->level_known = 0;
+  if(b->fetches)
+    emit_fetches(b);
+  if(b->filled)
+    emit_fill(b);
+}
+
+/* The level is value from here on (an empty buffer, after a GamePak data
+   access or a taken branch). Waiting fetches still cost their cycles. */
+static void prefetch_known(Builder *b, unsigned value)
+{
+  if(b->fetches)
+    emit_fetches(b);
+  b->fill = 0;
+  b->filled = 0;
+  b->level_known = 1;
+  b->level = value;
+}
+
+/* Fetches of an instruction: with the level known, their cost and the new
+   level are known too. */
+static void prefetch_fetches(Builder *b, unsigned halfwords)
+{
+  if(b->level_known)
+  {
+    int32_t wait = (int32_t)(halfwords * b->access) - (int32_t)b->level;
+    int32_t left = (int32_t)b->level - (int32_t)(halfwords *
+     (b->access - 1));
+
+    b->pending += wait > (int32_t)halfwords ? wait : (int32_t)halfwords;
+    b->level = left > 0 ? (unsigned)left : 0;
+    return;
+  }
+  if(b->filled)
+    emit_fill(b);
+  b->fetches += halfwords;
+  b->pending += (int32_t)halfwords;
+}
+
+/* The prefetch buffer fills by cycles (a register, added now, and a
+   constant, added later). */
 static void prefetch_fill(Builder *b, unsigned reg, uint32_t cycles)
 {
-  unsigned s = scratch(b);
-
+  if(b->level_known && !reg)
+  {
+    b->level = b->level + cycles < b->full ? b->level + cycles : b->full;
+    return;
+  }
+  if(b->level_known)
+    prefetch_settle(b);
+  if(b->fetches)
+    emit_fetches(b);
   if(reg)
     emit(b, ADDU(REG_PREFETCH, REG_PREFETCH, reg));
-  else
-    emit(b, ADDIU(REG_PREFETCH, REG_PREFETCH, cycles));
-  emit(b, ORI(s, ZERO, b->full));
-  emit(b, MIN(REG_PREFETCH, REG_PREFETCH, s));
+  b->fill += (int32_t)cycles;
+  b->filled = 1;
 }
 
 /* Multiplier early termination: 4 - min(leading zero (or, signed, sign)
@@ -1417,9 +1496,11 @@ static void multiply_cycles(Builder *b, const ArmIrOp *op)
   b->pending += 4;
   if(op->flags & ARM_IR_CARTRIDGE_CODE)
   {
-    emit(b, ORI(t, ZERO, 4));
-    emit(b, SUBU(t, t, s));
-    prefetch_fill(b, t, 0);
+    /* The buffer fills by the 4 - m cycles. */
+    prefetch_settle(b);
+    emit(b, SUBU(REG_PREFETCH, REG_PREFETCH, s));
+    b->fill += 4;
+    b->filled = 1;
   }
 }
 
@@ -1453,7 +1534,7 @@ static unsigned direct_region(const Builder *b, uint32_t address, int store)
 /* Cycles, prefetch buffer and refetch of ops [i, i + n) at region, as
    count_access does them. */
 static void access_effects(Builder *b, unsigned i, unsigned n,
- unsigned region)
+ unsigned region, int exact)
 {
   unsigned fill = 0;
   int flush = 0;
@@ -1482,7 +1563,11 @@ static void access_effects(Builder *b, unsigned i, unsigned n,
   }
   if(fill)
     prefetch_fill(b, 0, fill);
-  if(flush)
+  /* With the address known the slow path empties the buffer as well; a
+     guessed one may be elsewhere. */
+  if(flush && exact)
+    prefetch_known(b, 0);
+  else if(flush)
     emit(b, MOVE(REG_PREFETCH, ZERO));
 }
 
@@ -1519,27 +1604,57 @@ static void host_address(Builder *b, unsigned p, unsigned reg,
   emit(b, ADDU(p, p, s));
 }
 
-/* Branches to slow unless the 256-byte page of work RAM holding the
-   address in reg (or the constant address, with reg ZERO) has no
-   translated code; s is a scratch register. */
-static void page_check(Builder *b, unsigned reg, uint32_t address,
+/* Branches to slow if the 32 bytes of work RAM holding the address in reg
+   (or the constant address, with reg ZERO) may hold translated code; s is
+   a scratch register. */
+static void code_check(Builder *b, unsigned reg, uint32_t address,
  unsigned region, unsigned slow, unsigned s)
 {
   unsigned bits = region == 2 ? 18 : 15;
-  int base = CORE(page_blocks) + (region == 2 ? 0 : 2 * 1024);
+  int base = JIT(code_map) + (region == 2 ? 0 : 0x40000 /
+   (int)ARM_MIPS_CODE_GRANULE);
 
   if(reg == ZERO)
-    emit(b, LH(s, base + 2 * (int)((address & ((1u << bits) - 1)) >> 8),
-     GP));
+    emit(b, LB(s, base + (int)((address & ((1u << bits) - 1)) /
+     ARM_MIPS_CODE_GRANULE), GP));
   else
   {
-    emit(b, EXT(s, reg, 8, bits - 8));
-    emit(b, SLL(s, s, 1));
+    emit(b, EXT(s, reg, 5, bits - 5));
     emit(b, ADDU(s, s, GP));
-    emit(b, LH(s, base, s));
+    emit(b, LB(s, base, s));
   }
-  branch(b, BGEZ(s), slow);
+  branch(b, BNE(s, ZERO), slow);
   emit(b, NOP);
+}
+
+/* The same for every 32 bytes that [address, address + span] touches:
+   points 32 bytes apart from its start, and its end. */
+static void code_checks(Builder *b, unsigned reg, uint32_t address,
+ uint32_t span, unsigned region, unsigned slow, unsigned s)
+{
+  uint32_t offset;
+
+  if(reg == ZERO)
+  {
+    uint32_t granule;
+
+    for(granule = address / ARM_MIPS_CODE_GRANULE;
+        granule <= (address + span) / ARM_MIPS_CODE_GRANULE; granule++)
+      code_check(b, ZERO, granule * ARM_MIPS_CODE_GRANULE, region, slow, s);
+    return;
+  }
+  code_check(b, reg, 0, region, slow, s);
+  for(offset = ARM_MIPS_CODE_GRANULE; offset < span;
+      offset += ARM_MIPS_CODE_GRANULE)
+  {
+    emit(b, ADDIU(s, reg, offset));
+    code_check(b, s, 0, region, slow, s);
+  }
+  if(span)
+  {
+    emit(b, ADDIU(s, reg, span));
+    code_check(b, s, 0, region, slow, s);
+  }
 }
 
 static uint32_t access_word(unsigned code, unsigned rt, int offset, unsigned p)
@@ -1562,7 +1677,7 @@ static uint32_t access_word(unsigned code, unsigned rt, int offset, unsigned p)
    interpreter. */
 static void slow_path(Builder *b, unsigned i, unsigned n, unsigned slow,
  unsigned done, int32_t pending_before, int32_t pending_after,
- const unsigned *dest, unsigned in_memory)
+ const unsigned *dest, unsigned in_memory, int level)
 {
   unsigned base_slot = b->ops[i].a;
   unsigned saved = 0;
@@ -1580,6 +1695,9 @@ static void slow_path(Builder *b, unsigned i, unsigned n, unsigned slow,
       emit(b, SW(r, SPILL(r), GP));
     }
   add_cycles(b, pending_before);
+  /* A level known to the compiler (level >= 0) goes into its register. */
+  if(level >= 0)
+    load_constant(b, REG_PREFETCH, (uint32_t)level);
   for(j = i; j < i + n; j++)
   {
     const ArmIrOp *op = &b->ops[j];
@@ -1631,6 +1749,9 @@ static void slow_path(Builder *b, unsigned i, unsigned n, unsigned slow,
     if(saved & (1u << r))
       emit(b, LW(r, SPILL(r), GP));
   add_cycles(b, -pending_after);
+  /* The fast path's fill still waits for its cap: take it out here too. */
+  if(b->fill)
+    emit(b, ADDIU(REG_PREFETCH, REG_PREFETCH, -b->fill));
   branch(b, BEQ(ZERO, ZERO), done);
   emit(b, NOP);
   label_bind(b, tail);
@@ -1657,6 +1778,9 @@ static unsigned memory(Builder *b, unsigned i)
   unsigned s;
   unsigned p = V0;
   int known = b->known[base_slot];
+  int exact;
+  int level_known;
+  unsigned level;
   uint32_t guess;
   int32_t pending_before;
   unsigned j;
@@ -1689,29 +1813,29 @@ static unsigned memory(Builder *b, unsigned i)
    b->guessed[base_slot] ? b->guess[base_slot] + first->b :
    (base_slot == 13 ? 0x03000000u : 0x02000000u);
   region = direct_region(b, guess, store);
+  /* A constant address needs no check but the code map, unless it is
+     unaligned or runs off the region (left to the slow path). */
+  if(known && region < 16 && ((guess & (size - 1)) ||
+     (guess & b->core->map[region].mask) + span >
+     b->core->map[region].mask ||
+     (region >= 8 && ((guess & 0x1FFFF) + span) >> 17)))
+    region = 16;
+  exact = known && region < 16;
+  /* The slow path calls C, which needs the prefetch level in its register;
+     a known level stays known through an access to a known address. */
+  level_known = exact && b->level_known;
+  level = b->level;
+  if(!level_known)
+    prefetch_settle(b);
   pending_before = b->pending;
   s = scratch(b);
-  if(known && region < 16)
+  if(exact)
   {
-    const ArmRegion *map = &b->core->map[region];
-    uint32_t offset = guess & map->mask;
-
-    /* A constant address: no check but the code page, unless it is
-       unaligned or runs off the region (left to the slow path). */
-    if((guess & (size - 1)) || offset + span > map->mask ||
-       (region >= 8 && ((guess & 0x1FFFF) + span) >> 17))
-      region = 16;
-    else
-    {
-      if(store && region <= 3)
-      {
-        page_check(b, ZERO, guess, region, slow, s);
-        if(((guess + span) ^ guess) >> 8)
-          page_check(b, ZERO, guess + span, region, slow, s);
-      }
-      p = scratch(b);
-      load_constant(b, p, region_target(b, region) + offset);
-    }
+    if(store && region <= 3)
+      code_checks(b, ZERO, guess, span, region, slow, s);
+    p = scratch(b);
+    load_constant(b, p, region_target(b, region) +
+     (guess & b->core->map[region].mask));
   }
   else if(region < 16)
   {
@@ -1761,14 +1885,7 @@ static unsigned memory(Builder *b, unsigned i)
       emit(b, NOP);
     }
     if(store && region <= 3)
-    {
-      page_check(b, address, 0, region, slow, s);
-      if(span)
-      {
-        emit(b, ADDIU(s, address, span));
-        page_check(b, s, 0, region, slow, s);
-      }
-    }
+      code_checks(b, address, 0, span, region, slow, s);
     host_address(b, p, address, region, !(target & map->mask), s);
   }
 
@@ -1784,7 +1901,7 @@ static unsigned memory(Builder *b, unsigned i)
         emit(b, SW(rt, SLOT(op->d), GP));
     }
     b->scratch_used = 0;
-    access_effects(b, i, n, region);
+    access_effects(b, i, n, region, exact);
   }
   else
   {
@@ -1793,23 +1910,52 @@ static unsigned memory(Builder *b, unsigned i)
   }
   label_bind(b, done);
   slow_path(b, i, n, slow, done, pending_before, b->pending, dest,
-   in_memory);
+   in_memory, level_known ? (int)level : -1);
   return n;
 }
 
 /* ---- Blocks ------------------------------------------------------------- */
 
-/* Ends a conditional section. Both ways in have N and Z in their
-   registers: the section opened that way, and settles before it ends. */
+/* Whether the conditional section opened by the SKIP at op i may change
+   N and Z, or the registers they are kept in. */
+static int section_sets_nz(const Builder *b, unsigned i)
+{
+  unsigned end = i + 1 + (b->ops[i].b & 0xFFFF);
+  unsigned j;
+
+  for(j = i + 1; j < end && j < b->count; j++)
+  {
+    const ArmIrOp *op = &b->ops[j];
+
+    if(op->code == ARM_IR_SETNZ64 || (is_alu(op->code) &&
+       (op->flags & ARM_IR_SET_NZ)))
+      return 1;
+    if(op->d < 15 && (is_alu(op->code) || is_load(op->code)) &&
+       (guest_register[op->d] == b->n_reg ||
+       guest_register[op->d] == b->z_reg))
+      return 1;
+  }
+  return 0;
+}
+
+/* Ends a conditional section: both ways in leave N and Z where the
+   section found them, settled if the section could change them. */
 static void section_close(Builder *b)
 {
   if(!b->dead)
   {
-    settle(b);
+    if(b->section_settled)
+      settle(b);
+    prefetch_settle(b);
     add_cycles(b, b->pending - b->section_pending);
   }
-  b->n_reg = REG_N;
-  b->z_reg = REG_Z;
+  /* The prefetch register was up to date when the section opened. */
+  b->level_known = 0;
+  b->fetches = 0;
+  b->fill = 0;
+  b->filled = 0;
+  b->n_reg = b->section_n;
+  b->z_reg = b->section_z;
   b->pending = b->section_pending;
   label_bind(b, b->section_label);
   b->section_end = 0;
@@ -1833,11 +1979,27 @@ static void instruction(Builder *b, unsigned i)
   b->pending += op->a | op->d << 8;
   b->pc = op->b;
   b->insns++;
+  /* A fetch costs at least its cycle; prefetch_settle adds any wait. */
   if(op->flags & (ARM_IR_FETCH16 | ARM_IR_FETCH32))
+    prefetch_fetches(b, (op->flags & ARM_IR_FETCH32) ? 2 : 1);
+}
+
+/* Whether op leaves the prefetch buffer alone, so fetches pending before
+   it can wait. */
+static int prefetch_untouched(const ArmIrOp *op)
+{
+  switch(op->code)
   {
-    prefetch_fetch(b);
-    if(op->flags & ARM_IR_FETCH32)
-      prefetch_fetch(b);
+    case ARM_IR_NOP: case ARM_IR_INSN: case ARM_IR_CYCLES: case ARM_IR_SETC:
+    case ARM_IR_SETNZ64:
+      return 1;
+    case ARM_IR_MULCYC:
+      return !(op->flags & ARM_IR_CARTRIDGE_CODE);
+    /* These settle what they need themselves. */
+    case ARM_IR_IDLE: case ARM_IR_FLUSH:
+      return 1;
+    default:
+      return is_alu(op->code) || is_load(op->code) || is_store(op->code);
   }
 }
 
@@ -1860,6 +2022,11 @@ static void compile_ops(Builder *b)
       continue;
     }
     b->scratch_used = 0;
+    if((op->code == ARM_IR_EXIT || op->code == ARM_IR_EXIT_REG) &&
+       op->d != ARM_EXIT_NEXT)
+      prefetch_known(b, 0);
+    else if(!prefetch_untouched(op))
+      prefetch_settle(b);
     switch(op->code)
     {
       case ARM_IR_NOP:
@@ -1868,7 +2035,13 @@ static void compile_ops(Builder *b)
         instruction(b, i);
         break;
       case ARM_IR_SKIP:
-        settle(b);
+        /* N and Z go to their registers first if the section may change
+           them, so both ways agree where it ends. */
+        b->section_settled = section_sets_nz(b, i);
+        if(b->section_settled)
+          settle(b);
+        b->section_n = b->n_reg;
+        b->section_z = b->z_reg;
         b->section_label = label_new(b);
         b->section_end = i + 1 + (op->b & 0xFFFF);
         b->section_pending = b->pending;
@@ -1899,7 +2072,7 @@ static void compile_ops(Builder *b)
         prefetch_fill(b, 0, op->b);
         break;
       case ARM_IR_FLUSH:
-        emit(b, MOVE(REG_PREFETCH, ZERO));
+        prefetch_known(b, 0);
         break;
       case ARM_IR_LD8: case ARM_IR_LD8S: case ARM_IR_LD16:
       case ARM_IR_LD16S: case ARM_IR_LD32: case ARM_IR_ST8:
@@ -1996,6 +2169,10 @@ static uint32_t compile(ArmMips *jit, const ArmIrOp *ops, unsigned count,
   b->full = 8 * b->access;
   b->pending = 0;
   b->insns = 0;
+  b->fetches = 0;
+  b->fill = 0;
+  b->filled = 0;
+  b->level_known = 0;
   b->pc = pc;
   b->dead = 0;
   b->failed = 0;
@@ -2144,12 +2321,45 @@ static void write_runtime(ArmMips *jit)
 
 /* ---- C side ------------------------------------------------------------- */
 
+/* Sets (or clears) the code map over the work RAM a block was translated
+   from. Blocks never cross a 256-byte page, so no mirror boundary either.
+   Returns the interpreter's page of the block, or -1 outside work RAM. */
+static int protect(ArmMips *jit, const ArmBlock *block, uint8_t mark)
+{
+  uint32_t pc = block->key & ~1u;
+  uint32_t end = pc + block->insns * ((block->key & 1) ? 2u : 4u);
+  uint32_t mask;
+  unsigned base;
+  int page;
+
+  switch((pc >> 28) ? 1 : pc >> 24)
+  {
+    case 2:
+      mask = 0x3FFFF;
+      base = 0;
+      page = (int)((pc & mask) / ARM_CODE_PAGE_SIZE);
+      break;
+    case 3:
+      mask = 0x7FFF;
+      base = 0x40000 / ARM_MIPS_CODE_GRANULE;
+      page = 1024 + (int)((pc & mask) / ARM_CODE_PAGE_SIZE);
+      break;
+    default:
+      return -1;
+  }
+  for(pc &= ~(ARM_MIPS_CODE_GRANULE - 1); pc < end;
+      pc += ARM_MIPS_CODE_GRANULE)
+    jit->code_map[base + (pc & mask) / ARM_MIPS_CODE_GRANULE] = mark;
+  return page;
+}
+
 static void reset_code(ArmMips *jit)
 {
   unsigned i;
 
   jit->used = jit->blocks_start;
   memset(jit->code, 0, sizeof(jit->code));
+  memset(jit->code_map, 0, sizeof(jit->code_map));
   for(i = 0; i < ARM_MIPS_DISPATCH; i++)
     jit->dispatch[i][0] = INVALID_KEY;
   for(i = 0; i < ARM_MIPS_RETURNS; i++)
@@ -2159,17 +2369,30 @@ static void reset_code(ArmMips *jit)
 }
 
 /* The interpreter dropped a block (or all of them): its entry now leaves
-   for C, and the code stays until the next flush. */
+   for C, and the code stays until the next flush. Its work RAM leaves the
+   code map, but for the blocks still in its page (the interpreter's list
+   still holds this one, which unmarks first). */
 static void dropped(ArmCore *core, unsigned block)
 {
   ArmMips *jit = jit_of(core);
   uint32_t entry;
   uint32_t *word;
+  int page;
 
   if(block == ARM_NO_BLOCK)
   {
     reset_code(jit);
     return;
+  }
+  page = protect(jit, &core->blocks[block], 0);
+  if(page >= 0)
+  {
+    unsigned other;
+
+    for(other = core->page_blocks[page]; other != ARM_NO_BLOCK;
+        other = core->blocks[other].next_page)
+      if(other != block)
+        protect(jit, &core->blocks[other], 1);
   }
   entry = jit->code[block];
   jit->code[block] = 0;
@@ -2256,10 +2479,15 @@ static uint32_t block_entry(ArmMips *jit)
   uint32_t entry = jit->code[index];
   int tries;
 
+  /* Every block C runs goes (back) into the dispatch cache, so a jump the
+     cache missed finds it next time. */
+  if(entry > 1)
+    dispatch_insert(jit, block->key, entry);
   if(entry)
     return entry > 1 ? entry : 0;
   for(tries = 0; tries < 2; tries++)
   {
+    protect(jit, block, 1);
     entry = compile(jit, &core->ops[block->first], block->count, block->key,
      block->first, MODE_LINKED, jit->used, end);
     if(entry || builder.failed)
@@ -2423,6 +2651,7 @@ ArmExitKind arm_mips_run_block(ArmMips *jit)
   ArmCore *core = &jit->core;
   const ArmBlock *block = arm_core_block(core);
 
+  protect(jit, block, 1);
   return run_once(jit, &core->ops[block->first], block->count, block->first,
    MODE_ONCE);
 }

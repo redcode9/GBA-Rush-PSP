@@ -28,6 +28,10 @@
 /* Direct-mapped cache of (pc, Thumb) -> code for indirect jumps. */
 #define ARM_MIPS_DISPATCH 4096u
 #define ARM_MIPS_RETURNS 16u
+/* Bytes of work RAM (256 KB, then the 32 KB inside) per entry of the map
+   of translated code that stores check. */
+#define ARM_MIPS_CODE_GRANULE 32u
+#define ARM_MIPS_CODE_MAP ((0x40000u + 0x8000u) / ARM_MIPS_CODE_GRANULE)
 /* Words at the end of the code buffer for code compiled and run once
    (arm_mips_step, arm_mips_run_block). */
 #define ARM_MIPS_SCRATCH_WORDS 32768u
@@ -78,6 +82,10 @@ typedef struct ArmMips
   int32_t cycle_base;       /* the cycle register holds cycles minus this */
   uint32_t call_pc;         /* insn_pc | Thumb of the access in progress */
   uint32_t exit_arg;
+  /* Nonzero where work RAM holds translated code (since the last flush):
+     a store there takes the slow path, which drops that code. Finer than
+     the interpreter's 256-byte pages, so data next to code stays fast. */
+  uint8_t code_map[ARM_MIPS_CODE_MAP];
   ArmCore core;
 
   /* C only. */
