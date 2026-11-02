@@ -1,7 +1,10 @@
+/* Glyph size and icon code points of the GBK font drawn by ch_print.c
+   (print_string_gbk). The icons are custom glyphs in the font; FONT_BTN_*
+   are the PSP face buttons. */
 #define FONTWIDTH  (6)
 #define FONTHEIGHT (12)
 
-#define BG_NO_FILL (-1)
+#define BG_NO_FILL (-1) // background colour: leave the pixels untouched
 
 
 #define FONT_BATTERY0_GBK           "\x13\x16\x17" // empty

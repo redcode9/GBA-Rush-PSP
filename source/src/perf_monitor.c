@@ -140,6 +140,8 @@ void perf_monitor_observe_memory_available(uint64_t bytes)
   perf_metrics_observe_memory_available(&perf_monitor_metrics, bytes);
 }
 
+/* The settings the capture runs under, for the report. Ignored unless a
+   capture is active; main_perf_start sets it right after starting. */
 void perf_monitor_set_identity(const PerfMonitorIdentity *identity)
 {
   if(identity != NULL && perf_monitor_active())

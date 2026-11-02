@@ -6,7 +6,10 @@
 
 ******************************************************************************/
 
-/* copy from njemu */
+/* Copied from NJEMU. 32-pixel-tall 4-bit alpha masks, two pixels per byte
+ * (low nibble first). psp_video.c #includes this file; load_volume_icon()
+ * lays the icons and their shadows out side by side in the GBA texture,
+ * and the *_X values below are each one's texel column there. */
 
 #define SPEEKER_X            0
 #define SPEEKER_SHADOW_X     (32)

@@ -16,6 +16,14 @@
 
 #include "zlib/zlib.h"
 
+/* Snapshot layout, all big-endian. Header (64 bytes):
+ *   0 "GBRL"  4 version  6 header size  8 record size  10 critical count
+ *   12 main count  14 network count  16 session id  20 flush reason
+ *   24 PSP model  28 firmware  32 CPU MHz  36 ROM game code
+ *   40 start time  48 flush time  56 payload CRC-32  60 header CRC-32
+ * Then the main, network and critical records, 32 bytes each.
+ */
+
 static void runtime_log_barrier(void)
 {
   __sync_synchronize();
@@ -88,6 +96,7 @@ void runtime_log_ring_emit(RuntimeLogRing *ring, uint64_t timestamp_us,
   ordinal = ring->next_ordinal == UINT_MAX ? 1u :
    ring->next_ordinal + 1u;
   index = (ordinal - 1u) & (limit - 1u);
+  /* Unpublish the slot, fill it, then publish it with its ordinal. */
   ring->published[index] = 0;
   runtime_log_barrier();
 
@@ -141,6 +150,7 @@ size_t runtime_log_ring_snapshot(const RuntimeLogRing *ring,
   {
     ordinal = first + (uint32_t)offset;
     index = (ordinal - 1u) & (limit - 1u);
+    /* Keep the copy only if the slot held this ordinal before and after. */
     published = ring->published[index];
     runtime_log_barrier();
     record = ring->records[index];
@@ -160,6 +170,8 @@ uint32_t runtime_log_ring_dropped(const RuntimeLogRing *ring)
   return ring->dropped_records;
 }
 
+/* Record (32 bytes): 0 timestamp, 8 emulated cycle, 12 ordinal, 16 type,
+   18 source, 19 flags, 20/24/28 values. */
 static void runtime_log_encode_record(uint8_t *output,
  const RuntimeLogRecord *record)
 {
@@ -242,6 +254,7 @@ int runtime_log_encode(const RuntimeLogRing *main_ring,
     cursor += RUNTIME_LOG_RECORD_SIZE;
   }
 
+  /* The header CRC covers bytes 0-59, payload CRC included. */
   crc = crc32(0L, Z_NULL, 0);
   crc = crc32(crc, output + RUNTIME_LOG_HEADER_SIZE,
    (uInt)payload_size);
@@ -273,6 +286,7 @@ int runtime_log_validate(const uint8_t *input, size_t size,
   decoded_version = runtime_log_read_u16(input + 4);
   if(decoded_version < 1u || decoded_version > RUNTIME_LOG_VERSION)
     return 0;
+  /* Version 1 had no critical ring. */
   decoded_critical = decoded_version >= 2u ?
    runtime_log_read_u16(input + 10) : 0u;
   decoded_main = runtime_log_read_u16(input + 12);

@@ -1,3 +1,9 @@
+/*
+ * Import stub table for ku_bridge.prx, in the form psp-build-exports -s
+ * emits for ../prx/ku_bridge/ku_bridge.exp. 0x00070005 = 7 functions with
+ * 5-word stub entries; each NID is the hash of the exported function name.
+ */
+
 	.set noreorder
 
 #include "pspstub.s"

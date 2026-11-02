@@ -1,3 +1,7 @@
+/* Default exception handler for exception.prx, after the PSPSDK debug
+   handler: dumps every CPU register into the PspDebugRegBlock at
+   exception_regs, then erets into curr_handler (the emulator's C crash
+   screen) with $a0 pointing at that block. */
 #include "as_reg_compat.h"
    .set noreorder
    .set noat
@@ -8,9 +12,11 @@
 #define EPC      $14 // Program counter at last exception
 #define PRId     $15 // Processor identification and revision
 
+/* FPU control registers (cfc1/ctc1) */
 #define FSR       $31
 #define FIR      $0
 
+/* Byte offsets into PspDebugRegBlock (pspdebug.h), after its u32 frame[6] */
 #define REG_GPR_0    (6*4)
 #define REG_GPR_1    (REG_GPR_0 + 4)
 #define REG_GPR_2    (REG_GPR_1 + 4)
@@ -101,6 +107,8 @@ _pspDebugExceptionHandler:
    sw      $0, REG_GPR_0($v0)
    sw      $1, REG_GPR_1($v0)
 
+   /* The kernel's exception entry already used v0/v1 and parked their
+      original values in COP0 control registers 4 and 5 */
    cfc0   $1, $4               # Get original v0
    sw      $1, REG_GPR_2($v0)
    cfc0    $1, $5               # Get original v1
@@ -148,7 +156,7 @@ _pspDebugExceptionHandler:
    sw      $v1,  REG_STATUS($v0)
 
 # Check if cop1 is enable and skip if not
-   lui      $a0, 0x2000
+   lui      $a0, 0x2000        /* Status bit 29: CU1, FPU usable */
    and      $a0, $a0, $v1
    beq      $a0, $0, 1f
    nop
@@ -198,6 +206,7 @@ _pspDebugExceptionHandler:
    sw         $sp, REG_FP($v0)
    move      $a0, $v0
 
+   /* EPC = curr_handler, so eret "returns" into the C handler */
    lw      $2, curr_handler
    mtc0   $2, $14
    nop
@@ -210,5 +219,6 @@ _pspDebugExceptionHandler:
 
    #include "pspimport.s"
 
+   /* 3.71+ NID; main.c picks this or the SDK import by firmware version */
    IMPORT_START   "ExceptionManagerForKernel",0x00010011
    IMPORT_FUNC   "ExceptionManagerForKernel",0x565C0B0E,sceKernelRegisterDefaultExceptionHandler371

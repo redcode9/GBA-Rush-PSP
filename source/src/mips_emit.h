@@ -18,10 +18,16 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+// MIPS code emitter for the dynarec, included only by cpu.c: raw instruction
+// encoders, the fixed ARM-to-MIPS register map, and the generate_, arm_ and
+// thumb_ macros that translate one guest instruction. The macros use the
+// locals of translate_block_* (translation_ptr, pc, cycle_count, ...).
+
 #ifndef MIPS_EMIT_H
 #define MIPS_EMIT_H
 
 
+// Runtime entry points in mips_stub.S, called from generated code.
 u32 mips_update_gba(u32 pc);
 
 // Although these are defined as a function, don't call them as
@@ -181,6 +187,8 @@ typedef enum
   mips_opcode_sw         = 0x2B,
 } MIPS_OPCODE;
 
+// Raw encoders: each stores one MIPS instruction at translation_ptr and
+// advances it by 4.
 #define mips_emit_reg(opcode, rs, rt, rd, shift, function)                    \
   *((u32 *)translation_ptr) = (mips_opcode_##opcode << 26) | ((rs) << 21) | ((rt) << 16) | ((rd) << 11) | ((shift) << 6) | function; \
   translation_ptr += 4;                                                       \
@@ -205,6 +213,8 @@ typedef enum
   *((u32 *)translation_ptr) = (mips_opcode_##opcode << 26) | ((offset) & 0x3FFFFFF); \
   translation_ptr += 4;                                                       \
 
+// Branch offsets count words from the delay slot; j/jal take a word
+// address within the current 256 MB segment.
 #define mips_relative_offset(source, offset)                                  \
   (((u32)(offset) - ((u32)(source) + 4)) >> 2)                                \
 
@@ -384,6 +394,10 @@ typedef enum
 #define mips_emit_nop()                                                       \
   mips_emit_sll(reg_zero, reg_zero, 0)                                        \
 
+// Fixed register allocation: each ARM register lives in one MIPS register
+// while translated code runs (see the map in mips_stub.S). reg_pc holds the
+// GBA PC of the block start (stored_pc); other PCs are built relative to it.
+// The flag caches hold N/Z/C/V as 0 or 1.
 #define reg_base    mips_reg_s0
 #define reg_cycles  mips_reg_s1
 #define reg_a0      mips_reg_a0
@@ -440,6 +454,8 @@ const u8 arm_to_mips_reg[] =
   reg_temp
 };
 
+// Pseudo ARM register numbers for the scratch entries above, so operand
+// macros can redirect rm/rn into a temporary.
 #define arm_reg_a0   15
 #define arm_reg_a1   16
 #define arm_reg_a2   17
@@ -470,6 +486,7 @@ const u8 arm_to_mips_reg[] =
     }                                                                         \
   }                                                                           \
 
+// Loads a GBA PC, as an offset from reg_pc when it fits in 16 bits.
 #define generate_load_pc(ireg, new_pc)                                        \
 {                                                                             \
   s32 pc_delta = new_pc - stored_pc;                                          \
@@ -566,6 +583,7 @@ const u8 arm_to_mips_reg[] =
   mips_emit_jal(mips_absolute_offset(function_location));                     \
   mips_emit_nop();                                                            \
 
+// Emits a jal whose delay slot holds the previously emitted instruction.
 #define generate_function_call_swap_delay(function_location)                  \
 {                                                                             \
   u32 delay_instruction = ADDRESS32(translation_ptr, -4);                     \
@@ -575,6 +593,8 @@ const u8 arm_to_mips_reg[] =
   translation_ptr += 4;                                                       \
 }                                                                             \
 
+// Swaps the branch just emitted with the instruction before it, which
+// lands in the delay slot; the branch offset grows by one word to match.
 #define generate_swap_delay()                                                 \
 {                                                                             \
   u32 delay_instruction = ADDRESS32(translation_ptr, -8);                     \
@@ -584,6 +604,8 @@ const u8 arm_to_mips_reg[] =
   ADDRESS32(translation_ptr, -4) = delay_instruction;                         \
 }                                                                             \
 
+// reg_cycles counts down to the next event. cycle_count accumulates at
+// translate time and is subtracted at exits, branch targets and conditions.
 #define generate_cycle_update()                                               \
   if (cycle_count != 0)                                                       \
   {                                                                           \
@@ -595,6 +617,8 @@ const u8 arm_to_mips_reg[] =
   mips_emit_addiu(reg_cycles, reg_cycles, -cycle_count);                      \
   cycle_count = 0;                                                            \
 
+// Flushes pending cycles and calls mips_update_gba (a0 = _pc) if the
+// budget has run out.
 #define check_cycle_counter(_pc)                                              \
   generate_cycle_update_force();                                              \
   mips_emit_b(bgtz, reg_cycles, reg_zero, 3);                                 \
@@ -602,12 +626,18 @@ const u8 arm_to_mips_reg[] =
   mips_emit_jal(mips_absolute_offset(mips_update_gba));                       \
   mips_emit_ori(reg_a0, reg_temp, (_pc) & 0xFFFF);                            \
 
+// Back-patch a conditional branch's 16-bit offset, or overwrite a
+// placeholder with "j offset".
 #define generate_branch_patch_conditional(dest, offset)                       \
   *((u16 *)(dest)) = mips_relative_offset(dest, offset)                       \
 
 #define generate_branch_patch_unconditional(dest, offset)                     \
   *((u32 *)(dest)) = (mips_opcode_j << 26) | ((mips_absolute_offset(offset)) & 0x3FFFFFF) \
 
+// Direct branch exit: calls mips_update_gba when the cycle budget is spent
+// (via the block's trampoline) or always at an idle loop PC, then emits a j
+// placeholder patched later to the target block, or an indirect lookup if
+// the target cannot be linked.
 #define generate_branch_no_cycle_update(type, writeback_location, new_pc)     \
 {                                                                             \
   s32 i;                                                                      \
@@ -640,7 +670,7 @@ const u8 arm_to_mips_reg[] =
   /* This uses variables from cpu.c's translate_block_builder /               \
    * translate_block_arm / translate_block_thumb functions.                   \
    * BRANCH_TARGET_CAN_BE_LINKED() defines the policy for direct native       \
-   * linking and must match cpu.c's external_block_exit filtering logic. */   \
+   * linking and must match the exit loop in translate_block_builder. */      \
   if ((new_pc >= block_start_pc && new_pc < block_end_pc)                     \
    || BRANCH_TARGET_CAN_BE_LINKED(new_pc))                                    \
   {                                                                           \
@@ -671,6 +701,9 @@ const u8 arm_to_mips_reg[] =
   mips_emit_j(mips_absolute_offset(mips_indirect_branch_##type));             \
   generate_cycle_update_force();                                              \
 
+// Every block starts with an 8-byte update trampoline (j mips_update_gba;
+// nop) that in-block bltzal exits call when cycles run out; lookups enter
+// past it (block_prologue_size), where reg_pc is loaded with the block PC.
 #define generate_block_prologue()                                             \
   update_trampoline = translation_ptr;                                        \
                                                                               \
@@ -684,6 +717,8 @@ const u8 arm_to_mips_reg[] =
 #define block_prologue_size 8
 #define CODE_ALIGN_SIZE 4
 
+// Whether the current instruction must compute each flag (flag_status,
+// see thumb_flag_status in cpu.c).
 #define check_generate_n_flag                                                 \
   (flag_status & 0x08)                                                        \
 
@@ -706,6 +741,8 @@ const u8 arm_to_mips_reg[] =
     generate_load_reg(ireg, reg_index);                                       \
   }                                                                           \
 
+// If a source register is r15, load the pipeline PC (pc + pc_offset) into
+// the scratch arm_reg and read that instead.
 #define check_load_reg_pc(arm_reg, reg_index, pc_offset)                      \
   if (reg_index == REG_PC)                                                    \
   {                                                                           \
@@ -713,6 +750,8 @@ const u8 arm_to_mips_reg[] =
     generate_load_pc(arm_to_mips_reg[arm_reg], (pc + pc_offset));             \
   }                                                                           \
 
+// After an ALU op, a write to r15 becomes an indirect branch; with the S
+// bit it also restores CPSR from SPSR. Otherwise charge the fetch cycles.
 #define check_store_reg_pc_no_flags(reg_index)                                \
   if (reg_index == REG_PC)                                                    \
   {                                                                           \
@@ -734,6 +773,9 @@ const u8 arm_to_mips_reg[] =
     cycle_count += pFETCH_WS32S(pc >> 24);                                    \
   }                                                                           \
 
+// Operand-2 shifts by an immediate. Amount 0 means LSR #32, ASR #32 and RRX
+// for lsr/asr/ror, hence the special cases. The _flags versions also set the
+// shifter carry in reg_c_cache.
 #define generate_shift_imm_lsl_no_flags(arm_reg, _rm, _shift)                 \
   check_load_reg_pc(arm_reg, _rm, 8);                                         \
   if (_shift != 0)                                                            \
@@ -835,6 +877,8 @@ const u8 arm_to_mips_reg[] =
 #define generate_load_reg_lower_byte(ireg, reg_index)                         \
   mips_emit_andi(ireg, arm_to_mips_reg[reg_index], 0xFF)                      \
 
+// Shifts by register use the low byte of rs, with ARM results for amounts
+// of 32 and up; flag-setting lsl/lsr/asr call helpers in mips_stub.S.
 #define generate_shift_reg_lsl_no_flags(_rm, _rs)                             \
   generate_load_reg_pc(reg_a0, _rm, 12);                                      \
   generate_load_reg_lower_byte(reg_a1, _rs);                                  \
@@ -885,13 +929,6 @@ const u8 arm_to_mips_reg[] =
   mips_emit_srlv(reg_temp, reg_a0, reg_temp);                                 \
   mips_emit_andi(reg_c_cache, reg_temp, 1);                                   \
   mips_emit_rotrv(reg_a0, reg_a0, reg_a1);                                    \
-
-/*
-#define generate_shift_reg_ror_flags(_rm, _rs)                                \
-  generate_load_reg_pc(reg_a0, _rm, 12);                                      \
-  mips_emit_jal(mips_absolute_offset(execute_ror_flags_reg));                 \
-  generate_load_reg_lower_byte(reg_a1, _rs);                                  \
-*/
 
 #define generate_shift_imm(arm_reg, name, flags_op)                           \
   u32 shift = (opcode >> 7) & 0x1F;                                           \
@@ -976,6 +1013,8 @@ u32 generate_load_rm_sh_##flags_op(u32 rm)                                    \
   u32 stored_pc = pc;                                                         \
   u8 *update_trampoline;                                                      \
 
+// The operand-2 decoders are GCC nested functions inside translate_block_arm,
+// so they can use its locals (opcode, translation_ptr, ...).
 #define generate_block_extra_vars_arm()                                       \
   generate_block_extra_vars();                                                \
                                                                               \
@@ -1028,6 +1067,8 @@ u32 generate_load_rm_sh_##flags_op(u32 rm)                                    \
 // It should be okay to still generate result flags, spsr will overwrite them.
 // This is pretty infrequent (returning from interrupt handlers, et al) so
 // probably not worth optimizing for.
+// Called by execute_spsr_restore after CPSR = SPSR; bit 31 of the result asks
+// it to take a pending IRQ.
 
 u32 execute_spsr_restore_body(u32 address)
 {
@@ -1041,6 +1082,10 @@ u32 execute_spsr_restore_body(u32 address)
   return address;
 }
 
+
+// Condition headers branch over the instruction when the condition fails;
+// backpatch_address is patched after it. The delay slot flushes the cycles
+// pending from earlier instructions, so both paths account for them.
 
 /* EQ  Z=1 */
 #define generate_condition_eq()                                               \
@@ -1325,6 +1370,7 @@ u32 execute_spsr_restore_body(u32 address)
   mips_emit_and(_rd, _rn, reg_temp);                                          \
   generate_op_logic_flags(_rd);                                               \
 
+// ARM C is NOT borrow; V = (rn < rm, signed) xor N.
 #define generate_op_subs_reg(_rd, _rn, _rm)                                   \
   if (check_generate_c_flag != 0)                                             \
   {                                                                           \
@@ -1378,6 +1424,7 @@ u32 execute_spsr_restore_body(u32 address)
 #define generate_op_rscs_reg(_rd, _rn, _rm)                                   \
   generate_op_sbcs_reg(_rd, _rm, _rn)                                         \
 
+// C = result < rn (unsigned); V = (rm < 0) xor (result < rn, signed).
 #define generate_op_adds_reg(_rd, _rn, _rm)                                   \
   if ((check_generate_c_flag | check_generate_v_flag) != 0)                   \
   {                                                                           \
@@ -1550,6 +1597,8 @@ u32 execute_spsr_restore_body(u32 address)
   generate_op_##name##_reg(arm_to_mips_reg[rd], arm_to_mips_reg[rn], arm_to_mips_reg[rm]); \
   cycle_count++;                                                              \
 
+// A rotated immediate sets C to bit 31 of the result, i.e. bit (shift - 1)
+// of the unrotated byte; with no rotation C is unchanged.
 #define arm_generate_op_imm_flags(name, load_op)                              \
   arm_op_check_##load_op();                                                   \
   if ((check_generate_c_flag != 0) && (shift != 0))                           \
@@ -1724,6 +1773,8 @@ u32 execute_spsr_restore_body(u32 address)
   generate_function_call(execute_read_##psr_reg);                             \
   generate_store_reg(reg_rv, rd);                                             \
 
+// Called by execute_store_cpsr after CPSR is written: switches register banks
+// on a mode change and returns 1 if an IRQ is now pending.
 u32 execute_store_cpsr_body(u32 _cpsr, u32 store_mask)
 {
   if ((store_mask & 0xFF) != 0)
@@ -1768,6 +1819,9 @@ u32 execute_store_cpsr_body(u32 _cpsr, u32 store_mask)
   arm_psr_##transfer_type(op_type, psr_reg);                                  \
 }                                                                             \
 
+// Loads and stores call the region handlers in mips_stub.S with a0 =
+// address, a1 = PC as the ARM sees it (loads, for open bus and BIOS
+// protection) or the value (stores), a2 = next PC (stores).
 /* LDR: 1S+1N+1I. LDR PC: 2S+2N+1I. STR: 2N. */
 #define arm_access_memory_load(mem_type)                                      \
   cycle_count++;                                                              \
@@ -1858,6 +1912,8 @@ u32 execute_store_cpsr_body(u32 _cpsr, u32 store_mask)
 #define word_bit_count(word)                                                  \
   (bit_count[(word) >> 8] + bit_count[(word) & 0xFF])                         \
 
+// set_cpu_mode's bank swap without changing reg[CPU_MODE]; lets LDM/STM with
+// ^ reach the user bank (execute_force_user_mode_prologue/epilogue).
 void force_user_mode_body(CPU_MODE_TYPE cpu_mode, CPU_MODE_TYPE new_mode)
 {
   u32 i;
@@ -2038,6 +2094,10 @@ void force_user_mode_body(CPU_MODE_TYPE cpu_mode, CPU_MODE_TYPE new_mode)
 #define arm_block_memory_writeback_post_store(writeback_type)                 \
   arm_block_memory_writeback_##writeback_type()                               \
 
+// LDM/STM. With stack optimisation on (option_stack_optimize and the game's
+// iwram_stack_optimize), SP-based transfers assume the stack is in IWRAM and
+// access it directly, skipping the memory handlers. Otherwise all words but
+// the last use the lighter aligned handlers (a2 keeps the base address).
 #define arm_block_memory(access_type, offset_type, writeback_type, s_bit)     \
 {                                                                             \
   arm_decode_block_trans();                                                   \
@@ -2190,19 +2250,6 @@ void force_user_mode_body(CPU_MODE_TYPE cpu_mode, CPU_MODE_TYPE new_mode)
   generate_op_##name##_reg(arm_to_mips_reg[dest_rd], arm_to_mips_reg[rd], arm_to_mips_reg[rs]); \
   check_store_reg_pc_thumb(dest_rd);                                          \
 }                                                                             \
-
-/*
-
-#define thumb_data_proc_hi(name)                                              \
-{                                                                             \
-  thumb_decode_hireg_op();                                                    \
-  check_load_reg_pc(arm_reg_a0, rs, 4);                                       \
-  check_load_reg_pc(arm_reg_a1, rd, 4);                                       \
-  generate_op_##name##_reg(arm_to_mips_reg[rd], arm_to_mips_reg[rd], arm_to_mips_reg[rs]); \
-  check_store_reg_pc_thumb(rd);                                               \
-}                                                                             \
-
-*/
 
 #define thumb_data_proc_test_hi(name)                                         \
 {                                                                             \
@@ -2463,6 +2510,7 @@ void force_user_mode_body(CPU_MODE_TYPE cpu_mode, CPU_MODE_TYPE new_mode)
     mips_emit_addu(arm_to_mips_reg[rn], base_reg, reg_zero);                  \
   }                                                                           \
 
+// PUSH/POP, with the same IWRAM stack shortcut as arm_block_memory.
 #define thumb_block_memory_sp(access_type, offset_type)                       \
 {                                                                             \
   thumb_decode_rlist();                                                       \
@@ -2604,6 +2652,8 @@ void force_user_mode_body(CPU_MODE_TYPE cpu_mode, CPU_MODE_TYPE new_mode)
   generate_indirect_branch_cycle_update(dual);                                \
 }                                                                             \
 
+// SWI: the protected BIOS now reads back 0xE3A02004, the value it shows
+// after an SWI. SWI 0xF9 and up are VBA debug calls and are ignored.
 #define arm_swi()                                                             \
 {                                                                             \
   bios_read_protect = 0xe3a02004;                                             \
@@ -2654,7 +2704,7 @@ void force_user_mode_body(CPU_MODE_TYPE cpu_mode, CPU_MODE_TYPE new_mode)
   generate_branch(thumb);                                                     \
 }                                                                             \
 
-// BL
+// BL second half with no first half before it: jump to LR + offset.
 #define thumb_blh()                                                           \
 {                                                                             \
   thumb_decode_branch();                                                      \
@@ -2666,7 +2716,6 @@ void force_user_mode_body(CPU_MODE_TYPE cpu_mode, CPU_MODE_TYPE new_mode)
 
 #define thumb_bx()                                                            \
 {                                                                             \
-/*  thumb_decode_hireg_op(); */                                               \
   u8 rs = (opcode >> 3) & 0x0F;                                               \
                                                                               \
   generate_load_reg_pc(reg_a0, rs, 4);                                        \
@@ -2697,6 +2746,7 @@ void force_user_mode_body(CPU_MODE_TYPE cpu_mode, CPU_MODE_TYPE new_mode)
 }                                                                             \
 
 
+// Ends a block cut short by scan_block: continue at pc via the lookup.
 #define generate_translation_gate(type)                                       \
   generate_load_pc(reg_a0, pc);                                               \
   generate_function_call_swap_delay(mips_indirect_branch_##type##_no_update_gba); \

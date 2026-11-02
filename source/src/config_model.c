@@ -1,8 +1,27 @@
+/* Settings file format shared by tempgba.cfg and the per-game .cfg files.
+   Current files: a 16-byte header ("GBRC", u16 version, u16 value count,
+   u32 checksum, u32 payload size) then little-endian u32 values in
+   model_to_values() order. Headerless files from older releases are still
+   read. Out-of-range values decode to their defaults. */
+
 #include "config_model.h"
 
 #include <string.h>
 
 #define CONFIG_MODEL_MAGIC "GBRC"
+/* decode_versioned() reads only these two layouts: bumping the version
+   drops files of the older one unless it learns that layout too.
+   Adding a setting: append it to model_to_values() and values_to_model()
+   (limit and default), add the default to config_model_defaults(), raise
+   CONFIG_MODEL_VALUE_COUNT in config_model.h and bump the version. Keep
+   every released layout readable (version 1 shipped in 1.3.0): the current
+   pair becomes PREVIOUS_*, and each older one needs its own value-count
+   constant and a clause in decode_versioned()'s version check; then update
+   the note above decode_versioned() and the migration test in
+   tests/test_config_model.c. Finally map it in gui.c's
+   capture_global_config() and apply_global_config() (the game_ pair too
+   only for per-game settings) and add its option_ global, menu row and
+   messages. */
 #define CONFIG_MODEL_VERSION 2U
 #define CONFIG_MODEL_PREVIOUS_VERSION 1U
 #define CONFIG_MODEL_PREVIOUS_VALUE_COUNT 39U
@@ -39,6 +58,8 @@ static uint32_t read_u32(const uint8_t *input)
    ((uint32_t)input[2] << 16) | ((uint32_t)input[3] << 24);
 }
 
+/* 32-bit FNV-1a (offset basis 2166136261, prime 16777619) over the whole
+   file, reading the checksum field itself as zeros. */
 static uint32_t checksum(const uint8_t *data, size_t size)
 {
   uint32_t value = 2166136261U;
@@ -63,6 +84,8 @@ static uint32_t valid_or_default(uint32_t value, uint32_t limit,
   return value < limit ? value : default_value;
 }
 
+/* Headerless files numbered the RAM dynarec setting differently: 4-6 map to
+   policies 0-2, 0-1 to policies 1-2, anything else to the default (2). */
 static uint32_t decode_legacy_ram_policy(uint32_t value)
 {
   if(value >= 4 && value <= 6)
@@ -72,25 +95,28 @@ static uint32_t decode_legacy_ram_policy(uint32_t value)
   return 2;
 }
 
+/* Factory settings. Keep them equal to the defaults in values_to_model(),
+   which decoding falls back to for each out-of-range value, and to the
+   values the menus' menu_*_default() resets in gui.c restore. */
 void config_model_defaults(ConfigModel *model)
 {
   if(model == NULL)
     return;
 
   memset(model, 0, sizeof(*model));
-  model->screen_scale = 6;
+  model->screen_scale = 6;              /* SCALED_16X9_AUTO */
   model->screen_magnification = 170;
   model->screen_filter = 1;
   model->frameskip_type = 0;
   model->frameskip_value = 9;
-  model->clock_speed = 3;
+  model->clock_speed = 3;               /* PSP_CLOCK_333 */
   model->sound_volume = 10;
   model->stack_optimize = 1;
   model->ram_dynarec_policy = 2;
   model->video_renderer = 1;
   model->update_backup = 1;
   model->analog_sensitivity = 4;
-  model->language = 1;
+  model->language = 1;                  /* LANGUAGE_ENGLISH */
   model->hblank_window_start = 1;
   model->hblank_window_end = 160;
   model->fast_forward_profile = 0;
@@ -102,6 +128,8 @@ void config_model_defaults(ConfigModel *model)
   memcpy(model->gamepad, default_gamepad, sizeof(model->gamepad));
 }
 
+/* The value index is the on-disk position: append new settings, never
+   reorder. values_to_model() holds each setting's limit and default. */
 static void model_to_values(const ConfigModel *model, uint32_t *values)
 {
   size_t i;
@@ -139,6 +167,8 @@ static void model_to_values(const ConfigModel *model, uint32_t *values)
   values[44] = model->fast_forward_audio;
 }
 
+/* Inverse of model_to_values(). A value outside [0, limit) takes its
+   default, so a damaged file cannot set an out-of-range option. */
 static void values_to_model(const uint32_t *values, ConfigModel *model)
 {
   size_t i;
@@ -177,6 +207,8 @@ static void values_to_model(const uint32_t *values, ConfigModel *model)
   model->fast_forward_audio = valid_or_default(values[44], 2, 0);
 }
 
+/* Writes the current versioned format; output needs at least
+   CONFIG_MODEL_ENCODED_SIZE bytes. Returns 1, or 0 on bad arguments. */
 int config_model_encode(const ConfigModel *model, uint8_t *output,
  size_t output_size, size_t *written)
 {
@@ -202,6 +234,7 @@ int config_model_encode(const ConfigModel *model, uint8_t *output,
   return 1;
 }
 
+/* Version 1 files carry the first 39 values; the rest keep their defaults. */
 static ConfigModelDecodeResult decode_versioned(const uint8_t *data,
  size_t size, ConfigModel *model)
 {
@@ -234,6 +267,8 @@ static ConfigModelDecodeResult decode_versioned(const uint8_t *data,
   return CONFIG_MODEL_DECODE_VERSIONED;
 }
 
+/* Headerless files are bare u32 arrays: 32 to 39 words (no 38) for the
+   global config, as releases appended settings, and 23 for a per-game file. */
 static int legacy_word_count_supported(size_t word_count)
 {
   return word_count == 39 || word_count == 37 || word_count == 36 ||
@@ -241,6 +276,8 @@ static int legacy_word_count_supported(size_t word_count)
          word_count == 32 || word_count == 23;
 }
 
+/* Settings were inserted mid-array over the releases, so the word count
+   selects the layout and where the 16 button mappings start. */
 static ConfigModelDecodeResult decode_legacy(const uint8_t *data, size_t size,
  ConfigModel *model)
 {
@@ -259,6 +296,8 @@ static ConfigModelDecodeResult decode_legacy(const uint8_t *data, size_t size,
 
   config_model_defaults(&decoded);
   model_to_values(&decoded, values);
+  /* Per-game layout: scale, magnification, filter, frameskip type and
+     value, clock, volume, then the 16 button mappings. */
   if(word_count == 23)
   {
     values[0] = words[0];
@@ -363,6 +402,8 @@ static ConfigModelDecodeResult decode_legacy(const uint8_t *data, size_t size,
   return CONFIG_MODEL_DECODE_LEGACY;
 }
 
+/* Returns the format that was read. On CONFIG_MODEL_DECODE_INVALID, *model
+   is left untouched. */
 ConfigModelDecodeResult config_model_decode(const uint8_t *data, size_t size,
  ConfigModel *model)
 {

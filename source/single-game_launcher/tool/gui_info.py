@@ -129,7 +129,7 @@ class InfoTabMixin:
             self.title_counter.configure(text_color=C.COLOR_ERROR)
             self.title_warning.configure(text="PSP limit — May be truncated on PSP XMB", text_color=C.COLOR_ERROR)
         elif byte_len >= 19:
-            # 19 chars is roughly where PSP XMB starts truncating visually
+            # ~19 bytes is roughly where the PSP XMB starts truncating visually
             self.title_counter.configure(text_color=C.COLOR_WARNING)
             self.title_warning.configure(text="May be truncated on PSP XMB", text_color=C.COLOR_WARNING)
         else:

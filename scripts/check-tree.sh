@@ -2,6 +2,10 @@
 
 set -eu
 
+# make tree-check, part of make check: whitespace errors, the source-level
+# guard scripts, the CBMC gate's inputs (CBMC itself runs only in make
+# check-cbmc), maintained docs, and no ROMs, saves or build output in Git.
+
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "Source tree checks require a Git checkout." >&2
   exit 1

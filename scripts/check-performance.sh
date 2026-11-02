@@ -2,6 +2,10 @@
 
 set -eu
 
+# Keeps the performance instrumentation cheap enough to leave on: sampling
+# never allocates or touches files, and the report is only formatted and
+# written outside the emulation hot paths.
+
 if rg -q 'FILE_|sceIo|malloc\(|calloc\(|realloc\(|free\(' \
   source/src/perf_metrics.c source/src/perf_monitor.c
 then
@@ -26,6 +30,7 @@ then
   exit 1
 fi
 
+# Benchmarks compare medians of three runs per build with matching settings.
 if ! rg -q 'nargs=3' scripts/compare-benchmarks.py || \
    ! rg -q 'MATCH_FIELDS' scripts/compare-benchmarks.py
 then

@@ -21,7 +21,22 @@
 #ifndef MESSAGE_H
 #define MESSAGE_H
 
+/* UI text ids. MSG[id] is the string for the current language; the tables
+   in text/message_*.h list the strings in exactly this enum order
+   (scripts/check-messages.sh checks it). The tables are UTF-8 source that
+   source/Makefile compiles to GBK. Add new entries with LF line endings:
+   make check runs git diff --check, which rejects a CR. */
 #define MSG  message[option_language]
+
+/* option_language values, in the order of the message[] tables (message.c).
+   In Japanese mode, text without GBK bytes (file names, plain ASCII) is
+   drawn with the Shift-JIS font (print_string); all other text uses the GBK
+   font (print_string_gbk). */
+#define LANGUAGE_JAPANESE            0
+#define LANGUAGE_ENGLISH             1
+#define LANGUAGE_SIMPLIFIED_CHINESE  2
+#define LANGUAGE_TRADITIONAL_CHINESE 3
+#define LANGUAGE_ITALIAN             4
 
 enum MESSAGE_ITEM
 {

@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
+"""Compare two builds from their PSP performance reports.
+
+Each build is run three times on the same game and settings; the medians of
+the candidate runs must not regress against the baseline runs. The reports
+are the key=value files written by source/src/perf_report.c.
+"""
 
 import argparse
 import statistics
 import sys
 
 
+# Settings that every run must share, or the timings are not comparable.
 MATCH_FIELDS = (
     "psp-model",
     "clock-mhz",
@@ -18,6 +25,8 @@ MATCH_FIELDS = (
     "rom-revision",
 )
 
+# Fields that older reports lack: checked only when the first baseline
+# report has them, and then every run must carry the same value.
 OPTIONAL_MATCH_FIELDS = (
     "gamepak-file-size",
     "gamepak-ram-buffer-size",
@@ -36,6 +45,7 @@ OPTIONAL_MATCH_FIELDS = (
 
 
 def read_report(path):
+    """Parse a report into a dict; only finished (stopped) sessions count."""
     values = {}
     with open(path, "r", encoding="utf-8") as report:
         for line_number, line in enumerate(report, 1):
@@ -55,6 +65,7 @@ def read_report(path):
 
 
 def number(report, key):
+    """Integer field of a report; a missing or bad value is an error."""
     try:
         return int(report[key])
     except (KeyError, ValueError) as error:
@@ -62,10 +73,12 @@ def number(report, key):
 
 
 def median_metric(reports, metric):
+    """Median of metric(report) over the three runs of one build."""
     return float(statistics.median(metric(report) for report in reports))
 
 
 def throughput(report):
+    """Emulated frames per second of wall time."""
     duration = number(report, "duration-us")
     if duration <= 0:
         raise ValueError("duration-us must be positive")
@@ -73,6 +86,7 @@ def throughput(report):
 
 
 def skip_ratio(report):
+    """Share of emulated frames that were never shown."""
     frames = number(report, "emulated-frames")
     if frames <= 0:
         raise ValueError("emulated-frames must be positive")
@@ -80,6 +94,11 @@ def skip_ratio(report):
 
 
 def fast_forward_multiplier(report):
+    """Fast-forward speed as a multiple of a real GBA.
+
+    Each frame is 280896 cycles at 16777216 Hz, so emulated time in us is
+    frames * 280896e6 / 16777216, divided here by the wall time spent.
+    """
     duration = number(report, "fast-forward-time-us")
     if duration <= 0:
         raise ValueError("fast-forward-time-us must be positive")
@@ -88,12 +107,16 @@ def fast_forward_multiplier(report):
 
 
 def percent_change(baseline, candidate):
+    """Relative change in percent; infinite when the baseline is zero."""
     if baseline == 0:
         return 0.0 if candidate == 0 else float("inf")
     return ((candidate / baseline) - 1.0) * 100.0
 
 
 def validate_matching_runs(baseline, candidate):
+    """All six runs must share the settings in MATCH_FIELDS, and the
+    OPTIONAL_MATCH_FIELDS the first run reports, or the numbers are not
+    comparable."""
     reference = baseline[0]
     for report in baseline[1:] + candidate:
         for field in MATCH_FIELDS:
@@ -105,6 +128,12 @@ def validate_matching_runs(baseline, candidate):
 
 
 def compare(baseline, candidate):
+    """Compare run medians and list every regression past its threshold.
+
+    Fails on throughput down more than 2%, frame-time p95 up more than 5%,
+    more audio underruns, a skipped-frame ratio up more than 0.5 points, or
+    fast-forward speed down more than 2% (when all runs measured it).
+    """
     validate_matching_runs(baseline, candidate)
 
     baseline_throughput = median_metric(baseline, throughput)
@@ -179,6 +208,7 @@ def compare(baseline, candidate):
 
 
 def format_result(result):
+    """The PASS/FAIL report main() prints, one key=value per line."""
     lines = ["PASS" if result["passed"] else "FAIL"]
     lines.append(
         f"throughput={result['throughput']:.2f} fps "
@@ -204,6 +234,7 @@ def format_result(result):
 
 
 def main(argv=None):
+    """Exit status: 0 on PASS, 1 on a regression, 2 on unreadable input."""
     parser = argparse.ArgumentParser(
         description="Compare three PSP benchmark reports per build."
     )

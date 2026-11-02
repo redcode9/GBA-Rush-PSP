@@ -1,3 +1,5 @@
+# Builds exception.prx, the kernel module that installs the crash handler.
+# source/Makefile builds it and copies it next to the EBOOT.
 TARGET = exception
 OBJS = main.o exception_asm.o
 

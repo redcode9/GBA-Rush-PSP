@@ -18,12 +18,21 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+// GBA memory map: RAM areas, I/O registers, DMA, cartridge ROM paging,
+// backup memory (SRAM/Flash/EEPROM), RTC and savestates (memory.c). The
+// dynarec shares the page tables (defined in mips_stub.S) and the
+// waitstate tables with this module.
+
 #ifndef MEMORY_H
 #define MEMORY_H
 
 #include "gba_sio.h"
 
 
+// The DMA enums below hold DMAxCNT_H fields as decoded: start timing
+// (bits 12-13), 32-bit unit (bit 10), repeat (bit 9), source and
+// destination address control (bits 7-8, 5-6) and IRQ (bit 14).
+// DMA_INACTIVE is an emulator-only state.
 typedef enum
 {
   DMA_START_IMMEDIATELY,
@@ -59,6 +68,7 @@ typedef enum
   DMA_TRIGGER_IRQ
 } DMA_IRQ_TYPE;
 
+// Which sound FIFO a DMA_START_SPECIAL transfer on channel 1 or 2 feeds.
 typedef enum
 {
   DMA_DIRECT_SOUND_A,
@@ -81,6 +91,8 @@ typedef struct
   DMA_IRQ_TYPE irq;
 } DmaTransferType;
 
+// Halfword indexes into io_registers (byte offset from 0x4000000 / 2), for
+// use with pIO_REG().
 typedef enum
 {
   REG_DISPCNT  = 0x000,
@@ -149,6 +161,9 @@ typedef enum
 extern char gamepak_filename[MAX_FILE];
 extern char gamepak_filename_raw[MAX_FILE];
 
+/* Handle of a ROM streamed from storage (too big for its buffer), or: */
+#define GAMEPAK_FILE_NONE        (-1)  /* no ROM file open */
+#define GAMEPAK_FILE_MENU_CLOSED (-2)  /* closed while the menu runs */
 extern SceUID gamepak_file_large;
 extern u8 *gamepak_rom;
 #define GAMEPAK_HEADER_SIZE 0xC0u
@@ -176,6 +191,7 @@ struct BiosData
 
 extern u16 palette_ram   [  0x200];
 extern u16 oam_ram       [  0x200];
+// 1 KiB of registers, then 1 KiB of per-byte "readable" flags (io_readable)
 extern u16 io_registers  [  0x400];
 extern GbaSio gba_sio;
 extern u32 gba_sio_state_dirty;
@@ -194,15 +210,18 @@ extern u32 iwram_control;
 
 extern u32 obj_address;
 
+// Wait cycles per memory region (address >> 24): [0] 8/16-bit accesses,
+// [1] 32-bit; _n for non-sequential and _s for sequential accesses. fetch_*
+// are the opcode fetch costs, which depend on the gamepak prefetch.
 extern u8 memory_waitstate_n[2][16];
 extern u8 memory_waitstate_s[2][16];
 extern u8 fetch_waitstate_n[2][16];
 extern u8 fetch_waitstate_s[2][16];
 
+// Host pointer for each 32 KiB page of the 28-bit GBA address space,
+// indexed by address >> 15; NULL pages go through the handler tables.
 extern u8 *memory_map_read[8 * 1024];
 extern u8 *memory_map_write[8 * 1024];
-
-// extern char backup_id[16];
 
 
 u8  read_memory8(u32 address);
@@ -249,7 +268,11 @@ void update_backup_immediately(void);
 
 extern u8 *write_mem_ptr;
 
-/* Returns 1 if the user confirmed and the operation completed, else 0. */
+/* Ask, then load or save savestate_filename in dir_state; the prompt names
+   savestate_slot (10 is gui.c's AUTO_SAVESTATE_SLOT). Both refuse while
+   the link cable is active. The file starts with screen_capture and a
+   ticker() timestamp, which load_state skips. Returns 1 if the user
+   confirmed and the operation completed, else 0. */
 u32 load_state(char *savestate_filename);
 u32 save_state(char *savestate_filename, u16 *screen_capture);
 
@@ -258,13 +281,13 @@ u32 save_state(char *savestate_filename, u16 *screen_capture);
 
 #define GBA_IME_STATE  (pIO_REG(REG_IME) != 0)
 
-#define pMEMORY_WS16N(resion) *(memory_waitstate_n[0] + (resion))
-#define pMEMORY_WS16S(resion) *(memory_waitstate_s[0] + (resion))
-#define pMEMORY_WS32N(resion) *(memory_waitstate_n[1] + (resion))
-#define pMEMORY_WS32S(resion) *(memory_waitstate_s[1] + (resion))
-#define pFETCH_WS16N(resion)  *(fetch_waitstate_n[0]  + (resion))
-#define pFETCH_WS16S(resion)  *(fetch_waitstate_s[0]  + (resion))
-#define pFETCH_WS32N(resion)  *(fetch_waitstate_n[1]  + (resion))
-#define pFETCH_WS32S(resion)  *(fetch_waitstate_s[1]  + (resion))
+#define pMEMORY_WS16N(mem_region) *(memory_waitstate_n[0] + (mem_region))
+#define pMEMORY_WS16S(mem_region) *(memory_waitstate_s[0] + (mem_region))
+#define pMEMORY_WS32N(mem_region) *(memory_waitstate_n[1] + (mem_region))
+#define pMEMORY_WS32S(mem_region) *(memory_waitstate_s[1] + (mem_region))
+#define pFETCH_WS16N(mem_region)  *(fetch_waitstate_n[0]  + (mem_region))
+#define pFETCH_WS16S(mem_region)  *(fetch_waitstate_s[0]  + (mem_region))
+#define pFETCH_WS32N(mem_region)  *(fetch_waitstate_n[1]  + (mem_region))
+#define pFETCH_WS32S(mem_region)  *(fetch_waitstate_s[1]  + (mem_region))
 
 #endif /* MEMORY_H */

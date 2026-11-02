@@ -9,6 +9,12 @@
  * the License, or (at your option) any later version.
  */
 
+/*
+ * Formats a benchmark capture as a text report of key=value lines, which
+ * scripts/compare-benchmarks.py reads. The keys are the format, versioned
+ * by PERF_REPORT_VERSION.
+ */
+
 #ifndef PERF_REPORT_H
 #define PERF_REPORT_H
 
@@ -55,6 +61,8 @@ typedef struct
   uint32_t gamepak_ram_pages;
 } PerfReportMetadata;
 
+/* Returns the report length, or -1 (and an empty string) if it does not
+   fit in output_size. */
 int perf_report_format(char *output, size_t output_size,
  const PerfReportMetadata *metadata, const PerfMetricsSnapshot *metrics);
 

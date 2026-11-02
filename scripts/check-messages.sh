@@ -2,6 +2,11 @@
 
 set -eu
 
+# Every translation table in source/src/text/ must list its strings in the
+# order of enum MESSAGE_ITEM in message.h, or the menus show the wrong text.
+# Each table entry carries a "// MSG_..." tag; the tags are compared to the
+# enum names in order.
+
 temporary_root=${TMPDIR:-/tmp}
 expected=$(mktemp "$temporary_root/gbarush-messages-expected.XXXXXX")
 actual=$(mktemp "$temporary_root/gbarush-messages-actual.XXXXXX")

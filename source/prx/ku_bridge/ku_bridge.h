@@ -2,6 +2,9 @@
 
   ku_bridge.prx
 
+  User-side prototypes for the ku_bridge.prx exports. A copy lives in
+  source/src/ku_bridge.h next to the generated import stub.
+
 ******************************************************************************/
 
 #ifndef KU_BRIDGE_PRX_H

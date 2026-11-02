@@ -4,9 +4,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Settings as stored in tempgba.cfg and the per-game .cfg files; see
+   config_model.c for the byte layout. */
 #define CONFIG_MODEL_GAMEPAD_COUNT 16U
 #define CONFIG_MODEL_VALUE_COUNT 45U
-#define CONFIG_MODEL_LEGACY_CURRENT_WORDS 39U
+#define CONFIG_MODEL_LEGACY_CURRENT_WORDS 39U   // largest headerless layout
 #define CONFIG_MODEL_HEADER_SIZE 16U
 #define CONFIG_MODEL_ENCODED_SIZE \
  (CONFIG_MODEL_HEADER_SIZE + CONFIG_MODEL_VALUE_COUNT * sizeof(uint32_t))

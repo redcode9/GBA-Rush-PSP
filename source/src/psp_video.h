@@ -1,3 +1,8 @@
+/* PSP display output (psp_video.c): GU setup, presenting the GBA texture
+ * with the selected scaler, adaptive 16:9 quality, and the 2D drawing and
+ * text helpers that the menus in gui.c draw with.
+ */
+
 #ifndef PSP_VIDEO_H
 #define PSP_VIDEO_H
 

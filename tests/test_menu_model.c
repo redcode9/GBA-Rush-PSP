@@ -1,3 +1,9 @@
+/*
+ * Host tests for menu_model.c, the table-driven menu behind the settings
+ * screens (rows with visibility and availability predicates, value rows,
+ * actions), and for the main category order in menu_catalog.c.
+ */
+
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -35,6 +41,14 @@ static void count_change(void *context)
   ((TestContext *)context)->change_count++;
 }
 
+/*
+ * Moving skips hidden rows ("optional") and status rows and wraps around;
+ * an unavailable row ("link") can be selected but not activated; a value
+ * row with MENU_ROW_WRAP_VALUE wraps from its last value to the first; and
+ * when the selected row disappears, reconcile moves to the next visible one.
+ * Row fields: id, label, kind, flags, visible, available, unavailable
+ * reason, help ids, value, value count, activate, changed, context.
+ */
 static void test_navigation_and_dispatch(void)
 {
   TestContext context = { 0, 0, 0, 0 };
@@ -104,6 +118,8 @@ static void test_navigation_and_dispatch(void)
   assert(strcmp(menu_model_selected(&model)->id, "link") == 0);
 }
 
+/* Duplicate ids are rejected; a value row without the wrap flag stops at
+   its first and last value. */
 static void test_bounds_and_invalid_models(void)
 {
   uint32_t value = 0;
@@ -151,6 +167,8 @@ static void test_no_selectable_rows(void)
   assert(menu_model_adjust(&model, 1) == MENU_MODEL_NO_SELECTION);
 }
 
+/* Must match the main menu order that scripts/check-menu-layout.sh checks
+   in gui.c. */
 static void test_main_category_order(void)
 {
   static const char *expected[] =
@@ -181,6 +199,7 @@ static void test_main_category_order(void)
   }
 }
 
+/* Runs every menu model and catalog case; a failing assert aborts the run. */
 int main(void)
 {
   test_navigation_and_dispatch();

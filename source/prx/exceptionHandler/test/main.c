@@ -1,3 +1,7 @@
+/* Standalone test EBOOT for exception.prx: press X to raise a break
+ * exception or O for a bus error and check the crash screen. Needs
+ * exception.prx in the current directory. */
+
 #include <pspkernel.h>
 #include <pspctrl.h>
 #include <pspdebug.h>
@@ -6,7 +10,6 @@
 #include "../utility/exception.h"
 PSP_MODULE_INFO("Exception Handler Test", 0, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
-//PSP_HEAP_SIZE_KB(22000);
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Globals:
@@ -34,6 +37,7 @@ int CallbackThread(SceSize args, void *argp) {
 /* Sets up the callback thread and returns its thread id */
 int SetupCallbacks(void) {
     int thid = 0;
+    /* priority 0x11, 4000-byte stack */
     thid = sceKernelCreateThread("update_thread", CallbackThread, 0x11, 0xFA0, PSP_THREAD_ATTR_USER, 0);
     if(thid >= 0)
         sceKernelStartThread(thid, 0, 0);

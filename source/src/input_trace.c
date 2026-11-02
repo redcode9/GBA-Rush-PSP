@@ -14,6 +14,11 @@
 #include <limits.h>
 #include <string.h>
 
+/* Encoded trace, little-endian:
+ *   0 "GBIT"  4 version  6 header size  8 event count  12 game code
+ *   16 ROM revision  17-19 zero  20 duration in frames  24 checksum
+ *   28 start frame; then 8-byte events: u32 frame offset, u16 keys, u16 0.
+ */
 #define INPUT_TRACE_CHECKSUM_OFFSET 24U
 
 static void input_trace_write_u16(uint8_t *output, uint16_t value)
@@ -41,6 +46,7 @@ static uint32_t input_trace_read_u32(const uint8_t *input)
    ((uint32_t)input[2] << 16) | ((uint32_t)input[3] << 24);
 }
 
+/* 32-bit FNV-1a over the whole trace, reading the checksum field as 0. */
 static uint32_t input_trace_checksum(const uint8_t *data, size_t size)
 {
   uint32_t checksum = 2166136261U;
@@ -60,6 +66,7 @@ static uint32_t input_trace_checksum(const uint8_t *data, size_t size)
   return checksum;
 }
 
+/* Enters the ERROR state; returns 0 so callers can return it directly. */
 static int input_trace_fail(InputTrace *trace, InputTraceError error)
 {
   if(trace != NULL)
@@ -70,6 +77,8 @@ static int input_trace_fail(InputTrace *trace, InputTraceError error)
   return 0;
 }
 
+/* events is the caller's buffer of event_capacity entries; the trace
+   never allocates. */
 void input_trace_init(InputTrace *trace, InputTraceEvent *events,
  uint32_t event_capacity)
 {
@@ -82,6 +91,8 @@ void input_trace_init(InputTrace *trace, InputTraceEvent *events,
   trace->state = INPUT_TRACE_IDLE;
 }
 
+/* Back to IDLE, dropping any recording, replay or error; the caller's
+   event buffer stays attached. */
 void input_trace_cancel(InputTrace *trace)
 {
   InputTraceEvent *events;
@@ -98,6 +109,8 @@ void input_trace_cancel(InputTrace *trace)
   trace->state = INPUT_TRACE_IDLE;
 }
 
+/* The keys held at start_frame become event 0, so a replay starts from
+   the same buttons. */
 int input_trace_begin_record(InputTrace *trace, uint32_t start_frame,
  const uint8_t game_code[INPUT_TRACE_GAME_CODE_SIZE], uint8_t rom_revision,
  uint16_t initial_keys)
@@ -118,6 +131,8 @@ int input_trace_begin_record(InputTrace *trace, uint32_t start_frame,
   return 1;
 }
 
+/* frame is the absolute frame number. Going back before the last change
+   or filling the buffer puts the trace in ERROR. */
 int input_trace_record(InputTrace *trace, uint32_t frame, uint16_t keys)
 {
   uint32_t frame_offset;
@@ -129,6 +144,7 @@ int input_trace_record(InputTrace *trace, uint32_t frame, uint16_t keys)
 
   frame_offset = frame - trace->start_frame;
   keys &= INPUT_TRACE_KEY_MASK;
+  /* Only key changes are stored; the last change in a frame wins. */
   if(keys == trace->last_recorded_keys)
     return 1;
 
@@ -152,6 +168,7 @@ int input_trace_record(InputTrace *trace, uint32_t frame, uint16_t keys)
   return 1;
 }
 
+/* Ends the recording at end_frame; the trace is then READY to encode. */
 int input_trace_finish_record(InputTrace *trace, uint32_t end_frame)
 {
   uint32_t duration;
@@ -170,6 +187,7 @@ int input_trace_finish_record(InputTrace *trace, uint32_t end_frame)
   return 1;
 }
 
+/* Bytes input_trace_encode will write; 0 unless the trace is READY. */
 size_t input_trace_encoded_size(const InputTrace *trace)
 {
   if(trace == NULL || trace->state != INPUT_TRACE_READY ||
@@ -185,6 +203,8 @@ size_t input_trace_encoded_size(const InputTrace *trace)
    (size_t)trace->event_count * INPUT_TRACE_EVENT_SIZE;
 }
 
+/* Serializes a READY trace in the layout at the top of the file; fails
+   without writing when output is smaller than input_trace_encoded_size(). */
 int input_trace_encode(const InputTrace *trace, uint8_t *output,
  size_t output_size, size_t *written)
 {
@@ -223,6 +243,8 @@ int input_trace_encode(const InputTrace *trace, uint8_t *output,
   return 1;
 }
 
+/* Checks the whole file (format, checksum, game identity, capacity, event
+   order) before loading anything. Replay starts at start_frame. */
 int input_trace_begin_replay(InputTrace *trace, const uint8_t *encoded,
  size_t encoded_size,
  const uint8_t expected_game_code[INPUT_TRACE_GAME_CODE_SIZE],
@@ -307,6 +329,8 @@ int input_trace_begin_replay(InputTrace *trace, const uint8_t *encoded,
   return 1;
 }
 
+/* The _from_header variants take the game identity from the cartridge
+   header and fail when the ROM (file_size) is shorter than the header. */
 int input_trace_begin_record_from_header(InputTrace *trace,
  uint32_t start_frame,
  const uint8_t header[INPUT_TRACE_IDENTITY_SIZE], uint32_t file_size,
@@ -316,10 +340,12 @@ int input_trace_begin_record_from_header(InputTrace *trace,
      file_size < INPUT_TRACE_IDENTITY_SIZE)
     return 0;
 
+  /* Game code at 0xAC and software version at 0xBC of the header. */
   return input_trace_begin_record(trace, start_frame, header + 0xAC,
    header[0xBC], initial_keys);
 }
 
+/* Like input_trace_begin_record_from_header(), for a replay. */
 int input_trace_begin_replay_from_header(InputTrace *trace,
  const uint8_t *encoded, size_t encoded_size,
  const uint8_t header[INPUT_TRACE_IDENTITY_SIZE], uint32_t file_size,

@@ -1,3 +1,5 @@
+# Only the mandatory syslib exports: the emulator passes the handler and
+# its register block as module_start arguments (source/src/exception.c).
 PSP_BEGIN_EXPORTS
 PSP_EXPORT_START(syslib, 0, 0x8000)
 PSP_EXPORT_FUNC_HASH(module_start)

@@ -2,6 +2,11 @@
 
 set -eu
 
+# Source-level guards for psp_video.c and video_dispatch.c that host tests
+# cannot exercise: frames go out through libGU, the power callback leaves
+# video work to the main loop, and the per-scanline path only uses the
+# renderer chosen at the start of the frame.
+
 if rg -q 'sceGeListEnQueue' source/src/psp_video.c
 then
   echo "Video presentation must remain on the libGU path" >&2

@@ -13,6 +13,8 @@
 
 #include <string.h>
 
+/* Full barrier between the power callback and the emulator thread:
+   Allegrex SYNC on the PSP, the GCC builtin in host tests. */
 static void power_lifecycle_memory_barrier(void)
 {
 #ifdef __PSP__
@@ -30,6 +32,8 @@ void power_lifecycle_init(PowerLifecycle *lifecycle)
   memset(lifecycle, 0, sizeof(*lifecycle));
 }
 
+/* The counters are published before the suspended flag flips, so the
+   emulator thread never sees the flag without the request behind it. */
 void power_lifecycle_suspend(PowerLifecycle *lifecycle, int request_save)
 {
   if(lifecycle == NULL || lifecycle->suspended)

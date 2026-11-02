@@ -23,6 +23,9 @@ static int runtime_log_store_remove_if_present(const RuntimeLogStoreIo *io,
   return !io->exists(io->context, path) || io->remove(io->context, path);
 }
 
+/* Cleans up after an interrupted save: removes a leftover temporary file,
+   then either drops a stale backup or, when the primary is missing, puts
+   the backup back in its place. */
 int runtime_log_store_recover(const RuntimeLogStoreIo *io,
  const char *primary, const char *temporary, const char *backup)
 {
@@ -39,6 +42,9 @@ int runtime_log_store_recover(const RuntimeLogStoreIo *io,
   return 1;
 }
 
+/* Replaces primary with data: writes temporary, moves primary to backup,
+   promotes temporary, then deletes the backup. On failure the old primary
+   is put back where possible; recover() handles a crash midway. */
 int runtime_log_store_save(const RuntimeLogStoreIo *io,
  const char *primary, const char *temporary, const char *backup,
  const uint8_t *data, size_t size)
@@ -73,6 +79,8 @@ int runtime_log_store_save(const RuntimeLogStoreIo *io,
   return runtime_log_store_remove_if_present(io, backup);
 }
 
+/* Shifts each slot up by one (slots[count - 1] is deleted), leaving
+   slots[0] free for the next session. */
 int runtime_log_store_rotate(const RuntimeLogStoreIo *io,
  const char *const *slots, size_t count)
 {

@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+# Bounded model check of link_net.c's datagram handling with CBMC
+# (make check-cbmc). Not part of make check, since it needs CBMC; tree-check
+# only makes sure this script and its proof exist and keep unwinding
+# assertions on.
+
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cbmc_bin=${CBMC:-cbmc}
 
@@ -9,6 +14,8 @@ if ! command -v "$cbmc_bin" >/dev/null 2>&1; then
   exit 2
 fi
 
+# --unwinding-assertions fails the proof when a loop needs more iterations
+# than --unwind allows, so the bound is checked rather than assumed.
 common_flags="--c99 --object-bits 12 --bounds-check --pointer-check
 --div-by-zero-check --signed-overflow-check --pointer-overflow-check
 --conversion-check --undefined-shift-check --enum-range-check
@@ -25,6 +32,7 @@ run_proof()
     -I "$repo_root/source/src" "$@"
 }
 
+# The proof assumes queues of 4 messages, so link_net.c is built with them.
 run_proof link-net 14 -DLINK_NET_QUEUE=4u \
   "$repo_root/proofs/cbmc/prove_link_net.c" \
   "$repo_root/source/src/link_net.c"

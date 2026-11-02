@@ -28,8 +28,9 @@ Use one PSP-1000 and one PSP-2000 with the same EBOOT. Copy both
 - [ ] Disconnect from the menu, switch WLAN off, suspend one PSP and exit one
   PSP during a session: the other PSP must report the end within ten seconds
   and keep running.
-- [ ] One non-Pokemon game in lockstep mode, recording the frame rate shown
-  with the FPS overlay.
+- [ ] One non-Pokemon game in lockstep mode, such as a Mario Kart: Super
+  Circuit Multi-Pak race, recording the frame rate shown with the FPS
+  overlay.
 
 ## Runtime and build fixes
 

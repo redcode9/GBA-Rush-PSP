@@ -9,6 +9,12 @@
  * the License, or (at your option) any later version.
  */
 
+/*
+ * Growable LIFO of translated branches whose target block is still to be
+ * looked up. cpu.c queues direct exits while translating and drains the list
+ * in process_deferred_exits once the outermost translation is done.
+ */
+
 #ifndef DYNAREC_WORKLIST_H
 #define DYNAREC_WORKLIST_H
 
@@ -17,9 +23,9 @@
 
 typedef struct
 {
-  void *branch_source;
-  uint32_t branch_target;
-  uint8_t thumb;
+  void *branch_source;     /* emitted jump placeholder to patch */
+  uint32_t branch_target;  /* GBA address the branch goes to */
+  uint8_t thumb;           /* target is Thumb code */
 } DynarecWorkItem;
 
 typedef struct
@@ -29,6 +35,7 @@ typedef struct
   size_t capacity;
 } DynarecWorklist;
 
+/* push returns 0 if the list cannot grow; pop returns 0 when it is empty. */
 int dynarec_worklist_push(DynarecWorklist *worklist, void *branch_source,
  uint32_t branch_target, int thumb);
 int dynarec_worklist_pop(DynarecWorklist *worklist, DynarecWorkItem *item);

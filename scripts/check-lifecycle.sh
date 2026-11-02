@@ -3,6 +3,7 @@ set -eu
 
 # Source-level guards for PSP-only lifecycle rules that host tests cannot
 # exercise: callbacks, thread priorities, bounded waits and link wiring.
+# Run from the repository root by check-tree.sh; uses ripgrep (rg).
 
 fail()
 {
@@ -15,6 +16,8 @@ body()
   sed -n "$1" "$2"
 }
 
+# main_link_start() must prepare the SIO registers, returning on failure,
+# before any of the three calls that use them.
 link_start_body=$(body '/^static int main_link_start(int host)/,/^}/p' \
   source/src/main.c)
 if ! printf '%s\n' "$link_start_body" | awk '
@@ -30,6 +33,8 @@ then
   fail "Link startup uses SIO before guarded register preparation"
 fi
 
+# A link session runs at 333 MHz from before ad-hoc startup until it
+# closes, and the menu must not change the clock meanwhile.
 clock_line=$(printf '%s\n' "$link_start_body" | \
   rg -n 'set_cpu_clock\(PSP_CLOCK_333\)' | head -n 1 | cut -d: -f1 || true)
 adhoc_line=$(printf '%s\n' "$link_start_body" | \
@@ -95,6 +100,8 @@ then
   fail "Obsolete PTP transport is still present"
 fi
 
+# The power callback runs on the kernel callback thread and must not block:
+# the slow suspend and resume work is left to the main loop.
 callback_body=$(body \
   '/^static int power_callback/,/^static int callback_thread/p' \
   source/src/main.c)
@@ -152,6 +159,8 @@ then
   fail "Sound synchronization has no recovery deadline"
 fi
 
+# With a paged ROM the header page can be evicted, so title, game code and
+# revision must come from the gamepak_header copy taken at load time.
 if rg -q 'gamepak_rom[[:space:]]*\+[[:space:]]*0x(A0|AC)|gamepak_rom\[0xBC\]' \
   source/src/main.c || \
    ! rg -q 'gamepak_header\[GAMEPAK_HEADER_SIZE\]' source/src/memory.c || \
@@ -160,6 +169,7 @@ then
   fail "Paged ROM metadata is not backed by a stable header copy"
 fi
 
+# Logging must never block the emulator thread or the link wait loop.
 if body '/^void runtime_log_ring_emit/,/^size_t runtime_log_ring_snapshot/p' \
   source/src/runtime_log.c | rg -q \
   'sceIo|FILE_|printf|malloc|calloc|realloc|sceKernelWait|sceKernelDelay'

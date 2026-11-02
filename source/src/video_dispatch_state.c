@@ -1,5 +1,6 @@
 #include "video_dispatch_state.h"
 
+/* Any unknown value (e.g. from an old config) falls back to the new one. */
 static uint32_t video_dispatch_normalize(uint32_t renderer)
 {
   return renderer == VIDEO_DISPATCH_RENDERER_OLD ?
@@ -15,6 +16,8 @@ void video_dispatch_state_init(VideoDispatchState *state,
   state->active_renderer = normalized;
 }
 
+/* Only records the wish; begin_frame applies it, so a frame never mixes
+   renderers. */
 void video_dispatch_state_request(VideoDispatchState *state,
  uint32_t renderer)
 {

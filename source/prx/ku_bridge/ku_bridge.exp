@@ -2,12 +2,13 @@
 PSP_BEGIN_EXPORTS
 
 # These four lines are mandatory (although you can add other functions like module_stop)
-# syslib is a psynonym for the single mandatory export.
+# syslib is a synonym for the single mandatory export.
 PSP_EXPORT_START(syslib, 0, 0x8000)
 PSP_EXPORT_FUNC_HASH(module_start)
 PSP_EXPORT_VAR_HASH(module_info)
 PSP_EXPORT_END
 
+# The ku_bridge library the emulator imports through source/src/ku_bridge.S
 PSP_EXPORT_START(ku_bridge, 0, 0x4001)
 PSP_EXPORT_FUNC(init_ku_bridge)
 PSP_EXPORT_FUNC(kuImposeGetParam)

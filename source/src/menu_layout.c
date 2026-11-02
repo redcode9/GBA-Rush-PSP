@@ -1,7 +1,13 @@
+/* Platform-independent menu layout maths used by gui.c: scrolling the
+   option list so the selection stays visible, and clipping or scrolling
+   double-byte text by screen columns. */
+
 #include "menu_layout.h"
 
 #include <limits.h>
 
+/* Scroll only as far as needed to keep selected_line visible; once the list
+   scrolls, the selection sits on the last row. */
 MenuViewport menu_viewport_for_selection(uint32_t selected_line,
  uint32_t visible_lines)
 {
@@ -15,6 +21,8 @@ MenuViewport menu_viewport_for_selection(uint32_t selected_line,
   return viewport;
 }
 
+/* Screen y of logical_line; returns 0 (and leaves *baseline alone) when the
+   line is outside the viewport or the result would overflow. */
 int menu_viewport_baseline(const MenuViewport *viewport,
  uint32_t logical_line, uint32_t first_baseline, uint32_t line_height,
  uint32_t *baseline)
@@ -44,6 +52,10 @@ size_t menu_layout_max_columns(uint32_t screen_width, uint32_t start_x,
   return (screen_width - start_x) / glyph_width;
 }
 
+/* Length of the character at text: 2 for a valid lead/trail pair in the
+   given encoding (Shift-JIS lead 0x81-0x9F or 0xE0-0xEF, GBK lead
+   0x81-0xFE), otherwise 1. Every byte takes one font column, so a
+   double-byte character is two columns wide. */
 static size_t text_character_bytes(const char *text,
  MenuTextEncoding encoding)
 {
@@ -57,6 +69,7 @@ static size_t text_character_bytes(const char *text,
    trail <= (encoding == MENU_TEXT_SHIFT_JIS ? 0xFC : 0xFE) ? 2 : 1;
 }
 
+/* Bytes of text that fit in max_columns without splitting a character. */
 size_t menu_text_clip_length_for_encoding(const char *text,
  size_t max_columns, MenuTextEncoding encoding)
 {
@@ -86,6 +99,8 @@ size_t menu_text_clip_length(const char *text, size_t max_columns)
   return menu_text_clip_length_for_encoding(text, max_columns, MENU_TEXT_GBK);
 }
 
+/* Byte offset at which to start drawing text scrolled left by column_offset
+   columns, never starting inside a double-byte character. */
 size_t menu_text_scroll_start(const char *text, size_t column_offset,
  MenuTextEncoding encoding)
 {

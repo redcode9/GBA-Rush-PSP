@@ -18,7 +18,7 @@ typedef int64_t s64;
 /* PSP kernel handle type (see PSP SDK pspkernel.h). */
 typedef unsigned int SceUID;
 
-/* common.h:45 */
+/* Same value as MAX_FILE in common.h. */
 #define MAX_FILE 256
 
 #endif

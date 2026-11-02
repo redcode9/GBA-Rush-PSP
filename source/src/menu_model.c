@@ -1,3 +1,7 @@
+/* Platform-independent menu navigation: the selected row, cursor moves that
+   skip hidden or unselectable rows, and stepping a row's value. gui.c
+   mirrors each menu screen into MenuRows (build_legacy_menu_model). */
+
 #include "menu_model.h"
 
 #include <string.h>
@@ -12,11 +16,15 @@ static int row_available(const MenuRow *row)
   return row->available == NULL || row->available(row->context);
 }
 
+/* Availability is not checked: a disabled row still takes the cursor, and
+   menu_model_activate/adjust refuse it with MENU_MODEL_UNAVAILABLE. */
 static int row_selectable(const MenuRow *row)
 {
   return (row->flags & MENU_ROW_SELECTABLE) != 0 && row_visible(row);
 }
 
+/* Next selectable row after start in direction, wrapping around; start
+   itself is checked last when attempts equals row_count. */
 static size_t find_selectable(const MenuModel *model, size_t start,
  size_t attempts, int direction)
 {
@@ -126,6 +134,8 @@ int menu_model_select_id(MenuModel *model, const char *id)
   return 0;
 }
 
+/* If the selected row is no longer selectable (e.g. it became hidden), move
+   to the next one that is. Returns nonzero if the selection changed. */
 int menu_model_reconcile(MenuModel *model)
 {
   size_t previous;
@@ -185,6 +195,7 @@ MenuModelResult menu_model_activate(MenuModel *model)
   return MENU_MODEL_ACTIVATED;
 }
 
+/* Step a value row by one; it wraps only with MENU_ROW_WRAP_VALUE. */
 MenuModelResult menu_model_adjust(MenuModel *model, int direction)
 {
   const MenuRow *row = menu_model_selected(model);

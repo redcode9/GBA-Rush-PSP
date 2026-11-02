@@ -1,3 +1,7 @@
+/* Canonical order and stable ids of the main menu categories, checked by
+   tests/test_menu_model.c. gui.c's main_options[] lists the categories in
+   the same order (enforced by scripts/check-menu-layout.sh). */
+
 #include "menu_catalog.h"
 
 const MenuMainCategoryDefinition menu_main_categories[MENU_MAIN_CATEGORY_COUNT] =

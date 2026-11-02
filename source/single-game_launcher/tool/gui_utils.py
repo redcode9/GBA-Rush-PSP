@@ -104,7 +104,8 @@ def _sanitize(name):
     """
     Sanitize a string for use as a folder name.
 
-    Replaces Windows-forbidden characters with underscores.
+    Replaces the characters Windows forbids in names, except ':', with
+    underscores.
     Falls back to "Untitled" if the result is empty.
     """
     return re.sub(r'[<>"/\\|?*]', '_', name).strip() or "Untitled"

@@ -1,3 +1,10 @@
+/*
+ * Host tests for fast_forward_audio.c, which squeezes 1-3 emulated stereo
+ * frames into each output frame while fast-forwarding. The input is the
+ * sound ring of interleaved left/right int32 samples; consumed slots are
+ * cleared and the read position (base) advances with wrap-around.
+ */
+
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -5,6 +12,7 @@
 
 #include "fast_forward_audio.h"
 
+/* Samples = frames x 2 channels x factor; an invalid factor counts as 1. */
 static void test_required_samples(void)
 {
   assert(fast_forward_audio_required_samples(800, 1) == 1600);
@@ -28,6 +36,7 @@ static void test_stereo_groups_are_averaged(void)
   assert(memcmp(ring, (int32_t[8]){ 0 }, sizeof(ring)) == 0);
 }
 
+/* Reading three frames from slot 4 of an 8-slot ring wraps to slot 0. */
 static void test_ring_wrap(void)
 {
   int32_t ring[] = { 480, 4800, 0, 0, 160, 1600, 320, 3200 };
@@ -50,6 +59,7 @@ static void test_clipping_and_muting(void)
   assert(output[0] == 32767);
   assert(output[1] == -32768);
 
+  /* Not audible: output is silence, but the ring is still consumed. */
   ring[0] = 100;
   ring[1] = -100;
   base = 0;
@@ -58,6 +68,7 @@ static void test_clipping_and_muting(void)
   assert(ring[0] == 0 && ring[1] == 0);
 }
 
+/* Averages round half away from zero, so left and right mirror exactly. */
 static void test_average_rounds_without_sign_bias(void)
 {
   int32_t ring[] = { 1, -1, 2, -2, 2, -2, 3, -3, 3, -3, 3, -3 };
@@ -71,6 +82,7 @@ static void test_average_rounds_without_sign_bias(void)
   assert(output[3] == -3);
 }
 
+/* Runs every case; a failing assert aborts the run. */
 int main(void)
 {
   test_required_samples();

@@ -18,6 +18,13 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+/* New scanline renderer and the default one: a C++ port of upstream
+ * gpSP's 2023 renderer. Not compiled on its own: video_cc_wrap.cc gives its
+ * globals a _new suffix and #includes it, and video_dispatch.c calls it
+ * unless the old renderer (video.c) is selected. Adds an optional OAM
+ * hijack overlay (option_oam_hijacking_enabled).
+ */
+
 extern "C" {
   #include "common.h"
   #include "video_mosaic.h"
@@ -47,16 +54,21 @@ extern u32 option_oam_hijacking_enabled;  // Emulator option for OAM hijacking
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #endif
 
+// reg is a halfword index into the I/O registers (REG_* = byte offset / 2).
 static inline u32 read_ioreg(u32 reg)
 {
   return pIO_REG(reg);
 }
 
+// Both halfwords of a 32-bit register such as BG2X_L/H; reg * 2 is the
+// byte offset.
 static inline u32 read_ioreg32(u32 reg)
 {
   return ADDRESS32(io_registers, reg * 2);
 }
 
+// Upstream hooks for big-endian hosts and RGB565 output. No-ops on PSP,
+// which is little endian and displays the GBA's 5:5:5 colors as they are.
 static inline u16 eswap16(u16 v) { return v; }
 static inline u32 eswap32(u32 v) { return v; }
 static inline u16 convert_palette(u16 v) { return v; }
@@ -69,17 +81,22 @@ extern u32 skip_next_frame;
 #define bitmap_render_function bitmap_render_function_cc
 #define tile_render_function tile_render_function_cc
 
+// Unused upstream leftover.
 u16 *gba_screen_pixels = (u16 *)(0x4000000 + (PSP_FRAME_SIZE * 2));
+// Copies synced from video_dispatch.c every frame; only screen_texture,
+// the GBA frame texture in VRAM, is read here.
 void (*update_screen)(void);
 u16 *screen_texture = (u16 *)(0x4000000 + (PSP_FRAME_SIZE * 2));
 
 #define get_screen_pixels()   screen_texture
 #define get_screen_pitch()    GBA_SCREEN_PITCH
 
+// One OAM entry. attr3 is not an OBJ attribute: it holds affine params.
 typedef struct {
   u16 attr0, attr1, attr2, attr3;
 } t_oam;
 
+// One affine parameter group, spread over the attr3 of four OAM entries.
 typedef struct {
   u16 pad0[3];
   u16 dx;
@@ -146,7 +163,8 @@ typedef struct
 #define tile_width_8bpp   8
 #define tile_size_8bpp   64
 
-// Sprite rendering cycles
+// OBJ rendering budget per scanline, in cycles: 1210, or 954 when DISPCNT
+// bit 5 (H-Blank interval free) is set. Excess OBJs are dropped.
 #define REND_CYC_MAX          32768   /* Theoretical max is 17920 */
 #define REND_CYC_SCANLINE      1210
 #define REND_CYC_REDUCED        954
@@ -174,12 +192,14 @@ typedef enum
 extern "C" s32 affine_reference_x[2];
 extern "C" s32 affine_reference_y[2];
 
+/* BGxX/BGxY are 28-bit signed values: extend bit 27 through bit 31. */
 static inline s32 signext28(u32 value)
 {
   s32 ret = (s32)(value << 4);
   return ret >> 4;
 }
 
+// Not called on PSP: main.c reloads the reference points itself at VBlank.
 void video_reload_counters()
 {
   /* This happens every Vblank */
@@ -193,8 +213,9 @@ void video_reload_counters()
 // Will process a full or partial tile (start and end within 0..8) and draw
 // it in either 8 or 4 bpp mode. Honors vertical and horizontal flip.
 
-// tile contains the tile info (contains tile index, flip bits, pal info)
-// hflip causes the tile pixels lookup to be reversed (from MSB to LSB
+// tile contains the tile info: bits 0-9 tile index, bit 10 hflip, bit 11
+// vflip, bits 12-15 palette (4bpp).
+// hflip causes the tile pixels lookup to be reversed (from MSB to LSB).
 // If isbase is not set, color 0 is interpreted as transparent, otherwise
 // we are drawing the base layer, so palette[0] is used (backdrop).
 
@@ -213,12 +234,12 @@ static inline void rend_part_tile_Nbpp(u32 bg_comb, u32 px_comb,
     tile_ptr += vertical_pixel_flip;
 
   if (is8bpp) {
-    // Each byte is a color, mapped to a palete. 8 bytes can be read as 64bit
+    // Each byte is a color, mapped to a palette. 8 bytes can be read as 64bit
     for (u32 i = start; i < end; i++, dest_ptr++) {
       // Honor hflip by selecting bytes in the correct order
       u32 sel = hflip ? (7-i) : i;
       u8 pval = tile_ptr[sel];
-      // Alhpa mode stacks previous value (unless rendering the first layer)
+      // Alpha mode stacks previous value (unless rendering the first layer)
       if (pval) {
         if (rdtype == FULLCOLOR)
           *dest_ptr = paltbl[pval];
@@ -333,6 +354,8 @@ static inline void render_tile_Nbpp(
 }
 
 
+// Draws columns start..end of a text BG line a tile at a time; mosaic layers
+// use render_scanline_text_mosaic() instead.
 template<typename stype, rendtype rdtype, bool isbase, bool is8bpp>
 static void render_scanline_text_fast(u32 layer,
  u32 start, u32 end, void *scanline, const u16 * paltbl)
@@ -477,6 +500,7 @@ static void render_scanline_text_mosaic(u32 layer,
  u32 start, u32 end, void *scanline, const u16 * paltbl)
 {
   u32 bg_control = read_ioreg(REG_BGxCNT(layer));
+  // MOSAIC bits 0-3 / 4-7: BG block width / height minus one.
   const u32 mosh = (read_ioreg(REG_MOSAIC) & 0xF) + 1;
   const u32 mosv = ((read_ioreg(REG_MOSAIC) >> 4) & 0xF) + 1;
   u16 vcount = read_ioreg(REG_VCOUNT);
@@ -599,6 +623,7 @@ static void render_scanline_text_mosaic(u32 layer,
   }
 }
 
+// Picks the mosaic or fast text renderer, 4 or 8 bpp, from BGxCNT and MOSAIC.
 template<typename stype, rendtype rdtype, bool isbase>
 static void render_scanline_text(u32 layer,
  u32 start, u32 end, void *scanline, const u16 * paltbl)
@@ -644,7 +669,7 @@ template<typename dsttype, rendtype rdtype, bool isbase>
 static inline void rend_pix_8bpp(
   dsttype *dest_ptr, u8 pval, u32 bg_comb, u32 px_comb, const u16 *pal
 ) {
-  // Alhpa mode stacks previous value (unless rendering the first layer)
+  // Alpha mode stacks previous value (unless rendering the first layer)
   if (pval) {
     if (rdtype == FULLCOLOR)
       *dest_ptr = pal[pval];
@@ -666,7 +691,7 @@ static inline void rend_pix_8bpp(
 template<typename dsttype, rendtype rdtype>
 static inline void render_bdrop_pixel_8bpp(
   dsttype *dest_ptr, u32 bg_comb, u16 bgcol) {
-  // Alhpa mode stacks previous value (unless rendering the first layer)
+  // Backdrop pixel: its color, or index 0 with the backdrop target flags.
   if (rdtype == FULLCOLOR)
     *dest_ptr = bgcol;
   else
@@ -723,7 +748,7 @@ static inline void render_affine_background(
         source_x += dx; source_y += dy;  // Move to the next pixel
       }
     } else {
-      // Y coordinate stays contant across the walk.
+      // Y coordinate stays constant across the walk.
       const u32 pix_y = (u32)(source_y >> 8) & (width_height-1);
       for (; cnt; cnt--) {
         u32 pix_x = (u32)(source_x >> 8) & (width_height-1);
@@ -1008,9 +1033,16 @@ static const u8 obj_dim_table[3][4][2] = {
   { {8, 16}, {8, 32}, {16, 32}, {32, 64} }
 };
 
+// Per scanline, the OAM indexes of visible OBJs for priorities 0-3, plus
+// list 4 for OBJ window sprites; built by order_obj().
 static u8 obj_priority_list[5][160][128];
 static u8 obj_priority_count[5][160];
 static u8 obj_alpha_count[160];
+// OAM hijack overlay (option), for games that rely on the hardware picking
+// the lower-numbered OBJ's pixel before BG priority applies. order_obj()
+// flags OBJs with a higher priority than an earlier OBJ in OAM order. On
+// lines they cover, OBJs up to the flagged one are first drawn in OAM order
+// into obj_buf, and flagged OBJs copy it into their transparent tile rows.
 static u8 oam_hijack;
 static u8 oam_line_hijack[160];
 static u8 obj_hijack_flags[160][128];  // Track which objects are hijacking on each scanline
@@ -1037,12 +1069,12 @@ static inline void render_obj_part_tile_Nbpp(
   u32 px_attr = px_comb | palette | 0x100;  // Combine flags + high palette bit
 
   if (is8bpp) {
-    // Each byte is a color, mapped to a palete.
+    // Each byte is a color, mapped to a palette.
     for (u32 i = start; i < end; i++, dest_ptr++) {
       // Honor hflip by selecting bytes in the correct order
       u32 sel = hflip ? (7-i) : i;
       u8 pval = tile_ptr[sel];
-      // Alhpa mode stacks previous value
+      // Alpha mode stacks previous value
       if (pval) {
         if (rdtype == FULLCOLOR)
           *dest_ptr = pal[pval];
@@ -1092,7 +1124,6 @@ static inline void render_obj_tile_Nbpp(u32 px_comb,
 ) {
   const u8* tile_ptr = &vram[0x10000 + (tile_offset & 0x7FFF)];
   u32 px_attr = px_comb | palette | 0x100;  // Combine flags + high palette bit
-  //u32 vcount = read_ioreg(REG_VCOUNT);
   
   if (is8bpp) {
     for (u32 j = 0; j < 2; j++) {
@@ -1124,7 +1155,6 @@ static inline void render_obj_tile_Nbpp(u32 px_comb,
         bool is_hijacking = oam_hijacking_enabled && !rendering_obj_buffer && obj_hijack_flags[vcount][objnum];
         
         for (u32 i = 0; i < 4; i++, dest_ptr++, sl_start++) {
-          //u8 curr_pos = (u16*)dest_ptr - get_screen_pixels();
           if(is_hijacking && sl_start < 240 && obj_buf[sl_start]) {
             if (rdtype == FULLCOLOR)
               *dest_ptr = palette_ram_converted[obj_buf[sl_start] & 0x1FF];
@@ -1170,7 +1200,6 @@ static inline void render_obj_tile_Nbpp(u32 px_comb,
         bool is_hijacking = oam_hijacking_enabled && !rendering_obj_buffer && obj_hijack_flags[vcount][objnum];
         
         for (u32 i = 0; i < 8; i++, dest_ptr++, sl_start++) {
-          //u8 curr_pos = (u16*)dest_ptr - get_screen_pixels();
           if(is_hijacking && sl_start < 240 && obj_buf[sl_start]) {
             if (rdtype == FULLCOLOR)
               *dest_ptr = palette_ram_converted[obj_buf[sl_start] & 0x1FF];
@@ -1447,9 +1476,11 @@ inline static void render_sprite(
 ) {
   s32 vcount = read_ioreg(REG_VCOUNT);
   bool obj1dmap = read_ioreg(REG_DISPCNT) & 0x40;
+  // 8bpp OBJs in 2D mapping ignore bit 0 of the tile number.
   const u32 msk = is8bpp && !obj1dmap ? 0x3FE : 0x3FF;
   const u32 base_tile = (obji->attr2 & msk) * 32;
 
+  // MOSAIC bits 8-11 / 12-15: OBJ block width / height minus one.
   const u32 mosv = (mosaic ? (read_ioreg(REG_MOSAIC) >> 12) & 0xF : 0) + 1;
   const u32 mosh = (mosaic ? (read_ioreg(REG_MOSAIC) >>  8) & 0xF : 0) + 1;
 
@@ -1480,7 +1511,7 @@ inline static void render_sprite(
     bool hflip = obji->attr1 & 0x1000;
     bool vflip = obji->attr1 & 0x2000;
 
-    // Calulate the vertical offset (row) to be displayed. Account for vflip.
+    // Calculate the vertical offset (row) to be displayed. Account for vflip.
     u32 voffset = vflip ? obji->obj_y + obji->obj_h - vcount - 1
                         : vcount - obji->obj_y;
     if (mosaic)
@@ -1771,7 +1802,7 @@ static void order_obj(u32 video_mode)
 
     u16 obj_attr2 = eswap16(oam_ptr->attr2);
 
-    // On bitmap modes, objs 0-511 are not usable, ingore them.
+    // On bitmap modes, objs 0-511 are not usable, ignore them.
     if ((video_mode >= 3) && (!(obj_attr2 & 0x200)))
       continue;
 
@@ -1788,7 +1819,6 @@ static void order_obj(u32 video_mode)
     // Double size for affine sprites with double bit set
     if(obj_attr0 & 0x200)
     {
-      //printf("OBJ %d is affine", obj_num);
       obj_height *= 2;
       obj_width *= 2;
     }
@@ -1811,7 +1841,6 @@ static void order_obj(u32 video_mode)
           {
             // This object is hijacking - set oam_hijack to this object's number
             oam_hijack = obj_num;
-            //printf("OBJ %d is hijacking, X %d, Y %d \n", obj_num, obj_x, obj_y);
           }
         else
           {
@@ -1825,7 +1854,8 @@ static void order_obj(u32 video_mode)
         u32 starty = MAX(obj_y, 0);
         u32 endy   = MIN(obj_y + obj_height, 160);
 
-        // Calculate needed cycles to render the sprite
+        // Calculate needed cycles to render the sprite (1 per pixel of
+        // width; affine OBJs 10 plus 2 per pixel)
         u16 cyccnt = is_affine ? (10 + obj_width * 2) : obj_width;
 
         switch (obj_mode) {
@@ -1843,8 +1873,6 @@ static void order_obj(u32 video_mode)
                 oam_line_hijack[row] = oam_hijack;
                 obj_hijack_flags[row][obj_num] = 1;
               }
-              //if(oam_hijack)
-              //  printf("OAM Hijack Row: %d, Object: %d \n", row, obj_num);
               // Mark the row as having semi-transparent objects
               obj_alpha_count[row] = 1;
             }
@@ -1868,8 +1896,6 @@ static void order_obj(u32 video_mode)
                 oam_line_hijack[row] = oam_hijack;
                 obj_hijack_flags[row][obj_num] = 1;
               }
-              //if(oam_hijack)
-              //  printf("OAM Hijack Row: %d, Object: %d \n", row, obj_num);
             }
           }
           break;
@@ -1919,13 +1945,17 @@ static void order_layers(u32 layer_flags, u32 vcnt)
 
 // Blending is performed by separating an RGB value into 0G0R0B (32 bit)
 // Since blending factors are at most 16, mult/add operations do not overflow
-// to the neighbouring color and can be performed much faster than separatedly
+// to the neighbouring color and can be performed much faster than separately
 
 // Here follow the mask value to separate/expand the color to 32 bit,
-// the mask to detect overflows in the blend operation and
+// the mask to detect overflows in the blend operation and the masks that
+// saturate an overflowed channel.
 
 // TempGBA/PSP uses 5-5-5 channel semantics in the blend path.
 // Keep masks aligned with the proven C renderer (`video.c`) behavior.
+// With red in bits 0-4 the R and B names below are swapped versus the
+// channels they cover (upstream named them for RGB565); every channel is
+// handled the same way, so the result is still correct.
 #define OVFG_MSK 0x04000000
 #define OVFR_MSK 0x00008000
 #define OVFB_MSK 0x00000020
@@ -1938,8 +1968,8 @@ typedef enum
 {
   OBJ_BLEND,    // No effects, just blend forced-blend pixels (ie. ST objects)
   BLEND_ONLY,   // Just alpha blending (if the pixels are 1st and 2nd target)
-  BLEND_BRIGHT, // Perform alpha blending if appropiate, and brighten otherwise
-  BLEND_DARK,   // Same but with darken effecg
+  BLEND_BRIGHT, // Perform alpha blending if appropriate, and brighten otherwise
+  BLEND_DARK,   // Same but with darken effect
 } blendtype;
 
 // Applies blending (and optional brighten/darken) effect to a bunch of
@@ -2122,7 +2152,6 @@ void tile_render_layers(u32 start, u32 end, dsttype *dst_ptr, u32 enabled_layers
   if (oam_hijacking_enabled && row_obj_hijack) {
      // Fill it with Object Layers in OAM priority order (row_obj_hijack->0), ignoring BG priority
      if (obj_enabled) {
-       //printf("Start: %d, End: %d, Row: %d \n", start, end, read_ioreg(REG_VCOUNT));
        // Disable hijacking behavior when creating the obj buffer
        rendering_obj_buffer = true;
        // Render to u16/INDXCOLOR to allow us to cover all render types when substituting pixels
@@ -2193,12 +2222,12 @@ void tile_render_layers(u32 start, u32 end, dsttype *dst_ptr, u32 enabled_layers
 // It uses different rendering routines depending on the coloring effect
 // requirements, speeding up common cases where no effects are used.
 
-// No effects use NORMAL mode (RBB565 color is written on the buffer).
-// For blending, we use BLEND mode to record the two top-most pixels.
-// For other effects we use COLOR16, which records an indexed color in the
-// buffer (used for darken/brighten effects at later passes) or COLOR32,
-// which similarly uses an indexed color for rendering but recording one
-// color for the background and another one for the object layer.
+// No effects use FULLCOLOR mode (the final color is written on the buffer).
+// For blending, we use STCKCOLOR mode to record the two top-most pixels.
+// For other effects we use INDXCOLOR, which records an indexed color in the
+// buffer (used for darken/brighten effects at later passes), in a u32
+// buffer with stacked OBJ pixels when semi-transparent OBJs also need
+// blending.
 
 static void render_w_effects(
   u32 start, u32 end, u16* scanline, u32 enable_flags,
@@ -2308,8 +2337,7 @@ static const bitmap_layer_render_struct idx32_bmrend[3][2] =
 };
 
 // Render the BG and OBJ in a bitmap scanline from start to end ONLY if
-// enable_flag allows that layer/OBJ.
-
+// enable_flags allows that layer/OBJ.
 template<rendtype bgmode, rendtype objmode, typename dsttype>
 static void bitmap_render_layers(
   u32 start, u32 end, dsttype *scanline, u32 enable_flags)
@@ -2334,7 +2362,6 @@ static void bitmap_render_layers(
      // Fill it with Object Layers in OAM priority order (row_obj_hijack->0), ignoring BG priority
      bool obj_enabled = enable_flags & 0x10;
      if (obj_enabled) {
-       //printf("Start: %d, End: %d, Row: %d \n", start, end, REG_VCOUNT);
        // Disable hijacking behavior when creating the obj buffer
        rendering_obj_buffer = true;
        // Render to dsttype/FULLCOLOR to allow us to cover all render types when substituting pixels 
@@ -2440,7 +2467,7 @@ static void render_scanline_conditional(
     render_backdrop(start, end, scanline);
 }
 
-// Renders the are outside of all active windows
+// Renders the area outside of all active windows
 static void render_windowout_pass(u16 *scanline, u32 start, u32 end)
 {
   u32 winout = read_ioreg(REG_WINOUT);
@@ -2472,6 +2499,7 @@ static void render_windowobj_pass(u16 *scanline, u32 start, u32 end)
 
 // If the window Y coordinates are out of the window range we can skip
 // rendering the inside of the window.
+// 227 is the last VCOUNT line.
 inline bool in_window_y(u32 vcount, u32 top, u32 bottom) {
   // TODO: check if these are reversed when top-bottom are also reversed.
   if (top > 227)     // This causes the window to be invisible
@@ -2507,7 +2535,7 @@ static void render_window_n_pass(u16 *scanline, u32 start, u32 end)
     // WindowN is completely out, just render all out.
     outfn(scanline, start, end);
   else {
-    // Render window withtin the clipped range
+    // Render window within the clipped range
     // Enable bits for stuff inside the window (and outside)
     u32 winin = read_ioreg(REG_WININ);
     u32 wndn_enable = (winin >> (8 * winnum)) & 0x3F;
@@ -2535,7 +2563,7 @@ static void render_window_n_pass(u16 *scanline, u32 start, u32 end)
   }
 }
 
-// Renders a full scaleline, taking into consideration windowing effects.
+// Renders a full scanline, taking into consideration windowing effects.
 // Breaks the rendering step into N steps, for each windowed region.
 static void render_scanline_window(u16 *scanline)
 {
@@ -2589,6 +2617,8 @@ static const u8 active_layers[] = {
   0,
 };
 
+// Built as update_scanline_new (video_cc_wrap.cc). Unless the frame is
+// skipped, draws line VCOUNT and steps the BG2/BG3 affine reference points.
 void update_scanline(void)
 {
   u32 pitch = get_screen_pitch();
@@ -2610,7 +2640,7 @@ void update_scanline(void)
 
   order_layers((dispcnt >> 8) & active_layers[video_mode], vcount);
 
-  // If the screen is in in forced blank draw pure white.
+  // If the screen is in forced blank (DISPCNT bit 7) draw pure white.
   if(dispcnt & 0x80)
     memset(screen_offset, 0xff, 240*sizeof(u16));
   else

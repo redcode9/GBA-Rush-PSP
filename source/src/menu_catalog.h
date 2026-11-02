@@ -1,3 +1,6 @@
+/* The main menu categories in display order, each with a stable text id
+   (menu_catalog.c). */
+
 #ifndef MENU_CATALOG_H
 #define MENU_CATALOG_H
 

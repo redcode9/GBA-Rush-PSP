@@ -2,6 +2,11 @@
 
 set -eu
 
+# Source-level checks of the main menu in gui.c, which host tests do not
+# compile: the category order (the same order test_menu_model.c checks in
+# menu_catalog.c) and that menu text is drawn through the clipped,
+# viewport-bounded helpers.
+
 expected='MSG_CATEGORY_CONTINUE
 MSG_CATEGORY_SAVE_LOAD
 MSG_CATEGORY_GAME

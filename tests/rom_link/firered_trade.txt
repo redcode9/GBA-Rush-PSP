@@ -1,5 +1,9 @@
 # FireRed trade over the emulated cable, from a save that continues in
-# front of the Pewter City Pokemon Center (see place_save.py).
+# front of a Pokemon Center (see firered_save.py place-heal).
+# Commands, run by tests/rom_link/link_e2e.c: "run FRAMES [HOST JOINER]"
+# holds the given keys on each console ('-' for none) for FRAMES frames,
+# "link" plugs in the cable and "dump NAME" writes NAME-0.sav and NAME-1.sav.
+# scripts/check-rom-link.sh inserts its net and speed lines before "link".
 # Title screen and Continue
 run 600
 run 8 START START

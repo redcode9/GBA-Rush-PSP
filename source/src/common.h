@@ -18,6 +18,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+// Umbrella header included by every emulator source file: PSP SDK and libc
+// headers, file I/O and fixed-point helper macros, and all module headers.
+
 #ifndef COMMON_H
 #define COMMON_H
 
@@ -48,6 +51,7 @@
 #define ALIGN_DATA    __attribute__((aligned(4)))
 #define MEM_ALIGN     (4)
 
+// Allegrex rotate/min/max instructions via GCC builtins.
 #define ROR(dest, value, shift)                                               \
   dest = __builtin_allegrex_rotr(value, shift)                                \
 
@@ -58,6 +62,7 @@
   __builtin_allegrex_max(input, minout)                                       \
 
 
+// Thin wrappers over psp_fopen/sceIo* (filename_tag is a SceUID).
 #define PSP_FILE_OPEN_READ  "r"
 #define PSP_FILE_OPEN_WRITE "w"
 
@@ -76,10 +81,12 @@
 #define FILE_WRITE(filename_tag, buffer, size)                                \
   sceIoWrite(filename_tag, buffer, size)                                      \
 
-// type = FILE_OPEN_READ / FILE_OPEN_WRITE
+// type = SEEK_SET / SEEK_CUR / SEEK_END (pasted onto PSP_)
 #define FILE_SEEK(filename_tag, offset, type)                                 \
   sceIoLseek(filename_tag, offset, PSP_##type)                                \
 
+// Appends to the in-memory savestate buffer at write_mem_ptr (memory.c);
+// filename_tag is unused.
 #define FILE_WRITE_MEM(filename_tag, buffer, size)                            \
 {                                                                             \
   memcpy(write_mem_ptr, buffer, size);                                        \
@@ -110,6 +117,7 @@
   FILE_WRITE_MEM(filename_tag, array, sizeof(array))                          \
 
 
+// Unsigned fixed point with 8 integer and 24 fraction bits.
 typedef u32 FIXED08_24;
 
 #define FLOAT_TO_FP08_24(value)                                               \
@@ -128,10 +136,13 @@ typedef u32 FIXED08_24;
   ((value) & 0x00FFFFFF)                                                      \
 
 
+// numerator / denominator as a fixed-point value with `bits` fraction bits,
+// rounded to nearest.
 #define FIXED_DIV(numerator, denominator, bits)                               \
   (((numerator * (1 << bits)) + (denominator / 2)) / denominator)             \
 
 
+// Typed lvalue at a byte offset from base; must be aligned to the access size.
 #define ADDRESS8(base, offset)                                                \
   *((u8 *)((u8 *)(base) + (offset)))                                          \
 

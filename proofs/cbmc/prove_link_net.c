@@ -16,17 +16,21 @@
 
 #include "link_net.h"
 
+/* The 40-byte header plus 12 bytes: room for several short records. */
 #define PROOF_DATAGRAM 52u
 
+/* Left undefined on purpose: CBMC lets each call return any value. */
 uint32_t nondet_u32(void);
 uint64_t nondet_u64(void);
 size_t nondet_size(void);
 
+/* The proof itself: CBMC fails it if any assert or safety check can fail
+   for some nondet datagram, channel state or reply capacity. */
 int main(void)
 {
   static LinkNet net;
   uint8_t datagram[PROOF_DATAGRAM];   /* left unset: CBMC tries every value */
-  uint8_t reply[PROOF_DATAGRAM + 32u];
+  uint8_t reply[PROOF_DATAGRAM + 32u]; /* fits one full-size record */
   size_t size = nondet_size();
   size_t capacity = nondet_size();
   uint32_t queued = nondet_u32();
@@ -49,6 +53,13 @@ int main(void)
   net.out_acked = net.out_next - unacked;
   net.in_write = delivered;
   net.in_read = delivered - unread;
+  /* The unread ones look like what link_net_receive delivers: it rejects
+     type 0. */
+  for(i = net.in_read; i != net.in_write; i++)
+  {
+    net.in[i % LINK_NET_QUEUE].type = (uint8_t)(1u + i % 4u);
+    net.in[i % LINK_NET_QUEUE].size = 0u;
+  }
 
   link_net_receive(&net, datagram, size, nondet_u64());
 

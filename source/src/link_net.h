@@ -40,6 +40,9 @@
 #ifndef LINK_NET_QUEUE
 #define LINK_NET_QUEUE          128u
 #endif
+/* Acknowledgements wait this long by default so they can ride on a data
+   packet. */
+#define LINK_NET_ACK_DELAY_US  2000u
 
 typedef struct
 {
@@ -73,6 +76,8 @@ typedef struct
   uint64_t last_send_us;
   uint64_t last_receive_us;
   uint64_t heartbeat_us;
+  uint32_t ack_delay_us;
+  uint32_t probe_us;          /* while waiting on the peer, 0 otherwise */
   uint8_t send_now;
   uint8_t ack_pending;
 
@@ -87,7 +92,9 @@ typedef struct
 
 void link_net_init(LinkNet *net, uint32_t local_id, uint64_t now_us);
 
-/* Queues a message for reliable delivery. Returns 0 if the window is full. */
+/* Queues a message for reliable delivery. Returns 0 if the window is full,
+   type is 0 (reserved; the receiver rejects it) or size exceeds
+   LINK_NET_MAX_MESSAGE. */
 int link_net_queue(LinkNet *net, uint8_t type, const void *data,
  uint8_t size);
 
@@ -106,10 +113,18 @@ size_t link_net_build(LinkNet *net, uint8_t *datagram, size_t capacity,
 
 /* How often an otherwise idle channel sends a header. */
 void link_net_set_heartbeat(LinkNet *net, uint32_t interval_us);
+/* How long an acknowledgement may wait for a data packet to ride on. */
+void link_net_set_ack_delay(LinkNet *net, uint32_t delay_us);
+/* While this console waits on the peer, sends a header at least every
+   interval_us that asks the peer to answer at once, so a lost datagram in
+   either direction is repaired within about a round trip. 0 stops it. */
+void link_net_set_probe(LinkNet *net, uint32_t interval_us);
 
 /* Messages sent that the peer's emulator has not consumed yet. */
 uint32_t link_net_backlog(const LinkNet *net);
+/* Messages sent that the peer has not acknowledged receiving yet. */
 uint32_t link_net_unacked(const LinkNet *net);
+/* True when nothing has arrived from the peer for timeout_us. */
 int link_net_peer_silent(const LinkNet *net, uint64_t now_us,
  uint32_t timeout_us);
 
