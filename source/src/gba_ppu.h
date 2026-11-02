@@ -25,7 +25,9 @@
  * filled with zeros is ready to use.
  *
  * The behaviour follows GBATEK's description of the GBA's LCD video
- * controller (problemkaputt.de/gbatek.htm).
+ * controller (problemkaputt.de/gbatek.htm). Where GBATEK says nothing, it
+ * follows mGBA, which make check-render compares it with; the places are
+ * marked in gba_ppu.c.
  */
 
 #ifndef GBA_PPU_H
