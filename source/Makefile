@@ -67,6 +67,11 @@ CFLAGS = \
  -Wall -Wundef -Wpointer-arith -Wwrite-strings -Wsign-compare \
  -DZLIB_CONST -flto
 
+# Taking the address of a nested function that uses its parent's variables
+# makes GCC write a trampoline to the stack; two such menu callbacks crashed
+# the PSP with a reserved instruction. Fail the build instead.
+CFLAGS += -Werror=trampolines
+
 ifneq ($(DIAGNOSTIC_INPUT_TRACE),)
 CFLAGS += -DENABLE_DIAGNOSTIC_INPUT_TRACE
 endif
