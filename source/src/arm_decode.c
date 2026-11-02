@@ -49,6 +49,10 @@ typedef struct
   unsigned cost;          /* its cycles known now, when it executes */
   int ended;              /* it writes r15 or changes mode */
   int stored;             /* it writes memory */
+  int cartridge;          /* the block runs from the GamePak */
+  int prefetch;           /* ... with the prefetch buffer enabled */
+  unsigned idle;          /* cycles of the instruction the GamePak bus is
+                             free, for the prefetch buffer */
   /* Constant propagation: slots whose value is known here. Guest
      registers are only known within the block, temporaries within the
      instruction. */
@@ -189,16 +193,49 @@ static unsigned reg(Builder *b, unsigned r)
 
 /* ---- Timing ------------------------------------------------------------ */
 
+static int cartridge_address(uint32_t address)
+{
+  return !(address >> 28) && address >= 0x08000000u;
+}
+
+/* What happens on the bus around an instruction's opcode fetch. */
+enum
+{
+  FETCH_SEQUENTIAL,
+  FETCH_AFTER_STORE,    /* the bus moved to the data written */
+  FETCH_WITH_INTERNAL   /* internal cycles and r15 left alone */
+};
+
 /* The fetch made while an instruction executes is of the one two places
-   further on; it is sequential except at a 128 KB ROM boundary. */
+   further on. It is sequential except after a store, at a 128 KB ROM
+   boundary, and with the prefetch buffer disabled for GamePak opcodes
+   with internal cycles (GBATEK's prefetch disable bug). With the buffer
+   enabled, a GamePak fetch is counted at run time from the buffer. */
+static void fetch(Builder *b, unsigned kind)
+{
+  uint32_t address = b->pc + 2 * b->width;
+  int sequential = kind != FETCH_AFTER_STORE;
+
+  if(b->prefetch && (address & 0x1FFFF))
+  {
+    b->ops[b->insn_op].flags |= b->thumb ? ARM_IR_FETCH16 : ARM_IR_FETCH32;
+    return;
+  }
+  if(b->cartridge && !b->prefetch && kind == FETCH_WITH_INTERNAL)
+    sequential = 0;
+  b->cost += arm_access_cycles(b->core, address, b->width, sequential);
+}
+
 static unsigned fetch_s(const Builder *b)
 {
   return arm_access_cycles(b->core, b->pc + 2 * b->width, b->width, 1);
 }
 
-static unsigned fetch_n(const Builder *b)
+/* Internal cycles, during which the GamePak bus is free. */
+static void internal(Builder *b, unsigned cycles)
 {
-  return arm_access_cycles(b->core, b->pc + 2 * b->width, b->width, 0);
+  b->cost += cycles;
+  b->idle += cycles;
 }
 
 /* Refilling the pipeline at a branch target: N then S fetches there. */
@@ -221,6 +258,7 @@ static void begin(Builder *b, unsigned cond)
    b->pc);
   b->stored = 0;
   b->cost = 0;
+  b->idle = 0;
   b->ended = 0;
   b->skip_op = NO_OP;
   if(cond != ARM_COND_AL)
@@ -229,13 +267,19 @@ static void begin(Builder *b, unsigned cond)
 
 static void finish(Builder *b)
 {
-  ArmIrOp *insn = &b->ops[b->insn_op];
+  ArmIrOp *insn;
   unsigned cost = b->cost;
 
+  /* The cycles the prefetch buffer had to fill up, except before a branch,
+     which empties it anyway. */
+  if(b->prefetch && b->idle && !b->ended)
+    emit(b, ARM_IR_IDLE, 0, ARM_IR_NONE, 0, b->idle);
+  insn = &b->ops[b->insn_op];
   if(b->skip_op != NO_OP)
   {
     /* A failed condition costs the fetch alone. */
-    unsigned failed = fetch_s(b);
+    unsigned failed = (insn->flags & (ARM_IR_FETCH16 | ARM_IR_FETCH32)) ?
+     0 : fetch_s(b);
     ArmIrOp *skip = &b->ops[b->skip_op];
 
     skip->b = (b->count - b->skip_op - 1) |
@@ -279,7 +323,8 @@ static void branch(Builder *b, uint32_t target, unsigned kind)
 static void exception(Builder *b, unsigned code, uint32_t vector)
 {
   b->ended = 1;
-  b->cost += fetch_s(b) + refill(b, vector, 0);
+  fetch(b, FETCH_SEQUENTIAL);
+  b->cost += refill(b, vector, 0);
   emit(b, code, 0, ARM_EXIT_SYSTEM, 0, b->pc + b->width);
 }
 
@@ -331,20 +376,30 @@ static unsigned access_size(unsigned code)
 static void memory(Builder *b, unsigned code, unsigned flags, unsigned d,
  unsigned a, uint32_t offset)
 {
+  if(b->cartridge)
+    flags |= ARM_IR_CARTRIDGE_CODE;
   if(b->known[a])
   {
     uint32_t address = b->value[a] + offset;
     unsigned size = access_size(code);
-
-    b->cost += arm_access_cycles(b->core, address & ~(size - 1), size,
+    unsigned cycles = arm_access_cycles(b->core, address & ~(size - 1), size,
      flags & ARM_IR_SEQ);
+
+    b->cost += cycles;
     flags |= ARM_IR_FOLDED;
+    if(b->cartridge && !cartridge_address(address))
+      b->idle += cycles;
+    else if(b->cartridge && is_load(code) && !(flags & ARM_IR_SEQ))
+      b->cost += arm_cartridge_refetch(b->core, b->pc);
     if(is_load(code) && constant_memory(b, address))
     {
       uint32_t word = b->core->bus.code32(b->core->bus.context,
        address & ~3u);
 
       emit(b, ARM_IR_MOV, ARM_IR_IMM, d, 0, load_value(code, address, word));
+      /* The bus still read the literal, interrupting the prefetch. */
+      if(b->prefetch && cartridge_address(address))
+        emit(b, ARM_IR_FLUSH, 0, ARM_IR_NONE, 0, 0);
       return;
     }
   }
@@ -383,8 +438,10 @@ static void arm_data(Builder *b, uint32_t opcode)
   unsigned first;
   unsigned dest;
   uint32_t pc_value = b->pc + 8;
+  int shift_by_register = !(opcode & (1u << 25)) && (opcode & 0x10);
 
-  b->cost += fetch_s(b);
+  fetch(b, shift_by_register && rd != 15 ? FETCH_WITH_INTERNAL :
+   FETCH_SEQUENTIAL);
   if(opcode & (1u << 25))
   {
     unsigned rotate = (opcode >> 7) & 0x1E;
@@ -412,7 +469,7 @@ static void arm_data(Builder *b, uint32_t opcode)
       amount = rs == 15 ? constant(b, pc_value) : rs;
       operand = temp(b);
       emit(b, ARM_IR_LSL + type, shifter_c, operand, m, amount);
-      b->cost += 1;
+      internal(b, 1);
     }
     else
     {
@@ -473,7 +530,7 @@ static void arm_data(Builder *b, uint32_t opcode)
 
 static void arm_mrs(Builder *b, uint32_t opcode)
 {
-  b->cost += fetch_s(b);
+  fetch(b, FETCH_SEQUENTIAL);
   emit(b, ARM_IR_MRS, 0, (opcode >> 12) & 15, (opcode >> 22) & 1, 0);
 }
 
@@ -483,7 +540,7 @@ static void arm_msr(Builder *b, uint32_t opcode)
   unsigned fields = (opcode >> 16) & 15;
   unsigned source;
 
-  b->cost += fetch_s(b);
+  fetch(b, FETCH_SEQUENTIAL);
   if(opcode & (1u << 25))
     source = constant(b, ror32(opcode & 0xFF, (opcode >> 7) & 0x1E));
   else
@@ -508,8 +565,10 @@ static void arm_multiply(Builder *b, uint32_t opcode)
   unsigned rs = reg(b, (opcode >> 8) & 15);
   unsigned rm = reg(b, opcode & 15);
 
-  b->cost += fetch_s(b) + (unsigned)accumulate;
-  emit(b, ARM_IR_MULCYC, 0, ARM_IR_NONE, rs, 0);
+  fetch(b, FETCH_WITH_INTERNAL);
+  internal(b, (unsigned)accumulate);
+  emit(b, ARM_IR_MULCYC, b->cartridge ? ARM_IR_CARTRIDGE_CODE : 0,
+   ARM_IR_NONE, rs, 0);
   if(accumulate)
   {
     unsigned product = temp(b);
@@ -533,8 +592,10 @@ static void arm_multiply_long(Builder *b, uint32_t opcode)
   unsigned low = temp(b);
   unsigned high = temp(b);
 
-  b->cost += fetch_s(b) + 1 + (unsigned)accumulate;
-  emit(b, ARM_IR_MULCYC, 0, ARM_IR_NONE, rs, is_signed ? 0 : 1);
+  fetch(b, FETCH_WITH_INTERNAL);
+  internal(b, 1 + (unsigned)accumulate);
+  emit(b, ARM_IR_MULCYC, b->cartridge ? ARM_IR_CARTRIDGE_CODE : 0,
+   ARM_IR_NONE, rs, is_signed ? 0 : 1);
   emit(b, ARM_IR_MUL, 0, low, rm, rs);
   emit(b, is_signed ? ARM_IR_SMULH : ARM_IR_UMULH, 0, high, rm, rs);
   if(accumulate)
@@ -589,7 +650,8 @@ static void transfer(Builder *b, unsigned code, unsigned rd, unsigned rn,
 
   if(load)
   {
-    b->cost += fetch_s(b) + 1;
+    fetch(b, rd == 15 ? FETCH_SEQUENTIAL : FETCH_WITH_INTERNAL);
+    internal(b, 1);
     dest = rd == 15 ? temp(b) : rd;
     memory(b, code, 0, dest, address, displacement);
     /* The loaded value wins over the written back base. */
@@ -602,7 +664,7 @@ static void transfer(Builder *b, unsigned code, unsigned rd, unsigned rn,
   {
     unsigned value = rd == 15 ? constant(b, b->pc + 3 * b->width) : rd;
 
-    b->cost += fetch_n(b);
+    fetch(b, FETCH_AFTER_STORE);
     memory(b, code, 0, value, address, displacement);
     if(writeback)
       emit(b, ARM_IR_MOV, 0, rn, 0, updated);
@@ -688,7 +750,8 @@ static void arm_swap(Builder *b, uint32_t opcode)
   unsigned rm = (opcode & 15) == 15 ? constant(b, b->pc + 12) : opcode & 15;
   unsigned loaded = temp(b);
 
-  b->cost += fetch_s(b) + 1;
+  fetch(b, rd == 15 ? FETCH_SEQUENTIAL : FETCH_WITH_INTERNAL);
+  internal(b, 1);
   memory(b, byte ? ARM_IR_LD8 : ARM_IR_LD32, 0, loaded, rn, 0);
   memory(b, byte ? ARM_IR_ST8 : ARM_IR_ST32, 0, rm, rn, 0);
   if(rd == 15)
@@ -752,9 +815,12 @@ static void block_transfer(Builder *b, unsigned rn, unsigned list, int load,
   }
 
   if(load)
-    b->cost += fetch_s(b) + 1;
+  {
+    fetch(b, (list & 0x8000u) ? FETCH_SEQUENTIAL : FETCH_WITH_INTERNAL);
+    internal(b, 1);
+  }
   else
-    b->cost += fetch_n(b);
+    fetch(b, FETCH_AFTER_STORE);
   for(r = 0; r < 16; r++)
   {
     unsigned slot;
@@ -816,7 +882,7 @@ static void arm_branch(Builder *b, uint32_t opcode)
 {
   uint32_t target = b->pc + 8 + ((uint32_t)((int32_t)(opcode << 8) >> 6));
 
-  b->cost += fetch_s(b);
+  fetch(b, FETCH_SEQUENTIAL);
   if(opcode & (1u << 24))
   {
     emit(b, ARM_IR_MOV, ARM_IR_IMM, 14, 0, b->pc + 4);
@@ -833,7 +899,7 @@ static void exchange(Builder *b, unsigned rm)
   unsigned kind = ARM_EXIT_JUMP;
   uint32_t next = b->pc + b->width;
 
-  b->cost += fetch_s(b);
+  fetch(b, FETCH_SEQUENTIAL);
   if(rm == 14)
     kind = ARM_EXIT_RETURN;
   else if(b->known[14] && (b->value[14] & ~1u) == next)
@@ -953,7 +1019,7 @@ static void thumb_shift(Builder *b, unsigned opcode)
   unsigned rs = (opcode >> 3) & 7;
   unsigned rd = opcode & 7;
 
-  b->cost += fetch_s(b);
+  fetch(b, FETCH_SEQUENTIAL);
   if(type == 0 && amount == 0)
     emit(b, ARM_IR_MOV, ARM_IR_SET_NZ, rd, 0, rs);
   else
@@ -966,7 +1032,7 @@ static void thumb_add_sub(Builder *b, unsigned opcode)
   unsigned code = (opcode & 0x200) ? ARM_IR_SUB : ARM_IR_ADD;
   unsigned operand = (opcode >> 6) & 7;
 
-  b->cost += fetch_s(b);
+  fetch(b, FETCH_SEQUENTIAL);
   emit(b, code, NZCV | ((opcode & 0x400) ? ARM_IR_IMM : 0), opcode & 7,
    (opcode >> 3) & 7, operand);
 }
@@ -976,7 +1042,7 @@ static void thumb_immediate(Builder *b, unsigned opcode)
   unsigned rd = (opcode >> 8) & 7;
   uint32_t value = opcode & 0xFF;
 
-  b->cost += fetch_s(b);
+  fetch(b, FETCH_SEQUENTIAL);
   switch((opcode >> 11) & 3)
   {
     case 0:
@@ -998,30 +1064,32 @@ static void thumb_alu(Builder *b, unsigned opcode)
 {
   unsigned rs = (opcode >> 3) & 7;
   unsigned rd = opcode & 7;
+  unsigned alu = (opcode >> 6) & 15;
   const unsigned nz = ARM_IR_SET_NZ;
 
-  b->cost += fetch_s(b);
-  switch((opcode >> 6) & 15)
+  /* Shifts by register and MUL have internal cycles. */
+  fetch(b, ((0x209Cu >> alu) & 1) ? FETCH_WITH_INTERNAL : FETCH_SEQUENTIAL);
+  switch(alu)
   {
     case 0: emit(b, ARM_IR_AND, nz, rd, rd, rs); break;
     case 1: emit(b, ARM_IR_EOR, nz, rd, rd, rs); break;
     case 2:
       emit(b, ARM_IR_LSL, nz | ARM_IR_SET_C, rd, rd, rs);
-      b->cost += 1;
+      internal(b, 1);
       break;
     case 3:
       emit(b, ARM_IR_LSR, nz | ARM_IR_SET_C, rd, rd, rs);
-      b->cost += 1;
+      internal(b, 1);
       break;
     case 4:
       emit(b, ARM_IR_ASR, nz | ARM_IR_SET_C, rd, rd, rs);
-      b->cost += 1;
+      internal(b, 1);
       break;
     case 5: emit(b, ARM_IR_ADC, NZCV | ARM_IR_USE_C, rd, rd, rs); break;
     case 6: emit(b, ARM_IR_SBC, NZCV | ARM_IR_USE_C, rd, rd, rs); break;
     case 7:
       emit(b, ARM_IR_ROR, nz | ARM_IR_SET_C, rd, rd, rs);
-      b->cost += 1;
+      internal(b, 1);
       break;
     case 8: emit(b, ARM_IR_AND, nz, ARM_IR_NONE, rd, rs); break;
     case 9: emit(b, ARM_IR_RSB, NZCV | ARM_IR_IMM, rd, rs, 0); break;
@@ -1030,7 +1098,8 @@ static void thumb_alu(Builder *b, unsigned opcode)
     case 12: emit(b, ARM_IR_ORR, nz, rd, rd, rs); break;
     case 13:
       /* MUL rd, rs is MULS rd, rs, rd: rd is the multiplier. */
-      emit(b, ARM_IR_MULCYC, 0, ARM_IR_NONE, rd, 0);
+      emit(b, ARM_IR_MULCYC, b->cartridge ? ARM_IR_CARTRIDGE_CODE : 0,
+       ARM_IR_NONE, rd, 0);
       emit(b, ARM_IR_MUL, nz, rd, rs, rd);
       break;
     case 14: emit(b, ARM_IR_BIC, nz, rd, rd, rs); break;
@@ -1048,7 +1117,7 @@ static void thumb_high(Builder *b, unsigned opcode)
   switch((opcode >> 8) & 3)
   {
     case 0:
-      b->cost += fetch_s(b);
+      fetch(b, FETCH_SEQUENTIAL);
       source = reg(b, rs);
       dest = rd == 15 ? temp(b) : rd;
       emit(b, ARM_IR_ADD, 0, dest, reg(b, rd), source);
@@ -1056,12 +1125,12 @@ static void thumb_high(Builder *b, unsigned opcode)
         jump(b, dest, 0, ARM_EXIT_JUMP);
       break;
     case 1:
-      b->cost += fetch_s(b);
+      fetch(b, FETCH_SEQUENTIAL);
       source = reg(b, rs);
       emit(b, ARM_IR_SUB, NZCV, ARM_IR_NONE, reg(b, rd), source);
       break;
     case 2:
-      b->cost += fetch_s(b);
+      fetch(b, FETCH_SEQUENTIAL);
       source = reg(b, rs);
       if(rd == 15)
         jump(b, source, 0, rs == 14 ? ARM_EXIT_RETURN : ARM_EXIT_JUMP);
@@ -1124,7 +1193,7 @@ static void thumb_address(Builder *b, unsigned opcode)
   unsigned rd = (opcode >> 8) & 7;
   uint32_t offset = (opcode & 0xFF) * 4;
 
-  b->cost += fetch_s(b);
+  fetch(b, FETCH_SEQUENTIAL);
   if(opcode & 0x800)
     emit(b, ARM_IR_ADD, ARM_IR_IMM, rd, 13, offset);
   else
@@ -1136,7 +1205,7 @@ static void thumb_misc(Builder *b, unsigned opcode)
   switch((opcode >> 8) & 15)
   {
     case 0:
-      b->cost += fetch_s(b);
+      fetch(b, FETCH_SEQUENTIAL);
       emit(b, (opcode & 0x80) ? ARM_IR_SUB : ARM_IR_ADD, ARM_IR_IMM, 13, 13,
        (opcode & 0x7F) * 4);
       break;
@@ -1176,7 +1245,7 @@ static void thumb_conditional(Builder *b, unsigned opcode)
      undefined, but the ARM7TDMI branches always. */
   if(cond != ARM_COND_AL)
     b->skip_op = emit(b, ARM_IR_SKIP, 0, 0, cond, 0);
-  b->cost += fetch_s(b);
+  fetch(b, FETCH_SEQUENTIAL);
   branch(b, b->pc + 4 + (uint32_t)((int32_t)(int8_t)(opcode & 0xFF) * 2),
    ARM_EXIT_JUMP);
 }
@@ -1185,7 +1254,7 @@ static void thumb_branch(Builder *b, unsigned opcode)
 {
   int32_t offset = (int32_t)((uint32_t)opcode << 21) >> 20;
 
-  b->cost += fetch_s(b);
+  fetch(b, FETCH_SEQUENTIAL);
   switch(opcode >> 11)
   {
     case 28:
@@ -1420,6 +1489,8 @@ unsigned arm_translate(ArmCore *core, uint32_t pc, int thumb,
   b.thumb = thumb;
   b.width = thumb ? 2 : 4;
   b.skip_op = NO_OP;
+  b.cartridge = region >= 8 && region <= 13;
+  b.prefetch = b.cartridge && (core->waitcnt & 0x4000);
   if(region == 2 || region == 3)
     page_end = (pc | (ARM_CODE_PAGE_SIZE - 1)) + 1;
 
@@ -1459,7 +1530,7 @@ const char *arm_ir_name(unsigned code)
     "lsl", "lsr", "asr", "ror", "rrx",
     "mul", "umulh", "smulh", "sltu", "setc", "setnz64", "mulcyc",
     "ld8", "ld8s", "ld16", "ld16s", "ld32", "st8", "st16", "st32",
-    "mrs", "msr", "user_get", "user_set",
+    "idle", "flush", "mrs", "msr", "user_get", "user_set",
     "exit", "exit_reg", "swi", "undef"
   };
 

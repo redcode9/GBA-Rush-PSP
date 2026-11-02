@@ -138,6 +138,10 @@ typedef struct ArmCore
      (8-bit accesses cost what 16-bit ones do). */
   uint8_t wait[16][4];
   uint16_t waitcnt;
+  /* GamePak prefetch buffer: halfwords ready, and cycles spent on the
+     next one. */
+  uint8_t prefetch_count;
+  uint8_t prefetch_cycles;
 
   uint32_t block_count;
   uint32_t op_count;
@@ -186,5 +190,8 @@ int arm_core_step(ArmCore *core);
 /* Cycles of one access of size 1, 2 or 4 bytes at address. */
 unsigned arm_access_cycles(const ArmCore *core, uint32_t address,
  unsigned size, int sequential);
+/* Extra cycles for the next opcode fetch of code at pc when a load used
+   the GamePak bus: that fetch becomes non-sequential. */
+unsigned arm_cartridge_refetch(const ArmCore *core, uint32_t pc);
 
 #endif

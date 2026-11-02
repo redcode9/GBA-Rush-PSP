@@ -41,9 +41,13 @@
  * refills to known targets and data accesses whose address the decoder
  * could work out by constant propagation (literal pools, I/O registers
  * loaded from them). Only the rest is counted at run time: data accesses
- * to unknown addresses, multiply early termination and refills after
- * indirect jumps. Timing therefore depends on the guest instruction stream
- * alone, never on how the code was split into blocks.
+ * to unknown addresses, multiply early termination, refills after
+ * indirect jumps, and opcode fetches from the GamePak while its prefetch
+ * buffer is enabled. That buffer is the one piece of timing state: it
+ * fills while the GamePak bus is idle (ARM_IR_IDLE says for how long) and
+ * empties at taken branches and GamePak data accesses. Timing therefore
+ * depends on the guest instruction stream alone, never on how the code
+ * was split into blocks.
  *
  * Exits. A block ends at the first instruction that writes r15 or changes
  * the processor mode. Exit ops say what kind of jump they are, so a
@@ -64,9 +68,11 @@
 typedef enum
 {
   ARM_IR_NOP,
-  /* Start of a guest instruction: a = cycles known at translate time, b =
-     its address. With ARM_IR_CHECK the interpreter first leaves the block
-     there if the bus asked it to (after a store to I/O, or to code). */
+  /* Start of a guest instruction: a + 256 * d = cycles known at translate
+     time, b = its address. With ARM_IR_CHECK the interpreter first leaves
+     the block there if the bus asked it to (after a store to I/O, or to
+     code). ARM_IR_FETCH16 or ARM_IR_FETCH32: its opcode fetch comes from
+     the GamePak prefetch buffer, counted at run time. */
   ARM_IR_INSN,
   /* Unless condition a holds, skip the next b ops; when it holds, add d
      cycles (the instruction's cost beyond the 1S of a failed condition). */
@@ -128,6 +134,11 @@ typedef enum
   ARM_IR_ST16,
   ARM_IR_ST32,
 
+  /* The GamePak bus was free for b cycles: the prefetch buffer fills. */
+  ARM_IR_IDLE,
+  /* A GamePak data read folded into a constant: the buffer empties. */
+  ARM_IR_FLUSH,
+
   /* d = CPSR (a = 0) or SPSR (a = 1). */
   ARM_IR_MRS,
   /* PSR = a under field mask b bits 0-3 (control, extension, status,
@@ -160,6 +171,11 @@ typedef enum
 #define ARM_IR_SEQ     0x20u  /* memory: sequential access */
 #define ARM_IR_FOLDED  0x40u  /* memory: cycles already counted */
 #define ARM_IR_CHECK   0x80u  /* INSN: honour exit requests here */
+#define ARM_IR_FETCH16 0x01u  /* INSN: Thumb fetch from the prefetch buffer */
+#define ARM_IR_FETCH32 0x02u  /* INSN: ARM fetch from the prefetch buffer */
+/* Memory and MULCYC: the code runs from the GamePak, so GamePak data
+   accesses empty the prefetch buffer and other cycles fill it. */
+#define ARM_IR_CARTRIDGE_CODE 0x01u
 #define ARM_IR_BX      0x20u  /* EXIT_REG: bit 0 selects the state */
 #define ARM_IR_RESTORE 0x40u  /* EXIT_REG: CPSR = SPSR first */
 

@@ -45,6 +45,66 @@ unsigned arm_access_cycles(const ArmCore *core, uint32_t address,
   return core->wait[region][(size == 4 ? 2 : 0) + (sequential ? 1 : 0)];
 }
 
+unsigned arm_cartridge_refetch(const ArmCore *core, uint32_t pc)
+{
+  unsigned region = region_of(pc);
+
+  if(region < 8 || region > 13)
+    return 0;
+  return (unsigned)(core->wait[region][0] - core->wait[region][1]);
+}
+
+/* ---- GamePak prefetch buffer -------------------------------------------- */
+
+/* While the GamePak bus is free, the prefetch unit reads the halfwords
+   after the opcode being fetched, one per sequential access time, up to
+   eight. An opcode found there takes one cycle; otherwise the CPU waits
+   for the halfword being read. Taken branches and GamePak data accesses
+   empty it (GBATEK, GBA GamePak Prefetch). */
+static void prefetch_flush(ArmCore *core)
+{
+  core->prefetch_count = 0;
+  core->prefetch_cycles = 0;
+}
+
+static void prefetch_fill(ArmCore *core, unsigned cycles)
+{
+  unsigned access = core->wait[region_of(core->insn_pc)][1];
+  unsigned count = core->prefetch_count;
+
+  cycles += core->prefetch_cycles;
+  while(cycles >= access && count < 8)
+  {
+    cycles -= access;
+    count++;
+  }
+  core->prefetch_count = (uint8_t)count;
+  core->prefetch_cycles = (uint8_t)(count == 8 ? 0 : cycles);
+}
+
+/* Cycles of an opcode fetch of halfwords from the buffer. */
+static unsigned prefetch_fetch(ArmCore *core, unsigned halfwords)
+{
+  unsigned access = core->wait[region_of(core->insn_pc)][1];
+  unsigned cycles = 0;
+
+  while(halfwords--)
+  {
+    if(core->prefetch_count)
+    {
+      core->prefetch_count--;
+      cycles++;
+      prefetch_fill(core, 1);
+    }
+    else
+    {
+      cycles += access - core->prefetch_cycles;
+      core->prefetch_cycles = 0;
+    }
+  }
+  return cycles;
+}
+
 static void set_waits(ArmCore *core)
 {
   static const uint8_t first[4] = { 4, 3, 2, 8 };
@@ -212,6 +272,7 @@ int arm_core_irq(ArmCore *core)
   /* lr points one instruction past the one to return to, so the handler
      returns with subs pc, lr, #4 in either state. */
   exception(core, ARM_MODE_IRQ, 0x18, core->v[15] + 4);
+  prefetch_flush(core);
   return (int)refill(core);
 }
 
@@ -378,9 +439,24 @@ static ArmBlock *translate(ArmCore *core, uint32_t key)
 static void count_access(ArmCore *core, uint32_t address, unsigned size,
  unsigned flags)
 {
+  unsigned cycles;
+
   if(!(flags & ARM_IR_FOLDED))
-    core->cycles += (int32_t)arm_access_cycles(core, address, size,
-     flags & ARM_IR_SEQ);
+  {
+    cycles = arm_access_cycles(core, address, size, flags & ARM_IR_SEQ);
+    core->cycles += (int32_t)cycles;
+    if((flags & ARM_IR_CARTRIDGE_CODE) && region_of(address) < 8)
+      prefetch_fill(core, cycles);
+  }
+  /* GamePak data moves the GamePak's address: the buffer starts over and
+     the next opcode fetch is non-sequential (counted at translate time
+     for a known address). */
+  if((flags & ARM_IR_CARTRIDGE_CODE) && region_of(address) >= 8)
+  {
+    prefetch_flush(core);
+    if(!(flags & (ARM_IR_FOLDED | ARM_IR_SEQ)))
+      core->cycles += (int32_t)arm_cartridge_refetch(core, core->insn_pc);
+  }
 }
 
 static uint32_t read32(ArmCore *core, uint32_t address)
@@ -538,6 +614,9 @@ static ArmExitKind execute(ArmCore *core, const ArmIrOp *op)
         core->cycles += op->a | (op->d << 8);
         core->insn_pc = op->b;
         core->instructions++;
+        if(flags & (ARM_IR_FETCH16 | ARM_IR_FETCH32))
+          core->cycles += (int32_t)prefetch_fetch(core,
+           (flags & ARM_IR_FETCH32) ? 2 : 1);
         continue;
       case ARM_IR_SKIP:
         if(condition(core, op->a))
@@ -657,8 +736,17 @@ static ArmExitKind execute(ArmCore *core, const ArmIrOp *op)
            multiplier, leading zero bytes (or, signed, one bytes) free. */
         if(op->b == 0 && (a >> 31))
           a = ~a;
-        core->cycles += (a >> 8) == 0 ? 1 : (a >> 16) == 0 ? 2 :
+        result = (a >> 8) == 0 ? 1 : (a >> 16) == 0 ? 2 :
          (a >> 24) == 0 ? 3 : 4;
+        core->cycles += (int32_t)result;
+        if(flags & ARM_IR_CARTRIDGE_CODE)
+          prefetch_fill(core, result);
+        continue;
+      case ARM_IR_IDLE:
+        prefetch_fill(core, op->b);
+        continue;
+      case ARM_IR_FLUSH:
+        prefetch_flush(core);
         continue;
 
       case ARM_IR_LD8:
@@ -723,18 +811,23 @@ static ArmExitKind execute(ArmCore *core, const ArmIrOp *op)
 
       case ARM_IR_EXIT:
         set_pc(core, op->b, flags & ARM_IR_BX);
+        if(op->d != ARM_EXIT_NEXT)
+          prefetch_flush(core);
         return (ArmExitKind)op->d;
       case ARM_IR_EXIT_REG:
         if((flags & ARM_IR_RESTORE) && has_spsr(core))
           arm_core_set_cpsr(core, core->spsr);
         set_pc(core, a, flags & ARM_IR_BX);
         core->cycles += (int32_t)refill(core);
+        prefetch_flush(core);
         return (ArmExitKind)op->d;
       case ARM_IR_SWI:
         exception(core, ARM_MODE_SUPERVISOR, 0x08, op->b);
+        prefetch_flush(core);
         return ARM_EXIT_SYSTEM;
       default:
         exception(core, ARM_MODE_UNDEFINED, 0x04, op->b);
+        prefetch_flush(core);
         return ARM_EXIT_SYSTEM;
     }
     /* ALU ops end here. */
@@ -781,6 +874,7 @@ void arm_core_set_waitcnt(ArmCore *core, uint16_t waitcnt)
     return;
   core->waitcnt = waitcnt;
   set_waits(core);
+  prefetch_flush(core);
   arm_core_flush(core);
 }
 
