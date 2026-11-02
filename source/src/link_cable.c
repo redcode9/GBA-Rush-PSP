@@ -84,9 +84,10 @@ enum
 #define LINK_ANNOUNCE_MIN_GAP (LINK_CYCLES_PER_FRAME / 4u)
 /* A receiving console runs ahead of the clocking console's last reported
    clock once this many STARTs in a row have come at least a given spacing
-   apart, up to 7/8 of that spacing past the START it applied last. Games
-   such as Mario Kart start one transfer per frame. A START that comes
-   sooner while this is trusted doubles the figure. */
+   apart, up to 7/8 of that spacing past the START it applied last, and
+   learns the spacing again over every such run. Games such as Mario Kart
+   start one transfer per frame. A START that comes sooner while this is
+   trusted and finds this console already past it doubles the figure. */
 #define LINK_LOOKAHEAD_AFTER     300u
 #define LINK_LOOKAHEAD_AFTER_MAX (1u << 20)
 /* A START applied this many cycles after its time counts as late; less is
@@ -557,10 +558,15 @@ static void lockstep_learn_spacing(LinkLockstep *lockstep, uint32_t gap,
   }
   if(lockstep->spacing_run == 0 || gap < lockstep->spacing_min)
     lockstep->spacing_min = gap;
-  if(lockstep->spacing_run < UINT32_MAX)
-    lockstep->spacing_run++;
+  lockstep->spacing_run++;
   if(lockstep->spacing_run >= lockstep->lookahead_after)
+  {
+    /* Trust the closest pair of this run, then start a new run: a burst
+       that is over, like the one that sets up a Mario Kart link, no longer
+       holds the figure down once a whole run has gone without one. */
     lockstep->lookahead = lockstep->spacing_min - lockstep->spacing_min / 8u;
+    lockstep->spacing_run = 0;
+  }
 }
 
 /* Returns 0 if the START must wait for a later guest cycle. */
