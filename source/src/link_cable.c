@@ -56,13 +56,18 @@ enum
    reported, beyond what it learned of the sender's START spacing, so the
    sender reports its clock more often while the link is used. Every
    datagram costs a PSP close to a millisecond of processor time, so not
-   much more often. The receiver's clock only paces the sender, which allows
-   four frames of lead, so it keeps the ordinary rate. */
-#define LINK_HEARTBEAT_LOCKSTEP_US 8000u
+   much more often, and only until the receiver's announcements have proved
+   right: by then it has learned the spacing too and the STARTs carry the
+   clock, so the ordinary rate does. The receiver's clock only paces the
+   sender, which allows four frames of lead, and its announcements already
+   go out with every transfer, so it reports even less often. */
+#define LINK_HEARTBEAT_LOCKSTEP_US           8000u
+#define LINK_HEARTBEAT_LOCKSTEP_RECEIVER_US 32000u
 /* In lockstep mode an acknowledgement waits this long for a datagram to
-   ride on, since one of its own costs as much as any other. Pokemon mode
-   keeps the short default: under heavy loss its rooms need them prompt. */
-#define LINK_ACK_DELAY_LOCKSTEP_US 8000u
+   ride on, since one of its own costs as much as any other: longer than a
+   frame, so the next START or announcement carries it. Pokemon mode keeps
+   the short default: under heavy loss its rooms need them prompt. */
+#define LINK_ACK_DELAY_LOCKSTEP_US 20000u
 
 /* Lockstep pacing: while the link is in use, a console may run at most
    this far ahead of the other one's guest clock. The figure covers network
@@ -1292,14 +1297,18 @@ GbaSioEvent link_cable_service(LinkCable *cable, uint32_t cycle,
     link_net_set_heartbeat(&cable->net, LINK_HEARTBEAT_IDLE_US);
     link_net_set_ack_delay(&cable->net, LINK_NET_ACK_DELAY_US);
   }
+  else if(cable->mode == LINK_CABLE_MODE_LOCKSTEP)
+  {
+    link_net_set_heartbeat(&cable->net, lockstep_is_receiver(cable) ?
+     LINK_HEARTBEAT_LOCKSTEP_RECEIVER_US :
+     cable->lockstep.streak < cable->lockstep.trust_after ?
+     LINK_HEARTBEAT_LOCKSTEP_US : LINK_HEARTBEAT_ACTIVE_US);
+    link_net_set_ack_delay(&cable->net, LINK_ACK_DELAY_LOCKSTEP_US);
+  }
   else
   {
-    link_net_set_heartbeat(&cable->net,
-     cable->mode == LINK_CABLE_MODE_LOCKSTEP && !lockstep_is_receiver(cable) ?
-     LINK_HEARTBEAT_LOCKSTEP_US : LINK_HEARTBEAT_ACTIVE_US);
-    link_net_set_ack_delay(&cable->net,
-     cable->mode == LINK_CABLE_MODE_LOCKSTEP ?
-     LINK_ACK_DELAY_LOCKSTEP_US : LINK_NET_ACK_DELAY_US);
+    link_net_set_heartbeat(&cable->net, LINK_HEARTBEAT_ACTIVE_US);
+    link_net_set_ack_delay(&cable->net, LINK_NET_ACK_DELAY_US);
   }
 
   return events;
