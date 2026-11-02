@@ -534,11 +534,13 @@ static void draw_sprite(GbaPpu *ppu, const uint16_t *attr, int y, int top)
       if(index)
         ppu->obj[x] = (old & OBJ_WINDOW) | pixel | index;
       /* A transparent pixel of the sprite's picture (not of the empty
-         part of a rotation/scaling box) still lends its priority to an
-         earlier sprite's pixel under it, as in mGBA. GBATEK warns of the
-         "garbage" this makes when OBJ0 has a lower priority than OBJ1. */
+         part of a rotation/scaling box) still lends its priority and its
+         semi-transparency to an earlier sprite's pixel under it, as in
+         mGBA. GBATEK warns of the "garbage" this makes when OBJ0 has a
+         lower priority than OBJ1. */
       else if(old & OBJ_COLOUR)
-        ppu->obj[x] = (old & ~OBJ_PRIO_MASK) | priority;
+        ppu->obj[x] = (old & ~(OBJ_PRIO_MASK | PIXEL_SEMI)) | priority |
+         (pixel & PIXEL_SEMI);
     }
   }
 }
