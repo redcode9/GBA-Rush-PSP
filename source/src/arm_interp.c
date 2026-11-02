@@ -339,12 +339,16 @@ void arm_core_flush(ArmCore *core)
   memset(core->hash, 0xFF, sizeof(core->hash));
   memset(core->page_blocks, 0xFF, sizeof(core->page_blocks));
   core->exit_request |= ARM_EXIT_LEAVE_BLOCK;
+  if(core->dropped)
+    core->dropped(core, ARM_NO_BLOCK);
 }
 
 static void unlink_block(ArmCore *core, unsigned index)
 {
   uint16_t *link = &core->hash[hash_of(core->blocks[index].key)];
 
+  if(core->dropped)
+    core->dropped(core, index);
   while(*link != ARM_NO_BLOCK)
   {
     if(*link == index)
@@ -555,6 +559,46 @@ static void write8(ArmCore *core, uint32_t address, uint32_t value)
     core->bus.write8(core->bus.context, address, value & 0xFF);
 }
 
+uint32_t arm_core_access(ArmCore *core, unsigned code, unsigned flags,
+ uint32_t address, uint32_t value)
+{
+  uint32_t half;
+
+  switch(code)
+  {
+    case ARM_IR_LD8:
+      count_access(core, address, 1, flags);
+      return read8(core, address);
+    case ARM_IR_LD8S:
+      count_access(core, address, 1, flags);
+      return (uint32_t)(int32_t)(int8_t)read8(core, address);
+    case ARM_IR_LD16:
+      count_access(core, address & ~1u, 2, flags);
+      return ror32(read16(core, address & ~1u), (address & 1) * 8);
+    case ARM_IR_LD16S:
+      count_access(core, address & ~1u, 2, flags);
+      half = read16(core, address & ~1u);
+      if(address & 1)
+        return (uint32_t)(int32_t)(int8_t)(half >> 8);
+      return (uint32_t)(int32_t)(int16_t)half;
+    case ARM_IR_LD32:
+      count_access(core, address & ~3u, 4, flags);
+      return ror32(read32(core, address & ~3u), (address & 3) * 8);
+    case ARM_IR_ST8:
+      count_access(core, address, 1, flags);
+      write8(core, address, value);
+      return 0;
+    case ARM_IR_ST16:
+      count_access(core, address & ~1u, 2, flags);
+      write16(core, address & ~1u, value);
+      return 0;
+    default:
+      count_access(core, address & ~3u, 4, flags);
+      write32(core, address & ~3u, value);
+      return 0;
+  }
+}
+
 /* ---- Execution --------------------------------------------------------- */
 
 static uint32_t shift_left(uint32_t a, unsigned amount,
@@ -608,7 +652,7 @@ static uint32_t rotate_right(uint32_t a, unsigned amount, uint32_t *carry)
 }
 
 /* Runs a block's ops until an exit, leaving the next address in r15. */
-static ArmExitKind execute(ArmCore *core, const ArmIrOp *op)
+ArmExitKind arm_core_execute(ArmCore *core, const ArmIrOp *op)
 {
   uint32_t *v = core->v;
 
@@ -619,7 +663,6 @@ static ArmExitKind execute(ArmCore *core, const ArmIrOp *op)
     uint32_t b = (flags & ARM_IR_IMM) ? op->b : v[op->b & 0xFF];
     uint32_t result;
     uint32_t carry = core->flag_c;
-    uint32_t address;
 
     switch(op->code)
     {
@@ -770,48 +813,16 @@ static ArmExitKind execute(ArmCore *core, const ArmIrOp *op)
         continue;
 
       case ARM_IR_LD8:
-        address = a + op->b;
-        count_access(core, address, 1, flags);
-        v[op->d] = read8(core, address);
-        continue;
       case ARM_IR_LD8S:
-        address = a + op->b;
-        count_access(core, address, 1, flags);
-        v[op->d] = (uint32_t)(int32_t)(int8_t)read8(core, address);
-        continue;
       case ARM_IR_LD16:
-        address = a + op->b;
-        count_access(core, address & ~1u, 2, flags);
-        v[op->d] = ror32(read16(core, address & ~1u), (address & 1) * 8);
-        continue;
       case ARM_IR_LD16S:
-        address = a + op->b;
-        count_access(core, address & ~1u, 2, flags);
-        result = read16(core, address & ~1u);
-        if(address & 1)
-          v[op->d] = (uint32_t)(int32_t)(int8_t)(result >> 8);
-        else
-          v[op->d] = (uint32_t)(int32_t)(int16_t)result;
-        continue;
       case ARM_IR_LD32:
-        address = a + op->b;
-        count_access(core, address & ~3u, 4, flags);
-        v[op->d] = ror32(read32(core, address & ~3u), (address & 3) * 8);
+        v[op->d] = arm_core_access(core, op->code, flags, a + op->b, 0);
         continue;
       case ARM_IR_ST8:
-        address = a + op->b;
-        count_access(core, address, 1, flags);
-        write8(core, address, v[op->d]);
-        continue;
       case ARM_IR_ST16:
-        address = (a + op->b) & ~1u;
-        count_access(core, address, 2, flags);
-        write16(core, address, v[op->d]);
-        continue;
       case ARM_IR_ST32:
-        address = (a + op->b) & ~3u;
-        count_access(core, address, 4, flags);
-        write32(core, address, v[op->d]);
+        arm_core_access(core, op->code, flags, a + op->b, v[op->d]);
         continue;
 
       case ARM_IR_MRS:
@@ -913,7 +924,7 @@ ArmExitKind arm_core_run_block(ArmCore *core)
   /* Requests made between blocks (a DMA invalidating code) are about
      blocks no longer running. */
   core->exit_request = 0;
-  return execute(core, &core->ops[block->first]);
+  return arm_core_execute(core, &core->ops[block->first]);
 }
 
 int32_t arm_core_run(ArmCore *core, int32_t cycles)
@@ -954,6 +965,6 @@ int arm_core_step(ArmCore *core)
   arm_translate(core, core->v[15], (core->cpsr & ARM_CPSR_T) != 0, ops, 96,
    1, NULL);
   core->exit_request = 0;
-  execute(core, ops);
+  arm_core_execute(core, ops);
   return core->cycles - before;
 }

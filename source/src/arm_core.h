@@ -143,6 +143,10 @@ typedef struct ArmCore
      next one. One number, so the MIPS backend keeps it in a register. */
   uint16_t prefetch;
 
+  /* Told when a block is dropped (its index) or the whole cache is
+     (ARM_NO_BLOCK), so a code generator can drop its code; NULL if none. */
+  void (*dropped)(struct ArmCore *core, unsigned block);
+
   uint32_t block_count;
   uint32_t op_count;
   uint32_t flushes;
@@ -186,6 +190,14 @@ ArmExitKind arm_core_run_block(ArmCore *core);
 /* Translates and runs exactly one instruction outside the cache; returns
    the cycles it took. */
 int arm_core_step(ArmCore *core);
+/* Interprets ops from op on, to the block's exit; for a backend that
+   leaves the rest of a block to the interpreter. */
+ArmExitKind arm_core_execute(ArmCore *core, const ArmIrOp *op);
+/* One load or store op (code and flags as in the IR) at address, as the
+   interpreter does it: cycles, prefetch buffer, bus and code invalidation.
+   Returns the value loaded; value is the one stored. */
+uint32_t arm_core_access(ArmCore *core, unsigned code, unsigned flags,
+ uint32_t address, uint32_t value);
 
 /* Cycles of one access of size 1, 2 or 4 bytes at address. */
 unsigned arm_access_cycles(const ArmCore *core, uint32_t address,
