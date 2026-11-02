@@ -24,7 +24,9 @@ ArmMipsHost mips_unicorn_host(ArmMips *jit);
    block (when set) with the address and size of each run of them. */
 void mips_unicorn_count(void (*block)(uint32_t address, uint32_t size));
 extern unsigned long long mips_unicorn_executed;
-/* Calls of arm_mips_access, the slow memory path. */
+/* Calls of arm_mips_access, the slow memory path, and of them by address
+   bits 24-27 (and loads and stores by bit 4 of info, as the IR codes). */
 extern unsigned long long mips_unicorn_calls;
+extern unsigned long long mips_unicorn_region_calls[16][2];
 
 #endif

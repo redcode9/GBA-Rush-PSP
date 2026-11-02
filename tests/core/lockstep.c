@@ -38,6 +38,8 @@
  *   --jit                  the MIPS backend (arm_mips.c) runs the core
  *   --count                run mode: count the MIPS instructions run, the
  *                          sound mixer's share, the backend's predictors
+ *   --dump KEY             at the end, the IR and MIPS words of the block
+ *                          at KEY (hex pc, | 1 for Thumb)
  */
 
 #include <fcntl.h>
@@ -104,6 +106,8 @@ static int32_t run(int32_t cycles)
   return jit ? arm_mips_run(jit, cycles) : arm_core_run(core, cycles);
 }
 
+static void print_ir(uint32_t pc, int thumb, unsigned max_insns);
+
 /* Which block a stretch of MIPS code belongs to: blocks sit one after
    the other in the buffer, each from its key word to the next one. */
 typedef struct
@@ -152,8 +156,39 @@ static void build_spans(void)
   spans_generation = jit->generation;
 }
 
+/* MIPS instructions run per block, by key, for the hottest blocks. */
+typedef struct
+{
+  uint32_t key;
+  uint32_t insns;
+  unsigned long long mips;
+  unsigned long long runs;
+} Heat;
+
+static Heat heat[65536];
+
+static Heat *heat_of(const Span *s)
+{
+  unsigned i = (s->key * 2654435761u) >> 16;
+
+  while(heat[i].key && heat[i].key != s->key + 1)
+    i = (i + 1) & 65535;
+  heat[i].key = s->key + 1;
+  heat[i].insns = s->insns;
+  return &heat[i];
+}
+
+static int by_heat(const void *a, const void *b)
+{
+  const Heat *x = a;
+  const Heat *y = b;
+
+  return x->mips < y->mips ? 1 : x->mips > y->mips ? -1 : 0;
+}
+
 static void count_block(uint32_t address, uint32_t size)
 {
+  Heat *h;
   unsigned low = 0;
   unsigned high;
   const Span *s;
@@ -173,10 +208,13 @@ static void count_block(uint32_t address, uint32_t size)
   if(!low)
     return;
   s = &spans[low - 1];
+  h = heat_of(s);
+  h->mips += size / 4;
   if(address == s->entry)
   {
     block_runs++;
     block_guest_insns += s->insns;
+    h->runs++;
   }
   if((s->key & ~1u) >= MIXER_START && (s->key & ~1u) < MIXER_END)
   {
@@ -189,10 +227,37 @@ static void count_block(uint32_t address, uint32_t size)
   }
 }
 
+/* The IR and the MIPS words of the block at key (pc, | 1 for Thumb), for
+   a disassembler. */
+static void dump_block(uint32_t key)
+{
+  unsigned i;
+
+  build_spans();
+  for(i = 0; i < span_count; i++)
+    if(spans[i].key == key)
+    {
+      uint32_t end = i + 1 < span_count ? spans[i + 1].start :
+       jit->buffer_target + 4 * jit->used;
+      uint32_t at;
+
+      print_ir(key & ~1u, (int)(key & 1), ARM_BLOCK_MAX_INSNS);
+      printf("MIPS at %08X (main entry %08X):\n", spans[i].start,
+       spans[i].entry);
+      for(at = spans[i].start; at < end; at += 4)
+        printf("%08X%s", jit->buffer[(at - jit->buffer_target) / 4],
+         (at - spans[i].start) % 32 == 28 ? "\n" : " ");
+      printf("\n");
+      return;
+    }
+  printf("no compiled block at %08X\n", key);
+}
+
 static void print_counts(void)
 {
   unsigned long long mips = mips_unicorn_executed;
   const ArmMipsStats *st = &jit->stats;
+  unsigned i;
 
   printf("backend: %llu MIPS instructions run for %llu guest instructions "
    "in %llu block runs (%.2f per guest instruction, %llu accesses through "
@@ -212,6 +277,20 @@ static void print_counts(void)
    (double)st->hot_words / (double)st->guest_insns,
    (double)st->cold_words / (double)st->guest_insns, st->links, st->bails,
    st->interpreted, st->flushes);
+  printf("accesses through C by region (loads/stores):");
+  for(i = 0; i < 16; i++)
+    if(mips_unicorn_region_calls[i][0] || mips_unicorn_region_calls[i][1])
+      printf(" %X: %llu/%llu", i, mips_unicorn_region_calls[i][0],
+       mips_unicorn_region_calls[i][1]);
+  printf("\n");
+  qsort(heat, 65536, sizeof(Heat), by_heat);
+  for(i = 0; i < 16 && heat[i].mips; i++)
+    printf("  block %08X: %llu runs of %u instructions, %.1f MIPS per "
+     "run (%.2f per instruction), %.1f%% of all\n", heat[i].key - 1,
+     heat[i].runs, heat[i].insns,
+     heat[i].runs ? (double)heat[i].mips / (double)heat[i].runs : 0.0,
+     heat[i].runs ? (double)heat[i].mips / (double)heat[i].runs /
+     heat[i].insns : 0.0, 100.0 * (double)heat[i].mips / (double)mips);
 }
 #else
 static ArmExitKind run_block(void)
@@ -1214,6 +1293,7 @@ int main(int argc, char **argv)
 #ifdef LOCKSTEP_JIT
   int use_jit = 0;
   int count = 0;
+  uint32_t dump = 0;
 #endif
 
   for(arg = 1; arg < argc; arg++)
@@ -1244,6 +1324,8 @@ int main(int argc, char **argv)
       use_jit = 1;
     else if(!strcmp(argv[arg], "--count"))
       count = 1;
+    else if(!strcmp(argv[arg], "--dump") && arg + 1 < argc)
+      dump = (uint32_t)strtoul(argv[++arg], NULL, 16);
 #endif
     else if(path_count < 3)
       paths[path_count++] = argv[arg];
@@ -1366,6 +1448,8 @@ int main(int argc, char **argv)
 #ifdef LOCKSTEP_JIT
   if(jit && count)
     print_counts();
+  if(jit && dump)
+    dump_block(dump);
 #endif
   if(trace)
     fclose(trace);

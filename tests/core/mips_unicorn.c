@@ -34,6 +34,7 @@ static ArmMips *running;
 static void (*block_callback)(uint32_t address, uint32_t size);
 unsigned long long mips_unicorn_executed;
 unsigned long long mips_unicorn_calls;
+unsigned long long mips_unicorn_region_calls[16][2];
 
 static void check(uc_err e, const char *what)
 {
@@ -62,6 +63,8 @@ static void on_trap(uc_engine *u, uint64_t address, uint32_t size,
 {
   (void)u; (void)address; (void)size; (void)data;
   mips_unicorn_calls++;
+  mips_unicorn_region_calls[(reg(UC_MIPS_REG_A1) >> 24) & 15]
+   [(reg(UC_MIPS_REG_A3) & 0xFF) >= ARM_IR_ST8]++;
   set_reg(UC_MIPS_REG_V0, arm_mips_access(&running->core,
    reg(UC_MIPS_REG_A1), reg(UC_MIPS_REG_A2), reg(UC_MIPS_REG_A3)));
   set_reg(UC_MIPS_REG_PC, reg(UC_MIPS_REG_RA));
