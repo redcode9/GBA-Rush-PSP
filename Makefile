@@ -95,7 +95,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_arm_core
 
 .PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
- tree-check psp-build launcher-stub package artifact-smoke clean
+ check-core tree-check psp-build launcher-stub package artifact-smoke clean
 
 all: check
 
@@ -578,12 +578,17 @@ $(HOST_SANITIZE_DIR)/test_arm_core: tests/test_arm_core.c \
 
 # Optional gates outside make check: the CBMC proof needs CBMC, the ROM link
 # trade needs mGBA plus your own FireRed ROM, BIOS and save, and races Mario
-# Kart: Super Circuit as well when MKSC names its ROM.
+# Kart: Super Circuit as well when MKSC names its ROM. check-core runs the
+# new ARM core against the SingleStepTests suite and in lockstep with mGBA
+# on the same games; see scripts/check-core.sh for its inputs.
 check-cbmc:
 	sh scripts/check-cbmc.sh
 
 check-rom-link:
 	sh scripts/check-rom-link.sh
+
+check-core:
+	sh scripts/check-core.sh
 
 tree-check:
 	sh scripts/check-tree.sh
