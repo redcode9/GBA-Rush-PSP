@@ -82,6 +82,8 @@ typedef struct ArmMips
   int32_t cycle_base;       /* the cycle register holds cycles minus this */
   uint32_t call_pc;         /* insn_pc | Thumb of the access in progress */
   uint32_t exit_arg;
+  uint32_t fast[2][4];      /* work RAM and internal RAM for the slow paths:
+                               target, mask (0: use C), code map bias */
   /* Nonzero where work RAM holds translated code (since the last flush):
      a store there takes the slow path, which drops that code. Finer than
      the interpreter's 256-byte pages, so data next to code stays fast. */
@@ -104,6 +106,7 @@ typedef struct ArmMips
   uint32_t routine_exit;
   uint32_t routine_call;
   uint32_t routine_dropped;
+  uint32_t routine_fast[8]; /* work RAM accesses by IR code, LD8 first */
   uint32_t generation;      /* counts flushes, to spot one mid-link */
   int count_instructions;   /* keep core.instructions (tests, stats) */
   int profiling;            /* count return stack and dispatch hits */

@@ -45,8 +45,11 @@
  * so the budget check at a taken branch is a single bgez; the C side sets
  * the base to the current count when an interrupt is waiting, which makes
  * the next taken branch leave as the interpreter's run loop would. The
- * prefetch buffer is one level in cycles (see arm_interp.c), so an opcode
- * fetch from it is four instructions with the Allegrex's min and max.
+ * prefetch buffer is one level in cycles (see arm_interp.c). A run of
+ * opcode fetches from it has a closed form, four instructions with the
+ * Allegrex's min and max however long the run, and fills add up before
+ * one cap; after a GamePak data access or a known fill the compiler even
+ * knows the level and computes the fetches itself.
  *
  * Exits. Every block starts with its key, then a refill entry that adds the
  * pipeline refill for indirect jumps, checks the budget and empties the
@@ -63,19 +66,25 @@
  * access, or a call for I/O. Other addresses are guessed: the compiler
  * runs the block's address arithmetic on the registers as they are when
  * it compiles, and checks the guessed region at run time with three or four
- * instructions (rotr folds the alignment check into the region check). A
- * wrong guess, I/O, unaligned addresses and stores to a 256-byte page
- * that holds translated code take the slow path: a call to the
- * interpreter's own access function. LDM and STM check once for all their
- * words. Exit requests (a store to HALTCNT, code overwritten) only arise
- * in those calls, so the hot path never checks for them: the slow path
- * does, and hands the rest of the block to the interpreter, which stops
- * where it would have.
+ * instructions (rotr folds the alignment check into the region check);
+ * stores also look up a map of the work RAM holding translated code, one
+ * byte per 32 bytes. LDM and STM check once for all their words. Whatever
+ * fails takes the slow path: first a small routine that handles any work
+ * RAM address (shared code such as the BIOS's copies sees buffers in
+ * different places), then the interpreter's own access function for I/O,
+ * unaligned addresses and stores over code. Exit requests (a store to
+ * HALTCNT, code overwritten) only arise in that call, so the hot path
+ * never checks for them: the slow path does, and hands the rest of the
+ * block to the interpreter, which stops where it would have.
  *
  * Layout. Each block's slow paths, stubs and link records follow its hot
  * code, so the hot paths of a loop stay dense in the 16 KB instruction
  * cache while every branch between the two stays within beq's reach. One
  * shared cold area would need long jumps.
+ *
+ * Tests run this code in Unicorn, taught the four Allegrex instructions
+ * it lacks (scripts/build-unicorn.sh) rather than given substitutes, so
+ * they check the words the PSP runs (tests/core/mips_unicorn.c).
  */
 
 #include "arm_mips.h"
@@ -1680,6 +1689,8 @@ static void slow_path(Builder *b, unsigned i, unsigned n, unsigned slow,
  const unsigned *dest, unsigned in_memory, int level)
 {
   unsigned base_slot = b->ops[i].a;
+  uint32_t address = b->value[base_slot] + b->ops[i].b;
+  int io = b->known[base_slot] && (address >> 24 < 2 || address >> 24 > 3);
   unsigned saved = 0;
   unsigned tail = label_new(b);
   unsigned r;
@@ -1731,7 +1742,9 @@ static void slow_path(Builder *b, unsigned i, unsigned n, unsigned slow,
     }
     emit(b, ORI(A3, ZERO, op->code | (unsigned)op->flags << 8));
     load_constant(b, V1, b->pc | (uint32_t)b->thumb);
-    emit(b, JAL(b->jit->routine_call));
+    /* A known address outside work RAM (I/O) goes straight to C. */
+    emit(b, JAL(io ? b->jit->routine_call :
+     b->jit->routine_fast[op->code - ARM_IR_LD8]));
     emit(b, NOP);
     if(is_load(op->code))
     {
@@ -2227,96 +2240,204 @@ static uint32_t compile(ArmMips *jit, const ArmIrOp *ops, unsigned count,
 
 /* ---- Runtime routines --------------------------------------------------- */
 
+/* Work RAM accesses the slow paths can still do without C, when a guess
+   was wrong (a routine shared by callers with buffers in different places,
+   such as the BIOS's copies): one routine per access code, called as the
+   C path is (a1 address, a2 value, a3 info, v1 pc | Thumb) and returning
+   the loaded value with no exit request, or going on into that C path.
+   They count waitstates and fill the prefetch buffer as count_access does
+   (work RAM has no 128 KB rule and no buffer flush). */
+static void write_fast_access(ArmMips *jit, Builder *b)
+{
+  unsigned call = label_new(b);
+  unsigned cycles = label_new(b);
+  unsigned done = label_new(b);
+  int table = JIT(fast);
+  unsigned code;
+
+  for(code = ARM_IR_LD8; code <= ARM_IR_ST32; code++)
+  {
+    unsigned size = access_size(code);
+    int store = is_store(code);
+
+    jit->routine_fast[code - ARM_IR_LD8] = code_address(jit, b->hot_count);
+    emit(b, SRL(V0, A1, 24));
+    emit(b, ADDIU(V0, V0, -2));
+    emit(b, SLTIU(A0, V0, 2));
+    branch(b, BEQ(A0, ZERO), call);
+    emit(b, ANDI(A0, A1, size - 1));
+    branch(b, BNE(A0, ZERO), call);
+    emit(b, SLL(V0, V0, 4));
+    emit(b, ADDU(V0, V0, GP));
+    emit(b, LW(A0, table + 4, V0));
+    branch(b, BEQ(A0, ZERO), call);
+    emit(b, AND(A0, A0, A1));
+    if(store)
+    {
+      /* Not over translated code: a2 makes room for the code map index. */
+      emit(b, SW(A2, 0, SP));
+      emit(b, LW(A2, table + 8, V0));
+      emit(b, ADDU(A2, A2, A0));
+      emit(b, SRL(A2, A2, 5));
+      emit(b, ADDU(A2, A2, GP));
+      emit(b, LB(A2, JIT(code_map), A2));
+      branch(b, BNE(A2, ZERO), call);
+      emit(b, LW(A2, 0, SP));
+    }
+    emit(b, LW(V0, table, V0));
+    emit(b, ADDU(V0, V0, A0));
+    emit(b, access_word(code, store ? A2 : V0, 0, V0));
+    branch(b, BEQ(ZERO, ZERO), cycles);
+    emit(b, ORI(A0, ZERO, size == 4 ? 2 : 0));
+  }
+  /* Waitstates: wait[region][a0 + sequential], none when folded; with code
+     in the GamePak they fill the buffer, capped at eight halfwords of the
+     code's region. */
+  label_bind(b, cycles);
+  emit(b, ANDI(A2, A3, ARM_IR_SEQ << 8));
+  emit(b, SRL(A2, A2, 13));
+  emit(b, ADDU(A0, A0, A2));
+  emit(b, SRL(A2, A1, 24));
+  emit(b, SLL(A2, A2, 2));
+  emit(b, ADDU(A2, A2, A0));
+  emit(b, ADDU(A2, A2, GP));
+  emit(b, LBU(A0, CORE(wait), A2));
+  emit(b, ANDI(A2, A3, ARM_IR_FOLDED << 8));
+  emit(b, MOVN(A0, ZERO, A2));
+  emit(b, ADDU(REG_CYCLES, REG_CYCLES, A0));
+  emit(b, ANDI(A2, A3, ARM_IR_CARTRIDGE_CODE << 8));
+  branch(b, BEQ(A2, ZERO), done);
+  emit(b, NOP);
+  emit(b, ADDU(REG_PREFETCH, REG_PREFETCH, A0));
+  emit(b, SRL(A2, V1, 24));
+  emit(b, SLL(A2, A2, 2));
+  emit(b, ADDU(A2, A2, GP));
+  emit(b, LBU(A2, CORE(wait) + 1, A2));
+  emit(b, SLL(A2, A2, 3));
+  emit(b, MIN(REG_PREFETCH, REG_PREFETCH, A2));
+  label_bind(b, done);
+  emit(b, JR(RA));
+  emit(b, MOVE(V1, ZERO));
+  label_bind(b, call);
+  emit(b, J(jit->routine_call));
+  emit(b, NOP);
+}
+
+/* The work RAM regions the fast accesses may use: mapped both ways, with
+   the masks the code map assumes. */
+static void fast_regions(ArmMips *jit)
+{
+  unsigned i;
+
+  for(i = 0; i < 2; i++)
+  {
+    const ArmRegion *map = &jit->core.map[2 + i];
+
+    jit->fast[i][0] = jit->fast[i][1] = 0;
+    jit->fast[i][2] = i ? 0x40000 : 0;
+    if(map->read && map->write && map->read == map->write &&
+       map->mask == (i ? 0x7FFFu : 0x3FFFFu))
+    {
+      jit->fast[i][0] = target_of(jit, map->write);
+      jit->fast[i][1] = map->mask;
+    }
+  }
+}
+
 /* Writes the routines at the start of the buffer: entering generated code
    from C, leaving it, calling arm_mips_access from it, and the stub a
    dropped block's entry jumps to. */
 static void write_runtime(ArmMips *jit)
 {
-  uint32_t *w = jit->buffer;
-  unsigned n = 0;
+  Builder *b = &builder;
   unsigned r;
   static const uint8_t saved[] = { 8, 9, 10, 11, 12, 13, 14, 15, 24 };
 
+  memset(b, 0, offsetof(Builder, hot));
+  b->jit = jit;
+  b->core = &jit->core;
+
   /* enter(core, code) */
-  jit->routine_enter = code_address(jit, n);
-  w[n++] = ADDIU(SP, SP, -64);
-  w[n++] = SW(RA, 60, SP);
-  w[n++] = SW(FP, 56, SP);
-  w[n++] = SW(GP, 52, SP);
+  jit->routine_enter = code_address(jit, b->hot_count);
+  emit(b, ADDIU(SP, SP, -64));
+  emit(b, SW(RA, 60, SP));
+  emit(b, SW(FP, 56, SP));
+  emit(b, SW(GP, 52, SP));
   for(r = 0; r < 8; r++)
-    w[n++] = SW(16 + r, 20 + 4 * (int)r, SP);
-  w[n++] = MOVE(GP, A0);
+    emit(b, SW(16 + r, 20 + 4 * (int)r, SP));
+  emit(b, MOVE(GP, A0));
   for(r = 0; r < 15; r++)
-    w[n++] = LW(guest_register[r], SLOT(r), GP);
-  w[n++] = LW(REG_N, CORE(flag_n), GP);
-  w[n++] = LW(REG_Z, CORE(flag_z), GP);
-  w[n++] = LW(REG_C, CORE(flag_c), GP);
-  w[n++] = LW(REG_CYCLES, CORE(cycles), GP);
-  w[n++] = LW(V0, JIT(cycle_base), GP);
-  w[n++] = SUBU(REG_CYCLES, REG_CYCLES, V0);
-  w[n++] = LHU(REG_PREFETCH, CORE(prefetch), GP);
-  w[n++] = JR(A1);
-  w[n++] = NOP;
+    emit(b, LW(guest_register[r], SLOT(r), GP));
+  emit(b, LW(REG_N, CORE(flag_n), GP));
+  emit(b, LW(REG_Z, CORE(flag_z), GP));
+  emit(b, LW(REG_C, CORE(flag_c), GP));
+  emit(b, LW(REG_CYCLES, CORE(cycles), GP));
+  emit(b, LW(V0, JIT(cycle_base), GP));
+  emit(b, SUBU(REG_CYCLES, REG_CYCLES, V0));
+  emit(b, LHU(REG_PREFETCH, CORE(prefetch), GP));
+  emit(b, JR(A1));
+  emit(b, NOP);
 
   /* exit: a0 = status, a1 = argument */
-  jit->routine_exit = code_address(jit, n);
+  jit->routine_exit = code_address(jit, b->hot_count);
   for(r = 0; r < 15; r++)
-    w[n++] = SW(guest_register[r], SLOT(r), GP);
-  w[n++] = SW(REG_N, CORE(flag_n), GP);
-  w[n++] = SW(REG_Z, CORE(flag_z), GP);
-  w[n++] = SW(REG_C, CORE(flag_c), GP);
-  w[n++] = LW(V0, JIT(cycle_base), GP);
-  w[n++] = ADDU(V0, REG_CYCLES, V0);
-  w[n++] = SW(V0, CORE(cycles), GP);
-  w[n++] = SH(REG_PREFETCH, CORE(prefetch), GP);
-  w[n++] = SW(A1, JIT(exit_arg), GP);
-  w[n++] = MOVE(V0, A0);
+    emit(b, SW(guest_register[r], SLOT(r), GP));
+  emit(b, SW(REG_N, CORE(flag_n), GP));
+  emit(b, SW(REG_Z, CORE(flag_z), GP));
+  emit(b, SW(REG_C, CORE(flag_c), GP));
+  emit(b, LW(V0, JIT(cycle_base), GP));
+  emit(b, ADDU(V0, REG_CYCLES, V0));
+  emit(b, SW(V0, CORE(cycles), GP));
+  emit(b, SH(REG_PREFETCH, CORE(prefetch), GP));
+  emit(b, SW(A1, JIT(exit_arg), GP));
+  emit(b, MOVE(V0, A0));
   for(r = 0; r < 8; r++)
-    w[n++] = LW(16 + r, 20 + 4 * (int)r, SP);
-  w[n++] = LW(GP, 52, SP);
-  w[n++] = LW(FP, 56, SP);
-  w[n++] = LW(RA, 60, SP);
-  w[n++] = JR(RA);
-  w[n++] = ADDIU(SP, SP, 64);
+    emit(b, LW(16 + r, 20 + 4 * (int)r, SP));
+  emit(b, LW(GP, 52, SP));
+  emit(b, LW(FP, 56, SP));
+  emit(b, LW(RA, 60, SP));
+  emit(b, JR(RA));
+  emit(b, ADDIU(SP, SP, 64));
 
   /* call: a1-a3 = arguments, v1 = pc | Thumb; returns v0 = the loaded
      value and v1 = exit_request. C keeps s0-s8, but gp is saved as
      well, in case. */
-  jit->routine_call = code_address(jit, n);
-  w[n++] = SW(RA, SPILL(RA), GP);
+  jit->routine_call = code_address(jit, b->hot_count);
+  emit(b, SW(RA, SPILL(RA), GP));
   for(r = 0; r < sizeof(saved); r++)
-    w[n++] = SW(saved[r], SPILL(saved[r]), GP);
-  w[n++] = LW(V0, JIT(cycle_base), GP);
-  w[n++] = ADDU(V0, REG_CYCLES, V0);
-  w[n++] = SW(V0, CORE(cycles), GP);
-  w[n++] = SH(REG_PREFETCH, CORE(prefetch), GP);
-  w[n++] = SW(V1, JIT(call_pc), GP);
-  w[n++] = SW(GP, 16, SP);
-  w[n++] = MOVE(A0, GP);
-  w[n++] = LW(V0, JIT(access), GP);
-  w[n++] = JALR(V0);
-  w[n++] = NOP;
-  w[n++] = LW(GP, 16, SP);
+    emit(b, SW(saved[r], SPILL(saved[r]), GP));
+  emit(b, LW(V0, JIT(cycle_base), GP));
+  emit(b, ADDU(V0, REG_CYCLES, V0));
+  emit(b, SW(V0, CORE(cycles), GP));
+  emit(b, SH(REG_PREFETCH, CORE(prefetch), GP));
+  emit(b, SW(V1, JIT(call_pc), GP));
+  emit(b, SW(GP, 16, SP));
+  emit(b, MOVE(A0, GP));
+  emit(b, LW(V0, JIT(access), GP));
+  emit(b, JALR(V0));
+  emit(b, NOP);
+  emit(b, LW(GP, 16, SP));
   for(r = 0; r < sizeof(saved); r++)
-    w[n++] = LW(saved[r], SPILL(saved[r]), GP);
-  w[n++] = LW(REG_CYCLES, CORE(cycles), GP);
-  w[n++] = LW(V1, JIT(cycle_base), GP);
-  w[n++] = SUBU(REG_CYCLES, REG_CYCLES, V1);
-  w[n++] = LHU(REG_PREFETCH, CORE(prefetch), GP);
-  w[n++] = LW(V1, CORE(exit_request), GP);
-  w[n++] = LW(RA, SPILL(RA), GP);
-  w[n++] = JR(RA);
-  w[n++] = NOP;
+    emit(b, LW(saved[r], SPILL(saved[r]), GP));
+  emit(b, LW(REG_CYCLES, CORE(cycles), GP));
+  emit(b, LW(V1, JIT(cycle_base), GP));
+  emit(b, SUBU(REG_CYCLES, REG_CYCLES, V1));
+  emit(b, LHU(REG_PREFETCH, CORE(prefetch), GP));
+  emit(b, LW(V1, CORE(exit_request), GP));
+  emit(b, LW(RA, SPILL(RA), GP));
+  emit(b, JR(RA));
+  emit(b, NOP);
 
   /* dropped: a jal from a dropped block's main entry, whose key sits four
      words before it. */
-  jit->routine_dropped = code_address(jit, n);
-  w[n++] = LW(A1, -4 * (int)BLOCK_HEADER - 8, RA);
-  w[n++] = J(jit->routine_exit);
-  w[n++] = ORI(A0, ZERO, STATUS_DROPPED);
+  jit->routine_dropped = code_address(jit, b->hot_count);
+  emit(b, LW(A1, -4 * (int)BLOCK_HEADER - 8, RA));
+  emit(b, J(jit->routine_exit));
+  emit(b, ORI(A0, ZERO, STATUS_DROPPED));
 
-  jit->blocks_start = n;
-  sync_code(jit, w, n);
+  write_fast_access(jit, b);
+  place(jit, b, 0);
+  jit->blocks_start = b->hot_count;
 }
 
 /* ---- C side ------------------------------------------------------------- */
@@ -2544,6 +2665,7 @@ int32_t arm_mips_run(ArmMips *jit, int32_t cycles)
   ArmCore *core = &jit->core;
   int check = 1;
 
+  fast_regions(jit);
   core->cycles = 0;
   core->cycle_limit = cycles;
   for(;;)
@@ -2626,6 +2748,7 @@ static ArmExitKind run_once(ArmMips *jit, const ArmIrOp *ops, unsigned count,
   core->exit_request = 0;
   if(!entry)
     return arm_core_execute(core, ops);
+  fast_regions(jit);
   set_base(jit);
   code = run_code(jit, entry);
   arg = jit->exit_arg;
