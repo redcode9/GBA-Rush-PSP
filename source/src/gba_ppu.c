@@ -383,7 +383,7 @@ static const uint16_t *draw_affine_bg(GbaPpu *ppu, int bg, int y, int *from)
 static const uint16_t *draw_bitmap_bg(GbaPpu *ppu, int mode, int y,
  int *from)
 {
-  const uint8_t *vram = (const uint8_t *)ppu->vram;
+  const uint16_t *vram = ppu->vram;
   int32_t dx = (int16_t)IO(ppu, REG_BG2PA);
   int32_t dy = (int16_t)IO(ppu, REG_BG2PC);
   uint32_t width = mode == 5 ? 160 : 240;
@@ -403,10 +403,10 @@ static const uint16_t *draw_bitmap_bg(GbaPpu *ppu, int mode, int y,
     if(px >= width || py >= height)
       ppu->layer[n] = 0;
     else if(mode == 4)
-      ppu->layer[n] = vram[base + py * width + px];
+      ppu->layer[n] = ((const uint8_t *)vram)[base + py * width + px];
     else
       ppu->layer[n] = PIXEL_DIRECT |
-       (ppu->vram[(base >> 1) + py * width + px] & 0x7FFF);
+       (vram[(base >> 1) + py * width + px] & 0x7FFF);
   }
   return ppu->layer;
 }
@@ -717,11 +717,11 @@ static void lay_sprites(GbaPpu *ppu, unsigned priority)
   }
 }
 
-static unsigned colour_of(const GbaPpu *ppu, uint32_t pixel)
+static unsigned colour_of(const uint16_t *palette, uint32_t pixel)
 {
   if(pixel & PIXEL_DIRECT)
     return pixel & 0x7FFF;
-  return ppu->palette[pixel & 0x1FF] & 0x7FFF;
+  return palette[pixel & 0x1FF] & 0x7FFF;
 }
 
 /* min(31, (first * eva + second * evb) / 16) for each of red, green and
@@ -770,6 +770,7 @@ static unsigned weight(uint16_t value)
    pixels, then the palette. */
 static void compose(GbaPpu *ppu, uint16_t *row, unsigned semi)
 {
+  const uint16_t *palette = ppu->palette;
   uint16_t control = IO(ppu, REG_BLDCNT);
   uint16_t alpha = IO(ppu, REG_BLDALPHA);
   unsigned effect = (control >> 6) & 3;
@@ -782,25 +783,25 @@ static void compose(GbaPpu *ppu, uint16_t *row, unsigned semi)
   if(!effect && !semi)
   {
     for(x = 0; x < GBA_PPU_WIDTH; x++)
-      row[x] = (uint16_t)colour_of(ppu, ppu->top[x]);
+      row[x] = (uint16_t)colour_of(palette, ppu->top[x]);
     return;
   }
   for(x = 0; x < GBA_PPU_WIDTH; x++)
   {
     uint32_t top = ppu->top[x], below = ppu->below[x];
-    unsigned colour = colour_of(ppu, top);
+    unsigned colour = colour_of(palette, top);
 
     /* A semi-transparent sprite is always a 1st target. It blends with
        any 2nd target behind it whatever the effect and the window say (as
        in mGBA); otherwise the effect applies to it as to any 1st target. */
     if(top & PIXEL_SEMI && below & second)
-      colour = blend(colour, colour_of(ppu, below), eva, evb);
+      colour = blend(colour, colour_of(palette, below), eva, evb);
     else if(ppu->window[x] & WINDOW_EFFECTS && top & (first | PIXEL_SEMI))
     {
       if(effect == 1)
       {
         if(below & second)
-          colour = blend(colour, colour_of(ppu, below), eva, evb);
+          colour = blend(colour, colour_of(palette, below), eva, evb);
       }
       else if(effect >= 2)
         colour = fade(colour, evy, effect == 2);
