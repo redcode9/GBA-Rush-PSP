@@ -1418,7 +1418,7 @@ static void synchronize(void)
   skip_next_frame = 0;
   virtual_frame_count++;
 
-  // Behind real time: auto frameskip skips up to option_frameskip_value
+  // Behind real time: auto frameskip skips up to used_frameskip_value
   // frames in a row, then resyncs. Ahead: wait for the PSP VBlank.
   link_slept = main_link_slept();
   if (real_frame_count >= virtual_frame_count)
@@ -1429,7 +1429,7 @@ static void synchronize(void)
 
     if ((real_frame_count > virtual_frame_count) &&
         (used_frameskip_type == FRAMESKIP_AUTO) &&
-        (num_skipped_frames < option_frameskip_value))
+        (num_skipped_frames < used_frameskip_value))
     {
       skip_next_frame = 1;
       num_skipped_frames++;
