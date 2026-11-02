@@ -49,6 +49,7 @@ HOST_TEST_VIDEO_MOSAIC = $(HOST_BUILD_DIR)/test_video_mosaic
 HOST_TEST_DYNAREC_WORKLIST = $(HOST_BUILD_DIR)/test_dynarec_worklist
 HOST_TEST_SOUND_MATH = $(HOST_BUILD_DIR)/test_sound_math
 HOST_TEST_RUNTIME_LOG = $(HOST_BUILD_DIR)/test_runtime_log
+HOST_TEST_GBA_PPU = $(HOST_BUILD_DIR)/test_gba_ppu
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_LINK_NET) $(HOST_TEST_LINK_CABLE) \
  $(HOST_TEST_ADHOC_PEER) \
@@ -63,7 +64,7 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE) $(HOST_TEST_FAST_FORWARD) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
- $(HOST_TEST_RUNTIME_LOG)
+ $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_GBA_PPU)
 # The same C tests built with HOST_SANITIZE_FLAGS for make test-sanitize.
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_net \
@@ -88,7 +89,8 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_video_mosaic \
  $(HOST_SANITIZE_DIR)/test_dynarec_worklist \
  $(HOST_SANITIZE_DIR)/test_sound_math \
- $(HOST_SANITIZE_DIR)/test_runtime_log
+ $(HOST_SANITIZE_DIR)/test_runtime_log \
+ $(HOST_SANITIZE_DIR)/test_gba_ppu
 
 .PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
  check-render tree-check psp-build launcher-stub package artifact-smoke clean
@@ -123,6 +125,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_DYNAREC_WORKLIST)
 	$(HOST_TEST_SOUND_MATH)
 	$(HOST_TEST_RUNTIME_LOG)
+	$(HOST_TEST_GBA_PPU)
 
 # Python tests. test_startup and test_browser_text also compile functions
 # cut out of main.c and gui.c with HOST_CC.
@@ -159,6 +162,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_dynarec_worklist
 	$(HOST_SANITIZE_DIR)/test_sound_math
 	$(HOST_SANITIZE_DIR)/test_runtime_log
+	$(HOST_SANITIZE_DIR)/test_gba_ppu
 
 $(HOST_TEST_CODEBREAKER): tests/test_codebreaker.c source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_BUILD_DIR)
@@ -359,6 +363,12 @@ $(HOST_TEST_SOUND_MATH): tests/test_sound_math.c source/src/sound_math.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_sound_math.c source/src/sound_math.c -o $@
 
+$(HOST_TEST_GBA_PPU): tests/test_gba_ppu.c source/src/gba_ppu.c \
+ source/src/gba_ppu.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_gba_ppu.c source/src/gba_ppu.c -o $@
+
 $(HOST_SANITIZE_DIR)/test_codebreaker: tests/test_codebreaker.c \
  source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_SANITIZE_DIR)
@@ -557,6 +567,12 @@ $(HOST_SANITIZE_DIR)/test_sound_math: tests/test_sound_math.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_sound_math.c source/src/sound_math.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_gba_ppu: tests/test_gba_ppu.c \
+ source/src/gba_ppu.c source/src/gba_ppu.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_gba_ppu.c source/src/gba_ppu.c -o $@
 
 # Optional gates outside make check: the CBMC proof needs CBMC, the ROM link
 # trade needs mGBA plus your own FireRed ROM, BIOS and save, and races Mario
