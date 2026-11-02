@@ -112,6 +112,8 @@ pace start
 run 900 A A
 pace end
 # Both games are in the same race, their race clocks (in frames, at this
-# address in the European release) at least ten seconds in and in step
-ram16 0x030068FC 2 600
+# address in the European release) at least ten seconds in and in step:
+# no further apart than the four frames one console may run ahead of the
+# other (LINK_MAX_LEAD), which a slow network can briefly use up
+ram16 0x030068FC 4 600
 linked 1000
