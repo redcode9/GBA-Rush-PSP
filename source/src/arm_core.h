@@ -174,10 +174,11 @@ void arm_core_request_exit(ArmCore *core);
 /* Runs until at least `cycles` have passed, checking only at taken
    branches, or until an exit request; returns the cycles run. */
 int32_t arm_core_run(ArmCore *core, int32_t cycles);
-/* Runs one block from the cache (translating it if needed) and returns
-   its exit kind; *insns gets its guest instruction count. No interrupt
-   or budget check. */
-ArmExitKind arm_core_run_block(ArmCore *core, unsigned *insns);
+/* The block at r15, translated now if the cache does not hold it. */
+const ArmBlock *arm_core_block(ArmCore *core);
+/* Runs the block at r15 and returns its exit kind; no interrupt or budget
+   check. */
+ArmExitKind arm_core_run_block(ArmCore *core);
 /* Translates and runs exactly one instruction outside the cache; returns
    the cycles it took. */
 int arm_core_step(ArmCore *core);

@@ -784,7 +784,7 @@ void arm_core_set_waitcnt(ArmCore *core, uint16_t waitcnt)
   arm_core_flush(core);
 }
 
-static ArmBlock *current_block(ArmCore *core)
+const ArmBlock *arm_core_block(ArmCore *core)
 {
   uint32_t key = core->v[15] | ((core->cpsr & ARM_CPSR_T) ? 1u : 0u);
   ArmBlock *block = lookup(core, key);
@@ -792,12 +792,13 @@ static ArmBlock *current_block(ArmCore *core)
   return block ? block : translate(core, key);
 }
 
-ArmExitKind arm_core_run_block(ArmCore *core, unsigned *insns)
+ArmExitKind arm_core_run_block(ArmCore *core)
 {
-  ArmBlock *block = current_block(core);
+  const ArmBlock *block = arm_core_block(core);
 
-  if(insns)
-    *insns = block->insns;
+  /* Requests made between blocks (a DMA invalidating code) are about
+     blocks no longer running. */
+  core->exit_request = 0;
   return execute(core, &core->ops[block->first]);
 }
 
@@ -818,7 +819,7 @@ int32_t arm_core_run(ArmCore *core, int32_t cycles)
       if(core->irq_line && !(core->cpsr & ARM_CPSR_I))
         core->cycles += arm_core_irq(core);
     }
-    kind = arm_core_run_block(core, NULL);
+    kind = arm_core_run_block(core);
     if(core->exit_request)
     {
       unsigned request = core->exit_request;
@@ -838,7 +839,7 @@ int arm_core_step(ArmCore *core)
 
   arm_translate(core, core->v[15], (core->cpsr & ARM_CPSR_T) != 0, ops, 96,
    1, NULL);
-  execute(core, ops);
   core->exit_request = 0;
+  execute(core, ops);
   return core->cycles - before;
 }
