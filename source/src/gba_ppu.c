@@ -83,6 +83,9 @@
 #define WINDOW_EFFECTS 0x20
 #define WINDOW_ALL     0x3F
 
+/* draw_sprites' flag for a line with semi-transparent sprites. */
+#define SPRITES_SEMI   0x10
+
 /* Backgrounds each mode has, by bit. */
 static const uint8_t mode_backgrounds[8] =
 {
@@ -281,6 +284,11 @@ static const uint16_t *draw_text_bg(GbaPpu *ppu, int bg, int y)
       }
       pixels = vram[address] | vram[address + 1] << 8 |
        (uint32_t)vram[address + 2] << 16 | (uint32_t)vram[address + 3] << 24;
+      if(!pixels)
+      {
+        memset(out, 0, 8 * sizeof(*out));
+        continue;
+      }
       for(n = 0; n < 8; n++, pixels >>= 4)
         out[n ^ flip] = pixels & 15 ? palette | (pixels & 15) : 0;
     }
@@ -548,9 +556,11 @@ static void draw_sprite(GbaPpu *ppu, const uint16_t *attr, int y, int top)
 /* The sprite line for line y. Sprites are fetched in OAM order and each
    costs drawing time: its width in cycles, or 10 plus twice the width of
    its box with rotation/scaling. Those that start after the line's budget
-   ran out are not shown. */
-static void draw_sprites(GbaPpu *ppu, int y)
+   ran out are not shown. Returns the priorities drawn, by bit, and
+   SPRITES_SEMI if any sprite was semi-transparent. */
+static unsigned draw_sprites(GbaPpu *ppu, int y)
 {
+  unsigned drawn = 0;
   uint16_t dispcnt = IO(ppu, REG_DISPCNT);
   int budget = dispcnt & DISPCNT_HBLANK_FREE ? 954 : 1210;
   int bitmap = (dispcnt & 7) >= 3;
@@ -593,7 +603,11 @@ static void draw_sprites(GbaPpu *ppu, int y)
     if(bitmap && (attr[2] & 0x3FF) < 512)
       continue;
     draw_sprite(ppu, attr, y, top);
+    drawn |= 1u << ((attr[2] >> 10) & 3);
+    if(((a0 >> 10) & 3) == 1)
+      drawn |= SPRITES_SEMI;
   }
+  return drawn;
 }
 
 /* WINxH and WINxV hold the far edge plus one in the low byte and the near
@@ -607,6 +621,23 @@ static int window_covers(uint16_t edges, int position, int limit)
   if(from <= to)
     return position >= from && position < to;
   return position >= from || position < to;
+}
+
+/* The same rule across a line, as runs of columns. */
+static void fill_window(uint8_t *window, uint16_t edges, uint8_t inside)
+{
+  int from = edges >> 8, to = edges & 0xFF;
+
+  if(to > GBA_PPU_WIDTH)
+    to = GBA_PPU_WIDTH;
+  if(from <= to)
+    memset(window + from, inside, to - from);
+  else
+  {
+    if(from < GBA_PPU_WIDTH)
+      memset(window + from, inside, GBA_PPU_WIDTH - from);
+    memset(window, inside, to);
+  }
 }
 
 static void build_window(GbaPpu *ppu, int y, uint16_t dispcnt)
@@ -638,9 +669,7 @@ static void build_window(GbaPpu *ppu, int y, uint16_t dispcnt)
     if(!(dispcnt & (0x2000 << i)) ||
      !window_covers(IO(ppu, REG_WIN0V + i * 2), y, GBA_PPU_HEIGHT))
       continue;
-    for(x = 0; x < GBA_PPU_WIDTH; x++)
-      if(window_covers(across, x, GBA_PPU_WIDTH))
-        window[x] = inside;
+    fill_window(window, across, inside);
   }
 }
 
@@ -728,7 +757,7 @@ static unsigned weight(uint16_t value)
 
 /* The last pass: colour special effects between each column's two front
    pixels, then the palette. */
-static void compose(GbaPpu *ppu, uint16_t *row)
+static void compose(GbaPpu *ppu, uint16_t *row, unsigned semi)
 {
   uint16_t control = IO(ppu, REG_BLDCNT);
   uint16_t alpha = IO(ppu, REG_BLDALPHA);
@@ -739,6 +768,12 @@ static void compose(GbaPpu *ppu, uint16_t *row)
   unsigned evy = weight(IO(ppu, REG_BLDY));
   int x;
 
+  if(!effect && !semi)
+  {
+    for(x = 0; x < GBA_PPU_WIDTH; x++)
+      row[x] = (uint16_t)colour_of(ppu, ppu->top[x]);
+    return;
+  }
   for(x = 0; x < GBA_PPU_WIDTH; x++)
   {
     uint32_t top = ppu->top[x], below = ppu->below[x];
@@ -769,6 +804,7 @@ void gba_ppu_draw_line(GbaPpu *ppu, int y, uint16_t *row)
   int mode = dispcnt & 7;
   unsigned backgrounds = (dispcnt >> 8) & mode_backgrounds[mode];
   unsigned mosaic = (IO(ppu, REG_MOSAIC) & 15) + 1;
+  unsigned sprites = 0;
   int x, bg, priority;
 
   ppu->in_frame = 1;
@@ -785,7 +821,7 @@ void gba_ppu_draw_line(GbaPpu *ppu, int y, uint16_t *row)
   for(x = 0; x < GBA_PPU_WIDTH; x++)
     ppu->obj[x] = OBJ_EMPTY;
   if(dispcnt & DISPCNT_OBJ)
-    draw_sprites(ppu, y);
+    sprites = draw_sprites(ppu, y);
   build_window(ppu, y, dispcnt);
   for(x = 0; x < GBA_PPU_WIDTH; x++)
   {
@@ -813,10 +849,10 @@ void gba_ppu_draw_line(GbaPpu *ppu, int y, uint16_t *row)
         mosaic_line((uint16_t *)line, mosaic, from);
       lay_background(ppu, line, bg);
     }
-    if(dispcnt & DISPCNT_OBJ)
+    if(sprites & (1u << priority))
       lay_sprites(ppu, priority);
   }
-  compose(ppu, row);
+  compose(ppu, row, sprites & SPRITES_SEMI);
   if(mode)
     advance_affine(ppu, backgrounds);
 }
