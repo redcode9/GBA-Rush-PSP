@@ -85,7 +85,7 @@
    main.c's idle interval, MAIN_LINK_SERVICE_CYCLES, is 16384. */
 #define SERVICE_CYCLES 4096
 /* main.c MAIN_LINK_YIELD_US: a linked PSP sleeps this long after each late
-   frame. */
+   frame, unless a lockstep link made it sleep during the frame. */
 #define LATE_FRAME_SLEEP_US 2000u
 /* A PSP ad hoc link carries about a byte every 1.9 us: on real consoles a
    16-byte datagram comes back from an echo in 4.2 ms and a 1024-byte one in
@@ -124,6 +124,7 @@ typedef struct
   uint32_t send_yield_us;   /* lockstep: sleep after each datagram sent
                                while running */
   uint32_t stack_cost_us;   /* stack time per datagram, either way */
+  int slept;                /* lockstep pause or wait since the last frame */
   uint64_t sleep_until;     /* asleep, letting the stack work, until then */
   int ran;                  /* emulated during the last tick */
   uint32_t frame_seen;      /* frame counter after the last tick */
@@ -645,6 +646,7 @@ static void side_tick(Side *side)
       if(link_cable_blocked(&side->cable, side_cycle(side)))
       {
         side->blocked_us += TICK_US;
+        side->slept = 1;
         if(side->burst_cycles == 0)
           side->target = side_clock(side);
       }
@@ -685,8 +687,11 @@ static void side_tick(Side *side)
     /* A new frame while still behind the target is a late frame. */
     frame = side->core->frameCounter(side->core);
     if(side->stack && side->linked && frame != side->frame_seen &&
-       side_clock(side) < side->target)
+       side_clock(side) < side->target &&
+       !(side->slept && side->cable.mode == LINK_CABLE_MODE_LOCKSTEP))
       side->sleep_until = sim_now + LATE_FRAME_SLEEP_US;
+    if(frame != side->frame_seen)
+      side->slept = 0;
     side->frame_seen = frame;
     if(side->linked)
     {
@@ -710,7 +715,10 @@ static void side_tick(Side *side)
         if(side->ran && side->send_yield_us != 0 &&
            side->cable.mode == LINK_CABLE_MODE_LOCKSTEP &&
            sim_now + side->send_yield_us > side->sleep_until)
+        {
           side->sleep_until = sim_now + side->send_yield_us;
+          side->slept = 1;
+        }
       }
     }
   }

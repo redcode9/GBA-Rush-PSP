@@ -201,7 +201,10 @@ static volatile int quit_cleanup_complete = 0;
    the emulator gets the CPU. psp_adhoc.c puts the network threads it sets
    up above the emulator, but part of the PSP's Wi-Fi stack sits below:
    starving it held every datagram for seconds until the link was lost.
-   While a link is open, each late frame gives up this much time. */
+   While a link is open, each late frame gives up this much time, unless
+   a lockstep link already made the emulator sleep during the frame: then
+   the stack had its time, and below full speed the pause would cost every
+   frame 2 ms. */
 #define MAIN_LINK_YIELD_US 2000u
 /* For the same reason a datagram queued while the guest runs would wait
    for the end of the frame. In lockstep mode the other console needs our
@@ -1249,6 +1252,19 @@ static void vblank_interrupt_handler(u32 sub, u32 *parg)
   vblank_count++;
 }
 
+/* Whether the emulator thread slept for the link since the last call, once
+   per frame: after a lockstep datagram, or while the cable held the guest. */
+static int main_link_slept(void)
+{
+  static u32 yields_seen;
+  static u32 waits_seen;
+  int slept = gba_link_yields != yields_seen || gba_link_waits != waits_seen;
+
+  yields_seen = gba_link_yields;
+  waits_seen = gba_link_waits;
+  return slept;
+}
+
 /* Runs once per GBA frame, at the end of V-blank. Draws the on-screen
    status, decides whether the next frame is rendered (frameskip or the
    fast-forward policy), and waits for the PSP VBlank when emulation is
@@ -1260,6 +1276,7 @@ static void synchronize(void)
 
   u32 used_frameskip_type  = option_frameskip_type;
   u32 used_frameskip_value = option_frameskip_value;
+  int link_slept;
 
   fps_window_frames++;
 
@@ -1370,9 +1387,11 @@ static void synchronize(void)
 
   // Behind real time: auto frameskip skips up to option_frameskip_value
   // frames in a row, then resyncs. Ahead: wait for the PSP VBlank.
+  link_slept = main_link_slept();
   if (real_frame_count >= virtual_frame_count)
   {
-    if(gba_link_open)
+    if(gba_link_open &&
+       !(gba_link.mode == LINK_CABLE_MODE_LOCKSTEP && link_slept))
       sceKernelDelayThread(MAIN_LINK_YIELD_US);
 
     if ((real_frame_count > virtual_frame_count) &&
