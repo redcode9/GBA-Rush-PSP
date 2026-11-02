@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.4.3 - Unreleased
+## 1.4.3 - 2026-11-02
 
 ### Fixed
 
@@ -55,6 +55,8 @@
 - A PSP waiting for the other PSP's reply to a transfer asks it every 10 ms
   to answer at once, so a datagram lost on the radio holds the game for
   about a round trip instead of until the next datagram.
+- During such a link the emulator runs at the lowest priority a program can
+  use, so every part of the PSP network stack runs before it.
 - The session log records the priority the emulator runs at during such a
   link.
 
