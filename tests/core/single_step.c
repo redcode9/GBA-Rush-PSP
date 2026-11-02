@@ -6,6 +6,8 @@
  *
  * Usage: single_step [-v] FILE.json.bin...
  * Prints passed/total per file; -v prints the first failures in detail.
+ * Built with SINGLE_STEP_JIT (and Unicorn, see mips_unicorn.h), the MIPS
+ * backend runs every test as well and must end as the interpreter does.
  */
 
 #include <stdio.h>
@@ -13,6 +15,9 @@
 #include <string.h>
 
 #include "arm_core.h"
+#ifdef SINGLE_STEP_JIT
+#include "mips_unicorn.h"
+#endif
 
 typedef struct
 {
@@ -39,7 +44,8 @@ typedef struct
   uint32_t base;
 } Test;
 
-static ArmCore core;
+static ArmCore interpreter;
+static ArmCore *core = &interpreter;
 static const Test *current;
 static unsigned used[64];
 static int bus_error;
@@ -266,21 +272,21 @@ static void load_state(State *state)
   unsigned m;
   unsigned reg;
 
-  arm_core_reset(&core);
-  arm_core_set_cpsr(&core, state->cpsr);
+  arm_core_reset(core);
+  arm_core_set_cpsr(core, state->cpsr);
   for(reg = 0; reg < 16; reg++)
-    core.v[reg] = state->r[reg];
+    core->v[reg] = state->r[reg];
   for(m = 0; m < 6; m++)
   {
     uint32_t *spsr = state_spsr(state, modes[m]);
 
     for(reg = 8; reg < 15; reg++)
-      *arm_core_register(&core, modes[m], reg) =
+      *arm_core_register(core, modes[m], reg) =
        *state_register(state, modes[m], reg);
     if(spsr)
-      *arm_core_register(&core, modes[m], 16) = *spsr;
+      *arm_core_register(core, modes[m], 16) = *spsr;
   }
-  core.v[15] = instruction_address(state);
+  core->v[15] = instruction_address(state);
 }
 
 static void save_state(State *state)
@@ -289,21 +295,21 @@ static void save_state(State *state)
   unsigned reg;
 
   memset(state, 0, sizeof(*state));
-  state->cpsr = arm_core_cpsr(&core);
+  state->cpsr = arm_core_cpsr(core);
   for(reg = 0; reg < 8; reg++)
-    state->r[reg] = core.v[reg];
+    state->r[reg] = core->v[reg];
   for(m = 0; m < 6; m++)
   {
     uint32_t *spsr = state_spsr(state, modes[m]);
 
     for(reg = 8; reg < 15; reg++)
       *state_register(state, modes[m], reg) =
-       *arm_core_register(&core, modes[m], reg);
+       *arm_core_register(core, modes[m], reg);
     if(spsr)
-      *spsr = *arm_core_register(&core, modes[m], 16);
+      *spsr = *arm_core_register(core, modes[m], 16);
   }
   /* After a refill r15 reads two instructions on. */
-  state->r[15] = core.v[15] + ((state->cpsr & ARM_CPSR_T) ? 4 : 8);
+  state->r[15] = core->v[15] + ((state->cpsr & ARM_CPSR_T) ? 4 : 8);
 }
 
 static int compare(const State *got, const State *want, char *out,
@@ -456,6 +462,140 @@ static uint8_t *read_file(const char *path, size_t *size)
   return data;
 }
 
+#ifdef SINGLE_STEP_JIT
+/* The MIPS backend (arm_mips.c, in Unicorn) runs every test as well and
+   must end exactly as the interpreter did: same registers, cycles,
+   prefetch buffer and bus traffic. A second run gives both cores work RAM
+   (regions 2 and 3, mapped directly) and points the registers into it,
+   which takes the backend's fast memory paths. */
+#define JIT_CODE_BYTES (4u << 20)
+
+static ArmMips *jit;
+static uint8_t *ram[2][2];
+static unsigned long backend_runs;
+static unsigned long backend_differs;
+static int backend_verbose;
+
+static void backend_init(const ArmBus *bus)
+{
+  ArmMipsHost host;
+  uint32_t *code;
+  unsigned i;
+
+  mips_unicorn_init();
+  jit = mips_unicorn_alloc(sizeof(ArmMips));
+  code = mips_unicorn_alloc(JIT_CODE_BYTES);
+  for(i = 0; i < 2; i++)
+  {
+    ram[i][0] = mips_unicorn_alloc(0x40000);
+    ram[i][1] = mips_unicorn_alloc(0x8000);
+  }
+  mips_unicorn_map(jit, sizeof(ArmMips), 0x10000000u);
+  mips_unicorn_map(code, JIT_CODE_BYTES, 0x08800000u);
+  mips_unicorn_map(ram[1][0], 0x40000, 0x0A000000u);
+  mips_unicorn_map(ram[1][1], 0x8000, 0x0A040000u);
+  host = mips_unicorn_host(jit);
+  arm_mips_init(jit, bus, &host, code, JIT_CODE_BYTES);
+}
+
+static void map_ram(ArmCore *target, int on, unsigned which)
+{
+  target->map[2].read = target->map[2].write = on ? ram[which][0] : NULL;
+  target->map[2].mask = 0x3FFFF;
+  target->map[3].read = target->map[3].write = on ? ram[which][1] : NULL;
+  target->map[3].mask = 0x7FFF;
+}
+
+/* Runs the test on the core now selected; returns its cycles and leaves
+   the bus outcome in used[] and bus_error. */
+static int run_test(State *initial, State *out, int backend)
+{
+  int cycles;
+
+  memset(used, 0, sizeof(used));
+  bus_error = 0;
+  load_state(initial);
+  cycles = backend ? arm_mips_step(jit) : arm_core_step(core);
+  save_state(out);
+  return cycles;
+}
+
+static int same_run(const State *a, const State *b, int cycles_a,
+ int cycles_b, const unsigned *used_a, int error_a, unsigned prefetch_a)
+{
+  return !memcmp(a, b, sizeof(State)) && cycles_a == cycles_b &&
+   !memcmp(used_a, used, sizeof(used)) && error_a == bus_error &&
+   prefetch_a == jit->core.prefetch;
+}
+
+static int backend_agrees(const Test *test, const State *got, int cycles)
+{
+  State initial = test->initial;
+  State mine;
+  State theirs;
+  unsigned their_used[64];
+  unsigned first_used[64];
+  int their_error = bus_error;
+  int first_error = bus_error;
+  unsigned their_prefetch = interpreter.prefetch;
+  int agrees;
+  int mine_cycles;
+  unsigned r;
+
+  memcpy(their_used, used, sizeof(used));
+  memcpy(first_used, used, sizeof(used));
+  core = &jit->core;
+  mine_cycles = run_test(&initial, &mine, 1);
+  agrees = same_run(got, &mine, cycles, mine_cycles, their_used,
+   their_error, their_prefetch);
+  if(!agrees && backend_verbose)
+  {
+    char text[512] = "";
+
+    compare(got, &mine, text, sizeof(text));
+    printf("    first run:%s cycles %d/%d error %d/%d prefetch %u/%u\n", text,
+     cycles, mine_cycles, their_error, bus_error, their_prefetch,
+     jit->core.prefetch);
+  }
+
+  /* Registers into work RAM: even ones at word-aligned addresses, odd ones
+     small offsets (some unaligned). */
+  for(r = 0; r < 15; r++)
+    initial.r[r] = (r & 1) ? (test->opcode >> r) & 0x3F :
+     (((test->opcode * 2654435761u) >> r) & 1 ? 0x03000000u : 0x02000000u) +
+     ((test->opcode >> (r % 7)) & 0x7FFC);
+  for(r = 0; r < 7; r++)
+    initial.fiq[r] = initial.r[8 + r];
+  memset(ram[0][0], (int)(test->opcode & 0xFF), 0x40000);
+  memset(ram[0][1], (int)(test->opcode >> 8 & 0xFF), 0x8000);
+  memcpy(ram[1][0], ram[0][0], 0x40000);
+  memcpy(ram[1][1], ram[0][1], 0x8000);
+  map_ram(&interpreter, 1, 0);
+  map_ram(&jit->core, 1, 1);
+  core = &interpreter;
+  cycles = run_test(&initial, &theirs, 0);
+  memcpy(their_used, used, sizeof(used));
+  their_error = bus_error;
+  their_prefetch = interpreter.prefetch;
+  core = &jit->core;
+  mine_cycles = run_test(&initial, &mine, 1);
+  agrees = same_run(&theirs, &mine, cycles, mine_cycles, their_used,
+   their_error, their_prefetch) && agrees &&
+   !memcmp(ram[0][0], ram[1][0], 0x40000) &&
+   !memcmp(ram[0][1], ram[1][1], 0x8000);
+  map_ram(&interpreter, 0, 0);
+  map_ram(&jit->core, 0, 1);
+  core = &interpreter;
+  /* The suite's own checks go on with the first run's bus. */
+  memcpy(used, first_used, sizeof(used));
+  bus_error = first_error;
+  backend_runs += 2;
+  if(!agrees)
+    backend_differs++;
+  return agrees;
+}
+#endif
+
 int main(int argc, char **argv)
 {
   static Test test;
@@ -468,7 +608,10 @@ int main(int argc, char **argv)
   unsigned long all_undefined = 0;
   unsigned long all_total = 0;
 
-  arm_core_init(&core, &bus);
+  arm_core_init(core, &bus);
+#ifdef SINGLE_STEP_JIT
+  backend_init(&bus);
+#endif
   for(arg = 1; arg < argc; arg++)
   {
     size_t size;
@@ -480,10 +623,16 @@ int main(int argc, char **argv)
     unsigned differences = 0;
     unsigned undefined_cases = 0;
     unsigned shown = 0;
+#ifdef SINGLE_STEP_JIT
+    unsigned shown_backend = 0;
+#endif
 
     if(!strcmp(argv[arg], "-v"))
     {
       verbose = 1;
+#ifdef SINGLE_STEP_JIT
+      backend_verbose = 1;
+#endif
       continue;
     }
     data = read_file(argv[arg], &size);
@@ -498,6 +647,7 @@ int main(int argc, char **argv)
       State got;
       char diff[512] = "";
       int ok;
+      int cycles;
       unsigned t;
 
       offset += parse_test(data + offset, &test);
@@ -505,8 +655,17 @@ int main(int argc, char **argv)
       memset(used, 0, sizeof(used));
       bus_error = 0;
       load_state(&test.initial);
-      arm_core_step(&core);
+      cycles = arm_core_step(core);
       save_state(&got);
+#ifdef SINGLE_STEP_JIT
+      if(!backend_agrees(&test, &got, cycles) && verbose && shown_backend < 8)
+      {
+        shown_backend++;
+        printf("  #%u %s %08X at %08X cpsr %08X: the backend differs\n", i,
+         thumb_state(&test.initial) ? "thumb" : "arm", test.opcode,
+         instruction_address(&test.initial), test.initial.cpsr);
+      }
+#endif
       ok = compare(&got, &test.final, diff, sizeof(diff));
       for(t = 0; t < test.count; t++)
         if(test.transactions[t].kind == 2 && !used[t] && !bus_error)
@@ -541,5 +700,11 @@ int main(int argc, char **argv)
   printf("total: %lu/%lu passed, %lu known differences, %lu unpredictable,"
    " %lu failed\n", all_passed, all_total, all_known, all_undefined,
    all_total - all_passed - all_known - all_undefined);
+#ifdef SINGLE_STEP_JIT
+  printf("backend: %lu of %lu tests (each also with its registers in work "
+   "RAM) differ from the interpreter\n", backend_differs, backend_runs / 2);
+  if(backend_differs)
+    return 1;
+#endif
   return all_passed + all_known + all_undefined == all_total ? 0 : 1;
 }
