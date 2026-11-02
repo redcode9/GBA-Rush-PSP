@@ -225,7 +225,9 @@ size_t link_net_build(LinkNet *net, uint8_t *datagram, size_t capacity,
  uint32_t clock, uint64_t now_us)
 {
   uint64_t since_send = now_us - net->last_send_us;
-  uint32_t resend_us = net->rtt_us * 3u;
+  /* The peer may hold its acknowledgement as long as we hold ours: both
+     run the same mode. */
+  uint32_t resend_us = net->rtt_us * 3u + net->ack_delay_us;
   uint32_t echo = 0;
   uint32_t seq;
   size_t offset;
@@ -241,7 +243,8 @@ size_t link_net_build(LinkNet *net, uint8_t *datagram, size_t capacity,
     resend_us = LINK_NET_MIN_RESEND_US;
 
   /* Send at once when a message was queued; otherwise only for a delayed
-     ack, a resend after about three round trips, or the heartbeat. */
+     ack, a resend after about three round trips and the peer's
+     acknowledgement delay, or the heartbeat. */
   if(!net->send_now)
   {
     int ack_due = net->ack_pending &&
