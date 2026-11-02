@@ -91,7 +91,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_runtime_log
 
 .PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
- tree-check psp-build launcher-stub package artifact-smoke clean
+ check-render tree-check psp-build launcher-stub package artifact-smoke clean
 
 all: check
 
@@ -566,6 +566,10 @@ check-cbmc:
 
 check-rom-link:
 	sh scripts/check-rom-link.sh
+
+# Compares gba_ppu with mGBA's renderer on your own ROMs; see the script.
+check-render:
+	sh scripts/check-render.sh
 
 tree-check:
 	sh scripts/check-tree.sh
