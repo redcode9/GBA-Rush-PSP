@@ -22,7 +22,7 @@ enum
   LINK_MSG_SIO_STATE,      /* mode, SIOCNT SO bit (u16), RCNT (u16) */
   LINK_MSG_START,          /* sequence, cycle, word (u32 each), mode,
                               setting (baud rate index in Multiplayer, 2 MHz
-                              flag in Normal) */
+                              flag in Normal), LINK_START_* flags */
   LINK_MSG_REPLY,          /* sequence, word (u32 each), ready flag */
   LINK_MSG_POKEMON_STATE,  /* the sender's LinkPokemonState */
   LINK_MSG_POKEMON_PAIR,   /* host to joiner: both players' words of a
@@ -34,6 +34,13 @@ enum
                               applied last, then its reply to the next one:
                               word (u32), ready flag */
 };
+
+/* What the clocking console does with the receiver's announcement for a
+   START: it already finished the transfer with it, or it trusts
+   announcements and finishes the transfer as soon as one arrives. Either
+   way the real reply only serves as a check. */
+#define LINK_START_EARLY  0x01u
+#define LINK_START_TRUSTS 0x02u
 
 #define LINK_SIO_CONTROL_IRQ 0x4000u
 /* SIOCNT bit 0 in Normal mode: this console drives the clock. */
@@ -408,7 +415,9 @@ static GbaSioEvent lockstep_begin(LinkCable *cable, uint32_t cycle)
   put32(message + 8, transfer.outgoing);
   message[12] = (uint8_t)transfer.mode;
   message[13] = transfer.setting;
-  message[14] = (uint8_t)early;
+  message[14] = early ? LINK_START_EARLY :
+   lockstep->same_mode && lockstep->streak >= lockstep->trust_after ?
+   LINK_START_TRUSTS : 0u;
   link_cable_queue(cable, LINK_MSG_START, message, sizeof(message));
   if(!early)
     return GBA_SIO_EVENT_NONE;
@@ -580,6 +589,7 @@ static int lockstep_remote_start(LinkCable *cable,
   uint32_t sender_cycle;
   uint32_t anchor;
   uint32_t gap = 0;
+  uint8_t flags;
   uint32_t word;
   int timeline = 0;
   int ready;
@@ -643,11 +653,16 @@ static int lockstep_remote_start(LinkCable *cable,
   memcpy(reply, message->data, 4);
   put32(reply + 4, ready ? transfer.outgoing : 0xFFFFFFFFu);
   reply[8] = (uint8_t)(ready != 0);
-  if(message->size >= 15 && message->data[14])
+  flags = message->size >= 15 ? message->data[14] : 0u;
+  if((flags & LINK_START_EARLY) ||
+     ((flags & LINK_START_TRUSTS) && lockstep->announced &&
+      lockstep->announced_sequence + 1u == get32(message->data) &&
+      lockstep->announced_ready == reply[8] &&
+      lockstep->announced_word == get32(reply + 4)))
   {
-    /* The other console finished this transfer with our announcement and
-       only checks this reply: it rides with our next datagram, which is
-       usually the next announcement. */
+    /* The other console finishes this transfer with our announcement, if
+       it has not already, and only checks this reply: it rides with our
+       next datagram, which is usually the next announcement. */
     uint8_t send_now = cable->net.send_now;
 
     link_cable_queue(cable, LINK_MSG_REPLY, reply, sizeof(reply));
