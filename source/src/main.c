@@ -1119,6 +1119,7 @@ u32 update_gba(void)
           affine_reference_y[0] = (s32)(ADDRESS32(io_registers, 0x2C) << 4) >> 4;
           affine_reference_x[1] = (s32)(ADDRESS32(io_registers, 0x38) << 4) >> 4;
           affine_reference_y[1] = (s32)(ADDRESS32(io_registers, 0x3C) << 4) >> 4;
+          video_start_vblank();
 
           for (i = 0; i < 4; i++)
           {
@@ -1514,6 +1515,7 @@ static void init_main(void)
   // (init_memory sets VCOUNT to 126)
   video_count = option_boot_mode ? 960 : 272;
   reg[EXECUTE_CYCLES] = video_count;
+  video_reset();
   video_dispatch_frame_begin();
 
   irq_ticks = 0;

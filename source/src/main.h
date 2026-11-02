@@ -64,6 +64,7 @@
 // renderer option
 #define VIDEO_RENDERER_OLD 0
 #define VIDEO_RENDERER_NEW 1
+#define VIDEO_RENDERER_PPU 2   /* gba_ppu.c, "Exact" in the menu */
 
 
 extern u32 option_screen_scale;

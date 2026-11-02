@@ -1,11 +1,13 @@
-/* Runtime switch between the two scanline renderers: video.c (old, built as
- * video_old_wrap.c) and video_cc.cc (new, built as video_cc_wrap.cc).
- * Owns the shared video globals and forwards update_scanline and the
- * savestate hooks to the renderer picked by option_video_renderer. The
- * choice only changes at frame start, so one frame never mixes renderers.
+/* Runtime switch between the three scanline renderers: video.c (old, built
+ * as video_old_wrap.c), video_cc.cc (new, built as video_cc_wrap.cc) and
+ * gba_ppu.c, which this file drives. Owns the shared video globals and
+ * forwards update_scanline and the savestate hooks to the renderer picked
+ * by option_video_renderer. The choice only changes at frame start, so one
+ * frame never mixes renderers.
  */
 
 #include "common.h"
+#include "gba_ppu.h"
 #include "video_dispatch_state.h"
 
 void update_scanline_old(void);
@@ -29,6 +31,37 @@ u16 *screen_texture = (u16 *)(0x4000000 + (PSP_FRAME_SIZE * 2));
  * BGxX/BGxY writes. */
 s32 affine_reference_x[2];
 s32 affine_reference_y[2];
+
+/* gba_ppu reads the emulator's own palette RAM, OAM, VRAM and I/O
+   registers. It hears of register writes, V-Blank and resets whichever
+   renderer is active, so it is ready the moment it is picked. */
+static GbaPpu ppu;
+
+static void update_scanline_ppu(void)
+{
+  u32 line = pIO_REG(REG_VCOUNT);
+
+  gba_ppu_draw_line(&ppu, line, screen_texture + line * GBA_LINE_SIZE);
+}
+
+/* reset_gba: the machine starts over. */
+void video_reset(void)
+{
+  gba_ppu_init(&ppu, palette_ram, oam_ram, (u16 *)vram, io_registers);
+}
+
+/* main.c, when V-Blank begins. */
+void video_start_vblank(void)
+{
+  gba_ppu_start_frame(&ppu);
+}
+
+/* memory.c, after storing a write to DISPCNT or BG2X-BG3Y (address is the
+   offset from 0x4000000). */
+void video_io_written(u32 address)
+{
+  gba_ppu_write_io(&ppu, address, io_registers[address >> 1]);
+}
 
 static VideoDispatchState renderer_state = {
   VIDEO_DISPATCH_RENDERER_NEW,
@@ -54,9 +87,14 @@ void video_dispatch_frame_begin(void)
 
   if(video_dispatch_state_begin_frame(&renderer_state))
   {
-    active_scanline =
-     video_dispatch_state_active(&renderer_state) == VIDEO_RENDERER_OLD ?
-      update_scanline_old : update_scanline_new;
+    u32 active = video_dispatch_state_active(&renderer_state);
+
+    if(active == VIDEO_RENDERER_OLD)
+      active_scanline = update_scanline_old;
+    else if(active == VIDEO_RENDERER_PPU)
+      active_scanline = update_scanline_ppu;
+    else
+      active_scanline = update_scanline_new;
   }
 }
 
@@ -65,7 +103,8 @@ void update_scanline(void)
   active_scanline();
 }
 
-/* Savestate hooks first settle the renderer so the active one handles it. */
+/* Savestate hooks first settle the renderer so the active one handles it;
+   with gba_ppu active the new renderer's hooks keep the file format. */
 void video_read_savestate(SceUID savestate_file)
 {
   video_dispatch_frame_begin();
@@ -73,6 +112,9 @@ void video_read_savestate(SceUID savestate_file)
     video_read_savestate_old(savestate_file);
   else
     video_read_savestate_new(savestate_file);
+  /* gba_ppu keeps its own reference points: reload them from the loaded
+     registers, as V-Blank would. */
+  gba_ppu_start_frame(&ppu);
 }
 
 void video_write_mem_savestate(SceUID savestate_file)

@@ -81,6 +81,9 @@
 
 void update_scanline(void);
 void video_dispatch_frame_begin(void);
+void video_reset(void);
+void video_start_vblank(void);
+void video_io_written(u32 address);
 extern void (*update_screen)(void);
 
 extern s32 affine_reference_x[2];

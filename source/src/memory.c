@@ -1485,6 +1485,7 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       }
 
       ADDRESS16(io_registers, 0x00) = value;
+      video_io_written(0x00);
       break;
     }
 
@@ -1503,12 +1504,14 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       ACCESS_REGISTER16_LOW(0x28);
       affine_reference_x[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x28) = value;
+      video_io_written(0x28);
       break;
 
     case 0x2A:  // BG2X_H
       ACCESS_REGISTER16_HIGH(0x28);
       affine_reference_x[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x28) = value;
+      video_io_written(0x28);
       break;
 
     // BG2 reference Y
@@ -1516,12 +1519,14 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       ACCESS_REGISTER16_LOW(0x2C);
       affine_reference_y[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x2C) = value;
+      video_io_written(0x2C);
       break;
 
     case 0x2E:  // BG2Y_H
       ACCESS_REGISTER16_HIGH(0x2C);
       affine_reference_y[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x2C) = value;
+      video_io_written(0x2C);
       break;
 
     // BG3 reference X
@@ -1529,12 +1534,14 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       ACCESS_REGISTER16_LOW(0x38);
       affine_reference_x[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x38) = value;
+      video_io_written(0x38);
       break;
 
     case 0x3A:  // BG3X_H
       ACCESS_REGISTER16_HIGH(0x38);
       affine_reference_x[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x38) = value;
+      video_io_written(0x38);
       break;
 
     // BG3 reference Y
@@ -1542,12 +1549,14 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       ACCESS_REGISTER16_LOW(0x3C);
       affine_reference_y[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x3C) = value;
+      video_io_written(0x3C);
       break;
 
     case 0x3E:  // BG3Y_H
       ACCESS_REGISTER16_HIGH(0x3C);
       affine_reference_y[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x3C) = value;
+      video_io_written(0x3C);
       break;
 
     // Sound 1 control sweep
@@ -1795,24 +1804,28 @@ CPU_ALERT_TYPE write_io_register32(u32 address, u32 value)
     case 0x28:
       affine_reference_x[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x28) = value;
+      video_io_written(0x28);
       break;
 
     // BG2 reference Y
     case 0x2C:
       affine_reference_y[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x2C) = value;
+      video_io_written(0x2C);
       break;
 
     // BG3 reference X
     case 0x38:
       affine_reference_x[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x38) = value;
+      video_io_written(0x38);
       break;
 
     // BG3 reference Y
     case 0x3C:
       affine_reference_y[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x3C) = value;
+      video_io_written(0x3C);
       break;
 
     // Sound FIFO A

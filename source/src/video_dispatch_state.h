@@ -9,9 +9,11 @@
 
 #include <stdint.h>
 
-/* Same values as VIDEO_RENDERER_OLD/NEW in main.h (option_video_renderer). */
+/* Same values as VIDEO_RENDERER_OLD/NEW/PPU in main.h
+   (option_video_renderer). */
 #define VIDEO_DISPATCH_RENDERER_OLD 0u
 #define VIDEO_DISPATCH_RENDERER_NEW 1u
+#define VIDEO_DISPATCH_RENDERER_PPU 2u
 
 typedef struct
 {
