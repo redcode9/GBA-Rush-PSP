@@ -395,7 +395,7 @@ static void draw_sprite(GbaPpu *ppu, const uint16_t *attr, int y, int top)
   uint32_t priority = (uint32_t)((a2 >> 10) & 3) << OBJ_PRIO_SHIFT;
   uint32_t pixel = priority | PIXEL_LAYER(4) |
    (mode == 1 ? PIXEL_SEMI : 0) | (deep ? 256 : 256 + ((a2 >> 12) << 4));
-  unsigned row_tiles;
+  unsigned row_tiles, wrap;
   int mosaic_x = 1;
   int32_t u, v, du, dv;
   int x, end, row;
@@ -442,17 +442,33 @@ static void draw_sprite(GbaPpu *ppu, const uint16_t *attr, int y, int top)
     du = a1 & 0x1000 ? -256 : 256;
   }
 
+  /* One-dimensional mapping stores the sprite's tile rows one after the
+     other; two-dimensional mapping places them in a 32x32 tile matrix
+     whose rows the sprite wraps around in (as in mGBA). */
   if(dispcnt & DISPCNT_OBJ_1D)
+  {
     row_tiles = (width >> 3) << deep;
+    wrap = 0x3FF;
+  }
   else
   {
     row_tiles = 32;
+    wrap = 31;
     if(deep)
       tile &= ~1u;
   }
 
+  /* With mosaic each screen block shows the sprite's pixel at the block's
+     left edge, and the last block is filled even past the sprite's right
+     edge. A first block that starts left of the sprite shows the sprite's
+     leftmost pixel, or with rotation/scaling what the transformation
+     finds one pixel left of the box (both as in mGBA). */
   x = left < 0 ? 0 : left;
-  end = left + box_width > GBA_PPU_WIDTH ? GBA_PPU_WIDTH : left + box_width;
+  end = left + box_width;
+  if(mosaic_x > 1 && end > 0 && end % mosaic_x)
+    end += mosaic_x - end % mosaic_x;
+  if(end > GBA_PPU_WIDTH)
+    end = GBA_PPU_WIDTH;
   u += du * (x - left);
   v += dv * (x - left);
   for(; x < end; x++, u += du, v += dv)
@@ -465,21 +481,22 @@ static void draw_sprite(GbaPpu *ppu, const uint16_t *attr, int y, int top)
     {
       int back = x % mosaic_x;
 
+      if(x - back < left)
+        back = x - left + (a0 & 0x100 ? 1 : 0);
       tu -= back * du;
       tv -= back * dv;
     }
     tu >>= 8;
     tv >>= 8;
-    index = 0;
-    if((uint32_t)tu < (uint32_t)width && (uint32_t)tv < (uint32_t)height)
-    {
-      address = (tile + (tv >> 3) * row_tiles + ((tu >> 3) << deep)) * 32;
-      if(deep)
-        index = tiles[(address + (tv & 7) * 8 + (tu & 7)) & 0x7FFF];
-      else
-        index = tiles[(address + (tv & 7) * 4 + ((tu & 7) >> 1)) & 0x7FFF] >>
-         ((tu & 1) * 4) & 15;
-    }
+    if((uint32_t)tu >= (uint32_t)width || (uint32_t)tv >= (uint32_t)height)
+      continue;
+    address = ((tile & ~wrap) + (tv >> 3) * row_tiles +
+     ((tile + ((tu >> 3) << deep)) & wrap)) * 32;
+    if(deep)
+      index = tiles[(address + (tv & 7) * 8 + (tu & 7)) & 0x7FFF];
+    else
+      index = tiles[(address + (tv & 7) * 4 + ((tu & 7) >> 1)) & 0x7FFF] >>
+       ((tu & 1) * 4) & 15;
     old = ppu->obj[x];
     if(mode == 2)
     {
@@ -490,9 +507,10 @@ static void draw_sprite(GbaPpu *ppu, const uint16_t *attr, int y, int top)
     {
       if(index)
         ppu->obj[x] = (old & OBJ_WINDOW) | pixel | index;
-      /* A transparent pixel still lends its priority to an earlier
-         sprite's pixel under it (GBATEK warns of the "garbage" this
-         makes when OBJ0 has a lower priority than OBJ1). */
+      /* A transparent pixel of the sprite's picture (not of the empty
+         part of a rotation/scaling box) still lends its priority to an
+         earlier sprite's pixel under it, as in mGBA. GBATEK warns of the
+         "garbage" this makes when OBJ0 has a lower priority than OBJ1. */
       else if(old & OBJ_COLOUR)
         ppu->obj[x] = (old & ~OBJ_PRIO_MASK) | priority;
     }
@@ -529,11 +547,11 @@ static void draw_sprites(GbaPpu *ppu, int y)
       box_width *= 2;
       box_height *= 2;
     }
-    /* A sprite reaching below line 255 comes in from the top. */
-    top = a0 & 0xFF;
-    if(top + box_height > 256)
-      top -= 256;
-    if(y < top || y >= top + box_height)
+    /* Lines count modulo 256, so a sprite reaching below line 255 comes
+       in from the top. GBATEK says a 128-line box placed below line 128
+       then no longer shows at the bottom; mGBA shows it at both. */
+    top = y - ((y - (int)(a0 & 0xFF)) & 255);
+    if(y - top >= box_height)
       continue;
     /* Sprites wholly past the right edge cost nothing; any other starts
        while time is left and is drawn whole. */
