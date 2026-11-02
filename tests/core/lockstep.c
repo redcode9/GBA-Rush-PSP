@@ -78,6 +78,15 @@ static unsigned long replay_misses;
 
 /* Run mode */
 static int32_t run_base;
+static double core_seconds;
+
+static double now(void)
+{
+  struct timespec t;
+
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return (double)t.tv_sec + (double)t.tv_nsec / 1e9;
+}
 
 static void silent_log(struct mLogger *logger, int category,
  enum mLogLevel level, const char *format, va_list args)
@@ -903,6 +912,7 @@ static int compare_once(int block_mode)
 static void run_once(void)
 {
   int32_t budget;
+  double start;
 
   while(cpu->halted || cpu->cycles >= cpu->nextEvent)
   {
@@ -914,7 +924,9 @@ static void run_once(void)
   update_irq_line();
   budget = cpu->nextEvent - cpu->cycles;
   run_base = cpu->cycles;
+  start = now();
   cpu->cycles = run_base + arm_core_run(&core, budget);
+  core_seconds += now() - start;
   core.cycles = 0;
 }
 
@@ -1063,6 +1075,21 @@ int main(int argc, char **argv)
   arm_core_set_waitcnt(&core, gba->memory.io[REG_WAITCNT >> 1]);
   if(!strcmp(mode, "run"))
   {
+    unsigned region;
+
+    /* Work RAM and ROM are plain memory, read and written directly as an
+       emulator would map them; the rest goes through mGBA. */
+    core.map[2].read = core.map[2].write = (uint8_t *)gba->memory.wram;
+    core.map[2].mask = 0x3FFFF;
+    core.map[3].read = core.map[3].write = (uint8_t *)gba->memory.iwram;
+    core.map[3].mask = 0x7FFF;
+    if(gba->memory.romSize && !(gba->memory.romSize &
+       (gba->memory.romSize - 1)))
+      for(region = 8; region <= 12; region++)
+      {
+        core.map[region].read = (const uint8_t *)gba->memory.rom;
+        core.map[region].mask = (uint32_t)gba->memory.romSize - 1;
+      }
     load_core_from_mgba();
     /* mGBA no longer runs instructions; keep it from entering interrupts
        itself; the core does that from irq_line. */
@@ -1100,9 +1127,11 @@ int main(int argc, char **argv)
 
   if(!strcmp(mode, "run"))
     printf("run: %u frames, %u guest instructions in %.2f s (%.1f M/s "
-     "with mGBA's devices), %u translation flushes\n",
+     "with mGBA's devices), %.2f s in the core and its bus calls (%.1f "
+     "M/s), %u translation flushes\n",
      mcore->frameCounter(mcore) - start_frame, core.instructions, seconds,
-     core.instructions / seconds / 1e6, core.flushes);
+     core.instructions / seconds / 1e6, core_seconds,
+     core.instructions / core_seconds / 1e6, core.flushes);
   else if(!strcmp(mode, "mgba"))
     printf("mgba: %u frames in %.2f s\n",
      mcore->frameCounter(mcore) - start_frame, seconds);
