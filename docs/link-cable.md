@@ -239,7 +239,8 @@ exit close the session and tell the other PSP.
   joiner, such as LeafGreen. With `MKSC` set to Mario Kart: Super Circuit
   (European release) it also races two games in Multi-Pak mode, which uses
   lockstep mode, and checks that both race clocks run in step and that,
-  under PSP conditions with a 4 ms round trip, the race runs above 57 fps.
+  under PSP conditions with a 4 ms round trip, the race runs above 57 fps,
+  and above 53 fps when a tenth of the datagrams are lost.
   Those conditions come from two races between a PSP-2000 and a PSP-1000,
   at 40 fps on the build before 1.4.3's lockstep changes and at 45.5 fps on
   the first build with them. With 14 ms of emulation per frame, 0.3 ms of
