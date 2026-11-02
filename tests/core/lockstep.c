@@ -31,6 +31,13 @@
  *   --bios-boot            run the BIOS intro instead of skipping it
  *   --shot FILE            write the last frame as a BMP
  *   --cycles-strict        stop at the first cycle difference too
+ *   --trace FILE           run mode: a line per run (frame, cycles,
+ *                          instructions, pc, register hash), so two runs
+ *                          can be compared
+ * Built with LOCKSTEP_JIT (and Unicorn, see mips_unicorn.h):
+ *   --jit                  the MIPS backend (arm_mips.c) runs the core
+ *   --count                run mode: count the MIPS instructions run, the
+ *                          sound mixer's share, the backend's predictors
  */
 
 #include <fcntl.h>
@@ -67,7 +74,161 @@ static struct GBA *gba;
 static struct ARMCore *cpu;
 static struct ARMMemory original;
 static color_t video[256 * 160];
-static ArmCore core;
+static ArmCore interpreter;
+static ArmCore *core = &interpreter;
+static FILE *trace;
+
+#ifdef LOCKSTEP_JIT
+#include "arm_mips.h"
+#include "mips_unicorn.h"
+
+#define JIT_CODE_BYTES (16u << 20)
+/* The M4A sound mixer's loop in Mario Kart's internal RAM. */
+#define MIXER_START 0x03002890u
+#define MIXER_END 0x030028D8u
+
+static ArmMips *jit;
+
+static ArmExitKind run_block(void)
+{
+  return jit ? arm_mips_run_block(jit) : arm_core_run_block(core);
+}
+
+static int step(void)
+{
+  return jit ? arm_mips_step(jit) : arm_core_step(core);
+}
+
+static int32_t run(int32_t cycles)
+{
+  return jit ? arm_mips_run(jit, cycles) : arm_core_run(core, cycles);
+}
+
+/* Which block a stretch of MIPS code belongs to: blocks sit one after
+   the other in the buffer, each from its key word to the next one. */
+typedef struct
+{
+  uint32_t start;
+  uint32_t entry;
+  uint32_t key;
+  uint32_t insns;
+} Span;
+
+static Span spans[ARM_CACHE_BLOCKS];
+static unsigned span_count;
+static uint32_t spans_blocks = ~0u;
+static uint32_t spans_generation;
+static unsigned long long block_runs;
+static unsigned long long block_guest_insns;
+static unsigned long long mixer_mips;
+static unsigned long long mixer_runs;
+static unsigned long long mixer_guest_insns;
+
+static int by_start(const void *a, const void *b)
+{
+  const Span *x = a;
+  const Span *y = b;
+
+  return x->start < y->start ? -1 : x->start > y->start;
+}
+
+static void build_spans(void)
+{
+  unsigned i;
+
+  span_count = 0;
+  for(i = 0; i < core->block_count; i++)
+    if(jit->code[i] > 1)
+    {
+      Span *s = &spans[span_count++];
+
+      s->entry = jit->code[i];
+      s->start = s->entry - 16;
+      s->key = core->blocks[i].key;
+      s->insns = core->blocks[i].insns;
+    }
+  qsort(spans, span_count, sizeof(Span), by_start);
+  spans_blocks = jit->stats.blocks;
+  spans_generation = jit->generation;
+}
+
+static void count_block(uint32_t address, uint32_t size)
+{
+  unsigned low = 0;
+  unsigned high;
+  const Span *s;
+
+  if(spans_blocks != jit->stats.blocks || spans_generation != jit->generation)
+    build_spans();
+  high = span_count;
+  while(low < high)
+  {
+    unsigned mid = (low + high) / 2;
+
+    if(spans[mid].start <= address)
+      low = mid + 1;
+    else
+      high = mid;
+  }
+  if(!low)
+    return;
+  s = &spans[low - 1];
+  if(address == s->entry)
+  {
+    block_runs++;
+    block_guest_insns += s->insns;
+  }
+  if((s->key & ~1u) >= MIXER_START && (s->key & ~1u) < MIXER_END)
+  {
+    mixer_mips += size / 4;
+    if(address == s->entry)
+    {
+      mixer_runs++;
+      mixer_guest_insns += s->insns;
+    }
+  }
+}
+
+static void print_counts(void)
+{
+  unsigned long long mips = mips_unicorn_executed;
+  const ArmMipsStats *st = &jit->stats;
+
+  printf("backend: %llu MIPS instructions run for %llu guest instructions "
+   "in %llu block runs (%.2f per guest instruction, %llu accesses through "
+   "C)\n", mips, block_guest_insns, block_runs,
+   (double)mips / (double)block_guest_insns, mips_unicorn_calls);
+  printf("mixer loop %08X-%08X: %llu MIPS instructions for %llu guest "
+   "instructions in %llu runs (%.2f per guest instruction)\n", MIXER_START,
+   MIXER_END, mixer_mips, mixer_guest_insns, mixer_runs,
+   mixer_guest_insns ? (double)mixer_mips / (double)mixer_guest_insns : 0.0);
+  printf("return stack: %u hits, %u misses; dispatch cache: %u hits, %u "
+   "misses (%u from C)\n", jit->profile[0], jit->profile[1],
+   jit->profile[2], jit->profile[3], st->misses);
+  printf("code: %u blocks, %u guest instructions, %u hot and %u cold words "
+   "(%.1f and %.1f per guest instruction), %u links, %u bails, %u "
+   "interpreted, %u flushes\n", st->blocks, st->guest_insns,
+   st->hot_words, st->cold_words,
+   (double)st->hot_words / (double)st->guest_insns,
+   (double)st->cold_words / (double)st->guest_insns, st->links, st->bails,
+   st->interpreted, st->flushes);
+}
+#else
+static ArmExitKind run_block(void)
+{
+  return arm_core_run_block(core);
+}
+
+static int step(void)
+{
+  return arm_core_step(core);
+}
+
+static int32_t run(int32_t cycles)
+{
+  return arm_core_run(core, cycles);
+}
+#endif
 
 static Access accesses[8192];
 static unsigned access_count;
@@ -137,7 +298,7 @@ static void record(int write, unsigned size, uint32_t address,
 static void system_write(uint32_t address, unsigned size)
 {
   if(!recording)
-    arm_core_invalidate(&core, address, size);
+    arm_core_invalidate(core, address, size);
 }
 
 static uint32_t hook_load32(struct ARMCore *c, uint32_t address, int *cycles)
@@ -371,18 +532,18 @@ static uint32_t code32(void *c, uint32_t address)
 
 static void run_sync(void)
 {
-  uint32_t width = (core.cpsr & ARM_CPSR_T) ? 2 : 4;
+  uint32_t width = (core->cpsr & ARM_CPSR_T) ? 2 : 4;
 
-  cpu->cycles = run_base + core.cycles;
+  cpu->cycles = run_base + core->cycles;
   /* mGBA lets only code running in the BIOS read the BIOS. */
-  cpu->gprs[ARM_PC] = (int32_t)(core.insn_pc + 2 * width);
-  if((uint32_t)gba->memory.activeRegion != core.insn_pc >> 24)
-    original.setActiveRegion(cpu, core.insn_pc);
+  cpu->gprs[ARM_PC] = (int32_t)(core->insn_pc + 2 * width);
+  if((uint32_t)gba->memory.activeRegion != core->insn_pc >> 24)
+    original.setActiveRegion(cpu, core->insn_pc);
 }
 
 static void update_irq_line(void)
 {
-  core.irq_line = gba->memory.io[REG_IME >> 1] &&
+  core->irq_line = gba->memory.io[REG_IME >> 1] &&
    (gba->memory.io[REG_IE >> 1] & gba->memory.io[REG_IF >> 1]);
 }
 
@@ -394,10 +555,10 @@ static void run_after_write(uint32_t address)
   {
     update_irq_line();
     if((address & 0x00FFFFFCu) == 0x204)
-      arm_core_set_waitcnt(&core, gba->memory.io[REG_WAITCNT >> 1]);
+      arm_core_set_waitcnt(core, gba->memory.io[REG_WAITCNT >> 1]);
   }
   if(cpu->halted || cpu->nextEvent <= cpu->cycles)
-    arm_core_request_exit(&core);
+    arm_core_request_exit(core);
 }
 
 static uint32_t run_read8(void *c, uint32_t a)
@@ -504,14 +665,14 @@ static void load_core_from_mgba(void)
   unsigned m;
   unsigned r;
 
-  arm_core_set_cpsr(&core, (uint32_t)cpu->cpsr.packed);
+  arm_core_set_cpsr(core, (uint32_t)cpu->cpsr.packed);
   for(m = 0; m < 6; m++)
     for(r = 8; r <= 16; r++)
       if(r != 15)
-        *arm_core_register(&core, modes[m], r) = mgba_register(modes[m], r);
+        *arm_core_register(core, modes[m], r) = mgba_register(modes[m], r);
   for(r = 0; r < 15; r++)
-    core.v[r] = (uint32_t)cpu->gprs[r];
-  core.v[15] = mgba_next_pc();
+    core->v[r] = (uint32_t)cpu->gprs[r];
+  core->v[15] = mgba_next_pc();
 }
 
 /* Compares every register of every mode; returns a description of the
@@ -525,15 +686,15 @@ static const char *compare_registers(void)
 
   text[0] = 0;
   for(r = 0; r < 15; r++)
-    if(core.v[r] != (uint32_t)cpu->gprs[r])
+    if(core->v[r] != (uint32_t)cpu->gprs[r])
       n += (size_t)snprintf(text + n, sizeof(text) - n, " r%u %08X/%08X", r,
-       core.v[r], (uint32_t)cpu->gprs[r]);
-  if(core.v[15] != mgba_next_pc() && n < sizeof(text))
+       core->v[r], (uint32_t)cpu->gprs[r]);
+  if(core->v[15] != mgba_next_pc() && n < sizeof(text))
     n += (size_t)snprintf(text + n, sizeof(text) - n, " pc %08X/%08X",
-     core.v[15], mgba_next_pc());
-  if(arm_core_cpsr(&core) != (uint32_t)cpu->cpsr.packed && n < sizeof(text))
+     core->v[15], mgba_next_pc());
+  if(arm_core_cpsr(core) != (uint32_t)cpu->cpsr.packed && n < sizeof(text))
     n += (size_t)snprintf(text + n, sizeof(text) - n, " cpsr %08X/%08X",
-     arm_core_cpsr(&core), (uint32_t)cpu->cpsr.packed);
+     arm_core_cpsr(core), (uint32_t)cpu->cpsr.packed);
   for(m = 0; m < 6 && n < sizeof(text); m++)
     for(r = 8; r <= 16 && n < sizeof(text); r++)
     {
@@ -542,7 +703,7 @@ static const char *compare_registers(void)
 
       if(r == 15)
         continue;
-      mine = *arm_core_register(&core, modes[m], r);
+      mine = *arm_core_register(core, modes[m], r);
       theirs = mgba_register(modes[m], r);
       if(mine != theirs)
         n += (size_t)snprintf(text + n, sizeof(text) - n,
@@ -569,14 +730,14 @@ static void print_core_state(void)
 
   printf("core after:");
   for(r = 0; r < 16; r++)
-    printf("%s r%d=%08X", r % 8 ? "" : "\n ", r, core.v[r]);
-  printf("\n cpsr=%08X spsr=%08X\n", arm_core_cpsr(&core), core.spsr);
+    printf("%s r%d=%08X", r % 8 ? "" : "\n ", r, core->v[r]);
+  printf("\n cpsr=%08X spsr=%08X\n", arm_core_cpsr(core), core->spsr);
 }
 
 static void print_ir(uint32_t pc, int thumb, unsigned max_insns)
 {
   ArmIrOp ops[ARM_BLOCK_MAX_OPS];
-  unsigned n = arm_translate(&core, pc, thumb, ops, ARM_BLOCK_MAX_OPS,
+  unsigned n = arm_translate(core, pc, thumb, ops, ARM_BLOCK_MAX_OPS,
    max_insns, NULL);
   unsigned i;
 
@@ -807,9 +968,9 @@ static int multiply_carry_only(uint32_t pc, int thumb, unsigned insns)
 {
   unsigned i;
 
-  if((arm_core_cpsr(&core) ^ (uint32_t)cpu->cpsr.packed) != ARM_CPSR_C)
+  if((arm_core_cpsr(core) ^ (uint32_t)cpu->cpsr.packed) != ARM_CPSR_C)
     return 0;
-  arm_core_set_cpsr(&core, (uint32_t)cpu->cpsr.packed);
+  arm_core_set_cpsr(core, (uint32_t)cpu->cpsr.packed);
   if(compare_registers())
     return 0;
   for(i = 0; i < insns; i++)
@@ -837,10 +998,10 @@ static int compare_once(int block_mode)
   process_events();
   load_core_from_mgba();
   memcpy(&before, cpu, sizeof(before));
-  pc = core.v[15];
-  thumb = (core.cpsr & ARM_CPSR_T) != 0;
+  pc = core->v[15];
+  thumb = (core->cpsr & ARM_CPSR_T) != 0;
   if(block_mode)
-    insns = arm_core_block(&core)->insns;
+    insns = arm_core_block(core)->insns;
 
   access_count = 0;
   diverged = 0;
@@ -869,21 +1030,21 @@ static int compare_once(int block_mode)
   recording = 0;
   mgba_cycles = cpu->cycles - mgba_start;
 
-  core.cycles = 0;
+  core->cycles = 0;
   if(block_mode)
   {
-    uint32_t start = core.instructions;
+    uint32_t start = core->instructions;
 
     /* A store to translated code makes the core leave the block early; a
        block starting there could run past this one's end, so the rest
        goes one instruction at a time. */
-    arm_core_run_block(&core);
-    while(core.instructions - start < insns && !diverged)
-      arm_core_step(&core);
+    run_block();
+    while(core->instructions - start < insns && !diverged)
+      step();
   }
   else
-    arm_core_step(&core);
-  core_cycles = core.cycles;
+    step();
+  core_cycles = core->cycles;
   check_writes_done();
   compared += insns;
 
@@ -924,9 +1085,19 @@ static void run_once(void)
   budget = cpu->nextEvent - cpu->cycles;
   run_base = cpu->cycles;
   start = now();
-  cpu->cycles = run_base + arm_core_run(&core, budget);
+  cpu->cycles = run_base + run(budget);
   core_seconds += now() - start;
-  core.cycles = 0;
+  core->cycles = 0;
+  if(trace)
+  {
+    uint32_t sum = arm_core_cpsr(core);
+    unsigned r;
+
+    for(r = 0; r < 16; r++)
+      sum = sum * 31 + core->v[r];
+    fprintf(trace, "%u %d %u %08X %08X\n", mcore->frameCounter(mcore),
+     cpu->cycles, core->instructions, core->v[15], sum);
+  }
 }
 
 static void write_bmp(const char *path)
@@ -1040,6 +1211,10 @@ int main(int argc, char **argv)
    replay_write8, replay_write16, replay_write32, code32 };
   ArmBus direct = { NULL, run_read8, run_read16, run_read32, run_write8,
    run_write16, run_write32, code32 };
+#ifdef LOCKSTEP_JIT
+  int use_jit = 0;
+  int count = 0;
+#endif
 
   for(arg = 1; arg < argc; arg++)
   {
@@ -1055,6 +1230,21 @@ int main(int argc, char **argv)
       bios_boot = 1;
     else if(!strcmp(argv[arg], "--cycles-strict"))
       strict_cycles = 1;
+    else if(!strcmp(argv[arg], "--trace") && arg + 1 < argc)
+    {
+      trace = fopen(argv[++arg], "w");
+      if(!trace)
+      {
+        perror(argv[arg]);
+        return 2;
+      }
+    }
+#ifdef LOCKSTEP_JIT
+    else if(!strcmp(argv[arg], "--jit"))
+      use_jit = 1;
+    else if(!strcmp(argv[arg], "--count"))
+      count = 1;
+#endif
     else if(path_count < 3)
       paths[path_count++] = argv[arg];
   }
@@ -1070,24 +1260,53 @@ int main(int argc, char **argv)
     add_segment(frames ? frames : 600, 0);
 
   boot(paths[0], paths[1], paths[2], bios_boot);
-  arm_core_init(&core, strcmp(mode, "run") ? &replay : &direct);
-  arm_core_set_waitcnt(&core, gba->memory.io[REG_WAITCNT >> 1]);
+#ifdef LOCKSTEP_JIT
+  if(use_jit)
+  {
+    ArmMipsHost host;
+    uint32_t *code;
+
+    mips_unicorn_init();
+    jit = mips_unicorn_alloc(sizeof(ArmMips));
+    code = mips_unicorn_alloc(JIT_CODE_BYTES);
+    mips_unicorn_map(jit, sizeof(ArmMips), 0x10000000u);
+    mips_unicorn_map(code, JIT_CODE_BYTES, 0x08800000u);
+    /* Work RAM and ROM at addresses aligned to their size, as the PSP
+       build should allocate them. */
+    mips_unicorn_map(gba->memory.wram, 0x40000, 0x0A000000u);
+    mips_unicorn_map(gba->memory.iwram, 0x8000, 0x0A040000u);
+    mips_unicorn_map(gba->memory.rom, gba->memory.romSize, 0x0C000000u);
+    host = mips_unicorn_host(jit);
+    arm_mips_init(jit, strcmp(mode, "run") ? &replay : &direct, &host,
+     code, JIT_CODE_BYTES);
+    core = &jit->core;
+    /* Step and block mode count instructions to know where a block
+       ended; a run counts them for --trace. */
+    jit->count_instructions = !count;
+    jit->profiling = count;
+    if(count)
+      mips_unicorn_count(count_block);
+  }
+  else
+#endif
+  arm_core_init(core, strcmp(mode, "run") ? &replay : &direct);
+  arm_core_set_waitcnt(core, gba->memory.io[REG_WAITCNT >> 1]);
   if(!strcmp(mode, "run"))
   {
     unsigned region;
 
     /* Work RAM and ROM are plain memory, read and written directly as an
        emulator would map them; the rest goes through mGBA. */
-    core.map[2].read = core.map[2].write = (uint8_t *)gba->memory.wram;
-    core.map[2].mask = 0x3FFFF;
-    core.map[3].read = core.map[3].write = (uint8_t *)gba->memory.iwram;
-    core.map[3].mask = 0x7FFF;
+    core->map[2].read = core->map[2].write = (uint8_t *)gba->memory.wram;
+    core->map[2].mask = 0x3FFFF;
+    core->map[3].read = core->map[3].write = (uint8_t *)gba->memory.iwram;
+    core->map[3].mask = 0x7FFF;
     if(gba->memory.romSize && !(gba->memory.romSize &
        (gba->memory.romSize - 1)))
       for(region = 8; region <= 12; region++)
       {
-        core.map[region].read = (const uint8_t *)gba->memory.rom;
-        core.map[region].mask = (uint32_t)gba->memory.romSize - 1;
+        core->map[region].read = (const uint8_t *)gba->memory.rom;
+        core->map[region].mask = (uint32_t)gba->memory.romSize - 1;
       }
     load_core_from_mgba();
     /* mGBA no longer runs instructions; keep it from entering interrupts
@@ -1114,7 +1333,7 @@ int main(int argc, char **argv)
       {
         ok = compare_once(!strcmp(mode, "block"));
         /* The core's waitstates follow WAITCNT. */
-        arm_core_set_waitcnt(&core, gba->memory.io[REG_WAITCNT >> 1]);
+        arm_core_set_waitcnt(core, gba->memory.io[REG_WAITCNT >> 1]);
       }
     }
     if(ok && segments[s].shot[0])
@@ -1128,9 +1347,9 @@ int main(int argc, char **argv)
     printf("run: %u frames, %u guest instructions in %.2f s (%.1f M/s "
      "with mGBA's devices), %.2f s in the core and its bus calls (%.1f "
      "M/s), %u translation flushes\n",
-     mcore->frameCounter(mcore) - start_frame, core.instructions, seconds,
-     core.instructions / seconds / 1e6, core_seconds,
-     core.instructions / core_seconds / 1e6, core.flushes);
+     mcore->frameCounter(mcore) - start_frame, core->instructions, seconds,
+     core->instructions / seconds / 1e6, core_seconds,
+     core->instructions / core_seconds / 1e6, core->flushes);
   else if(!strcmp(mode, "mgba"))
     printf("mgba: %u frames in %.2f s\n",
      mcore->frameCounter(mcore) - start_frame, seconds);
@@ -1144,6 +1363,12 @@ int main(int argc, char **argv)
        multiply_carries);
     print_cycle_summary();
   }
+#ifdef LOCKSTEP_JIT
+  if(jit && count)
+    print_counts();
+#endif
+  if(trace)
+    fclose(trace);
   if(shot)
     write_bmp(shot);
   mcore->deinit(mcore);
