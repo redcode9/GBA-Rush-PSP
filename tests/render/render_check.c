@@ -3,6 +3,9 @@
  * renderer, and every video register, palette, OAM and VRAM write it hands
  * that renderer also goes to GBA Rush's gba_ppu, which draws each line too.
  * At the end of each frame the two pictures are compared pixel by pixel.
+ * A second gba_ppu reads mGBA's own memory, as the emulator's does, hearing
+ * only of the register writes the emulator reports; its pictures must equal
+ * the first one's.
  * Build it against an mGBA compiled with COLOR_16_BIT, whose colours are
  * the GBA's own (see mgba_pixel).
  *
@@ -44,10 +47,12 @@
 static struct mCore *core;
 static struct GBA *gba;
 static struct GBAVideoRenderer mgba_renderer;
-static GbaPpu ppu;
+static GbaPpu ppu, shared;
+static GbaPpuMemory copy;
 static color_t mgba_frame[256 * HEIGHT];
-static uint16_t ppu_frame[WIDTH * HEIGHT];
+static uint16_t ppu_frame[WIDTH * HEIGHT], shared_frame[WIDTH * HEIGHT];
 static unsigned long frames, bad_frames, bad_pixels, desync_frames;
+static unsigned long shared_frames;
 static unsigned long rounded_pixels;
 static double mgba_ns, ppu_ns;
 static int written_mismatch;
@@ -110,6 +115,10 @@ static uint16_t on_register(struct GBAVideoRenderer *renderer,
 {
   trace("io", address, value);
   gba_ppu_write_io(&ppu, address, value);
+  /* The emulator reports DISPCNT and BG2X-BG3Y (mGBA stores the value
+     only after this hook, so gba_ppu_write_io stores it first). */
+  if(address == 0 || (address >= 0x28 && address < 0x40))
+    gba_ppu_write_io(&shared, address, value);
   return mgba_renderer.writeVideoRegister(renderer, address, value);
 }
 
@@ -152,8 +161,9 @@ static void on_line(struct GBAVideoRenderer *renderer, int y)
   t1 = now_ns();
   gba_ppu_draw_line(&ppu, y, ppu_frame + y * WIDTH);
   ppu_ns += now_ns() - t1;
+  gba_ppu_draw_line(&shared, y, shared_frame + y * WIDTH);
   drawn[y] = 1;
-  memcpy(line_io[y], ppu.io, sizeof(ppu.io));
+  memcpy(line_io[y], copy.io, sizeof(copy.io));
   memcpy(line_top[y], ppu.top, sizeof(ppu.top));
   memcpy(line_below[y], ppu.below, sizeof(ppu.below));
   mgba_ns += t1 - t0;
@@ -200,9 +210,9 @@ static void check_copies(void)
 {
   int i;
 
-  if(!memcmp(ppu.vram, gba->video.vram, sizeof(ppu.vram)) &&
-     !memcmp(ppu.palette, gba->video.palette, sizeof(ppu.palette)) &&
-     !memcmp(ppu.oam, gba->video.oam.raw, sizeof(ppu.oam)))
+  if(!memcmp(copy.vram, gba->video.vram, sizeof(copy.vram)) &&
+     !memcmp(copy.palette, gba->video.palette, sizeof(copy.palette)) &&
+     !memcmp(copy.oam, gba->video.oam.raw, sizeof(copy.oam)))
     return;
   if(!desync_frames++)
   {
@@ -267,16 +277,24 @@ static void on_frame_end(struct GBAVideoRenderer *renderer)
 
     if(f)
     {
-      fwrite(ppu.io, 1, sizeof(ppu.io), f);
-      fwrite(ppu.palette, 1, sizeof(ppu.palette), f);
-      fwrite(ppu.oam, 1, sizeof(ppu.oam), f);
-      fwrite(ppu.vram, 1, sizeof(ppu.vram), f);
+      fwrite(copy.io, 1, sizeof(copy.io), f);
+      fwrite(copy.palette, 1, sizeof(copy.palette), f);
+      fwrite(copy.oam, 1, sizeof(copy.oam), f);
+      fwrite(copy.vram, 1, sizeof(copy.vram), f);
       fclose(f);
     }
   }
   gba_ppu_start_frame(&ppu);
+  gba_ppu_start_frame(&shared);
   check_copies();
   frames++;
+  for(y = 0; y < HEIGHT; y++)
+    if(drawn[y] && memcmp(ppu_frame + y * WIDTH, shared_frame + y * WIDTH,
+     WIDTH * sizeof(*ppu_frame)))
+    {
+      shared_frames++;
+      break;
+    }
   for(y = 0; y < HEIGHT; y++)
     for(x = 0; x < WIDTH && drawn[y]; x++)
       if(mgba_pixel(x, y) == ppu_frame[y * WIDTH + x])
@@ -355,8 +373,8 @@ static void *read_file(const char *path, size_t *size)
   return data;
 }
 
-/* Hands every hook to both renderers, and starts gba_ppu from the state
-   mGBA's reset left behind. */
+/* Hands every hook to both renderers, and starts both gba_ppus from the
+   state mGBA's reset left behind. */
 static void attach(void)
 {
   struct GBAVideoRenderer *renderer = gba->video.renderer;
@@ -370,13 +388,15 @@ static void attach(void)
   renderer->drawScanline = on_line;
   renderer->finishFrame = on_frame_end;
 
-  memset(&ppu, 0, sizeof(ppu));
+  gba_ppu_init(&ppu, copy.palette, copy.oam, copy.vram, copy.io);
   for(offset = 0; offset < GBA_PPU_IO_BYTES; offset += 2)
     gba_ppu_write_io(&ppu, offset, gba->memory.io[offset >> 1]);
-  gba_ppu_write_vram(&ppu, 0, gba->video.vram, sizeof(ppu.vram));
-  gba_ppu_write_palette(&ppu, 0, gba->video.palette, sizeof(ppu.palette));
-  gba_ppu_write_oam(&ppu, 0, gba->video.oam.raw, sizeof(ppu.oam));
+  gba_ppu_write_vram(&ppu, 0, gba->video.vram, sizeof(copy.vram));
+  gba_ppu_write_palette(&ppu, 0, gba->video.palette, sizeof(copy.palette));
+  gba_ppu_write_oam(&ppu, 0, gba->video.oam.raw, sizeof(copy.oam));
   gba_ppu_start_frame(&ppu);
+  gba_ppu_init(&shared, gba->video.palette, gba->video.oam.raw,
+   gba->video.vram, gba->memory.io);
 }
 
 int main(int argc, char **argv)
@@ -460,7 +480,9 @@ int main(int argc, char **argv)
     printf(", %lu more darkened one step less by mGBA", rounded_pixels);
   if(desync_frames)
     printf(", memory copies out of step in %lu frames", desync_frames);
+  if(shared_frames)
+    printf(", gba_ppu on mGBA's memory differs in %lu frames", shared_frames);
   printf("\n  per frame: mGBA renderer %.0f us, gba_ppu %.0f us\n",
    frames ? mgba_ns / frames / 1e3 : 0.0, frames ? ppu_ns / frames / 1e3 : 0.0);
-  return bad_frames || desync_frames ? 1 : 0;
+  return bad_frames || desync_frames || shared_frames ? 1 : 0;
 }

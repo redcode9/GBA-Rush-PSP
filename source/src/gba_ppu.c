@@ -113,19 +113,19 @@ static void copy_into(void *memory, uint32_t memory_size, uint32_t offset,
 void gba_ppu_write_palette(GbaPpu *ppu, uint32_t offset, const void *data,
  uint32_t size)
 {
-  copy_into(ppu->palette, sizeof(ppu->palette), offset, data, size);
+  copy_into(ppu->palette, 0x400, offset, data, size);
 }
 
 void gba_ppu_write_oam(GbaPpu *ppu, uint32_t offset, const void *data,
  uint32_t size)
 {
-  copy_into(ppu->oam, sizeof(ppu->oam), offset, data, size);
+  copy_into(ppu->oam, 0x400, offset, data, size);
 }
 
 void gba_ppu_write_vram(GbaPpu *ppu, uint32_t offset, const void *data,
  uint32_t size)
 {
-  copy_into(ppu->vram, sizeof(ppu->vram), offset, data, size);
+  copy_into(ppu->vram, 0x18000, offset, data, size);
 }
 
 /* The reference point registers hold 28-bit signed numbers. */
@@ -185,6 +185,17 @@ void gba_ppu_start_frame(GbaPpu *ppu)
     ppu->affine_y[bg] = reference_point(ppu,
      REG_BG2X + 4 + bg * AFFINE_STRIDE);
   }
+}
+
+void gba_ppu_init(GbaPpu *ppu, uint16_t *palette, uint16_t *oam,
+ uint16_t *vram, uint16_t *io)
+{
+  memset(ppu, 0, sizeof(*ppu));
+  ppu->palette = palette;
+  ppu->oam = oam;
+  ppu->vram = vram;
+  ppu->io = io;
+  gba_ppu_start_frame(ppu);
 }
 
 /* Whether a background shows on the line being drawn, as mGBA has it: one

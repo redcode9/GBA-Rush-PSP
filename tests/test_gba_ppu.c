@@ -11,7 +11,14 @@
 #include "gba_ppu.h"
 
 static GbaPpu ppu;
+static GbaPpuMemory copy;
 static uint16_t row[GBA_PPU_WIDTH];
+
+static void reset(void)
+{
+  memset(&copy, 0, sizeof(copy));
+  gba_ppu_init(&ppu, copy.palette, copy.oam, copy.vram, copy.io);
+}
 
 static void io(uint32_t offset, uint16_t value)
 {
@@ -31,7 +38,7 @@ static void text_scene(void)
   uint8_t pixels[4] = { 0x12, 0x11, 0x11, 0x11 };
   unsigned i;
 
-  memset(&ppu, 0, sizeof(ppu));
+  reset();
   for(i = 0; i < 1024; i++)
     gba_ppu_write_vram(&ppu, 0xF800 + i * 2, &entry, 2);
   for(i = 0; i < 8; i++)
@@ -116,7 +123,7 @@ static void test_affine_reference_points(void)
 {
   uint16_t y;
 
-  memset(&ppu, 0, sizeof(ppu));
+  reset();
   for(y = 0; y < 160; y++)
     gba_ppu_write_vram(&ppu, (uint32_t)y * 480, &y, 2);
   io(0x20, 0x100);
@@ -187,6 +194,40 @@ static void test_semi_transparent_sprite(void)
   assert(row[30] == 0x001F);
 }
 
+/* The emulator's way: the renderer reads the emulator's arrays, which the
+   game's writes reach directly, and hears only of writes to DISPCNT and the
+   reference points, after they were stored. */
+static void test_emulator_memory(void)
+{
+  static uint16_t palette_ram[0x200], oam_ram[0x200], io_registers[0x400];
+  static uint16_t vram[0x18000 / 2];
+  uint16_t y;
+
+  gba_ppu_init(&ppu, palette_ram, oam_ram, vram, io_registers);
+  for(y = 0; y < 160; y++)
+    vram[y * 240] = y;
+  io_registers[0x20 >> 1] = 0x100;
+  io_registers[0x26 >> 1] = 0x100;
+  io_registers[0x2C >> 1] = 0x0300;       /* start at source line 3 */
+  gba_ppu_write_io(&ppu, 0x2C, io_registers[0x2C >> 1]);
+  io_registers[0] = 0x0403;
+  gba_ppu_write_io(&ppu, 0x00, io_registers[0]);
+  gba_ppu_draw_line(&ppu, 0, row);
+  assert(row[0] == 3);
+  gba_ppu_draw_line(&ppu, 1, row);
+  assert(row[0] == 4);
+  vram[10 * 240] = 0x7C1F;
+  io_registers[0x2C >> 1] = 0x0A00;
+  gba_ppu_write_io(&ppu, 0x2C, io_registers[0x2C >> 1]);
+  gba_ppu_draw_line(&ppu, 2, row);
+  assert(row[0] == 0x7C1F);
+  palette_ram[0] = 0x8123;                /* backdrop; bit 15 is ignored */
+  io_registers[0] = 0x0003;
+  gba_ppu_write_io(&ppu, 0x00, io_registers[0]);
+  gba_ppu_draw_line(&ppu, 3, row);
+  assert(row[0] == 0x0123);
+}
+
 int main(void)
 {
   test_forced_blank_is_white();
@@ -195,5 +236,6 @@ int main(void)
   test_affine_reference_points();
   test_background_enable_delay();
   test_semi_transparent_sprite();
+  test_emulator_memory();
   return 0;
 }
