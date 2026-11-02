@@ -23,14 +23,16 @@
  *                                       the console waits for VBlank
  *   hiccup <side> <period_ms> <length_ms>  freeze the console, link
  *                                       included, once per period
- *   stack <side> <send_yield_us>        model the PSP's network stack, part
- *                                       of which runs below the emulator:
- *                                       datagrams move only while the
- *                                       console sleeps. It sleeps 2 ms after
- *                                       each late frame, and send_yield_us
- *                                       after each datagram it sends while
- *                                       emulating, in every mode; a PSP
- *                                       does so only in lockstep mode
+ *   stack <side> <send_yield_us> [cost_us]  model the PSP's network
+ *                                       stack, part of which runs below the
+ *                                       emulator: datagrams move only while
+ *                                       the console sleeps, and each one in
+ *                                       either direction takes cost_us of
+ *                                       that time. The console sleeps 2 ms
+ *                                       after each late frame, and in
+ *                                       lockstep mode send_yield_us after
+ *                                       each datagram it sends while
+ *                                       emulating
  *   linked <transfers>                  fail unless both cables are connected
  *                                       and this many transfers went through
  *   same <percent> [x y w h]            fail unless at least this share of
@@ -39,7 +41,10 @@
  *   minfps <fps>                        the speed `pace end` must reach
  *   pace <start|end>                    measure frames per simulated second
  *                                       between the two lines and fail
- *                                       below minfps on either console
+ *                                       below minfps on either console;
+ *                                       start drops any frames a console
+ *                                       is behind, so the figure never
+ *                                       exceeds the GBA's 59.7 fps
  *   ram16 <address> <tolerance> <min>   fail unless the 16-bit value at
  *                                       this work RAM address is at least
  *                                       min on both consoles and differs by
@@ -80,8 +85,18 @@
    main.c's idle interval, MAIN_LINK_SERVICE_CYCLES, is 16384. */
 #define SERVICE_CYCLES 4096
 /* main.c MAIN_LINK_YIELD_US: a linked PSP sleeps this long after each late
-   frame. */
+   frame, unless a lockstep link made it sleep during the frame. */
 #define LATE_FRAME_SLEEP_US 2000u
+/* A PSP ad hoc link carries about a byte every 1.9 us: on real consoles a
+   16-byte datagram comes back from an echo in 4.2 ms and a 1024-byte one in
+   8.0 ms (pspautotests, tests/net/adhoc/pair). Bigger datagrams arrive
+   later, on top of the network's own delay. */
+#define AIRTIME_NS_PER_BYTE 1900u
+/* Datagrams a PSP's network stack holds in both directions, and how many
+   of them may be outgoing before it refuses to send: a real PSP refuses
+   most of a quick burst of sends. */
+#define STACK_QUEUE 32u
+#define STACK_SENDS 4u
 
 typedef struct
 {
@@ -101,21 +116,30 @@ typedef struct
   uint64_t target;
   uint64_t blocked_us;
   uint32_t burst_cycles;    /* per tick in PSP mode, 0 for smooth running */
+  int64_t burst_credit;     /* cycles this tick may still run; negative
+                               while mGBA's last run loop went past it */
   uint64_t hiccup_period_us;
   uint64_t hiccup_us;
   int stack;                /* datagrams wait while the console emulates */
-  uint32_t send_yield_us;   /* sleep after each datagram sent while running,
-                               in every mode (a PSP: lockstep only) */
+  uint32_t send_yield_us;   /* lockstep: sleep after each datagram sent
+                               while running */
+  uint32_t stack_cost_us;   /* stack time per datagram, either way */
+  int slept;                /* lockstep pause or wait since the last frame */
   uint64_t sleep_until;     /* asleep, letting the stack work, until then */
   int ran;                  /* emulated during the last tick */
   uint32_t frame_seen;      /* frame counter after the last tick */
-  /* Datagrams sent while emulating, which leave when the console sleeps. */
+  /* Datagrams the stack still has to send or hand over, in order. */
   struct
   {
     uint8_t data[LINK_NET_MAX_DATAGRAM];
     size_t size;
-  } outbox[256];
-  unsigned outbox_count;
+    int outgoing;
+  } stack_queue[STACK_QUEUE];
+  unsigned stack_head;
+  unsigned stack_count;
+  uint32_t stack_time;      /* sleep time not yet spent on the queue */
+  uint32_t send_errors;     /* sends refused: too many outgoing */
+  uint32_t receive_drops;   /* arrivals dropped: the queue was full */
   uint32_t max_backlog;
   int rehalt;               /* woken only to stop the run loop, see below */
   uint64_t backlog_sum;     /* per tick while the games are linked */
@@ -127,6 +151,26 @@ typedef struct
 } Side;
 
 static Side sides[2];
+
+/* Queues a datagram for a console's stack. Returns 0 when the stack
+   refuses it, as a PSP does once too many sends are pending. */
+static int stack_push(Side *side, const uint8_t *data, size_t size,
+ int outgoing)
+{
+  unsigned sends = 0;
+  unsigned slot;
+  unsigned i;
+
+  for(i = 0; i < side->stack_count; i++)
+    sends += side->stack_queue[(side->stack_head + i) % STACK_QUEUE].outgoing;
+  if(side->stack_count == STACK_QUEUE || (outgoing && sends == STACK_SENDS))
+    return 0;
+  slot = (side->stack_head + side->stack_count++) % STACK_QUEUE;
+  memcpy(side->stack_queue[slot].data, data, size);
+  side->stack_queue[slot].size = size;
+  side->stack_queue[slot].outgoing = outgoing;
+  return 1;
+}
 
 /* Keeps mGBA's own log quiet so only the test's output is printed. */
 static void silent_log(struct mLogger *logger, int category,
@@ -181,23 +225,28 @@ static void network_send(int to, const uint8_t *data, size_t size)
     memcpy(f->data, data, size);
     f->size = size;
     f->to = to;
-    f->arrival = sim_now + net_latency + (net_jitter ? rng() % net_jitter : 0);
+    f->arrival = sim_now + net_latency + size * AIRTIME_NS_PER_BYTE / 1000u +
+     (net_jitter ? rng() % net_jitter : 0);
   }
 }
 
-/* Hands every datagram whose arrival time has come to its console. */
+/* Hands every datagram whose arrival time has come to its console, or to
+   its stack, which passes it on once the console sleeps. */
 static void network_deliver(void)
 {
   unsigned i = 0;
 
   while(i < flight_count)
   {
-    /* A PSP's stack hands datagrams over only while the console sleeps. */
-    if(flights[i].arrival <= sim_now &&
-       !(sides[flights[i].to].stack && sides[flights[i].to].ran))
+    if(flights[i].arrival <= sim_now)
     {
-      link_cable_receive(&sides[flights[i].to].cable, flights[i].data,
-       flights[i].size, sim_now);
+      Side *side = &sides[flights[i].to];
+
+      if(!side->stack)
+        link_cable_receive(&side->cable, flights[i].data, flights[i].size,
+         sim_now);
+      else if(!stack_push(side, flights[i].data, flights[i].size, 0))
+        side->receive_drops++;
       flights[i] = flights[--flight_count];
     }
     else
@@ -509,14 +558,29 @@ static void side_link(Side *side, int generic)
   mTimingSchedule(&side->gba->timing, &side->service_event, SERVICE_CYCLES);
 }
 
-/* Datagrams a PSP queued while emulating leave once it sleeps. */
-static void side_flush_outbox(Side *side)
+/* A PSP's stack works through its datagrams only while the console
+   sleeps, cost_us each, in the order they came and went. */
+static void side_stack_work(Side *side)
 {
-  unsigned i;
+  if(side->ran)
+    return;
+  side->stack_time += TICK_US;
+  while(side->stack_count != 0 && side->stack_time >= side->stack_cost_us)
+  {
+    unsigned slot = side->stack_head;
 
-  for(i = 0; i < side->outbox_count; i++)
-    network_send(1 - side->index, side->outbox[i].data, side->outbox[i].size);
-  side->outbox_count = 0;
+    side->stack_head = (side->stack_head + 1) % STACK_QUEUE;
+    side->stack_count--;
+    side->stack_time -= side->stack_cost_us;
+    if(side->stack_queue[slot].outgoing)
+      network_send(1 - side->index, side->stack_queue[slot].data,
+       side->stack_queue[slot].size);
+    else
+      link_cable_receive(&side->cable, side->stack_queue[slot].data,
+       side->stack_queue[slot].size, sim_now);
+  }
+  if(side->stack_count == 0)
+    side->stack_time = 0;
 }
 
 /* Moves one console's emulation target on by a tick: smoothly at its
@@ -537,19 +601,12 @@ static void side_advance(Side *side)
   }
 }
 
-/* Advances the simulation by TICK_US: delivers due datagrams, then runs
-   each console towards its target unless frozen, asleep (until VBlank, or
-   for its network stack) or blocked by the cable, and sends the cable's
-   next datagram, which a console with a stack holds until it sleeps. */
-static void run_tick(void)
+/* Runs one console for a tick towards its target unless frozen, asleep
+   (until VBlank, or for its network stack) or blocked by the cable, and
+   sends the cable's next datagram, through its stack if it has one. */
+static void side_tick(Side *side)
 {
-  int s;
-
-  sim_now += TICK_US;
-  network_deliver();
-  for(s = 0; s < 2; s++)
   {
-    Side *side = &sides[s];
     uint8_t datagram[LINK_NET_MAX_DATAGRAM];
     uint64_t limit;
     uint64_t before;
@@ -559,12 +616,11 @@ static void run_tick(void)
     side->now = sim_now;
     side->core->setKeys(side->core, side->keys);
     side->ran = 0;
-    /* Asleep for the stack: time passes and held datagrams leave. */
+    /* Asleep for the stack: time passes and the stack works. */
     if(sim_now < side->sleep_until)
     {
       side_advance(side);
-      side_flush_outbox(side);
-      continue;
+      return;
     }
     if(side->hiccup_period_us != 0 &&
        sim_now % side->hiccup_period_us < side->hiccup_us)
@@ -572,8 +628,7 @@ static void run_tick(void)
       /* Frozen, like a PSP writing to the memory stick: nothing runs and
          the lost time is never made up. */
       side->target = side_clock(side);
-      side_flush_outbox(side);
-      continue;
+      return;
     }
     /* A PSP that has finished its frame sleeps until VBlank without
        touching the link. */
@@ -581,10 +636,7 @@ static void run_tick(void)
     {
       side_advance(side);
       if(side_clock(side) >= side->target)
-      {
-        side_flush_outbox(side);
-        continue;
-      }
+        return;
     }
     else
       side_advance(side);
@@ -594,14 +646,24 @@ static void run_tick(void)
       if(link_cable_blocked(&side->cable, side_cycle(side)))
       {
         side->blocked_us += TICK_US;
+        side->slept = 1;
         if(side->burst_cycles == 0)
           side->target = side_clock(side);
       }
     }
-    limit = side->burst_cycles != 0 ?
-     side_clock(side) + side->burst_cycles : side->target;
-    if(limit > side->target)
-      limit = side->target;
+    limit = side->target;
+    if(side->burst_cycles != 0)
+    {
+      /* One run loop can go well past a tick's cycles; the ticks after it
+         pay them back, so a frame takes burst_ms however mGBA splits it. */
+      side->burst_credit += side->burst_cycles;
+      if(side->burst_credit > (int64_t)side->burst_cycles)
+        side->burst_credit = side->burst_cycles;
+      if(side->burst_credit <= 0)
+        limit = side_clock(side);
+      else if(side_clock(side) + (uint64_t)side->burst_credit < limit)
+        limit = side_clock(side) + (uint64_t)side->burst_credit;
+    }
     before = side_clock(side);
     while(side_clock(side) < limit)
     {
@@ -616,11 +678,20 @@ static void run_tick(void)
       side->core->runLoop(side->core);
     }
     side->ran = side_clock(side) != before;
+    if(side->burst_cycles != 0)
+    {
+      side->burst_credit -= (int64_t)(side_clock(side) - before);
+      if(side->burst_credit < 0)
+        side->ran = 1;
+    }
     /* A new frame while still behind the target is a late frame. */
     frame = side->core->frameCounter(side->core);
     if(side->stack && side->linked && frame != side->frame_seen &&
-       side_clock(side) < side->target)
+       side_clock(side) < side->target &&
+       !(side->slept && side->cable.mode == LINK_CABLE_MODE_LOCKSTEP))
       side->sleep_until = sim_now + LATE_FRAME_SLEEP_US;
+    if(frame != side->frame_seen)
+      side->slept = 0;
     side->frame_seen = frame;
     if(side->linked)
     {
@@ -635,23 +706,37 @@ static void run_tick(void)
       }
       size = link_cable_build(&side->cable, datagram, sizeof(datagram),
        side_cycle(side), sim_now);
-      if(size && side->stack && side->ran &&
-         side->outbox_count < sizeof(side->outbox) / sizeof(side->outbox[0]))
-      {
-        memcpy(side->outbox[side->outbox_count].data, datagram, size);
-        side->outbox[side->outbox_count++].size = size;
-        if(side->send_yield_us != 0 && sim_now + side->send_yield_us >
-           side->sleep_until)
-          side->sleep_until = sim_now + side->send_yield_us;
-      }
+      if(size && !side->stack)
+        network_send(1 - side->index, datagram, size);
       else if(size)
       {
-        side_flush_outbox(side);
-        network_send(1 - s, datagram, size);
+        if(!stack_push(side, datagram, size, 1))
+          side->send_errors++;
+        if(side->ran && side->send_yield_us != 0 &&
+           side->cable.mode == LINK_CABLE_MODE_LOCKSTEP &&
+           sim_now + side->send_yield_us > side->sleep_until)
+        {
+          side->sleep_until = sim_now + side->send_yield_us;
+          side->slept = 1;
+        }
       }
     }
-    if(!side->ran)
-      side_flush_outbox(side);
+  }
+}
+
+/* Advances the simulation by TICK_US: delivers due datagrams, then runs
+   each console and lets its stack work if it slept. */
+static void run_tick(void)
+{
+  int s;
+
+  sim_now += TICK_US;
+  network_deliver();
+  for(s = 0; s < 2; s++)
+  {
+    side_tick(&sides[s]);
+    if(sides[s].stack)
+      side_stack_work(&sides[s]);
   }
 }
 
@@ -756,7 +841,8 @@ static void print_status(void)
     if(side->cable.mode == LINK_CABLE_MODE_LOCKSTEP)
       printf("  lockstep waiting %d deferred %d transfers %u cycle %u "
        "finish %u deferred-until %u peer-clock %u pacing %u/%u sio %d%d%d "
-       "control %04X inbox %u early %u mispredicted %u streak %u/%u\n",
+       "control %04X inbox %u early %u mispredicted %u streak %u/%u "
+       "send-errors %u receive-drops %u lookahead %u late %u\n",
        side->cable.lockstep.waiting,
        side->cable.lockstep.deferred, side->cable.lockstep.transfers,
        side_cycle(side), side->cable.lockstep.finish_cycle,
@@ -766,7 +852,9 @@ static void print_status(void)
        side->registers[GBA_SIO_REG_CONTROL >> 1],
        side->cable.net.in_write - side->cable.net.in_read,
        side->cable.lockstep.answered_early, side->cable.lockstep.mispredicted,
-       side->cable.lockstep.streak, side->cable.lockstep.trust_after);
+       side->cable.lockstep.streak, side->cable.lockstep.trust_after,
+       side->send_errors, side->receive_drops, side->cable.lockstep.lookahead,
+       side->cable.lockstep.late_starts);
   }
   fflush(stdout);
 }
@@ -947,6 +1035,12 @@ int main(int argc, char **argv)
           if(fps < min_fps)
             check_failed = 1;
         }
+        else
+        {
+          /* Forgive the frames this console fell behind before: catching
+             up on them would count as speed the game never shows. */
+          sides[s].target = side_clock(&sides[s]);
+        }
         pace_frames[s] = frames;
       }
       pace_since = sim_now;
@@ -955,6 +1049,7 @@ int main(int argc, char **argv)
     {
       sides[atoi(a)].stack = 1;
       sides[atoi(a)].send_yield_us = (uint32_t)atoi(b);
+      sides[atoi(a)].stack_cost_us = c ? (uint32_t)atoi(c) : 0u;
     }
     else if(strcmp(cmd, "status") == 0)
       print_status();

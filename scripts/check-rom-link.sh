@@ -87,21 +87,39 @@ run_case adhoc "net 3000 4000 3 1"
 run_case noisy "net 8000 15000 15 5"
 run_case slow-joiner "net 3000 4000 3 1" "speed 1 0.8"
 run_case slow-host-noisy "net 8000 15000 15 5" "speed 0 0.8"
-# Conditions measured between a PSP-2000 and a PSP-1000: each console runs
-# a frame in a burst and leaves the link alone while it waits for VBlank,
-# its network stack only moves datagrams while the emulator sleeps, and the
-# round trip is 70 ms and loses a third of the datagrams. The second case
-# adds radio dropouts and a joiner that freezes now and then. Each console
-# also sleeps 200 us after each datagram it sends while emulating, like
-# main.c's MAIN_LINK_SEND_YIELD_US, which a PSP applies only in lockstep
-# mode; the model applies it in every mode.
-psp="psp 0 10
-psp 1 10
-stack 0 200
-stack 1 200"
+# Conditions measured between a PSP-2000 and a PSP-1000: each console needs
+# about 12 ms to emulate a FireRed frame, runs it in a burst and leaves the
+# link alone while it waits for VBlank; its network stack only moves
+# datagrams while the emulator sleeps and spends 0.9 ms of that per datagram
+# either way; in lockstep mode the console sleeps after each datagram it
+# sends while emulating, 1.12 ms on average for main.c's 1 ms
+# MAIN_LINK_SEND_YIELD_US. The trade cases add a 70 ms round trip that loses
+# a third of the datagrams, and the second one radio dropouts and a joiner
+# that freezes now and then.
+psp="psp 0 12
+psp 1 12
+stack 0 1120 900
+stack 1 1120 900"
+# Mario Kart on the same two PSPs: races there ran at 40 fps on the build
+# before 1.4.3's lockstep changes and at 45.5 fps on the first build with
+# them. With 14 ms of emulation per frame and 0.3 ms of stack time per
+# datagram they run at 39.7 and 52.7 fps here, with the clocking console
+# sending and waiting as much as it did there; the second one's joiner
+# resent 1446 datagrams too early there, which this test does not
+# reproduce and the build after it no longer does.
+mksc_psp="psp 0 14
+psp 1 14
+stack 0 1120 300
+stack 1 1120 300"
 run_case psp "net 20000 30000 35 1" "$psp"
 run_case psp-stalls "net 20000 30000 35 1" "$psp" "outage 7000 250" \
   "hiccup 1 9000 600"
+# Other network seeds time the dropouts differently against the games'
+# own steps; these three once ended with both games waiting for good.
+for seed in 4 9 21; do
+  run_case "psp-stalls-$seed" "net 20000 30000 35 1" "$psp" \
+    "outage 7000 250" "hiccup 1 9000 600" "seed $seed"
+done
 run_case lockstep "net 3000 4000 3 1" lockstep
 
 # Mario Kart starts from blank saves; its script checks the race itself.
@@ -132,9 +150,13 @@ if [ -n "${MKSC:-}" ]; then
   # mksc-psp-slow runs on the psp trade cases' network (20 ms delay, up to
   # 30 ms jitter, 35% loss): "slow" names that network here, while
   # slow-joiner and slow-host-noisy have a slow console.
-  race_case mksc-psp-slow "net 20000 30000 35 1" "$psp"
-  # Two PSPs side by side, about 6 ms apart: the race must stay near full
-  # speed.
-  race_case mksc-psp "net 2500 1000 5 1" "$psp" "minfps 59"
+  race_case mksc-psp-slow "net 20000 30000 35 1" "$mksc_psp"
+  # Two PSPs side by side, a 4 ms round trip at best: the race must run at
+  # full speed.
+  race_case mksc-psp "net 2000 1000 5 1" "$mksc_psp" "minfps 57"
+  # The frame times both PSPs reported in that race match this test's at
+  # about a tenth of the datagrams lost: most frames on time, one in twenty
+  # held 30 ms or more by a lost START or announcement.
+  race_case mksc-psp-lossy "net 2000 1000 10 1" "$mksc_psp" "minfps 53"
 fi
 echo "ROM link checks passed"

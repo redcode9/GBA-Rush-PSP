@@ -97,8 +97,13 @@ typedef struct
   uint16_t local_words[8];
   uint16_t pair[2][8];        /* words delivered this frame, per player */
   uint32_t next_transfer;     /* joiner: cycle of the next local transfer */
-  uint32_t frame_start;       /* joiner: cycle of this frame's first word */
+  uint32_t frame_start;       /* cycle of this frame's first word */
   uint32_t pairs_seen;        /* joiner: host frames taken or dropped */
+  /* Joiner: the host's cycle at the last host frame taken and ours when
+     it was taken, once one has been (see pokemon_pair_early). */
+  uint8_t pair_spaced;
+  uint32_t pair_sent;
+  uint32_t pair_taken;
   uint32_t answered;          /* host: pairs_seen in the joiner's last frame */
   uint64_t wait_since_us;
   uint32_t interrupt_disables;
@@ -129,6 +134,15 @@ typedef struct
      reply announced for the next START. */
   uint32_t applied_sequence;
   uint8_t applied_mode;
+  /* How far past the START applied last this console may run without word
+   from the clocking console: learned from how far apart that console's
+   STARTs come, 0 while not trusted. */
+  uint32_t lookahead;
+  uint32_t lookahead_after;   /* STARTs in a row needed to trust it */
+  uint32_t spacing_run;
+  uint32_t spacing_min;       /* closest pair of STARTs in that run */
+  uint32_t late_starts;       /* applied after this console passed them */
+  uint8_t bursting;           /* that START came close after the last */
   uint8_t loaded;
   uint32_t writes_seen;
   uint32_t quiet_since;
@@ -146,6 +160,7 @@ typedef struct
   uint32_t predicted_sequence;
   uint32_t predicted_word;
   uint8_t start_mode;         /* mode of the START we sent last */
+  uint8_t same_mode;          /* ...and the START before was in it too */
   uint8_t verify_used;        /* a transfer was finished with it */
   uint8_t verify_ready;
   uint32_t verify_sequence;

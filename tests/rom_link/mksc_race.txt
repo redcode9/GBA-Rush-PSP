@@ -19,8 +19,10 @@ run 8 A A
 run 120
 run 8 A A
 run 180
-# Both screens show the game selection, only the player badges differ
-same 90
+# Both screens show the same menu: the game selection, or already the
+# character selection on a fast link. Only the player badges and cursor
+# colours differ, which leaves about 89% of the pixels alike.
+same 85
 linked 100
 # 50cc, characters, cup and course: keep pressing A like a player would,
 # however long each screen takes to answer over the network
@@ -110,6 +112,8 @@ pace start
 run 900 A A
 pace end
 # Both games are in the same race, their race clocks (in frames, at this
-# address in the European release) at least ten seconds in and in step
-ram16 0x030068FC 2 600
+# address in the European release) at least ten seconds in and in step:
+# no further apart than the four frames one console may run ahead of the
+# other (LINK_MAX_LEAD), which a slow network can briefly use up
+ram16 0x030068FC 4 600
 linked 1000

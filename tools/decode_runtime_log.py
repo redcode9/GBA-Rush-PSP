@@ -86,6 +86,8 @@ LINK_COUNTERS = {
     4: "adhoc-sends/send-errors/receive-drops",
     5: "early-replies/mispredicted/trusted-streak",
     6: "rtt-min-us/send-yields/send-yield-us",
+    7: "lockstep-priority/priority-seen/change-result",
+    8: "frames/frames-drawn/vblank-wait-us",
 }
 LINK_EVENTS = {
     "link-command", "link-state", "link-pause-end", "link-error",

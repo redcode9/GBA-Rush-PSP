@@ -13,17 +13,20 @@
 
 #include <string.h>
 
-/* Acknowledgements wait briefly so they can ride on a data packet. */
-#define LINK_NET_ACK_DELAY_US     2000u
+/* Header flag: the sender is waiting on us, so answer at once. */
+#define LINK_NET_ANSWER_NOW 0x01u
+
 /* Unacknowledged data is repeated after this long without any send. */
 #define LINK_NET_MIN_RESEND_US   15000u
 #define LINK_NET_DEFAULT_HEARTBEAT_US 250000u
 
+/* The masks keep only the bits each byte carries, which also lets the
+   CBMC proof check every conversion. */
 static void put32(uint8_t *out, uint32_t value)
 {
-  out[0] = (uint8_t)value;
-  out[1] = (uint8_t)(value >> 8);
-  out[2] = (uint8_t)(value >> 16);
+  out[0] = (uint8_t)(value & 0xFFu);
+  out[1] = (uint8_t)((value >> 8) & 0xFFu);
+  out[2] = (uint8_t)((value >> 16) & 0xFFu);
   out[3] = (uint8_t)(value >> 24);
 }
 
@@ -40,13 +43,19 @@ static uint32_t get32(const uint8_t *in)
  *   16 ack: messages received in order
  *   20 messages the emulator has consumed (used for pacing)
  *   24 guest clock      28 send time (us)   32 echo of the peer's send time
- *   36 reserved (0)
+ *   36 flags: LINK_NET_ANSWER_NOW, other bits 0
  * then `count` messages, each [type, size, data]. */
 
-/* Sequence numbers wrap, so compare them as signed distances. */
+/* Sequence numbers wrap, so compare them as signed distances. Written
+   without converting a value above INT32_MAX, which C leaves to the
+   compiler. */
 static int32_t seq_diff(uint32_t a, uint32_t b)
 {
-  return (int32_t)(a - b);
+  uint32_t distance = a - b;
+
+  if(distance <= 0x7FFFFFFFu)
+    return (int32_t)distance;
+  return -(int32_t)(0xFFFFFFFFu - distance) - 1;
 }
 
 /* local_id identifies this console in every header; 0 is reserved. */
@@ -55,6 +64,7 @@ void link_net_init(LinkNet *net, uint32_t local_id, uint64_t now_us)
   memset(net, 0, sizeof(*net));
   net->local_id = local_id != 0 ? local_id : 1u;
   net->heartbeat_us = LINK_NET_DEFAULT_HEARTBEAT_US;
+  net->ack_delay_us = LINK_NET_ACK_DELAY_US;
   net->last_receive_us = now_us;
   net->send_now = 1;
 }
@@ -99,7 +109,7 @@ void link_net_pop(LinkNet *net)
 static void link_net_sample_rtt(LinkNet *net, uint32_t echo,
  uint64_t now_us)
 {
-  uint32_t sample = (uint32_t)now_us - echo;
+  uint32_t sample = (uint32_t)(now_us & 0xFFFFFFFFu) - echo;
 
   /* Ignore samples that cannot be real, such as a stale echo. */
   if(echo == 0 || sample > 5000000u)
@@ -175,6 +185,10 @@ int link_net_receive(LinkNet *net, const uint8_t *datagram, size_t size,
   net->peer_stamp = get32(datagram + 28);
   net->peer_stamp_received_us = now_us;
   link_net_sample_rtt(net, get32(datagram + 32), now_us);
+  /* Our answer carries the acknowledgement and repeats whatever of ours
+     the peer is missing. */
+  if(get32(datagram + 36) & LINK_NET_ANSWER_NOW)
+    net->send_now = 1;
 
   offset = LINK_NET_HEADER_SIZE;
   for(i = 0; i < count; i++)
@@ -218,7 +232,9 @@ size_t link_net_build(LinkNet *net, uint8_t *datagram, size_t capacity,
  uint32_t clock, uint64_t now_us)
 {
   uint64_t since_send = now_us - net->last_send_us;
-  uint32_t resend_us = net->rtt_us * 3u;
+  /* The peer may hold its acknowledgement as long as we hold ours: both
+     run the same mode. */
+  uint32_t resend_us = net->rtt_us * 3u + net->ack_delay_us;
   uint32_t echo = 0;
   uint32_t seq;
   size_t offset;
@@ -234,21 +250,24 @@ size_t link_net_build(LinkNet *net, uint8_t *datagram, size_t capacity,
     resend_us = LINK_NET_MIN_RESEND_US;
 
   /* Send at once when a message was queued; otherwise only for a delayed
-     ack, a resend after about three round trips, or the heartbeat. */
+     ack, a resend after about three round trips and the peer's
+     acknowledgement delay, or the heartbeat. */
   if(!net->send_now)
   {
     int ack_due = net->ack_pending &&
-     now_us - net->peer_stamp_received_us >= LINK_NET_ACK_DELAY_US;
+     now_us - net->peer_stamp_received_us >= net->ack_delay_us;
 
     resend = net->out_next != net->out_acked && since_send >= resend_us;
-    if(!ack_due && !resend && since_send < net->heartbeat_us)
+    if(!ack_due && !resend && since_send < net->heartbeat_us &&
+       (net->probe_us == 0 || since_send < net->probe_us))
       return 0;
   }
 
   /* The echo adds how long we held the peer's stamp, so the peer's
      round-trip sample leaves out our own delay. */
   if(net->peer_seen)
-    echo = net->peer_stamp + (uint32_t)(now_us - net->peer_stamp_received_us);
+    echo = net->peer_stamp +
+     (uint32_t)((now_us - net->peer_stamp_received_us) & 0xFFFFFFFFu);
 
   datagram[0] = 'G';
   datagram[1] = 'R';
@@ -259,9 +278,9 @@ size_t link_net_build(LinkNet *net, uint8_t *datagram, size_t capacity,
   put32(datagram + 16, net->in_write);
   put32(datagram + 20, net->in_read);
   put32(datagram + 24, clock);
-  put32(datagram + 28, (uint32_t)now_us);
+  put32(datagram + 28, (uint32_t)(now_us & 0xFFFFFFFFu));
   put32(datagram + 32, echo);
-  put32(datagram + 36, 0);
+  put32(datagram + 36, net->probe_us != 0 ? LINK_NET_ANSWER_NOW : 0u);
 
   offset = LINK_NET_HEADER_SIZE;
   for(seq = net->out_acked; seq != net->out_next && count < 255u; seq++)
@@ -290,6 +309,16 @@ size_t link_net_build(LinkNet *net, uint8_t *datagram, size_t capacity,
 void link_net_set_heartbeat(LinkNet *net, uint32_t interval_us)
 {
   net->heartbeat_us = interval_us;
+}
+
+void link_net_set_ack_delay(LinkNet *net, uint32_t delay_us)
+{
+  net->ack_delay_us = delay_us;
+}
+
+void link_net_set_probe(LinkNet *net, uint32_t interval_us)
+{
+  net->probe_us = interval_us;
 }
 
 uint32_t link_net_backlog(const LinkNet *net)

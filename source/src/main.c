@@ -37,7 +37,7 @@
 #include "sound_math.h"
 
 // Main thread params; on the PSP a lower priority number runs first.
-// 32 is 0x20, so MAIN_LINK_LOCKSTEP_PRIORITY (0x40) is lower.
+// 32 is 0x20, so MAIN_LINK_LOCKSTEP_PRIORITY (0x77) is lower.
 #define PRIORITY       (32)
 #define STACK_SIZE_KB  (512)
 #define ATTRIBUTE      (THREAD_ATTR_USER | PSP_THREAD_ATTR_CLEAR_STACK)
@@ -168,10 +168,19 @@ static u32 gba_link_wait_max_us = 0;
 static u64 gba_link_wait_total_us = 0;
 static u32 gba_link_yields = 0;
 static u64 gba_link_yield_total_us = 0;
+/* GBA frames run and drawn while a link was open, and the time spent
+   waiting for VBlank meanwhile. */
+static u32 gba_link_frames = 0;
+static u32 gba_link_frames_drawn = 0;
+static u64 gba_link_vblank_wait_us = 0;
 /* The emulator thread, whose priority drops while a lockstep link is
    connected, and the priority it has now. */
 static SceUID gba_link_thread = -1;
 static int gba_link_priority = PRIORITY;
+/* What the last switch to MAIN_LINK_LOCKSTEP_PRIORITY returned and the
+   priority the emulator thread then reported, for the session log. */
+static int gba_link_priority_result = 0;
+static int gba_link_priority_seen = 0;
 static PowerLifecycle psp_power_lifecycle;
 static FastForwardPolicy fast_forward_policy;
 /* The ROM file was closed for suspend and must be reopened on resume. */
@@ -197,18 +206,32 @@ static volatile int quit_cleanup_complete = 0;
    the emulator gets the CPU. psp_adhoc.c puts the network threads it sets
    up above the emulator, but part of the PSP's Wi-Fi stack sits below:
    starving it held every datagram for seconds until the link was lost.
-   While a link is open, each late frame gives up this much time. */
+   While a link is open, each late frame gives up this much time, unless
+   a lockstep link already made the emulator sleep during the frame: then
+   the stack had its time, and below full speed the pause would cost every
+   frame 2 ms. */
 #define MAIN_LINK_YIELD_US 2000u
 /* For the same reason a datagram queued while the guest runs would wait
    for the end of the frame. In lockstep mode the other console needs our
-   clock and STARTs as they happen, so the emulator pauses this long after
-   each one to let the stack send it. */
-#define MAIN_LINK_SEND_YIELD_US 200u
+   STARTs and announcements as they happen, so the emulator pauses this long
+   after each one to let the stack send it. The stack needs about a
+   millisecond per datagram, and a shorter pause left it for the next one:
+   a 200 us pause lasted 560 us on average on a PSP, so this one lasts about
+   1.4 ms, which the link test's PSP profile uses. */
+#define MAIN_LINK_SEND_YIELD_US 1000u
 /* While a lockstep link is connected the emulator thread also drops to
-   this lower priority. It shipped together with the pause above as the
-   fix for consoles taking turns; on its own it still left the stack
-   refusing datagrams, so the pause is what matters. */
-#define MAIN_LINK_LOCKSTEP_PRIORITY 0x40
+   the lowest priority a user thread can have, so every part of the PSP's
+   Wi-Fi stack runs as soon as it has work instead of waiting for the
+   emulator to sleep: at 0x40 a datagram still waited about 12 ms on
+   average, the round trip being 16 ms against 4 ms when both consoles
+   idle. This build's own threads all run above it. */
+#define MAIN_LINK_LOCKSTEP_PRIORITY 0x77
+/* During a lockstep link the other console sets the pace, so skipping the
+   drawing of frames never catches up with real time: AUTO frameskip would
+   skip nine frames in a row and show a few frames a second. The link
+   therefore skips at most this many frames in a row, whatever the frameskip
+   setting, which applies again once the link closes. */
+#define MAIN_LINK_FRAMESKIP_RUN 1u
 
 /* Guest CPU cycles since reset; wraps. The guest clock for sound and link. */
 u32 cpu_ticks = 0;
@@ -481,14 +504,21 @@ MainLinkEnd main_link_end_reason(void)
    and from main_link_log_state, on each link status or mode change. */
 static void main_link_set_priority(void)
 {
+  int result;
   int priority = gba_link_open && gba_link.status == LINK_CABLE_CONNECTED &&
    gba_link.mode == LINK_CABLE_MODE_LOCKSTEP ?
    MAIN_LINK_LOCKSTEP_PRIORITY : PRIORITY;
 
   if(priority == gba_link_priority || gba_link_thread < 0)
     return;
-  sceKernelChangeThreadPriority(gba_link_thread, priority);
+  result = sceKernelChangeThreadPriority(gba_link_thread, priority);
   gba_link_priority = priority;
+  if(priority == MAIN_LINK_LOCKSTEP_PRIORITY)
+  {
+    gba_link_priority_result = result;
+    gba_link_priority_seen = sceKernelGetThreadId() == gba_link_thread ?
+     sceKernelGetThreadCurrentPriority() : -1;
+  }
 }
 
 /* Logs a LINK_STATE record only when the link status or mode changed since
@@ -546,6 +576,13 @@ static void main_link_close(MainLinkEnd reason)
    gba_link.net.rtt_min_us, gba_link_yields,
    gba_link_yield_total_us > UINT_MAX ? UINT_MAX :
     (u32)gba_link_yield_total_us);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 7,
+   MAIN_LINK_LOCKSTEP_PRIORITY, (u32)gba_link_priority_seen,
+   (u32)gba_link_priority_result);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 8,
+   gba_link_frames, gba_link_frames_drawn,
+   gba_link_vblank_wait_us > UINT_MAX ? UINT_MAX :
+    (u32)gba_link_vblank_wait_us);
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_ERROR, cpu_ticks,
    (u8)reason, (u32)gba_link.status, (u32)psp_adhoc_last_error(),
    main_adhoc_phase_value());
@@ -703,7 +740,12 @@ static int main_link_start(int host)
   gba_link_wait_total_us = 0;
   gba_link_yields = 0;
   gba_link_yield_total_us = 0;
+  gba_link_frames = 0;
+  gba_link_frames_drawn = 0;
+  gba_link_vblank_wait_us = 0;
   gba_link_thread = sceKernelGetThreadId();
+  gba_link_priority_result = 0;
+  gba_link_priority_seen = 0;
   main_link_log_state();
   return 1;
 }
@@ -748,18 +790,21 @@ void main_link_disconnect(MainLinkEnd reason)
 static void main_link_wait_vblank(void)
 {
   u32 vcount = sceDisplayGetVcount();
+  u64 started = sceKernelGetSystemTimeWide();
 
   if(!gba_link_open || gba_link.mode != LINK_CABLE_MODE_LOCKSTEP)
-  {
     sceDisplayWaitVblankStart();
-    return;
-  }
-  while(gba_link_open && sceDisplayGetVcount() == vcount)
+  else
   {
-    psp_adhoc_wait(MAIN_LINK_VBLANK_POLL_US);
-    if(main_link_exchange())
-      pIO_REG(REG_IF) |= IRQ_SERIAL;
+    while(gba_link_open && sceDisplayGetVcount() == vcount)
+    {
+      psp_adhoc_wait(MAIN_LINK_VBLANK_POLL_US);
+      if(main_link_exchange())
+        pIO_REG(REG_IF) |= IRQ_SERIAL;
+    }
   }
+  if(gba_link_open)
+    gba_link_vblank_wait_us += sceKernelGetSystemTimeWide() - started;
 }
 
 /* Keeps the link alive while a menu has the emulation stopped. */
@@ -1230,6 +1275,19 @@ static void vblank_interrupt_handler(u32 sub, u32 *parg)
   vblank_count++;
 }
 
+/* Whether the emulator thread slept for the link since the last call, once
+   per frame: after a lockstep datagram, or while the cable held the guest. */
+static int main_link_slept(void)
+{
+  static u32 yields_seen;
+  static u32 waits_seen;
+  int slept = gba_link_yields != yields_seen || gba_link_waits != waits_seen;
+
+  yields_seen = gba_link_yields;
+  waits_seen = gba_link_waits;
+  return slept;
+}
+
 /* Runs once per GBA frame, at the end of V-blank. Draws the on-screen
    status, decides whether the next frame is rendered (frameskip or the
    fast-forward policy), and waits for the PSP VBlank when emulation is
@@ -1241,8 +1299,21 @@ static void synchronize(void)
 
   u32 used_frameskip_type  = option_frameskip_type;
   u32 used_frameskip_value = option_frameskip_value;
+  int link_slept;
 
   fps_window_frames++;
+
+  if(gba_link_open)
+  {
+    gba_link_frames++;
+    if(!skip_next_frame)
+      gba_link_frames_drawn++;
+    if(gba_link.mode == LINK_CABLE_MODE_LOCKSTEP)
+    {
+      used_frameskip_type = FRAMESKIP_AUTO;
+      used_frameskip_value = MAIN_LINK_FRAMESKIP_RUN;
+    }
+  }
 
   if (fps_window_frames == 60)
   {
@@ -1349,16 +1420,18 @@ static void synchronize(void)
   skip_next_frame = 0;
   virtual_frame_count++;
 
-  // Behind real time: auto frameskip skips up to option_frameskip_value
+  // Behind real time: auto frameskip skips up to used_frameskip_value
   // frames in a row, then resyncs. Ahead: wait for the PSP VBlank.
+  link_slept = main_link_slept();
   if (real_frame_count >= virtual_frame_count)
   {
-    if(gba_link_open)
+    if(gba_link_open &&
+       !(gba_link.mode == LINK_CABLE_MODE_LOCKSTEP && link_slept))
       sceKernelDelayThread(MAIN_LINK_YIELD_US);
 
     if ((real_frame_count > virtual_frame_count) &&
         (used_frameskip_type == FRAMESKIP_AUTO) &&
-        (num_skipped_frames < option_frameskip_value))
+        (num_skipped_frames < used_frameskip_value))
     {
       skip_next_frame = 1;
       num_skipped_frames++;

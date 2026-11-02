@@ -3217,6 +3217,78 @@ static int menu_game_available(void)
     return gamepak_filename[0] != '\0';
 }
 
+/* The Performance page's fast-forward rows edit either the global settings
+   or this game's. menu() points these at the rows each time it builds the
+   page, which lives in its stack frame, and clears them on entry. These
+   callbacks stay at file scope: the address of a nested function that uses
+   menu()'s variables goes through a trampoline on the stack, and calling
+   one from the Performance page crashed both PSPs with a reserved
+   instruction. */
+static MenuOptionType *fast_forward_profile_option;
+static MenuOptionType *fast_forward_activation_option;
+static MenuOptionType *fast_forward_speed_option;
+static MenuOptionType *fast_forward_presentation_option;
+static MenuOptionType *fast_forward_audio_option;
+
+static void menu_fast_forward_bind_options(void)
+{
+  if(fast_forward_profile_option == NULL)
+    return;
+
+  if(option_fast_forward_game_override)
+  {
+    fast_forward_profile_option->current_option =
+     &option_game_fast_forward_profile;
+    fast_forward_activation_option->current_option =
+     &option_game_fast_forward_activation;
+    fast_forward_speed_option->current_option =
+     &option_game_fast_forward_speed;
+    fast_forward_presentation_option->current_option =
+     &option_game_fast_forward_presentation;
+    fast_forward_audio_option->current_option =
+     &option_game_fast_forward_audio;
+  }
+  else
+  {
+    fast_forward_profile_option->current_option =
+     &option_fast_forward_profile;
+    fast_forward_activation_option->current_option =
+     &option_fast_forward_activation;
+    fast_forward_speed_option->current_option = &option_fast_forward_speed;
+    fast_forward_presentation_option->current_option =
+     &option_fast_forward_presentation;
+    fast_forward_audio_option->current_option = &option_fast_forward_audio;
+  }
+}
+
+static void menu_fast_forward_changed(void)
+{
+  main_fast_forward_apply_settings();
+}
+
+static void menu_fast_forward_override_changed(void)
+{
+  if(option_fast_forward_game_override)
+  {
+    option_game_fast_forward_profile = option_fast_forward_profile;
+    option_game_fast_forward_activation = option_fast_forward_activation;
+    option_game_fast_forward_speed = option_fast_forward_speed;
+    option_game_fast_forward_presentation =
+     option_fast_forward_presentation;
+    option_game_fast_forward_audio = option_fast_forward_audio;
+  }
+  menu_fast_forward_bind_options();
+  main_fast_forward_apply_settings();
+}
+
+static int menu_fast_forward_custom_available(void)
+{
+  u32 profile = option_fast_forward_game_override ?
+   option_game_fast_forward_profile : option_fast_forward_profile;
+
+  return profile == FAST_FORWARD_PROFILE_CUSTOM;
+}
+
 static int menu_diagnostics_start_available(void)
 {
     PerfMetricsSnapshot snapshot;
@@ -3739,6 +3811,7 @@ u32 menu(void)
 {
 
   main_fast_forward_stop();
+  fast_forward_profile_option = NULL;
 
   init_choice_arrays();
   u32 i;
@@ -3776,11 +3849,6 @@ u32 menu(void)
   MenuType *current_menu;
   MenuOptionType *current_option;
   MenuOptionType *display_option;
-  MenuOptionType *fast_forward_profile_option = NULL;
-  MenuOptionType *fast_forward_activation_option = NULL;
-  MenuOptionType *fast_forward_speed_option = NULL;
-  MenuOptionType *fast_forward_presentation_option = NULL;
-  MenuOptionType *fast_forward_audio_option = NULL;
   MenuModel navigation_model;
   MenuRow navigation_rows[MAX_MENU_MODEL_ROWS];
 
@@ -3814,11 +3882,6 @@ u32 menu(void)
   auto void menu_load_file(void);
 
   auto void submenu_emulator(void);
-  auto void menu_fast_forward_bind_options(void);
-  auto void menu_fast_forward_changed(void);
-  auto void menu_fast_forward_override_changed(void);
-  auto int menu_fast_forward_custom_available(void);
-  auto int menu_fast_forward_game_available(void);
   auto void submenu_graphics(void);
   auto void submenu_gamepad(void);
   auto void submenu_analog(void);
@@ -4213,70 +4276,6 @@ u32 menu(void)
     option_video_renderer = VIDEO_RENDERER_NEW;
     option_oam_hijacking_enabled = 0;
     option_psp_vsync = 0;
-  }
-
-  void menu_fast_forward_bind_options(void)
-  {
-    if(fast_forward_profile_option == NULL)
-      return;
-
-    if(option_fast_forward_game_override)
-    {
-      fast_forward_profile_option->current_option =
-       &option_game_fast_forward_profile;
-      fast_forward_activation_option->current_option =
-       &option_game_fast_forward_activation;
-      fast_forward_speed_option->current_option =
-       &option_game_fast_forward_speed;
-      fast_forward_presentation_option->current_option =
-       &option_game_fast_forward_presentation;
-      fast_forward_audio_option->current_option =
-       &option_game_fast_forward_audio;
-    }
-    else
-    {
-      fast_forward_profile_option->current_option =
-       &option_fast_forward_profile;
-      fast_forward_activation_option->current_option =
-       &option_fast_forward_activation;
-      fast_forward_speed_option->current_option = &option_fast_forward_speed;
-      fast_forward_presentation_option->current_option =
-       &option_fast_forward_presentation;
-      fast_forward_audio_option->current_option = &option_fast_forward_audio;
-    }
-  }
-
-  void menu_fast_forward_changed(void)
-  {
-    main_fast_forward_apply_settings();
-  }
-
-  void menu_fast_forward_override_changed(void)
-  {
-    if(option_fast_forward_game_override)
-    {
-      option_game_fast_forward_profile = option_fast_forward_profile;
-      option_game_fast_forward_activation = option_fast_forward_activation;
-      option_game_fast_forward_speed = option_fast_forward_speed;
-      option_game_fast_forward_presentation =
-       option_fast_forward_presentation;
-      option_game_fast_forward_audio = option_fast_forward_audio;
-    }
-    menu_fast_forward_bind_options();
-    main_fast_forward_apply_settings();
-  }
-
-  int menu_fast_forward_custom_available(void)
-  {
-    u32 profile = option_fast_forward_game_override ?
-     option_game_fast_forward_profile : option_fast_forward_profile;
-
-    return profile == FAST_FORWARD_PROFILE_CUSTOM;
-  }
-
-  int menu_fast_forward_game_available(void)
-  {
-    return !first_load;
   }
 
   void menu_emulator_default(void)
@@ -5161,7 +5160,7 @@ u32 menu(void)
   fast_forward_speed_option = &emulator_options[3];
   fast_forward_presentation_option = &emulator_options[4];
   fast_forward_audio_option = &emulator_options[5];
-  emulator_options[1].available_function = menu_fast_forward_game_available;
+  emulator_options[1].available_function = menu_game_available;
   emulator_options[1].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   emulator_options[2].available_function = menu_fast_forward_custom_available;
   emulator_options[3].available_function = menu_fast_forward_custom_available;

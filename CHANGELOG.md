@@ -1,5 +1,65 @@
 # Changelog
 
+## 1.4.3 - 2026-11-02
+
+### Fixed
+
+- Opening the Performance page could crash the emulator with a blue
+  "Reserved instruction" screen. The build now fails instead of producing
+  code that runs from the stack.
+- Performance reports saved on a PSP showed meaningless numbers for frame
+  counts, durations and every other 64-bit counter.
+- A Pokemon trade could stop for good at "Please wait" when the joining
+  PSP froze for a moment or the radio dropped out just as the trade screen
+  opened. A burst of delayed frames reached the joining game closer together
+  than the hosting game had sent them, so it threw away the first part of
+  the other player's party. The joining PSP now keeps the hosting game's
+  spacing between frames.
+
+### Changed
+
+- Linked games other than Pokemon, such as a Mario Kart: Super Circuit race,
+  need far fewer datagrams, each of which costs a PSP close to a millisecond
+  of processor time. The PSP that receives transfers learns how far apart
+  the other one's transfers come and keeps running on its own in between,
+  so the other PSP reports its clock four times less often; replies that
+  only serve as a check and acknowledgements ride with other datagrams; and
+  a reply is announced only once the game has stopped changing it.
+- The PSP that clocks transfers no longer waits for the real reply when the
+  other PSP's announcement of it arrives a moment after the transfer
+  started; it finishes the transfer as soon as the announcement is in.
+  Replies are no longer announced during quick bursts of transfers, where
+  an announcement cannot arrive in time and is more likely to be wrong.
+- The PSP that receives transfers learns again every few seconds how far
+  apart they come, so the burst of transfers that sets up a Mario Kart race
+  no longer holds it back for the whole race.
+- Once announcements have proved right, a real reply always rides with the
+  next announcement, and both PSPs report their clock and acknowledge less
+  often, so a Mario Kart race needs about one datagram per frame in each
+  direction.
+- During such a link the emulator pauses for 1 ms instead of 0.2 ms after
+  each datagram, long enough for the PSP network stack to send it at once
+  instead of at the end of the frame.
+- A frame that runs late during such a link no longer also pauses for 2 ms
+  when the emulator already slept for the link during it; below full speed
+  that pause cost every frame.
+- A PSP no longer sends its unacknowledged messages again before the other
+  PSP has had time to acknowledge them along with its next datagram.
+- During such a link the emulator draws at least every other frame,
+  whatever the frameskip setting, which is left untouched and applies again
+  once the link closes. AUTO frameskip skipped up to nine frames in a row
+  trying to catch up with real time, which the other PSP's pace never
+  allows, and showed a few frames a second.
+- The session log records the GBA frames run and drawn during a link and
+  the time spent waiting for VBlank.
+- A PSP waiting for the other PSP's reply to a transfer asks it every 10 ms
+  to answer at once, so a datagram lost on the radio holds the game for
+  about a round trip instead of until the next datagram.
+- During such a link the emulator runs at the lowest priority a program can
+  use, so every part of the PSP network stack runs before it.
+- The session log records the priority the emulator runs at during such a
+  link.
+
 ## 1.4.2 - 2026-11-01
 
 ### Fixed

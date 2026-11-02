@@ -53,6 +53,13 @@ int main(void)
   net.out_acked = net.out_next - unacked;
   net.in_write = delivered;
   net.in_read = delivered - unread;
+  /* The unread ones look like what link_net_receive delivers: it rejects
+     type 0. */
+  for(i = net.in_read; i != net.in_write; i++)
+  {
+    net.in[i % LINK_NET_QUEUE].type = (uint8_t)(1u + i % 4u);
+    net.in[i % LINK_NET_QUEUE].size = 0u;
+  }
 
   link_net_receive(&net, datagram, size, nondet_u64());
 

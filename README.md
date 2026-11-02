@@ -126,8 +126,10 @@ the other PSP has proved it can announce its next word in advance, as Mario
 Kart: Super Circuit allows, the PSP that clocks the transfers stops waiting
 for each reply; games that send many words per frame still slow down.
 
-Fast-forward and savestates are disabled while connected. Reset, ROM change,
-suspend and exit close the session. Normal 8-bit, Normal 32-bit and
+Fast-forward and savestates are disabled while connected. In games that
+exchange each serial word the emulator draws at least every other frame,
+whatever the frameskip setting, which applies again once the link closes.
+Reset, ROM change, suspend and exit close the session. Normal 8-bit, Normal 32-bit and
 two-player Multiplayer modes are supported; the Wireless Adapter, four
 players, UART, JoyBus, multiboot and internet play are not. Back up both
 saves before trading.
@@ -163,7 +165,7 @@ docker run --rm -v "$PWD:/workspace" -w /workspace/source pspdev/pspdev:latest m
 After a successful candidate build:
 
 ```sh
-make package VERSION=1.4.2
+make package VERSION=1.4.3
 ```
 
 The package command creates a reproducible ZIP and SHA-256 checksum under
