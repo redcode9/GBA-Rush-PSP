@@ -161,7 +161,14 @@ all messages the other side has not acknowledged yet, as GGPO does with
 inputs, so a lost packet is repaired by the next one instead of a timer.
 Only when nothing else goes out are unacknowledged messages sent again, after
 three round trips plus the acknowledgement delay, since the other side holds
-its acknowledgements as long as this one does. Each header also carries the
+its acknowledgements as long as this one does. A console that waits on the other
+one can also set a flag in its header asking for an answer at once; in
+lockstep mode the clocking console does so every 10 ms while a transfer
+waits for its reply. A START or an announcement lost on the radio otherwise
+held both consoles until the next datagram that happened to repeat it, and
+those losses, not the work per frame, were what kept a Mario Kart race
+between two PSPs from full speed: most of its frames already took 16.7 ms
+there, but one in twenty took 40 ms or more. Each header also carries the
 guest clock, the number of consumed messages and a timestamp echo used to
 measure the round trip.
 

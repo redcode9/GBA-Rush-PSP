@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Performance reports saved on a PSP showed meaningless numbers for frame
+  counts, durations and every other 64-bit counter.
 - A Pokemon trade could stop for good at "Please wait" when the joining
   PSP froze for a moment or the radio dropped out just as the trade screen
   opened. A burst of delayed frames reached the joining game closer together
@@ -40,6 +42,9 @@
   that pause cost every frame.
 - A PSP no longer sends its unacknowledged messages again before the other
   PSP has had time to acknowledge them along with its next datagram.
+- A PSP waiting for the other PSP's reply to a transfer asks it every 10 ms
+  to answer at once, so a datagram lost on the radio holds the game for
+  about a round trip instead of until the next datagram.
 - The session log records the priority the emulator runs at during such a
   link.
 
