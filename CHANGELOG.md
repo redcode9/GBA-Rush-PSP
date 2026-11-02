@@ -45,6 +45,13 @@
   that pause cost every frame.
 - A PSP no longer sends its unacknowledged messages again before the other
   PSP has had time to acknowledge them along with its next datagram.
+- During such a link the emulator draws at least every other frame,
+  whatever the frameskip setting, which is left untouched and applies again
+  once the link closes. AUTO frameskip skipped up to nine frames in a row
+  trying to catch up with real time, which the other PSP's pace never
+  allows, and showed a few frames a second.
+- The session log records the GBA frames run and drawn during a link and
+  the time spent waiting for VBlank.
 - A PSP waiting for the other PSP's reply to a transfer asks it every 10 ms
   to answer at once, so a datagram lost on the radio holds the game for
   about a round trip instead of until the next datagram.
