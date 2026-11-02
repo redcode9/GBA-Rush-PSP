@@ -205,9 +205,12 @@ static volatile int quit_cleanup_complete = 0;
 #define MAIN_LINK_YIELD_US 2000u
 /* For the same reason a datagram queued while the guest runs would wait
    for the end of the frame. In lockstep mode the other console needs our
-   clock and STARTs as they happen, so the emulator pauses this long after
-   each one to let the stack send it. */
-#define MAIN_LINK_SEND_YIELD_US 200u
+   STARTs and announcements as they happen, so the emulator pauses this long
+   after each one to let the stack send it. The stack needs about a
+   millisecond per datagram, and a shorter pause left it for the next one:
+   a 200 us pause lasted 560 us on average on a PSP, so this one lasts about
+   1.4 ms, which the link test's PSP profile uses. */
+#define MAIN_LINK_SEND_YIELD_US 1000u
 /* While a lockstep link is connected the emulator thread also drops to
    this lower priority. It shipped together with the pause above as the
    fix for consoles taking turns; on its own it still left the stack
