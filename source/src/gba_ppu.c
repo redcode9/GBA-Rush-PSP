@@ -281,8 +281,23 @@ static void affine_start(const GbaPpu *ppu, int bg, int y, int32_t *x,
   }
 }
 
-/* Rotation/scaling background of 8-bit tiles with one-byte map entries. */
-static const uint16_t *draw_affine_bg(GbaPpu *ppu, int bg, int y)
+/* The first column whose rotation/scaling position lies inside a width x
+   height area. Mosaic blocks start there (as in mGBA), not at the left
+   edge of the screen. */
+static int first_inside(int32_t x, int32_t y, int32_t dx, int32_t dy,
+ uint32_t width, uint32_t height)
+{
+  int n;
+
+  for(n = 0; n < GBA_PPU_WIDTH; n++, x += dx, y += dy)
+    if((uint32_t)(x >> 8) < width && (uint32_t)(y >> 8) < height)
+      break;
+  return n;
+}
+
+/* Rotation/scaling background of 8-bit tiles with one-byte map entries;
+   *from tells where its mosaic blocks start. */
+static const uint16_t *draw_affine_bg(GbaPpu *ppu, int bg, int y, int *from)
 {
   const uint8_t *vram = (const uint8_t *)ppu->vram;
   uint16_t control = IO(ppu, REG_BG0CNT + bg * 2);
@@ -297,6 +312,8 @@ static const uint16_t *draw_affine_bg(GbaPpu *ppu, int bg, int y)
   int n;
 
   affine_start(ppu, bg, y, &x, &yy);
+  if(control & 0x40 && !wrap)
+    *from = first_inside(x, yy, dx, dy, mask + 1, mask + 1);
   for(n = 0; n < GBA_PPU_WIDTH; n++, x += dx, yy += dy)
   {
     uint32_t px = (uint32_t)(x >> 8), py = (uint32_t)(yy >> 8);
@@ -318,7 +335,8 @@ static const uint16_t *draw_affine_bg(GbaPpu *ppu, int bg, int y)
 }
 
 /* Modes 3-5: BG2 is a bitmap, transparent outside its edges. */
-static const uint16_t *draw_bitmap_bg(GbaPpu *ppu, int mode, int y)
+static const uint16_t *draw_bitmap_bg(GbaPpu *ppu, int mode, int y,
+ int *from)
 {
   const uint8_t *vram = (const uint8_t *)ppu->vram;
   int32_t dx = (int16_t)IO(ppu, REG_BG2PA);
@@ -331,6 +349,8 @@ static const uint16_t *draw_bitmap_bg(GbaPpu *ppu, int mode, int y)
   int n;
 
   affine_start(ppu, 2, y, &x, &yy);
+  if(IO(ppu, REG_BG0CNT + 4) & 0x40)
+    *from = first_inside(x, yy, dx, dy, width, height);
   for(n = 0; n < GBA_PPU_WIDTH; n++, x += dx, yy += dy)
   {
     uint32_t px = (uint32_t)(x >> 8), py = (uint32_t)(yy >> 8);
@@ -346,12 +366,13 @@ static const uint16_t *draw_bitmap_bg(GbaPpu *ppu, int mode, int y)
   return ppu->layer;
 }
 
-/* Horizontal mosaic: each block of pixels repeats its leftmost one. */
-static void mosaic_line(uint16_t *line, int size)
+/* Horizontal mosaic: each block of pixels, from column from on, repeats
+   its leftmost one. */
+static void mosaic_line(uint16_t *line, int size, int from)
 {
   int x, n;
 
-  for(x = 0; x < GBA_PPU_WIDTH; x += size)
+  for(x = from; x < GBA_PPU_WIDTH; x += size)
     for(n = 1; n < size && x + n < GBA_PPU_WIDTH; n++)
       line[x + n] = line[x];
 }
@@ -737,17 +758,18 @@ void gba_ppu_draw_line(GbaPpu *ppu, int y, uint16_t *row)
     {
       uint16_t control = IO(ppu, REG_BG0CNT + bg * 2);
       const uint16_t *line;
+      int from = 0;
 
       if(!(backgrounds & (1u << bg)) || (control & 3) != (unsigned)priority)
         continue;
       if(mode >= 3)
-        line = draw_bitmap_bg(ppu, mode, y);
+        line = draw_bitmap_bg(ppu, mode, y, &from);
       else if(mode == 0 || (mode == 1 && bg < 2))
         line = draw_text_bg(ppu, bg, y);
       else
-        line = draw_affine_bg(ppu, bg, y);
+        line = draw_affine_bg(ppu, bg, y, &from);
       if(control & 0x40 && mosaic > 1)
-        mosaic_line((uint16_t *)line, mosaic);
+        mosaic_line((uint16_t *)line, mosaic, from);
       lay_background(ppu, line, bg);
     }
     if(dispcnt & DISPCNT_OBJ)
