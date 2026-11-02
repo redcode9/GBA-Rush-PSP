@@ -13,6 +13,9 @@
 
 #include <string.h>
 
+/* Header flag: the sender is waiting on us, so answer at once. */
+#define LINK_NET_ANSWER_NOW 0x01u
+
 /* Unacknowledged data is repeated after this long without any send. */
 #define LINK_NET_MIN_RESEND_US   15000u
 #define LINK_NET_DEFAULT_HEARTBEAT_US 250000u
@@ -40,7 +43,7 @@ static uint32_t get32(const uint8_t *in)
  *   16 ack: messages received in order
  *   20 messages the emulator has consumed (used for pacing)
  *   24 guest clock      28 send time (us)   32 echo of the peer's send time
- *   36 reserved (0)
+ *   36 flags: LINK_NET_ANSWER_NOW, other bits 0
  * then `count` messages, each [type, size, data]. */
 
 /* Sequence numbers wrap, so compare them as signed distances. Written
@@ -182,6 +185,10 @@ int link_net_receive(LinkNet *net, const uint8_t *datagram, size_t size,
   net->peer_stamp = get32(datagram + 28);
   net->peer_stamp_received_us = now_us;
   link_net_sample_rtt(net, get32(datagram + 32), now_us);
+  /* Our answer carries the acknowledgement and repeats whatever of ours
+     the peer is missing. */
+  if(get32(datagram + 36) & LINK_NET_ANSWER_NOW)
+    net->send_now = 1;
 
   offset = LINK_NET_HEADER_SIZE;
   for(i = 0; i < count; i++)
@@ -251,7 +258,8 @@ size_t link_net_build(LinkNet *net, uint8_t *datagram, size_t capacity,
      now_us - net->peer_stamp_received_us >= net->ack_delay_us;
 
     resend = net->out_next != net->out_acked && since_send >= resend_us;
-    if(!ack_due && !resend && since_send < net->heartbeat_us)
+    if(!ack_due && !resend && since_send < net->heartbeat_us &&
+       (net->probe_us == 0 || since_send < net->probe_us))
       return 0;
   }
 
@@ -272,7 +280,7 @@ size_t link_net_build(LinkNet *net, uint8_t *datagram, size_t capacity,
   put32(datagram + 24, clock);
   put32(datagram + 28, (uint32_t)(now_us & 0xFFFFFFFFu));
   put32(datagram + 32, echo);
-  put32(datagram + 36, 0);
+  put32(datagram + 36, net->probe_us != 0 ? LINK_NET_ANSWER_NOW : 0u);
 
   offset = LINK_NET_HEADER_SIZE;
   for(seq = net->out_acked; seq != net->out_next && count < 255u; seq++)
@@ -306,6 +314,11 @@ void link_net_set_heartbeat(LinkNet *net, uint32_t interval_us)
 void link_net_set_ack_delay(LinkNet *net, uint32_t delay_us)
 {
   net->ack_delay_us = delay_us;
+}
+
+void link_net_set_probe(LinkNet *net, uint32_t interval_us)
+{
+  net->probe_us = interval_us;
 }
 
 uint32_t link_net_backlog(const LinkNet *net)
