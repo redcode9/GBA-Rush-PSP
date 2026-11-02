@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- A third choice for Video > Video renderer, Exact: a renderer written from
+  scratch for GBA Rush, which matches mGBA pixel for pixel on every frame of
+  the games it is checked with. For now it runs on the PSP's main processor
+  and is slower than New; it is offered so its cost can be measured on a
+  PSP.
+
 ## 1.4.3 - 2026-11-02
 
 ### Fixed

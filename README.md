@@ -18,7 +18,8 @@ included in this repository or its releases.
 
 ## Features
 
-- Old and new gpSP renderers with sharp, aspect-correct and adaptive 16:9
+- Old and new gpSP renderers, plus an experimental Exact renderer that
+  matches mGBA pixel for pixel, with sharp, aspect-correct and adaptive 16:9
   presentation modes.
 - Modern, Classic and Custom fast-forward profiles, global defaults and
   optional per-game overrides.
