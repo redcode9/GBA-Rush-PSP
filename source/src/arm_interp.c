@@ -60,26 +60,23 @@ unsigned arm_cartridge_refetch(const ArmCore *core, uint32_t pc)
    after the opcode being fetched, one per sequential access time, up to
    eight. An opcode found there takes one cycle; otherwise the CPU waits
    for the halfword being read. Taken branches and GamePak data accesses
-   empty it (GBATEK, GBA GamePak Prefetch). */
+   empty it (GBATEK, GBA GamePak Prefetch).
+
+   The buffer is kept as one level in cycles: count * access + partial.
+   Filling adds to it up to eight halfwords; taking a halfword removes
+   access and the cycle the fetch itself took fills it again. The access
+   time only changes at a taken branch, which empties the buffer. */
 static void prefetch_flush(ArmCore *core)
 {
-  core->prefetch_count = 0;
-  core->prefetch_cycles = 0;
+  core->prefetch = 0;
 }
 
 static void prefetch_fill(ArmCore *core, unsigned cycles)
 {
-  unsigned access = core->wait[region_of(core->insn_pc)][1];
-  unsigned count = core->prefetch_count;
+  unsigned full = 8u * core->wait[region_of(core->insn_pc)][1];
+  unsigned level = core->prefetch + cycles;
 
-  cycles += core->prefetch_cycles;
-  while(cycles >= access && count < 8)
-  {
-    cycles -= access;
-    count++;
-  }
-  core->prefetch_count = (uint8_t)count;
-  core->prefetch_cycles = (uint8_t)(count == 8 ? 0 : cycles);
+  core->prefetch = (uint16_t)(level < full ? level : full);
 }
 
 /* Cycles of an opcode fetch of halfwords from the buffer. */
@@ -90,16 +87,15 @@ static unsigned prefetch_fetch(ArmCore *core, unsigned halfwords)
 
   while(halfwords--)
   {
-    if(core->prefetch_count)
+    if(core->prefetch >= access)
     {
-      core->prefetch_count--;
+      core->prefetch = (uint16_t)(core->prefetch - access + 1);
       cycles++;
-      prefetch_fill(core, 1);
     }
     else
     {
-      cycles += access - core->prefetch_cycles;
-      core->prefetch_cycles = 0;
+      cycles += access - core->prefetch;
+      core->prefetch = 0;
     }
   }
   return cycles;

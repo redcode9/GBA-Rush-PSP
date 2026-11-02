@@ -138,10 +138,10 @@ typedef struct ArmCore
      (8-bit accesses cost what 16-bit ones do). */
   uint8_t wait[16][4];
   uint16_t waitcnt;
-  /* GamePak prefetch buffer: halfwords ready, and cycles spent on the
-     next one. */
-  uint8_t prefetch_count;
-  uint8_t prefetch_cycles;
+  /* GamePak prefetch buffer, as the cycles it has spent filling: the
+     halfwords ready times their access time, plus the cycles spent on the
+     next one. One number, so the MIPS backend keeps it in a register. */
+  uint16_t prefetch;
 
   uint32_t block_count;
   uint32_t op_count;
