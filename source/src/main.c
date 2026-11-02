@@ -168,6 +168,11 @@ static u32 gba_link_wait_max_us = 0;
 static u64 gba_link_wait_total_us = 0;
 static u32 gba_link_yields = 0;
 static u64 gba_link_yield_total_us = 0;
+/* GBA frames run and drawn while a link was open, and the time spent
+   waiting for VBlank meanwhile. */
+static u32 gba_link_frames = 0;
+static u32 gba_link_frames_drawn = 0;
+static u64 gba_link_vblank_wait_us = 0;
 /* The emulator thread, whose priority drops while a lockstep link is
    connected, and the priority it has now. */
 static SceUID gba_link_thread = -1;
@@ -566,6 +571,10 @@ static void main_link_close(MainLinkEnd reason)
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 7,
    MAIN_LINK_LOCKSTEP_PRIORITY, (u32)gba_link_priority_seen,
    (u32)gba_link_priority_result);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 8,
+   gba_link_frames, gba_link_frames_drawn,
+   gba_link_vblank_wait_us > UINT_MAX ? UINT_MAX :
+    (u32)gba_link_vblank_wait_us);
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_ERROR, cpu_ticks,
    (u8)reason, (u32)gba_link.status, (u32)psp_adhoc_last_error(),
    main_adhoc_phase_value());
@@ -723,6 +732,9 @@ static int main_link_start(int host)
   gba_link_wait_total_us = 0;
   gba_link_yields = 0;
   gba_link_yield_total_us = 0;
+  gba_link_frames = 0;
+  gba_link_frames_drawn = 0;
+  gba_link_vblank_wait_us = 0;
   gba_link_thread = sceKernelGetThreadId();
   gba_link_priority_result = 0;
   gba_link_priority_seen = 0;
@@ -770,18 +782,21 @@ void main_link_disconnect(MainLinkEnd reason)
 static void main_link_wait_vblank(void)
 {
   u32 vcount = sceDisplayGetVcount();
+  u64 started = sceKernelGetSystemTimeWide();
 
   if(!gba_link_open || gba_link.mode != LINK_CABLE_MODE_LOCKSTEP)
-  {
     sceDisplayWaitVblankStart();
-    return;
-  }
-  while(gba_link_open && sceDisplayGetVcount() == vcount)
+  else
   {
-    psp_adhoc_wait(MAIN_LINK_VBLANK_POLL_US);
-    if(main_link_exchange())
-      pIO_REG(REG_IF) |= IRQ_SERIAL;
+    while(gba_link_open && sceDisplayGetVcount() == vcount)
+    {
+      psp_adhoc_wait(MAIN_LINK_VBLANK_POLL_US);
+      if(main_link_exchange())
+        pIO_REG(REG_IF) |= IRQ_SERIAL;
+    }
   }
+  if(gba_link_open)
+    gba_link_vblank_wait_us += sceKernelGetSystemTimeWide() - started;
 }
 
 /* Keeps the link alive while a menu has the emulation stopped. */
@@ -1279,6 +1294,13 @@ static void synchronize(void)
   int link_slept;
 
   fps_window_frames++;
+
+  if(gba_link_open)
+  {
+    gba_link_frames++;
+    if(!skip_next_frame)
+      gba_link_frames_drawn++;
+  }
 
   if (fps_window_frames == 60)
   {

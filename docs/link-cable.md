@@ -274,7 +274,8 @@ trip, datagrams, frames or transfers, waits, datagrams the PSP network stack
 refused or dropped, the shortest round trip, and in lockstep mode the time
 spent pausing for the stack, the transfers completed with an announced
 reply, the announcements used that turned out wrong and the current run of
-right ones, and the priority the emulator thread ran at. `link-error` tells
+right ones, the priority the emulator thread ran at, and the GBA frames run
+and drawn while the link was open with the time spent waiting for VBlank. `link-error` tells
 why the session ended, including the PSP network error and the step that
 failed.
 
