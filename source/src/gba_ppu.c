@@ -459,7 +459,7 @@ static void draw_sprite(GbaPpu *ppu, const uint16_t *attr, int y, int top)
   unsigned row_tiles, wrap;
   int mosaic_x = 1;
   int32_t u, v, du, dv;
-  int x, end, row;
+  int x, end, row, place;
 
   if(a0 & 0x200 && a0 & 0x100)
   {
@@ -532,6 +532,8 @@ static void draw_sprite(GbaPpu *ppu, const uint16_t *attr, int y, int top)
     end = GBA_PPU_WIDTH;
   u += du * (x - left);
   v += dv * (x - left);
+  /* x's place in its mosaic block, counted rather than divided for. */
+  place = mosaic_x > 1 ? x % mosaic_x : 0;
   for(; x < end; x++, u += du, v += dv)
   {
     int32_t tu = u, tv = v;
@@ -540,8 +542,10 @@ static void draw_sprite(GbaPpu *ppu, const uint16_t *attr, int y, int top)
 
     if(mosaic_x > 1)
     {
-      int back = x % mosaic_x;
+      int back = place;
 
+      if(++place == mosaic_x)
+        place = 0;
       if(x - back < left)
         back = x - left + (a0 & 0x100 ? 1 : 0);
       tu -= back * du;
