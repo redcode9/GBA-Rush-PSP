@@ -200,15 +200,48 @@ static uint32_t thumb_opcode(void)
   return op;
 }
 
+/* Whether an opcode may jump: the straight programs leave most of those
+   out, so blocks run to their length limit and fall through into the next
+   one (the one way into a block with the prefetch buffer not empty), while
+   some still end in branches. */
+static int jumps(uint32_t op, int thumb)
+{
+  if(thumb)
+    return op >= 0xD000 || (op & 0xFF00) == 0x4700 ||
+     (op & 0xFF00) == 0xBD00 || ((op & 0xFC00) == 0x4400 && (op & 0x87) ==
+     0x87);
+  return ((op >> 25) & 7) == 5 || ((op >> 25) & 7) == 4 ||
+   ((op >> 12) & 15) == 15 || (op & 0x0FFFFFF0u) == 0x012FFF10u ||
+   ((op >> 24) & 15) == 15;
+}
+
+static int straight;
+
 static void fill(uint8_t *p, uint32_t bytes, int thumb)
 {
   uint32_t i;
 
   for(i = 0; i < bytes; i += 4)
   {
-    uint32_t word = thumb ? thumb_opcode() | thumb_opcode() << 16 :
-     arm_opcode();
+    uint32_t word;
 
+    if(thumb)
+    {
+      uint32_t low = thumb_opcode();
+      uint32_t high = thumb_opcode();
+
+      while(straight && jumps(low, 1) && (rng() & 15))
+        low = thumb_opcode();
+      while(straight && jumps(high, 1) && (rng() & 15))
+        high = thumb_opcode();
+      word = low | high << 16;
+    }
+    else
+    {
+      word = arm_opcode();
+      while(straight && jumps(word, 0) && (rng() & 15))
+        word = arm_opcode();
+    }
     memcpy(p + i, &word, 4);
   }
 }
@@ -491,8 +524,10 @@ static int run_case(uint32_t seed)
   fill(worlds[0].ewram, EWRAM_SIZE, rng() & 1);
   fill(worlds[0].iwram, IWRAM_SIZE, rng() & 1);
 
-  /* The program: up to 256 instructions whose branches stay inside. */
+  /* The program: up to 256 instructions whose branches stay inside, or
+   in every other case no branches at all. */
   thumb = (int)(rng() & 1);
+  straight = (int)(seed & 1);
   count = 8 + rng() % 248;
   switch(rng() % 3)
   {
@@ -519,6 +554,7 @@ static int run_case(uint32_t seed)
   pc += offset;
   fill(program, (count * (thumb ? 2 : 4) + 3) & ~3u, thumb);
   confine(program, pc, count, thumb);
+  straight = 0;
   memcpy(worlds[1].ewram, worlds[0].ewram, EWRAM_SIZE);
   memcpy(worlds[1].iwram, worlds[0].iwram, IWRAM_SIZE);
 
