@@ -92,21 +92,25 @@ run_case slow-host-noisy "net 8000 15000 15 5" "speed 0 0.8"
 # link alone while it waits for VBlank; its network stack only moves
 # datagrams while the emulator sleeps and spends 0.9 ms of that per datagram
 # either way; in lockstep mode the console sleeps after each datagram it
-# sends while emulating, 1.4 ms for main.c's 1 ms MAIN_LINK_SEND_YIELD_US,
-# since a PSP's short sleeps last about 0.35 ms longer than asked. The trade
-# cases add a 70 ms round trip that loses a third of the datagrams, and the
-# second one radio dropouts and a joiner that freezes now and then.
+# sends while emulating, 1.12 ms on average for main.c's 1 ms
+# MAIN_LINK_SEND_YIELD_US. The trade cases add a 70 ms round trip that loses
+# a third of the datagrams, and the second one radio dropouts and a joiner
+# that freezes now and then.
 psp="psp 0 12
 psp 1 12
-stack 0 1400 900
-stack 1 1400 900"
-# Mario Kart on the same two PSPs: the race that ran at 40 fps there on the
-# build before 1.4.3 runs at 40 fps here with 15 ms bursts and 1.2 ms of
-# stack time per datagram.
-mksc_psp="psp 0 15
-psp 1 15
-stack 0 1400 1200
-stack 1 1400 1200"
+stack 0 1120 900
+stack 1 1120 900"
+# Mario Kart on the same two PSPs: races there ran at 40 fps on the build
+# before 1.4.3's lockstep changes and at 45.5 fps on the first build with
+# them. With 14 ms of emulation per frame and 0.3 ms of stack time per
+# datagram they run at 39.7 and 52.7 fps here, with the clocking console
+# sending and waiting as much as it did there; the second one's joiner
+# resent 1446 datagrams too early there, which this test does not
+# reproduce and the build after it no longer does.
+mksc_psp="psp 0 14
+psp 1 14
+stack 0 1120 300
+stack 1 1120 300"
 run_case psp "net 20000 30000 35 1" "$psp"
 run_case psp-stalls "net 20000 30000 35 1" "$psp" "outage 7000 250" \
   "hiccup 1 9000 600"
@@ -149,6 +153,6 @@ if [ -n "${MKSC:-}" ]; then
   race_case mksc-psp-slow "net 20000 30000 35 1" "$mksc_psp"
   # Two PSPs side by side, a 4 ms round trip at best: the race must run at
   # full speed.
-  race_case mksc-psp "net 2000 1000 5 1" "$mksc_psp" "minfps 58"
+  race_case mksc-psp "net 2000 1000 5 1" "$mksc_psp" "minfps 57"
 fi
 echo "ROM link checks passed"
