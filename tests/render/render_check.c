@@ -194,13 +194,28 @@ static void write_pair(const char *path)
 }
 
 /* Both renderers must have seen the same memory; a difference means a
-   write that never reached a hook, not a drawing error. */
+   write that never reached a hook, not a drawing error. mGBA's built-in
+   BIOS writes some decompressed data that way: pass a real BIOS. */
 static void check_copies(void)
 {
-  if(memcmp(ppu.vram, gba->video.vram, sizeof(ppu.vram)) ||
-     memcmp(ppu.palette, gba->video.palette, sizeof(ppu.palette)) ||
-     memcmp(ppu.oam, gba->video.oam.raw, sizeof(ppu.oam)))
-    desync_frames++;
+  int i;
+
+  if(!memcmp(ppu.vram, gba->video.vram, sizeof(ppu.vram)) &&
+     !memcmp(ppu.palette, gba->video.palette, sizeof(ppu.palette)) &&
+     !memcmp(ppu.oam, gba->video.oam.raw, sizeof(ppu.oam)))
+    return;
+  if(!desync_frames++)
+  {
+    for(i = 0; i < 0xC000 && ppu.vram[i] == gba->video.vram[i]; i++)
+      ;
+    printf("frame %lu: copies differ, VRAM from %05X", frames + 1, i * 2);
+    for(i = 0; i < 512 && ppu.palette[i] == gba->video.palette[i]; i++)
+      ;
+    printf(", palette from %03X", i * 2);
+    for(i = 0; i < 512 && ppu.oam[i] == gba->video.oam.raw[i]; i++)
+      ;
+    printf(", OAM from %03X\n", i * 2);
+  }
 }
 
 static void print_registers(int y)
