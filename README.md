@@ -21,6 +21,8 @@ included in this repository or its releases.
 - Old and new gpSP renderers, plus an experimental Exact renderer that
   matches mGBA pixel for pixel and, on custom firmware, draws on the Media
   Engine, with sharp, aspect-correct and adaptive 16:9 presentation modes.
+- Two CPU cores: the Classic gpSP dynarec, and an experimental New core
+  written from scratch that runs like mGBA instruction by instruction.
 - Modern, Classic and Custom fast-forward profiles, global defaults and
   optional per-game overrides.
 - Full-scale 16-bit audio mixing and optional 2x/3x accelerated audio.
@@ -79,6 +81,25 @@ to Sharp after a stable interval. The FPS overlay shows the active level.
 
 Integer and aspect-correct modes remain available when preserving GBA geometry
 is more important than filling the display.
+
+## CPU core
+
+**Performance > Advanced settings > CPU core** picks the processor emulation:
+
+- **Classic**, the default, is the gpSP dynarec GBA Rush has always used.
+- **New** is a core written from scratch for GBA Rush. In the games it is
+  checked with it runs every instruction, cycle counts included, as mGBA
+  does, and it compiles the game's code to the PSP's own instructions. It
+  is being tested.
+
+The choice takes effect when a game starts or is reset. With Show FPS on,
+the counter ends in NEW while the New core runs. Savestates load in either
+core. Saves, cheats (CodeBreaker hooks included), fast-forward and the link
+cable go through the same emulator code with both cores.
+
+The New core does not use the idle loop shortcuts of `game_config.txt`. A
+ROM smaller than 16 MB repeats past its end, where the Classic core reads
+open bus.
 
 ## Cheats
 

@@ -4,6 +4,15 @@
 
 ### Added
 
+- Performance > Advanced settings > CPU core: Classic, the dynarec GBA Rush
+  has always used, or New, a processor core written from scratch that runs
+  each instruction and its cycles as mGBA does and compiles the game's code
+  for the PSP. It is experimental and takes effect when a game starts or is
+  reset; Classic stays the default. With Show FPS on, the counter ends in
+  NEW while the New core runs. Savestates load in either core. The runtime
+  log records the core each game starts on, and how many blocks of code the
+  New core compiled.
+
 - A third choice for Video > Video renderer, Exact: a renderer written from
   scratch for GBA Rush, which matches mGBA pixel for pixel on every frame of
   the games it is checked with. On custom firmware it draws on the PSP's
