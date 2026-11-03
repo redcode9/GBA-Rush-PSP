@@ -19,8 +19,8 @@ included in this repository or its releases.
 ## Features
 
 - Old and new gpSP renderers, plus an experimental Exact renderer that
-  matches mGBA pixel for pixel, with sharp, aspect-correct and adaptive 16:9
-  presentation modes.
+  matches mGBA pixel for pixel and, on custom firmware, draws on the Media
+  Engine, with sharp, aspect-correct and adaptive 16:9 presentation modes.
 - Modern, Classic and Custom fast-forward profiles, global defaults and
   optional per-game overrides.
 - Full-scale 16-bit audio mixing and optional 2x/3x accelerated audio.

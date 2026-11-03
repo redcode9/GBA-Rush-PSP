@@ -668,7 +668,7 @@
   "当显示模式为 USER GU 时生效.",
 
   // MSG_TOOLTIP_VIDEO_RENDERER
-  "旧的: 原始版 TempGBA 及修复补丁，运行速度可能更快，但存在一些 bug.\n新: 为 Libretro gpsp 重新编写，更准确.\n精确: 全新编写，与 mGBA 逐像素一致；速度较慢，仍在测试中.",
+  "旧的: 原始版 TempGBA 及修复补丁，运行速度可能更快，但存在一些 bug.\n新: 为 Libretro gpsp 重新编写，更准确.\n精确: 全新编写，与 mGBA 逐像素一致；仍在测试中.\n自制系统上由 Media Engine 绘制，否则速度较慢.",
 
   // MSG_TOOLTIP_OAM_HIJACKING
   "仅适用于新渲染器.\n修复了某些游戏中的显示错误.",

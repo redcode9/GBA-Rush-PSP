@@ -668,7 +668,7 @@
   "Funziona quando la Modalita display e` UTENTE GU.",
 
   // MSG_TOOLTIP_VIDEO_RENDERER
-  "Vecchio: TempGBA originale+correzioni.\n         Potrebbe essere piu veloce ma con alcuni problemi.\nNuovo: Riscritto per Libretro gpsp, piu accurato.\nEsatto: nuovo, identico a mGBA pixel per pixel;\n        piu lento, in prova.",
+  "Vecchio: TempGBA originale+correzioni.\n         Potrebbe essere piu veloce ma con alcuni problemi.\nNuovo: Riscritto per Libretro gpsp, piu accurato.\nEsatto: nuovo, identico a mGBA pixel per pixel; in prova.\n        Disegna sul Media Engine con un firmware\n        personalizzato, altrimenti e` piu lento.",
 
   // MSG_TOOLTIP_OAM_HIJACKING
   "Puo solo essere usato con il NUOVO render.\nCorregge alcuni errori di visualizzazione in certi giochi.",
