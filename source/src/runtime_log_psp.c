@@ -212,7 +212,7 @@ int runtime_log_psp_init(const char *base_path)
 }
 
 void runtime_log_psp_set_rom(const uint8_t *game_code, uint8_t revision,
- uint32_t rom_size, uint32_t emulated_cycle)
+ uint32_t rom_size, uint32_t cpu_core, uint32_t emulated_cycle)
 {
   uint32_t identity = 0;
 
@@ -224,7 +224,7 @@ void runtime_log_psp_set_rom(const uint8_t *game_code, uint8_t revision,
   }
   runtime_log_psp.metadata.rom_identity = identity;
   runtime_log_psp_main(RUNTIME_LOG_EVENT_ROM_OPEN, emulated_cycle,
-   revision, identity, rom_size, 0);
+   revision, identity, rom_size, cpu_core);
 }
 
 void runtime_log_psp_main(RuntimeLogEventType type, uint32_t emulated_cycle,

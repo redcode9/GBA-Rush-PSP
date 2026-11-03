@@ -175,6 +175,20 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         self.assertEqual(len(decoder.LINK_STATUS), 6)
         self.assertEqual(decoder.LINK_MODES, ["none", "lockstep", "pokemon"])
 
+    def test_rom_open_names_the_cpu_core(self):
+        header = (Path(__file__).parents[1] / "source" / "src" /
+                  "main.h").read_text()
+        self.assertIn("#define CPU_CORE_CLASSIC 0", header)
+        self.assertIn("#define CPU_CORE_NEW     1", header)
+        self.assertEqual(
+            decoder.describe({"event": "rom-open", "flags": 1,
+                              "values": [0x414D4B50, 4194304, 1]}),
+            "code=AMKP revision=1 size=4194304 core=new")
+        self.assertEqual(
+            decoder.describe({"event": "rom-open", "flags": 0,
+                              "values": [0x42505249, 16777216, 0]}),
+            "code=BPRI revision=0 size=16777216 core=classic")
+
     def test_exact_renderer_names_match_the_c_enum(self):
         header = (Path(__file__).parents[1] / "source" / "src" /
                   "video_me.h").read_text()

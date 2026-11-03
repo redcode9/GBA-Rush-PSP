@@ -91,6 +91,9 @@ LINK_COUNTERS = {
     9: "me-frames/frames-late/me-busy-us-per-frame",
     10: "log-us-per-frame/log-words-per-frame/full-resends",
 }
+# The CPU core a start or reset chose (CPU_CORE_* in source/src/main.h);
+# logs from before the option say classic.
+CPU_CORES = ["classic", "new"]
 # Where the Exact renderer draws (VideoMeState in source/src/video_me.h):
 # counters kind 11, with the cause and address of a Media Engine exception.
 EXACT_RENDERER = [
@@ -201,7 +204,10 @@ def describe(record: dict[str, Any]) -> str:
     flags = record["flags"]
     value0, value1, value2 = record["values"]
     if event == "rom-open":
-        return f"code={_rom_code(value0)} revision={flags} size={value1}"
+        return (
+            f"code={_rom_code(value0)} revision={flags} size={value1} "
+            f"core={_name(CPU_CORES, value2)}"
+        )
     if event == "log-flush":
         return f"reason={FLUSH_REASONS.get(value0, value0)} main={value1} network={value2}"
     # Earlier versions belong to a retired link design; show raw values.

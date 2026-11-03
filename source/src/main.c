@@ -1940,7 +1940,7 @@ void reset_gba(void)
   if(gamepak_file_size >= 0xC0u)
   {
     runtime_log_psp_set_rom(gamepak_header + 0xAC, gamepak_header[0xBC],
-     gamepak_file_size, cpu_ticks);
+     gamepak_file_size, main_cpu_core_chosen, cpu_ticks);
     runtime_log_rom_identity = new_identity;
     runtime_log_rom_active = 1;
   }
