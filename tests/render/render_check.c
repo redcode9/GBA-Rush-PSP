@@ -5,7 +5,10 @@
  * At the end of each frame the two pictures are compared pixel by pixel.
  * A second gba_ppu reads mGBA's own memory, as the emulator's does, hearing
  * only of the register writes the emulator reports; its pictures must equal
- * the first one's.
+ * the first one's. A third draws on its own thread from the write log
+ * (gba_ppu_log.c), as the Media Engine does: the hooks mark the blocks
+ * mGBA's memory changed in, as the emulator's store paths do, and its
+ * pictures must equal the first one's too.
  * Build it against an mGBA compiled with COLOR_16_BIT, whose colours are
  * the GBA's own (see mgba_pixel).
  *
@@ -26,6 +29,8 @@
  */
 
 #include <fcntl.h>
+#include <pthread.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +45,7 @@
 #include <mgba-util/vfs.h>
 
 #include "gba_ppu.h"
+#include "gba_ppu_log.h"
 
 #define WIDTH GBA_PPU_WIDTH
 #define HEIGHT GBA_PPU_HEIGHT
@@ -58,6 +64,18 @@ static double mgba_ns, ppu_ns;
 static int written_mismatch;
 /* Lines drawn this frame: mGBA starts the first frame part way down. */
 static unsigned char drawn[HEIGHT];
+/* The write log and the reader thread that plays the Media Engine. */
+static GbaPpuLogMailbox log_mailbox __attribute__((aligned(64)));
+static uint32_t log_ring[GBA_PPU_LOG_RING_WORDS] __attribute__((aligned(64)));
+static uint16_t log_frame[GBA_PPU_LOG_FRAME_STRIDE * HEIGHT]
+ __attribute__((aligned(64)));
+static uint8_t log_dirty[GBA_PPU_LOG_BLOCKS];
+static uint32_t log_groups[GBA_PPU_LOG_GROUP_BYTES / 4];
+static GbaPpuLogWriter log_writer;
+static GbaPpuLogReader log_reader;
+static pthread_t log_thread;
+static volatile int log_stop;
+static unsigned long log_frames, log_differ, log_incomplete;
 /* The video registers each line was drawn with, for RENDER_VERBOSE. */
 static uint16_t line_io[HEIGHT][GBA_PPU_IO_BYTES / 2];
 static uint32_t line_top[HEIGHT][WIDTH], line_below[HEIGHT][WIDTH];
@@ -110,11 +128,30 @@ static void trace(const char *what, uint32_t address, uint16_t value)
      value);
 }
 
+/* As the emulator's store paths do; offset counts from palette RAM, then
+   OAM at 0x400 and VRAM at 0x800. */
+static void log_mark(uint32_t offset)
+{
+  log_dirty[offset >> 6] = 1;
+  ((uint8_t *)log_groups)[offset >> 11] = 1;
+}
+
+static void *log_reader_thread(void *unused)
+{
+  (void)unused;
+  while(!__atomic_load_n(&log_stop, __ATOMIC_ACQUIRE))
+    if(gba_ppu_log_read(&log_reader) == 0)
+      sched_yield();
+  return NULL;
+}
+
 static uint16_t on_register(struct GBAVideoRenderer *renderer,
  uint32_t address, uint16_t value)
 {
   trace("io", address, value);
   gba_ppu_write_io(&ppu, address, value);
+  if(address < GBA_PPU_IO_BYTES)
+    gba_ppu_log_io(&log_writer, address, value);
   /* The emulator reports DISPCNT and BG2X-BG3Y (mGBA stores the value
      only after this hook, so gba_ppu_write_io stores it first). */
   if(address == 0 || (address >= 0x28 && address < 0x40))
@@ -129,6 +166,7 @@ static void on_vram(struct GBAVideoRenderer *renderer, uint32_t address)
     address -= 0x8000;
   trace("vram", address, renderer->vram[address >> 1]);
   gba_ppu_write_vram(&ppu, address, &renderer->vram[address >> 1], 2);
+  log_mark(0x800 + address);
   mgba_renderer.writeVRAM(renderer, address);
 }
 
@@ -137,6 +175,7 @@ static void on_palette(struct GBAVideoRenderer *renderer, uint32_t address,
 {
   trace("palette", address, value);
   gba_ppu_write_palette(&ppu, address & 0x3FE, &value, 2);
+  log_mark(address & 0x3FE);
 #ifdef COLOR_16_BIT
   /* The GBA ignores bit 15 of a colour; mGBA's 16-bit build keeps it and
      lets it spill into colour effects. */
@@ -150,6 +189,7 @@ static void on_oam(struct GBAVideoRenderer *renderer, uint32_t index)
   index &= 0x1FF;
   trace("oam", index * 2, renderer->oam->raw[index]);
   gba_ppu_write_oam(&ppu, index * 2, &renderer->oam->raw[index], 2);
+  log_mark(0x400 + index * 2);
   mgba_renderer.writeOAM(renderer, index);
 }
 
@@ -162,6 +202,7 @@ static void on_line(struct GBAVideoRenderer *renderer, int y)
   gba_ppu_draw_line(&ppu, y, ppu_frame + y * WIDTH);
   ppu_ns += now_ns() - t1;
   gba_ppu_draw_line(&shared, y, shared_frame + y * WIDTH);
+  gba_ppu_log_line(&log_writer, (uint32_t)y);
   drawn[y] = 1;
   memcpy(line_io[y], copy.io, sizeof(copy.io));
   memcpy(line_top[y], ppu.top, sizeof(ppu.top));
@@ -265,12 +306,40 @@ static int darkening_rounds(int x, int y)
 #endif
 }
 
+/* V-Blank on the log: once the reader drew everything sent, its picture of
+   the frame must be whole and equal to the copy-based one's. Only mGBA's
+   first frame, which starts part way down, may be missing lines. */
+static void check_log_frame(void)
+{
+  uint32_t number = gba_ppu_log_frame(&log_writer);
+  int y;
+
+  gba_ppu_log_vblank(&log_writer);
+  while(__atomic_load_n(&log_mailbox.reader.read, __ATOMIC_ACQUIRE) !=
+        log_mailbox.writer.write)
+    sched_yield();
+  if(!gba_ppu_log_frame_done(&log_writer, number))
+  {
+    log_incomplete++;
+    return;
+  }
+  log_frames++;
+  for(y = 0; y < HEIGHT; y++)
+    if(memcmp(log_frame + y * GBA_PPU_LOG_FRAME_STRIDE, ppu_frame + y * WIDTH,
+     WIDTH * sizeof(*ppu_frame)))
+    {
+      log_differ++;
+      break;
+    }
+}
+
 static void on_frame_end(struct GBAVideoRenderer *renderer)
 {
   unsigned long differ = 0;
   int x, y;
 
   mgba_renderer.finishFrame(renderer);
+  check_log_frame();
   if(dump_frame && frames + 1 == dump_frame)
   {
     FILE *f = fopen("state.bin", "wb");
@@ -397,6 +466,11 @@ static void attach(void)
   gba_ppu_start_frame(&ppu);
   gba_ppu_init(&shared, gba->video.palette, gba->video.oam.raw,
    gba->video.vram, gba->memory.io);
+  gba_ppu_log_writer_init(&log_writer, &log_mailbox, log_ring, log_frame,
+   gba->video.palette, gba->video.oam.raw, gba->video.vram, gba->memory.io,
+   log_dirty, (uint8_t *)log_groups);
+  gba_ppu_log_reader_start(&log_reader, &log_mailbox);
+  pthread_create(&log_thread, NULL, log_reader_thread, NULL);
 }
 
 int main(int argc, char **argv)
@@ -482,7 +556,18 @@ int main(int argc, char **argv)
     printf(", memory copies out of step in %lu frames", desync_frames);
   if(shared_frames)
     printf(", gba_ppu on mGBA's memory differs in %lu frames", shared_frames);
+  if(log_differ || log_incomplete > 1)
+    printf(", through the write log %lu frames differ and %lu are missing",
+     log_differ, log_incomplete);
   printf("\n  per frame: mGBA renderer %.0f us, gba_ppu %.0f us\n",
    frames ? mgba_ns / frames / 1e3 : 0.0, frames ? ppu_ns / frames / 1e3 : 0.0);
-  return bad_frames || desync_frames || shared_frames ? 1 : 0;
+  printf("  write log: %lu frames whole, per frame %.0f words, %.1f blocks,"
+   " %.0f register writes, %u full resends\n", log_frames,
+   frames ? (double)log_writer.write / frames : 0.0,
+   frames ? (double)log_writer.blocks_sent / frames : 0.0,
+   frames ? (double)log_writer.io_sent / frames : 0.0, log_writer.resends);
+  __atomic_store_n(&log_stop, 1, __ATOMIC_RELEASE);
+  pthread_join(log_thread, NULL);
+  return bad_frames || desync_frames || shared_frames || log_differ ||
+   log_incomplete > 1 ? 1 : 0;
 }

@@ -2,7 +2,8 @@
 set -eu
 
 # Draws real games with both mGBA's renderer and GBA Rush's gba_ppu and
-# checks that every pixel of every frame matches. Skipped unless MGBA_DIR
+# checks that every pixel of every frame matches, gba_ppu drawing also from
+# the write log the Media Engine reads, on a second thread. Skipped unless MGBA_DIR
 # and at least one game are set:
 #   MGBA_DIR  an mGBA 0.10 source tree with libmgba.a built in build16/ or
 #             build/. Build build16/ with -DCMAKE_C_FLAGS=-DCOLOR_16_BIT:
@@ -49,7 +50,8 @@ fi
 # shellcheck disable=SC2086
 ${CC:-cc} -O2 -std=gnu99 $color -I"$MGBA_DIR/include" -I"$build/include" \
   -Isource/src tests/render/render_check.c source/src/gba_ppu.c \
-  "$build/libmgba.a" -lm $frameworks -o "$out/render_check"
+  source/src/gba_ppu_log.c "$build/libmgba.a" -lm -lpthread $frameworks \
+  -o "$out/render_check"
 
 status=0
 check()
@@ -65,7 +67,7 @@ check()
   if [ -f "$out/mismatch.bmp" ]; then
     mv "$out/mismatch.bmp" "$out/$name.bmp"
   fi
-  tail -n 2 "$out/$name.log" | sed "s|^[^ ]*:|$name:|"
+  tail -n 3 "$out/$name.log" | sed "s|^[^ ]*:|$name:|"
 }
 
 bios=
