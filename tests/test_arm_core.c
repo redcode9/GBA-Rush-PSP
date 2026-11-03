@@ -224,6 +224,34 @@ static void test_interrupt(void)
   CHECK(arm_core_irq(&core) == 0);
 }
 
+static unsigned hook_calls;
+
+static void count_hook(ArmCore *hooked)
+{
+  (void)hooked;
+  hook_calls++;
+}
+
+static void test_hook(void)
+{
+  ArmIrOp ops[ARM_BLOCK_MAX_OPS];
+  ArmIrBlockInfo info;
+
+  /* The Thumb loop at 28h, inside the block from 24h, calls the hook on
+     each of its ten passes. */
+  core.hook = 0x08000028;
+  core.hooked = count_hook;
+  arm_core_flush(&core);
+  arm_translate(&core, 0x08000024, 1, ops, ARM_BLOCK_MAX_OPS,
+   ARM_BLOCK_MAX_INSNS, &info);
+  CHECK(info.insns == 2);
+  reset(0x08000000, ARM_MODE_SYSTEM);
+  arm_core_run(&core, 2000);
+  CHECK(core.v[0] == 55 && hook_calls == 10);
+  core.hook = 0;
+  arm_core_flush(&core);
+}
+
 int main(void)
 {
   ArmBus bus = { NULL, read8, read16, read32, ignore, ignore, ignore,
@@ -250,6 +278,7 @@ int main(void)
   test_literal_pool();
   test_timing();
   test_interrupt();
+  test_hook();
   if(failures)
     return 1;
   printf("test_arm_core: all checks passed\n");

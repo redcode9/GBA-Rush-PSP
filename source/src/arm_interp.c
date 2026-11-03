@@ -924,6 +924,8 @@ ArmExitKind arm_core_run_block(ArmCore *core)
   /* Requests made between blocks (a DMA invalidating code) are about
      blocks no longer running. */
   core->exit_request = 0;
+  if(core->hook && (block->key & ~1u) == (core->hook & ~1u) && core->hooked)
+    core->hooked(core);
   return arm_core_execute(core, &core->ops[block->first]);
 }
 

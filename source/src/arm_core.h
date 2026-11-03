@@ -146,6 +146,11 @@ typedef struct ArmCore
   /* Told when a block is dropped (its index) or the whole cache is
      (ARM_NO_BLOCK), so a code generator can drop its code; NULL if none. */
   void (*dropped)(struct ArmCore *core, unsigned block);
+  /* Code at address hook (0: none) calls hooked whenever it is about to
+     run, for cheats that run at a game address: it always starts a block,
+     which a backend leaves to the interpreter. Flush after changing it. */
+  uint32_t hook;
+  void (*hooked)(struct ArmCore *core);
 
   uint32_t block_count;
   uint32_t op_count;

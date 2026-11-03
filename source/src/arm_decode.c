@@ -1495,7 +1495,8 @@ unsigned arm_translate(ArmCore *core, uint32_t pc, int thumb,
     page_end = (pc | (ARM_CODE_PAGE_SIZE - 1)) + 1;
 
   while(insns < max_insns && b.count + INSN_MAX_OPS <= max_ops &&
-   (insns == 0 || page_end == 0 || b.pc != page_end))
+   (insns == 0 || ((page_end == 0 || b.pc != page_end) &&
+    (core->hook == 0 || b.pc != (core->hook & ~1u)))))
   {
     uint32_t word = core->bus.code32(core->bus.context, b.pc & ~3u);
 

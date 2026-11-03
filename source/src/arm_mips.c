@@ -2606,6 +2606,13 @@ static uint32_t block_entry(ArmMips *jit)
     dispatch_insert(jit, block->key, entry);
   if(entry)
     return entry > 1 ? entry : 0;
+  /* The hook's block runs in the interpreter, which calls the hook: never
+     compiled, nothing links to it or caches it. */
+  if(core->hook && (block->key & ~1u) == (core->hook & ~1u))
+  {
+    jit->code[index] = 1;
+    return 0;
+  }
   for(tries = 0; tries < 2; tries++)
   {
     protect(jit, block, 1);
