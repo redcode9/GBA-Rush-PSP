@@ -54,6 +54,12 @@ int sceKernelDcacheWritebackAll(void)
   return 0;
 }
 
+void sceKernelDcacheWritebackInvalidateRange(const void *p, unsigned int size)
+{
+  (void)p;
+  (void)size;
+}
+
 int sceDisplayWaitVblankStart(void)
 {
   return 0;
@@ -191,6 +197,26 @@ void sceGuTexFilter(int min, int mag)
 
 void sceGuTexFlush(void)
 {
+}
+
+void sceGuTexSync(void)
+{
+}
+
+void sceGuCopyImage(int psm, int sx, int sy, int width, int height, int srcw,
+ void *src, int dx, int dy, int destw, void *dest)
+{
+  (void)psm;
+  (void)sx;
+  (void)sy;
+  (void)width;
+  (void)height;
+  (void)srcw;
+  (void)src;
+  (void)dx;
+  (void)dy;
+  (void)destw;
+  (void)dest;
 }
 
 void sceGuTexFunc(int tfx, int tcc)

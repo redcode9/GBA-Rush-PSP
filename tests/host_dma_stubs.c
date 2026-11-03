@@ -228,6 +228,7 @@ void sound_timer_queue(void) {}
 void timer_control_high(void) {}
 void timer_control_low(void) {}
 void sound_write_mem_savestate(void) {}
+void video_io_written(void) {}
 void video_read_savestate(void) {}
 void video_write_mem_savestate(void) {}
 void yesno_dialog(void) {}

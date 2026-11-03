@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- A third choice for Video > Video renderer, Exact: a renderer written from
+  scratch for GBA Rush, which matches mGBA pixel for pixel on every frame of
+  the games it is checked with. On custom firmware it draws on the PSP's
+  second processor, the Media Engine, through media_engine.prx, which ships
+  next to the EBOOT: the main processor only tells it what the game wrote,
+  so every frame can be drawn, shown as early as with the other renderers.
+  Where the Media Engine cannot be used, as on official firmware or in an
+  emulator, Exact draws on the main processor and is slower than New. With
+  Show FPS on, the counter ends in ME or CPU to tell which.
+
 ## 1.4.3 - 2026-11-02
 
 ### Fixed

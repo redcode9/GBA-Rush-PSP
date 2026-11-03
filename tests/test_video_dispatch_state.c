@@ -20,6 +20,10 @@ static void test_change_is_deferred_until_frame_boundary(void)
   assert(video_dispatch_state_begin_frame(&state));
   assert(video_dispatch_state_active(&state) == VIDEO_DISPATCH_RENDERER_OLD);
   assert(!video_dispatch_state_begin_frame(&state));
+
+  video_dispatch_state_request(&state, VIDEO_DISPATCH_RENDERER_PPU);
+  assert(video_dispatch_state_begin_frame(&state));
+  assert(video_dispatch_state_active(&state) == VIDEO_DISPATCH_RENDERER_PPU);
 }
 
 static void test_invalid_renderer_uses_new_renderer(void)
@@ -29,7 +33,7 @@ static void test_invalid_renderer_uses_new_renderer(void)
   video_dispatch_state_init(&state, 99);
   assert(video_dispatch_state_active(&state) == VIDEO_DISPATCH_RENDERER_NEW);
 
-  video_dispatch_state_request(&state, 42);
+  video_dispatch_state_request(&state, 3);
   assert(!video_dispatch_state_begin_frame(&state));
   assert(video_dispatch_state_active(&state) == VIDEO_DISPATCH_RENDERER_NEW);
 }

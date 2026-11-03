@@ -175,6 +175,13 @@ extern u32 gamepak_ram_pages;
 
 extern u32 oam_update;
 
+/* One byte per 64-byte block of palette RAM (from 0), OAM (from 0x400)
+   and VRAM (from 0x800), and one per group of 32 blocks, set by every
+   store to video memory in memory.c and mips_stub.S: the blocks the
+   Media Engine's write log has to send (gba_ppu_log.h). */
+extern u8 video_dirty[1568];
+extern u32 video_dirty_groups[13];
+
 extern DmaTransferType dma[4];
 
 

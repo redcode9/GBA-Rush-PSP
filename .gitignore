@@ -6,6 +6,7 @@ release/
 *.d
 *.elf
 *.prx
+/source/prx/media_engine/renderer.bin
 *.PBP
 *.map
 PARAM.SFO

@@ -1,5 +1,6 @@
 # Host build of the tests and checks; the PSP build lives in source/Makefile.
-#   make / make check     every host test plus the source tree checks
+#   make / make check     every host test plus the source tree checks, and
+#                         the Media Engine program's build where the PSP SDK is
 #   make test-sanitize    the C tests again under ASan and UBSan
 #   make psp-build        the EBOOT (needs the PSP SDK)
 #   make package VERSION=x.y.z   build, check and zip a release
@@ -55,6 +56,8 @@ ARM_CORE_SOURCES = source/src/arm_decode.c source/src/arm_interp.c \
  source/src/arm_mips.c
 ARM_CORE_HEADERS = source/src/arm_core.h source/src/arm_ir.h \
  source/src/arm_mips.h
+HOST_TEST_GBA_PPU = $(HOST_BUILD_DIR)/test_gba_ppu
+HOST_TEST_GBA_PPU_LOG = $(HOST_BUILD_DIR)/test_gba_ppu_log
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_LINK_NET) $(HOST_TEST_LINK_CABLE) \
  $(HOST_TEST_ADHOC_PEER) \
@@ -69,7 +72,8 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE) $(HOST_TEST_FAST_FORWARD) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
- $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE)
+ $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_GBA_PPU) \
+ $(HOST_TEST_GBA_PPU_LOG)
 # The same C tests built with HOST_SANITIZE_FLAGS for make test-sanitize.
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_net \
@@ -95,14 +99,17 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_dynarec_worklist \
  $(HOST_SANITIZE_DIR)/test_sound_math \
  $(HOST_SANITIZE_DIR)/test_runtime_log \
- $(HOST_SANITIZE_DIR)/test_arm_core
+ $(HOST_SANITIZE_DIR)/test_arm_core \
+ $(HOST_SANITIZE_DIR)/test_gba_ppu \
+ $(HOST_SANITIZE_DIR)/test_gba_ppu_log
 
 .PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
- check-core tree-check psp-build launcher-stub package artifact-smoke clean
+ check-core check-render tree-check media-engine-check psp-build \
+ launcher-stub package artifact-smoke clean
 
 all: check
 
-check: test tree-check
+check: test tree-check media-engine-check
 
 test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_CODEBREAKER)
@@ -131,6 +138,8 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_SOUND_MATH)
 	$(HOST_TEST_RUNTIME_LOG)
 	$(HOST_TEST_ARM_CORE)
+	$(HOST_TEST_GBA_PPU)
+	$(HOST_TEST_GBA_PPU_LOG)
 
 # Python tests. test_startup and test_browser_text also compile functions
 # cut out of main.c and gui.c with HOST_CC.
@@ -168,6 +177,8 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_sound_math
 	$(HOST_SANITIZE_DIR)/test_runtime_log
 	$(HOST_SANITIZE_DIR)/test_arm_core
+	$(HOST_SANITIZE_DIR)/test_gba_ppu
+	$(HOST_SANITIZE_DIR)/test_gba_ppu_log
 
 $(HOST_TEST_CODEBREAKER): tests/test_codebreaker.c source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_BUILD_DIR)
@@ -374,6 +385,22 @@ $(HOST_TEST_ARM_CORE): tests/test_arm_core.c $(ARM_CORE_SOURCES) \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_arm_core.c $(ARM_CORE_SOURCES) -o $@
 
+$(HOST_TEST_GBA_PPU): tests/test_gba_ppu.c source/src/gba_ppu.c \
+ source/src/gba_ppu.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_gba_ppu.c source/src/gba_ppu.c -o $@
+
+# The log test runs its reader on a second thread, as the Media Engine.
+GBA_PPU_LOG_SOURCES = tests/test_gba_ppu_log.c source/src/gba_ppu_log.c \
+ source/src/gba_ppu.c
+GBA_PPU_LOG_HEADERS = source/src/gba_ppu_log.h source/src/gba_ppu.h
+
+$(HOST_TEST_GBA_PPU_LOG): $(GBA_PPU_LOG_SOURCES) $(GBA_PPU_LOG_HEADERS)
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -pthread -Wall -Wextra -Werror -Isource/src \
+	 $(GBA_PPU_LOG_SOURCES) -o $@
+
 $(HOST_SANITIZE_DIR)/test_codebreaker: tests/test_codebreaker.c \
  source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_SANITIZE_DIR)
@@ -579,6 +606,18 @@ $(HOST_SANITIZE_DIR)/test_arm_core: tests/test_arm_core.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_arm_core.c $(ARM_CORE_SOURCES) -o $@
 
+$(HOST_SANITIZE_DIR)/test_gba_ppu: tests/test_gba_ppu.c \
+ source/src/gba_ppu.c source/src/gba_ppu.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_gba_ppu.c source/src/gba_ppu.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_gba_ppu_log: $(GBA_PPU_LOG_SOURCES) \
+ $(GBA_PPU_LOG_HEADERS)
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -pthread -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src $(GBA_PPU_LOG_SOURCES) -o $@
+
 # Optional gates outside make check: the CBMC proof needs CBMC, the ROM link
 # trade needs mGBA plus your own FireRed ROM, BIOS and save, and races Mario
 # Kart: Super Circuit as well when MKSC names its ROM. check-core runs the
@@ -593,8 +632,21 @@ check-rom-link:
 check-core:
 	sh scripts/check-core.sh
 
+# Compares gba_ppu with mGBA's renderer on your own ROMs; see the script.
+check-render:
+	sh scripts/check-render.sh
+
 tree-check:
 	sh scripts/check-tree.sh
+
+# The Media Engine program (source/prx/media_engine) must build and fit the
+# Media Engine's instruction cache.
+media-engine-check:
+	@if command -v psp-config >/dev/null 2>&1; then \
+	  $(MAKE) -C source/prx/media_engine renderer.bin; \
+	else \
+	  echo "Media Engine program check skipped: no PSP SDK"; \
+	fi
 
 psp-build:
 	$(MAKE) -C source

@@ -35,6 +35,7 @@
 #include "psp_adhoc.h"
 #include "runtime_log_psp.h"
 #include "sound_math.h"
+#include "video_me.h"
 
 // Main thread params; on the PSP a lower priority number runs first.
 // 32 is 0x20, so MAIN_LINK_LOCKSTEP_PRIORITY (0x77) is lower.
@@ -173,6 +174,8 @@ static u64 gba_link_yield_total_us = 0;
 static u32 gba_link_frames = 0;
 static u32 gba_link_frames_drawn = 0;
 static u64 gba_link_vblank_wait_us = 0;
+/* The Exact renderer's counters when the link opened. */
+static VideoMeCounters gba_link_video_start;
 /* The emulator thread, whose priority drops while a lockstep link is
    connected, and the priority it has now. */
 static SceUID gba_link_thread = -1;
@@ -537,6 +540,33 @@ static void main_link_log_state(void)
    main_adhoc_state_value());
 }
 
+/* The Exact renderer's counters since since, as LINK_COUNTERS records 9
+   to 11 (tools/decode_runtime_log.py names them): frames the Media Engine
+   drew, frames shown late and its busy time per frame; the main
+   processor's time per frame in the log's hooks, log words per frame and
+   full resends; whether it draws on the Media Engine (VideoMeState) and
+   the cause and address of an exception there. */
+static void main_log_video_counters(const VideoMeCounters *since)
+{
+  VideoMeCounters now;
+  VideoMeState state = video_me_state();
+  u32 frames, sampled, cause, address;
+
+  video_me_counters(&now);
+  video_me_fault(&cause, &address);
+  frames = now.frames - since->frames;
+  sampled = now.log_frames - since->log_frames;
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 9,
+   now.me_frames - since->me_frames, now.late_frames - since->late_frames,
+   frames ? (u32)((now.me_busy_us - since->me_busy_us) / frames) : 0);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 10,
+   sampled ? (u32)((now.log_us - since->log_us) / sampled) : 0,
+   frames ? (now.log_words - since->log_words) / frames : 0,
+   now.resends - since->resends);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 11,
+   (u32)state, cause, address);
+}
+
 /* Ends the session without telling the peer (main_link_disconnect sends
    the goodbye): fails any SIO transfer, logs counters, stops the network. */
 static void main_link_close(MainLinkEnd reason)
@@ -583,6 +613,7 @@ static void main_link_close(MainLinkEnd reason)
    gba_link_frames, gba_link_frames_drawn,
    gba_link_vblank_wait_us > UINT_MAX ? UINT_MAX :
     (u32)gba_link_vblank_wait_us);
+  main_log_video_counters(&gba_link_video_start);
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_ERROR, cpu_ticks,
    (u8)reason, (u32)gba_link.status, (u32)psp_adhoc_last_error(),
    main_adhoc_phase_value());
@@ -743,6 +774,7 @@ static int main_link_start(int host)
   gba_link_frames = 0;
   gba_link_frames_drawn = 0;
   gba_link_vblank_wait_us = 0;
+  video_me_counters(&gba_link_video_start);
   gba_link_thread = sceKernelGetThreadId();
   gba_link_priority_result = 0;
   gba_link_priority_seen = 0;
@@ -1058,6 +1090,11 @@ u32 update_gba(void)
             TRANSFER_HBLANK_DMA(i);
           }
         }
+        else
+        {
+          // The Media Engine may have finished the picture by now
+          video_present_poll();
+        }
 
         // H-blank interrupts do occur during v-blank (unlike hdma, which does not)
         if ((dispstat & 0x10) != 0)
@@ -1103,7 +1140,7 @@ u32 update_gba(void)
             if(perf_monitor_active())
               renderer_start = sceKernelGetSystemTimeLow();
 
-            (*update_screen)();
+            video_present();
 
             if(renderer_start != 0)
               perf_monitor_record_renderer_frame(
@@ -1119,6 +1156,7 @@ u32 update_gba(void)
           affine_reference_y[0] = (s32)(ADDRESS32(io_registers, 0x2C) << 4) >> 4;
           affine_reference_x[1] = (s32)(ADDRESS32(io_registers, 0x38) << 4) >> 4;
           affine_reference_y[1] = (s32)(ADDRESS32(io_registers, 0x3C) << 4) >> 4;
+          video_start_vblank();
 
           for (i = 0; i < 4; i++)
           {
@@ -1150,7 +1188,10 @@ u32 update_gba(void)
           __draw_volume_status(draw_this_frame);
 
           if (draw_this_frame != 0)
+          {
+            video_present_finish();
             flip_screen(option_psp_vsync);
+          }
 
           video_adaptive_frame_complete(draw_this_frame == 0, 0);
 
@@ -1339,10 +1380,12 @@ static void synchronize(void)
     if (get_pad_input(PSP_CTRL_HOLD) != 0)
       print_string(FONT_KEY_ICON, 6, 258, color_batt_low, BG_NO_FILL);
 
-    // fps
+    // fps, and where the Exact renderer draws
     if (psp_fps_debug != 0)
     {
       char print_buffer[24];
+      const char *drawn_on = option_video_renderer != VIDEO_RENDERER_PPU ?
+       "" : video_me_drawing() ? " ME" : " CPU";
 
       if(option_screen_scale == SCALED_16X9_AUTO)
       {
@@ -1350,13 +1393,13 @@ static void synchronize(void)
          video_active_quality() == VIDEO_ADAPTIVE_QUALITY_SHARP ?
           "SHARP" : "CRISP";
 
-        sprintf(print_buffer, "%02ld(%02ld) %s", (long)fps,
-         (long)frames_drawn, quality);
+        sprintf(print_buffer, "%02ld(%02ld) %s%s", (long)fps,
+         (long)frames_drawn, quality, drawn_on);
       }
       else
       {
-        sprintf(print_buffer, "%02ld(%02ld)", (long)fps,
-         (long)frames_drawn);
+        sprintf(print_buffer, "%02ld(%02ld)%s", (long)fps,
+         (long)frames_drawn, drawn_on);
       }
       print_string(print_buffer, 0, 0, COLOR15_WHITE, COLOR15_BLACK);
     }
@@ -1421,7 +1464,9 @@ static void synchronize(void)
   virtual_frame_count++;
 
   // Behind real time: auto frameskip skips up to used_frameskip_value
-  // frames in a row, then resyncs. Ahead: wait for the PSP VBlank.
+  // frames in a row, then resyncs; not while the Media Engine draws, as
+  // a skipped frame would save this processor next to nothing. Ahead:
+  // wait for the PSP VBlank.
   link_slept = main_link_slept();
   if (real_frame_count >= virtual_frame_count)
   {
@@ -1431,7 +1476,8 @@ static void synchronize(void)
 
     if ((real_frame_count > virtual_frame_count) &&
         (used_frameskip_type == FRAMESKIP_AUTO) &&
-        (num_skipped_frames < used_frameskip_value))
+        (num_skipped_frames < used_frameskip_value) &&
+        !video_me_drawing())
     {
       skip_next_frame = 1;
       num_skipped_frames++;
@@ -1514,6 +1560,7 @@ static void init_main(void)
   // (init_memory sets VCOUNT to 126)
   video_count = option_boot_mode ? 960 : 272;
   reg[EXECUTE_CYCLES] = video_count;
+  video_reset();
   video_dispatch_frame_begin();
 
   irq_ticks = 0;
@@ -1787,6 +1834,11 @@ void quit(void)
 
   update_backup_immediately();
   save_config_file();
+  {
+    static const VideoMeCounters session_start;
+
+    main_log_video_counters(&session_start);
+  }
   runtime_log_psp_main(RUNTIME_LOG_EVENT_SESSION_END, cpu_ticks, 0,
    (u32)gba_link.status, (u32)gba_link_end, 0);
   runtime_log_psp_flush(RUNTIME_LOG_FLUSH_EXIT);
@@ -1794,6 +1846,7 @@ void quit(void)
   sound_term();
   memory_term();
   video_term();
+  video_me_stop();
 
   set_cpu_clock(PSP_CLOCK_222);
 
