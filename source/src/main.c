@@ -578,6 +578,17 @@ static void main_log_video_counters(const VideoMeCounters *since)
    (u32)state, cause, address);
 }
 
+/* The CPU core running and, for the new one, its compiled blocks and code
+   flushes, as LINK_COUNTERS record 12. */
+static void main_log_core_counters(void)
+{
+  u32 blocks, flushes;
+
+  arm_gba_counters(&blocks, &flushes);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 12,
+   main_cpu_core, blocks, flushes);
+}
+
 /* Ends the session without telling the peer (main_link_disconnect sends
    the goodbye): fails any SIO transfer, logs counters, stops the network. */
 static void main_link_close(MainLinkEnd reason)
@@ -625,6 +636,7 @@ static void main_link_close(MainLinkEnd reason)
    gba_link_vblank_wait_us > UINT_MAX ? UINT_MAX :
     (u32)gba_link_vblank_wait_us);
   main_log_video_counters(&gba_link_video_start);
+  main_log_core_counters();
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_ERROR, cpu_ticks,
    (u8)reason, (u32)gba_link.status, (u32)psp_adhoc_last_error(),
    main_adhoc_phase_value());
@@ -1888,6 +1900,7 @@ void quit(void)
 
     main_log_video_counters(&session_start);
   }
+  main_log_core_counters();
   runtime_log_psp_main(RUNTIME_LOG_EVENT_SESSION_END, cpu_ticks, 0,
    (u32)gba_link.status, (u32)gba_link_end, 0);
   runtime_log_psp_flush(RUNTIME_LOG_FLUSH_EXIT);

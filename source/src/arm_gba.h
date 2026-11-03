@@ -30,6 +30,11 @@ void arm_gba_save_registers(void);
    translated from it. Does nothing while the Classic core runs. */
 void arm_gba_written(u32 address, u32 size);
 
+/* Blocks the new core compiled and times it threw all its code away (a
+   full code buffer, a WAITCNT change, a reset or a loaded state) since it
+   started; both 0 while the Classic core runs. */
+void arm_gba_counters(u32 *blocks, u32 *flushes);
+
 /* The address where CodeBreaker cheats run (0: once per frame instead);
    the code there runs process_cheats_at_hook() first. */
 void arm_gba_set_cheat_hook(u32 address);

@@ -301,6 +301,12 @@ void arm_gba_written(u32 address, u32 size)
     arm_core_invalidate(&jit->core, address, size);
 }
 
+void arm_gba_counters(u32 *blocks, u32 *flushes)
+{
+  *blocks = main_cpu_core == CPU_CORE_NEW ? jit->stats.blocks : 0;
+  *flushes = main_cpu_core == CPU_CORE_NEW ? jit->stats.flushes : 0;
+}
+
 void arm_gba_set_cheat_hook(u32 address)
 {
   cheat_hook = address;

@@ -188,6 +188,10 @@ class RuntimeLogDecoderTests(unittest.TestCase):
             decoder.describe({"event": "rom-open", "flags": 0,
                               "values": [0x42505249, 16777216, 0]}),
             "code=BPRI revision=0 size=16777216 core=classic")
+        self.assertEqual(
+            decoder.describe({"event": "link-counters", "flags": 12,
+                              "values": [1, 8116, 2]}),
+            "cpu-core=new blocks-compiled=8116 code-flushes=2")
 
     def test_exact_renderer_names_match_the_c_enum(self):
         header = (Path(__file__).parents[1] / "source" / "src" /

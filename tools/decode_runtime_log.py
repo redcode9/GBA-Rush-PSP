@@ -237,6 +237,11 @@ def describe(record: dict[str, Any]) -> str:
             f"exact-renderer={_name(EXACT_RENDERER, value0)} "
             f"me-fault-cause=0x{value1:08X} me-fault-address=0x{value2:08X}"
         )
+    if event == "link-counters" and flags == 12:
+        return (
+            f"cpu-core={_name(CPU_CORES, value0)} blocks-compiled={value1} "
+            f"code-flushes={value2}"
+        )
     if event == "link-counters":
         return f"{LINK_COUNTERS.get(flags, f'counters-{flags}')}={value0}/{value1}/{value2}"
     if event == "menu-presence":
