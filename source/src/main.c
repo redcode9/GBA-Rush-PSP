@@ -174,6 +174,8 @@ static u64 gba_link_yield_total_us = 0;
 static u32 gba_link_frames = 0;
 static u32 gba_link_frames_drawn = 0;
 static u64 gba_link_vblank_wait_us = 0;
+/* The Exact renderer's counters when the link opened. */
+static VideoMeCounters gba_link_video_start;
 /* The emulator thread, whose priority drops while a lockstep link is
    connected, and the priority it has now. */
 static SceUID gba_link_thread = -1;
@@ -538,6 +540,33 @@ static void main_link_log_state(void)
    main_adhoc_state_value());
 }
 
+/* The Exact renderer's counters since since, as LINK_COUNTERS records 9
+   to 11 (tools/decode_runtime_log.py names them): frames the Media Engine
+   drew, frames shown late and its busy time per frame; the main
+   processor's time per frame in the log's hooks, log words per frame and
+   full resends; whether it draws on the Media Engine (VideoMeState) and
+   the cause and address of an exception there. */
+static void main_log_video_counters(const VideoMeCounters *since)
+{
+  VideoMeCounters now;
+  VideoMeState state = video_me_state();
+  u32 frames, sampled, cause, address;
+
+  video_me_counters(&now);
+  video_me_fault(&cause, &address);
+  frames = now.frames - since->frames;
+  sampled = now.log_frames - since->log_frames;
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 9,
+   now.me_frames - since->me_frames, now.late_frames - since->late_frames,
+   frames ? (u32)((now.me_busy_us - since->me_busy_us) / frames) : 0);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 10,
+   sampled ? (u32)((now.log_us - since->log_us) / sampled) : 0,
+   frames ? (now.log_words - since->log_words) / frames : 0,
+   now.resends - since->resends);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 11,
+   (u32)state, cause, address);
+}
+
 /* Ends the session without telling the peer (main_link_disconnect sends
    the goodbye): fails any SIO transfer, logs counters, stops the network. */
 static void main_link_close(MainLinkEnd reason)
@@ -584,6 +613,7 @@ static void main_link_close(MainLinkEnd reason)
    gba_link_frames, gba_link_frames_drawn,
    gba_link_vblank_wait_us > UINT_MAX ? UINT_MAX :
     (u32)gba_link_vblank_wait_us);
+  main_log_video_counters(&gba_link_video_start);
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_ERROR, cpu_ticks,
    (u8)reason, (u32)gba_link.status, (u32)psp_adhoc_last_error(),
    main_adhoc_phase_value());
@@ -744,6 +774,7 @@ static int main_link_start(int host)
   gba_link_frames = 0;
   gba_link_frames_drawn = 0;
   gba_link_vblank_wait_us = 0;
+  video_me_counters(&gba_link_video_start);
   gba_link_thread = sceKernelGetThreadId();
   gba_link_priority_result = 0;
   gba_link_priority_seen = 0;
@@ -1801,6 +1832,11 @@ void quit(void)
 
   update_backup_immediately();
   save_config_file();
+  {
+    static const VideoMeCounters session_start;
+
+    main_log_video_counters(&session_start);
+  }
   runtime_log_psp_main(RUNTIME_LOG_EVENT_SESSION_END, cpu_ticks, 0,
    (u32)gba_link.status, (u32)gba_link_end, 0);
   runtime_log_psp_flush(RUNTIME_LOG_FLUSH_EXIT);

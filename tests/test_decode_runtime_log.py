@@ -6,6 +6,7 @@ payload CRC goes at byte 56 and the header CRC (over bytes 0-59) at 60.
 
 import binascii
 import importlib.util
+import re
 import struct
 import unittest
 from pathlib import Path
@@ -153,6 +154,15 @@ class RuntimeLogDecoderTests(unittest.TestCase):
             "adhoc-error=-2143222007/0x80410709 adhoc-phase=send")
         self.assertEqual(counters, "rtt-us/rtt-max-us/resends=6200/41000/3")
         self.assertEqual(
+            decoder.describe({"event": "link-counters", "flags": 9,
+                              "values": [3600, 2, 4100]}),
+            "me-frames/frames-late/me-busy-us-per-frame=3600/2/4100")
+        self.assertEqual(
+            decoder.describe({"event": "link-counters", "flags": 11,
+                              "values": [1, 0, 0]}),
+            "exact-renderer=media-engine me-fault-cause=0x00000000 "
+            "me-fault-address=0x00000000")
+        self.assertEqual(
             pause, "mode=lockstep wait=125.000ms status=connected backlog=4")
 
     # The decoder's name tables must follow the C enum order.
@@ -164,6 +174,14 @@ class RuntimeLogDecoderTests(unittest.TestCase):
             self.assertIn(f"LINK_CABLE_{name}", header)
         self.assertEqual(len(decoder.LINK_STATUS), 6)
         self.assertEqual(decoder.LINK_MODES, ["none", "lockstep", "pokemon"])
+
+    def test_exact_renderer_names_match_the_c_enum(self):
+        header = (Path(__file__).parents[1] / "source" / "src" /
+                  "video_me.h").read_text()
+        states = re.findall(r"^\s+(VIDEO_ME_[A-Z_]+)", header, re.M)
+        self.assertEqual(len(states), len(decoder.EXACT_RENDERER))
+        self.assertEqual(states[:2], ["VIDEO_ME_NOT_STARTED",
+                                      "VIDEO_ME_DRAWING"])
 
 
 if __name__ == "__main__":
