@@ -7,7 +7,7 @@
 
 # PSP build of the emulator (make psp-build from the repository root): the
 # PSPSDK build.mak rules turn TARGET into EBOOT.PBP, and "all" also builds
-# the exception handler PRX that ships next to it.
+# the exception handler and Media Engine PRXs that ship next to it.
 
 .DEFAULT_GOAL := all
 
@@ -108,3 +108,5 @@ LDFLAGS += -flto
 all: $(EXTRA_TARGETS)
 	@$(MAKE) -C prx/exceptionHandler/prx
 	@cp prx/exceptionHandler/prx/exception.prx .
+	@$(MAKE) -C prx/media_engine
+	@cp prx/media_engine/media_engine.prx .

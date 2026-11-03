@@ -1,5 +1,6 @@
 # Host build of the tests and checks; the PSP build lives in source/Makefile.
-#   make / make check     every host test plus the source tree checks
+#   make / make check     every host test plus the source tree checks, and
+#                         the Media Engine program's build where the PSP SDK is
 #   make test-sanitize    the C tests again under ASan and UBSan
 #   make psp-build        the EBOOT (needs the PSP SDK)
 #   make package VERSION=x.y.z   build, check and zip a release
@@ -95,11 +96,12 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_ppu_log
 
 .PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
- check-render tree-check psp-build launcher-stub package artifact-smoke clean
+ check-render tree-check media-engine-check psp-build launcher-stub package \
+ artifact-smoke clean
 
 all: check
 
-check: test tree-check
+check: test tree-check media-engine-check
 
 test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_CODEBREAKER)
@@ -609,6 +611,15 @@ check-render:
 
 tree-check:
 	sh scripts/check-tree.sh
+
+# The Media Engine program (source/prx/media_engine) must build and fit the
+# Media Engine's instruction cache.
+media-engine-check:
+	@if command -v psp-config >/dev/null 2>&1; then \
+	  $(MAKE) -C source/prx/media_engine renderer.bin; \
+	else \
+	  echo "Media Engine program check skipped: no PSP SDK"; \
+	fi
 
 psp-build:
 	$(MAKE) -C source
