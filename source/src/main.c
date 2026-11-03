@@ -19,11 +19,12 @@
  */
 
 /* Emulator entry point and main loop. update_gba is the hardware scheduler
-   the dynarec calls between slices (timers, LCD timing, DMA, IRQs); around it
+   the CPU core calls between slices (timers, LCD timing, DMA, IRQs); around it
    live frame pacing, startup, the PSP power and exit callbacks, and the
    link cable, fast-forward and benchmark glue used by gui.c and input.c. */
 
 #include <limits.h>
+#include <setjmp.h>
 
 #include <pspsysmem.h>
 
@@ -60,6 +61,7 @@ u32 option_sound_volume = 10;
 u32 option_stack_optimize = 1;
 u32 option_ram_dynarec_policy = RAM_DYNAREC_PARTIAL_WITH_REUSE;
 u32 option_video_renderer = VIDEO_RENDERER_NEW;
+u32 option_cpu_core = CPU_CORE_CLASSIC;
 u32 option_oam_hijacking_enabled = 0;
 u32 option_boot_mode = 0;
 u32 option_update_backup = 0;
@@ -260,7 +262,16 @@ u32 vblank_count = 0;
    flush the read-only one and clear the RAM block metadata instead. */
 static u8 caches_inited = 0;
 
+/* The CPU core running, and the one the last start or reset chose from
+   option_cpu_core. When they differ, update_gba returns to main_run_cpu
+   through main_cpu_core_switch once the menu closes. */
+u32 main_cpu_core = CPU_CORE_CLASSIC;
+static u32 main_cpu_core_chosen = CPU_CORE_CLASSIC;
+static jmp_buf main_cpu_core_switch;
+
 static void cpu_interrupt(void);
+static void main_follow_cpu_core(void);
+static void main_run_cpu(void);
 
 int main(int argc, char *argv[]);
 int user_main(int argc, char *argv[]);
@@ -1131,7 +1142,10 @@ u32 update_gba(void)
 
           // The menu or a state load replaced the machine; drop this pass
           if (update_input() != 0)
+          {
+            main_follow_cpu_core();
             continue;
+          }
 
           if (!skip_next_frame)
           {
@@ -1228,7 +1242,10 @@ u32 update_gba(void)
     {
       gba_link_service_ticks = cpu_ticks;
       if(main_link_service(&irq_raised))
+      {
+        main_follow_cpu_core();
         continue;
+      }
     }
 
     reg[EXECUTE_CYCLES] = video_count;
@@ -1265,7 +1282,17 @@ u32 update_gba(void)
       irq_raised = IRQ_NONE;
     }
 
-    if ((pIO_REG(REG_IF) != 0) && GBA_IME_STATE && ARM_IRQ_STATE)
+    if (main_cpu_core == CPU_CORE_NEW)
+    {
+      // The new core takes interrupts itself (arm_gba.c). An enabled
+      // request ends a halt whatever IME and the CPSR say, as on the GBA;
+      // only serial, keypad and game pak IRQs end STOP.
+      u16 irq_mask = (reg[CPU_HALT_STATE] == CPU_STOP) ? 0x3080 : 0x3FFF;
+
+      if ((pIO_REG(REG_IE) & pIO_REG(REG_IF) & irq_mask) != 0)
+        reg[CPU_HALT_STATE] = CPU_ACTIVE;
+    }
+    else if ((pIO_REG(REG_IF) != 0) && GBA_IME_STATE && ARM_IRQ_STATE)
     {
       // Only serial, keypad and game pak IRQs wake the GBA from STOP
       u16 irq_mask = (reg[CPU_HALT_STATE] == CPU_STOP) ? 0x3080 : 0x3FFF;
@@ -1807,7 +1834,7 @@ int user_main(int argc, char *argv[])
     sound_pause = 0;
 
     // We'll never actually return from here.
-    execute_arm_translate(reg[EXECUTE_CYCLES]);
+    main_run_cpu();
   }
 
   quit();
@@ -1818,6 +1845,27 @@ int main(int argc, char *argv[])
 {
     user_main(argc, argv);
     return 0;
+}
+
+
+/* Runs the game on the core the last start or reset chose; never returns.
+   Each core runs from reg[] until update_gba finds a reset that chose the
+   other one and jumps back here (main_follow_cpu_core). */
+static void main_run_cpu(void)
+{
+  setjmp(main_cpu_core_switch);
+  main_cpu_core = main_cpu_core_chosen;
+  if(main_cpu_core == CPU_CORE_NEW)
+    arm_gba_run();
+  execute_arm_translate(reg[EXECUTE_CYCLES]);
+}
+
+/* After the menu: a reset that chose the other core leaves the running
+   one, whose call stack is dropped; reg[] already holds the new game. */
+static void main_follow_cpu_core(void)
+{
+  if(main_cpu_core != main_cpu_core_chosen)
+    longjmp(main_cpu_core_switch, 1);
 }
 
 
@@ -1888,6 +1936,7 @@ void reset_gba(void)
   clear_texture(0x7FFF);
   init_memory();
   init_main();
+  main_cpu_core_chosen = option_cpu_core;
   if(gamepak_file_size >= 0xC0u)
   {
     runtime_log_psp_set_rom(gamepak_header + 0xAC, gamepak_header[0xBC],

@@ -2574,8 +2574,10 @@ u32 read_open_memory32(u32 address)
 }
 
 
-// Stores for C code (cheats), aligned down to their size; addresses of
-// 0x10000000 and above are ignored. Returns the handler's CPU_ALERT_* bits.
+// Stores for C code (cheats) and the new core's bus, aligned down to their
+// size; addresses of 0x10000000 and above are ignored. Returns the
+// handler's CPU_ALERT_* bits. A store to work RAM drops the new core's
+// code there (arm_gba_written).
 CPU_ALERT_TYPE write_memory8(u32 address, u8 value)
 {
   u32 region = address >> 24;
@@ -2583,6 +2585,7 @@ CPU_ALERT_TYPE write_memory8(u32 address, u8 value)
   if ((region & 0xF0) != 0)
     return CPU_ALERT_NONE;
 
+  arm_gba_written(address, 1);
   return (*mem_write8[region])(address, value);
 }
 
@@ -2594,6 +2597,7 @@ CPU_ALERT_TYPE write_memory16(u32 address, u16 value)
   if ((region & 0xF0) != 0)
     return CPU_ALERT_NONE;
 
+  arm_gba_written(address & ~0x01, 2);
   return (*mem_write16[region])(address & ~0x01, value);
 }
 
@@ -2605,6 +2609,7 @@ CPU_ALERT_TYPE write_memory32(u32 address, u32 value)
   if ((region & 0xF0) != 0)
     return CPU_ALERT_NONE;
 
+  arm_gba_written(address & ~0x03, 4);
   return (*mem_write32[region])(address & ~0x03, value);
 }
 
@@ -2631,6 +2636,19 @@ CPU_ALERT_TYPE write_memory32(u32 address, u32 value)
     return_value |= (*dma_write##type[dest_ptr >> 24])(dest_ptr, read_value); \
     dest_ptr += dest_increment;                                               \
   }                                                                           \
+
+// The units a transfer stored from first until next (one step past the
+// last), in either direction: the new core drops code there.
+static void dma_written(u32 first, u32 next, s32 increment, u32 unit)
+{
+  u32 last = next - increment;
+
+  first &= ~(unit - 1);
+  if (first <= last)
+    arm_gba_written(first, last - first + unit);
+  else
+    arm_gba_written(last, first - last + unit);
+}
 
 // Runs a whole DMA transfer at once, then reloads or stops the channel.
 // Returns CPU_ALERT_DMA plus alerts raised by the writes (SMC) and the
@@ -2688,6 +2706,9 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
 
     reg[CPU_DMA_LAST] = read_value;
   }
+
+  dma_written(dma->dest_address, dest_ptr, dest_increment,
+   dma->length_type == DMA_16BIT ? 2 : 4);
 
 
   // Open-bus reads now return the last DMA value (see read8_open).

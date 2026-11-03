@@ -42,7 +42,6 @@ typedef uint32_t u32;
 #define COLOR32_BLACK 0
 #define CONFIRMATION_QUIT 1
 #define CONFIRMATION_CONT 2
-#define EXECUTE_CYCLES 0
 #define MSG_ERR_LOAD_GAMEPACK 0
 #define MSG_AUTO_SAVESTATE_LOAD_PROMPT 1
 const char *messages[] = {"load error", "restore state"};
@@ -81,8 +80,8 @@ int sceImposeSetHomePopup(u32 p) { popup_value = p; return 0; }
 void set_cpu_clock(u32 c) { (void)c; }
 void sceDisplayWaitVblankStart(void) {}
 void video_resolution_small(void) {}
-void execute_arm_translate(u32 c) {
-  assert(c == (menu_result ? 0xFEEDU : 0xCAFEU)); execute_calls++;
+void main_run_cpu(void) {
+  assert(reg[0] == (menu_result ? 0xFEEDU : 0xCAFEU)); execute_calls++;
 }
 int main_link_active(void) { return active_link; }
 u32 auto_savestate_exists(void) { return state_exists; }

@@ -168,6 +168,7 @@ typedef u32 FIXED08_24;
 #include "gui.h"
 
 #include "cpu.h"
+#include "arm_gba.h"
 #include "memory.h"
 #include "video.h"
 #include "psp_video.h"
