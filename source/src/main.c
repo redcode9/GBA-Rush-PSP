@@ -1380,10 +1380,12 @@ static void synchronize(void)
     if (get_pad_input(PSP_CTRL_HOLD) != 0)
       print_string(FONT_KEY_ICON, 6, 258, color_batt_low, BG_NO_FILL);
 
-    // fps
+    // fps, and where the Exact renderer draws
     if (psp_fps_debug != 0)
     {
       char print_buffer[24];
+      const char *drawn_on = option_video_renderer != VIDEO_RENDERER_PPU ?
+       "" : video_me_drawing() ? " ME" : " CPU";
 
       if(option_screen_scale == SCALED_16X9_AUTO)
       {
@@ -1391,13 +1393,13 @@ static void synchronize(void)
          video_active_quality() == VIDEO_ADAPTIVE_QUALITY_SHARP ?
           "SHARP" : "CRISP";
 
-        sprintf(print_buffer, "%02ld(%02ld) %s", (long)fps,
-         (long)frames_drawn, quality);
+        sprintf(print_buffer, "%02ld(%02ld) %s%s", (long)fps,
+         (long)frames_drawn, quality, drawn_on);
       }
       else
       {
-        sprintf(print_buffer, "%02ld(%02ld)", (long)fps,
-         (long)frames_drawn);
+        sprintf(print_buffer, "%02ld(%02ld)%s", (long)fps,
+         (long)frames_drawn, drawn_on);
       }
       print_string(print_buffer, 0, 0, COLOR15_WHITE, COLOR15_BLACK);
     }
