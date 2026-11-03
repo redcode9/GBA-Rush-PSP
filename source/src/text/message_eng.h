@@ -1156,5 +1156,13 @@
   "Silent",
   // MSG_FF_AUDIO_ACCELERATED
   "Accelerated",
+  // MSG_OPTION_MENU_CPU_CORE
+  "CPU core         : %s",
+  // MSG_TOOLTIP_CPU_CORE
+  "Classic: the dynarec GBA Rush has always used.\nNew: rewritten core, matches mGBA instruction by instruction;\n     being tested.\nTakes effect when a game starts or resets.",
+  // MSG_CPU_CORE_CLASSIC
+  "Classic",
+  // MSG_CPU_CORE_NEW
+  "New",
 
 },

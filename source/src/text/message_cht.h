@@ -1159,5 +1159,13 @@
   "Silent",
   // MSG_FF_AUDIO_ACCELERATED
   "Accelerated",
+  // MSG_OPTION_MENU_CPU_CORE
+  "CPU 核心   : %s",
+  // MSG_TOOLTIP_CPU_CORE
+  "經典: 一直以來使用的動態重編譯器.\n新: 重新編寫的核心，與 mGBA 逐條指令一致；仍在測試中.\n在遊戲啟動或重置時生效.",
+  // MSG_CPU_CORE_CLASSIC
+  "經典",
+  // MSG_CPU_CORE_NEW
+  "新",
 
 },

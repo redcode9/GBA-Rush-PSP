@@ -1158,5 +1158,13 @@
   "Silent",
   // MSG_FF_AUDIO_ACCELERATED
   "Accelerated",
+  // MSG_OPTION_MENU_CPU_CORE
+  "CPUコア   : %s",
+  // MSG_TOOLTIP_CPU_CORE
+  "クラシック: これまでのダイナレックです.\n新しい: 書き直したコアで、mGBAと1命令ずつ同じ動作です.テスト中です.\nゲームの起動またはリセット時に適用されます.",
+  // MSG_CPU_CORE_CLASSIC
+  "クラシック",
+  // MSG_CPU_CORE_NEW
+  "新しい",
 
 },

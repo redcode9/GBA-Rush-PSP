@@ -85,6 +85,7 @@ static void test_defaults_and_versioned_round_trip(void)
   assert(original.fast_forward_speed == 2);
   assert(original.fast_forward_presentation == 1);
   assert(original.fast_forward_audio == 0);
+  assert(original.cpu_core == 0);
   assert(original.gamepad[0] == 11);
 
   original.screen_filter = 0;
@@ -98,6 +99,7 @@ static void test_defaults_and_versioned_round_trip(void)
   original.fast_forward_speed = 1;
   original.fast_forward_presentation = 2;
   original.fast_forward_audio = 1;
+  original.cpu_core = 1;
 
   assert(config_model_encode(&original, encoded, sizeof(encoded), &written));
   assert(written == CONFIG_MODEL_ENCODED_SIZE);
@@ -145,6 +147,38 @@ static void test_previous_versioned_migration(void)
   assert(decoded.fast_forward_speed == 2);
   assert(decoded.fast_forward_presentation == 1);
   assert(decoded.fast_forward_audio == 0);
+  assert(decoded.cpu_core == 0);
+}
+
+/* A version 2 file (1.4.x) carries 45 values: the CPU core that version 3
+   added decodes as Classic, the values it has are kept. */
+static void test_version_2_migration(void)
+{
+  enum { previous_count = 45, previous_size = 16 + previous_count * 4 };
+  uint8_t encoded[previous_size];
+  uint8_t current[CONFIG_MODEL_ENCODED_SIZE];
+  ConfigModel model;
+  ConfigModel decoded;
+  size_t written;
+  size_t i;
+
+  config_model_defaults(&model);
+  model.fast_forward_audio = 1;
+  model.cpu_core = 1;
+  assert(config_model_encode(&model, current, sizeof(current), &written));
+  memset(encoded, 0, sizeof(encoded));
+  memcpy(encoded, "GBRC", 4);
+  write_u16(encoded + 4, 2);
+  write_u16(encoded + 6, previous_count);
+  write_u32(encoded + 12, previous_count * 4);
+  for(i = 0; i < previous_count; i++)
+    memcpy(encoded + 16 + i * 4, current + 16 + i * 4, 4);
+  write_u32(encoded + 8, config_checksum(encoded, sizeof(encoded)));
+
+  assert(config_model_decode(encoded, sizeof(encoded), &decoded) ==
+   CONFIG_MODEL_DECODE_VERSIONED);
+  assert(decoded.fast_forward_audio == 1);
+  assert(decoded.cpu_core == 0);
 }
 
 /* Out-of-range fast-forward values reset only themselves to the default;
@@ -353,6 +387,7 @@ int main(void)
 {
   test_defaults_and_versioned_round_trip();
   test_previous_versioned_migration();
+  test_version_2_migration();
   test_fast_forward_fields_fall_back_independently();
   test_current_binary_migration_and_field_validation();
   test_older_binary_layouts();
