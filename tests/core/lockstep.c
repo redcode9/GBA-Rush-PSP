@@ -40,6 +40,9 @@
  *                          sound mixer's share, the backend's predictors
  *   --dump KEY             at the end, the IR and MIPS words of the block
  *                          at KEY (hex pc, | 1 for Thumb)
+ *   --unaligned-ram        work RAM at addresses not aligned to its size,
+ *                          as GBA Rush's arrays are (the backend's longer
+ *                          address form)
  */
 
 #include <fcntl.h>
@@ -1316,6 +1319,7 @@ int main(int argc, char **argv)
 #ifdef LOCKSTEP_JIT
   int use_jit = 0;
   int count = 0;
+  int unaligned_ram = 0;
   uint32_t dump = 0;
 #endif
 
@@ -1347,6 +1351,8 @@ int main(int argc, char **argv)
       use_jit = 1;
     else if(!strcmp(argv[arg], "--count"))
       count = 1;
+    else if(!strcmp(argv[arg], "--unaligned-ram"))
+      unaligned_ram = 1;
     else if(!strcmp(argv[arg], "--dump") && arg + 1 < argc)
       dump = (uint32_t)strtoul(argv[++arg], NULL, 16);
 #endif
@@ -1376,10 +1382,12 @@ int main(int argc, char **argv)
     code = mips_unicorn_alloc(JIT_CODE_BYTES);
     mips_unicorn_map(jit, sizeof(ArmMips), 0x10000000u);
     mips_unicorn_map(code, JIT_CODE_BYTES, 0x08800000u);
-    /* Work RAM and ROM at addresses aligned to their size, as the PSP
-       build should allocate them. */
-    mips_unicorn_map(gba->memory.wram, 0x40000, 0x0A000000u);
-    mips_unicorn_map(gba->memory.iwram, 0x8000, 0x0A040000u);
+    /* Work RAM and ROM at addresses aligned to their size, which the
+       backend reaches in fewer instructions; GBA Rush's work RAM is not. */
+    mips_unicorn_map(gba->memory.wram, 0x40000,
+     unaligned_ram ? 0x0A001000u : 0x0A000000u);
+    mips_unicorn_map(gba->memory.iwram, 0x8000,
+     unaligned_ram ? 0x0A043000u : 0x0A040000u);
     mips_unicorn_map(gba->memory.rom, gba->memory.romSize, 0x0C000000u);
     map_pages(gba->video.palette, 0x400, 0x0B000000u);
     map_pages(gba->video.oam.raw, 0x400, 0x0B100000u);
