@@ -132,6 +132,16 @@ SceUID gamepak_file_large = GAMEPAK_FILE_NONE;
 // If OAM is written to:
 u32 oam_update = 1;
 
+u8 video_dirty[1568];
+u32 video_dirty_groups[13];
+
+// Marks offset, in video_dirty's numbering, as written.
+#define VIDEO_MARK_DIRTY(offset)                                              \
+{                                                                             \
+  video_dirty[(offset) >> 6] = 1;                                             \
+  ((u8 *)video_dirty_groups)[(offset) >> 11] = 1;                             \
+}                                                                             \
+
 
 // RTC
 typedef enum
@@ -1002,6 +1012,7 @@ static CPU_ALERT_TYPE write32_io_registers(u32 address, u32 value)
 static CPU_ALERT_TYPE write8_palette_ram(u32 address, u32 value)
 {
   ADDRESS16(palette_ram, address & 0x3Fe) = value | (value << 8);
+  VIDEO_MARK_DIRTY(address & 0x3FE);
 
   return CPU_ALERT_NONE;
 }
@@ -1009,6 +1020,7 @@ static CPU_ALERT_TYPE write8_palette_ram(u32 address, u32 value)
 static CPU_ALERT_TYPE write16_palette_ram(u32 address, u32 value)
 {
   ADDRESS16(palette_ram, address & 0x3Fe) = value;
+  VIDEO_MARK_DIRTY(address & 0x3FE);
 
   return CPU_ALERT_NONE;
 }
@@ -1016,12 +1028,14 @@ static CPU_ALERT_TYPE write16_palette_ram(u32 address, u32 value)
 static CPU_ALERT_TYPE write32_palette_ram(u32 address, u32 value)
 {
   ADDRESS32(palette_ram, address & 0x3FC) = value;
+  VIDEO_MARK_DIRTY(address & 0x3FC);
 
   return CPU_ALERT_NONE;
 }
 
 // VRAM is 96 KiB in a 128 KiB window; 0x18000-0x1FFFF mirrors the OBJ area
-// at 0x10000-0x17FFF.
+// at 0x10000-0x17FFF. Video memory writes are marked in video_dirty
+// (memory.h), VRAM from 0x800 in its numbering.
 #define WRITE_VRAM(type)                                                      \
   if (((address >> 16) & 0x01) != 0)                                          \
     address &= 0x17FFF;                                                       \
@@ -1029,6 +1043,7 @@ static CPU_ALERT_TYPE write32_palette_ram(u32 address, u32 value)
     address &= 0x0FFFF;                                                       \
                                                                               \
   ADDRESS##type(vram, address) = value;                                       \
+  VIDEO_MARK_DIRTY(0x800 + address);                                          \
   return check_smc_write(vram_metadata, address, 0x06);                       \
 
 // 8-bit writes to BG VRAM fill both bytes of the halfword; writes to OBJ
@@ -1044,6 +1059,7 @@ static CPU_ALERT_TYPE write8_vram(u32 address, u32 value)
     return  CPU_ALERT_NONE;
 
   ADDRESS16(vram, address) = value | (value << 8);
+  VIDEO_MARK_DIRTY(0x800 + address);
   return check_smc_write(vram_metadata, address, 0x06);
 }
 
@@ -1060,6 +1076,7 @@ static CPU_ALERT_TYPE write32_vram(u32 address, u32 value)
 #define WRITE_OAM_RAM(type)                                                   \
   oam_update = 1;                                                             \
   ADDRESS##type(oam_ram, address & 0x3FF) = value;                            \
+  VIDEO_MARK_DIRTY(0x400 + (address & 0x3FF));                                \
                                                                               \
   return  CPU_ALERT_NONE;                                                     \
 
@@ -1787,6 +1804,9 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
 
     default:
       ADDRESS16(io_registers, address) = value;
+      // The other video registers, up to BLDY
+      if (address < 0x58)
+        video_io_written(address);
       break;
   }
 
