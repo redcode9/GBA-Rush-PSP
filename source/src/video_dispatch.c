@@ -72,11 +72,15 @@ void video_start_vblank(void)
    reference point reports its low half). */
 void video_io_written(u32 address)
 {
-  gba_ppu_write_io(&ppu, address, io_registers[address >> 1]);
+  int reference_point = address >= 0x28 && address < 0x40 && (address & 8);
+
+  /* The other registers gba_ppu reads in place as they are. */
+  if(address == 0 || reference_point)
+    gba_ppu_write_io(&ppu, address, io_registers[address >> 1]);
   if(!video_me_drawing())
     return;
   video_me_io(address);
-  if(address >= 0x28 && address < 0x40 && (address & 8))
+  if(reference_point)
     video_me_io(address + 2);
 }
 
