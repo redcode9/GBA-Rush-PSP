@@ -44,7 +44,8 @@ header or source file; the main ones are:
 | Area | Files |
 | --- | --- |
 | Entry and scheduler | `main.c`: entry point, the `update_gba` hardware scheduler, frame pacing, power callbacks |
-| CPU | `cpu.c` finds, translates and caches ARM/Thumb blocks (there is no interpreter); `mips_emit.h` emits the MIPS code; `mips_stub.S` holds the runtime stubs and memory handlers that translated code calls |
+| CPU, Classic | `cpu.c` finds, translates and caches ARM/Thumb blocks (there is no interpreter); `mips_emit.h` emits the MIPS code; `mips_stub.S` holds the runtime stubs and memory handlers that translated code calls |
+| CPU, New | `arm_decode.c` turns ARM/Thumb code into the IR of `arm_ir.h`, `arm_interp.c` caches and interprets it, `arm_mips.c` compiles it to MIPS; `arm_gba.c` runs that core in the emulator. `make check-core` tests it against SingleStepTests and mGBA |
 | Memory and I/O | `memory.c`: memory map, I/O registers, DMA, ROM paging, save memory, RTC; `gba_sio.c`: serial port |
 | Video | `video_dispatch.c` runs `video_cc.cc` (default) or `video.c` (old renderer), each built through its `*_wrap` file; `psp_video.c` presents frames and draws the menu |
 | Sound | `sound.c`, with `sound_math.c`, `fast_forward_audio.c` and `link_audio_wait.c` |
