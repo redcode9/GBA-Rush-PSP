@@ -1,14 +1,16 @@
 /* Runtime switch between the three scanline renderers: video.c (old, built
  * as video_old_wrap.c), video_cc.cc (new, built as video_cc_wrap.cc) and
- * gba_ppu.c, which this file drives. Owns the shared video globals and
- * forwards update_scanline and the savestate hooks to the renderer picked
- * by option_video_renderer. The choice only changes at frame start, so one
- * frame never mixes renderers.
+ * gba_ppu.c, which this file drives, on the main processor or, through
+ * video_me.c, on the Media Engine. Owns the shared video globals and
+ * forwards update_scanline, the presentation of each frame and the
+ * savestate hooks to the renderer picked by option_video_renderer. The
+ * choice only changes at frame start, so one frame never mixes renderers.
  */
 
 #include "common.h"
 #include "gba_ppu.h"
 #include "video_dispatch_state.h"
+#include "video_me.h"
 
 void update_scanline_old(void);
 void update_scanline_new(void);
@@ -44,23 +46,58 @@ static void update_scanline_ppu(void)
   gba_ppu_draw_line(&ppu, line, screen_texture + line * GBA_LINE_SIZE);
 }
 
+/* gba_ppu on the Media Engine: only the mark that the line is due. */
+static void update_scanline_me(void)
+{
+  video_me_line(pIO_REG(REG_VCOUNT));
+}
+
 /* reset_gba: the machine starts over. */
 void video_reset(void)
 {
   gba_ppu_init(&ppu, palette_ram, oam_ram, (u16 *)vram, io_registers);
+  video_me_resend();
 }
 
 /* main.c, when V-Blank begins. */
 void video_start_vblank(void)
 {
   gba_ppu_start_frame(&ppu);
+  if(video_me_drawing())
+    video_me_vblank();
 }
 
-/* memory.c, after storing a write to DISPCNT or BG2X-BG3Y (address is the
-   offset from 0x4000000). */
+/* memory.c, after storing a write to a video register, DISPCNT to BLDY
+   (address is the offset from 0x4000000; a write to either half of a
+   reference point reports its low half). */
 void video_io_written(u32 address)
 {
   gba_ppu_write_io(&ppu, address, io_registers[address >> 1]);
+  if(!video_me_drawing())
+    return;
+  video_me_io(address);
+  if(address >= 0x28 && address < 0x40 && (address & 8))
+    video_me_io(address + 2);
+}
+
+/* main.c at the start of V-Blank, for a frame that is drawn. */
+void video_present(void)
+{
+  if(video_me_drawing())
+    video_me_present();
+  else
+    (*update_screen)();
+}
+
+/* main.c at each line of V-Blank, and at its end before the flip. */
+void video_present_poll(void)
+{
+  video_me_present_poll();
+}
+
+void video_present_finish(void)
+{
+  video_me_present_finish();
 }
 
 static VideoDispatchState renderer_state = {
@@ -91,11 +128,16 @@ void video_dispatch_frame_begin(void)
 
     if(active == VIDEO_RENDERER_OLD)
       active_scanline = update_scanline_old;
-    else if(active == VIDEO_RENDERER_PPU)
-      active_scanline = update_scanline_ppu;
-    else
+    else if(active == VIDEO_RENDERER_NEW)
       active_scanline = update_scanline_new;
   }
+  /* Exact draws on the Media Engine whenever it is up, which can change
+     from one frame to the next. */
+  if(video_dispatch_state_active(&renderer_state) == VIDEO_RENDERER_PPU)
+    active_scanline = video_me_frame_begin(1) ? update_scanline_me :
+     update_scanline_ppu;
+  else
+    video_me_frame_begin(0);
 }
 
 void update_scanline(void)
@@ -113,8 +155,9 @@ void video_read_savestate(SceUID savestate_file)
   else
     video_read_savestate_new(savestate_file);
   /* gba_ppu keeps its own reference points: reload them from the loaded
-     registers, as V-Blank would. */
+     registers, as V-Blank would. The Media Engine's copy is all new. */
   gba_ppu_start_frame(&ppu);
+  video_me_resend();
 }
 
 void video_write_mem_savestate(SceUID savestate_file)

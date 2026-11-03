@@ -54,6 +54,9 @@ static u32 present_blocked;
 static u32 synchronous_present;
 /* Time spent in the last video_sync_present() wait. */
 static u32 last_ge_wait_us;
+/* A picture in main memory the next present copies into screen_texture
+   first, with the GE: the Media Engine's (video_me.c). */
+static const u16 *texture_source;
 static u32 adaptive_last_frame_time;
 static int adaptive_has_last_frame_time;
 static VideoAdaptiveState adaptive_video;
@@ -219,6 +222,36 @@ static void video_dcache_writeback(void)
   if(measuring)
     perf_monitor_record_dcache_writeback(
      sceKernelGetSystemTimeLow() - writeback_start);
+}
+
+/* Queues the GE copy of texture_source into screen_texture in the list
+   being built, if there is one. Returns whether there was. */
+static int copy_texture_source(void)
+{
+  if(texture_source == NULL)
+    return 0;
+  sceGuCopyImage(GU_PSM_5551, 0, 0, GBA_SCREEN_WIDTH, GBA_SCREEN_HEIGHT,
+   GBA_LINE_SIZE, (void *)texture_source, 0, 0, GBA_LINE_SIZE,
+   screen_texture);
+  sceGuTexSync();
+  sceGuTexFlush();
+  texture_source = NULL;
+  return 1;
+}
+
+/* After the GE wrote screen_texture, the CPU must not read its rows from
+   the cache. */
+static void forget_texture_rows(void)
+{
+  sceKernelDcacheWritebackInvalidateRange(screen_texture,
+   GBA_LINE_SIZE * GBA_SCREEN_HEIGHT * 2);
+}
+
+/* The next present shows frame (240x160 rows GBA_LINE_SIZE pixels apart,
+   in main memory and written back) instead of what screen_texture holds. */
+void video_texture_from(const u16 *frame)
+{
+  texture_source = frame;
 }
 
 /* Center of the GE's 4096x4096 virtual screen; sceGuOffset and
@@ -523,7 +556,10 @@ static void restore_gu_state(void)
 static void blit_gu(void)
 {
   if(present_blocked)
+  {
+    texture_source = NULL;
     return;
+  }
 
   video_sync_present();
   last_ge_wait_us = 0;
@@ -531,6 +567,7 @@ static void blit_gu(void)
 
   sceGuStart(GU_DIRECT, display_list);
 
+  copy_texture_source();
   sceGuCallList(display_list_0);
 
   sceGuFinish();
@@ -596,7 +633,10 @@ static void blit_sharp(void)
   int second_pass_ok;
 
   if(present_blocked)
+  {
+    texture_source = NULL;
     return;
+  }
 
   video_sync_present();
   last_ge_wait_us = 0;
@@ -604,6 +644,7 @@ static void blit_sharp(void)
 
   sceGuStart(GU_DIRECT, display_list);
 
+  copy_texture_source();
   sceGuDrawBufferList(GU_PSM_5551, sharp_draw_frame, SHARP_TEXTURE_WIDTH);
   sceGuOffset(GU_COORD_CENTER - (SHARP_ACTIVE_WIDTH / 2),
    GU_COORD_CENTER - (SHARP_ACTIVE_HEIGHT / 2));
@@ -671,16 +712,20 @@ static void blit_sw(void)
   u32 x, y;
   u16 *vptr, *vptr0;
   u16 *d, *d0;
+  int copied;
 
   video_sync_present();
   video_dcache_writeback();
 
   sceGuStart(GU_DIRECT, display_list);
 
+  copied = copy_texture_source();
   sceGuClear(GU_COLOR_BUFFER_BIT | GU_FAST_CLEAR_BIT);
 
   sceGuFinish();
   video_ge_sync_direct();
+  if(copied)
+    forget_texture_rows();
 
   vptr0 = (u16 *)psp_vram_addr(draw_frame, 60, 16);
   d0 = screen_texture;
@@ -870,6 +915,7 @@ u16 *copy_screen(void)
   video_sync_present();
   video_ge_sync_direct();
   video_dcache_writeback();
+  forget_texture_rows();
 
   copy = (u16 *)safe_malloc(GBA_SCREEN_SIZE);
 

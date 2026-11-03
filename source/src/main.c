@@ -35,6 +35,7 @@
 #include "psp_adhoc.h"
 #include "runtime_log_psp.h"
 #include "sound_math.h"
+#include "video_me.h"
 
 // Main thread params; on the PSP a lower priority number runs first.
 // 32 is 0x20, so MAIN_LINK_LOCKSTEP_PRIORITY (0x77) is lower.
@@ -1058,6 +1059,11 @@ u32 update_gba(void)
             TRANSFER_HBLANK_DMA(i);
           }
         }
+        else
+        {
+          // The Media Engine may have finished the picture by now
+          video_present_poll();
+        }
 
         // H-blank interrupts do occur during v-blank (unlike hdma, which does not)
         if ((dispstat & 0x10) != 0)
@@ -1103,7 +1109,7 @@ u32 update_gba(void)
             if(perf_monitor_active())
               renderer_start = sceKernelGetSystemTimeLow();
 
-            (*update_screen)();
+            video_present();
 
             if(renderer_start != 0)
               perf_monitor_record_renderer_frame(
@@ -1151,7 +1157,10 @@ u32 update_gba(void)
           __draw_volume_status(draw_this_frame);
 
           if (draw_this_frame != 0)
+          {
+            video_present_finish();
             flip_screen(option_psp_vsync);
+          }
 
           video_adaptive_frame_complete(draw_this_frame == 0, 0);
 
@@ -1422,7 +1431,9 @@ static void synchronize(void)
   virtual_frame_count++;
 
   // Behind real time: auto frameskip skips up to used_frameskip_value
-  // frames in a row, then resyncs. Ahead: wait for the PSP VBlank.
+  // frames in a row, then resyncs; not while the Media Engine draws, as
+  // a skipped frame would save this processor next to nothing. Ahead:
+  // wait for the PSP VBlank.
   link_slept = main_link_slept();
   if (real_frame_count >= virtual_frame_count)
   {
@@ -1432,7 +1443,8 @@ static void synchronize(void)
 
     if ((real_frame_count > virtual_frame_count) &&
         (used_frameskip_type == FRAMESKIP_AUTO) &&
-        (num_skipped_frames < used_frameskip_value))
+        (num_skipped_frames < used_frameskip_value) &&
+        !video_me_drawing())
     {
       skip_next_frame = 1;
       num_skipped_frames++;
@@ -1796,6 +1808,7 @@ void quit(void)
   sound_term();
   memory_term();
   video_term();
+  video_me_stop();
 
   set_cpu_clock(PSP_CLOCK_222);
 
