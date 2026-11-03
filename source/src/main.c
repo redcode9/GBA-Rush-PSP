@@ -1407,12 +1407,13 @@ static void synchronize(void)
     if (get_pad_input(PSP_CTRL_HOLD) != 0)
       print_string(FONT_KEY_ICON, 6, 258, color_batt_low, BG_NO_FILL);
 
-    // fps, and where the Exact renderer draws
+    // fps, where the Exact renderer draws, and NEW on the new CPU core
     if (psp_fps_debug != 0)
     {
-      char print_buffer[24];
+      char print_buffer[32];
       const char *drawn_on = option_video_renderer != VIDEO_RENDERER_PPU ?
        "" : video_me_drawing() ? " ME" : " CPU";
+      const char *core = main_cpu_core == CPU_CORE_NEW ? " NEW" : "";
 
       if(option_screen_scale == SCALED_16X9_AUTO)
       {
@@ -1420,13 +1421,13 @@ static void synchronize(void)
          video_active_quality() == VIDEO_ADAPTIVE_QUALITY_SHARP ?
           "SHARP" : "CRISP";
 
-        sprintf(print_buffer, "%02ld(%02ld) %s%s", (long)fps,
-         (long)frames_drawn, quality, drawn_on);
+        sprintf(print_buffer, "%02ld(%02ld) %s%s%s", (long)fps,
+         (long)frames_drawn, quality, drawn_on, core);
       }
       else
       {
-        sprintf(print_buffer, "%02ld(%02ld)%s", (long)fps,
-         (long)frames_drawn, drawn_on);
+        sprintf(print_buffer, "%02ld(%02ld)%s%s", (long)fps,
+         (long)frames_drawn, drawn_on, core);
       }
       print_string(print_buffer, 0, 0, COLOR15_WHITE, COLOR15_BLACK);
     }
