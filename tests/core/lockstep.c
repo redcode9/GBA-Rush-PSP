@@ -108,6 +108,16 @@ static int32_t run(int32_t cycles)
 
 static void print_ir(uint32_t pc, int thumb, unsigned max_insns);
 
+/* Maps the whole pages holding host memory that is not page aligned (mGBA's
+   palette RAM and OAM) at a page aligned target. */
+static void map_pages(const void *host, size_t bytes, uint32_t target)
+{
+  uintptr_t start = (uintptr_t)host & ~(uintptr_t)4095;
+  uintptr_t end = ((uintptr_t)host + bytes + 4095) & ~(uintptr_t)4095;
+
+  mips_unicorn_map((void *)start, end - start, target);
+}
+
 /* Which block a stretch of MIPS code belongs to: blocks sit one after
    the other in the buffer, each from its key word to the next one. */
 typedef struct
@@ -116,6 +126,7 @@ typedef struct
   uint32_t entry;
   uint32_t key;
   uint32_t insns;
+  uint32_t memory_ops;    /* loads and stores in its IR */
 } Span;
 
 static Span spans[ARM_CACHE_BLOCKS];
@@ -124,6 +135,7 @@ static uint32_t spans_blocks = ~0u;
 static uint32_t spans_generation;
 static unsigned long long block_runs;
 static unsigned long long block_guest_insns;
+static unsigned long long block_memory_ops;
 static unsigned long long mixer_mips;
 static unsigned long long mixer_runs;
 static unsigned long long mixer_guest_insns;
@@ -145,11 +157,17 @@ static void build_spans(void)
     if(jit->code[i] > 1)
     {
       Span *s = &spans[span_count++];
+      const ArmIrOp *op = &core->ops[core->blocks[i].first];
+      unsigned n;
 
       s->entry = jit->code[i];
       s->start = s->entry - 16;
       s->key = core->blocks[i].key;
       s->insns = core->blocks[i].insns;
+      s->memory_ops = 0;
+      for(n = 0; n < core->blocks[i].count; n++)
+        if(op[n].code >= ARM_IR_LD8 && op[n].code <= ARM_IR_ST32)
+          s->memory_ops++;
     }
   qsort(spans, span_count, sizeof(Span), by_start);
   spans_blocks = jit->stats.blocks;
@@ -214,6 +232,7 @@ static void count_block(uint32_t address, uint32_t size)
   {
     block_runs++;
     block_guest_insns += s->insns;
+    block_memory_ops += s->memory_ops;
     h->runs++;
   }
   if((s->key & ~1u) >= MIXER_START && (s->key & ~1u) < MIXER_END)
@@ -277,6 +296,10 @@ static void print_counts(void)
    (double)st->hot_words / (double)st->guest_insns,
    (double)st->cold_words / (double)st->guest_insns, st->links, st->bails,
    st->interpreted, st->flushes);
+  printf("memory ops in the compiled blocks run: %llu (conditional ones "
+   "included), %.2f%% of them through C\n", block_memory_ops,
+   block_memory_ops ? 100.0 * (double)mips_unicorn_calls /
+   (double)block_memory_ops : 0.0);
   printf("accesses through C by region (loads/stores):");
   for(i = 0; i < 16; i++)
     if(mips_unicorn_region_calls[i][0] || mips_unicorn_region_calls[i][1])
@@ -1358,6 +1381,8 @@ int main(int argc, char **argv)
     mips_unicorn_map(gba->memory.wram, 0x40000, 0x0A000000u);
     mips_unicorn_map(gba->memory.iwram, 0x8000, 0x0A040000u);
     mips_unicorn_map(gba->memory.rom, gba->memory.romSize, 0x0C000000u);
+    map_pages(gba->video.palette, 0x400, 0x0B000000u);
+    map_pages(gba->video.oam.raw, 0x400, 0x0B100000u);
     host = mips_unicorn_host(jit);
     arm_mips_init(jit, strcmp(mode, "run") ? &replay : &direct, &host,
      code, JIT_CODE_BYTES);
@@ -1377,12 +1402,17 @@ int main(int argc, char **argv)
   {
     unsigned region;
 
-    /* Work RAM and ROM are plain memory, read and written directly as an
-       emulator would map them; the rest goes through mGBA. */
+    /* Work RAM and ROM are plain memory, read and written directly, and
+       palette RAM and OAM read directly, as GBA Rush maps them
+       (source/src/arm_gba.c); the rest goes through mGBA. */
     core->map[2].read = core->map[2].write = (uint8_t *)gba->memory.wram;
     core->map[2].mask = 0x3FFFF;
     core->map[3].read = core->map[3].write = (uint8_t *)gba->memory.iwram;
     core->map[3].mask = 0x7FFF;
+    core->map[5].read = (const uint8_t *)gba->video.palette;
+    core->map[5].mask = 0x3FF;
+    core->map[7].read = (const uint8_t *)gba->video.oam.raw;
+    core->map[7].mask = 0x3FF;
     if(gba->memory.romSize && !(gba->memory.romSize &
        (gba->memory.romSize - 1)))
       for(region = 8; region <= 12; region++)
