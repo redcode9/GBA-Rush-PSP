@@ -504,6 +504,80 @@ static int smc_case(unsigned variant)
   return 1;
 }
 
+/* Multiplies whose operands sit at the byte boundaries of the multiplier's
+   early termination, both signs, run from internal RAM and from the ROM
+   with the prefetch buffer on: the cycles must agree. */
+static const uint32_t multiply_arm[8] =
+{
+  0xE0020190,   /* mul r2, r0, r1 */
+  0xE0232190,   /* mla r3, r0, r1, r2 */
+  0xE0854190,   /* umull r4, r5, r0, r1 */
+  0xE0A54190,   /* umlal r4, r5, r0, r1 */
+  0xE0C76190,   /* smull r6, r7, r0, r1 */
+  0xE0E76190,   /* smlal r6, r7, r0, r1 */
+  0xE0180091,   /* muls r8, r1, r0 */
+  0xEAFFFFFE    /* b . */
+};
+/* muls r2, r1; muls r1, r0; b . */
+static const uint16_t multiply_thumb[4] = { 0x434A, 0x4341, 0xE7FE, 0 };
+static const uint32_t multiply_values[] =
+{
+  0, 1, 0x7F, 0x80, 0xFF, 0x100, 0xFFFF, 0x10000, 0xFFFFFF, 0x1000000,
+  0x7FFFFFFF, 0x80000000, 0xFFFFFFFF, 0xFFFFFF80, 0xFFFFFF00, 0xFFFF7FFF,
+  0xFFFF0000, 0xFF7FFFFF, 0xFF000000, 0x12345678
+};
+
+static int multiply_case(void)
+{
+  unsigned n = sizeof(multiply_values) / sizeof(multiply_values[0]);
+  unsigned place;
+
+  for(place = 0; place < 4; place++)
+  {
+    int thumb = place & 1;
+    int in_rom = place >> 1;
+    uint32_t pc = in_rom ? 0x080F0000u : 0x03007000u;
+    unsigned w;
+    unsigned i;
+
+    for(w = 0; w < 2; w++)
+    {
+      uint8_t *at = in_rom ? rom + 0xF0000 : worlds[w].iwram + 0x7000;
+
+      if(thumb)
+        memcpy(at, multiply_thumb, sizeof(multiply_thumb));
+      else
+        memcpy(at, multiply_arm, sizeof(multiply_arm));
+    }
+    for(i = 0; i < n * n; i++)
+    {
+      for(w = 0; w < 2; w++)
+      {
+        ArmCore *core = w ? &jit->core : &reference;
+
+        arm_core_reset(core);
+        arm_core_set_waitcnt(core, 0x4317);
+        arm_core_set_cpsr(core, ARM_MODE_SYSTEM | (thumb ? ARM_CPSR_T : 0));
+        core->v[0] = multiply_values[i / n];
+        core->v[1] = multiply_values[i % n];
+        core->v[15] = pc;
+        core->prefetch = 0;
+        core->instructions = 0;
+        core->cycles = 0;
+        worlds[w].log_count = 0;
+      }
+      arm_core_run_block(&reference);
+      arm_mips_run_block(jit);
+      if(!compare("multiply block", place, i))
+        return 0;
+      if(arm_core_run(&reference, 60) != arm_mips_run(jit, 60) ||
+         !compare("multiply run", place, i))
+        return 0;
+    }
+  }
+  return 1;
+}
+
 static int run_case(uint32_t seed)
 {
   uint32_t values[7 * 8 + 15];
@@ -679,6 +753,11 @@ int main(int argc, char **argv)
   map_world(&worlds[0]);
   map_world(&worlds[1]);
 
+  if(!multiply_case())
+    return 1;
+  printf("jit_fuzz: multiplies agree on %u operand pairs\n",
+   (unsigned)(4 * sizeof(multiply_values) / sizeof(multiply_values[0]) *
+   sizeof(multiply_values) / sizeof(multiply_values[0])));
   for(i = 0; i < 9; i++)
     if(!smc_case(i))
       return 1;

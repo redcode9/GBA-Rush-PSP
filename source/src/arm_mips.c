@@ -1495,24 +1495,23 @@ static void prefetch_fill(Builder *b, unsigned reg, uint32_t cycles)
 }
 
 /* Multiplier early termination: 4 - min(leading zero (or, signed, sign)
-   bytes, 3) cycles. */
+   bytes, 3) cycles. Setting the low byte before clz caps its count at 24,
+   which is the min. */
 static void multiply_cycles(Builder *b, const ArmIrOp *op)
 {
   unsigned ra = source(b, op->a);
   unsigned s = scratch(b);
-  unsigned t = scratch(b);
 
   if(op->b == 0)
   {
     emit(b, SRA(s, ra, 31));
     emit(b, XOR(s, s, ra));
-    emit(b, CLZ(s, s));
+    emit(b, ORI(s, s, 0xFF));
   }
   else
-    emit(b, CLZ(s, ra));
+    emit(b, ORI(s, ra, 0xFF));
+  emit(b, CLZ(s, s));
   emit(b, SRL(s, s, 3));
-  emit(b, ORI(t, ZERO, 3));
-  emit(b, MIN(s, s, t));
   emit(b, SUBU(REG_CYCLES, REG_CYCLES, s));
   b->pending += 4;
   if(op->flags & ARM_IR_CARTRIDGE_CODE)
