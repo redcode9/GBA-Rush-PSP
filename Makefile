@@ -24,11 +24,12 @@ HOST_TEST_CODEBREAKER = $(HOST_BUILD_DIR)/test_codebreaker
 HOST_TEST_GBA_SIO = $(HOST_BUILD_DIR)/test_gba_sio
 HOST_TEST_LINK_NET = $(HOST_BUILD_DIR)/test_link_net
 HOST_TEST_LINK_CABLE = $(HOST_BUILD_DIR)/test_link_cable
-# The link cable test runs the real cable, channel and SIO code together.
+# The link cable test runs the real cable, channel and SIO code together,
+# over net_fault's simulated network.
 LINK_CABLE_SOURCES = tests/test_link_cable.c source/src/link_cable.c \
- source/src/link_net.c source/src/gba_sio.c
+ source/src/link_net.c source/src/gba_sio.c source/src/net_fault.c
 LINK_CABLE_HEADERS = source/src/link_cable.h source/src/link_net.h \
- source/src/gba_sio.h
+ source/src/gba_sio.h source/src/net_fault.h
 HOST_TEST_NET_FAULT = $(HOST_BUILD_DIR)/test_net_fault
 HOST_TEST_ADHOC_PEER = $(HOST_BUILD_DIR)/test_adhoc_peer
 HOST_TEST_POWER_LIFECYCLE = $(HOST_BUILD_DIR)/test_power_lifecycle
