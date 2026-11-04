@@ -29,6 +29,7 @@ LINK_CABLE_SOURCES = tests/test_link_cable.c source/src/link_cable.c \
  source/src/link_net.c source/src/gba_sio.c
 LINK_CABLE_HEADERS = source/src/link_cable.h source/src/link_net.h \
  source/src/gba_sio.h
+HOST_TEST_NET_FAULT = $(HOST_BUILD_DIR)/test_net_fault
 HOST_TEST_ADHOC_PEER = $(HOST_BUILD_DIR)/test_adhoc_peer
 HOST_TEST_POWER_LIFECYCLE = $(HOST_BUILD_DIR)/test_power_lifecycle
 HOST_TEST_LINK_AUDIO_WAIT = $(HOST_BUILD_DIR)/test_link_audio_wait
@@ -60,7 +61,7 @@ ARM_CORE_HEADERS = source/src/arm_core.h source/src/arm_ir.h \
 HOST_TEST_GBA_PPU = $(HOST_BUILD_DIR)/test_gba_ppu
 HOST_TEST_GBA_PPU_LOG = $(HOST_BUILD_DIR)/test_gba_ppu_log
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
- $(HOST_TEST_LINK_NET) $(HOST_TEST_LINK_CABLE) \
+ $(HOST_TEST_LINK_NET) $(HOST_TEST_LINK_CABLE) $(HOST_TEST_NET_FAULT) \
  $(HOST_TEST_ADHOC_PEER) \
  $(HOST_TEST_POWER_LIFECYCLE) \
  $(HOST_TEST_LINK_AUDIO_WAIT) $(HOST_TEST_VIDEO_ADAPTIVE) \
@@ -79,6 +80,7 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_net \
  $(HOST_SANITIZE_DIR)/test_link_cable \
+ $(HOST_SANITIZE_DIR)/test_net_fault \
  $(HOST_SANITIZE_DIR)/test_adhoc_peer \
  $(HOST_SANITIZE_DIR)/test_power_lifecycle \
  $(HOST_SANITIZE_DIR)/test_link_audio_wait \
@@ -118,6 +120,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_GBA_SIO)
 	$(HOST_TEST_LINK_NET)
 	$(HOST_TEST_LINK_CABLE)
+	$(HOST_TEST_NET_FAULT)
 	$(HOST_TEST_ADHOC_PEER)
 	$(HOST_TEST_POWER_LIFECYCLE)
 	$(HOST_TEST_LINK_AUDIO_WAIT)
@@ -159,6 +162,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_gba_sio
 	$(HOST_SANITIZE_DIR)/test_link_net
 	$(HOST_SANITIZE_DIR)/test_link_cable --quick
+	$(HOST_SANITIZE_DIR)/test_net_fault
 	$(HOST_SANITIZE_DIR)/test_adhoc_peer
 	$(HOST_SANITIZE_DIR)/test_power_lifecycle
 	$(HOST_SANITIZE_DIR)/test_link_audio_wait
@@ -206,6 +210,12 @@ $(HOST_TEST_LINK_CABLE): $(LINK_CABLE_SOURCES) $(LINK_CABLE_HEADERS)
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -Isource/src \
 	 $(LINK_CABLE_SOURCES) -o $@
+
+$(HOST_TEST_NET_FAULT): tests/test_net_fault.c source/src/net_fault.c \
+ source/src/net_fault.h source/src/link_net.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_net_fault.c source/src/net_fault.c -o $@
 
 $(HOST_TEST_ADHOC_PEER): tests/test_adhoc_peer.c \
  source/src/adhoc_peer.c source/src/adhoc_peer.h
@@ -429,6 +439,12 @@ $(HOST_SANITIZE_DIR)/test_link_cable: $(LINK_CABLE_SOURCES) \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src $(LINK_CABLE_SOURCES) -o $@
+
+$(HOST_SANITIZE_DIR)/test_net_fault: tests/test_net_fault.c \
+ source/src/net_fault.c source/src/net_fault.h source/src/link_net.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_net_fault.c source/src/net_fault.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_link_net: tests/test_link_net.c \
  source/src/link_net.c source/src/link_net.h
