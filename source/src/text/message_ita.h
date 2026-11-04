@@ -553,8 +553,14 @@
   // MSG_ERR_LOAD_DIR_INI
   "Impossibile caricare il file dir.ini.\nTutto e` impostato nella seguente cartella:\n%s",
 
-  // MSG_ERR_BIOS_NONE
-  "Impossibile caricare il file BIOS.",
+  // MSG_ERR_BIOS_INVALID
+  "gba_bios.bin non e` un'immagine BIOS GBA da 16 KB.\nViene usato il BIOS integrato.",
+
+  // MSG_ERR_STATE_NEEDS_BIOS_FILE
+  "Stato di salvataggio creato con gba_bios.bin.\nPer caricarlo, rimetti gba_bios.bin nella\ncartella dell'emulatore, esci da GBA Rush PSP e riaprilo.",
+
+  // MSG_ERR_STATE_NEEDS_BUILTIN_BIOS
+  "Stato di salvataggio creato con il BIOS integrato.\nPer caricarlo, sposta gba_bios.bin fuori dalla\ncartella dell'emulatore, esci da GBA Rush PSP e riaprilo.",
 
   // MSG_ERR_LOAD_GAMEPACK
   "Impossibile caricare il file di gioco.",
@@ -668,7 +674,7 @@
   "Funziona quando la Modalita display e` UTENTE GU.",
 
   // MSG_TOOLTIP_VIDEO_RENDERER
-  "Vecchio: TempGBA originale+correzioni.\n         Potrebbe essere piu veloce ma con alcuni problemi.\nNuovo: Riscritto per Libretro gpsp, piu accurato.",
+  "Vecchio: TempGBA originale+correzioni.\n         Potrebbe essere piu veloce ma con alcuni problemi.\nNuovo: Riscritto per Libretro gpsp, piu accurato.\nEsatto: nuovo, identico a mGBA pixel per pixel; in prova.\n        Disegna sul Media Engine con un firmware\n        personalizzato, altrimenti e` piu lento.",
 
   // MSG_TOOLTIP_OAM_HIJACKING
   "Puo solo essere usato con il NUOVO render.\nCorregge alcuni errori di visualizzazione in certi giochi.",
@@ -807,6 +813,9 @@
 
   // MSG_RENDERER_NEW
   "Nuovo",
+
+  // MSG_RENDERER_PPU
+  "Esatto",
 
   // MSG_FMT_PNG
   "PNG",
@@ -1153,5 +1162,13 @@
   "Silenzioso",
   // MSG_FF_AUDIO_ACCELERATED
   "Accelerato",
+  // MSG_OPTION_MENU_CPU_CORE
+  "Core CPU             : %s",
+  // MSG_TOOLTIP_CPU_CORE
+  "Classico: il dynarec usato finora da GBA Rush.\nNuovo: core riscritto, identico a mGBA istruzione per istruzione;\n       in prova.\nVale da quando un gioco parte o si riavvia.",
+  // MSG_CPU_CORE_CLASSIC
+  "Classico",
+  // MSG_CPU_CORE_NEW
+  "Nuovo",
 
 },

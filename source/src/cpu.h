@@ -120,6 +120,14 @@ typedef enum
 
 #define TRANSLATION_REGION_COUNT 2
 
+// The code caches themselves. The new core (arm_gba.c) keeps its state and
+// code in them while it runs instead of the Classic core, so it takes no
+// memory of its own.
+#define READONLY_CODE_CACHE_SIZE (1024 * 1024 * 4)
+#define WRITABLE_CODE_CACHE_SIZE (1024 * 1024 * 2)
+extern u8 readonly_code_cache[READONLY_CODE_CACHE_SIZE];
+extern u8 writable_code_cache[WRITABLE_CODE_CACHE_SIZE];
+
 typedef enum {
   METADATA_AREA_BIOS,
   METADATA_AREA_EWRAM,

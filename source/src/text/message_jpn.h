@@ -553,8 +553,14 @@
   // MSG_ERR_LOAD_DIR_INI
   "dir.ini ファイルを読み込めませんでした.\nすべては次のディレクトリに設定されています:\n%s",
 
-  // MSG_ERR_BIOS_NONE
-  "BIOSイメージファイルを読み込めませんでした.",
+  // MSG_ERR_BIOS_INVALID
+  "gba_bios.bin は 16 KB の GBA BIOS イメージではありません.\n代わりに内蔵 BIOS を使用します.",
+
+  // MSG_ERR_STATE_NEEDS_BIOS_FILE
+  "このステートは gba_bios.bin で保存されました.\n読み込むには gba_bios.bin をエミュレータのフォルダに\n戻して、エミュレータを再起動してください.",
+
+  // MSG_ERR_STATE_NEEDS_BUILTIN_BIOS
+  "このステートは内蔵 BIOS で保存されました.\n読み込むには gba_bios.bin をエミュレータのフォルダから\n別の場所に移動して、エミュレータを再起動してください.",
 
   // MSG_ERR_LOAD_GAMEPACK
   "ゲームファイルを読み込めませんでした.",
@@ -668,7 +674,7 @@
   "表示モードが USER GU の場合に動作します.",
 
   // MSG_TOOLTIP_VIDEO_RENDERER
-  "古い: オリジナルのTempGBAに修正を加えたバージョンです.動作は速くなる可能性がありますが、いくつかのバグがあります.\n新着: Libretro gpsp用に書き直しました.より正確になりました.",
+  "古い: オリジナルのTempGBAに修正を加えたバージョンです.動作は速くなる可能性がありますが、いくつかのバグがあります.\n新着: Libretro gpsp用に書き直しました.より正確になりました.\n正確: 新しく作り直したレンダラーで、mGBAと1ドットまで同じ表示です.テスト中です.\nカスタムファームウェアではMedia Engineで描画し、それ以外では遅くなります.",
 
   // MSG_TOOLTIP_OAM_HIJACKING
   "新しいレンダラーにのみ適用可能です.\n特定のゲームにおける表示上の不具合を修正しました.",
@@ -807,6 +813,9 @@
 
   // MSG_RENDERER_NEW
   "新しい",
+
+  // MSG_RENDERER_PPU
+  "正確",
 
   // MSG_FMT_PNG
   "PNG",
@@ -1155,5 +1164,13 @@
   "Silent",
   // MSG_FF_AUDIO_ACCELERATED
   "Accelerated",
+  // MSG_OPTION_MENU_CPU_CORE
+  "CPUコア   : %s",
+  // MSG_TOOLTIP_CPU_CORE
+  "クラシック: これまでのダイナレックです.\n新しい: 書き直したコアで、mGBAと1命令ずつ同じ動作です.テスト中です.\nゲームの起動またはリセット時に適用されます.",
+  // MSG_CPU_CORE_CLASSIC
+  "クラシック",
+  // MSG_CPU_CORE_NEW
+  "新しい",
 
 },

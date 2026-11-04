@@ -553,8 +553,14 @@
   // MSG_ERR_LOAD_DIR_INI
   "無法載入 dir.ini 檔案.\n所有內容均設定在以下目錄中:\n%s",
 
-  // MSG_ERR_BIOS_NONE
-  "無法載入 BIOS 映像檔.",
+  // MSG_ERR_BIOS_INVALID
+  "gba_bios.bin 不是 16 KB 的 GBA BIOS 映像檔.\n將改用內建 BIOS.",
+
+  // MSG_ERR_STATE_NEEDS_BIOS_FILE
+  "此即時存檔是用 gba_bios.bin 儲存的.\n請將 gba_bios.bin 放回模擬器資料夾，\n重新啟動模擬器後再載入.",
+
+  // MSG_ERR_STATE_NEEDS_BUILTIN_BIOS
+  "此即時存檔是用內建 BIOS 儲存的.\n請先將 gba_bios.bin 移出模擬器資料夾，\n重新啟動模擬器後再載入.",
 
   // MSG_ERR_LOAD_GAMEPACK
   "無法載入遊戲檔案.",
@@ -669,7 +675,7 @@
   "當顯示模式設定為 USER GU 時，此功能即生效.",
 
   // MSG_TOOLTIP_VIDEO_RENDERER
-  "舊的: 原始版 TempGBA 加上修正，速度可能更快，但仍有幾個錯誤.\n新: 已針對 Libretro gpsp 重新編寫，更為精確.",
+  "舊的: 原始版 TempGBA 加上修正，速度可能更快，但仍有幾個錯誤.\n新: 已針對 Libretro gpsp 重新編寫，更為精確.\n精確: 全新編寫，與 mGBA 逐像素一致；仍在測試中.\n自製系統上由 Media Engine 繪製，否則速度較慢.",
 
   // MSG_TOOLTIP_OAM_HIJACKING
   "僅適用於新渲染器.\n修正了某些遊戲中的顯示錯誤.",
@@ -808,6 +814,9 @@
 
   // MSG_RENDERER_NEW
   "新",
+
+  // MSG_RENDERER_PPU
+  "精確",
 
   // MSG_FMT_PNG
   "PNG",
@@ -1156,5 +1165,13 @@
   "Silent",
   // MSG_FF_AUDIO_ACCELERATED
   "Accelerated",
+  // MSG_OPTION_MENU_CPU_CORE
+  "CPU 核心   : %s",
+  // MSG_TOOLTIP_CPU_CORE
+  "經典: 一直以來使用的動態重編譯器.\n新: 重新編寫的核心，與 mGBA 逐條指令一致；仍在測試中.\n在遊戲啟動或重置時生效.",
+  // MSG_CPU_CORE_CLASSIC
+  "經典",
+  // MSG_CPU_CORE_NEW
+  "新",
 
 },

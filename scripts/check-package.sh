@@ -26,10 +26,10 @@ checksum="$archive.sha256"
 documentation_files='LICENSE NOTICE README.md CHANGELOG.md CONTRIBUTING.md
 docs/link-cable.md docs/ROADMAP-1.4.0.md docs/images/link-trade-room.jpg
 docs/images/link-cable-club.jpg docs/images/link-trainer-card.jpg
-source/copyright source/res/PIC1.png'
+source/copyright source/bios/README.md source/res/PIC1.png'
 
 for required in "$archive" "$checksum" source/EBOOT.PBP \
-  source/exception.prx $documentation_files
+  source/exception.prx source/media_engine.prx $documentation_files
 do
   if [ ! -f "$required" ]; then
     echo "Missing package input: $required" >&2
@@ -46,6 +46,7 @@ actual_manifest="$temporary_root/actual.txt"
 {
   echo "$release_name/GBARushPSP/EBOOT.PBP"
   echo "$release_name/GBARushPSP/exception.prx"
+  echo "$release_name/GBARushPSP/media_engine.prx"
   for document in $documentation_files
   do
     echo "$release_name/$document"
@@ -70,6 +71,7 @@ fi
 package_root="$temporary_root/extracted/$release_name"
 cmp source/EBOOT.PBP "$package_root/GBARushPSP/EBOOT.PBP"
 cmp source/exception.prx "$package_root/GBARushPSP/exception.prx"
+cmp source/media_engine.prx "$package_root/GBARushPSP/media_engine.prx"
 for document in $documentation_files
 do
   cmp "$document" "$package_root/$document"

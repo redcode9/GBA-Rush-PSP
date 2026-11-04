@@ -1113,8 +1113,11 @@ mips_indirect_branch_dual_no_update_gba:
   nop
 .endm
 
-.macro store_u16 base, waitstate
+# Palette RAM and OAM stores, marked for the Media Engine (see
+# mark_video_dirty below).
+.macro store_u16 base, waitstate, first_block, first_group
   sh $5, %lo(\base)($2)           # store value at base[offset]
+  mark_video_dirty \first_block, \first_group
   addiu $17, $17, \waitstate      # waitstate cycles
 
   blez $17, store_update_gba
@@ -1124,8 +1127,9 @@ mips_indirect_branch_dual_no_update_gba:
   nop
 .endm
 
-.macro store_u32 base, waitstate
+.macro store_u32 base, waitstate, first_block, first_group
   sw $5, %lo(\base)($2)           # store value at base[offset]
+  mark_video_dirty \first_block, \first_group
   addiu $17, $17, \waitstate      # waitstate cycles
 
   blez $17, store_update_gba
@@ -1165,11 +1169,39 @@ mips_indirect_branch_dual_no_update_gba:
 .endm
 
 
+# Marks the 64-byte block of video memory at offset $4 of a region as
+# written, for the Media Engine's write log: the block's byte in
+# video_dirty and its group's byte in video_dirty_groups (memory.h).
+# first_block and first_group place the region in the maps: palette RAM 0
+# and 0, OAM 16 and 0, VRAM 32 and 1. Uses $1, $2 and $5, the value being
+# stored.
+
+.macro mark_video_dirty first_block, first_group
+  srl $1, $4, 6                   # block within the region
+  lui $2, %hi(video_dirty + \first_block)
+  addu $2, $2, $1
+  addiu $5, $0, 1
+  sb $5, %lo(video_dirty + \first_block)($2)
+  srl $1, $1, 5                   # group within the region
+  lui $2, %hi(video_dirty_groups + \first_group)
+  addu $2, $2, $1
+  sb $5, %lo(video_dirty_groups + \first_group)($2)
+.endm
+
+.macro store_u32a_video base, waitstate, first_block, first_group
+  sw $5, %lo(\base)($2)           # store value at base[offset]
+  mark_video_dirty \first_block, \first_group
+  jr $ra                          # return
+  addiu $17, $17, \waitstate      # waitstate cycles (delay)
+.endm
+
+
 # Store the value double mirrored (u16)
 
 .macro store_u8_double base, waitstate
   ins $5, $5, 8, 8                # value = (value << 8) | value
   sh $5, %lo(\base)($2)           # store value at base[offset]
+  mark_video_dirty 0, 0           # palette RAM, its only user
   addiu $17, $17, \waitstate      # waitstate cycles
 
   blez $17, store_update_gba
@@ -1247,6 +1279,7 @@ post_write_metadata_iwram:
   post_write_metadata_core iwram, iwram_metadata, 0x03
 
 post_write_metadata_vram:
+  mark_video_dirty 32, 1
   post_write_metadata_core vram, vram_metadata, 0x06
 
 /* STM onto the IWRAM stack: drop the tags and flags of just this word,
@@ -2849,7 +2882,7 @@ execute_store_io_u16:
 
 execute_store_palette_u16:
   translate_region 5, patch_store_u16, palette_ram, 0x3FE
-  store_u16 palette_ram, -1
+  store_u16 palette_ram, -1, 0, 0
 
 execute_store_vram_u16:
   translate_region_vram_store_align16 patch_store_u16
@@ -2859,7 +2892,7 @@ execute_store_oam_u16:
   translate_region 7, patch_store_u16, oam_ram, 0x3FE
   lui $1, %hi(oam_update)         # write non-zero to oam_update (delay)
   sw $1, %lo(oam_update)($1)      # cheap, but the address is non-zero
-  store_u16 oam_ram, -1
+  store_u16 oam_ram, -1, 16, 0
 
 execute_store_rtc_u16:
   rtc_store 8, patch_store_u16
@@ -2946,7 +2979,7 @@ execute_store_io_u32:
 
 execute_store_palette_u32:
   translate_region 5, patch_store_u32, palette_ram, 0x3FC
-  store_u32 palette_ram, -2
+  store_u32 palette_ram, -2, 0, 0
 
 execute_store_vram_u32:
   translate_region_vram_store_align32 patch_store_u32
@@ -2956,7 +2989,7 @@ execute_store_oam_u32:
   translate_region 7, patch_store_u32, oam_ram, 0x3FC
   lui $1, %hi(oam_update)         # write non-zero to oam_update
   sw $1, %lo(oam_update)($1)      # cheap, but the address is non-zero
-  store_u32 oam_ram, -2
+  store_u32 oam_ram, -2, 16, 0
 
 execute_store_ignore8_u32:
   ignore_region 8, patch_store_u32
@@ -3048,17 +3081,17 @@ execute_store_io_u32a:
 
 execute_store_palette_u32a:
   translate_region 5, patch_store_u32a, palette_ram, 0x3FC
-  store_u32a palette_ram, -2
+  store_u32a_video palette_ram, -2, 0, 0
 
 execute_store_vram_u32a:
   translate_region_vram_store_align32 patch_store_u32a
-  store_u32a vram, -2
+  store_u32a_video vram, -2, 32, 1
 
 execute_store_oam_u32a:
   translate_region 7, patch_store_u32a, oam_ram, 0x3FC
   lui $1, %hi(oam_update)         # write non-zero to oam_update
   sw $1, %lo(oam_update)($1)      # cheap, but the address is non-zero
-  store_u32a oam_ram, -2
+  store_u32a_video oam_ram, -2, 16, 0
 
 execute_store_ignore8_u32a:
   ignore_region 8, patch_store_u32a

@@ -190,7 +190,8 @@ static const char *enable_disable_options[2];
 static const char *clock_speed_options[4];
 static const char *sound_volume_options[11];
 static const char *image_format_options[2];
-static const char *video_renderer_options[2];
+static const char *video_renderer_options[3];
+static const char *cpu_core_options[2];
 static const char *ram_dynarec_options[3];
 static const char *swap_button_options[2];
 static const char *theme_preset_options[9];
@@ -285,6 +286,10 @@ static void init_choice_arrays(void)
 
     video_renderer_options[0] = MSG[MSG_RENDERER_OLD];
     video_renderer_options[1] = MSG[MSG_RENDERER_NEW];
+    video_renderer_options[2] = MSG[MSG_RENDERER_PPU];
+
+    cpu_core_options[CPU_CORE_CLASSIC] = MSG[MSG_CPU_CORE_CLASSIC];
+    cpu_core_options[CPU_CORE_NEW] = MSG[MSG_CPU_CORE_NEW];
 
     ram_dynarec_options[0] = MSG[MSG_RAM_DYNAREC_FULL_FLUSH];
     ram_dynarec_options[1] = MSG[MSG_RAM_DYNAREC_PARTIAL_NO_REUSE];
@@ -2958,8 +2963,10 @@ static void get_savestate_info(char *filename, u16 *snapshot, char *timestamp)
 }
 
 /* Slots 0-9 are the numbered savestates ("<rom>_N.svs"); the extra slot is
-   the automatic one ("<rom>_auto.svs") written on exit, sleep, ROM change
-   and before overwriting progress with a load. */
+   the automatic one written on exit, sleep, ROM change and before
+   overwriting progress with a load. A savestate loads only with the BIOS
+   that made it, so each BIOS keeps its own: "<rom>_auto.svs" with
+   gba_bios.bin, "<rom>_auto-builtin.svs" with the built-in BIOS. */
 #define AUTO_SAVESTATE_SLOT   10
 #define SAVESTATE_SLOT_COUNT  11
 
@@ -2967,7 +2974,8 @@ static void get_savestate_info(char *filename, u16 *snapshot, char *timestamp)
 static void get_savestate_filename(u32 slot, char *name_buffer)
 {
   if (slot == AUTO_SAVESTATE_SLOT)
-    change_ext(gamepak_filename, name_buffer, "_auto.svs");
+    change_ext(gamepak_filename, name_buffer,
+     bios_builtin ? "_auto-builtin.svs" : "_auto.svs");
   else
   {
     char savestate_ext[16];
@@ -4074,7 +4082,8 @@ u32 menu(void)
       if (load_file(file_ext, filename_buffer, dir_state, 0) == 0)
       {
         /* Extract ROM base name from savestate filename.
-           "RomName_5.svs" -> "RomName", "RomName_auto.svs" -> "RomName" */
+           "RomName_5.svs" -> "RomName", "RomName_auto.svs" and
+           "RomName_auto-builtin.svs" -> "RomName" */
         {
             char temp_name[MAX_FILE];
             strncpy(temp_name, filename_buffer, sizeof(temp_name) - 1);
@@ -4088,7 +4097,7 @@ u32 menu(void)
                 rom_name[sizeof(rom_name) - 1] = '\0';
 
                 /* Parse slot number for same-ROM case */
-                if (strncmp(underscore + 1, "auto.svs", 8) == 0)
+                if (strncmp(underscore + 1, "auto", 4) == 0)
                     slot_parsed = AUTO_SAVESTATE_SLOT;
                 else
                     slot_parsed = (u32)atoi(underscore + 1);
@@ -4288,6 +4297,7 @@ u32 menu(void)
     option_hblank_irq_window_start = 1;
     option_hblank_irq_window_end = 160;
     option_boot_mode = 0;
+    option_cpu_core = CPU_CORE_CLASSIC;
     if(option_fast_forward_game_override)
     {
       option_game_fast_forward_profile = FAST_FORWARD_PROFILE_MODERN;
@@ -5112,7 +5122,7 @@ u32 menu(void)
     NUMERIC_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_1], &option_screen_mag, 201, MSG_OPTION_MENU_HELP_1, 1,MSG_TOOLTIP_MAGNIFICATION, MSG_OPTION_MENU_1),
     STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_2], on_off_options, &option_screen_filter, 2, MSG_OPTION_MENU_HELP_2, 2, MSG_OPTION_MENU_2),
 
-    STRING_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_VIDEORENDER], video_renderer_options, &option_video_renderer, 2, MSG_OPTION_MENU_HELP_7, 4, MSG_TOOLTIP_VIDEO_RENDERER, MSG_OPTION_MENU_VIDEORENDER),
+    STRING_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_VIDEORENDER], video_renderer_options, &option_video_renderer, 3, MSG_OPTION_MENU_HELP_7, 4, MSG_TOOLTIP_VIDEO_RENDERER, MSG_OPTION_MENU_VIDEORENDER),
     STRING_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_OAMHIJACKSUPPORT], on_off_options, &option_oam_hijacking_enabled, 2, MSG_OPTION_MENU_HELP_7, 5, MSG_TOOLTIP_OAM_HIJACKING, MSG_OPTION_MENU_OAMHIJACKSUPPORT),
     STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_VSYNCPSP], on_off_options, &option_psp_vsync, 2, MSG_OPTION_MENU_HELP_7, 6,MSG_OPTION_MENU_VSYNCPSP),
     
@@ -5131,7 +5141,8 @@ u32 menu(void)
     NUMERIC_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_HBLANK_IRQ_WIN_END], &option_hblank_irq_window_end, 228, MSG_OPTION_MENU_HELP_HBLANK_IRQ_WIN_END, 2, MSG_TOOLTIP_HBLANK_WIN_END, MSG_OPTION_MENU_HBLANK_IRQ_WIN_END),
     STRING_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_7], stack_optimize_options, &option_stack_optimize, 2, MSG_OPTION_MENU_HELP_7, 4, MSG_TOOLTIP_STACK_OPTIMIZE, MSG_OPTION_MENU_7),
     STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_8], yes_no_options, &option_boot_mode, 2, MSG_OPTION_MENU_HELP_8, 6, MSG_OPTION_MENU_8),
-    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 8, MSG_OPTION_MENU_11)
+    STRING_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_CPU_CORE], cpu_core_options, &option_cpu_core, 2, MSG_OPTION_MENU_HELP_7, 8, MSG_TOOLTIP_CPU_CORE, MSG_OPTION_MENU_CPU_CORE),
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 10, MSG_OPTION_MENU_11)
   };
 
   MAKE_MENU(performance_advanced, NULL, NULL);
@@ -6233,6 +6244,7 @@ static void capture_global_config(ConfigModel *model)
   model->fast_forward_speed = option_fast_forward_speed;
   model->fast_forward_presentation = option_fast_forward_presentation;
   model->fast_forward_audio = option_fast_forward_audio;
+  model->cpu_core = option_cpu_core;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     model->gamepad[i] = gamepad_config_map[i];
 }
@@ -6272,6 +6284,7 @@ static void apply_global_config(const ConfigModel *model)
   option_fast_forward_speed = model->fast_forward_speed;
   option_fast_forward_presentation = model->fast_forward_presentation;
   option_fast_forward_audio = model->fast_forward_audio;
+  option_cpu_core = model->cpu_core;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
   {
     gamepad_config_map[i] = model->gamepad[i];

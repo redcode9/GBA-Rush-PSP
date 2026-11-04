@@ -553,8 +553,14 @@
   // MSG_ERR_LOAD_DIR_INI
   "Could not load dir.ini file.\nEverything is set as the following directory:\n%s",
 
-  // MSG_ERR_BIOS_NONE
-  "Could not load BIOS image file.",
+  // MSG_ERR_BIOS_INVALID
+  "gba_bios.bin is not a 16 KB GBA BIOS image.\nUsing the built-in BIOS instead.",
+
+  // MSG_ERR_STATE_NEEDS_BIOS_FILE
+  "This savestate was made with gba_bios.bin.\nPut gba_bios.bin back in the emulator folder\nand restart the emulator to load it.",
+
+  // MSG_ERR_STATE_NEEDS_BUILTIN_BIOS
+  "This savestate was made with the built-in BIOS.\nMove gba_bios.bin out of the emulator folder\nand restart the emulator to load it.",
 
   // MSG_ERR_LOAD_GAMEPACK
   "Could not load the game file.",
@@ -668,7 +674,7 @@
   "Works when Display mode is USER GU.",
 
   // MSG_TOOLTIP_VIDEO_RENDERER
-  "Old: Original TempGBA+fixes, can be faster but has a few bugs.\nNew: Rewritten for Libretro gpsp, more accurate.",
+  "Old: Original TempGBA+fixes, can be faster but has a few bugs.\nNew: Rewritten for Libretro gpsp, more accurate.\nExact: new, matches mGBA pixel for pixel; being tested.\nDraws on the Media Engine on custom firmware, else slower.",
 
   // MSG_TOOLTIP_OAM_HIJACKING
   "Can be applied only to the New renderer.\nCorrects some display errors in certain games.",
@@ -807,6 +813,9 @@
 
   // MSG_RENDERER_NEW
   "New",
+
+  // MSG_RENDERER_PPU
+  "Exact",
 
   // MSG_FMT_PNG
   "PNG",
@@ -1153,5 +1162,13 @@
   "Silent",
   // MSG_FF_AUDIO_ACCELERATED
   "Accelerated",
+  // MSG_OPTION_MENU_CPU_CORE
+  "CPU core         : %s",
+  // MSG_TOOLTIP_CPU_CORE
+  "Classic: the dynarec GBA Rush has always used.\nNew: rewritten core, matches mGBA instruction by instruction;\n     being tested.\nTakes effect when a game starts or resets.",
+  // MSG_CPU_CORE_CLASSIC
+  "Classic",
+  // MSG_CPU_CORE_NEW
+  "New",
 
 },

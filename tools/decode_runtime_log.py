@@ -88,7 +88,19 @@ LINK_COUNTERS = {
     6: "rtt-min-us/send-yields/send-yield-us",
     7: "lockstep-priority/priority-seen/change-result",
     8: "frames/frames-drawn/vblank-wait-us",
+    9: "me-frames/frames-late/me-busy-us-per-frame",
+    10: "log-us-per-frame/log-words-per-frame/full-resends",
 }
+# The CPU core a start or reset chose (CPU_CORE_* in source/src/main.h);
+# logs from before the option say classic.
+CPU_CORES = ["classic", "new"]
+# Where the Exact renderer draws (VideoMeState in source/src/video_me.h):
+# counters kind 11, with the cause and address of a Media Engine exception.
+EXACT_RENDERER = [
+    "not-started", "media-engine", "cpu-no-module", "cpu-no-driver",
+    "cpu-no-answer", "cpu-stopped", "cpu-fault", "cpu-too-slow",
+    "cpu-no-memory",
+]
 LINK_EVENTS = {
     "link-command", "link-state", "link-pause-end", "link-error",
     "link-counters", "menu-presence", "power-suspend", "power-resume",
@@ -192,7 +204,10 @@ def describe(record: dict[str, Any]) -> str:
     flags = record["flags"]
     value0, value1, value2 = record["values"]
     if event == "rom-open":
-        return f"code={_rom_code(value0)} revision={flags} size={value1}"
+        return (
+            f"code={_rom_code(value0)} revision={flags} size={value1} "
+            f"core={_name(CPU_CORES, value2)}"
+        )
     if event == "log-flush":
         return f"reason={FLUSH_REASONS.get(value0, value0)} main={value1} network={value2}"
     # Earlier versions belong to a retired link design; show raw values.
@@ -216,6 +231,16 @@ def describe(record: dict[str, Any]) -> str:
             f"end={_name(LINK_ENDS, flags)} status={_name(LINK_STATUS, value0)} "
             f"adhoc-error={_signed(value1)}/0x{value1:08X} "
             f"adhoc-phase={_name(ADHOC_PHASES, value2)}"
+        )
+    if event == "link-counters" and flags == 11:
+        return (
+            f"exact-renderer={_name(EXACT_RENDERER, value0)} "
+            f"me-fault-cause=0x{value1:08X} me-fault-address=0x{value2:08X}"
+        )
+    if event == "link-counters" and flags == 12:
+        return (
+            f"cpu-core={_name(CPU_CORES, value0)} blocks-compiled={value1} "
+            f"code-flushes={value2}"
         )
     if event == "link-counters":
         return f"{LINK_COUNTERS.get(flags, f'counters-{flags}')}={value0}/{value1}/{value2}"

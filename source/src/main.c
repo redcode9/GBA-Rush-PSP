@@ -19,11 +19,12 @@
  */
 
 /* Emulator entry point and main loop. update_gba is the hardware scheduler
-   the dynarec calls between slices (timers, LCD timing, DMA, IRQs); around it
+   the CPU core calls between slices (timers, LCD timing, DMA, IRQs); around it
    live frame pacing, startup, the PSP power and exit callbacks, and the
    link cable, fast-forward and benchmark glue used by gui.c and input.c. */
 
 #include <limits.h>
+#include <setjmp.h>
 
 #include <pspsysmem.h>
 
@@ -35,6 +36,7 @@
 #include "psp_adhoc.h"
 #include "runtime_log_psp.h"
 #include "sound_math.h"
+#include "video_me.h"
 
 // Main thread params; on the PSP a lower priority number runs first.
 // 32 is 0x20, so MAIN_LINK_LOCKSTEP_PRIORITY (0x77) is lower.
@@ -59,6 +61,7 @@ u32 option_sound_volume = 10;
 u32 option_stack_optimize = 1;
 u32 option_ram_dynarec_policy = RAM_DYNAREC_PARTIAL_WITH_REUSE;
 u32 option_video_renderer = VIDEO_RENDERER_NEW;
+u32 option_cpu_core = CPU_CORE_CLASSIC;
 u32 option_oam_hijacking_enabled = 0;
 u32 option_boot_mode = 0;
 u32 option_update_backup = 0;
@@ -173,6 +176,8 @@ static u64 gba_link_yield_total_us = 0;
 static u32 gba_link_frames = 0;
 static u32 gba_link_frames_drawn = 0;
 static u64 gba_link_vblank_wait_us = 0;
+/* The Exact renderer's counters when the link opened. */
+static VideoMeCounters gba_link_video_start;
 /* The emulator thread, whose priority drops while a lockstep link is
    connected, and the priority it has now. */
 static SceUID gba_link_thread = -1;
@@ -257,7 +262,16 @@ u32 vblank_count = 0;
    flush the read-only one and clear the RAM block metadata instead. */
 static u8 caches_inited = 0;
 
+/* The CPU core running, and the one the last start or reset chose from
+   option_cpu_core. When they differ, update_gba returns to main_run_cpu
+   through main_cpu_core_switch once the menu closes. */
+u32 main_cpu_core = CPU_CORE_CLASSIC;
+static u32 main_cpu_core_chosen = CPU_CORE_CLASSIC;
+static jmp_buf main_cpu_core_switch;
+
 static void cpu_interrupt(void);
+static void main_follow_cpu_core(void);
+static void main_run_cpu(void);
 
 int main(int argc, char *argv[]);
 int user_main(int argc, char *argv[]);
@@ -537,6 +551,44 @@ static void main_link_log_state(void)
    main_adhoc_state_value());
 }
 
+/* The Exact renderer's counters since since, as LINK_COUNTERS records 9
+   to 11 (tools/decode_runtime_log.py names them): frames the Media Engine
+   drew, frames shown late and its busy time per frame; the main
+   processor's time per frame in the log's hooks, log words per frame and
+   full resends; whether it draws on the Media Engine (VideoMeState) and
+   the cause and address of an exception there. */
+static void main_log_video_counters(const VideoMeCounters *since)
+{
+  VideoMeCounters now;
+  VideoMeState state = video_me_state();
+  u32 frames, sampled, cause, address;
+
+  video_me_counters(&now);
+  video_me_fault(&cause, &address);
+  frames = now.frames - since->frames;
+  sampled = now.log_frames - since->log_frames;
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 9,
+   now.me_frames - since->me_frames, now.late_frames - since->late_frames,
+   frames ? (u32)((now.me_busy_us - since->me_busy_us) / frames) : 0);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 10,
+   sampled ? (u32)((now.log_us - since->log_us) / sampled) : 0,
+   frames ? (now.log_words - since->log_words) / frames : 0,
+   now.resends - since->resends);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 11,
+   (u32)state, cause, address);
+}
+
+/* The CPU core running and, for the new one, its compiled blocks and code
+   flushes, as LINK_COUNTERS record 12. */
+static void main_log_core_counters(void)
+{
+  u32 blocks, flushes;
+
+  arm_gba_counters(&blocks, &flushes);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 12,
+   main_cpu_core, blocks, flushes);
+}
+
 /* Ends the session without telling the peer (main_link_disconnect sends
    the goodbye): fails any SIO transfer, logs counters, stops the network. */
 static void main_link_close(MainLinkEnd reason)
@@ -583,6 +635,8 @@ static void main_link_close(MainLinkEnd reason)
    gba_link_frames, gba_link_frames_drawn,
    gba_link_vblank_wait_us > UINT_MAX ? UINT_MAX :
     (u32)gba_link_vblank_wait_us);
+  main_log_video_counters(&gba_link_video_start);
+  main_log_core_counters();
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_ERROR, cpu_ticks,
    (u8)reason, (u32)gba_link.status, (u32)psp_adhoc_last_error(),
    main_adhoc_phase_value());
@@ -743,6 +797,7 @@ static int main_link_start(int host)
   gba_link_frames = 0;
   gba_link_frames_drawn = 0;
   gba_link_vblank_wait_us = 0;
+  video_me_counters(&gba_link_video_start);
   gba_link_thread = sceKernelGetThreadId();
   gba_link_priority_result = 0;
   gba_link_priority_seen = 0;
@@ -1058,6 +1113,11 @@ u32 update_gba(void)
             TRANSFER_HBLANK_DMA(i);
           }
         }
+        else
+        {
+          // The Media Engine may have finished the picture by now
+          video_present_poll();
+        }
 
         // H-blank interrupts do occur during v-blank (unlike hdma, which does not)
         if ((dispstat & 0x10) != 0)
@@ -1094,7 +1154,10 @@ u32 update_gba(void)
 
           // The menu or a state load replaced the machine; drop this pass
           if (update_input() != 0)
+          {
+            main_follow_cpu_core();
             continue;
+          }
 
           if (!skip_next_frame)
           {
@@ -1103,7 +1166,7 @@ u32 update_gba(void)
             if(perf_monitor_active())
               renderer_start = sceKernelGetSystemTimeLow();
 
-            (*update_screen)();
+            video_present();
 
             if(renderer_start != 0)
               perf_monitor_record_renderer_frame(
@@ -1119,6 +1182,7 @@ u32 update_gba(void)
           affine_reference_y[0] = (s32)(ADDRESS32(io_registers, 0x2C) << 4) >> 4;
           affine_reference_x[1] = (s32)(ADDRESS32(io_registers, 0x38) << 4) >> 4;
           affine_reference_y[1] = (s32)(ADDRESS32(io_registers, 0x3C) << 4) >> 4;
+          video_start_vblank();
 
           for (i = 0; i < 4; i++)
           {
@@ -1150,7 +1214,10 @@ u32 update_gba(void)
           __draw_volume_status(draw_this_frame);
 
           if (draw_this_frame != 0)
+          {
+            video_present_finish();
             flip_screen(option_psp_vsync);
+          }
 
           video_adaptive_frame_complete(draw_this_frame == 0, 0);
 
@@ -1187,7 +1254,10 @@ u32 update_gba(void)
     {
       gba_link_service_ticks = cpu_ticks;
       if(main_link_service(&irq_raised))
+      {
+        main_follow_cpu_core();
         continue;
+      }
     }
 
     reg[EXECUTE_CYCLES] = video_count;
@@ -1224,7 +1294,17 @@ u32 update_gba(void)
       irq_raised = IRQ_NONE;
     }
 
-    if ((pIO_REG(REG_IF) != 0) && GBA_IME_STATE && ARM_IRQ_STATE)
+    if (main_cpu_core == CPU_CORE_NEW)
+    {
+      // The new core takes interrupts itself (arm_gba.c). An enabled
+      // request ends a halt whatever IME and the CPSR say, as on the GBA;
+      // only serial, keypad and game pak IRQs end STOP.
+      u16 irq_mask = (reg[CPU_HALT_STATE] == CPU_STOP) ? 0x3080 : 0x3FFF;
+
+      if ((pIO_REG(REG_IE) & pIO_REG(REG_IF) & irq_mask) != 0)
+        reg[CPU_HALT_STATE] = CPU_ACTIVE;
+    }
+    else if ((pIO_REG(REG_IF) != 0) && GBA_IME_STATE && ARM_IRQ_STATE)
     {
       // Only serial, keypad and game pak IRQs wake the GBA from STOP
       u16 irq_mask = (reg[CPU_HALT_STATE] == CPU_STOP) ? 0x3080 : 0x3FFF;
@@ -1339,10 +1419,13 @@ static void synchronize(void)
     if (get_pad_input(PSP_CTRL_HOLD) != 0)
       print_string(FONT_KEY_ICON, 6, 258, color_batt_low, BG_NO_FILL);
 
-    // fps
+    // fps, where the Exact renderer draws, and NEW on the new CPU core
     if (psp_fps_debug != 0)
     {
-      char print_buffer[24];
+      char print_buffer[32];
+      const char *drawn_on = option_video_renderer != VIDEO_RENDERER_PPU ?
+       "" : video_me_drawing() ? " ME" : " CPU";
+      const char *core = main_cpu_core == CPU_CORE_NEW ? " NEW" : "";
 
       if(option_screen_scale == SCALED_16X9_AUTO)
       {
@@ -1350,13 +1433,13 @@ static void synchronize(void)
          video_active_quality() == VIDEO_ADAPTIVE_QUALITY_SHARP ?
           "SHARP" : "CRISP";
 
-        sprintf(print_buffer, "%02ld(%02ld) %s", (long)fps,
-         (long)frames_drawn, quality);
+        sprintf(print_buffer, "%02ld(%02ld) %s%s%s", (long)fps,
+         (long)frames_drawn, quality, drawn_on, core);
       }
       else
       {
-        sprintf(print_buffer, "%02ld(%02ld)", (long)fps,
-         (long)frames_drawn);
+        sprintf(print_buffer, "%02ld(%02ld)%s%s", (long)fps,
+         (long)frames_drawn, drawn_on, core);
       }
       print_string(print_buffer, 0, 0, COLOR15_WHITE, COLOR15_BLACK);
     }
@@ -1421,7 +1504,9 @@ static void synchronize(void)
   virtual_frame_count++;
 
   // Behind real time: auto frameskip skips up to used_frameskip_value
-  // frames in a row, then resyncs. Ahead: wait for the PSP VBlank.
+  // frames in a row, then resyncs; not while the Media Engine draws, as
+  // a skipped frame would save this processor next to nothing. Ahead:
+  // wait for the PSP VBlank.
   link_slept = main_link_slept();
   if (real_frame_count >= virtual_frame_count)
   {
@@ -1431,7 +1516,8 @@ static void synchronize(void)
 
     if ((real_frame_count > virtual_frame_count) &&
         (used_frameskip_type == FRAMESKIP_AUTO) &&
-        (num_skipped_frames < used_frameskip_value))
+        (num_skipped_frames < used_frameskip_value) &&
+        !video_me_drawing())
     {
       skip_next_frame = 1;
       num_skipped_frames++;
@@ -1514,6 +1600,7 @@ static void init_main(void)
   // (init_memory sets VCOUNT to 126)
   video_count = option_boot_mode ? 960 : 272;
   reg[EXECUTE_CYCLES] = video_count;
+  video_reset();
   video_dispatch_frame_begin();
 
   irq_ticks = 0;
@@ -1553,19 +1640,18 @@ static void load_setting_cfg(void)
   }
 }
 
-/* Loads gba_bios.bin from the emulator folder; the emulator cannot run
-   without it, so a missing BIOS is reported and quits. */
+/* Loads gba_bios.bin from the emulator folder; without a usable one,
+   load_bios() falls back to the built-in open BIOS. A file that is there
+   but is not a GBA BIOS is reported, since the player meant to use it.
+   tests/test_open_bios.py compiles this function alone. */
 static void load_bios_file(void)
 {
   char filename[MAX_FILE];
 
   sprintf(filename, "%sgba_bios.bin", main_path);
 
-  if (load_bios(filename) < 0)
-  {
-    error_msg(MSG[MSG_ERR_BIOS_NONE], CONFIRMATION_QUIT);
-    quit();
-  }
+  if (load_bios(filename) == -2)
+    error_msg(MSG[MSG_ERR_BIOS_INVALID], CONFIRMATION_CONT);
 }
 
 /* Find the emulator's home directory.
@@ -1760,7 +1846,7 @@ int user_main(int argc, char *argv[])
     sound_pause = 0;
 
     // We'll never actually return from here.
-    execute_arm_translate(reg[EXECUTE_CYCLES]);
+    main_run_cpu();
   }
 
   quit();
@@ -1771,6 +1857,27 @@ int main(int argc, char *argv[])
 {
     user_main(argc, argv);
     return 0;
+}
+
+
+/* Runs the game on the core the last start or reset chose; never returns.
+   Each core runs from reg[] until update_gba finds a reset that chose the
+   other one and jumps back here (main_follow_cpu_core). */
+static void main_run_cpu(void)
+{
+  setjmp(main_cpu_core_switch);
+  main_cpu_core = main_cpu_core_chosen;
+  if(main_cpu_core == CPU_CORE_NEW)
+    arm_gba_run();
+  execute_arm_translate(reg[EXECUTE_CYCLES]);
+}
+
+/* After the menu: a reset that chose the other core leaves the running
+   one, whose call stack is dropped; reg[] already holds the new game. */
+static void main_follow_cpu_core(void)
+{
+  if(main_cpu_core != main_cpu_core_chosen)
+    longjmp(main_cpu_core_switch, 1);
 }
 
 
@@ -1787,6 +1894,12 @@ void quit(void)
 
   update_backup_immediately();
   save_config_file();
+  {
+    static const VideoMeCounters session_start;
+
+    main_log_video_counters(&session_start);
+  }
+  main_log_core_counters();
   runtime_log_psp_main(RUNTIME_LOG_EVENT_SESSION_END, cpu_ticks, 0,
    (u32)gba_link.status, (u32)gba_link_end, 0);
   runtime_log_psp_flush(RUNTIME_LOG_FLUSH_EXIT);
@@ -1794,6 +1907,7 @@ void quit(void)
   sound_term();
   memory_term();
   video_term();
+  video_me_stop();
 
   set_cpu_clock(PSP_CLOCK_222);
 
@@ -1835,10 +1949,11 @@ void reset_gba(void)
   clear_texture(0x7FFF);
   init_memory();
   init_main();
+  main_cpu_core_chosen = option_cpu_core;
   if(gamepak_file_size >= 0xC0u)
   {
     runtime_log_psp_set_rom(gamepak_header + 0xAC, gamepak_header[0xBC],
-     gamepak_file_size, cpu_ticks);
+     gamepak_file_size, main_cpu_core_chosen, cpu_ticks);
     runtime_log_rom_identity = new_identity;
     runtime_log_rom_active = 1;
   }

@@ -185,6 +185,14 @@ int gba_sio_write32(void)
   return 0;
 }
 
+/* The new CPU core's code invalidation after a transfer: the Classic core
+   runs here, so there is nothing to drop. */
+void arm_gba_written(uint32_t address, uint32_t size)
+{
+  (void)address;
+  (void)size;
+}
+
 /* --- Emulation support (never reached by the DMA test path) --------------- */
 
 void add_smc_gate(void) {}
@@ -228,6 +236,7 @@ void sound_timer_queue(void) {}
 void timer_control_high(void) {}
 void timer_control_low(void) {}
 void sound_write_mem_savestate(void) {}
+void video_io_written(void) {}
 void video_read_savestate(void) {}
 void video_write_mem_savestate(void) {}
 void yesno_dialog(void) {}

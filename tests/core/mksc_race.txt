@@ -1,0 +1,30 @@
+# Mario Kart: Super Circuit (Europe), one player from a blank save, for
+# tests/core/lockstep.c: past the title screen, A through the menus
+# (Mario GP, 50cc, the first driver, cup and course), then a race with
+# the accelerator held and a few turns.
+run 1100
+run 8 START
+run 120
+run 6 A
+run 60
+run 6 A
+run 60
+run 6 A
+run 60
+run 6 A
+run 60
+run 6 A
+run 60
+run 6 A
+run 60
+run 6 A
+run 60
+run 6 A
+run 60
+run 6 A
+run 300
+run 600 A
+run 60 A+LEFT
+run 300 A
+run 60 A+RIGHT
+run 900 A

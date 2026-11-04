@@ -68,9 +68,6 @@ u32 ALIGN_DATA spsr[7];
 #define DCACHE_FILL_WITH_LOCK                   (0x1F) // Fill with Lock (D)
 
 
-// Native code caches (see TRANSLATION_REGION_TYPE in cpu.h).
-#define READONLY_CODE_CACHE_SIZE          (1024 * 1024 * 4)
-#define WRITABLE_CODE_CACHE_SIZE          (1024 * 1024 * 2)
  /* The following parameter needs to be at least enough bytes to hold
   * the generated code for the largest instruction on your platform.
   * In most cases, that will be the ARM instruction
@@ -4232,5 +4229,7 @@ void cpu_read_savestate(SceUID savestate_file)
 
 void cpu_write_mem_savestate(SceUID savestate_file)
 {
+  // The new core keeps its registers to itself while it runs.
+  arm_gba_save_registers();
   CPU_SAVESTATE_BODY(WRITE_MEM);
 }

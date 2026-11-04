@@ -1,0 +1,122 @@
+# Pokemon LeafGreen (Italian), from a blank save, for render_check: the
+# Game Freak opening, the title screen, then a new game: the controls
+# guide, Professor Oak's welcome, the naming screens and the first steps,
+# pressing A about once a second and START now and then.
+run 1500
+run 8 START
+run 200
+run 8 A
+run 200
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 START
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 START
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 START
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 START
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 8 A
+run 52
+run 120 DOWN
+run 60 LEFT
+run 60 UP
+run 60 RIGHT
+run 300

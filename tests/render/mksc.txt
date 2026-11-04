@@ -1,0 +1,34 @@
+# Mario Kart: Super Circuit (Europe), one player, for render_check: the
+# intro and title, the menus with their default choices (Grand Prix,
+# 50cc, Mario, Mushroom Cup), then the first race, steering both ways.
+run 600
+run 8 START
+run 120
+run 8 A
+run 120
+run 8 A
+run 120
+run 8 A
+run 120
+run 8 A
+run 120
+run 8 A
+run 120
+run 8 A
+run 120
+run 8 A
+run 120
+run 8 A
+run 120
+run 8 A
+run 120
+run 8 A
+run 300
+run 600
+run 600 A
+run 90 A+LEFT
+run 300 A
+run 90 A+RIGHT
+run 600 A
+run 60 A+R
+run 900 A

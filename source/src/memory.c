@@ -26,6 +26,7 @@
 
 #include "common.h"
 #include "perf_monitor.h"
+#include "open_bios.h"
 
 /* Popup depth frame — declared in psp_video.h, defined in psp_video.c */
 extern void draw_popup_frame_auto(int x, int y, int w, int h);
@@ -85,6 +86,8 @@ u16 vram_metadata [0x18000]; // Video RAM code metadata                192 KiB
                              // Total                                  768 KiB
 
 u32 bios_read_protect;
+// 1 when bios.rom holds the built-in open BIOS instead of gba_bios.bin.
+u32 bios_builtin;
 
 // Internal memory control register (0x4000800).
 u32 iwram_control;
@@ -131,6 +134,16 @@ SceUID gamepak_file_large = GAMEPAK_FILE_NONE;
 
 // If OAM is written to:
 u32 oam_update = 1;
+
+u8 video_dirty[1568];
+u32 video_dirty_groups[13];
+
+// Marks offset, in video_dirty's numbering, as written.
+#define VIDEO_MARK_DIRTY(offset)                                              \
+{                                                                             \
+  video_dirty[(offset) >> 6] = 1;                                             \
+  ((u8 *)video_dirty_groups)[(offset) >> 11] = 1;                             \
+}                                                                             \
 
 
 // RTC
@@ -301,13 +314,22 @@ static u32 save_backup(char *name);
 static u32 encode_bcd(u8 value);
 
 #define SAVESTATE_SIZE  0x80000 // 512K Byte (524288 Byte)
-// The link cable snapshot occupies the last bytes of the savestate.
+// The link cable snapshot occupies the last bytes of the savestate. The word
+// before it says which BIOS made the savestate: SAVESTATE_BIOS_BUILTIN, or
+// anything else for gba_bios.bin (older savestates have zero padding there).
+// tests/test_open_bios.py reads these one-line defines and compiles load_bios,
+// the game_config option functions, the savestate BIOS helpers and
+// load_state_silent alone, by their exact signatures.
 #define SAVESTATE_SIO_OFFSET (SAVESTATE_SIZE - sizeof(GbaSioSnapshot))
+#define SAVESTATE_BIOS_OFFSET (SAVESTATE_SIO_OFFSET - sizeof(u32))
+#define SAVESTATE_BIOS_BUILTIN 0x4E45504F // "OPEN"
 u8 *write_mem_ptr;
 static void memory_write_mem_savestate(SceUID savestate_file);
 static void memory_read_savestate(SceUID savestate_file);
 static void read_gba_sio_snapshot(SceUID savestate_file);
-static int write_gba_sio_snapshot(u8 *savestate_buffer);
+static u32 savestate_bios_matches(SceUID savestate_file);
+static void show_savestate_bios_error(void);
+static int write_savestate_tail(u8 *savestate_buffer);
 
 typedef char GbaSioSnapshotMustFit[
  sizeof(GbaSioSnapshot) < SAVESTATE_SIZE ? 1 : -1];
@@ -1002,6 +1024,7 @@ static CPU_ALERT_TYPE write32_io_registers(u32 address, u32 value)
 static CPU_ALERT_TYPE write8_palette_ram(u32 address, u32 value)
 {
   ADDRESS16(palette_ram, address & 0x3Fe) = value | (value << 8);
+  VIDEO_MARK_DIRTY(address & 0x3FE);
 
   return CPU_ALERT_NONE;
 }
@@ -1009,6 +1032,7 @@ static CPU_ALERT_TYPE write8_palette_ram(u32 address, u32 value)
 static CPU_ALERT_TYPE write16_palette_ram(u32 address, u32 value)
 {
   ADDRESS16(palette_ram, address & 0x3Fe) = value;
+  VIDEO_MARK_DIRTY(address & 0x3FE);
 
   return CPU_ALERT_NONE;
 }
@@ -1016,12 +1040,14 @@ static CPU_ALERT_TYPE write16_palette_ram(u32 address, u32 value)
 static CPU_ALERT_TYPE write32_palette_ram(u32 address, u32 value)
 {
   ADDRESS32(palette_ram, address & 0x3FC) = value;
+  VIDEO_MARK_DIRTY(address & 0x3FC);
 
   return CPU_ALERT_NONE;
 }
 
 // VRAM is 96 KiB in a 128 KiB window; 0x18000-0x1FFFF mirrors the OBJ area
-// at 0x10000-0x17FFF.
+// at 0x10000-0x17FFF. Video memory writes are marked in video_dirty
+// (memory.h), VRAM from 0x800 in its numbering.
 #define WRITE_VRAM(type)                                                      \
   if (((address >> 16) & 0x01) != 0)                                          \
     address &= 0x17FFF;                                                       \
@@ -1029,6 +1055,7 @@ static CPU_ALERT_TYPE write32_palette_ram(u32 address, u32 value)
     address &= 0x0FFFF;                                                       \
                                                                               \
   ADDRESS##type(vram, address) = value;                                       \
+  VIDEO_MARK_DIRTY(0x800 + address);                                          \
   return check_smc_write(vram_metadata, address, 0x06);                       \
 
 // 8-bit writes to BG VRAM fill both bytes of the halfword; writes to OBJ
@@ -1044,6 +1071,7 @@ static CPU_ALERT_TYPE write8_vram(u32 address, u32 value)
     return  CPU_ALERT_NONE;
 
   ADDRESS16(vram, address) = value | (value << 8);
+  VIDEO_MARK_DIRTY(0x800 + address);
   return check_smc_write(vram_metadata, address, 0x06);
 }
 
@@ -1060,6 +1088,7 @@ static CPU_ALERT_TYPE write32_vram(u32 address, u32 value)
 #define WRITE_OAM_RAM(type)                                                   \
   oam_update = 1;                                                             \
   ADDRESS##type(oam_ram, address & 0x3FF) = value;                            \
+  VIDEO_MARK_DIRTY(0x400 + (address & 0x3FF));                                \
                                                                               \
   return  CPU_ALERT_NONE;                                                     \
 
@@ -1485,6 +1514,7 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       }
 
       ADDRESS16(io_registers, 0x00) = value;
+      video_io_written(0x00);
       break;
     }
 
@@ -1503,12 +1533,14 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       ACCESS_REGISTER16_LOW(0x28);
       affine_reference_x[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x28) = value;
+      video_io_written(0x28);
       break;
 
     case 0x2A:  // BG2X_H
       ACCESS_REGISTER16_HIGH(0x28);
       affine_reference_x[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x28) = value;
+      video_io_written(0x28);
       break;
 
     // BG2 reference Y
@@ -1516,12 +1548,14 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       ACCESS_REGISTER16_LOW(0x2C);
       affine_reference_y[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x2C) = value;
+      video_io_written(0x2C);
       break;
 
     case 0x2E:  // BG2Y_H
       ACCESS_REGISTER16_HIGH(0x2C);
       affine_reference_y[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x2C) = value;
+      video_io_written(0x2C);
       break;
 
     // BG3 reference X
@@ -1529,12 +1563,14 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       ACCESS_REGISTER16_LOW(0x38);
       affine_reference_x[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x38) = value;
+      video_io_written(0x38);
       break;
 
     case 0x3A:  // BG3X_H
       ACCESS_REGISTER16_HIGH(0x38);
       affine_reference_x[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x38) = value;
+      video_io_written(0x38);
       break;
 
     // BG3 reference Y
@@ -1542,12 +1578,14 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       ACCESS_REGISTER16_LOW(0x3C);
       affine_reference_y[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x3C) = value;
+      video_io_written(0x3C);
       break;
 
     case 0x3E:  // BG3Y_H
       ACCESS_REGISTER16_HIGH(0x3C);
       affine_reference_y[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x3C) = value;
+      video_io_written(0x3C);
       break;
 
     // Sound 1 control sweep
@@ -1778,6 +1816,9 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
 
     default:
       ADDRESS16(io_registers, address) = value;
+      // The other video registers, up to BLDY
+      if (address < 0x58)
+        video_io_written(address);
       break;
   }
 
@@ -1795,24 +1836,28 @@ CPU_ALERT_TYPE write_io_register32(u32 address, u32 value)
     case 0x28:
       affine_reference_x[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x28) = value;
+      video_io_written(0x28);
       break;
 
     // BG2 reference Y
     case 0x2C:
       affine_reference_y[0] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x2C) = value;
+      video_io_written(0x2C);
       break;
 
     // BG3 reference X
     case 0x38:
       affine_reference_x[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x38) = value;
+      video_io_written(0x38);
       break;
 
     // BG3 reference Y
     case 0x3C:
       affine_reference_y[1] = ((s32)value << 4) >> 4;
       ADDRESS32(io_registers, 0x3C) = value;
+      video_io_written(0x3C);
       break;
 
     // Sound FIFO A
@@ -2541,8 +2586,10 @@ u32 read_open_memory32(u32 address)
 }
 
 
-// Stores for C code (cheats), aligned down to their size; addresses of
-// 0x10000000 and above are ignored. Returns the handler's CPU_ALERT_* bits.
+// Stores for C code (cheats) and the new core's bus, aligned down to their
+// size; addresses of 0x10000000 and above are ignored. Returns the
+// handler's CPU_ALERT_* bits. A store to work RAM drops the new core's
+// code there (arm_gba_written).
 CPU_ALERT_TYPE write_memory8(u32 address, u8 value)
 {
   u32 region = address >> 24;
@@ -2550,6 +2597,7 @@ CPU_ALERT_TYPE write_memory8(u32 address, u8 value)
   if ((region & 0xF0) != 0)
     return CPU_ALERT_NONE;
 
+  arm_gba_written(address, 1);
   return (*mem_write8[region])(address, value);
 }
 
@@ -2561,6 +2609,7 @@ CPU_ALERT_TYPE write_memory16(u32 address, u16 value)
   if ((region & 0xF0) != 0)
     return CPU_ALERT_NONE;
 
+  arm_gba_written(address & ~0x01, 2);
   return (*mem_write16[region])(address & ~0x01, value);
 }
 
@@ -2572,6 +2621,7 @@ CPU_ALERT_TYPE write_memory32(u32 address, u32 value)
   if ((region & 0xF0) != 0)
     return CPU_ALERT_NONE;
 
+  arm_gba_written(address & ~0x03, 4);
   return (*mem_write32[region])(address & ~0x03, value);
 }
 
@@ -2598,6 +2648,19 @@ CPU_ALERT_TYPE write_memory32(u32 address, u32 value)
     return_value |= (*dma_write##type[dest_ptr >> 24])(dest_ptr, read_value); \
     dest_ptr += dest_increment;                                               \
   }                                                                           \
+
+// The units a transfer stored from first until next (one step past the
+// last), in either direction: the new core drops code there.
+static void dma_written(u32 first, u32 next, s32 increment, u32 unit)
+{
+  u32 last = next - increment;
+
+  first &= ~(unit - 1);
+  if (first <= last)
+    arm_gba_written(first, last - first + unit);
+  else
+    arm_gba_written(last, first - last + unit);
+}
 
 // Runs a whole DMA transfer at once, then reloads or stops the channel.
 // Returns CPU_ALERT_DMA plus alerts raised by the writes (SMC) and the
@@ -2655,6 +2718,9 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
 
     reg[CPU_DMA_LAST] = read_value;
   }
+
+  dma_written(dma->dest_address, dest_ptr, dest_increment,
+   dma->length_type == DMA_16BIT ? 2 : 4);
 
 
   // Open-bus reads now return the last DMA value (see read8_open).
@@ -3392,9 +3458,13 @@ static void reset_game_config_options(void)
 
   iwram_stack_optimize = 1;
 
-  // Undo the optional per-game BIOS patches (bios_rom_hack_39 / _2C).
-  bios.rom[0x39] = 0x00;
-  bios.rom[0x2C] = 0x00;
+  // Undo the optional per-game BIOS patches (bios_rom_hack_39 / _2C). They
+  // patch gba_bios.bin; in the built-in BIOS 0x2C is IRQ handler code.
+  if (!bios_builtin)
+  {
+    bios.rom[0x39] = 0x00;
+    bios.rom[0x2C] = 0x00;
+  }
 }
 
 // Applies one option from a matched game_config.txt entry; other keys are
@@ -3422,13 +3492,13 @@ static void apply_game_config_option(const char *current_variable, const char *c
     iwram_stack_optimize = 0;
   }
 
-  if (!strcasecmp(current_variable, "bios_rom_hack_39") &&
+  if (!bios_builtin && !strcasecmp(current_variable, "bios_rom_hack_39") &&
       !strcasecmp(current_value, "yes"))
   {
     bios.rom[0x39] = 0xC0;
   }
 
-  if (!strcasecmp(current_variable, "bios_rom_hack_2C") &&
+  if (!bios_builtin && !strcasecmp(current_variable, "bios_rom_hack_2C") &&
       !strcasecmp(current_value, "yes"))
   {
     bios.rom[0x2C] = 0x02;
@@ -3698,23 +3768,37 @@ s32 load_gamepak(char *name)
 }
 
 
-// Reads the 16 KB BIOS into bios.rom; -1 only if the file won't open (a
-// short file is not detected).
+// Reads the 16 KB BIOS file into bios.rom and returns 0. Otherwise bios.rom
+// gets the built-in open BIOS, and the result is -1 if the file won't open
+// or is a copy of the built-in image, -2 if it is not a GBA BIOS (too short,
+// or another image).
 s32 load_bios(char *name)
 {
   SceUID bios_file;
+  s32 bytes_read;
+  s32 result = -1;
 
   FILE_OPEN(bios_file, name, READ);
 
   if (FILE_CHECK_VALID(bios_file))
   {
-    FILE_READ(bios_file, bios.rom, 0x4000);
+    bytes_read = FILE_READ(bios_file, bios.rom, 0x4000);
     FILE_CLOSE(bios_file);
 
-    return 0;
+    // Every GBA BIOS starts with the reset vector "b 0x68" (EA000018). The
+    // built-in image does not, but ReGBA ships it as gba_bios.bin.
+    if ((bytes_read == 0x4000) && (memcmp(bios.rom, "\x18\x00\x00\xEA", 4) == 0))
+      result = 0;
+    else if ((bytes_read != 0x4000) ||
+     (memcmp(bios.rom, open_bios_rom, sizeof(open_bios_rom)) != 0))
+      result = -2;
   }
 
-  return -1;
+  bios_builtin = (result != 0);
+  if (bios_builtin)
+    memcpy(bios.rom, open_bios_rom, sizeof(open_bios_rom));
+
+  return result;
 }
 
 
@@ -3746,16 +3830,39 @@ static void read_gba_sio_snapshot(SceUID savestate_file)
   gba_sio_state_dirty = 1;
 }
 
-// Stores the link snapshot at its fixed offset at the end of the savestate
-// buffer. Returns 0 if the module data already reaches that offset.
-static int write_gba_sio_snapshot(u8 *savestate_buffer)
+// A game stopped inside one BIOS would crash in the other, so a savestate
+// loads only with the kind of BIOS that made it (see SAVESTATE_BIOS_OFFSET).
+static u32 savestate_bios_matches(SceUID savestate_file)
+{
+  u32 bios_word = 0;
+  u32 state_builtin;
+
+  FILE_SEEK(savestate_file, SAVESTATE_BIOS_OFFSET, SEEK_SET);
+  FILE_READ(savestate_file, &bios_word, sizeof(bios_word));
+  state_builtin = (bios_word == SAVESTATE_BIOS_BUILTIN);
+  return state_builtin == bios_builtin;
+}
+
+// Says which BIOS a refused savestate needs: the other one.
+static void show_savestate_bios_error(void)
+{
+  error_msg(MSG[bios_builtin ? MSG_ERR_STATE_NEEDS_BIOS_FILE :
+   MSG_ERR_STATE_NEEDS_BUILTIN_BIOS], CONFIRMATION_CONT);
+}
+
+// Stores the BIOS word and the link snapshot at their fixed offsets at the
+// end of the savestate buffer. Returns 0 if the module data reaches them.
+static int write_savestate_tail(u8 *savestate_buffer)
 {
   GbaSioSnapshot snapshot;
+  u32 bios_word = bios_builtin ? SAVESTATE_BIOS_BUILTIN : 0;
   size_t used = (size_t)(write_mem_ptr - savestate_buffer);
 
-  if(used > SAVESTATE_SIO_OFFSET)
+  if(used > SAVESTATE_BIOS_OFFSET)
     return 0;
 
+  memcpy(savestate_buffer + SAVESTATE_BIOS_OFFSET, &bios_word,
+   sizeof(bios_word));
   gba_sio_save_snapshot(&gba_sio, &snapshot);
   memcpy(savestate_buffer + SAVESTATE_SIO_OFFSET, &snapshot,
    sizeof(snapshot));
@@ -3764,11 +3871,8 @@ static int write_gba_sio_snapshot(u8 *savestate_buffer)
 
 u32 load_state(char *savestate_filename)
 {
-  SceUID savestate_file;
-  char savestate_path[MAX_PATH];
   char confirm_text[64];
   u32 prev_sound_pause = sound_pause;
-  u32 result = 0;
 
   if(main_link_active())
   {
@@ -3788,41 +3892,18 @@ u32 load_state(char *savestate_filename)
   }
   sound_pause = prev_sound_pause;
 
-  sprintf(savestate_path, "%s%s", dir_state, savestate_filename);
-
-  scePowerLock(0);
-
-  FILE_OPEN(savestate_file, savestate_path, READ);
-
-  if (FILE_CHECK_VALID(savestate_file))
-  {
-    FILE_SEEK(savestate_file, GBA_SCREEN_SIZE + sizeof(u64), SEEK_SET);
-
-    SAVESTATE_BLOCK(read);
-    read_gba_sio_snapshot(savestate_file);
-    FILE_CLOSE(savestate_file);
-
-    clear_metadata_area(METADATA_AREA_EWRAM, CLEAR_REASON_LOADING_STATE);
-    clear_metadata_area(METADATA_AREA_IWRAM, CLEAR_REASON_LOADING_STATE);
-    clear_metadata_area(METADATA_AREA_VRAM,  CLEAR_REASON_LOADING_STATE);
-
-    oam_update = 1;
-    gbc_sound_update = 1;
-    reg[CHANGED_PC_STATUS] = 1;
-    result = 1;
-  }
-
-  scePowerUnlock(0);
-  return result;
+  return load_state_silent(savestate_filename);
 }
 
-// load_state() without the confirmation dialog.
+// load_state() without the confirmation dialog. A savestate made with the
+// other BIOS is not loaded; the player is told which BIOS it needs.
 u32 load_state_silent(char *savestate_filename)
 {
   SceUID savestate_file;
   char savestate_path[MAX_PATH];
   u32 prev_sound_pause = sound_pause;
   u32 result = 0;
+  u32 bios_matches;
 
   if(main_link_active())
     return 0;
@@ -3834,8 +3915,10 @@ u32 load_state_silent(char *savestate_filename)
   scePowerLock(0);
 
   FILE_OPEN(savestate_file, savestate_path, READ);
+  bios_matches = !FILE_CHECK_VALID(savestate_file) ||
+   savestate_bios_matches(savestate_file);
 
-  if (FILE_CHECK_VALID(savestate_file))
+  if (FILE_CHECK_VALID(savestate_file) && bios_matches)
   {
     FILE_SEEK(savestate_file, GBA_SCREEN_SIZE + sizeof(u64), SEEK_SET);
 
@@ -3852,8 +3935,12 @@ u32 load_state_silent(char *savestate_filename)
     reg[CHANGED_PC_STATUS] = 1;
     result = 1;
   }
+  else if (FILE_CHECK_VALID(savestate_file))
+    FILE_CLOSE(savestate_file);
 
   scePowerUnlock(0);
+  if (!bios_matches)
+    show_savestate_bios_error();
   sound_pause = prev_sound_pause;
   return result;
 }
@@ -3904,7 +3991,7 @@ u32 save_state(char *savestate_filename, u16 *screen_capture)
     FILE_WRITE_MEM_VARIABLE(savestate_file, current_time);
 
     SAVESTATE_BLOCK(write_mem);
-    if(write_gba_sio_snapshot(savestate_write_buffer))
+    if(write_savestate_tail(savestate_write_buffer))
     {
       FILE_WRITE(savestate_file, savestate_write_buffer, SAVESTATE_SIZE);
       result = 1;
@@ -3951,7 +4038,7 @@ u32 save_state_silent(char *savestate_filename, u16 *screen_capture)
     FILE_WRITE_MEM_VARIABLE(savestate_file, current_time);
 
     SAVESTATE_BLOCK(write_mem);
-    if(write_gba_sio_snapshot(savestate_write_buffer))
+    if(write_savestate_tail(savestate_write_buffer))
     {
       FILE_WRITE(savestate_file, savestate_write_buffer, SAVESTATE_SIZE);
       result = 1;

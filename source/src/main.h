@@ -64,6 +64,11 @@
 // renderer option
 #define VIDEO_RENDERER_OLD 0
 #define VIDEO_RENDERER_NEW 1
+#define VIDEO_RENDERER_PPU 2   /* gba_ppu.c, "Exact" in the menu */
+
+// CPU core option: the dynarec of cpu.c, or the core of arm_gba.c
+#define CPU_CORE_CLASSIC 0
+#define CPU_CORE_NEW     1
 
 
 extern u32 option_screen_scale;
@@ -73,6 +78,10 @@ extern u32 option_sound_volume;
 extern u32 option_stack_optimize;
 extern u32 option_ram_dynarec_policy;
 extern u32 option_video_renderer;
+/* Takes effect when a game starts or resets; main_cpu_core is the core
+   running now. */
+extern u32 option_cpu_core;
+extern u32 main_cpu_core;
 extern u32 option_oam_hijacking_enabled;
 extern u32 option_boot_mode;
 extern u32 option_update_backup;
@@ -161,8 +170,8 @@ int main_perf_stop(void);
 void main_perf_snapshot(PerfMetricsSnapshot *snapshot);
 int main_perf_write_report(char *output_path, size_t output_path_size);
 
-/* Hardware scheduler called by the dynarec; returns the next slice length
-   in CPU cycles. */
+/* Hardware scheduler called by the CPU core after each slice of
+   reg[EXECUTE_CYCLES] cycles; returns the next slice length. */
 u32 update_gba(void);
 
 void reset_gba(void);

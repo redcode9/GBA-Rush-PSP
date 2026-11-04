@@ -44,7 +44,8 @@ header or source file; the main ones are:
 | Area | Files |
 | --- | --- |
 | Entry and scheduler | `main.c`: entry point, the `update_gba` hardware scheduler, frame pacing, power callbacks |
-| CPU | `cpu.c` finds, translates and caches ARM/Thumb blocks (there is no interpreter); `mips_emit.h` emits the MIPS code; `mips_stub.S` holds the runtime stubs and memory handlers that translated code calls |
+| CPU, Classic | `cpu.c` finds, translates and caches ARM/Thumb blocks (there is no interpreter); `mips_emit.h` emits the MIPS code; `mips_stub.S` holds the runtime stubs and memory handlers that translated code calls |
+| CPU, New | `arm_decode.c` turns ARM/Thumb code into the IR of `arm_ir.h`, `arm_interp.c` caches and interprets it, `arm_mips.c` compiles it to MIPS; `arm_gba.c` runs that core in the emulator. `make check-core` tests it against SingleStepTests and mGBA |
 | Memory and I/O | `memory.c`: memory map, I/O registers, DMA, ROM paging, save memory, RTC; `gba_sio.c`: serial port |
 | Video | `video_dispatch.c` runs `video_cc.cc` (default) or `video.c` (old renderer), each built through its `*_wrap` file; `psp_video.c` presents frames and draws the menu |
 | Sound | `sound.c`, with `sound_math.c`, `fast_forward_audio.c` and `link_audio_wait.c` |
@@ -53,7 +54,9 @@ header or source file; the main ones are:
 | Link cable | `link_cable.c`, `link_net.c`, `psp_adhoc.c`, `adhoc_peer.c`; see the [link cable notes](docs/link-cable.md) |
 | Diagnostics | `runtime_log*.c`, `perf_*.c`, `exception.c` (crash screen) |
 
-`zlib/`, `gbkfont.c` and `shinonomefont.c` are vendored. Modules with a host
+`zlib/`, `gbkfont.c` and `shinonomefont.c` are vendored, and so is the
+built-in BIOS: `open_bios.h` holds its image, and `source/bios/` (kept byte for
+byte, see its README) its source. Modules with a host
 test, such as the `*_model`, `*_policy`, `*_math` and `*_store` files,
 `gba_sio.c`, `link_cable.c` and `link_net.c`, avoid PSP headers; keep new logic
 in that shape when it can be tested off the console.
@@ -97,8 +100,9 @@ make check-rom-link MGBA_DIR=/path/to/mgba ROM=firered.gba \
 
 Keep paired PSP logs with the build hashes and reproduction steps. Store local
 results in `artifacts/`, build output in `build/` and packages in `dist/`.
-These directories are ignored. BIOS files, game ROMs, saves and local settings
-stay out of Git; diagnostic ROM sources must be redistributable.
+These directories are ignored. BIOS dumps (`gba_bios.bin`), game ROMs, saves
+and local settings stay out of Git; diagnostic ROM sources must be
+redistributable.
 
 Open release pull requests against `develop`, then promote the reviewed source
 to `master`. Hardware acceptance remains required for a stable release; an

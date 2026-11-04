@@ -7,7 +7,7 @@
 /* Settings as stored in tempgba.cfg and the per-game .cfg files; see
    config_model.c for the byte layout. */
 #define CONFIG_MODEL_GAMEPAD_COUNT 16U
-#define CONFIG_MODEL_VALUE_COUNT 45U
+#define CONFIG_MODEL_VALUE_COUNT 46U
 #define CONFIG_MODEL_LEGACY_CURRENT_WORDS 39U   // largest headerless layout
 #define CONFIG_MODEL_HEADER_SIZE 16U
 #define CONFIG_MODEL_ENCODED_SIZE \
@@ -53,6 +53,7 @@ typedef struct
   uint32_t fast_forward_speed;
   uint32_t fast_forward_presentation;
   uint32_t fast_forward_audio;
+  uint32_t cpu_core;
 } ConfigModel;
 
 void config_model_defaults(ConfigModel *model);

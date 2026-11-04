@@ -23,7 +23,8 @@
 // codes are the same formats unencrypted, and CodeBreaker codes are decoded
 // and run by codebreaker.c. A CodeBreaker 1xxxxxxx code instead runs the
 // codes when the CPU reaches a ROM address: cpu.c checks
-// cheat_hook_configured() and mips_stub.S calls process_cheats_at_hook().
+// cheat_hook_configured() and mips_stub.S calls process_cheats_at_hook(),
+// or the new core calls it at the active hook (arm_gba_set_cheat_hook).
 
 #include "common.h"
 #include "codebreaker.h"
@@ -228,6 +229,7 @@ void rebuild_active_cheat_indexes(void)
   active_cheat_count = 0;
   active_codebreaker_count = 0;
   active_dispatch_hook = selected_hook;
+  arm_gba_set_cheat_hook(selected_hook);
 
   for(i = 0; i < num_cheats; i++)
   {
@@ -252,6 +254,7 @@ void clear_cheats(void)
   active_cheat_count = 0;
   active_codebreaker_count = 0;
   active_dispatch_hook = 0;
+  arm_gba_set_cheat_hook(0);
 }
 
 

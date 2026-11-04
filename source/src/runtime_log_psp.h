@@ -26,8 +26,10 @@
    or the logs directory cannot be used, the log stays in memory only;
    otherwise the old session files are rotated and a first snapshot written. */
 int runtime_log_psp_init(const char *base_path);
+/* Logs ROM_OPEN at every start or reset: the game, and the CPU core
+   (CPU_CORE_* in main.h) it runs on. */
 void runtime_log_psp_set_rom(const uint8_t *game_code, uint8_t revision,
- uint32_t rom_size, uint32_t emulated_cycle);
+ uint32_t rom_size, uint32_t cpu_core, uint32_t emulated_cycle);
 /* Emulator thread only: each ring has a single writer (see RuntimeLogRing).
    Ignored before runtime_log_psp_init(). */
 void runtime_log_psp_main(RuntimeLogEventType type, uint32_t emulated_cycle,

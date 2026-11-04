@@ -2,8 +2,8 @@
 
 set -eu
 
-# Builds dist/GBA-Rush-PSP-VERSION.zip from the built EBOOT.PBP and
-# exception.prx plus the documentation (make package). The archive is
+# Builds dist/GBA-Rush-PSP-VERSION.zip from the built EBOOT.PBP,
+# exception.prx and media_engine.prx plus the documentation (make package). The archive is
 # reproducible: every file gets the last commit's time (or
 # SOURCE_DATE_EPOCH) and zip -X leaves out extra file attributes.
 
@@ -23,9 +23,10 @@ esac
 documentation_files='LICENSE NOTICE README.md CHANGELOG.md CONTRIBUTING.md
 docs/link-cable.md docs/ROADMAP-1.4.0.md docs/images/link-trade-room.jpg
 docs/images/link-cable-club.jpg docs/images/link-trainer-card.jpg
-source/copyright source/res/PIC1.png'
+source/copyright source/bios/README.md source/res/PIC1.png'
 
-for required in source/EBOOT.PBP source/exception.prx $documentation_files
+for required in source/EBOOT.PBP source/exception.prx \
+  source/media_engine.prx $documentation_files
 do
   if [ ! -f "$required" ]; then
     echo "Missing required file: $required" >&2
@@ -67,6 +68,7 @@ mkdir -p "$install_root"
 
 cp source/EBOOT.PBP "$install_root/EBOOT.PBP"
 cp source/exception.prx "$install_root/exception.prx"
+cp source/media_engine.prx "$install_root/media_engine.prx"
 for document in $documentation_files
 do
   mkdir -p "$release_root/$(dirname "$document")"
