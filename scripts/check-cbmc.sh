@@ -1,10 +1,10 @@
 #!/bin/sh
 set -eu
 
-# Bounded model check of link_net.c's datagram handling with CBMC
-# (make check-cbmc). Not part of make check, since it needs CBMC; tree-check
-# only makes sure this script and its proof exist and keep unwinding
-# assertions on.
+# Bounded model checks with CBMC (make check-cbmc) of link_net.c's datagram
+# handling and of the savestate trailer decoder. Not part of make check,
+# since it needs CBMC; tree-check only makes sure this script and the
+# link_net proof exist and keep unwinding assertions on.
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cbmc_bin=${CBMC:-cbmc}
@@ -36,5 +36,10 @@ run_proof()
 run_proof link-net 14 -DLINK_NET_QUEUE=4u \
   "$repo_root/proofs/cbmc/prove_link_net.c" \
   "$repo_root/source/src/link_net.c"
+
+# The proof supplies its own crc32, so zlib's crc32.c is not linked in.
+run_proof savestate-trailer 70 -DZLIB_CONST \
+  "$repo_root/proofs/cbmc/prove_savestate_trailer.c" \
+  "$repo_root/source/src/savestate_trailer.c"
 
 echo "CBMC bounded proofs passed"

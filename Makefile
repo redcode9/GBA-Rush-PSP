@@ -639,7 +639,7 @@ $(HOST_SANITIZE_DIR)/test_gba_ppu_log: $(GBA_PPU_LOG_SOURCES) \
 	$(HOST_CC) -std=c99 -pthread -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src $(GBA_PPU_LOG_SOURCES) -o $@
 
-# Optional gates outside make check: the CBMC proof needs CBMC, the ROM link
+# Optional gates outside make check: the CBMC proofs need CBMC, the ROM link
 # trade needs mGBA plus your own FireRed ROM, BIOS and save, and races Mario
 # Kart: Super Circuit as well when MKSC names its ROM. check-core runs the
 # new ARM core against the SingleStepTests suite and in lockstep with mGBA
