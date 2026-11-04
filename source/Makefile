@@ -94,6 +94,8 @@ message.o: CFLAGS += -finput-charset=UTF-8 -fexec-charset=GBK
 # #include the real source, so each wrapper depends on that file.
 video_cc_wrap.o: src/video_cc.cc
 video_old_wrap.o: src/video.c
+# memory.c embeds the built-in BIOS from this header.
+memory.o: src/open_bios.h
 
 INCDIR = SDK/include src src/zlib src/libpower
 LIBDIR = SDK/lib

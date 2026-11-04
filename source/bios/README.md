@@ -60,7 +60,7 @@ the emulator starts.
 Savestates record which of the two BIOSes made them and load only with the
 same one, because a game paused inside one BIOS would crash in the other;
 savestates from earlier versions count as made with `gba_bios.bin`, and GBA
-Rush PSP 1.4.2 and earlier do not check this. The automatic savestate has one
+Rush PSP 1.4.3 and earlier do not check this. The automatic savestate has one
 file per BIOS (`<rom>_auto.svs` with `gba_bios.bin`, `<rom>_auto-builtin.svs`
 with this one), so neither BIOS overwrites the other's. The
 `bios_rom_hack_39` and `bios_rom_hack_2C` options of `game_config.txt` patch

@@ -1553,19 +1553,18 @@ static void load_setting_cfg(void)
   }
 }
 
-/* Loads gba_bios.bin from the emulator folder; the emulator cannot run
-   without it, so a missing BIOS is reported and quits. */
+/* Loads gba_bios.bin from the emulator folder; without a usable one,
+   load_bios() falls back to the built-in open BIOS. A file that is there
+   but is not a GBA BIOS is reported, since the player meant to use it.
+   tests/test_open_bios.py compiles this function alone. */
 static void load_bios_file(void)
 {
   char filename[MAX_FILE];
 
   sprintf(filename, "%sgba_bios.bin", main_path);
 
-  if (load_bios(filename) < 0)
-  {
-    error_msg(MSG[MSG_ERR_BIOS_NONE], CONFIRMATION_QUIT);
-    quit();
-  }
+  if (load_bios(filename) == -2)
+    error_msg(MSG[MSG_ERR_BIOS_INVALID], CONFIRMATION_CONT);
 }
 
 /* Find the emulator's home directory.

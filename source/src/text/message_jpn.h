@@ -553,8 +553,14 @@
   // MSG_ERR_LOAD_DIR_INI
   "dir.ini ファイルを読み込めませんでした.\nすべては次のディレクトリに設定されています:\n%s",
 
-  // MSG_ERR_BIOS_NONE
-  "BIOSイメージファイルを読み込めませんでした.",
+  // MSG_ERR_BIOS_INVALID
+  "gba_bios.bin は 16 KB の GBA BIOS イメージではありません.\n代わりに内蔵 BIOS を使用します.",
+
+  // MSG_ERR_STATE_NEEDS_BIOS_FILE
+  "このステートは gba_bios.bin で保存されました.\n読み込むには gba_bios.bin をエミュレータのフォルダに\n戻して、エミュレータを再起動してください.",
+
+  // MSG_ERR_STATE_NEEDS_BUILTIN_BIOS
+  "このステートは内蔵 BIOS で保存されました.\n読み込むには gba_bios.bin をエミュレータのフォルダから\n別の場所に移動して、エミュレータを再起動してください.",
 
   // MSG_ERR_LOAD_GAMEPACK
   "ゲームファイルを読み込めませんでした.",
