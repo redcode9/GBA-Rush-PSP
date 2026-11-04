@@ -578,6 +578,30 @@ static int multiply_case(void)
   return 1;
 }
 
+/* With sampling set, the block generated code last entered (where a
+   profiler would put a sample) must be a block of the cache compiled at
+   that address. Runs that flushed or dropped code are left out. */
+static unsigned long long sampled_runs;
+
+static int sampled_block_ok(uint32_t flushes, uint32_t dropped)
+{
+  uint32_t key = arm_mips_sampled_key(jit);
+  unsigned i;
+
+  if(!jit->sampling || !jit->entered || jit->stats.flushes != flushes ||
+     jit->stats.dropped != dropped)
+    return 1;
+  for(i = 0; i < jit->core.block_count; i++)
+    if(jit->core.blocks[i].key == key && jit->code[i] == jit->entered - 8)
+    {
+      sampled_runs++;
+      return 1;
+    }
+  printf("sampled block %08X at %08X is no compiled block\n", key,
+   jit->entered);
+  return 0;
+}
+
 static int run_case(uint32_t seed)
 {
   uint32_t values[7 * 8 + 15];
@@ -671,6 +695,8 @@ static int run_case(uint32_t seed)
     int32_t budget = (int32_t)(rng() % 1500) + 1;
     int irq = (rng() & 7) == 0;
     int32_t ran[2];
+    uint32_t flushes;
+    uint32_t dropped;
 
     reference.irq_line = jit->core.irq_line = irq;
     if((rng() & 15) == 0)
@@ -679,8 +705,13 @@ static int run_case(uint32_t seed)
       arm_core_set_waitcnt(&reference, waitcnt);
       arm_core_set_waitcnt(&jit->core, waitcnt);
     }
+    flushes = jit->stats.flushes;
+    dropped = jit->stats.dropped;
+    jit->entered = 0;
     ran[0] = arm_core_run(&reference, budget);
     ran[1] = arm_mips_run(jit, budget);
+    if(!sampled_block_ok(flushes, dropped))
+      return 0;
     if(!compare("run", seed, i) || ran[0] != ran[1])
     {
       if(ran[0] != ran[1])
@@ -712,6 +743,7 @@ int main(int argc, char **argv)
   unsigned cases = 1000;
   unsigned passed = 0;
   unsigned i;
+  unsigned n;
   int arg;
 
   for(arg = 1; arg < argc; arg++)
@@ -782,6 +814,16 @@ int main(int argc, char **argv)
    jit->stats.misses, jit->stats.bails, jit->stats.dropped,
    jit->stats.flushes, mips_unicorn_calls, guest_instructions ?
    (double)mips_unicorn_executed / (double)guest_instructions : 0.0);
+  /* The first cases again with blocks noting their entry, as for the
+     profiler: same results, and the notes point at the blocks. */
+  jit->sampling = 1;
+  for(n = 0; n < 4 && n < cases; n++)
+    if(!run_case(seed + n))
+      return 1;
+  printf("jit_fuzz: with sampling, %llu runs left from the block noted\n",
+   sampled_runs);
+  if(!sampled_runs)
+    return 1;
   if(jit->stats.compile_ticks != jit->stats.blocks + jit->stats.interpreted)
   {
     printf("jit_fuzz: %u compile ticks for %u blocks compiled and %u "

@@ -85,6 +85,12 @@
  * Tests run this code in Unicorn, taught the four Allegrex instructions
  * it lacks (scripts/build-unicorn.sh) rather than given substitutes, so
  * they check the words the PSP runs (tests/core/mips_unicorn.c).
+ *
+ * Profiling. ArmMips.phase always says what the core is doing, for a
+ * sampler on another thread. With sampling set, each block's main entry
+ * first notes its own address (a bltzal, which links without branching,
+ * and a store), so a sample taken in generated code can name its block.
+ * The host's clock, when it gives one, times decoding and compiling.
  */
 
 #include "arm_mips.h"
@@ -176,6 +182,7 @@ static const uint8_t guest_register[15] =
 #define BGTZ(s) I_TYPE(0x07, s, 0, 0)
 #define BLTZ(s) I_TYPE(0x01, s, 0, 0)
 #define BGEZ(s) I_TYPE(0x01, s, 1, 0)
+#define BLTZAL(s) I_TYPE(0x01, s, 0x10, 0)
 #define J(address) (2u << 26 | ((address) >> 2 & 0x3FFFFFFu))
 #define JAL(address) (3u << 26 | ((address) >> 2 & 0x3FFFFFFu))
 
@@ -2233,6 +2240,13 @@ static uint32_t compile(ArmMips *jit, const ArmIrOp *ops, unsigned count,
     load_constant(b, A1, key);
     leave(b, status(b, STATUS_BUDGET, ARM_EXIT_JUMP));
     b->cold = 0;
+    if(jit->sampling)
+    {
+      /* bltzal never branches but always links: ra is the main entry + 8,
+         noted for the profiler. */
+      emit(b, BLTZAL(ZERO));
+      emit(b, SW(RA, JIT(entered), GP));
+    }
   }
   compile_ops(b);
   if(b->failed || at + b->hot_count + b->cold_count > end)
@@ -2556,11 +2570,25 @@ uint32_t arm_mips_access(ArmCore *core, uint32_t address, uint32_t value,
   ArmMips *jit = jit_of(core);
   uint32_t result;
 
+  jit->phase = ARM_MIPS_PHASE_MEMORY;
   core->insn_pc = jit->call_pc & ~1u;
   core->cpsr = (core->cpsr & ~ARM_CPSR_T) | (jit->call_pc & 1) << 5;
   result = arm_core_access(core, info & 0xFF, info >> 8, address, value);
   set_base(jit);
+  jit->phase = ARM_MIPS_PHASE_CODE;
   return result;
+}
+
+uint32_t arm_mips_sampled_key(const ArmMips *jit)
+{
+  uint32_t entered = jit->entered;
+  uint32_t word = (entered - jit->buffer_target) / 4;
+
+  /* entered is a main entry + 8; the block's key is 6 words back. */
+  if(entered < jit->buffer_target || word < jit->blocks_start + 6 ||
+     word >= jit->used)
+    return 0;
+  return jit->buffer[word - 6];
 }
 
 static uint32_t run_code(ArmMips *jit, uint32_t code)
@@ -2620,9 +2648,11 @@ static uint32_t block_entry(ArmMips *jit)
 
   if(!block)
   {
+    jit->phase = ARM_MIPS_PHASE_TRANSLATE;
     start = ticks(jit);
     block = arm_core_block(core);
     jit->stats.decode_ticks += ticks(jit) - start;
+    jit->phase = ARM_MIPS_PHASE_DISPATCH;
   }
   index = (unsigned)(block - core->blocks);
   entry = jit->code[index];
@@ -2640,6 +2670,7 @@ static uint32_t block_entry(ArmMips *jit)
     jit->code[index] = 1;
     return 0;
   }
+  jit->phase = ARM_MIPS_PHASE_TRANSLATE;
   start = ticks(jit);
   for(tries = 0; tries < 2; tries++)
   {
@@ -2655,6 +2686,7 @@ static uint32_t block_entry(ArmMips *jit)
     index = (unsigned)(block - core->blocks);
   }
   jit->stats.compile_ticks += ticks(jit) - start;
+  jit->phase = ARM_MIPS_PHASE_DISPATCH;
   if(!entry)
   {
     jit->code[index] = 1;
@@ -2704,6 +2736,7 @@ int32_t arm_mips_run(ArmMips *jit, int32_t cycles)
   fast_regions(jit);
   core->cycles = 0;
   core->cycle_limit = cycles;
+  jit->phase = ARM_MIPS_PHASE_DISPATCH;
   for(;;)
   {
     uint32_t entry;
@@ -2720,11 +2753,17 @@ int32_t arm_mips_run(ArmMips *jit, int32_t cycles)
     entry = block_entry(jit);
     core->exit_request = 0;
     if(!entry)
+    {
+      jit->phase = ARM_MIPS_PHASE_INTERPRET;
       check = arm_core_run_block(core) != ARM_EXIT_NEXT;
+      jit->phase = ARM_MIPS_PHASE_DISPATCH;
+    }
     else
     {
       set_base(jit);
+      jit->phase = ARM_MIPS_PHASE_CODE;
       code = run_code(jit, entry);
+      jit->phase = ARM_MIPS_PHASE_DISPATCH;
       arg = jit->exit_arg;
       check = 1;
       switch(code & 15)
@@ -2746,8 +2785,10 @@ int32_t arm_mips_run(ArmMips *jit, int32_t cycles)
         case STATUS_BAIL:
           core->cpsr = (core->cpsr & ~ARM_CPSR_T) |
            ((code & STATUS_THUMB) ? ARM_CPSR_T : 0);
+          jit->phase = ARM_MIPS_PHASE_INTERPRET;
           check = arm_core_execute(core, bail_ops(jit, code) + arg) !=
            ARM_EXIT_NEXT;
+          jit->phase = ARM_MIPS_PHASE_DISPATCH;
           jit->stats.bails++;
           break;
         default:
@@ -2765,6 +2806,7 @@ int32_t arm_mips_run(ArmMips *jit, int32_t cycles)
         break;
     }
   }
+  jit->phase = ARM_MIPS_PHASE_EVENTS;
   return core->cycles;
 }
 
@@ -2841,6 +2883,9 @@ void arm_mips_init(ArmMips *jit, const ArmBus *bus, const ArmMipsHost *host,
   jit->generation = 0;
   jit->count_instructions = 0;
   jit->profiling = 0;
+  jit->sampling = 0;
+  jit->entered = 0;
+  jit->phase = ARM_MIPS_PHASE_EVENTS;
   memset(&jit->stats, 0, sizeof(jit->stats));
   memset(jit->profile, 0, sizeof(jit->profile));
   write_runtime(jit);

@@ -58,6 +58,20 @@ typedef struct
   uint32_t (*clock)(void *context);
 } ArmMipsHost;
 
+/* What the thread running the core is doing, in ArmMips.phase, for a
+   sampling profiler. Outside arm_mips_run it is EVENTS: the rest of the
+   system (timers, video, sound) between two runs of the core. */
+enum
+{
+  ARM_MIPS_PHASE_CODE,       /* generated code and the routines it calls */
+  ARM_MIPS_PHASE_DISPATCH,   /* C between blocks: lookups, links, IRQs */
+  ARM_MIPS_PHASE_MEMORY,     /* the memory accesses generated code calls */
+  ARM_MIPS_PHASE_TRANSLATE,  /* decoding and compiling new blocks */
+  ARM_MIPS_PHASE_INTERPRET,  /* the interpreter, for a block or its rest */
+  ARM_MIPS_PHASE_EVENTS,
+  ARM_MIPS_PHASES
+};
+
 typedef struct
 {
   uint32_t blocks;          /* compiled */
@@ -87,6 +101,8 @@ typedef struct ArmMips
   int32_t cycle_base;       /* the cycle register holds cycles minus this */
   uint32_t call_pc;         /* insn_pc | Thumb of the access in progress */
   uint32_t exit_arg;
+  uint32_t entered;         /* with sampling set, where generated code last
+                               entered a block (see arm_mips_sampled_key) */
   uint32_t fast[2][4];      /* work RAM and internal RAM for the slow paths:
                                target, mask (0: use C), code map bias */
   /* Nonzero where work RAM holds translated code (since the last flush):
@@ -115,6 +131,8 @@ typedef struct ArmMips
   uint32_t generation;      /* counts flushes, to spot one mid-link */
   int count_instructions;   /* keep core.instructions (tests, stats) */
   int profiling;            /* count return stack and dispatch hits */
+  int sampling;             /* blocks note their entry (flush to apply) */
+  volatile uint32_t phase;  /* ARM_MIPS_PHASE_* */
   ArmMipsStats stats;
 } ArmMips;
 
@@ -130,6 +148,11 @@ void arm_mips_init(ArmMips *jit, const ArmBus *bus, const ArmMipsHost *host,
 int32_t arm_mips_run(ArmMips *jit, int32_t cycles);
 ArmExitKind arm_mips_run_block(ArmMips *jit);
 int arm_mips_step(ArmMips *jit);
+
+/* For a profiler sampling from another thread: the key (address | Thumb)
+   of the block generated code entered last, 0 if unknown. Needs sampling
+   set, and may be stale for a moment after a flush. */
+uint32_t arm_mips_sampled_key(const ArmMips *jit);
 
 /* The memory access generated code calls for what it cannot do itself:
    info is the op's code | flags << 8. */
