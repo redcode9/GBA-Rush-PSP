@@ -55,8 +55,9 @@ header or source file; the main ones are:
 | Diagnostics | `runtime_log*.c`, `perf_*.c`, `exception.c` (crash screen) |
 
 `zlib/`, `gbkfont.c` and `shinonomefont.c` are vendored, and so is the
-built-in BIOS: `open_bios.h` holds its image, and `source/bios/` (kept byte for
-byte, see its README) its source. Modules with a host
+built-in BIOS: `open_bios.h` holds its image, which
+`scripts/build-open-bios.py` builds, and `source/bios/` its source (ReGBA's,
+changed only where its README says). Modules with a host
 test, such as the `*_model`, `*_policy`, `*_math` and `*_store` files,
 `gba_sio.c`, `link_cable.c` and `link_net.c`, avoid PSP headers; keep new logic
 in that shape when it can be tested off the console.

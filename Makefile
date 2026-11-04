@@ -51,9 +51,10 @@ HOST_TEST_DYNAREC_WORKLIST = $(HOST_BUILD_DIR)/test_dynarec_worklist
 HOST_TEST_SOUND_MATH = $(HOST_BUILD_DIR)/test_sound_math
 HOST_TEST_RUNTIME_LOG = $(HOST_BUILD_DIR)/test_runtime_log
 HOST_TEST_ARM_CORE = $(HOST_BUILD_DIR)/test_arm_core
+# Runs the built-in BIOS image on the ARM core's interpreter too.
 HOST_TEST_BIOS_HLE = $(HOST_BUILD_DIR)/test_bios_hle
 BIOS_HLE_SOURCES = tests/test_bios_hle.c source/src/bios_hle.c
-BIOS_HLE_HEADERS = source/src/bios_hle.h
+BIOS_HLE_HEADERS = source/src/bios_hle.h source/src/open_bios.h
 # arm_mips.c is only compiled here (its tests need Unicorn: make check-core).
 ARM_CORE_SOURCES = source/src/arm_decode.c source/src/arm_interp.c \
  source/src/arm_mips.c
@@ -392,10 +393,11 @@ $(HOST_TEST_ARM_CORE): tests/test_arm_core.c $(ARM_CORE_SOURCES) \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_arm_core.c $(ARM_CORE_SOURCES) -o $@
 
-$(HOST_TEST_BIOS_HLE): $(BIOS_HLE_SOURCES) $(BIOS_HLE_HEADERS)
+$(HOST_TEST_BIOS_HLE): $(BIOS_HLE_SOURCES) $(BIOS_HLE_HEADERS) \
+ $(ARM_CORE_SOURCES) $(ARM_CORE_HEADERS)
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
-	 $(BIOS_HLE_SOURCES) -o $@
+	 $(BIOS_HLE_SOURCES) $(ARM_CORE_SOURCES) -o $@
 
 $(HOST_TEST_GBA_PPU): tests/test_gba_ppu.c source/src/gba_ppu.c \
  source/src/gba_ppu.h
@@ -618,10 +620,11 @@ $(HOST_SANITIZE_DIR)/test_arm_core: tests/test_arm_core.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_arm_core.c $(ARM_CORE_SOURCES) -o $@
 
-$(HOST_SANITIZE_DIR)/test_bios_hle: $(BIOS_HLE_SOURCES) $(BIOS_HLE_HEADERS)
+$(HOST_SANITIZE_DIR)/test_bios_hle: $(BIOS_HLE_SOURCES) $(BIOS_HLE_HEADERS) \
+ $(ARM_CORE_SOURCES) $(ARM_CORE_HEADERS)
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
-	 -Isource/src $(BIOS_HLE_SOURCES) -o $@
+	 -Isource/src $(BIOS_HLE_SOURCES) $(ARM_CORE_SOURCES) -o $@
 
 $(HOST_SANITIZE_DIR)/test_gba_ppu: tests/test_gba_ppu.c \
  source/src/gba_ppu.c source/src/gba_ppu.h

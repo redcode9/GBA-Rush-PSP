@@ -1,11 +1,14 @@
 """Check the built-in BIOS and the production code that picks and records it."""
 
 import hashlib
+import importlib.util
 import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -15,8 +18,14 @@ from tests.test_startup import function
 
 ROOT = Path(__file__).resolve().parents[1]
 MEMORY = "source/src/memory.c"
-# bios/open_gba_bios.bin of libretro/gpsp 5819380 (see source/bios/README.md).
-OPEN_BIOS_SHA256 = "661a9afb93624f2c5e77d07dab137bd8d23cff79e8639c62fe621b49bb064749"
+# The built-in image: libretro's with the fixes of source/bios/README.md.
+OPEN_BIOS_SHA256 = "16c7932e2cf42d031a405d4ca6a886c78379e0dc6db69e20609761df8d63a3f2"
+
+# The script that builds the image has a dash in its name: load it by path.
+SCRIPT = ROOT / "scripts" / "build-open-bios.py"
+SPEC = importlib.util.spec_from_file_location("build_open_bios", SCRIPT)
+BUILD = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(BUILD)
 
 
 def open_bios_bytes():
@@ -202,10 +211,25 @@ int main(void) {
 
 
 class OpenBiosTests(unittest.TestCase):
-    def test_embedded_bios_matches_upstream(self):
+    def test_embedded_bios(self):
         data = open_bios_bytes()
         self.assertEqual(len(data), 0x4000)
         self.assertEqual(hashlib.sha256(data).hexdigest(), OPEN_BIOS_SHA256)
+
+    def test_only_the_fixes_differ_from_upstream(self):
+        # Putting back the original bytes of every fix gives libretro's image
+        # exactly, so no other byte changed.
+        data = bytearray(open_bios_bytes())
+        for offset, original in BUILD.UPSTREAM_BYTES:
+            self.assertNotEqual(bytes(data[offset:offset + 4]), original[:4])
+            data[offset:offset + len(original)] = original
+        self.assertEqual(hashlib.sha256(data).hexdigest(), BUILD.UPSTREAM_SHA256)
+
+    @unittest.skipUnless(shutil.which(BUILD.PREFIX + "gcc"),
+                         "needs arm-none-eabi-gcc")
+    def test_image_is_built_from_source(self):
+        subprocess.run([sys.executable, str(SCRIPT), "--check"], check=True,
+                       capture_output=True)
 
     def test_production_bios_paths(self):
         # Splice the real functions between the stubs and the scenarios.

@@ -9,7 +9,9 @@
   one libretro gpSP also ships) instead of quitting. A `gba_bios.bin` that is
   not a 16 KB GBA BIOS is reported and the built-in BIOS is used instead. A
   valid `gba_bios.bin` beside the EBOOT is still used first and remains the
-  more compatible choice.
+  more compatible choice. Its Div and DivArm functions return what the
+  official BIOS returns, including the signed remainder, and never hang on a
+  division by zero.
 - Performance > Advanced settings > CPU core: Classic, the dynarec GBA Rush
   has always used, or New, a processor core written from scratch that runs
   each instruction and its cycles as mGBA does and compiles the game's code

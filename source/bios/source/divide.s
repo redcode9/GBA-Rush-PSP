@@ -1,76 +1,108 @@
+@---------------------------------------------------------------------------------
+@ Div and DivArm (SWI 0x06 and 0x07)
+@
+@ Custom GBA BIOS replacement
+@ Copyright (c) 2002-2006 VBA Development Team
+@ Copyright (c) 2006-2013 VBA-M Development Team
+@ Copyright (c) 2013 Normmatt
+@
+@ This program is free software; you can redistribute it and/or modify it
+@ under the terms of the GNU General Public License as published by the Free
+@ Software Foundation; either version 2 of the License, or (at your option)
+@ any later version.
+@
+@ Changed by GBA Rush PSP on 2026-11-05: rewritten so that Div and DivArm
+@ return what the official BIOS returns (source/src/bios_hle.h): the
+@ remainder with the sign of the numerator, the absolute quotient in r3,
+@ and a result for every division by zero and for -2^31 divided by a
+@ power of two, which used to loop forever. Div is the routine for C code;
+@ swi_Div and swi_DivARM are the SWI entries. scripts/build-open-bios.py
+@ assembles this file into the image in source/src/open_bios.h.
+@---------------------------------------------------------------------------------
+	.arm
+	.text
 
 @---------------------------------------------------------------------------------
-@ Setup some nicer names
-@---------------------------------------------------------------------------------
-numerator .req r0
-denominator .req r1
-accumulator .req r2
-current_bit .req r3
-
-numerator_signed .req r12
-denominator_signed .req r3
-
-sign_flip .req r12
-
-result .req r0
-remainder .req r1
-result_abs .req r3
-
-temp .req r3
-
+@ The SWI handler in core.s saves r2, r3 and lr on the system mode stack
+@ and restores them when the SWI returns. Div returns a value in r3, so
+@ the SWI entries overwrite the saved copy.
 @---------------------------------------------------------------------------------
 .global swi_DivARM
 .type swi_DivARM STT_FUNC
 swi_DivARM:
-@---------------------------------------------------------------------------------
-	mov     temp, numerator
-	mov     numerator, denominator
-	mov     denominator, temp
-	b       swi_Div
+	@ r0 = denominator, r1 = numerator
+	mov     r3, r0
+	mov     r0, r1
+	mov     r1, r3
 
-@---------------------------------------------------------------------------------
 .global swi_Div
 .type swi_Div STT_FUNC
 swi_Div:
-@ See http://www.tofla.iconbar.com/tofla/arm/arm02/index.htm for more information
-@---------------------------------------------------------------------------------	
-	@ Set if numerator is signed, and abs numerator
-	ands numerator_signed, numerator, #0x80000000
-	rsbmi numerator, numerator, #0
+	stmfd   sp!, {lr}
+	bl      Div
+	ldmfd   sp!, {lr}
+	str     r3, [sp, #4]
+	bx      lr
 
-	// Same with denominator
-	ands denominator_signed, denominator, #0x80000000
-	rsbmi denominator, denominator, #0
+@---------------------------------------------------------------------------------
+@ r0 = numerator, r1 = denominator. Returns r0 = quotient, r1 = remainder
+@ with the sign of the numerator, r3 = absolute quotient; changes r2 and
+@ r12. Dividing by zero returns r0 = 1 or -1 (the sign of the numerator),
+@ r1 = numerator and r3 = 1, as the official BIOS does for 0, 1 and -1
+@ (it never returns for other numerators).
+@---------------------------------------------------------------------------------
+.global Div
+.type Div STT_FUNC
+Div:
+	cmp     r1, #0
+	beq     div_by_zero
 
-	// Gets set if sign(numerator) != sign(denominator)
-	eor sign_flip, numerator_signed, denominator_signed
+	@ r12: bit 31 set when the quotient is negative, bit 0 when the
+	@ numerator is
+	eor     r12, r0, r1
+	and     r12, r12, #0x80000000
+	orr     r12, r12, r0, lsr #31
 
-	mov accumulator, #0
-	mov current_bit, #1
+	@ Divide the absolute values as unsigned numbers (-2^31 stays
+	@ 0x80000000)
+	cmp     r0, #0
+	rsblt   r0, r0, #0
+	cmp     r1, #0
+	rsblt   r1, r1, #0
 
-	// This moves out the current bit to the MSB of the denominator,
-	// and aligns the denominator up to the same bit-length as the
-	// numerator
- 0:
-	cmp denominator, numerator
-	movls denominator, denominator, lsl #1
-	movls current_bit, current_bit, lsl #1
-	bls 0b
+	@ Shift the denominator up towards the numerator, never past bit 31
+	mov     r2, #0              @ quotient
+	mov     r3, #1              @ the quotient bit the denominator stands for
+0:
+	cmp     r1, #0x80000000
+	cmpcc   r1, r0
+	movcc   r1, r1, lsl #1
+	movcc   r3, r3, lsl #1
+	bcc     0b
 
-	// Basically the grade-school algorithm, for unsigned integers in binary
- 1:
-	cmp numerator, denominator
-	subcs numerator, numerator, denominator
-	orrcs accumulator, accumulator, current_bit
-	movs current_bit, current_bit, lsr #1
-	movcc denominator, denominator, lsr #1
-	bcc 1b
+	@ Grade-school division, one quotient bit per step
+1:
+	cmp     r0, r1
+	subcs   r0, r0, r1
+	orrcs   r2, r2, r3
+	movs    r3, r3, lsr #1
+	movne   r1, r1, lsr #1
+	bne     1b
 
-	mov remainder, numerator
-	mov result_abs, accumulator
-	mov result, accumulator
+	@ r0 = absolute remainder, r2 = absolute quotient: put the signs back
+	mov     r3, r2
+	tst     r12, #1
+	rsbne   r1, r0, #0
+	moveq   r1, r0
+	tst     r12, #0x80000000
+	rsbne   r0, r2, #0
+	moveq   r0, r2
+	bx      lr
 
-	tst sign_flip, #0x80000000
-	rsbmi result, result, #0
-	
-	bx lr
+div_by_zero:
+	mov     r1, r0
+	mov     r3, #1
+	cmp     r0, #0
+	movge   r0, #1
+	mvnlt   r0, #0
+	bx      lr

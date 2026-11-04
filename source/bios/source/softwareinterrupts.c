@@ -17,6 +17,9 @@
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+  Changed by GBA Rush PSP on 2026-11-05: ArcTan2 calls Div, the C entry of
+  the new divide.s.
 */
 
 #include <tonc.h>
@@ -161,7 +164,7 @@ u32 umul3232H32(u32 val, u32 val2);
 /*-----------------------------------------------------------------
   Assembly method declarations
 -----------------------------------------------------------------*/
-extern int swi_Div(u32 a, u32 b); //Returns result
+extern int Div(u32 a, u32 b); //Returns result
 
 /*-----------------------------------------------------------------
 0x27 - CustomHalt
@@ -326,14 +329,14 @@ u32 swi_ArcTan2(s32 x, s32 y)
       res = ((y>>16) & 0x8000) + 0x4000;
     } else {
 	  if ((abs(x) > abs(y)) || ((abs(x) == abs(y)) && (!((x<0) && (y<0))))) {
-        u32 div = swi_Div(y << 14, (u32)x);
+        u32 div = Div(y << 14, (u32)x);
         div = swi_ArcTan(div);
         if (x < 0)
           res = 0x8000 + div;
         else
           res = (((y>>16) & 0x8000)<<1) + div;
       } else {
-        u32 div = swi_Div(x << 14, (u32)y);
+        u32 div = Div(x << 14, (u32)y);
         div = swi_ArcTan(div);
         res = (0x4000 + ((y>>16) & 0x8000)) - div;
       }

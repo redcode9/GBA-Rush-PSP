@@ -29,9 +29,10 @@ is Normmatt's open-source replacement for the GBA BIOS, based on the VBA and
 VBA-M HLE BIOS: Copyright (c) 2002-2006 VBA Development Team, (c) 2006-2013
 VBA-M Development Team, (c) 2013 Normmatt. It is distributed under the GNU
 General Public License, version 2 or any later version. The image is the one
-libretro/gpsp and Nebuleon/ReGBA ship, and its source is ReGBA's;
-`source/bios/README.md` records the provenance. Nintendo's BIOS is not
-included.
+libretro/gpsp and Nebuleon/ReGBA ship, and its source is ReGBA's, both with
+GBA Rush PSP's changes to Div and DivArm (2026), noted in the changed
+files; `source/bios/README.md` records the provenance and the changes.
+Nintendo's BIOS is not included.
 
 Vendored zlib source retains its original notices. PSP SDK import libraries in
 `source/SDK/` and the power library in `source/src/libpower/` are inherited
