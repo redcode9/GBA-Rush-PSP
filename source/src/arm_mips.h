@@ -53,6 +53,9 @@ typedef struct
    uint32_t code);
   /* The address generated code calls for arm_mips_access (0: its own). */
   uint32_t access;
+  /* A free-running clock in any unit (NULL: none), read around each
+     translation for the decode and compile times in ArmMipsStats. */
+  uint32_t (*clock)(void *context);
 } ArmMipsHost;
 
 typedef struct
@@ -67,6 +70,8 @@ typedef struct
   uint32_t dropped;         /* compiled blocks whose code was overwritten */
   uint32_t interpreted;     /* blocks too large to compile */
   uint32_t flushes;
+  uint32_t decode_ticks;    /* clock ticks spent decoding new blocks */
+  uint32_t compile_ticks;   /* and compiling them */
 } ArmMipsStats;
 
 typedef struct ArmMips

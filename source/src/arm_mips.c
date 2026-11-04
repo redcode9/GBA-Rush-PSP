@@ -2602,16 +2602,31 @@ static void dispatch_insert(ArmMips *jit, uint32_t key, uint32_t entry)
   slot[1] = entry - 4 * (BLOCK_HEADER - 1);
 }
 
+static uint32_t ticks(const ArmMips *jit)
+{
+  return jit->host.clock ? jit->host.clock(jit->host.context) : 0;
+}
+
 /* The main entry of the block at r15, compiled now if need be; 0 if the
    interpreter has to run it. */
 static uint32_t block_entry(ArmMips *jit)
 {
   ArmCore *core = &jit->core;
-  const ArmBlock *block = arm_core_block(core);
-  unsigned index = (unsigned)(block - core->blocks);
+  const ArmBlock *block = arm_core_cached(core);
+  unsigned index;
   uint32_t end = jit->words - ARM_MIPS_SCRATCH_WORDS;
-  uint32_t entry = jit->code[index];
+  uint32_t entry;
+  uint32_t start;
   int tries;
+
+  if(!block)
+  {
+    start = ticks(jit);
+    block = arm_core_block(core);
+    jit->stats.decode_ticks += ticks(jit) - start;
+  }
+  index = (unsigned)(block - core->blocks);
+  entry = jit->code[index];
 
   /* Every block C runs goes (back) into the dispatch cache, so a jump the
      cache missed finds it next time. */
@@ -2626,6 +2641,7 @@ static uint32_t block_entry(ArmMips *jit)
     jit->code[index] = 1;
     return 0;
   }
+  start = ticks(jit);
   for(tries = 0; tries < 2; tries++)
   {
     protect(jit, block, 1);
@@ -2639,6 +2655,7 @@ static uint32_t block_entry(ArmMips *jit)
     block = arm_core_block(core);
     index = (unsigned)(block - core->blocks);
   }
+  jit->stats.compile_ticks += ticks(jit) - start;
   if(!entry)
   {
     jit->code[index] = 1;

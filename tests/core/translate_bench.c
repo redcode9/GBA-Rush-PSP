@@ -191,7 +191,7 @@ int main(int argc, char **argv)
 {
   ArmBus bus = { NULL, read_none, read_none, read_none, write_none,
    write_none, write_none, code32 };
-  ArmMipsHost host = { NULL, target, sync_none, NULL, 0x08700000u };
+  ArmMipsHost host = { NULL, target, sync_none, NULL, 0x08700000u, NULL };
   static ArmIrOp ops[ARM_BLOCK_MAX_OPS];
   unsigned repeat = 20;
   unsigned max_blocks = ARM_CACHE_BLOCKS;

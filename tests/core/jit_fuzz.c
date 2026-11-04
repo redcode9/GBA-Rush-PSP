@@ -618,6 +618,16 @@ static int run_case(uint32_t seed)
   return 1;
 }
 
+/* A clock that ticks once per reading, so each translation adds one to
+   the decode and compile times. */
+static uint32_t clock_ticks;
+
+static uint32_t tick(void *context)
+{
+  (void)context;
+  return clock_ticks++;
+}
+
 int main(int argc, char **argv)
 {
   ArmBus bus = { NULL, read8, read16, read32, write8, write16, write32,
@@ -660,6 +670,7 @@ int main(int argc, char **argv)
   mips_unicorn_map(worlds[1].iwram, IWRAM_SIZE, 0x0A068000u);
 
   host = mips_unicorn_host(jit);
+  host.clock = tick;
   arm_core_init(&reference, &bus);
   arm_mips_init(jit, &bus, &host, code, CODE_BYTES);
   jit->count_instructions = 1;
@@ -692,5 +703,12 @@ int main(int argc, char **argv)
    jit->stats.misses, jit->stats.bails, jit->stats.dropped,
    jit->stats.flushes, mips_unicorn_calls, guest_instructions ?
    (double)mips_unicorn_executed / (double)guest_instructions : 0.0);
+  if(jit->stats.compile_ticks != jit->stats.blocks + jit->stats.interpreted)
+  {
+    printf("jit_fuzz: %u compile ticks for %u blocks compiled and %u "
+     "interpreted\n", jit->stats.compile_ticks, jit->stats.blocks,
+     jit->stats.interpreted);
+    return 1;
+  }
   return passed == i ? 0 : 1;
 }
