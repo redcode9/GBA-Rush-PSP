@@ -1731,6 +1731,8 @@ static void setup_main(const char *eboot_path)
   enable_home_menu = 1;
 
   load_config_file();
+  /* The file browser and the menu without a game run at this clock too. */
+  set_cpu_clock(option_clock_speed);
   rebuild_fast_forward_button_mask();
   load_theme_config();
   load_recent_roms();

@@ -3557,23 +3557,23 @@ static void menu_trace_cancel(void)
 
 /* A link session needs a game: loading another one closes the link.
    Starting a session pins the CPU at 333 MHz; when it fails or ends, the
-   menu's usual 222 MHz is restored. */
+   configured clock is restored. */
 static void menu_link_host_action(void)
 {
     if (gamepak_filename[0] == '\0' || !main_link_host())
-        set_cpu_clock(PSP_CLOCK_222);
+        set_cpu_clock(option_clock_speed);
 }
 
 static void menu_link_join_action(void)
 {
     if (gamepak_filename[0] == '\0' || !main_link_join())
-        set_cpu_clock(PSP_CLOCK_222);
+        set_cpu_clock(option_clock_speed);
 }
 
 static void menu_link_disconnect_action(void)
 {
     main_link_disconnect(MAIN_LINK_END_USER);
-    set_cpu_clock(PSP_CLOCK_222);
+    set_cpu_clock(option_clock_speed);
 }
 
 /* The other console's four-letter game code, safe to print. */
@@ -5481,7 +5481,7 @@ u32 menu(void)
 
   video_resolution_large();
   if(!main_link_active())
-    set_cpu_clock(PSP_CLOCK_222);
+    set_cpu_clock(option_clock_speed);
   choose_menu(&main_menu);
 
   /* One iteration per frame: draw the screen, then handle one input. */

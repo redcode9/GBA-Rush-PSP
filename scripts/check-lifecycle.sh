@@ -57,6 +57,17 @@ then
   fail "Menu clock transitions are not guarded by link state"
 fi
 
+# Game, menu, browser, ROM loading and link run at the configured clock;
+# only quit() lowers it, after the last log flush.
+clock_222_calls=$(rg -o 'set_cpu_clock\(PSP_CLOCK_222\)' source/src | \
+  wc -l)
+clock_222_quit=$(body '/^void quit(void)/,/^}/p' source/src/main.c | \
+  rg -c 'set_cpu_clock\(PSP_CLOCK_222\)' || true)
+if [ "$clock_222_calls" -ne "${clock_222_quit:-0}" ]
+then
+  fail "A path drops the CPU clock to 222 MHz"
+fi
+
 # The PSP never time-slices equal priorities: the network stack and the
 # link worker must run above the emulator thread (32), or reception stops.
 for name in PSP_ADHOC_STACK_PRIORITY PSP_ADHOC_CONTROL_PRIORITY \

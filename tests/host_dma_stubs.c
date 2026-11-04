@@ -59,6 +59,7 @@ uint8_t *memory_map_read[8 * 1024] = { 0 };
 uint8_t *memory_map_write[8 * 1024] = { 0 };
 uint32_t option_boot_mode = 0;
 uint32_t option_language = 0;
+uint32_t option_clock_speed = 3;
 uint32_t savestate_slot = 0;
 char dir_save[512] = { 0 };
 char dir_state[512] = { 0 };
