@@ -190,4 +190,20 @@ then
   fail "Runtime and link diagnostics are not covered by the validation gate"
 fi
 
+# Load State File on a state of the running ROM first saves the AUTO state,
+# which must not happen when the chosen file is that AUTO state.
+if ! body '/^  void menu_load_state_file(void)/,/^  }/p' source/src/gui.c | awk '
+  /if \(same_rom\)/ { same = 1 }
+  /MSG_LOAD_ROM_AND_STATE/ { same = 0 }
+  same && /action_savestate_slot\(AUTO_SAVESTATE_SLOT\)/ {
+    calls++
+    if (previous !~ /if \(slot_parsed != AUTO_SAVESTATE_SLOT\)/) bad = 1
+  }
+  /[^[:space:]]/ { previous = $0 }
+  END { exit !(calls >= 1 && !bad) }
+'
+then
+  fail "Load State File can overwrite the AUTO state it is loading"
+fi
+
 echo "Runtime lifecycle checks passed"

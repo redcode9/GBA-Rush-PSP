@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Load State File on the running game's `<rom>_auto.svs` loads that state
+  instead of first overwriting it with the game in progress.
+
 ## 1.4.3 - 2026-11-02
 
 ### Fixed
