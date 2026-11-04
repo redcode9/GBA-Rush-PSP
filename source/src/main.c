@@ -1740,6 +1740,7 @@ static void setup_main(const char *eboot_path)
   load_setting_cfg();
   load_bios_file();
 
+  backup_io = &gui_save_store_io;
   init_gamepak_buffer();
 
   sound_pause = 1;
@@ -1771,6 +1772,7 @@ int user_main(int argc, char *argv[])
   const char *file_ext[] = { ".zip", ".gba", ".bin", ".agb", ".gbz", NULL };
   u32 rom_loaded = 0;
   u32 prepared_by_menu = 0;
+  s32 load_result;
 
   setup_main((argc > 0 && argv[0] != NULL) ? argv[0] : NULL);
 
@@ -1780,10 +1782,14 @@ int user_main(int argc, char *argv[])
   /* Priority 1: launcher or file manager passed a ROM path */
   if (argc > 1)
   {
-    if (load_gamepak((char *)argv[1]) < 0)
+    load_result = load_gamepak((char *)argv[1]);
+    if (load_result < 0)
     {
-      clear_screen(COLOR32_BLACK);
-      error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_QUIT);
+      if (load_result != LOAD_GAMEPAK_CANCELLED)
+      {
+        clear_screen(COLOR32_BLACK);
+        error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_QUIT);
+      }
       quit();
     }
     /* Single-game bubble launch: do not update Recent ROMs */
@@ -1799,10 +1805,14 @@ int user_main(int argc, char *argv[])
 
     if (path_is_regular_file(load_filename))
     {
-      if (load_gamepak(load_filename) < 0)
+      load_result = load_gamepak(load_filename);
+      if (load_result < 0)
       {
-        clear_screen(COLOR32_BLACK);
-        error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+        if (load_result != LOAD_GAMEPAK_CANCELLED)
+        {
+          clear_screen(COLOR32_BLACK);
+          error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+        }
         prepared_by_menu = rom_loaded = menu() != 0;
       }
       else
@@ -1815,10 +1825,13 @@ int user_main(int argc, char *argv[])
     {
       prepared_by_menu = rom_loaded = menu() != 0;
     }
-    else if (load_gamepak(load_filename) < 0)
+    else if ((load_result = load_gamepak(load_filename)) < 0)
     {
-      clear_screen(COLOR32_BLACK);
-      error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+      if (load_result != LOAD_GAMEPAK_CANCELLED)
+      {
+        clear_screen(COLOR32_BLACK);
+        error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+      }
       prepared_by_menu = rom_loaded = menu() != 0;
     }
     else

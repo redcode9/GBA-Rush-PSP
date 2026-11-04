@@ -567,6 +567,10 @@
 
   // MSG_ERR_OPEN_GAMEPACK
   "Impossibile aprire il file di gioco.",
+  // MSG_SAVE_READ_RETRY
+  "Il salvataggio non si legge. Riprovare?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "Giocare senza salvare? Il file resta com'e`.",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "Impossibile avviare il thread di callback.",

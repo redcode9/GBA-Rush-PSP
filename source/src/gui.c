@@ -3971,20 +3971,24 @@ u32 menu(void)
       action_savestate_slot(AUTO_SAVESTATE_SLOT);
     }
 
-    if (load_file(file_ext, filename_buffer, dir_roms, 1) == 0)
+    while (load_file(file_ext, filename_buffer, dir_roms, 1) == 0)
     {
-      if (load_gamepak(filename_buffer) < 0)
+      s32 load_result = load_gamepak(filename_buffer);
+
+      /* Refusing the unreadable-save prompts goes back to the list */
+      if (load_result == LOAD_GAMEPAK_CANCELLED)
+      {
+        gamepak_file_none();
+        continue;
+      }
+
+      if (load_result < 0)
       {
         clear_screen(COLOR32_BLACK);
         error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
 
         gamepak_file_none();
-
-        menu_init();
-        choose_menu(current_menu);
-        counter = 0;
-
-        return;
+        break;
       }
 
       reset_gba();
@@ -3997,13 +4001,12 @@ u32 menu(void)
 
       return_value = 1;
       repeat = 0;
+      return;
     }
-    else
-    {
-      menu_init();
-      choose_menu(current_menu);
-      counter = 0;
-    }
+
+    menu_init();
+    choose_menu(current_menu);
+    counter = 0;
   }
 
   void menu_reset(void)
@@ -4126,8 +4129,10 @@ u32 menu(void)
                      MSG[MSG_LOAD_STATE_FILE]);
             if (yesno_dialog(dialog_msg) == 0)
             {
-                /* Auto-save current progress before loading */
-                action_savestate_slot(AUTO_SAVESTATE_SLOT);
+                /* Auto-save current progress before loading, unless the
+                   chosen file is that AUTO state, which it would replace */
+                if (slot_parsed != AUTO_SAVESTATE_SLOT)
+                    action_savestate_slot(AUTO_SAVESTATE_SLOT);
                 if (load_state_silent(filename_buffer) != 0)
                 {
                     return_value = 1;
@@ -4201,10 +4206,15 @@ u32 menu(void)
                        load_gamepak() needs CWD to be the ROM directory */
                     chdir(dir_roms);
 
-                    if (load_gamepak(rom_file) < 0)
+                    s32 load_result = load_gamepak(rom_file);
+
+                    if (load_result < 0)
                     {
-                        clear_screen(COLOR32_BLACK);
-                        error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+                        if (load_result != LOAD_GAMEPAK_CANCELLED)
+                        {
+                            clear_screen(COLOR32_BLACK);
+                            error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+                        }
                         gamepak_file_none();
                         /* Reopen file browser after error */
                         file_browser_repeat = 1;
@@ -6191,6 +6201,86 @@ static const ConfigStoreIo config_store_io =
   config_io_move,
   config_io_remove,
   config_io_exists
+};
+
+/* SaveStoreIo exists. A .sav that does not stat while its folder does not
+   open either counts as present: the device is gone, not the file, so the
+   load fails and asks instead of starting a blank cartridge that the first
+   save would write over the real file. */
+static int save_io_exists(void *context, const char *path)
+{
+  SceIoStat stat;
+  char folder[MAX_PATH];
+  const char *slash;
+  size_t length;
+  SceUID dir;
+
+  (void)context;
+  if(sceIoGetstat(path, &stat) >= 0)
+    return 1;
+
+  slash = strrchr(path, '/');
+  if(slash == NULL)
+    return 0;
+  length = (size_t)(slash - path) + 1;
+  if(length >= sizeof(folder))
+    return 1;
+  memcpy(folder, path, length);
+  folder[length] = '\0';
+
+  dir = sceIoDopen(folder);
+  if(dir < 0)
+    return 1;
+  sceIoDclose(dir);
+  return 0;
+}
+
+/* SaveStoreIo read: up to capacity bytes from the start of the file, and
+   the file's whole length. A read error just stops early, and
+   save_store_load() treats the short count as a failure. */
+static int save_io_read(void *context, const char *path, uint8_t *data,
+ size_t capacity, size_t *size, size_t *file_size)
+{
+  SceUID file;
+  SceOff length;
+  size_t wanted;
+  size_t total = 0;
+  s32 result;
+
+  (void)context;
+  FILE_OPEN(file, path, READ);
+  if(!FILE_CHECK_VALID(file))
+    return 0;
+
+  length = FILE_SEEK(file, 0, SEEK_END);
+  if(length < 0 || FILE_SEEK(file, 0, SEEK_SET) != 0)
+  {
+    FILE_CLOSE(file);
+    return 0;
+  }
+
+  wanted = ((u64)length < capacity) ? (size_t)length : capacity;
+  while(total < wanted)
+  {
+    result = FILE_READ(file, data + total, wanted - total);
+    if(result <= 0)
+      break;
+    total += (size_t)result;
+  }
+  FILE_CLOSE(file);
+
+  *size = total;
+  *file_size = (size_t)length;
+  return 1;
+}
+
+/* memory.c's .sav I/O, sharing write with the settings file. */
+const SaveStoreIo gui_save_store_io =
+{
+  NULL,
+  save_io_exists,
+  save_io_read,
+  config_io_write
 };
 
 /* tempgba.cfg plus its .tmp (write target) and .bak (last good) siblings. */

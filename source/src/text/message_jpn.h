@@ -567,6 +567,10 @@
 
   // MSG_ERR_OPEN_GAMEPACK
   "ゲームファイルを開くことができませんでした.",
+  // MSG_SAVE_READ_RETRY
+  "セーブデータを読み込めません. 再試行する?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "セーブせずにプレイする? ファイルはそのままです.",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "コールバックスレッドを起動できませんでした.",

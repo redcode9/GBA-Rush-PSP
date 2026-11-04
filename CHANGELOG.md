@@ -39,6 +39,28 @@
   so it never overwrites the `<rom>_auto.svs` made with `gba_bios.bin`.
 - The `bios_rom_hack_39` and `bios_rom_hack_2C` options of `game_config.txt`
   apply only to `gba_bios.bin`.
+- A `.sav` whose size does not match its save chip is written back at the
+  chip's size the next time the game saves: SRAM 32 or 64 KB, Flash 64 or
+  128 KB, EEPROM 512 bytes or 8 KB.
+
+### Fixed
+
+- A 64 KB `.sav` of an SRAM game is no longer written back as a 1-byte file
+  the first time the game saves. Saves already cut by earlier versions
+  cannot be recovered.
+- A `.sav` that exists but cannot be read is never written over. The
+  emulator asks whether to read it again or to play without saving; while
+  playing without saving, nothing is written to the file until another ROM
+  is loaded.
+- A `.sav` larger than 128 KB no longer overruns memory: its first 128 KB
+  are loaded.
+- The save type comes from the ROM's save library string, and the file size
+  no longer overrides it, so a `.sav` of another size, such as a 128 KB file
+  for a game with 64 KB Flash, loads with the chip the game expects.
+- A damaged savestate can no longer make the save memory read or write
+  outside its buffer.
+- Load State File on the running game's `<rom>_auto.svs` loads that state
+  instead of first overwriting it with the game in progress.
 
 ## 1.4.3 - 2026-11-02
 

@@ -190,4 +190,54 @@ then
   fail "Runtime and link diagnostics are not covered by the validation gate"
 fi
 
+# The .sav goes through backup_io, and only save_backup() writes it, after
+# checking that the file did not fail to read: else a blank image would
+# replace the save. So memory.c opens no file on the save buffer or name,
+# never calls backup_io itself, and hands backup_filename only to
+# load_backup() and save_backup().
+if rg -q 'FILE_(OPEN|WRITE)\([^)]*backup|backup_io->' source/src/memory.c || \
+   rg 'backup_filename' source/src/memory.c | rg -v -q \
+    'char backup_filename\[|change_ext\(gamepak_filename, backup_filename|load_backup\(backup_filename|save_backup\(backup_filename'
+then
+  fail "memory.c reaches the .sav outside load_backup and save_backup"
+fi
+save_backup_body=$(body '/^static u32 save_backup(char \*name)[^;]*$/,/^}/p' \
+  source/src/memory.c)
+if [ "$(rg -c 'save_store_write\(' source/src/memory.c || true)" != 1 ] || \
+   ! printf '%s\n' "$save_backup_body" | awk '
+  /backup_write_blocked/ && !io { checked = 1 }
+  /scePowerLock|save_store_write\(/ { io = 1; if (!checked) bad = 1 }
+  END { exit !(checked && io && !bad) }
+'
+then
+  fail "A .sav write can bypass the unreadable-save block"
+fi
+
+# A dialog under load_gamepak()'s power lock would hold off standby.
+if ! body '/^s32 load_gamepak(char \*name)/,/^}/p' source/src/memory.c | awk '
+  /scePowerLock\(/ { locked = 1 }
+  /scePowerUnlock\(/ { locked = 0 }
+  /yesno_dialog\(|error_msg\(/ { asked = 1; if (locked) bad = 1 }
+  END { exit !(asked && !bad) }
+'
+then
+  fail "load_gamepak() opens a dialog while it holds the power lock"
+fi
+
+# Load State File on a state of the running ROM first saves the AUTO state,
+# which must not happen when the chosen file is that AUTO state.
+if ! body '/^  void menu_load_state_file(void)/,/^  }/p' source/src/gui.c | awk '
+  /if \(same_rom\)/ { same = 1 }
+  /MSG_LOAD_ROM_AND_STATE/ { same = 0 }
+  same && /action_savestate_slot\(AUTO_SAVESTATE_SLOT\)/ {
+    calls++
+    if (previous !~ /if \(slot_parsed != AUTO_SAVESTATE_SLOT\)/) bad = 1
+  }
+  /[^[:space:]]/ { previous = $0 }
+  END { exit !(calls >= 1 && !bad) }
+'
+then
+  fail "Load State File can overwrite the AUTO state it is loading"
+fi
+
 echo "Runtime lifecycle checks passed"

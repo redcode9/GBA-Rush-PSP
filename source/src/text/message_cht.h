@@ -567,6 +567,10 @@
 
   // MSG_ERR_OPEN_GAMEPACK
   "無法開啟遊戲檔案.",
+  // MSG_SAVE_READ_RETRY
+  "無法讀取遊戲存檔. 重試?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "不儲存繼續遊戲? 存檔檔案保持不變.",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "無法啟動回調執行緒.",

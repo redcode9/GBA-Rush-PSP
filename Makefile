@@ -17,7 +17,7 @@ PYTHON ?= python3
 HOST_BUILD_DIR ?= build/host
 HOST_SANITIZE_DIR ?= build/sanitize
 HOST_SANITIZE_FLAGS ?= -fsanitize=address,undefined -fno-omit-frame-pointer
-# SDK headers for the two tests that compile PSP sources (memory.c and
+# SDK headers for the tests that compile PSP sources (memory.c and
 # psp_video.c) on the host.
 PSP_SDK_INCLUDE ?= $(shell psp-config --pspsdk-path 2>/dev/null)/include
 HOST_TEST_CODEBREAKER = $(HOST_BUILD_DIR)/test_codebreaker
@@ -58,6 +58,9 @@ ARM_CORE_HEADERS = source/src/arm_core.h source/src/arm_ir.h \
  source/src/arm_mips.h
 HOST_TEST_GBA_PPU = $(HOST_BUILD_DIR)/test_gba_ppu
 HOST_TEST_GBA_PPU_LOG = $(HOST_BUILD_DIR)/test_gba_ppu_log
+HOST_TEST_SAVE_FORMAT = $(HOST_BUILD_DIR)/test_save_format
+HOST_TEST_SAVE_STORE = $(HOST_BUILD_DIR)/test_save_store
+HOST_TEST_MEMORY_BACKUP = $(HOST_BUILD_DIR)/test_memory_backup
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_LINK_NET) $(HOST_TEST_LINK_CABLE) \
  $(HOST_TEST_ADHOC_PEER) \
@@ -73,7 +76,8 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
  $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_GBA_PPU) \
- $(HOST_TEST_GBA_PPU_LOG)
+ $(HOST_TEST_GBA_PPU_LOG) $(HOST_TEST_SAVE_FORMAT) $(HOST_TEST_SAVE_STORE) \
+ $(HOST_TEST_MEMORY_BACKUP)
 # The same C tests built with HOST_SANITIZE_FLAGS for make test-sanitize.
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_net \
@@ -101,7 +105,10 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_runtime_log \
  $(HOST_SANITIZE_DIR)/test_arm_core \
  $(HOST_SANITIZE_DIR)/test_gba_ppu \
- $(HOST_SANITIZE_DIR)/test_gba_ppu_log
+ $(HOST_SANITIZE_DIR)/test_gba_ppu_log \
+ $(HOST_SANITIZE_DIR)/test_save_format \
+ $(HOST_SANITIZE_DIR)/test_save_store \
+ $(HOST_SANITIZE_DIR)/test_memory_backup
 
 .PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
  check-core check-render tree-check media-engine-check psp-build \
@@ -140,6 +147,9 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_ARM_CORE)
 	$(HOST_TEST_GBA_PPU)
 	$(HOST_TEST_GBA_PPU_LOG)
+	$(HOST_TEST_SAVE_FORMAT)
+	$(HOST_TEST_SAVE_STORE)
+	$(HOST_TEST_MEMORY_BACKUP)
 
 # Python tests. test_startup, test_browser_text and test_open_bios also
 # compile functions cut out of main.c, gui.c and memory.c with HOST_CC.
@@ -179,6 +189,9 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_arm_core
 	$(HOST_SANITIZE_DIR)/test_gba_ppu
 	$(HOST_SANITIZE_DIR)/test_gba_ppu_log
+	$(HOST_SANITIZE_DIR)/test_save_format
+	$(HOST_SANITIZE_DIR)/test_save_store
+	$(HOST_SANITIZE_DIR)/test_memory_backup
 
 $(HOST_TEST_CODEBREAKER): tests/test_codebreaker.c source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_BUILD_DIR)
@@ -268,6 +281,8 @@ $(HOST_TEST_PERF_MONITOR): tests/test_perf_monitor.c \
 # build); the test TU itself is built with -Wall -Wextra -Werror.
 $(HOST_TEST_PERF_DMA_PROBE): tests/test_perf_dma_probe.c tests/host_dma_stubs.c \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/save_format.c source/src/save_format.h \
+ source/src/save_store.c source/src/save_store.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
@@ -282,6 +297,7 @@ $(HOST_TEST_PERF_DMA_PROBE): tests/test_perf_dma_probe.c tests/host_dma_stubs.c 
 	 -I source/src \
 	 tests/test_perf_dma_probe.c tests/host_dma_stubs.c \
 	 source/src/perf_monitor.c source/src/perf_metrics.c \
+	 source/src/save_format.c source/src/save_store.c \
 	 $(HOST_BUILD_DIR)/perf_dma_memory.o -o $@
 
 # Host test for the psp_video.c frame-time timestamp sentinel
@@ -401,6 +417,43 @@ $(HOST_TEST_GBA_PPU_LOG): $(GBA_PPU_LOG_SOURCES) $(GBA_PPU_LOG_HEADERS)
 	$(HOST_CC) -std=c99 -pthread -Wall -Wextra -Werror -Isource/src \
 	 $(GBA_PPU_LOG_SOURCES) -o $@
 
+$(HOST_TEST_SAVE_FORMAT): tests/test_save_format.c \
+ source/src/save_format.c source/src/save_format.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_save_format.c source/src/save_format.c -o $@
+
+$(HOST_TEST_SAVE_STORE): tests/test_save_store.c tests/fake_store_io.c \
+ tests/fake_store_io.h source/src/save_store.c source/src/save_store.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_save_store.c tests/fake_store_io.c source/src/save_store.c \
+	 -o $@
+
+# The real memory.c save path (load_gamepak, the unreadable-save prompt,
+# every .sav write) against tests/fake_store_io.c, built like
+# test_perf_dma_probe but into its own memory object, so make -j can build
+# both at once.
+$(HOST_TEST_MEMORY_BACKUP): tests/test_memory_backup.c \
+ tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
+ source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/save_format.c source/src/save_format.h \
+ source/src/save_store.c source/src/save_store.h \
+ source/src/perf_monitor.c source/src/perf_monitor.h \
+ source/src/perf_metrics.c source/src/perf_metrics.h \
+ tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
+ tests/host_shim/psptypes.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -O1 -w -include tests/host_shim/host_builtins.h \
+	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -c source/src/memory.c -o $(HOST_BUILD_DIR)/memory_backup_memory.o
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror \
+	 -I source/src \
+	 tests/test_memory_backup.c tests/fake_store_io.c tests/host_dma_stubs.c \
+	 source/src/save_format.c source/src/save_store.c \
+	 source/src/perf_monitor.c source/src/perf_metrics.c \
+	 $(HOST_BUILD_DIR)/memory_backup_memory.o -o $@
+
 $(HOST_SANITIZE_DIR)/test_codebreaker: tests/test_codebreaker.c \
  source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_SANITIZE_DIR)
@@ -481,6 +534,8 @@ $(HOST_SANITIZE_DIR)/test_perf_report: tests/test_perf_report.c \
 $(HOST_SANITIZE_DIR)/test_perf_dma_probe: tests/test_perf_dma_probe.c \
  tests/host_dma_stubs.c \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/save_format.c source/src/save_format.h \
+ source/src/save_store.c source/src/save_store.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
@@ -496,6 +551,7 @@ $(HOST_SANITIZE_DIR)/test_perf_dma_probe: tests/test_perf_dma_probe.c \
 	 -I source/src \
 	 tests/test_perf_dma_probe.c tests/host_dma_stubs.c \
 	 source/src/perf_monitor.c source/src/perf_metrics.c \
+	 source/src/save_format.c source/src/save_store.c \
 	 $(HOST_SANITIZE_DIR)/perf_dma_memory.o -o $@
 
 $(HOST_SANITIZE_DIR)/test_perf_video_sentinel: tests/test_perf_video_sentinel.c \
@@ -617,6 +673,41 @@ $(HOST_SANITIZE_DIR)/test_gba_ppu_log: $(GBA_PPU_LOG_SOURCES) \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -pthread -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src $(GBA_PPU_LOG_SOURCES) -o $@
+
+$(HOST_SANITIZE_DIR)/test_save_format: tests/test_save_format.c \
+ source/src/save_format.c source/src/save_format.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_save_format.c source/src/save_format.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_save_store: tests/test_save_store.c \
+ tests/fake_store_io.c tests/fake_store_io.h \
+ source/src/save_store.c source/src/save_store.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_save_store.c tests/fake_store_io.c \
+	 source/src/save_store.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_memory_backup: tests/test_memory_backup.c \
+ tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
+ source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/save_format.c source/src/save_format.h \
+ source/src/save_store.c source/src/save_store.h \
+ source/src/perf_monitor.c source/src/perf_monitor.h \
+ source/src/perf_metrics.c source/src/perf_metrics.h \
+ tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
+ tests/host_shim/psptypes.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
+	 -include tests/host_shim/host_builtins.h \
+	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -c source/src/memory.c -o $(HOST_SANITIZE_DIR)/memory_backup_memory.o
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -I source/src \
+	 tests/test_memory_backup.c tests/fake_store_io.c tests/host_dma_stubs.c \
+	 source/src/save_format.c source/src/save_store.c \
+	 source/src/perf_monitor.c source/src/perf_metrics.c \
+	 $(HOST_SANITIZE_DIR)/memory_backup_memory.o -o $@
 
 # Optional gates outside make check: the CBMC proof needs CBMC, the ROM link
 # trade needs mGBA plus your own FireRed ROM, BIOS and save, and races Mario

@@ -1,15 +1,18 @@
-// Host link stubs for tests/test_perf_dma_probe.c.
+// Host link stubs for tests/test_perf_dma_probe.c and
+// tests/test_memory_backup.c.
 //
 // memory.c is compiled on the host against the real PSP SDK headers (see
 // the test_perf_dma_probe Makefile target). Everything memory.c references
 // outside its own translation unit is stubbed here so the production
-// dma_transfer() path can be exercised in a host test.
+// dma_transfer() and save paths can be exercised in a host test.
 //
-// Two stubs have behavior. The system clock: host_stub_set_time() arms two
-// timestamps, so the first sceKernelGetSystemTimeLow() call of a transfer
-// returns t0 and the second returns t1, giving a deterministic measured DMA
-// duration of (t1 - t0) microseconds. And the ROM file reads used by the
-// paged ROM test, controlled by host_stub_rom_io().
+// A few stubs have behavior. The system clock: host_stub_set_time() arms
+// two timestamps, so the first sceKernelGetSystemTimeLow() call of a
+// transfer returns t0 and the second returns t1, giving a deterministic
+// measured DMA duration of (t1 - t0) microseconds. The ROM file reads used
+// by the paged ROM test, controlled by host_stub_rom_io(). And for
+// load_gamepak(): the ROM file size (host_stub_file_length()), the answers
+// of the yes/no prompts (host_stub_yesno()) and a working change_ext().
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,7 +66,8 @@ uint32_t savestate_slot = 0;
 char dir_save[512] = { 0 };
 char dir_state[512] = { 0 };
 char main_path[512] = { 0 };
-unsigned char bios[0x20000] = { 0 };
+/* The MSG strings: never read, only passed to the stubs below. */
+const char *message[5][1024] = { { 0 } };
 
 /* --- File I/O (only the paged ROM reads are reached) --------------------- */
 
@@ -124,10 +128,70 @@ int sceIoWrite(int fd, const void *buf, int size)
   return -1;
 }
 
+/* The ROM size load_gamepak() reads; the .sav goes through backup_io. */
+static int host_file_length;
+
+void host_stub_file_length(int length)
+{
+  host_file_length = length;
+}
+
 int file_length(const char *path)
 {
   (void)path;
-  return 0;
+  return host_file_length;
+}
+
+/* main.c's: replaces the extension after the last dot. */
+void change_ext(const char *src, char *buffer, const char *extension)
+{
+  char *dot;
+
+  strcpy(buffer, src);
+  dot = strrchr(buffer, '.');
+  if(dot != NULL)
+    strcpy(dot, extension);
+}
+
+/* Scripted yes/no prompts: 0 is yes, as in main.c. Past the script every
+   prompt answers no. Each prompt also notes whether a ROM counted as
+   loaded (memory.c's gamepak_filename), which a suspend there would save
+   an AUTO state for. */
+extern char gamepak_filename[];
+static const unsigned *host_yesno_answers;
+static int host_yesno_count;
+static int host_yesno_asked;
+static int host_yesno_saw_rom;
+
+void host_stub_yesno(const unsigned *answers, int count)
+{
+  host_yesno_answers = answers;
+  host_yesno_count = count;
+  host_yesno_asked = 0;
+  host_yesno_saw_rom = 0;
+}
+
+int host_stub_yesno_asked(void)
+{
+  return host_yesno_asked;
+}
+
+int host_stub_yesno_saw_rom(void)
+{
+  return host_yesno_saw_rom;
+}
+
+unsigned yesno_dialog(const char *text)
+{
+  (void)text;
+  if(gamepak_filename[0] != '\0')
+    host_yesno_saw_rom = 1;
+  if(host_yesno_asked >= host_yesno_count)
+  {
+    host_yesno_asked++;
+    return 1;
+  }
+  return host_yesno_answers[host_yesno_asked++];
 }
 
 void *safe_malloc(size_t size)
@@ -196,7 +260,6 @@ void arm_gba_written(uint32_t address, uint32_t size)
 /* --- Emulation support (never reached by the DMA test path) --------------- */
 
 void add_smc_gate(void) {}
-void change_ext(void) {}
 void clear_cheats(void) {}
 void clear_metadata_area(void) {}
 void cpu_read_savestate(void) {}
@@ -220,7 +283,6 @@ void main_read_savestate(void) {}
 void main_write_mem_savestate(void) {}
 void load_game_config_file(void) {}
 int main_link_active(void) { return 0; }
-void message(void) {}
 void partial_clear_metadata(void) {}
 void print_string(void) {}
 void print_string_gbk(void) {}
@@ -239,4 +301,3 @@ void sound_write_mem_savestate(void) {}
 void video_io_written(void) {}
 void video_read_savestate(void) {}
 void video_write_mem_savestate(void) {}
-void yesno_dialog(void) {}
