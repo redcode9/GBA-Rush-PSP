@@ -3,8 +3,9 @@
 Tests run on real PSPs. Every result belongs to the build that ran, named
 by the SHA-256 of its `EBOOT.PBP`: the first 12 hex digits in the results
 table, the full hash in the builds table. Logs and Diagnostics reports
-behind each row stay out of Git, in the `artifacts/hardware/` folder that
-`scripts/install-test-build.sh` wrote when it collected them.
+behind each row stay out of Git, in the `artifacts/hardware/` folder of the
+main checkout that `scripts/install-test-build.sh` wrote when it collected
+them.
 
 ## Builds
 
