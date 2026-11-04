@@ -5,6 +5,7 @@
 - **File principali:** `source/src/cpu.c`, `mips_emit.h`, `mips_stub.S`.
 - **Dipende da:** `wip/classic-core`, `wip/perf-method`.
 - **Nota:** Congelato dalla decisione (m) fino a SOA-10.1, tranne ENG-14.1, che vale per entrambi i core.
+- **Stato:** BLOCCATO per decisione dell'utente del 2026-11-04 (decisione (m) in `docs/BACKLOG.md`): nessun lavoro sul core Classic. Il branch resta aperto ma fermo; le correzioni che servono ai giochi si fanno nel core New.
 - **Regole:** quelle di «Branch di lavoro dell'epica» in `docs/BACKLOG.md`. Il testo completo di ogni ticket (cosa, file, test, accettazione, licenza) è in `docs/BACKLOG.md` sotto il suo ID. Si spunta un ticket quando la sua accettazione è verificata; questo file si cancella nella PR che chiude il branch.
 - **Legenda:** «subito» = nessuna dipendenza, si può iniziare oggi; «aspetta» = dipendenze in altri branch, si parte quando sono in main.
 
