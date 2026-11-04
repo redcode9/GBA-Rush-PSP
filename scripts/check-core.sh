@@ -38,7 +38,12 @@ if [ -n "${UNICORN_DIR:-}" ]; then
     -I"$UNICORN_DIR/include" tests/core/jit_fuzz.c tests/core/mips_unicorn.c \
     source/src/arm_mips.c $core_sources -L"$lib" -lunicorn \
     -Wl,-rpath,"$lib" -o "$out/jit_fuzz"
-  "$out/jit_fuzz" --cases "${FUZZ_CASES:-200}" | tail -1
+  if ! "$out/jit_fuzz" --cases "${FUZZ_CASES:-200}" > "$out/jit_fuzz.log"
+  then
+    echo "check-core: the backend differs, see $out/jit_fuzz.log" >&2
+    exit 1
+  fi
+  tail -1 "$out/jit_fuzz.log"
 else
   echo "check-core: UNICORN_DIR not set, MIPS backend checks skipped"
 fi
@@ -47,7 +52,12 @@ if [ -n "${SST_DIR:-}" ]; then
   # shellcheck disable=SC2086
   ${CC:-cc} -std=c99 -O2 -Wall -Wextra -Werror -Isource/src \
     tests/core/single_step.c $core_sources $backend -o "$out/single_step"
-  "$out/single_step" "$SST_DIR"/*.json.bin | tail -2
+  if ! "$out/single_step" "$SST_DIR"/*.json.bin > "$out/single_step.log"
+  then
+    echo "check-core: SingleStepTests failed, see $out/single_step.log" >&2
+    exit 1
+  fi
+  tail -2 "$out/single_step.log"
 else
   echo "check-core: SST_DIR not set, SingleStepTests skipped"
 fi
