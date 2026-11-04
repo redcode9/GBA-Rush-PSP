@@ -19,12 +19,14 @@
 #include "result.h"
 
 extern const TestCase cases_irq[];
+extern const TestCase cases_stack[];
 
 static const TestCase *const areas[] =
 {
   /* First: its BIOS open bus case needs a BIOS that has run nothing since
      boot. */
   cases_irq,
+  cases_stack,
   NULL
 };
 

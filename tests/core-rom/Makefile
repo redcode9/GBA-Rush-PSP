@@ -6,6 +6,7 @@
 
 TARGETS := core-rom
 GAME_CODE := GRCR
-SOURCES := source/main.c source/cases_irq.c
+SOURCES := source/main.c source/cases_irq.c source/cases_stack.c \
+ source/cases_stack_asm.s
 
 include ../gba-rom.mk
