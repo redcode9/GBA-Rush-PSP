@@ -193,14 +193,21 @@ class BenchmarkComparisonTests(unittest.TestCase):
         result = MODULE.compare(baseline, candidate)
 
         _, _, _, p, text, needed = result["metrics"][0]
-        self.assertGreater(p, 0.05)
+        self.assertAlmostEqual(p, 0.25)
         self.assertIn("undecided", text)
-        self.assertIsInstance(needed, int)
-        self.assertGreater(needed, 3)
-        self.assertIn(f"about {needed} runs per build needed", text)
+        # 2 * ((z(0.95) + z(0.80)) * 0.5 / 0.3) ** 2 = 34.3, rounded up.
+        self.assertEqual(needed, 35)
+        self.assertIn("about 35 runs per build needed", text)
         output = MODULE.format_result(result)
         self.assertNotIn("higher", output)
         self.assertNotIn("lower", output)
+        # One swapped pair at 4+3 is still undecided (p = 2/35).
+        p, text, _ = MODULE.verdict([1, 2, 3, 5], [4, 6, 7])
+        self.assertAlmostEqual(p, 2 / 35)
+        self.assertTrue(text.startswith("undecided"))
+        # A wide gap with a tie: the estimate is at least one more run.
+        _, _, needed = MODULE.verdict([61, 61, 61], [61, 70, 70])
+        self.assertEqual(needed, 4)
         # Identical runs are a tie in every pick: nothing to decide.
         p, text, needed = MODULE.verdict([60.1] * 3, [60.1] * 3)
         self.assertEqual(p, 1.0)
@@ -240,6 +247,8 @@ class BenchmarkComparisonTests(unittest.TestCase):
         self.assertIn("at least 3 reports per build", errors.getvalue())
         with self.assertRaisesRegex(ValueError, "at least 3"):
             MODULE.compare([report(), report()], [report() for _ in range(3)])
+        with self.assertRaisesRegex(ValueError, "at least 3"):
+            MODULE.compare([report() for _ in range(3)], [report(), report()])
 
     def test_many_runs_use_sampled_picks(self):
         baseline = [report(frames=600 + index) for index in range(15)]

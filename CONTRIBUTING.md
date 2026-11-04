@@ -83,9 +83,13 @@ metric the tool also prints the median, minimum and maximum of both builds and
 the verdict of an exact one-sided permutation test on the per-run values. With
 3+3 runs that test reaches p=0.05 only when every candidate run is above (or
 every one is below) every baseline run; otherwise the verdict says undecided
-and estimates how many runs per build would decide it. Above 10+10 runs the
-p is estimated from 20000 seeded random picks and printed as `p~`. Never
-claim a difference that the verdict does not state.
+and estimates how many runs per build would decide it. Overlapping ranges
+never give a difference up to 4+3 runs; with more runs they can, which is
+what larger sets are for. Above 10+10 runs the p is estimated from 20000
+seeded random picks and printed as `p~`. The side tested is the one the
+medians point to, chosen after the runs, so a stated difference is only an
+indication until its side is declared before the runs. Never claim a
+difference that the verdict does not state.
 
 Record the PSP model, firmware, storage, ROM hash and actual ROM-cache capacity.
 Test menu transitions, suspend, resume and exit when changing threads, audio,
