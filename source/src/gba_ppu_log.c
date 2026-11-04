@@ -89,6 +89,24 @@ static void forget(const void *start, uint32_t bytes)
     __asm__ volatile("cache 0x19, 0(%0)" :: "r"(line) : "memory");
 }
 
+/* Main processor: count 64-byte blocks, both ends on 16 bytes, in VFPU
+   quadwords: four loads and four stores a block instead of sixteen of
+   each. */
+static void copy_quads(uint32_t *to, const uint16_t *from, uint32_t blocks)
+{
+  for(; blocks; blocks--, to += 16, from += 32)
+    __asm__ volatile(
+     "lv.q C000, 0(%1)\n"
+     "lv.q C010, 16(%1)\n"
+     "lv.q C020, 32(%1)\n"
+     "lv.q C030, 48(%1)\n"
+     "sv.q C000, 0(%0)\n"
+     "sv.q C010, 16(%0)\n"
+     "sv.q C020, 32(%0)\n"
+     "sv.q C030, 48(%0)\n"
+     :: "r"(to), "r"(from) : "memory");
+}
+
 /* Media Engine: put a drawn row in memory for the GE, and out of the
    cache. */
 static void hand_over(const void *start, uint32_t bytes)
@@ -128,6 +146,11 @@ static void hand_over(const void *start, uint32_t bytes)
 {
   (void)start;
   (void)bytes;
+}
+
+static void copy_quads(uint32_t *to, const uint16_t *from, uint32_t blocks)
+{
+  memcpy(to, from, blocks * GBA_PPU_LOG_BLOCK_BYTES);
 }
 #endif
 
@@ -241,13 +264,18 @@ static int send_blocks(GbaPpuLogWriter *writer, uint32_t first,
  uint32_t count)
 {
   uint32_t words = count * BLOCK_WORDS;
+  const uint16_t *from = block_source(writer, first);
+  uint32_t *to;
 
   if(!reserve(writer, DATA_HEADER_WORDS + words))
     return 0;
   put(writer, GBA_PPU_LOG_DATA | first << 8 | count << 20);
   writer->write = data_start(writer->write - 1);
-  memcpy(writer->ring + (writer->write & writer->mask),
-   block_source(writer, first), words * 4);
+  to = writer->ring + (writer->write & writer->mask);
+  if(writer->copy_quads && ((uintptr_t)from & 15) == 0)
+    copy_quads(to, from, count);
+  else
+    memcpy(to, from, words * 4);
   writer->write += words;
   writer->blocks_sent += count;
   return 1;

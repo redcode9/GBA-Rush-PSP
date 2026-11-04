@@ -39,6 +39,19 @@ typedef enum
   VIDEO_ME_NO_MEMORY
 } VideoMeState;
 
+/* Switches for the ways of using the Media Engine still to be proven on a
+   console, each off unless media_engine.cfg next to the EBOOT turns it on:
+   that file holds one number (decimal, or hex after 0x), the sum of the
+   switches wanted. It is read once, when the Media Engine starts, and the
+   runtime log records what was on. */
+/* Written video blocks go into the log with VFPU quadword copies. */
+#define VIDEO_ME_COPY_QUADS        0x01u
+/* A frame the Media Engine drew, following another, is presented without
+   writing the whole data cache back first: the main processor wrote
+   nothing the GE reads, and the log writes back its own lines. */
+#define VIDEO_ME_NO_CACHE_FLUSH    0x02u
+#define VIDEO_ME_SWITCHES          0x03u
+
 typedef struct
 {
   /* Frames the Media Engine drew whole, and the frames presented again
@@ -77,6 +90,8 @@ void video_me_present_poll(void);
 void video_me_present_finish(void);
 
 VideoMeState video_me_state(void);
+/* The switches in use, VIDEO_ME_*. */
+u32 video_me_switches(void);
 void video_me_counters(VideoMeCounters *counters);
 /* A processor exception on the Media Engine: cause and address, or 0. */
 void video_me_fault(u32 *cause, u32 *address);

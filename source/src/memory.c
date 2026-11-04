@@ -60,16 +60,17 @@ u8 ALIGN_DATA fetch_waitstate_s[2][16] =
   { 0, 0, 5, 0, 0, 1, 1, 1, 5, 5, 9, 9,17,17, 4, 0 }
 };
 
-// GBA memory areas.
+// GBA memory areas. Palette RAM, OAM and VRAM are on 16 bytes so that the
+// Media Engine's log can copy them in VFPU quadwords (gba_ppu_log.c).
 
-u16 palette_ram   [  0x200]; // Palette RAM             (05000000h)      1 KiB
-u16 oam_ram       [  0x200]; // Object Attribute Memory (07000000h)      1 KiB
+u16 palette_ram   [  0x200] ALIGN_PSPDATA; // Palette RAM   (05000000h)  1 KiB
+u16 oam_ram       [  0x200] ALIGN_PSPDATA; // OAM           (07000000h)  1 KiB
 u16 io_registers  [  0x400]; // I/O Registers           (04000000h)      1 KiB + 1KiB (io_readable)
 GbaSio gba_sio;
 u32 gba_sio_state_dirty = 1;
 u8  ewram         [0x40000]; // External Working RAM    (02000000h)    256 KiB
 u8  iwram         [ 0x8000]; // Internal Working RAM    (03000000h)     32 KiB
-u8  vram          [0x18000]; // Video RAM               (06000000h)     96 KiB
+u8  vram          [0x18000] ALIGN_PSPDATA; // Video RAM     (06000000h) 96 KiB
 struct BiosData bios;        // BIOS ROM and code tags  (00000000h)     48 KiB
                              // ----------------------------------------------
                              // Total                                  594 KiB

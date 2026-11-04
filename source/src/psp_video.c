@@ -57,6 +57,11 @@ static u32 last_ge_wait_us;
 /* A picture in main memory the next present copies into screen_texture
    first, with the GE: the Media Engine's (video_me.c). */
 static const u16 *texture_source;
+/* Whether that present may skip writing the whole data cache back: the
+   main processor wrote nothing the GE reads since the last present, which
+   also came from such a picture. */
+static int texture_source_clean;
+static int last_present_from_source;
 static u32 adaptive_last_frame_time;
 static int adaptive_has_last_frame_time;
 static VideoAdaptiveState adaptive_video;
@@ -208,12 +213,20 @@ static void video_ge_sync_direct(void)
      sceKernelGetSystemTimeLow() - sync_start);
 }
 
-/* Flushes CPU-drawn pixels (screen_texture) so the GE reads fresh data. */
+/* Flushes CPU-drawn pixels (screen_texture) so the GE reads fresh data,
+   and so that no line of them left in the cache can later overwrite what
+   the GE writes there. Not needed when this present and the last one both
+   come from a picture the GE copies, as asked by video_texture_from. */
 static void video_dcache_writeback(void)
 {
   int measuring = perf_monitor_active();
   u32 writeback_start;
+  int skip = texture_source && texture_source_clean &&
+   last_present_from_source;
 
+  last_present_from_source = texture_source != NULL;
+  if(skip)
+    return;
   if(measuring)
     writeback_start = sceKernelGetSystemTimeLow();
 
@@ -248,10 +261,13 @@ static void forget_texture_rows(void)
 }
 
 /* The next present shows frame (240x160 rows GBA_LINE_SIZE pixels apart,
-   in main memory and written back) instead of what screen_texture holds. */
-void video_texture_from(const u16 *frame)
+   in main memory and written back) instead of what screen_texture holds.
+   clean: nothing the GE reads is left in the cache by the main processor
+   if the last present was such a frame too. */
+void video_texture_from(const u16 *frame, int clean)
 {
   texture_source = frame;
+  texture_source_clean = clean;
 }
 
 /* Center of the GE's 4096x4096 virtual screen; sceGuOffset and
@@ -887,6 +903,7 @@ void clear_texture(u16 color)
   u16 *p_dest, *p_dest0;
 
   video_sync_present();
+  last_present_from_source = 0;
   p_dest0 = screen_texture;
 
   for (y = 0; y < GBA_SCREEN_HEIGHT; y++)

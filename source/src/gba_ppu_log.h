@@ -139,6 +139,9 @@ typedef struct
   /* Set when the log lost a write: everything goes again at the next
      line, which also happens after a reset or a state load. */
   int lost;
+  /* Copy the blocks with VFPU quadwords (PSP, in a thread allowed the
+     VFPU) where both ends are on 16 bytes. */
+  int copy_quads;
   /* The emulator's memory the blocks are copied from. */
   const uint16_t *palette;
   const uint16_t *oam;

@@ -60,6 +60,7 @@ static VideoMeMemory *memory;
 static GbaPpuLogMailbox *mailbox;
 static GbaPpuLogWriter writer;
 static VideoMeState state;
+static u32 switches;
 static SceUID module = -1;
 static int drawing;
 static u32 present_frame;
@@ -135,8 +136,34 @@ static void give_up(VideoMeState reason)
     mailbox->writer.magic = 0;
 }
 
+/* The switches media_engine.cfg turns on (see video_me.h); none without
+   it. */
+static u32 read_switches(void)
+{
+  char path[MAX_PATH];
+  char text[16];
+  SceUID file;
+  int bytes;
+
+  snprintf(path, sizeof(path), "%smedia_engine.cfg", main_path);
+  file = sceIoOpen(path, PSP_O_RDONLY, 0);
+  if(file < 0)
+    return 0;
+  bytes = sceIoRead(file, text, sizeof(text) - 1);
+  sceIoClose(file);
+  if(bytes <= 0)
+    return 0;
+  text[bytes] = '\0';
+  return (u32)strtoul(text, NULL, 0) & VIDEO_ME_SWITCHES;
+}
+
 static void start(void)
 {
+  switches = read_switches();
+  /* The VFPU is only there for threads that ask for it. */
+  if((switches & VIDEO_ME_COPY_QUADS) &&
+     sceKernelChangeCurrentThreadAttr(0, PSP_THREAD_ATTR_VFPU) < 0)
+    switches &= ~VIDEO_ME_COPY_QUADS;
   memory = (VideoMeMemory *)memalign(64, sizeof(*memory));
   if(!memory)
   {
@@ -150,6 +177,7 @@ static void start(void)
   gba_ppu_log_writer_init(&writer, mailbox, memory->ring, memory->frame,
    palette_ram, oam_ram, (u16 *)vram, io_registers, video_dirty,
    (u8 *)video_dirty_groups);
+  writer.copy_quads = (switches & VIDEO_ME_COPY_QUADS) != 0;
   state = load_module();
   if(state != VIDEO_ME_DRAWING)
     give_up(state);
@@ -284,7 +312,8 @@ void video_me_present_poll(void)
     return;
   present_frame = 0;
   late_in_a_row = 0;
-  video_texture_from(memory->frame);
+  video_texture_from(memory->frame,
+   (switches & VIDEO_ME_NO_CACHE_FLUSH) != 0);
   (*update_screen)();
 }
 
@@ -301,6 +330,11 @@ void video_me_present_finish(void)
 VideoMeState video_me_state(void)
 {
   return state;
+}
+
+u32 video_me_switches(void)
+{
+  return switches;
 }
 
 void video_me_counters(VideoMeCounters *out)

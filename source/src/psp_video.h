@@ -17,7 +17,7 @@ void init_video(int devkit_version);
 void video_term(void);
 
 void flip_screen(u32 vsync);
-void video_texture_from(const u16 *frame);
+void video_texture_from(const u16 *frame, int clean);
 void video_sync_present(void);
 u32 video_last_ge_wait_us(void);
 void video_power_suspend(void);
