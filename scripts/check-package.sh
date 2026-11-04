@@ -3,8 +3,9 @@
 set -eu
 
 # Checks the archive made by package-release.sh (make package, or make
-# artifact-smoke on its own): exactly the approved files, no symbolic links,
-# contents identical to the tree, and a matching SHA-256 file.
+# artifact-smoke on its own): no user files, ROMs or BIOS dumps, exactly the
+# approved files under PSP/GAME/GBARushPSP/, no symbolic links, contents
+# identical to the tree, and a matching SHA-256 file.
 
 if [ "$#" -ne 1 ]; then
   echo "Usage: $0 VERSION" >&2
@@ -43,18 +44,30 @@ trap 'rm -rf "$temporary_root"' EXIT HUP INT TERM
 expected_manifest="$temporary_root/expected.txt"
 actual_manifest="$temporary_root/actual.txt"
 
+install_dir="PSP/GAME/GBARushPSP"
+
 {
-  echo "$release_name/GBARushPSP/EBOOT.PBP"
-  echo "$release_name/GBARushPSP/exception.prx"
-  echo "$release_name/GBARushPSP/media_engine.prx"
+  echo "$install_dir/EBOOT.PBP"
+  echo "$install_dir/exception.prx"
+  echo "$install_dir/media_engine.prx"
   for document in $documentation_files
   do
-    echo "$release_name/$document"
+    echo "$install_dir/docs/$document"
   done
 } | LC_ALL=C sort > "$expected_manifest"
 
 # List the archive's files, without directory entries.
 unzip -Z1 "$archive" | sed '/\/$/d' | LC_ALL=C sort > "$actual_manifest"
+
+# Extracting the archive over an install would overwrite these.
+if user_files=$(grep -i -E \
+  '(^|/)dir\.ini$|\.(cfg|sav|svs|gba|agb|gbz|bin)$' "$actual_manifest")
+then
+  echo "Release archive contains user files, ROMs or BIOS dumps:" >&2
+  echo "$user_files" >&2
+  exit 1
+fi
+
 if ! diff -u "$expected_manifest" "$actual_manifest"
 then
   echo "Release archive does not match the approved manifest" >&2
@@ -68,13 +81,13 @@ then
   exit 1
 fi
 
-package_root="$temporary_root/extracted/$release_name"
-cmp source/EBOOT.PBP "$package_root/GBARushPSP/EBOOT.PBP"
-cmp source/exception.prx "$package_root/GBARushPSP/exception.prx"
-cmp source/media_engine.prx "$package_root/GBARushPSP/media_engine.prx"
+package_root="$temporary_root/extracted/$install_dir"
+cmp source/EBOOT.PBP "$package_root/EBOOT.PBP"
+cmp source/exception.prx "$package_root/exception.prx"
+cmp source/media_engine.prx "$package_root/media_engine.prx"
 for document in $documentation_files
 do
-  cmp "$document" "$package_root/$document"
+  cmp "$document" "$package_root/docs/$document"
 done
 
 if command -v shasum >/dev/null 2>&1; then

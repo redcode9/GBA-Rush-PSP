@@ -168,7 +168,8 @@ test-tools:
 	 tests/test_decode_runtime_log.py tests/test_startup.py \
 	 tests/test_browser_text.py tests/test_open_bios.py \
 	 tests/test_theme_boot.py tests/test_toast_draw.py \
-	 tests/test_input_shortcuts.py
+	 tests/test_input_shortcuts.py \
+	 tests/test_check_package.py
 
 # The link cable test runs fewer network profiles (--quick) under the
 # sanitizers, where it is much slower.

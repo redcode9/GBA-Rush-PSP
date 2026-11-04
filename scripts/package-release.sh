@@ -6,6 +6,8 @@ set -eu
 # exception.prx and media_engine.prx plus the documentation (make package). The archive is
 # reproducible: every file gets the last commit's time (or
 # SOURCE_DATE_EPOCH) and zip -X leaves out extra file attributes.
+# Its root is PSP/GAME/GBARushPSP/, with the documentation under docs/, so
+# extracting it at the root of ms0: or ef0: installs or upgrades in place.
 
 if [ "$#" -ne 1 ]; then
   echo "Usage: $0 VERSION" >&2
@@ -36,7 +38,7 @@ done
 
 release_name="GBA-Rush-PSP-$version"
 release_root="dist/$release_name"
-install_root="$release_root/GBARushPSP"
+install_root="$release_root/PSP/GAME/GBARushPSP"
 archive="dist/$release_name.zip"
 checksum="$archive.sha256"
 release_epoch=${SOURCE_DATE_EPOCH:-$(git log -1 --format=%at)}
@@ -71,12 +73,12 @@ cp source/exception.prx "$install_root/exception.prx"
 cp source/media_engine.prx "$install_root/media_engine.prx"
 for document in $documentation_files
 do
-  mkdir -p "$release_root/$(dirname "$document")"
-  cp "$document" "$release_root/$document"
+  mkdir -p "$install_root/docs/$(dirname "$document")"
+  cp "$document" "$install_root/docs/$document"
 done
 
 find "$release_root" -exec env TZ=UTC touch -t "$archive_timestamp" {} +
-(cd dist && TZ=UTC zip -q -X -D -r "$release_name.zip" "$release_name")
+(cd "$release_root" && TZ=UTC zip -q -X -D -r "../$release_name.zip" PSP)
 
 if command -v shasum >/dev/null 2>&1; then
   (cd dist && shasum -a 256 "$release_name.zip") > "$checksum"
