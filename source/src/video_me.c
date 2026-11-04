@@ -43,6 +43,9 @@
 #define BUSY_FRAMES      60
 #define UNCACHED(pointer) ((void *)(0x40000000u | (u32)(pointer)))
 
+/* media_engine.prx, through media_engine_stub.S. */
+void media_engine_wake(void);
+
 typedef char VideoMeDirtyMapCheck[
  sizeof(video_dirty) == GBA_PPU_LOG_BLOCKS &&
  sizeof(video_dirty_groups) == GBA_PPU_LOG_GROUP_BYTES ? 1 : -1];
@@ -181,6 +184,8 @@ static void start(void)
    palette_ram, oam_ram, (u16 *)vram, io_registers, video_dirty,
    (u8 *)video_dirty_groups);
   writer.copy_quads = (switches & VIDEO_ME_COPY_QUADS) != 0;
+  if(switches & VIDEO_ME_SLEEP)
+    mailbox->writer.wait = GBA_PPU_LOG_WAIT_SLEEP;
   state = load_module();
   if(state != VIDEO_ME_DRAWING)
     give_up(state);
@@ -289,10 +294,22 @@ static void sample_end(void)
     counters.log_us += sceKernelGetSystemTimeLow() - sample_start;
 }
 
+/* After publishing: a Media Engine that went to sleep with everything
+   read is woken (VIDEO_ME_SLEEP). */
+static void wake_if_sleeping(void)
+{
+  if((switches & VIDEO_ME_SLEEP) && mailbox->reader.sleeping)
+  {
+    media_engine_wake();
+    counters.wakes++;
+  }
+}
+
 void video_me_line(u32 y)
 {
   sample_begin();
   gba_ppu_log_line(&writer, y);
+  wake_if_sleeping();
   sample_end();
 }
 
@@ -305,6 +322,7 @@ void video_me_vblank(void)
 {
   sample_begin();
   gba_ppu_log_vblank(&writer);
+  wake_if_sleeping();
   sample_end();
 }
 

@@ -102,7 +102,14 @@ typedef struct
   uint16_t *volatile frame;
   /* Words published, counted from the start of the log. */
   volatile uint32_t write;
+  /* GBA_PPU_LOG_WAIT_*: how the reader waits for words. */
+  volatile uint32_t wait;
 } __attribute__((aligned(64))) GbaPpuLogWriterSide;
+
+/* The reader polls write when idle, less and less often; or it sleeps
+   until the writer wakes it, the writer having seen sleeping set. */
+#define GBA_PPU_LOG_WAIT_POLL  0u
+#define GBA_PPU_LOG_WAIT_SLEEP 1u
 
 typedef struct
 {
@@ -120,6 +127,9 @@ typedef struct
   volatile uint32_t busy;
   /* A processor exception on the reader: cause, address, bad address. */
   volatile uint32_t fault[3];
+  /* Set while the reader sleeps, or is about to, with all of write read
+     (GBA_PPU_LOG_WAIT_SLEEP). */
+  volatile uint32_t sleeping;
   /* Frames finished, by working time (GBA_PPU_LOG_TIME_SHIFT); kept
      across the reader's starts. */
   volatile uint32_t frame_time[GBA_PPU_LOG_TIME_BUCKETS];

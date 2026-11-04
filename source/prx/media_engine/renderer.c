@@ -17,9 +17,11 @@
  * copied there by boot.S, so neither its code nor its copy of the video
  * memory ever takes a trip over the bus the main processor and the Wi-Fi
  * share: only the log, the drawn lines and the polls of the mailbox do. It
- * has no operating system, no library and no interrupts. Between batches
- * of work it waits in a loop that touches no memory, and polls the mailbox
- * less and less often the longer nothing comes, up to about every 25 us.
+ * has no operating system, no library and takes no interrupts. Between
+ * batches of work it waits in a loop that touches no memory, and polls the
+ * mailbox less and less often the longer nothing comes, up to about every
+ * 25 us. When the emulator asks for it (GBA_PPU_LOG_WAIT_SLEEP) it then
+ * goes further and halts until the emulator interrupts it.
  */
 
 #include <stddef.h>
@@ -31,6 +33,13 @@
    a handful of cycles. */
 #define PAUSE_SHORTEST 32u
 #define PAUSE_LONGEST  2048u
+
+/* The Media Engine's interrupt flags in its system registers, which its
+   start-up code (boot.S) clears in the same way; and the Status bits that
+   let the hardware interrupt lines end a halt, still without taking an
+   exception (interrupts stay off). */
+#define INTERRUPT_FLAGS     (*(volatile uint32_t *)0xBC100004u)
+#define STATUS_ALL_LINES    0xFC00u
 
 void me_start(GbaPpuLogMailbox *mailbox);
 
@@ -109,11 +118,33 @@ static void pause_for(uint32_t spins)
     __asm__ volatile("");
 }
 
-/* Stops for good: halt waits for an interrupt, and none is enabled. */
+static void halt(void)
+{
+  __asm__ volatile(".word 0x70000000" ::: "memory");   /* halt */
+}
+
+/* Stops for good: halt waits for an interrupt, and none is enabled (if
+   one is, it halts again). */
 static void __attribute__((noreturn)) stop(void)
 {
   for(;;)
-    __asm__ volatile(".word 0x70000000");   /* halt */
+    halt();
+}
+
+/* Sleeps until the emulator interrupts it, unless words came meanwhile:
+   the emulator looks at sleeping after each word it publishes. A wake
+   that comes too early, or never ends, only costs a poll. */
+static void sleep_for_words(GbaPpuLogMailbox *mailbox)
+{
+  GbaPpuLogReaderSide *side = &mailbox->reader;
+
+  side->sleeping = 1;
+  __asm__ volatile("sync" ::: "memory");
+  if(mailbox->writer.write == side->read)
+    halt();
+  INTERRUPT_FLAGS = 0xFFFFFFFFu;
+  __asm__ volatile("sync" ::: "memory");
+  side->sleeping = 0;
 }
 
 /* Every processor exception comes here (COP0 register 25 holds the
@@ -165,6 +196,8 @@ static void __attribute__((noreturn)) run(GbaPpuLogMailbox *mailbox)
        longer ours to write. */
     else if(mailbox->writer.magic != GBA_PPU_LOG_MAGIC)
       stop();
+    else if(mailbox->writer.wait == GBA_PPU_LOG_WAIT_SLEEP)
+      sleep_for_words(mailbox);
   }
 }
 
@@ -179,5 +212,12 @@ void __attribute__((section(".text.start"), noreturn))
     *word = 0;
   fault_mailbox = mailbox;
   __asm__ volatile("mtc0 %0, $25" :: "r"(fault));
+  if(mailbox->writer.wait == GBA_PPU_LOG_WAIT_SLEEP)
+  {
+    uint32_t status;
+
+    __asm__ volatile("mfc0 %0, $12" : "=r"(status));
+    __asm__ volatile("mtc0 %0, $12" :: "r"(status | STATUS_ALL_LINES));
+  }
   run(mailbox);
 }

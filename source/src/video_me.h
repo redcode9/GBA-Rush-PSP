@@ -56,7 +56,11 @@ typedef enum
    main processor draws frames until it caught up, instead of showing the
    last picture again for up to a second before giving up on it. */
 #define VIDEO_ME_QUICK_FALLBACK    0x04u
-#define VIDEO_ME_SWITCHES          0x07u
+/* Once idle for a while, the Media Engine halts until the main processor
+   interrupts it after publishing more of the log, instead of polling the
+   mailbox in main memory. */
+#define VIDEO_ME_SLEEP             0x08u
+#define VIDEO_ME_SWITCHES          0x0Fu
 
 typedef struct
 {
@@ -74,8 +78,10 @@ typedef struct
   u32 resends;
   u32 frames;
   /* Frames drawn on the main processor because the Media Engine did not
-     answer (VIDEO_ME_QUICK_FALLBACK). */
+     answer (VIDEO_ME_QUICK_FALLBACK), and the times it was woken from its
+     halt (VIDEO_ME_SLEEP). */
   u32 fallback_frames;
+  u32 wakes;
   /* Frames the Media Engine finished, by its working time on each. */
   u32 frame_time[GBA_PPU_LOG_TIME_BUCKETS];
 } VideoMeCounters;

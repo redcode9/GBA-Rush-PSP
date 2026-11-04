@@ -30,6 +30,10 @@
  * when the module is stopped, the Media Engine is held in reset so it
  * writes nothing into memory that is no longer the emulator's.
  *
+ * The emulator also calls media_engine_wake from user mode, through the
+ * library this module exports (source/src/media_engine_stub.S), to end the
+ * program's halt when it sleeps between batches of work.
+ *
  * What is known of this hardware comes from Sony's own driver as uOFW
  * describes it and from mcidclan's Media Engine research.
  */
@@ -46,6 +50,8 @@ PSP_NO_CREATE_MAIN_THREAD();
 #define SYSREG_RESET      (*(volatile u32 *)0xBC10004Cu)
 #define SYSREG_RAM_CONFIG (*(volatile u32 *)0xBC100040u)
 #define SYSREG_BUS_CLOCK  (*(volatile u32 *)0xBC100050u)
+/* Written by one processor, interrupts the other one. */
+#define SYSREG_INTERRUPT_OTHER (*(volatile u32 *)0xBC100044u)
 #define RESET_MEDIA_ENGINE     0x04u
 #define BUS_CLOCK_MEDIA_ENGINE 0x01u
 /* Where renderer.ld places the program, in the Media Engine's eDRAM. */
@@ -68,6 +74,7 @@ enum
 int module_start(SceSize args, void *argp);
 int module_stop(SceSize args, void *argp);
 int module_reboot_before(SceSize args, void *argp);
+void media_engine_wake(void);
 
 /* boot.S, and the program built from renderer.c (program.S). */
 extern const u32 media_engine_boot[];
@@ -208,6 +215,16 @@ int module_stop(SceSize args, void *argp)
   for(i = 0; i < boot_bytes / 4; i++)
     ((volatile u32 *)BOOT_ADDRESS)[i] = saved_boot[i];
   return 0;
+}
+
+/* Interrupts the Media Engine, which ends its halt; nothing when it is
+   not running. */
+void media_engine_wake(void)
+{
+  if(!running)
+    return;
+  SYSREG_INTERRUPT_OTHER = 1;
+  __asm__ volatile("sync");
 }
 
 /* Leaving the game: the kernel reboots and loads Sony's firmware into the

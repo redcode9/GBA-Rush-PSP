@@ -42,7 +42,7 @@ MAINOBJS = \
  cpu.o memory.o gba_ppu.o gba_ppu_log.o video_me.o video_dispatch_state.o video_dispatch.o video_cc_wrap.o video_old_wrap.o psp_video.o input.o sound.o main.o message.o mh_print.o gui.o zip.o png.o \
  mips_stub.o video_blend_mips.o \
  arm_decode.o arm_interp.o arm_mips.o arm_gba.o \
- ku_bridge.o exception.o cheats.o codebreaker.o ch_print.o \
+ ku_bridge.o media_engine_stub.o exception.o cheats.o codebreaker.o ch_print.o \
  adhoc_peer.o boxart.o dynarec_worklist.o fast_forward_audio.o fast_forward_policy.o gba_sio.o link_audio_wait.o link_cable.o link_net.o power_lifecycle.o runtime_log.o runtime_log_psp.o runtime_log_store.o sound_math.o video_adaptive.o perf_metrics.o perf_monitor.o perf_report.o menu_model.o menu_layout.o menu_catalog.o config_model.o config_store.o psp_adhoc.o
 
 # make DIAGNOSTIC_INPUT_TRACE=1 adds the diagnostic input recorder.
@@ -89,7 +89,7 @@ ASFLAGS = ${CFLAGS}
 
 # Stricter C-only warnings, so the C++ and assembly objects are left out;
 # zlib's old-style definitions are tolerated.
-C_ONLY_OBJS = $(filter-out video_cc_wrap.o mips_stub.o video_blend_mips.o ku_bridge.o,$(OBJS))
+C_ONLY_OBJS = $(filter-out video_cc_wrap.o mips_stub.o video_blend_mips.o ku_bridge.o media_engine_stub.o,$(OBJS))
 $(C_ONLY_OBJS): CFLAGS += -Wbad-function-cast -Wmissing-prototypes
 $(OBJZ) $(OBJG): CFLAGS += -Wno-old-style-definition
 $(MAINOBJS): $(COMMON_FILE)

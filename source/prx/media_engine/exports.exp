@@ -1,4 +1,4 @@
-# Only the mandatory syslib exports: the emulator passes the mailbox as the
+# The mandatory syslib exports: the emulator passes the mailbox as the
 # module_start argument (source/src/video_me.c), and the kernel calls
 # module_reboot_before when the game is left.
 PSP_BEGIN_EXPORTS
@@ -7,6 +7,11 @@ PSP_EXPORT_FUNC_HASH(module_start)
 PSP_EXPORT_FUNC_HASH(module_stop)
 PSP_EXPORT_FUNC_HASH(module_reboot_before)
 PSP_EXPORT_VAR_HASH(module_info)
+PSP_EXPORT_END
+
+# Called by the emulator in user mode (source/src/media_engine_stub.S).
+PSP_EXPORT_START(GBARushMediaEngine, 0, 0x4001)
+PSP_EXPORT_FUNC(media_engine_wake)
 PSP_EXPORT_END
 
 PSP_END_EXPORTS

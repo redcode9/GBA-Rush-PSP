@@ -189,12 +189,14 @@ void gba_ppu_log_writer_init(GbaPpuLogWriter *writer,
   reader->busy = 0;
   for(i = 0; i < 3; i++)
     reader->fault[i] = 0;
+  reader->sleeping = 0;
   for(i = 0; i < (int)GBA_PPU_LOG_TIME_BUCKETS; i++)
     reader->frame_time[i] = 0;
   mailbox->writer.ring = ring;
   mailbox->writer.ring_words = RING_WORDS;
   mailbox->writer.frame = frame;
   mailbox->writer.write = 0;
+  mailbox->writer.wait = GBA_PPU_LOG_WAIT_POLL;
   store(&mailbox->writer.magic, GBA_PPU_LOG_MAGIC);
 }
 
