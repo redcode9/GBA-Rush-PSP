@@ -181,8 +181,8 @@ step_arm_gcc()
     return
   fi
   if [ "$platform" != Darwin-arm64 ]; then
-    # ponytail: only the macOS archive's digest is pinned; add the Linux
-    # one when a Linux machine needs test ROMs built.
+    # Only the macOS archive's digest is pinned; add the Linux one when a
+    # Linux machine needs to build test ROMs.
     say "install arm-none-eabi-gcc 15 (gcc-arm-none-eabi) to build test ROMs"
     return
   fi
