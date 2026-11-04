@@ -29,11 +29,14 @@
 #define ROW_BYTES    (GBA_PPU_WIDTH * 2)
 /* The register writes a full resend repeats, DISPCNT to BLDY. */
 #define IO_HALFWORDS (GBA_PPU_IO_BYTES / 2)
+/* A DATA command's header and the unused words after it at most. */
+#define DATA_HEADER_WORDS 4u
 /* A full resend: RESET, the registers, every block in runs of at most a
    group with a header each, the line mark, and a ring end skipped once. */
-#define RESEND_WORDS (1 + IO_HALFWORDS + GBA_PPU_LOG_GROUPS + 1 + \
+#define RESEND_WORDS (1 + IO_HALFWORDS + \
+ DATA_HEADER_WORDS * (GBA_PPU_LOG_GROUPS + 1) + \
  GBA_PPU_LOG_BLOCKS * BLOCK_WORDS + 1 + \
- (1 + GBA_PPU_LOG_GROUP_BLOCKS * BLOCK_WORDS))
+ (DATA_HEADER_WORDS + GBA_PPU_LOG_GROUP_BLOCKS * BLOCK_WORDS))
 /* Lines counted in a frame once one of them was missed. */
 #define LINES_MISSED 0x100u
 #define FRAME_MASK   0xFFFFFFu
@@ -226,15 +229,23 @@ static const uint16_t *block_source(const GbaPpuLogWriter *writer,
   return writer->vram + (block - GBA_PPU_LOG_VRAM_BLOCK) * BLOCK_HALFWORDS;
 }
 
+/* Where the blocks of a DATA command whose header is word at begin: the
+   next word on 16 bytes. Words are counted from a ring start on 64. */
+static uint32_t data_start(uint32_t at)
+{
+  return (at + DATA_HEADER_WORDS) & ~(DATA_HEADER_WORDS - 1);
+}
+
 /* One DATA command: count blocks from first, as they are now. */
 static int send_blocks(GbaPpuLogWriter *writer, uint32_t first,
  uint32_t count)
 {
   uint32_t words = count * BLOCK_WORDS;
 
-  if(!reserve(writer, 1 + words))
+  if(!reserve(writer, DATA_HEADER_WORDS + words))
     return 0;
   put(writer, GBA_PPU_LOG_DATA | first << 8 | count << 20);
+  writer->write = data_start(writer->write - 1);
   memcpy(writer->ring + (writer->write & writer->mask),
    block_source(writer, first), words * 4);
   writer->write += words;
@@ -487,17 +498,21 @@ int gba_ppu_log_read(GbaPpuLogReader *reader)
         break;
 
       case GBA_PPU_LOG_DATA:
+      {
+        uint32_t data = data_start(at);
+
         /* A run past the end of video memory or of the ring is no
            command. */
         known = first + count <= GBA_PPU_LOG_BLOCKS &&
-         at + 1 + count * BLOCK_WORDS <= size;
+         data + count * BLOCK_WORDS <= size;
         if(known)
         {
           memcpy((uint8_t *)&reader->memory + first * 64,
-           reader->ring + at + 1, count * 64);
-          reader->read += count * BLOCK_WORDS;
+           reader->ring + data, count * 64);
+          reader->read += data - at - 1 + count * BLOCK_WORDS;
         }
         break;
+      }
 
       case GBA_PPU_LOG_RESET:
         gba_ppu_init(&reader->ppu, reader->memory.palette,

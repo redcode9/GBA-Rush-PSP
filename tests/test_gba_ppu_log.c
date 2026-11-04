@@ -268,6 +268,47 @@ static void test_unknown_word_is_refused(void)
   check(mailbox.reader.read == mailbox.writer.write);
 }
 
+/* Block data starts on 16 bytes in the ring, so that it can be copied in
+   quadwords, also after the ring went round. */
+static void test_block_data_is_aligned(void)
+{
+  uint32_t at, end, data_commands = 0;
+  int i;
+
+  start();
+  scene();
+  for(i = 0; i < 3; i++)
+    check(caught_up(run_frame(1)));
+  at = writer.write;
+  for(i = 0; i < 30; i++)
+    check(caught_up(run_frame(1)));
+  end = writer.write;
+  while((int32_t)(end - at) > 0)
+  {
+    uint32_t word = ring[at & writer.mask];
+
+    switch(word & 0xFF)
+    {
+      case GBA_PPU_LOG_WRAP:
+        at += GBA_PPU_LOG_RING_WORDS - (at & writer.mask);
+        continue;
+      case GBA_PPU_LOG_DATA:
+      {
+        uint32_t data = (at + 4) & ~3u;
+
+        check(((uintptr_t)(ring + (data & writer.mask)) & 15) == 0);
+        at = data + (word >> 20) * 16;
+        data_commands++;
+        continue;
+      }
+      default:
+        at++;
+        break;
+    }
+  }
+  check(data_commands > 30);
+}
+
 /* ---- The reader on its own thread, as on the Media Engine ----------- */
 
 static volatile int stop_reader;
@@ -320,6 +361,7 @@ int main(void)
   test_frame_with_missing_lines_is_not_done();
   test_reader_start_over();
   test_unknown_word_is_refused();
+  test_block_data_is_aligned();
   test_frames_match_on_two_threads();
   printf("gba_ppu_log tests passed\n");
   return 0;

@@ -48,7 +48,7 @@
 /* The writer sets magic while the log is in use; a reader that finds it
    gone stops. The reader answers with version once it started. */
 #define GBA_PPU_LOG_MAGIC   0x4C505047u   /* "GPPL" */
-#define GBA_PPU_LOG_VERSION 1u
+#define GBA_PPU_LOG_VERSION 2u
 
 /* Video memory in 64-byte blocks, in GbaPpuMemory's order: palette RAM
    (blocks 0-15), OAM (16-31), VRAM (32-1567). Whenever the game writes
@@ -81,7 +81,8 @@ enum
   GBA_PPU_LOG_LINE,       /* bits 8-15: draw this line */
   GBA_PPU_LOG_VBLANK,     /* bits 8-31: the frame that begins */
   GBA_PPU_LOG_DATA,       /* bits 8-19 first block, 20-31 how many; then
-                             16 words per block */
+                             0-3 unused words, so that the blocks start on
+                             16 bytes, and 16 words per block */
   GBA_PPU_LOG_RESET       /* bits 8-31: start over within this frame */
 };
 
