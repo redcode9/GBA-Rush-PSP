@@ -4117,8 +4117,10 @@ u32 menu(void)
                      MSG[MSG_LOAD_STATE_FILE]);
             if (yesno_dialog(dialog_msg) == 0)
             {
-                /* Auto-save current progress before loading */
-                action_savestate_slot(AUTO_SAVESTATE_SLOT);
+                /* Auto-save current progress before loading, unless the
+                   chosen file is that AUTO state, which it would replace */
+                if (slot_parsed != AUTO_SAVESTATE_SLOT)
+                    action_savestate_slot(AUTO_SAVESTATE_SLOT);
                 if (load_state_silent(filename_buffer) != 0)
                 {
                     return_value = 1;
