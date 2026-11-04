@@ -142,6 +142,74 @@ int main(void) {
 '''
 
 
+# Host stand-ins for load_setting_cfg() and set_default_directories().
+# load_dir_cfg() is not spliced (its nested functions do not build on the
+# host); dir_ini_result plays its return value. sceIoDopen() opens only the
+# roms/ folder, and only when roms_present is set.
+DIR_STUBS = r'''
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#define MAX_PATH 512
+#define MAX_FILE 256
+#define CONFIRMATION_CONT 2
+#define MSG_ERR_LOAD_DIR_INI 0
+typedef int SceUID;
+const char *messages[] = {"%sdir.ini is missing"};
+#define MSG messages
+char main_path[MAX_PATH] = "ms0:/PSP/GAME/X/";
+char dir_roms[MAX_PATH], dir_save[MAX_PATH], dir_state[MAX_PATH];
+char dir_cfg[MAX_PATH], dir_snap[MAX_PATH], dir_cheat[MAX_PATH];
+char dir_boxart[MAX_PATH], dir_boxart_folders[MAX_PATH];
+int dir_ini_result, roms_present, error_calls, open_dirs;
+int load_dir_cfg(char *name) {
+  assert(strcmp(name, "ms0:/PSP/GAME/X/dir.ini") == 0); return dir_ini_result;
+}
+void error_msg(const char *m, int c) { (void)m; (void)c; error_calls++; }
+SceUID sceIoDopen(const char *p) {
+  if(!roms_present || strcmp(p, "ms0:/PSP/GAME/X/roms/") != 0) return -1;
+  open_dirs++; return 3;
+}
+int sceIoDclose(SceUID d) { assert(d == 3); open_dirs--; return 0; }
+'''
+
+
+# 1.4.2 kept every folder in the EBOOT folder when dir.ini was missing, and
+# saves and states must still be found there; only the ROM folder moves to
+# roms/, when it exists. A dir.ini that loads keeps the folders it set.
+DIR_SCENARIOS = r'''
+static char *const dirs[] = {dir_roms, dir_save, dir_state, dir_cfg,
+ dir_snap, dir_cheat, dir_boxart, dir_boxart_folders};
+static void run(int result, int roms) {
+  unsigned i;
+  for(i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) strcpy(dirs[i], "set/");
+  dir_ini_result = result; roms_present = roms; error_calls = open_dirs = 0;
+  load_setting_cfg();
+  assert(error_calls == 0 && open_dirs == 0);
+  for(i = 1; i < sizeof(dirs) / sizeof(dirs[0]); i++)
+    assert(strcmp(dirs[i], result < 0 ? main_path : "set/") == 0);
+}
+int main(void) {
+  run(-1, 1); assert(strcmp(dir_roms, "ms0:/PSP/GAME/X/roms/") == 0);
+  run(-1, 0); assert(strcmp(dir_roms, main_path) == 0);
+  run(0, 1); assert(strcmp(dir_roms, "set/") == 0);
+  puts("dir.ini default regressions passed");
+  return 0;
+}
+'''
+
+
+def build_and_run(source, name):
+    with tempfile.TemporaryDirectory(prefix="gbarush-startup-") as directory:
+        path = Path(directory)
+        (path / (name + ".c")).write_text(source)
+        command = shlex.split(os.environ.get("HOST_CC", "cc"))
+        subprocess.run(command + ["-std=c99", "-Wall", "-Wextra", "-Werror",
+                                 str(path / (name + ".c")), "-o", str(path / name)],
+                       check=True, capture_output=True, text=True)
+        subprocess.run([str(path / name)], check=True)
+
+
 class StartupTests(unittest.TestCase):
     def test_production_startup_paths(self):
         # Splice the real functions between the stubs and the scenarios.
@@ -149,14 +217,14 @@ class StartupTests(unittest.TestCase):
                                  "void maybe_load_auto_savestate(void)")
         source += function("source/src/main.c", "int user_main(int argc, char *argv[])")
         source += SCENARIOS
-        with tempfile.TemporaryDirectory(prefix="gbarush-startup-") as directory:
-            path = Path(directory)
-            (path / "startup.c").write_text(source)
-            command = shlex.split(os.environ.get("HOST_CC", "cc"))
-            subprocess.run(command + ["-std=c99", "-Wall", "-Wextra", "-Werror",
-                                     str(path / "startup.c"), "-o", str(path / "startup")],
-                           check=True, capture_output=True, text=True)
-            subprocess.run([str(path / "startup")], check=True)
+        build_and_run(source, "startup")
+
+    def test_missing_dir_ini_needs_no_dialog(self):
+        source = DIR_STUBS + function("source/src/gui.c",
+                                     "void set_default_directories(void)")
+        source += function("source/src/main.c", "static void load_setting_cfg(void)")
+        source += DIR_SCENARIOS
+        build_and_run(source, "dir_defaults")
 
 
 if __name__ == "__main__":

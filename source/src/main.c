@@ -1625,8 +1625,10 @@ static void init_main(void)
 }
 
 
-/* dir.ini names the ROM, save, state and other folders; a missing or bad
-   file is reported but not fatal. */
+/* dir.ini names the ROM, save, state and other folders. It is optional:
+   without it the defaults apply silently; a dir.ini naming folders that do
+   not exist is reported by load_dir_cfg().
+   tests/test_startup.py compiles this function alone. */
 static void load_setting_cfg(void)
 {
   char filename[MAX_FILE];
@@ -1634,10 +1636,7 @@ static void load_setting_cfg(void)
   sprintf(filename, "%sdir.ini", main_path);
 
   if (load_dir_cfg(filename) < 0)
-  {
-    sprintf(filename, MSG[MSG_ERR_LOAD_DIR_INI], main_path);
-    error_msg(filename, CONFIRMATION_CONT);
-  }
+    set_default_directories();
 }
 
 /* Loads gba_bios.bin from the emulator folder; without a usable one,

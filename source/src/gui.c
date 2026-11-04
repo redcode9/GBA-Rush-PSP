@@ -6524,10 +6524,33 @@ s32 load_config_file(void)
 }
 
 
+/* Folders used when there is no dir.ini: all of them are main_path, as in
+   1.4.2, so existing saves and states are still found, except ROMs, which
+   come from <main_path>roms/ when that folder exists.
+   tests/test_startup.py compiles this function alone. */
+void set_default_directories(void)
+{
+  SceUID roms_dir;
+
+  strcpy(dir_save,  main_path);
+  strcpy(dir_state, main_path);
+  strcpy(dir_cfg,   main_path);
+  strcpy(dir_snap,  main_path);
+  strcpy(dir_cheat, main_path);
+  strcpy(dir_boxart, main_path);
+  strcpy(dir_boxart_folders, main_path);
+
+  if ((snprintf(dir_roms, MAX_PATH, "%sroms/", main_path) < MAX_PATH) &&
+   ((roms_dir = sceIoDopen(dir_roms)) >= 0))
+    sceIoDclose(roms_dir);
+  else
+    strcpy(dir_roms, main_path);
+}
+
 /* Read the "name = path" directory settings. Relative paths are taken from
    main_path; a missing or unopenable directory falls back to main_path with
    an on-screen warning. Returns 0 if the file was read, -1 if it is absent
-   (every directory is then main_path). */
+   (every directory is then empty: the caller sets the defaults). */
 s32 load_dir_cfg(char *file_name)
 {
   char current_line[256];
@@ -6652,15 +6675,5 @@ s32 load_dir_cfg(char *file_name)
     return 0;
   }
 
-  // set launch directory
-  strcpy(dir_roms,  main_path);
-  strcpy(dir_save,  main_path);
-  strcpy(dir_state, main_path);
-  strcpy(dir_cfg,   main_path);
-  strcpy(dir_snap,  main_path);
-  strcpy(dir_cheat, main_path);
-  strcpy(dir_boxart, main_path);
-  strcpy(dir_boxart_folders, main_path);
-  apply_theme(option_theme);
   return -1;
 }

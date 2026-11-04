@@ -43,6 +43,7 @@ s32 save_theme_config(void);
 s32 load_theme_config(void);
 
 s32 load_dir_cfg(char *file_name);
+void set_default_directories(void);
 
 u32 menu(void);
 
