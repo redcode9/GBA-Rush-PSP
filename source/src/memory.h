@@ -264,6 +264,7 @@ u32 read_backup(u32 address);
 CPU_ALERT_TYPE write_eeprom(u32 address, u32 value);
 CPU_ALERT_TYPE write_backup(u32 address, u32 value);
 CPU_ALERT_TYPE write_rtc(u32 address, u32 value);
+u32 memory_rtc_active(void);
 
 s32 parse_config_line(char *current_line, char *current_variable, char *current_value);
 

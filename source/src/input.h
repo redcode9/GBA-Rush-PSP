@@ -103,11 +103,15 @@ GUI_ACTION_TYPE get_gui_input_fs_hold(u32 button_id);
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 int input_diagnostic_trace_begin_record(void);
+int input_diagnostic_trace_set_companion(u32 state_crc32, u32 state_size,
+ u32 rtc_base);
 int input_diagnostic_trace_finish_record(void);
 int input_diagnostic_trace_encode(u8 *output, size_t output_size,
  size_t *written);
 int input_diagnostic_trace_begin_replay(const u8 *encoded,
  size_t encoded_size);
+int input_diagnostic_trace_check_state(u32 state_crc32, u32 state_size);
+u32 input_diagnostic_trace_version(void);
 void input_diagnostic_trace_cancel(void);
 InputTraceState input_diagnostic_trace_state(void);
 InputTraceError input_diagnostic_trace_error(void);

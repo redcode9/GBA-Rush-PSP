@@ -514,6 +514,14 @@ int input_diagnostic_trace_begin_record(void)
    (u16)gba_keys_held);
 }
 
+/* Names the .svs the recording starts from; rtc_base is Unix seconds. */
+int input_diagnostic_trace_set_companion(u32 state_crc32, u32 state_size,
+ u32 rtc_base)
+{
+  return input_trace_set_companion(&diagnostic_trace, state_crc32,
+   state_size, rtc_base);
+}
+
 int input_diagnostic_trace_finish_record(void)
 {
   return input_trace_finish_record(&diagnostic_trace,
@@ -533,6 +541,19 @@ int input_diagnostic_trace_begin_replay(const u8 *encoded,
 {
   return input_trace_begin_replay_from_header(&diagnostic_trace, encoded,
    encoded_size, gamepak_header, gamepak_file_size, diagnostic_trace_frame);
+}
+
+/* After a replay begins: refuses a .svs other than the one a v2 trace
+   names. */
+int input_diagnostic_trace_check_state(u32 state_crc32, u32 state_size)
+{
+  return input_trace_check_state(&diagnostic_trace, state_crc32, state_size);
+}
+
+/* 1 or 2 for a loaded trace, 0 when idle. */
+u32 input_diagnostic_trace_version(void)
+{
+  return diagnostic_trace.version;
 }
 
 void input_diagnostic_trace_cancel(void)

@@ -2504,6 +2504,13 @@ CPU_ALERT_TYPE write_rtc(u32 address, u32 value)
   return CPU_ALERT_NONE;
 }
 
+// Nonzero once the game has driven the RTC port (rtc_state is in the
+// savestate).
+u32 memory_rtc_active(void)
+{
+  return rtc_state != RTC_DISABLED;
+}
+
 
 // Whole-address-space accessors for C code (cheats). Addresses of
 // 0x10000000 and above read as open bus.

@@ -3373,10 +3373,19 @@ static void menu_quit_action(void)
 }
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
-/* <main_path>traces/input-<game code>-r<version>.gbit, named from the GBA
-   cartridge header: game code at 0xAC, software version at 0xBC; the header
-   is 0xC0 bytes long. */
-static int menu_trace_path(char *path, size_t path_size, int create_directory)
+/* Bytes menu_trace_file_crc32() reads at a time. */
+#define MENU_TRACE_CRC_CHUNK 0x8000U
+
+/* Set when a trace start saved, or a replay loaded, the machine at this
+   frame: menu() then reports a resume, as after a state load, so both
+   runs continue from the .svs the same way. */
+static int menu_trace_resume;
+
+/* <main_path>traces/input-<game code>-r<version><extension> (".gbit" or
+   ".svs"), named from the GBA cartridge header: game code at 0xAC, software
+   version at 0xBC; the header is 0xC0 bytes long. */
+static int menu_trace_path(char *path, size_t path_size, int create_directory,
+ const char *extension)
 {
     char directory[MAX_PATH];
     char game_code[5];
@@ -3395,17 +3404,84 @@ static int menu_trace_path(char *path, size_t path_size, int create_directory)
        sceIoMkdir(directory, 0777) < 0)
         return 0;
 
+    /* gamepak_header, not the paged ROM: the .gbit and .svs names must
+       match whatever ROM page is loaded. */
     for(i = 0; i < 4; i++)
     {
-        u8 value = gamepak_rom[0xAC + i];
+        u8 value = gamepak_header[0xAC + i];
         game_code[i] = ((value >= 'A' && value <= 'Z') ||
                         (value >= '0' && value <= '9')) ? (char)value : '_';
     }
     game_code[4] = '\0';
 
-    result = snprintf(path, path_size, "%s/input-%s-r%u.gbit", directory,
-     game_code, (unsigned int)gamepak_rom[0xBC]);
+    result = snprintf(path, path_size, "%s/input-%s-r%u%s", directory,
+     game_code, (unsigned int)gamepak_header[0xBC], extension);
     return result >= 0 && (size_t)result < path_size;
+}
+
+/* CRC-32 and size of the file at path, read in chunks; fails on a read
+   error or a file larger than any companion .svs. */
+static int menu_trace_file_crc32(const char *path, u32 *crc, u32 *size)
+{
+    u8 *buffer;
+    SceUID file;
+    uLong value = crc32(0L, Z_NULL, 0);
+    u32 total = 0;
+    s32 result = 0;
+
+    FILE_OPEN(file, path, READ);
+    if(!FILE_CHECK_VALID(file))
+        return 0;
+
+    buffer = (u8 *)safe_malloc(MENU_TRACE_CRC_CHUNK);
+    while(total <= INPUT_TRACE_MAX_STATE_SIZE &&
+          (result = FILE_READ(file, buffer, MENU_TRACE_CRC_CHUNK)) > 0)
+    {
+        value = crc32(value, buffer, (uInt)result);
+        total += (u32)result;
+    }
+    free(buffer);
+    FILE_CLOSE(file);
+
+    if(result < 0 || total > INPUT_TRACE_MAX_STATE_SIZE)
+        return 0;
+    *crc = (u32)value;
+    *size = total;
+    return 1;
+}
+
+/* Saves the machine to the .svs at path when screen is set, else loads
+   it. save_state_silent() and load_state_silent() name files inside
+   dir_state, so dir_state points at the traces folder for the call. */
+static u32 menu_trace_state_io(const char *path, u16 *screen)
+{
+    char saved_dir_state[MAX_PATH];
+    char name[MAX_FILE];
+    const char *slash = strrchr(path, '/');
+    size_t directory_length;
+    u32 result;
+
+    if(slash == NULL || strlen(slash + 1) >= sizeof(name))
+        return 0;
+    directory_length = (size_t)(slash + 1 - path);
+    if(directory_length >= sizeof(dir_state))
+        return 0;
+
+    strcpy(name, slash + 1);
+    strcpy(saved_dir_state, dir_state);
+    memcpy(dir_state, path, directory_length);
+    dir_state[directory_length] = '\0';
+    result = screen != NULL ? save_state_silent(name, screen) :
+     load_state_silent(name);
+    strcpy(dir_state, saved_dir_state);
+    return result;
+}
+
+/* Wall clock in Unix seconds (UTC): ticker() counts microseconds from
+   year 1, 62135596800 seconds before 1970. */
+static u32 menu_trace_rtc_base(void)
+{
+    return (u32)(ticker() / 1000000U - 62135596800ULL);
 }
 
 /* Repeats FILE_WRITE until all size bytes are out; 0 on an error or a
@@ -3467,12 +3543,45 @@ static int menu_trace_cancel_available(void)
     return input_diagnostic_trace_state() != INPUT_TRACE_IDLE;
 }
 
+/* Saves the machine to traces/<name>.svs, then records from this frame
+   with the .svs named in the trace. Savestates are off during a link
+   session, so recording is too. */
 static void menu_trace_start(void)
 {
+    char path[MAX_PATH];
+    u16 *screen;
+    u32 crc = 0;
+    u32 size = 0;
+    u32 message = MSG_TRACE_FAILED;
+    int success = 0;
+
     diagnostics_report_line[0] = '\0';
-    if(!input_diagnostic_trace_begin_record())
+    if(main_link_active())
+    {
+        message = MSG_LINK_SAVESTATE_BLOCKED;
+        goto finish;
+    }
+    if(!menu_trace_path(path, sizeof(path), 1, ".svs"))
+        goto finish;
+
+    screen = copy_screen();
+    success = menu_trace_state_io(path, screen) != 0;
+    free(screen);
+    success = success && menu_trace_file_crc32(path, &crc, &size) &&
+     input_diagnostic_trace_begin_record() &&
+     input_diagnostic_trace_set_companion(crc, size, menu_trace_rtc_base());
+    if(!success)
+    {
+        input_diagnostic_trace_cancel();
+        sceIoRemove(path);
+    }
+    else
+        menu_trace_resume = 1;
+
+finish:
+    if(!success)
         snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
-         "%s", MSG[MSG_TRACE_FAILED]);
+         "%s", MSG[message]);
 }
 
 /* Stop recording and save the trace to menu_trace_path(); the status row
@@ -3492,7 +3601,7 @@ static void menu_trace_finish_save(void)
     capacity = input_diagnostic_trace_max_encoded_size();
     encoded = (u8 *)safe_malloc(capacity);
     if(!input_diagnostic_trace_encode(encoded, capacity, &written) ||
-       !menu_trace_path(path, sizeof(path), 1))
+       !menu_trace_path(path, sizeof(path), 1, ".gbit"))
     {
         free(encoded);
         goto finish;
@@ -3513,7 +3622,9 @@ finish:
      MSG[success ? MSG_TRACE_SAVED : MSG_TRACE_FAILED]);
 }
 
-/* Start replaying this ROM's saved trace; only a failure is reported. */
+/* Start replaying this ROM's saved trace. A version 2 trace first loads
+   the .svs it names and refuses a missing or different one; on a game
+   that uses the RTC the status row warns that the replay may diverge. */
 static void menu_trace_replay(void)
 {
     char path[MAX_PATH];
@@ -3521,9 +3632,12 @@ static void menu_trace_replay(void)
     SceUID file;
     u8 *encoded;
     size_t size;
+    u32 crc = 0;
+    u32 state_size = 0;
+    u32 message = MSG_TRACE_FAILED;
     int success = 0;
 
-    if(!menu_trace_path(path, sizeof(path), 0) ||
+    if(!menu_trace_path(path, sizeof(path), 0, ".gbit") ||
        sceIoGetstat(path, &stat) < 0 || stat.st_size <= 0 ||
        (u64)stat.st_size > input_diagnostic_trace_max_encoded_size())
         goto finish;
@@ -3540,10 +3654,32 @@ static void menu_trace_replay(void)
         success = input_diagnostic_trace_begin_replay(encoded, size);
     free(encoded);
 
+    /* The trace starts at the current frame, so the state loads now. */
+    if(success && input_diagnostic_trace_version() >= 2)
+    {
+        if(!menu_trace_path(path, sizeof(path), 0, ".svs") ||
+           !menu_trace_file_crc32(path, &crc, &state_size) ||
+           !input_diagnostic_trace_check_state(crc, state_size))
+        {
+            message = MSG_TRACE_STATE_MISMATCH;
+            success = 0;
+        }
+        else
+            success = menu_trace_state_io(path, NULL) != 0;
+
+        if(success)
+            menu_trace_resume = 1;
+        else
+            input_diagnostic_trace_cancel();
+    }
+
 finish:
     if(!success)
         snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
-         "%s", MSG[MSG_TRACE_FAILED]);
+         "%s", MSG[message]);
+    else if(memory_rtc_active())
+        snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+         "%s", MSG[MSG_TRACE_RTC_WARNING]);
     else
         diagnostics_report_line[0] = '\0';
 }
@@ -5927,6 +6063,14 @@ u32 menu(void)
     }
 
   } /* end while */
+
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  if(menu_trace_resume)
+  {
+    menu_trace_resume = 0;
+    return_value = 1;
+  }
+#endif
 
   /* Keep menu presence visible until all blocking resume work is complete. */
   main_link_pump();
