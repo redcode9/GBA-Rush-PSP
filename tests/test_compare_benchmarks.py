@@ -5,7 +5,9 @@ import importlib.util
 import io
 import pathlib
 import tempfile
+import time
 import unittest
+import unittest.mock
 
 
 # The script name has a dash, so load it as a module by path.
@@ -238,6 +240,29 @@ class BenchmarkComparisonTests(unittest.TestCase):
         self.assertIn("at least 3 reports per build", errors.getvalue())
         with self.assertRaisesRegex(ValueError, "at least 3"):
             MODULE.compare([report(), report()], [report() for _ in range(3)])
+
+    def test_many_runs_use_sampled_picks(self):
+        baseline = [report(frames=600 + index) for index in range(15)]
+        candidate = [report(frames=620 + index) for index in range(15)]
+
+        start = time.perf_counter()
+        result = MODULE.compare(baseline, candidate)
+        # Counting all C(30, 15) picks of every metric would take minutes.
+        self.assertLess(time.perf_counter() - start, 5.0)
+
+        _, _, _, p, text, _ = result["metrics"][0]
+        self.assertAlmostEqual(p, 1 / (MODULE.SAMPLED_PICKS + 1))
+        self.assertIn("candidate higher (p~0.000, 15+15 runs)", text)
+        # Constant metrics are a tie in every pick and are not sampled.
+        self.assertIn("ge-p95-runs=baseline 500 [500..500], candidate 500 "
+                      "[500..500]; undecided (p=1.000, 15+15 runs)",
+                      MODULE.format_result(result))
+        # The sampled estimate agrees with the exact count on 3+3 runs.
+        values = ([60.0, 60.5, 61.0], [60.3, 60.8, 61.3])
+        with unittest.mock.patch.object(MODULE, "EXACT_PICKS", 0):
+            p, text, _ = MODULE.verdict(*values)
+        self.assertAlmostEqual(p, 0.25, delta=0.01)
+        self.assertIn("undecided (p~0.2", text)
 
     def test_cli_compares_three_runs_per_build(self):
         with tempfile.TemporaryDirectory() as directory:

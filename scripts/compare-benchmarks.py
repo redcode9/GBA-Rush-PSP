@@ -11,6 +11,7 @@ files written by source/src/perf_report.c.
 import argparse
 import itertools
 import math
+import random
 import statistics
 import sys
 
@@ -21,6 +22,12 @@ MIN_RUNS = 3
 
 # A difference is claimed only when the exact one-sided p is at most this.
 ALPHA = 0.05
+
+# Above EXACT_PICKS ways of picking the candidate runs (more than 10+10
+# runs), p is estimated from SAMPLED_PICKS random picks instead, so large
+# run sets still finish in about a second.
+EXACT_PICKS = 200_000
+SAMPLED_PICKS = 20_000
 
 # Settings that every run must share, or the timings are not comparable.
 MATCH_FIELDS = (
@@ -129,26 +136,36 @@ def summary(values):
     return float(statistics.median(values)), min(values), max(values)
 
 
-def exact_p(baseline_values, candidate_values, higher):
-    """One-sided exact permutation p of the candidate runs' sum.
+def permutation_p(baseline_values, candidate_values, higher):
+    """One-sided permutation p of the candidate runs' sum: (p, exact).
 
     If both builds are the same, every way of picking the candidate's runs
     out of the pooled runs is equally likely; p is the share of those picks
     whose sum is at least as high (or as low, when higher is False) as the
-    observed one.
+    observed one. Up to EXACT_PICKS picks (10+10 runs) every pick is
+    counted; above that, SAMPLED_PICKS seeded random picks estimate p and
+    exact is False.
     """
     sign = 1.0 if higher else -1.0
     pooled = [sign * value for value in list(baseline_values) +
               list(candidate_values)]
     size = len(candidate_values)
+    if min(pooled) == max(pooled):
+        return 1.0, True
     observed = sum(pooled[len(baseline_values):])
     # Float sums that are equal up to rounding are ties, and ties count.
     floor = observed - 1e-9 * max(1.0, abs(observed))
-    # shortcut: exact enumeration is fine up to about 10 runs per build
-    # (184756 picks); switch to Monte Carlo if larger sets are ever archived.
-    extreme = sum(1 for pick in itertools.combinations(pooled, size)
-                  if sum(pick) >= floor)
-    return extreme / math.comb(len(pooled), size)
+    picks = math.comb(len(pooled), size)
+    if picks <= EXACT_PICKS:
+        extreme = sum(1 for pick in itertools.combinations(pooled, size)
+                      if sum(pick) >= floor)
+        return extreme / picks, True
+    # Seeded, so the same reports always print the same verdict; the
+    # observed pick counts once more, so the estimate is never 0.
+    rng = random.Random(0)
+    extreme = sum(1 for _ in range(SAMPLED_PICKS)
+                  if sum(rng.sample(pooled, size)) >= floor)
+    return (extreme + 1) / (SAMPLED_PICKS + 1), False
 
 
 def runs_needed(baseline_values, candidate_values):
@@ -180,8 +197,10 @@ def verdict(baseline_values, candidate_values):
     difference = (statistics.median(candidate_values) -
                   statistics.median(baseline_values))
     higher = difference >= 0
-    p = exact_p(baseline_values, candidate_values, higher)
-    runs = f"p={p:.3f}, {len(baseline_values)}+{len(candidate_values)} runs"
+    p, exact = permutation_p(baseline_values, candidate_values, higher)
+    # "p~" marks a p estimated from sampled picks.
+    runs = (f"p{'=' if exact else '~'}{p:.3f}, "
+            f"{len(baseline_values)}+{len(candidate_values)} runs")
     if difference != 0 and p <= ALPHA:
         side = "higher" if higher else "lower"
         return p, f"candidate {side} ({runs})", None
