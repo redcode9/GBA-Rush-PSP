@@ -162,6 +162,10 @@ class RuntimeLogDecoderTests(unittest.TestCase):
                               "values": [4330, 9840, 11810]}),
             "me-frame-us-median/p99/max=4330/9840/11810")
         self.assertEqual(
+            decoder.describe({"event": "link-counters", "flags": 14,
+                              "values": [0x0B, 2410, 3]}),
+            "me-switches=0x0B me-wakes=2410 cpu-fallback-frames=3")
+        self.assertEqual(
             decoder.describe({"event": "link-counters", "flags": 11,
                               "values": [1, 0, 0]}),
             "exact-renderer=media-engine me-fault-cause=0x00000000 "
