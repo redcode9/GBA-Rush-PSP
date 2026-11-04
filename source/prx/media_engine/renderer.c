@@ -35,9 +35,10 @@
 #define PAUSE_LONGEST  2048u
 
 /* The Media Engine's interrupt flags in its system registers, which its
-   start-up code (boot.S) clears in the same way; and the Status bits that
-   let the hardware interrupt lines end a halt, still without taking an
-   exception (interrupts stay off). */
+   start-up code (boot.S) clears in the same way (GBA_PPU_LOG_WAIT_CLEAR:
+   whether that register is the Media Engine's own is still to be seen on
+   a console); and the Status bits that let the hardware interrupt lines
+   end a halt, still without taking an exception (interrupts stay off). */
 #define INTERRUPT_FLAGS     (*(volatile uint32_t *)0xBC100004u)
 #define STATUS_ALL_LINES    0xFC00u
 
@@ -142,8 +143,11 @@ static void sleep_for_words(GbaPpuLogMailbox *mailbox)
   __asm__ volatile("sync" ::: "memory");
   if(mailbox->writer.write == side->read)
     halt();
-  INTERRUPT_FLAGS = 0xFFFFFFFFu;
-  __asm__ volatile("sync" ::: "memory");
+  if(mailbox->writer.wait & GBA_PPU_LOG_WAIT_CLEAR)
+  {
+    INTERRUPT_FLAGS = 0xFFFFFFFFu;
+    __asm__ volatile("sync" ::: "memory");
+  }
   side->sleeping = 0;
 }
 
@@ -196,7 +200,7 @@ static void __attribute__((noreturn)) run(GbaPpuLogMailbox *mailbox)
        longer ours to write. */
     else if(mailbox->writer.magic != GBA_PPU_LOG_MAGIC)
       stop();
-    else if(mailbox->writer.wait == GBA_PPU_LOG_WAIT_SLEEP)
+    else if(mailbox->writer.wait & GBA_PPU_LOG_WAIT_SLEEP)
       sleep_for_words(mailbox);
   }
 }
@@ -212,7 +216,7 @@ void __attribute__((section(".text.start"), noreturn))
     *word = 0;
   fault_mailbox = mailbox;
   __asm__ volatile("mtc0 %0, $25" :: "r"(fault));
-  if(mailbox->writer.wait == GBA_PPU_LOG_WAIT_SLEEP)
+  if(mailbox->writer.wait & GBA_PPU_LOG_WAIT_SLEEP)
   {
     uint32_t status;
 

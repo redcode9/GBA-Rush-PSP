@@ -197,7 +197,8 @@ static void start(void)
    (u8 *)video_dirty_groups);
   writer.copy_quads = (switches & VIDEO_ME_COPY_QUADS) != 0;
   if(switches & VIDEO_ME_SLEEP)
-    mailbox->writer.wait = GBA_PPU_LOG_WAIT_SLEEP;
+    mailbox->writer.wait = GBA_PPU_LOG_WAIT_SLEEP |
+     (switches & VIDEO_ME_SLEEP_CLEAR ? GBA_PPU_LOG_WAIT_CLEAR : 0);
   state = load_module();
   if(state != VIDEO_ME_DRAWING)
     give_up(state);

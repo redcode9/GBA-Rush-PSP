@@ -470,6 +470,7 @@ void gba_ppu_log_reader_start(GbaPpuLogReader *reader,
   gba_ppu_init(&reader->ppu, reader->memory.palette, reader->memory.oam,
    reader->memory.vram, reader->memory.io);
   store(&side->read, reader->read);
+  store(&side->sleeping, 0);
   store(&side->version, GBA_PPU_LOG_VERSION);
   store(&side->boots, load(&side->boots) + 1);
 }

@@ -112,10 +112,12 @@ typedef struct
   volatile uint32_t wait;
 } __attribute__((aligned(64))) GbaPpuLogWriterSide;
 
-/* The reader polls write when idle, less and less often; or it sleeps
-   until the writer wakes it, the writer having seen sleeping set. */
+/* The reader polls write when idle, less and less often; with SLEEP it
+   then sleeps until the writer wakes it, the writer having seen sleeping
+   set, and with CLEAR also clears its interrupt flags after each wake. */
 #define GBA_PPU_LOG_WAIT_POLL  0u
 #define GBA_PPU_LOG_WAIT_SLEEP 1u
+#define GBA_PPU_LOG_WAIT_CLEAR 2u
 
 typedef struct
 {

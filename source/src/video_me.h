@@ -65,7 +65,11 @@ typedef enum
    without the GE; the HOLD and fast-forward marks are not drawn over
    them. Takes 816 KiB for three pictures. */
 #define VIDEO_ME_DIRECT_1X         0x10u
-#define VIDEO_ME_SWITCHES          0x1Fu
+/* With VIDEO_ME_SLEEP: after each wake the Media Engine clears its
+   interrupt flags, as its start-up code does; without it a wake that
+   stays pending turns the halt back into a poll every 25 us. */
+#define VIDEO_ME_SLEEP_CLEAR       0x20u
+#define VIDEO_ME_SWITCHES          0x3Fu
 
 typedef struct
 {
