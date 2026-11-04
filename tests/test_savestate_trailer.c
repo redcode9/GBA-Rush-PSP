@@ -1,9 +1,10 @@
 /*
  * Host tests for savestate_trailer.c, the 48-byte trailer after a v2
  * savestate's 512 KiB payload: round trip, a golden vector, the outcome of
- * every altered field and file size, the ROM id, and a deterministic fuzz
- * whose oracle catches a read past the given tail even without a
- * sanitizer.
+ * every altered field and file size, the ROM id, and a deterministic fuzz.
+ * Short tails and fuzz inputs are also decoded from the very end of a
+ * buffer, so AddressSanitizer (make test-sanitize) reports any read past
+ * the given tail; without it, only a read that changes the outcome fails.
  */
 
 #include <stdint.h>
@@ -107,6 +108,21 @@ static SavestateTrailerResult decode_full(const uint8_t *trailer,
 {
   return savestate_trailer_decode(FULL_SIZE, trailer, SAVESTATE_TRAILER_SIZE,
    payload_crc, current, out);
+}
+
+/* Decodes the first `tail_size` (at most FUZZ_BUFFER) bytes of `source`
+   copied to the very end of a buffer, so AddressSanitizer reports a read
+   past them. */
+static SavestateTrailerResult decode_at_end(uint32_t file_size,
+ const uint8_t *source, size_t tail_size, uint32_t payload_crc,
+ const SavestateRomId *current, SavestateTrailer *out)
+{
+  uint8_t edge[FUZZ_BUFFER];
+  uint8_t *tail = edge + FUZZ_BUFFER - tail_size;
+
+  memcpy(tail, source, tail_size);
+  return savestate_trailer_decode(file_size, tail, tail_size, payload_crc,
+   current, out);
 }
 
 static void test_round_trip(void)
@@ -247,30 +263,27 @@ static void test_file_sizes(void)
   savestate_trailer_encode(&t, trailer);
   trailer[SAVESTATE_TRAILER_SIZE] = 0;
 
-  CHECK(savestate_trailer_decode(PAYLOAD, trailer, 0, t.payload_crc, &t.rom,
-   &out) == SAVESTATE_TRAILER_LEGACY);
-  CHECK(savestate_trailer_decode(PAYLOAD - 1u, trailer, 0, t.payload_crc,
-   &t.rom, &out) == SAVESTATE_TRAILER_CORRUPT);
-  CHECK(savestate_trailer_decode(0, trailer, 0, t.payload_crc, &t.rom,
+  CHECK(decode_at_end(PAYLOAD, trailer, 0, t.payload_crc, &t.rom, &out) ==
+   SAVESTATE_TRAILER_LEGACY);
+  CHECK(decode_at_end(PAYLOAD - 1u, trailer, 0, t.payload_crc, &t.rom,
    &out) == SAVESTATE_TRAILER_CORRUPT);
-  CHECK(savestate_trailer_decode(PAYLOAD + 4u, trailer, 4, t.payload_crc,
-   &t.rom, &out) == SAVESTATE_TRAILER_CORRUPT);
-  CHECK(savestate_trailer_decode(FULL_SIZE - 1u, trailer,
-   SAVESTATE_TRAILER_SIZE - 1u, t.payload_crc, &t.rom, &out) ==
+  CHECK(decode_at_end(0, trailer, 0, t.payload_crc, &t.rom, &out) ==
    SAVESTATE_TRAILER_CORRUPT);
+  CHECK(decode_at_end(PAYLOAD + 4u, trailer, 4, t.payload_crc, &t.rom,
+   &out) == SAVESTATE_TRAILER_CORRUPT);
+  CHECK(decode_at_end(FULL_SIZE - 1u, trailer, SAVESTATE_TRAILER_SIZE - 1u,
+   t.payload_crc, &t.rom, &out) == SAVESTATE_TRAILER_CORRUPT);
   CHECK(savestate_trailer_decode(FULL_SIZE + 1u, trailer,
    SAVESTATE_TRAILER_SIZE + 1u, t.payload_crc, &t.rom, &out) ==
    SAVESTATE_TRAILER_CORRUPT);
-  CHECK(savestate_trailer_decode(0xFFFFFFFFu, trailer,
-   SAVESTATE_TRAILER_SIZE, t.payload_crc, &t.rom, &out) ==
-   SAVESTATE_TRAILER_CORRUPT);
+  CHECK(decode_at_end(0xFFFFFFFFu, trailer, SAVESTATE_TRAILER_SIZE,
+   t.payload_crc, &t.rom, &out) == SAVESTATE_TRAILER_CORRUPT);
 
   /* A short read of a full-size file. */
-  CHECK(savestate_trailer_decode(FULL_SIZE, trailer,
-   SAVESTATE_TRAILER_SIZE - 1u, t.payload_crc, &t.rom, &out) ==
+  CHECK(decode_at_end(FULL_SIZE, trailer, SAVESTATE_TRAILER_SIZE - 1u,
+   t.payload_crc, &t.rom, &out) == SAVESTATE_TRAILER_CORRUPT);
+  CHECK(decode_at_end(FULL_SIZE, trailer, 0, t.payload_crc, &t.rom, &out) ==
    SAVESTATE_TRAILER_CORRUPT);
-  CHECK(savestate_trailer_decode(FULL_SIZE, trailer, 0, t.payload_crc,
-   &t.rom, &out) == SAVESTATE_TRAILER_CORRUPT);
 }
 
 static void test_rom_id(void)
@@ -299,10 +312,12 @@ static void test_rom_id(void)
   CHECK(again.header_crc != id.header_crc);
 }
 
-/* Each input is decoded three times, with zeros, ones or the source's own
-   bytes after the `tail_size` given ones: a decoder that reads past them
-   gives different answers. Inputs are random bytes or a valid trailer with
-   a few changes, so the deep paths run too. */
+/* Each input is decoded four times: with zeros, ones or the source's own
+   bytes after the `tail_size` given ones, where a read past them that
+   changes the outcome gives different answers, and from the very end of a
+   buffer, where AddressSanitizer reports any read past them. Inputs are
+   random bytes or a valid trailer with a few changes, so the deep paths
+   run too. */
 static void test_fuzz(void)
 {
   unsigned int seen[SAVESTATE_TRAILER_ROM_SIZE_DIFFERS + 1];
@@ -314,8 +329,8 @@ static void test_fuzz(void)
   for(iteration = 0; iteration < FUZZ_ITERATIONS; iteration++)
   {
     SavestateTrailer t = sample_trailer();
-    SavestateTrailer out[3];
-    SavestateTrailerResult result[3];
+    SavestateTrailer out[4];
+    SavestateTrailerResult result[4];
     SavestateRomId current;
     uint8_t source[FUZZ_BUFFER];
     uint8_t given[3][FUZZ_BUFFER];
@@ -373,10 +388,13 @@ static void test_fuzz(void)
     for(i = 0; i < 3; i++)
       result[i] = savestate_trailer_decode(file_size, given[i], tail_size,
        payload_crc, &current, &out[i]);
+    result[3] = decode_at_end(file_size, source, tail_size, payload_crc,
+     &current, &out[3]);
 
-    ok = result[0] == result[1] && result[1] == result[2] &&
-     same_trailer(&out[0], &out[1]) && same_trailer(&out[1], &out[2]) &&
-     (unsigned int)result[0] <=
+    ok = 1;
+    for(i = 1; i < 4; i++)
+      ok = ok && result[i] == result[0] && same_trailer(&out[i], &out[0]);
+    ok = ok && (unsigned int)result[0] <=
       (unsigned int)SAVESTATE_TRAILER_ROM_SIZE_DIFFERS &&
      (result[0] == SAVESTATE_TRAILER_LEGACY) == (file_size == PAYLOAD) &&
      ((result[0] != SAVESTATE_TRAILER_V2 &&
