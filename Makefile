@@ -141,12 +141,14 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_GBA_PPU)
 	$(HOST_TEST_GBA_PPU_LOG)
 
-# Python tests. test_startup, test_browser_text and test_open_bios also
-# compile functions cut out of main.c, gui.c and memory.c with HOST_CC.
+# Python tests. test_startup, test_browser_text, test_menu_keys and
+# test_open_bios also compile functions cut out of main.c, gui.c, input.c
+# and memory.c with HOST_CC.
 test-tools:
 	$(PYTHON) -m unittest tests/test_compare_benchmarks.py \
 	 tests/test_decode_runtime_log.py tests/test_startup.py \
-	 tests/test_browser_text.py tests/test_open_bios.py
+	 tests/test_browser_text.py tests/test_menu_keys.py \
+	 tests/test_open_bios.py
 
 # The link cable test runs fewer network profiles (--quick) under the
 # sanitizers, where it is much slower.

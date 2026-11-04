@@ -57,6 +57,16 @@ then
   fail "Menu clock transitions are not guarded by link state"
 fi
 
+# A key held while the menu closes must not hold the power lock or delay
+# standby: update_input masks it until release instead of a busy wait.
+if rg -q 'while[[:space:]]*\(get_pad_input\([^)]*\)[^);]*\)[[:space:]]*;' \
+  source/src/gui.c || \
+   ! body '/^u32 menu(void)/,/^static void update_status_string/p' \
+  source/src/gui.c | rg -q 'input_hold_until_released\('
+then
+  fail "Menu close waits for the pad instead of masking held keys"
+fi
+
 # The PSP never time-slices equal priorities: the network stack and the
 # link worker must run above the emulator thread (32), or reception stops.
 for name in PSP_ADHOC_STACK_PRIORITY PSP_ADHOC_CONTROL_PRIORITY \

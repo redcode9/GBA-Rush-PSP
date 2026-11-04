@@ -5939,9 +5939,9 @@ u32 menu(void)
   if (gamepak_file_large == GAMEPAK_FILE_MENU_CLOSED)
     gamepak_file_reopen();
 
-  /* Wait for every button up to HOME (PSP_CTRL bits 0-16) to be released so
-     the press that closed the menu does not reach the game. */
-  while (get_pad_input(0x0001FFFF) != 0);
+  /* Buttons up to HOME (PSP_CTRL bits 0-16) still held reach neither the
+     game nor the hotkeys until released; closing never waits for them. */
+  input_hold_until_released(get_pad_input(0x0001FFFF));
 
   menu_term();
 

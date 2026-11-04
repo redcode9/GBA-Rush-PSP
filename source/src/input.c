@@ -157,6 +157,10 @@ GUI_ACTION_TYPE cursor_repeat = CURSOR_NONE;
 u32 last_buttons = 0;
 u32 button_repeat_timestamp;
 
+/* Buttons still held when the menu closed; update_input hides each one from
+   the game and the hotkeys until it is released. */
+static u32 menu_held_buttons = 0;
+
 /* Flips on every rapid-fire key handled, so rapid-fire keys alternate
    between pressed and released from frame to frame. */
 u32 rapidfire_flag = 1;
@@ -206,6 +210,13 @@ u32 get_pad_input(u32 mask)
   }
 
   return 0;
+}
+
+/* Hides buttons (the keys held as the menu closes) from update_input until
+   each is released, so closing the menu never waits for the keys to go up. */
+void input_hold_until_released(u32 buttons)
+{
+  menu_held_buttons = buttons;
 }
 
 
@@ -390,6 +401,10 @@ u32 update_input(void)
         buttons |= PSP_CTRL_ANALOG_DOWN;
     }
   }
+
+  // A key held since the menu closed counts as up until it is released
+  menu_held_buttons &= buttons;
+  buttons &= ~menu_held_buttons;
 
   non_repeat_buttons = (last_buttons ^ buttons) & buttons;
   last_buttons = buttons;
