@@ -51,6 +51,7 @@ EVENTS = {
     23: "link-stream-metrics",
     24: "link-timeout",
     25: "link-benchmark",
+    26: "power-bits",
 }
 FLUSH_REASONS = {
     1: "start",
@@ -101,6 +102,18 @@ EXACT_RENDERER = [
     "cpu-no-answer", "cpu-stopped", "cpu-fault", "cpu-too-slow",
     "cpu-no-memory",
 ]
+# power-bits: the PSP power callback bits ORed since the last record
+# (PSP_POWER_CB_* in source/src/libpower/psppower.h), the callbacks counted
+# and the power_lifecycle outcome (POWER_LIFECYCLE_ENTRY_* and
+# POWER_LIFECYCLE_SWITCH_EXPIRED in source/src/power_lifecycle.h).
+POWER_BITS = {
+    0x80000000: "switch",
+    0x00080000: "standby",
+    0x00040000: "resume-complete",
+    0x00020000: "resuming",
+    0x00010000: "suspending",
+}
+POWER_OUTCOMES = ["none", "entered-by-switch", "entered-by-suspending", "switch-timed-out"]
 LINK_EVENTS = {
     "link-command", "link-state", "link-pause-end", "link-error",
     "link-counters", "menu-presence", "power-suspend", "power-resume",
@@ -210,6 +223,12 @@ def describe(record: dict[str, Any]) -> str:
         )
     if event == "log-flush":
         return f"reason={FLUSH_REASONS.get(value0, value0)} main={value1} network={value2}"
+    if event == "power-bits":
+        names = "|".join(name for bit, name in POWER_BITS.items() if value0 & bit)
+        return (
+            f"bits=0x{value0:08X} ({names or '-'}) callbacks={value1} "
+            f"outcome={_name(POWER_OUTCOMES, value2)}"
+        )
     # Earlier versions belong to a retired link design; show raw values.
     if event not in LINK_EVENTS or record.get("version", 5) < 5:
         return f"flags=0x{flags:02X} values={value0}/{value1}/{value2}"
