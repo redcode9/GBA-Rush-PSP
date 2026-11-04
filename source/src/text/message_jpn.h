@@ -1155,5 +1155,9 @@
   "Silent",
   // MSG_FF_AUDIO_ACCELERATED
   "Accelerated",
+  // MSG_SAVE_READ_RETRY
+  "セーブデータを読み込めません. 再試行する?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "セーブせずにプレイする? ファイルはそのままです.",
 
 },

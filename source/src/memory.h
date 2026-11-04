@@ -27,6 +27,8 @@
 #define MEMORY_H
 
 #include "gba_sio.h"
+#include "save_format.h"
+#include "save_store.h"
 
 
 // The DMA enums below hold DMAxCNT_H fields as decoded: start timing
@@ -247,7 +249,15 @@ u8 *load_gamepak_page(u32 physical_index);
 
 s32 load_bios(char *name);
 s32 load_gamepak(char *name);
-s32 load_backup(char *name);
+SaveStoreResult load_backup(char *name, SaveTag tag);
+
+// load_gamepak() result when the player refused to retry an unreadable
+// .sav and to play without saving. Load errors are -1, or -2 from
+// load_file_zip() for a ROM larger than the ROM buffer.
+#define LOAD_GAMEPAK_CANCELLED (-3)
+
+// The .sav file I/O: gui.c's sceIo binding on the PSP, a fake in tests.
+extern const SaveStoreIo *backup_io;
 
 u32 read_eeprom(void);
 u32 read_backup(u32 address);

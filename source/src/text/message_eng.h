@@ -1153,5 +1153,9 @@
   "Silent",
   // MSG_FF_AUDIO_ACCELERATED
   "Accelerated",
+  // MSG_SAVE_READ_RETRY
+  "The save file cannot be read. Try again?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "Play without saving? The file stays as it is.",
 
 },
