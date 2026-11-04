@@ -151,7 +151,7 @@ DIR_STUBS = r'''
 #include <stdio.h>
 #include <string.h>
 #define MAX_PATH 512
-#define MAX_FILE 256
+#define MAX_FILE (MAX_PATH + 8) /* holds main_path + dir.ini without -Wformat-overflow */
 #define CONFIRMATION_CONT 2
 #define MSG_ERR_LOAD_DIR_INI 0
 typedef int SceUID;
@@ -161,12 +161,15 @@ char main_path[MAX_PATH] = "ms0:/PSP/GAME/X/";
 char dir_roms[MAX_PATH], dir_save[MAX_PATH], dir_state[MAX_PATH];
 char dir_cfg[MAX_PATH], dir_snap[MAX_PATH], dir_cheat[MAX_PATH];
 char dir_boxart[MAX_PATH], dir_boxart_folders[MAX_PATH];
-int dir_ini_result, roms_present, error_calls, open_dirs;
+int dir_ini_result, roms_present, error_calls, open_dirs, dopen_calls;
 int load_dir_cfg(char *name) {
-  assert(strcmp(name, "ms0:/PSP/GAME/X/dir.ini") == 0); return dir_ini_result;
+  size_t n = strlen(main_path);
+  assert(strncmp(name, main_path, n) == 0 && strcmp(name + n, "dir.ini") == 0);
+  return dir_ini_result;
 }
 void error_msg(const char *m, int c) { (void)m; (void)c; error_calls++; }
 SceUID sceIoDopen(const char *p) {
+  dopen_calls++;
   if(!roms_present || strcmp(p, "ms0:/PSP/GAME/X/roms/") != 0) return -1;
   open_dirs++; return 3;
 }
@@ -183,7 +186,7 @@ static char *const dirs[] = {dir_roms, dir_save, dir_state, dir_cfg,
 static void run(int result, int roms) {
   unsigned i;
   for(i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) strcpy(dirs[i], "set/");
-  dir_ini_result = result; roms_present = roms; error_calls = open_dirs = 0;
+  dir_ini_result = result; roms_present = roms; error_calls = open_dirs = dopen_calls = 0;
   load_setting_cfg();
   assert(error_calls == 0 && open_dirs == 0);
   for(i = 1; i < sizeof(dirs) / sizeof(dirs[0]); i++)
@@ -192,7 +195,10 @@ static void run(int result, int roms) {
 int main(void) {
   run(-1, 1); assert(strcmp(dir_roms, "ms0:/PSP/GAME/X/roms/") == 0);
   run(-1, 0); assert(strcmp(dir_roms, main_path) == 0);
-  run(0, 1); assert(strcmp(dir_roms, "set/") == 0);
+  run(0, 1); assert(strcmp(dir_roms, "set/") == 0 && dopen_calls == 0);
+  /* main_path + roms/ would not fit: keep main_path, open nothing. */
+  memset(main_path, 'a', MAX_PATH - 5); main_path[MAX_PATH - 5] = '\0';
+  run(-1, 1); assert(strcmp(dir_roms, main_path) == 0 && dopen_calls == 0);
   puts("dir.ini default regressions passed");
   return 0;
 }
