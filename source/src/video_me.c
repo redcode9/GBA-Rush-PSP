@@ -80,6 +80,7 @@ static u32 sample_start;
 static u32 busy_clock;
 static u32 busy_ticks;
 static u32 busy_time;
+static u32 busy_boots;
 static int busy_known;
 /* The Media Engine's clock ticks per ms of the main processor's. */
 static u32 ticks_per_ms;
@@ -188,14 +189,17 @@ static void start(void)
 /* The Media Engine's busy ticks over the last stretch, as a share of its
    clock ticks, times the main processor's time over the same stretch. A
    stretch longer than a few seconds (the menu was open) is skipped: the
-   clock goes round in 25 s at 333 MHz. */
+   clock goes round in 25 s at 333 MHz. So is one in which the Media
+   Engine started again (after a sleep), with its clock and count new. */
 static void convert_busy_time(void)
 {
   u32 now = sceKernelGetSystemTimeLow();
   u32 clock = mailbox->reader.clock;
   u32 ticks = mailbox->reader.busy;
+  u32 boots = mailbox->reader.boots;
 
-  if(busy_known && clock != busy_clock && now - busy_time < 5000000u)
+  if(busy_known && boots == busy_boots && clock != busy_clock &&
+     now - busy_time < 5000000u)
   {
     counters.me_busy_us += (u64)(ticks - busy_ticks) *
      (now - busy_time) / (clock - busy_clock);
@@ -205,6 +209,7 @@ static void convert_busy_time(void)
   busy_clock = clock;
   busy_ticks = ticks;
   busy_time = now;
+  busy_boots = boots;
   busy_known = 1;
 }
 
@@ -245,6 +250,15 @@ int video_me_frame_begin(int exact)
     start();
   if(state != VIDEO_ME_DRAWING || !healthy())
     return 0;
+  /* It read nothing since the last frame began: the main processor draws
+     until it caught up with what it was sent, as a live one does at
+     once, while healthy() keeps counting towards giving up on it. */
+  if((switches & VIDEO_ME_QUICK_FALLBACK) && stalled_frames)
+  {
+    drawing = 0;
+    counters.fallback_frames++;
+    return 0;
+  }
   /* The Media Engine missed what was written while it was not used. */
   if(!drawing)
     gba_ppu_log_resend(&writer);

@@ -52,7 +52,11 @@ typedef enum
    writing the whole data cache back first: the main processor wrote
    nothing the GE reads, and the log writes back its own lines. */
 #define VIDEO_ME_NO_CACHE_FLUSH    0x02u
-#define VIDEO_ME_SWITCHES          0x03u
+/* A frame begins and the Media Engine read nothing of the last one: the
+   main processor draws frames until it caught up, instead of showing the
+   last picture again for up to a second before giving up on it. */
+#define VIDEO_ME_QUICK_FALLBACK    0x04u
+#define VIDEO_ME_SWITCHES          0x07u
 
 typedef struct
 {
@@ -69,6 +73,9 @@ typedef struct
   u32 log_words;
   u32 resends;
   u32 frames;
+  /* Frames drawn on the main processor because the Media Engine did not
+     answer (VIDEO_ME_QUICK_FALLBACK). */
+  u32 fallback_frames;
   /* Frames the Media Engine finished, by its working time on each. */
   u32 frame_time[GBA_PPU_LOG_TIME_BUCKETS];
 } VideoMeCounters;
