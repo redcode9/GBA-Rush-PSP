@@ -277,9 +277,15 @@ int video_me_frame_begin(int exact)
     counters.fallback_frames++;
     return 0;
   }
-  /* The Media Engine missed what was written while it was not used. */
+  /* The Media Engine missed what was written while it was not used; and
+     the picture it drew into last may be on the display now, so this
+     frame goes to the GE. */
   if(!drawing)
+  {
     gba_ppu_log_resend(&writer);
+    gba_ppu_log_target(&writer, 0, GBA_PPU_LOG_FRAME_STRIDE);
+    frame_target = 0;
+  }
   drawing = 1;
   counters.frames++;
   sampling = counters.frames % SAMPLE_FRAMES == 0;
