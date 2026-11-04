@@ -231,6 +231,15 @@ static void test_altered_fields(void)
   CHECK(decode_full(good, t.payload_crc ^ 1u, &t.rom, &out) ==
    SAVESTATE_TRAILER_CORRUPT);
 
+  /* BIOS CRC and emulator version are never checked, only returned. */
+  other = t;
+  other.bios_crc ^= 0x01010101u;
+  other.emulator_version = 0x00020000u;
+  savestate_trailer_encode(&other, trailer);
+  CHECK(decode_full(trailer, t.payload_crc, &t.rom, &out) ==
+   SAVESTATE_TRAILER_V2);
+  CHECK(same_trailer(&other, &out));
+
   current = t.rom;
   current.game_code[3] ^= 0x20u;
   CHECK(decode_full(good, t.payload_crc, &current, &out) ==
