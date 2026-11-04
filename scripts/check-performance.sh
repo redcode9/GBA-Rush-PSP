@@ -30,8 +30,8 @@ then
   exit 1
 fi
 
-# Benchmarks compare medians of three runs per build with matching settings.
-if ! rg -q 'nargs=3' scripts/compare-benchmarks.py || \
+# Benchmarks compare at least MIN_RUNS runs per build with matching settings.
+if ! rg -q 'MIN_RUNS = 3' scripts/compare-benchmarks.py || \
    ! rg -q 'MATCH_FIELDS' scripts/compare-benchmarks.py
 then
   echo "Benchmark comparison does not enforce repeated matching runs" >&2

@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
 """Compare two builds from their PSP performance reports.
 
-Each build is run three times on the same game and settings; the medians of
-the candidate runs must not regress against the baseline runs. The reports
-are the key=value files written by source/src/perf_report.c.
+Each build is run at least three times on the same game and settings (the two
+builds may have different run counts); the medians of the candidate runs must
+not regress against the baseline runs. Each metric also gets the spread of its
+runs and an exact one-sided permutation verdict. The reports are the key=value
+files written by source/src/perf_report.c.
 """
 
 import argparse
+import itertools
+import math
 import statistics
 import sys
 
+
+# Fewest reports per build; 3+3 runs is the smallest even split whose exact
+# test can reach p = 0.05.
+MIN_RUNS = 3
+
+# A difference is claimed only when the exact one-sided p is at most this.
+ALPHA = 0.05
 
 # Settings that every run must share, or the timings are not comparable.
 MATCH_FIELDS = (
@@ -73,7 +84,7 @@ def number(report, key):
 
 
 def median_metric(reports, metric):
-    """Median of metric(report) over the three runs of one build."""
+    """Median of metric(report) over the runs of one build."""
     return float(statistics.median(metric(report) for report in reports))
 
 
@@ -113,8 +124,91 @@ def percent_change(baseline, candidate):
     return ((candidate / baseline) - 1.0) * 100.0
 
 
+def summary(values):
+    """Median, minimum and maximum of the per-run values of one build."""
+    return float(statistics.median(values)), min(values), max(values)
+
+
+def exact_p(baseline_values, candidate_values, higher):
+    """One-sided exact permutation p of the candidate runs' sum.
+
+    If both builds are the same, every way of picking the candidate's runs
+    out of the pooled runs is equally likely; p is the share of those picks
+    whose sum is at least as high (or as low, when higher is False) as the
+    observed one.
+    """
+    sign = 1.0 if higher else -1.0
+    pooled = [sign * value for value in list(baseline_values) +
+              list(candidate_values)]
+    size = len(candidate_values)
+    observed = sum(pooled[len(baseline_values):])
+    # Float sums that are equal up to rounding are ties, and ties count.
+    floor = observed - 1e-9 * max(1.0, abs(observed))
+    # shortcut: exact enumeration is fine up to about 10 runs per build
+    # (184756 picks); switch to Monte Carlo if larger sets are ever archived.
+    extreme = sum(1 for pick in itertools.combinations(pooled, size)
+                  if sum(pick) >= floor)
+    return extreme / math.comb(len(pooled), size)
+
+
+def runs_needed(baseline_values, candidate_values):
+    """Runs per build that would likely decide the observed difference.
+
+    Normal approximation of a one-sided test at ALPHA with 80% power, with
+    Cohen's d from the median difference and the pooled spread; None when
+    the medians or the runs do not differ at all.
+    """
+    difference = abs(statistics.median(candidate_values) -
+                     statistics.median(baseline_values))
+    spread = math.sqrt((statistics.variance(baseline_values) +
+                        statistics.variance(candidate_values)) / 2.0)
+    if difference == 0 or spread == 0:
+        return None
+    z = statistics.NormalDist().inv_cdf
+    needed = math.ceil(2.0 * ((z(1.0 - ALPHA) + z(0.80)) * spread /
+                              difference) ** 2)
+    return max(needed, len(baseline_values) + 1, len(candidate_values) + 1)
+
+
+def verdict(baseline_values, candidate_values):
+    """Exact verdict on the per-run values: (p, text, runs needed).
+
+    The side tested is the one the medians point to. A difference is
+    claimed only at p <= ALPHA; otherwise the text says the result is
+    undecided and about how many runs per build would decide it.
+    """
+    difference = (statistics.median(candidate_values) -
+                  statistics.median(baseline_values))
+    higher = difference >= 0
+    p = exact_p(baseline_values, candidate_values, higher)
+    runs = f"p={p:.3f}, {len(baseline_values)}+{len(candidate_values)} runs"
+    if difference != 0 and p <= ALPHA:
+        side = "higher" if higher else "lower"
+        return p, f"candidate {side} ({runs})", None
+    needed = runs_needed(baseline_values, candidate_values)
+    if needed is None:
+        return p, f"undecided ({runs}), no difference observed", None
+    return p, (f"undecided ({runs}), about {needed} runs per build "
+               "needed"), needed
+
+
+# The per-run metrics whose spread and verdict the report prints, with
+# their display format; fast-forward only when every run measured it.
+RUN_METRICS = (
+    ("throughput", throughput, "{:.2f}"),
+    ("frame-p95", lambda report: number(report, "frame-time-p95-us"),
+     "{:.0f}"),
+    ("ge-p95", lambda report: number(report, "ge-wait-p95-us"), "{:.0f}"),
+    ("audio-underruns", lambda report: number(report, "audio-underruns"),
+     "{:.0f}"),
+    ("skipped-frames", lambda report: skip_ratio(report) * 100.0,
+     "{:.2f}%"),
+    ("fast-forward", fast_forward_multiplier, "{:.2f}x"),
+)
+
+
 def validate_matching_runs(baseline, candidate):
-    """All six runs must share the settings in MATCH_FIELDS, and the
+    """All runs must share the settings in MATCH_FIELDS, and the
     OPTIONAL_MATCH_FIELDS the first run reports, or the numbers are not
     comparable."""
     reference = baseline[0]
@@ -134,6 +228,8 @@ def compare(baseline, candidate):
     more audio underruns, a skipped-frame ratio up more than 0.5 points, or
     fast-forward speed down more than 2% (when all runs measured it).
     """
+    if min(len(baseline), len(candidate)) < MIN_RUNS:
+        raise ValueError(f"at least {MIN_RUNS} reports per build are needed")
     validate_matching_runs(baseline, candidate)
 
     baseline_throughput = median_metric(baseline, throughput)
@@ -191,6 +287,16 @@ def compare(baseline, candidate):
         if fast_forward_change < -2.0:
             failures.append("fast-forward speed regression exceeds 2%")
 
+    metrics = []
+    for name, metric, _ in RUN_METRICS:
+        if name == "fast-forward" and baseline_fast_forward is None:
+            continue
+        baseline_values = [metric(report) for report in baseline]
+        candidate_values = [metric(report) for report in candidate]
+        p, text, needed = verdict(baseline_values, candidate_values)
+        metrics.append((name, summary(baseline_values),
+                        summary(candidate_values), p, text, needed))
+
     return {
         "passed": not failures,
         "failures": failures,
@@ -204,6 +310,7 @@ def compare(baseline, candidate):
         "skip_ratio": candidate_skips,
         "fast_forward": candidate_fast_forward,
         "fast_forward_change": fast_forward_change,
+        "metrics": metrics,
     }
 
 
@@ -229,17 +336,27 @@ def format_result(result):
             f"fast-forward={result['fast_forward']:.2f}x "
             f"({result['fast_forward_change']:+.2f}%)"
         )
+    formats = {name: display for name, _, display in RUN_METRICS}
+    for name, baseline_runs, candidate_runs, _, text, _ in result["metrics"]:
+        show = formats[name].format
+        baseline_text = "{} [{}..{}]".format(*map(show, baseline_runs))
+        candidate_text = "{} [{}..{}]".format(*map(show, candidate_runs))
+        lines.append(f"{name}-runs=baseline {baseline_text}, "
+                     f"candidate {candidate_text}; {text}")
     lines.extend(f"reason={failure}" for failure in result["failures"])
     return "\n".join(lines)
 
 
 def main(argv=None):
-    """Exit status: 0 on PASS, 1 on a regression, 2 on unreadable input."""
+    """Exit status: 0 on PASS, 1 on a regression, 2 on unreadable input or
+    fewer than MIN_RUNS reports per build."""
     parser = argparse.ArgumentParser(
-        description="Compare three PSP benchmark reports per build."
+        description=f"Compare PSP benchmark reports, at least {MIN_RUNS} "
+        "per build (the counts may differ), on medians and on an exact "
+        "one-sided permutation test."
     )
-    parser.add_argument("--baseline", nargs=3, required=True, metavar="REPORT")
-    parser.add_argument("--candidate", nargs=3, required=True, metavar="REPORT")
+    parser.add_argument("--baseline", nargs="+", required=True, metavar="REPORT")
+    parser.add_argument("--candidate", nargs="+", required=True, metavar="REPORT")
     arguments = parser.parse_args(argv)
 
     try:

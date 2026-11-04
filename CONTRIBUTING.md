@@ -69,13 +69,22 @@ PSP rendering, MIPS assembly, radio behavior and power callbacks need testing
 on the console as well.
 
 For performance changes, compare at least three runs per build with the same
-ROM, initial save or state, renderer, clocks and settings:
+ROM, initial save or state, renderer, clocks and settings (the two builds may
+have different run counts):
 
 ```sh
 python3 scripts/compare-benchmarks.py \
   --baseline old-1.txt old-2.txt old-3.txt \
   --candidate new-1.txt new-2.txt new-3.txt
 ```
+
+PASS and FAIL still come from the medians and their thresholds. For each
+metric the tool also prints the median, minimum and maximum of both builds and
+the verdict of an exact one-sided permutation test on the per-run values. With
+3+3 runs that test reaches p=0.05 only when every candidate run is above (or
+every one is below) every baseline run; otherwise the verdict says undecided
+and estimates how many runs per build would decide it. Never claim a
+difference that the verdict does not state.
 
 Record the PSP model, firmware, storage, ROM hash and actual ROM-cache capacity.
 Test menu transitions, suspend, resume and exit when changing threads, audio,

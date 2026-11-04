@@ -1,6 +1,8 @@
 """Tests for scripts/compare-benchmarks.py on synthetic benchmark reports."""
 
+import contextlib
 import importlib.util
+import io
 import pathlib
 import tempfile
 import unittest
@@ -53,6 +55,12 @@ def report(frame_p95=17000, frames=600, duration=10_000_000,
         result["fast-forward-time-us"] = str(fast_forward_time)
         result["fast-forward-frames"] = str(fast_forward_frames)
     return result
+
+
+def write_report(path, values):
+    """Write a parsed report back as the key=value file read_report() reads."""
+    path.write_text("".join(f"{key}={value}\n" for key, value in values.items()),
+                    encoding="utf-8")
 
 
 class BenchmarkComparisonTests(unittest.TestCase):
@@ -154,6 +162,141 @@ class BenchmarkComparisonTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "not stopped"):
                 MODULE.read_report(path)
+
+    def test_exact_permutation_complete_separation_3v3(self):
+        baseline = [report(frames=frames) for frames in (600, 601, 602)]
+        candidate = [report(frames=frames) for frames in (610, 611, 612)]
+
+        result = MODULE.compare(baseline, candidate)
+
+        name, _, _, p, text, needed = result["metrics"][0]
+        self.assertEqual(name, "throughput")
+        self.assertAlmostEqual(p, 0.05)
+        self.assertIn("candidate higher (p=0.050, 3+3 runs)", text)
+        self.assertIsNone(needed)
+        self.assertIn(
+            "throughput-runs=baseline 60.10 [60.00..60.20], "
+            "candidate 61.10 [61.00..61.20]; candidate higher",
+            MODULE.format_result(result),
+        )
+        # The same separation the other way round is a lower candidate.
+        p, text, _ = MODULE.verdict([61.0, 61.1, 61.2], [60.0, 60.1, 60.2])
+        self.assertAlmostEqual(p, 0.05)
+        self.assertTrue(text.startswith("candidate lower"))
+
+    def test_overlap_is_undecided_with_runs_needed(self):
+        baseline = [report(frames=frames) for frames in (600, 605, 610)]
+        candidate = [report(frames=frames) for frames in (603, 608, 613)]
+
+        result = MODULE.compare(baseline, candidate)
+
+        _, _, _, p, text, needed = result["metrics"][0]
+        self.assertGreater(p, 0.05)
+        self.assertIn("undecided", text)
+        self.assertIsInstance(needed, int)
+        self.assertGreater(needed, 3)
+        self.assertIn(f"about {needed} runs per build needed", text)
+        output = MODULE.format_result(result)
+        self.assertNotIn("higher", output)
+        self.assertNotIn("lower", output)
+        # Identical runs are a tie in every pick: nothing to decide.
+        p, text, needed = MODULE.verdict([60.1] * 3, [60.1] * 3)
+        self.assertEqual(p, 1.0)
+        self.assertIn("no difference observed", text)
+        self.assertIsNone(needed)
+
+    def test_unequal_run_counts_4v3(self):
+        baseline = [report(frames=frames) for frames in (600, 601, 602, 603)]
+        candidate = [report(frames=frames) for frames in (610, 611, 612)]
+
+        result = MODULE.compare(baseline, candidate)
+
+        _, baseline_runs, _, p, text, _ = result["metrics"][0]
+        self.assertAlmostEqual(p, 1 / 35)
+        self.assertIn("4+3 runs", text)
+        for value, expected in zip(baseline_runs, (60.15, 60.0, 60.3)):
+            self.assertAlmostEqual(value, expected)
+        # PASS/FAIL still comes from the medians: 60.15 against 61.10 fps.
+        self.assertTrue(result["passed"])
+        self.assertAlmostEqual(result["throughput_change"],
+                               (61.1 / 60.15 - 1.0) * 100.0)
+
+    def test_fewer_than_three_runs_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for index in range(5):
+                path = pathlib.Path(directory) / f"run-{index}.txt"
+                write_report(path, report())
+                paths.append(str(path))
+
+            errors = io.StringIO()
+            with contextlib.redirect_stderr(errors):
+                status = MODULE.main(["--baseline", *paths[:2],
+                                      "--candidate", *paths[2:]])
+
+        self.assertEqual(status, 2)
+        self.assertIn("at least 3 reports per build", errors.getvalue())
+        with self.assertRaisesRegex(ValueError, "at least 3"):
+            MODULE.compare([report(), report()], [report() for _ in range(3)])
+
+    def test_cli_compares_three_runs_per_build(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for index, frames in enumerate((600, 601, 602, 610, 611, 612)):
+                path = pathlib.Path(directory) / f"run-{index}.txt"
+                write_report(path, report(frames=frames))
+                paths.append(str(path))
+
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                status = MODULE.main(["--baseline", *paths[:3],
+                                      "--candidate", *paths[3:]])
+
+        self.assertEqual(status, 0)
+        self.assertTrue(output.getvalue().startswith("PASS\n"))
+
+    def test_legacy_v6_fixtures_same_pass_fail(self):
+        passing = MODULE.compare(
+            [report(), report(frame_p95=17100), report(frame_p95=16900)],
+            [report(frames=605), report(frames=606), report(frames=604)],
+        )
+        self.assertTrue(passing["passed"])
+        self.assertEqual(passing["failures"], [])
+        # The lines printed before the per-run lines are unchanged.
+        self.assertEqual(
+            [line for line in MODULE.format_result(passing).splitlines()
+             if "-runs=" not in line],
+            ["PASS",
+             "throughput=60.50 fps (+0.83%)",
+             "frame-p95=17000 us (+0.00%)",
+             "ge-p95=500 us (+0.00%)",
+             "audio-underruns=0",
+             "skipped-frames=0.00%"],
+        )
+
+        regressed = MODULE.compare(
+            [report(), report(), report()],
+            [report(frame_p95=p95, frames=570, underruns=2, skipped=12)
+             for p95 in (18000, 18100, 17900)],
+        )
+        self.assertFalse(regressed["passed"])
+        self.assertEqual(regressed["failures"], [
+            "throughput regression exceeds 2%",
+            "frame-time p95 regression exceeds 5%",
+            "audio underruns increased",
+            "skipped-frame ratio increased by more than 0.5 points",
+        ])
+
+        fast_forward = MODULE.compare(
+            [report(fast_forward_time=1_000_000, fast_forward_frames=120)
+             for _ in range(3)],
+            [report(fast_forward_time=1_100_000, fast_forward_frames=120)
+             for _ in range(3)],
+        )
+        self.assertFalse(fast_forward["passed"])
+        self.assertEqual(fast_forward["failures"],
+                         ["fast-forward speed regression exceeds 2%"])
+        self.assertEqual(fast_forward["metrics"][-1][0], "fast-forward")
 
 
 if __name__ == "__main__":
