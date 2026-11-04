@@ -553,8 +553,14 @@
   // MSG_ERR_LOAD_DIR_INI
   "Could not load dir.ini file.\nEverything is set as the following directory:\n%s",
 
-  // MSG_ERR_BIOS_NONE
-  "Could not load BIOS image file.",
+  // MSG_ERR_BIOS_INVALID
+  "gba_bios.bin is not a 16 KB GBA BIOS image.\nUsing the built-in BIOS instead.",
+
+  // MSG_ERR_STATE_NEEDS_BIOS_FILE
+  "This savestate was made with gba_bios.bin.\nPut gba_bios.bin back in the emulator folder\nand restart the emulator to load it.",
+
+  // MSG_ERR_STATE_NEEDS_BUILTIN_BIOS
+  "This savestate was made with the built-in BIOS.\nMove gba_bios.bin out of the emulator folder\nand restart the emulator to load it.",
 
   // MSG_ERR_LOAD_GAMEPACK
   "Could not load the game file.",

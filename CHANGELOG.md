@@ -4,6 +4,12 @@
 
 ### Added
 
+- GBA Rush PSP starts without `gba_bios.bin`. When the file is missing, the
+  emulator uses a built-in open-source BIOS (Normmatt's, based on VBA-M, the
+  one libretro gpSP also ships) instead of quitting. A `gba_bios.bin` that is
+  not a 16 KB GBA BIOS is reported and the built-in BIOS is used instead. A
+  valid `gba_bios.bin` beside the EBOOT is still used first and remains the
+  more compatible choice.
 - A third choice for Video > Video renderer, Exact: a renderer written from
   scratch for GBA Rush, which matches mGBA pixel for pixel on every frame of
   the games it is checked with. On custom firmware it draws on the PSP's
@@ -13,6 +19,18 @@
   Where the Media Engine cannot be used, as on official firmware or in an
   emulator, Exact draws on the main processor and is slower than New. With
   Show FPS on, the counter ends in ME or CPU to tell which.
+
+### Changed
+
+- A savestate loads only with the BIOS it was saved with, `gba_bios.bin` or
+  the built-in one; otherwise a message says which one it needs, instead of
+  loading a game that would crash. Savestates from earlier versions count as
+  saved with `gba_bios.bin`. GBA Rush PSP 1.4.3 and earlier do not check
+  this, so a savestate made with the built-in BIOS can crash there.
+- With the built-in BIOS the automatic savestate is `<rom>_auto-builtin.svs`,
+  so it never overwrites the `<rom>_auto.svs` made with `gba_bios.bin`.
+- The `bios_rom_hack_39` and `bios_rom_hack_2C` options of `game_config.txt`
+  apply only to `gba_bios.bin`.
 
 ## 1.4.3 - 2026-11-02
 

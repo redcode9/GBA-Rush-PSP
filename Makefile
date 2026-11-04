@@ -132,12 +132,12 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_GBA_PPU)
 	$(HOST_TEST_GBA_PPU_LOG)
 
-# Python tests. test_startup and test_browser_text also compile functions
-# cut out of main.c and gui.c with HOST_CC.
+# Python tests. test_startup, test_browser_text and test_open_bios also
+# compile functions cut out of main.c, gui.c and memory.c with HOST_CC.
 test-tools:
 	$(PYTHON) -m unittest tests/test_compare_benchmarks.py \
 	 tests/test_decode_runtime_log.py tests/test_startup.py \
-	 tests/test_browser_text.py
+	 tests/test_browser_text.py tests/test_open_bios.py
 
 # The link cable test runs fewer network profiles (--quick) under the
 # sanitizers, where it is much slower.
@@ -257,7 +257,7 @@ $(HOST_TEST_PERF_MONITOR): tests/test_perf_monitor.c \
 # memory.c is compiled against the real PSP SDK headers with -w (host
 # build); the test TU itself is built with -Wall -Wextra -Werror.
 $(HOST_TEST_PERF_DMA_PROBE): tests/test_perf_dma_probe.c tests/host_dma_stubs.c \
- source/src/memory.c source/src/memory.h source/src/cpu.h \
+ source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
@@ -464,7 +464,7 @@ $(HOST_SANITIZE_DIR)/test_perf_report: tests/test_perf_report.c \
 
 $(HOST_SANITIZE_DIR)/test_perf_dma_probe: tests/test_perf_dma_probe.c \
  tests/host_dma_stubs.c \
- source/src/memory.c source/src/memory.h source/src/cpu.h \
+ source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \

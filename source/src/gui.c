@@ -2959,8 +2959,10 @@ static void get_savestate_info(char *filename, u16 *snapshot, char *timestamp)
 }
 
 /* Slots 0-9 are the numbered savestates ("<rom>_N.svs"); the extra slot is
-   the automatic one ("<rom>_auto.svs") written on exit, sleep, ROM change
-   and before overwriting progress with a load. */
+   the automatic one written on exit, sleep, ROM change and before
+   overwriting progress with a load. A savestate loads only with the BIOS
+   that made it, so each BIOS keeps its own: "<rom>_auto.svs" with
+   gba_bios.bin, "<rom>_auto-builtin.svs" with the built-in BIOS. */
 #define AUTO_SAVESTATE_SLOT   10
 #define SAVESTATE_SLOT_COUNT  11
 
@@ -2968,7 +2970,8 @@ static void get_savestate_info(char *filename, u16 *snapshot, char *timestamp)
 static void get_savestate_filename(u32 slot, char *name_buffer)
 {
   if (slot == AUTO_SAVESTATE_SLOT)
-    change_ext(gamepak_filename, name_buffer, "_auto.svs");
+    change_ext(gamepak_filename, name_buffer,
+     bios_builtin ? "_auto-builtin.svs" : "_auto.svs");
   else
   {
     char savestate_ext[16];
@@ -4075,7 +4078,8 @@ u32 menu(void)
       if (load_file(file_ext, filename_buffer, dir_state, 0) == 0)
       {
         /* Extract ROM base name from savestate filename.
-           "RomName_5.svs" -> "RomName", "RomName_auto.svs" -> "RomName" */
+           "RomName_5.svs" -> "RomName", "RomName_auto.svs" and
+           "RomName_auto-builtin.svs" -> "RomName" */
         {
             char temp_name[MAX_FILE];
             strncpy(temp_name, filename_buffer, sizeof(temp_name) - 1);
@@ -4089,7 +4093,7 @@ u32 menu(void)
                 rom_name[sizeof(rom_name) - 1] = '\0';
 
                 /* Parse slot number for same-ROM case */
-                if (strncmp(underscore + 1, "auto.svs", 8) == 0)
+                if (strncmp(underscore + 1, "auto", 4) == 0)
                     slot_parsed = AUTO_SAVESTATE_SLOT;
                 else
                     slot_parsed = (u32)atoi(underscore + 1);

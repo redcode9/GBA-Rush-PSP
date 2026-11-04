@@ -1,0 +1,5 @@
+# Nebuleon/ReGBA's BIOS sources, kept byte for byte (CRLF, trailing spaces).
+source/bios/Makefile -text -whitespace
+source/bios/*.bat -text -whitespace
+source/bios/source/** -text -whitespace
+source/bios/specs/** -text -whitespace

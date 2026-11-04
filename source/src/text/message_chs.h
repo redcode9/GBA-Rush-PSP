@@ -553,8 +553,14 @@
   // MSG_ERR_LOAD_DIR_INI
   "无法加载 dir.ini 文件.\n所有内容均设置在以下目录中:\n%s",
 
-  // MSG_ERR_BIOS_NONE
-  "无法加载 BIOS 映像文件.",
+  // MSG_ERR_BIOS_INVALID
+  "gba_bios.bin 不是 16 KB 的 GBA BIOS 映像文件.\n将改用内置 BIOS.",
+
+  // MSG_ERR_STATE_NEEDS_BIOS_FILE
+  "此即时存档是用 gba_bios.bin 保存的.\n请将 gba_bios.bin 放回模拟器文件夹，\n重新启动模拟器后再读取.",
+
+  // MSG_ERR_STATE_NEEDS_BUILTIN_BIOS
+  "此即时存档是用内置 BIOS 保存的.\n请先将 gba_bios.bin 移出模拟器文件夹，\n重新启动模拟器后再读取.",
 
   // MSG_ERR_LOAD_GAMEPACK
   "无法加载游戏文件.",
