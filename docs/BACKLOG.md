@@ -1,10 +1,10 @@
 # Backlog di GBA Rush PSP
 
 - **Perimetro:** le capacità obiettivo del catalogo che GBA Rush PSP non ha, o ha solo in parte, comprese quelle che l'analisi sconsiglia e che restano dietro un gate, più i difetti nostri emersi lungo la strada (salvataggi, EEPROM, zip). Ogni epic ha un obiettivo misurabile (principio 8).
-- **Base e data:** release 1.4.3 (`develop` ee57fba, uscita il 2026-11-02 come release del link); revisione del 2026-11-02. I riferimenti `file:riga` sono stati spostati sulla 1.4.3. `features/save-read-fixes` (SAV-1 in corso e SAV-2.8) parte da d6ef51f e non è committato. `features/builtin-open-bios` (CMP-1, con `source/bios/`) è committato sopra la 1.4.3 e dal 2026-11-04 è su origin, insieme a questo backlog.
+- **Base e data:** release 1.4.3 (`develop` ee57fba, uscita il 2026-11-02 come release del link); revisione del 2026-11-02. I riferimenti `file:riga` sono stati spostati sulla 1.4.3. `features/save-read-fixes` (SAV-1 in corso e SAV-2.8) parte da d6ef51f e non è committato. `features/builtin-open-bios` (CMP-1, con `source/bios/`) è committato sopra la 1.4.3 e dal 2026-11-04 è su origin, insieme a questo backlog. **Aggiornamento del 2026-11-04:** il backlog entra nell'epica `state-of-the-art-development`: `features/state-of-the-art-development/main`, staccato da `develop` ee57fba, contiene anche il core New e il renderer Exact sul Media Engine, già uniti con il BIOS integrato in `features/arm-core` e `features/gba-renderer`. Vedi «Branch di lavoro dell'epica», «Riconciliazione con il nuovo core e il renderer» e la sezione 9 (gruppo SOA).
 - **Metodo:** si parte dall'analisi del 2026-11-01 (verdetto e roadmap a fasi). Ogni epic è stata verificata sul nostro codice, e un controllo di copertura ha incrociato capacità, dipendenze e milestone. La revisione del 2026-11-02 ha riallineato il backlog alla 1.4.3 pubblicata e ha alzato ogni obiettivo (vedi «Correzioni applicate»).
 - **Codice di terzi:** solo da fonti con licenza compatibile, a commit fissato (principio 7). I pezzi di origine libretro (BIOS aperto, tabella dei giochi, correzioni del core, rfu.c, relay di Advance Wars) vengono da libretro/gpsp al commit 5819380; il sorgente del BIOS aperto in `source/bios/` viene da ReGBA 313ddd0. La base discende da TempGBA e da gpSP.
-- **Dimensione:** 103 epic, 456 storie, circa 790 giorni-sviluppatore: circa 392 nelle milestone numerate e circa 398 dietro un gate.
+- **Dimensione:** 113 epic, 511 storie, circa 896,5 giorni-sviluppatore. La revisione del 2026-11-02 ne contava 103, 456 e 790 (circa 392 nelle milestone numerate e circa 398 dietro un gate); il gruppo SOA del 2026-11-04 aggiunge 10 epic, 55 storie e circa 106 gg.
 
 ## Come leggerlo
 
@@ -12,9 +12,9 @@
 
 | Verdetto | Epic | Significato |
 |---|---|---|
-| in corso | 2 | Lavoro già aperto in un branch non ancora unito: CMP-1 (BIOS aperto, `features/builtin-open-bios`) e SAV-1 (lettura del `.sav`, `features/save-read-fixes`). |
-| consigliato | 60 | Da fare, nella milestone indicata. |
-| condizionato | 29 | Parte solo se il gate scritto nell'epic («Gate prima di iniziare») dà sì con un numero misurato; prima si pianifica solo la misura. In ENG-6, UI-7 e UI-16 il gate riguarda solo alcune storie. |
+| in corso | 4 | Lavoro già aperto: CMP-1 (BIOS aperto, ora nel main dell'epica), SAV-1 (lettura del `.sav`, `features/save-read-fixes`), SOA-2 e SOA-6 (core New e renderer Exact, nel main dell'epica, da provare su console). |
+| consigliato | 66 | Da fare, nella milestone indicata. |
+| condizionato | 31 | Parte solo se il gate scritto nell'epic («Gate prima di iniziare») dà sì con un numero misurato; prima si pianifica solo la misura. In ENG-6, UI-7 e UI-16 il gate riguarda solo alcune storie. |
 | sconsigliato (dietro gate) | 12 | L'analisi lo sconsiglia: resta dietro un gate come le condizionate, e prima di partire il verdetto va rivisto per iscritto. |
 
 **Taglie e stime.** Ogni storia ha una taglia e una stima in giorni-sviluppatore (gg), cioè giorni di lavoro di una persona. La stima di un'epic è la somma delle sue storie. Le attese di calendario (7 giorni di prerelease, segnalazioni per i gate di domanda) restano fuori. La taglia dice quanto è grande il pezzo, ma per il piano conta la stima.
@@ -26,7 +26,7 @@
 | L | 27 | 3-6 gg, di solito 4-5 |
 | XL | 2 | oltre una settimana: PRF-14.1 (8 gg) e LNK-12.3 (14 gg), entrambe dietro un gate |
 
-**ID.** `SAV-2.3` è la terza storia dell'epic SAV-2. I gruppi sono: SAV salvataggi, stati e affidabilità; CMP compatibilità e core; PRF prestazioni; UI interfaccia e UX; GIO funzioni di gioco; LNK link e multiplayer; ENG ingegneria, verifica e presentazione; EXT altre capacità e difetti nostri. Le sezioni 1-8 che seguono questa panoramica hanno lo stesso ordine. `F-001`…`F-172` sono le capacità obiettivo del catalogo (vedi «Catalogo delle capacità obiettivo»; F-164 non è più usata): una dipendenza scritta F-xxx vale per tutte le epic che coprono quella capacità. `NC-1`…`NC-4` sono voci nostre dell'analisi del 2026-11-01 (tre difetti e la modalità USB), fuori dal catalogo.
+**ID.** `SAV-2.3` è la terza storia dell'epic SAV-2. I gruppi sono: SAV salvataggi, stati e affidabilità; CMP compatibilità e core; PRF prestazioni; UI interfaccia e UX; GIO funzioni di gioco; LNK link e multiplayer; ENG ingegneria, verifica e presentazione; EXT altre capacità e difetti nostri; SOA stato dell'arte (core New, Media Engine, mirror, hardware PSP), aggiunto il 2026-11-04. Le sezioni 1-9 che seguono questa panoramica hanno lo stesso ordine. `F-001`…`F-172` sono le capacità obiettivo del catalogo (vedi «Catalogo delle capacità obiettivo»; F-164 non è più usata): una dipendenza scritta F-xxx vale per tutte le epic che coprono quella capacità. `NC-1`…`NC-4` sono voci nostre dell'analisi del 2026-11-01 (tre difetti e la modalità USB), fuori dal catalogo.
 
 **PSP.** «sì» vuol dire che l'accettazione richiede prove su PSP reale, di regola PSP-1000 più un secondo modello; «no» vuol dire che l'epic si chiude con test host, script, strumenti desktop o documenti. PPSSPP non vale come prova. Anche ogni storia porta questa voce.
 
@@ -70,7 +70,9 @@ Regola di assegnazione. Un'epic sta nella milestone in cui si chiudono le sue st
 | 1.6 | Core misurabile e verificabile, poi più corretto; trucchi sicuri | 23 | 106 | 150,25 gg |
 | 2.0 | Interfaccia 2.0, riavvolgimento, stanze, invio di salvataggi | 18 | 52 | 107,75 gg |
 | dopo gate | Solo se il gate dà sì | 38 | 179 | 398,25 gg |
-| **Totale** | | **103** | **456** | **790,5 gg** |
+| **Totale (revisione 2026-11-02)** | | **103** | **456** | **790,5 gg** |
+| SOA (2026-11-04) | Core New, Media Engine, mirror, hardware PSP (sezione 9) | 10 | 55 | 106 gg |
+| **Totale con SOA** | | **113** | **511** | **896,5 gg** |
 
 ### 1.4.4 — nessun salvataggio perso
 
@@ -277,6 +279,78 @@ Restano dopo il gate UI-9.5, UI-16.3, GIO-1.6, LNK-6.3 ed ENG-8.2; l'ex GIO-7.5 
 - Le soglie di domanda si contano su issue e Discussions, con un'etichetta per funzione (ENG-18): GIO-8 almeno 15 richieste distinte nei 90 giorni dopo la 2.0; LNK-14, LNK-15 e LNK-17 almeno 5 ciascuna; LNK-13, EXT-6.2 ed EXT-8.2 almeno 3.
 - Le epic sconsigliate (CMP-10, PRF-14, UI-17, GIO-8, LNK-12, LNK-14, LNK-15, LNK-17, ENG-13, EXT-6, EXT-7, EXT-8) partono solo con il gate superato e con il verdetto rivisto per iscritto.
 
+### Epica state-of-the-art-development (gruppo SOA)
+
+**Obiettivo.** Core New e renderer Exact provati su console, poi la gara MKSC a 60 fps in link con il mirror e ogni risorsa della PSP misurata e usata dove conta. Gli obiettivi numerici stanno nelle epic SOA (sezione 9).
+
+**Dove cade nelle milestone:**
+- subito, in parallelo alla 1.4.4: SOA-1 (ambiente riproducibile) e SOA-2 (prova su console del core New e di Exact);
+- 1.5: SOA-3.1-3.4;
+- 1.6: SOA-3.5-3.7, SOA-4, SOA-5, SOA-6, SOA-8;
+- 2.0: SOA-7 con LNK-12, SOA-10;
+- dopo gate: SOA-9, SOA-4.7, SOA-7.2, SOA-7.4.
+
+**Stima:** circa 106 gg, 55 storie in 10 epic. Le storie di velocità solo Classic restano congelate finché SOA-10.1 non decide (decisione (m)).
+
+## Branch di lavoro dell'epica state-of-the-art-development
+
+Dal 2026-11-04 tutto il backlog si sviluppa nell'epica `state-of-the-art-development`, con più persone e agenti in parallelo.
+
+- `features/state-of-the-art-development/main`: integrazione dell'epica, staccato da `develop` (ee57fba, release 1.4.3). Contiene questo backlog, il BIOS integrato, il core New e il renderer Exact sul Media Engine.
+- `features/state-of-the-art-development/wip/<nome>`: un flusso di lavoro, staccato da main. Ogni wip tiene in `docs/wip/<nome>.md` la lista dei suoi ticket, in ordine di milestone, con le dipendenze verso gli altri branch.
+
+**Regole**
+1. Ogni storia appartiene a un solo branch (tabella sotto). Chi la prende la spunta nel file del branch quando la sua accettazione è verificata.
+2. Un wip torna in main con una PR, anche più volte durante la sua vita; ogni PR porta storie finite con `make check` e `make test-sanitize` verdi, più check-core e check-render quando tocca `arm_*`, `gba_ppu*`, `video_me.c` o `source/prx/media_engine/`.
+3. Main si unisce nel wip almeno una volta a settimana e prima di ogni PR, con un merge: niente rebase di branch pubblicati, niente push forzati.
+4. Una storia con dipendenze in un altro branch parte quando quelle dipendenze sono in main; il file del branch le segna come «aspetta».
+5. I file caldi hanno un branch proprietario (colonna «File principali» dei file `docs/wip/`); chi non è proprietario li tocca con modifiche piccole e lo scrive nella PR.
+6. Le voci nuove di `MESSAGE_ITEM` vanno accanto a quelle della stessa area, mai tutte in fondo, così i merge delle cinque tabelle restano semplici; `scripts/check-messages.sh` resta verde dopo ogni merge.
+7. Le prove su PSP si raggruppano in sessioni che `wip/hardware-validation` mette in calendario: le console di prova sono due.
+8. Le release escono da main: `release/X.Y.Z`, poi develop e master, versioni solo `X.Y.Z` (decisione (l)).
+9. Commit piccoli e dichiarativi in inglese, senza righe di attribuzione a un'AI; la documentazione nel codice in inglese comprensibile a chiunque.
+10. Il file `docs/wip/<nome>.md` si cancella nella PR che chiude il branch.
+
+**Branch e ticket**
+
+| Branch | Ambito | Ticket | Storie | gg | Dipende da | Si parte con |
+|---|---|---|---|---|---|---|
+| `wip/dev-environment` | Ambiente di verifica riproducibile | ENG-10.4, SOA-1 | 7 | 7 | — | ENG-10.4, SOA-1.1, SOA-1.6 |
+| `wip/hardware-validation` | Prova su console del core New e di Exact | SOA-2 | 5 | 6 | `dev-environment` | dopo le dipendenze |
+| `wip/test-roms` | ROM di prova: salvataggi, core-rom e raster | CMP-3.1, CMP-4.1, CMP-5.1, CMP-11.1, CMP-12.1, ENG-10.3, EXT-3.1, SAV-2.6 | 8 | 13,25 | — | SAV-2.6 |
+| `wip/open-bios` | BIOS integrato: HLE di Div, IntrWait, open bus e HALT | CMP-1, CMP-3 (tranne CMP-3.1), EXT-3 (tranne EXT-3.1) | 11 | 14 | `test-roms` | dopo le dipendenze |
+| `wip/new-core` | Core New: parità con il Classic, poi predefinito | SOA-3, SOA-10 | 10 | 15 | `hardware-validation`, `open-bios`, `test-roms`, `game-compat` | dopo le dipendenze |
+| `wip/new-core-speed` | Core New veloce | SOA-4 | 8 | 18 | `hardware-validation`, `perf-method`, `platform` | dopo le dipendenze |
+| `wip/event-scheduler` | Scheduler a scadenza unica e timer dal vivo | CMP-12.2, PRF-9.1, SOA-5 | 7 | 14,5 | `test-roms`, `replay-oracle` | SOA-5.1 |
+| `wip/media-engine` | Renderer Exact sul Media Engine e presentazione | PRF-11, PRF-14, SOA-6 | 19 | 43,75 | `hardware-validation`, `suspend-resume` | dopo le dipendenze |
+| `wip/mirror` | Mirror: due GBA su ogni PSP | LNK-12, SOA-7 | 12 | 50 | `new-core-speed`, `media-engine`, `link-rooms`, `link-techniques`, `replay-oracle` | dopo le dipendenze |
+| `wip/audio` | Audio: mixer M4A nativo, 32 kHz e Media Engine | PRF-12, PRF-13, SOA-9 | 12 | 33 | `new-core-speed`, `media-engine`, `perf-method` | dopo le dipendenze |
+| `wip/platform` | Hardware PSP al limite e memoria per modello | ENG-14.4, PRF-4, PRF-5, PRF-6, SOA-8 | 19 | 31,5 | `dev-environment`, `release-and-ci` | SOA-8.6 |
+| `wip/perf-method` | Metodo A/B, strumentazione, benchmark e suite di misura | PRF-1, PRF-2, PRF-3, PRF-8.6, PRF-10.1 | 19 | 30 | `release-and-ci` | PRF-8.6, PRF-1.1 |
+| `wip/classic-core` | Correttezza del core Classic | CMP-5 (tranne CMP-5.1), CMP-11 (tranne CMP-11.1), CMP-12 (tranne CMP-12.1, CMP-12.2), ENG-5.2, ENG-5.3 | 13 | 21 | `test-roms`, `replay-oracle`, `perf-method` | ENG-5.2 |
+| `wip/classic-core-speed` | Velocità del core Classic | ENG-12, ENG-14 (tranne ENG-14.4), PRF-7, PRF-8 (tranne PRF-8.6), PRF-9 (tranne PRF-9.1), PRF-10 (tranne PRF-10.1) | 35 | 76,5 | `classic-core`, `perf-method` | ENG-14.1 |
+| `wip/save-store` | Salvataggi che non si perdono | EXT-1, SAV-1, SAV-2 (tranne SAV-2.6), SAV-3, SAV-5 | 26 | 21 | `test-roms` | EXT-1.1, SAV-1.1, SAV-1.2, SAV-2.8 … |
+| `wip/savestate-v2` | Formato savestate v2 | SAV-4 | 6 | 6 | `save-store`, `open-bios` | SAV-4.1 |
+| `wip/suspend-resume` | Sospensione e ripresa sicure | ENG-8, SAV-7, SAV-8 | 11 | 12 | `save-store`, `test-roms` | SAV-7.6 |
+| `wip/crash-safety` | Guasti senza perdite e sicurezza sul campo | CMP-4.2, ENG-15, SAV-6 | 12 | 13,5 | `test-roms`, `save-store`, `release-and-ci` | ENG-15.1, ENG-15.4, SAV-6.5 |
+| `wip/game-compat` | Tabella dei giochi, RTC e titoli difficili | CMP-2, CMP-7, CMP-8, CMP-9, CMP-10 | 20 | 28,75 | `open-bios`, `replay-oracle`, `perf-method` | CMP-10.1, CMP-2.1, CMP-7.1 |
+| `wip/rom-loading` | Caricamento delle ROM: zip, ROM grandi e piccole, avanzamento | CMP-6, EXT-2, EXT-5, UI-14 | 11 | 10 | `save-store`, `test-roms` | CMP-6.1, EXT-2.1, UI-14.1 |
+| `wip/release-and-ci` | Rilascio, formati, profili di build e CI | ENG-1, ENG-2, ENG-5.1, ENG-5.4, ENG-18, ENG-19 | 19 | 21,25 | — | ENG-1.1, ENG-1.3, ENG-18.1, ENG-2.1 … |
+| `wip/replay-oracle` | Replay deterministico e reti di regressione | ENG-3, ENG-4, ENG-6, ENG-7, ENG-11, ENG-13 | 25 | 42 | `dev-environment`, `test-roms` | ENG-3.1, ENG-7.1 |
+| `wip/docs` | Documentazione, README e larghezza dei testi | ENG-9, ENG-16, ENG-17 | 11 | 13,75 | — | ENG-9.1, ENG-17.2 |
+| `wip/ui-foundation` | Interfaccia: primo avvio, toast, scorciatoie, input e screenshot | EXT-4, EXT-6, UI-1, UI-2, UI-3, UI-4, UI-5, UI-6 | 23 | 24,75 | — | UI-1.1, UI-1.5, EXT-4.1, UI-1.3 … |
+| `wip/ui-ge` | Interfaccia 2.0 sul GE, testo e menu di gioco | UI-7, UI-8, UI-9, UI-10, UI-11, UI-16 | 25 | 47,75 | `ui-foundation`, `platform` | UI-9.1, UI-7.1, UI-8.1, UI-10.1 … |
+| `wip/library` | Libreria e arte dei giochi | EXT-7, EXT-8, UI-12, UI-13, UI-15, UI-17 | 20 | 32,5 | `ui-foundation` | UI-12.1, UI-12.3, UI-12.4, UI-15.1 … |
+| `wip/cheats` | Trucchi | GIO-3, GIO-4, GIO-5, GIO-6 | 17 | 31,5 | `open-bios` | GIO-3.1 |
+| `wip/rewind` | Riavvolgimento | GIO-1, GIO-2 | 13 | 41,5 | `savestate-v2`, `perf-method`, `replay-oracle`, `platform` | GIO-1.1 |
+| `wip/launcher` | Launcher single-game e link automatico | GIO-7, LNK-16 | 9 | 13,5 | `save-store`, `link-rooms`, `link-diagnostics` | GIO-7.1 |
+| `wip/gameboy` | Modulo Game Boy e link Game Boy | GIO-8, LNK-17 | 19 | 51,5 | `save-store`, `savestate-v2` | dopo le dipendenze |
+| `wip/link-diagnostics` | Link: verifica, motivi dei fallimenti, integrità, stato, audio | ENG-10.1, ENG-10.2, LNK-1, LNK-2, LNK-3, LNK-4, LNK-6 | 21 | 28,5 | — | ENG-10.1, LNK-1.1, LNK-3.1, LNK-3.3 … |
+| `wip/link-rooms` | Link: stanze e invio di salvataggi | LNK-5, LNK-7 | 10 | 20,5 | `link-diagnostics`, `save-store`, `savestate-v2` | LNK-7.1 |
+| `wip/link-techniques` | Link: tecnica per gioco, relay, adattatore wireless | LNK-8, LNK-9, LNK-10, LNK-11, LNK-13, LNK-14, LNK-15 | 28 | 62,75 | `link-diagnostics` | LNK-8.1, LNK-15.1 |
+
+**Prima ondata, subito e in parallelo:** `wip/dev-environment` (SOA-1), `wip/test-roms` (SAV-2.6, poi CMP-3.1), `wip/save-store` (SAV-1, SAV-2), `wip/link-diagnostics` (LNK-1.1, ENG-10.1), `wip/release-and-ci` (ENG-1, ENG-2.6), `wip/ui-foundation` (UI-1.1, UI-1.2, UI-1.5), `wip/hardware-validation` (SOA-2, appena SOA-1.1 dà la build PSP), `wip/open-bios` (revisione di CMP-1.1, decisione (e)). Seguono, appena le dipendenze entrano in main, core New, Media Engine, scheduler, piattaforma e il resto della tabella.
+
 ## Indice delle epic
 
 | ID | Titolo | Verdetto | Milestone | gg | Dipendenze principali | PSP |
@@ -313,8 +387,8 @@ Restano dopo il gate UI-9.5, UI-16.3, GIO-1.6, LNK-6.3 ed ENG-8.2; l'ex GIO-7.5 
 | PRF-10 | Layout dell'I-cache fissato, dati caldi a set fisso e controllo del budget del nucleo caldo | condizionato | dopo gate (PRF-10.1 in 1.6) | 8,25 | PRF-1.1, PRF-3.1, ENG-2, ENG-3 | sì |
 | PRF-11 | Latenza dell'input misurata e ridotta, triplo buffer senza latenza aggiunta | condizionato | dopo gate (PRF-11.1 e PRF-11.5 in 1.6) | 13,75 | PRF-1.5, PRF-2.1, ENG-1.6, ENG-3, ENG-15.4 | sì |
 | PRF-12 | Mix audio a 32 kHz come opzione misurata | condizionato | dopo gate (PRF-12.1 in 1.6) | 6,5 | PRF-1.1, PRF-3.2, CMP-1.4, ENG-2 | sì |
-| PRF-13 | Media Engine: prima l'audio | condizionato | dopo gate | 14 | PRF-1.5, ENG-2, SAV-7.5 | sì |
-| PRF-14 | Media Engine: renderer video opzionale | sconsigliato | dopo gate | 16,5 | PRF-13.4, PRF-2.2, PRF-11.5, ENG-6 | sì |
+| PRF-13 | Media Engine: prima l'audio | condizionato → assorbita da SOA-9 (2026-11-04) | dopo gate | 14 | PRF-1.5, ENG-2, SAV-7.5 | sì |
+| PRF-14 | Media Engine: renderer video opzionale | sconsigliato → superata da SOA-6, in corso (2026-11-04) | dopo gate | 16,5 | PRF-13.4, PRF-2.2, PRF-11.5, ENG-6 | sì |
 | UI-1 | Primo avvio senza configurazione e colori del tema persistenti | consigliato | 1.5 (UI-1.1, UI-1.2 e UI-1.5 in 1.4.4) | 2,75 | UI-2.2, UI-4.4, CMP-1.1 | sì |
 | UI-2 | Notifiche non modali: un anello di toast localizzati | consigliato | 1.5 | 2,5 | — | sì |
 | UI-3 | Salvataggio e caricamento rapido senza prompt, annullabili | consigliato | 1.5 | 2,25 | LNK-3.2, SAV-4.5 | sì |
@@ -351,7 +425,7 @@ Restano dopo il gate UI-9.5, UI-16.3, GIO-1.6, LNK-6.3 ed ENG-8.2; l'ex GIO-7.5 
 | LNK-9 | Ritmo fisso della sessione | condizionato | dopo gate | 4 | LNK-1.3, LNK-2.2 | sì |
 | LNK-10 | Meno datagrammi nelle stanze Pokémon | condizionato | dopo gate | 3,75 | LNK-1.3, PRF-1.1 | sì |
 | LNK-11 | Relay Advance Wars | condizionato | dopo gate | 11,5 | LNK-1.3, LNK-2.2, LNK-8.1 | sì |
-| LNK-12 | Link a due core per la stessa ROM | sconsigliato | dopo gate | 36 | LNK-1.3, LNK-2.2, LNK-7.1, LNK-8.1, ENG-3 (+4) | sì |
+| LNK-12 | Link a due core per la stessa ROM | sconsigliato → consigliato con SOA-7, 2.0 (2026-11-04) | dopo gate | 36 | LNK-1.3, LNK-2.2, LNK-7.1, LNK-8.1, ENG-3 (+4) | sì |
 | LNK-13 | Relay Pokémon a 3-4 giocatori via cavo | condizionato | dopo gate | 13 | LNK-1.1, LNK-2.2 | sì |
 | LNK-14 | Wireless Adapter (AGB-015): Union Room, Trade Center, 3-4 PSP | sconsigliato | dopo gate | 18 | LNK-1.1, LNK-2.2, LNK-5.1, LNK-8.1, LNK-13.1 | sì |
 | LNK-15 | Mystery Gift Gen-3 da file, tutto sulla PSP | sconsigliato | dopo gate | 9,5 | LNK-14.2, SAV-2 | sì |
@@ -384,7 +458,17 @@ Restano dopo il gate UI-9.5, UI-16.3, GIO-1.6, LNK-6.3 ed ENG-8.2; l'ex GIO-7.5 
 | EXT-6 | Uscita dal gioco con una tenuta | sconsigliato | dopo gate (EXT-6.1 in 1.6) | 1,25 | ENG-17.3, UI-4.3 | sì |
 | EXT-7 | Pacchetti di arte pronti | sconsigliato | dopo gate (EXT-7.1 in 1.6) | 1,75 | ENG-17.3, UI-13.1 | sì |
 | EXT-8 | Modalità USB per il giocatore | sconsigliato | dopo gate (EXT-8.1 in 1.6) | 3,75 | ENG-17.3 | sì |
-| **Totale** | **103 epic, 456 storie** | | | **790,5** | | |
+| SOA-1 | Ambiente di verifica riproducibile per core, renderer e Media Engine | consigliato | 1.5 (parte subito) | 6,5 | ENG-10.4 (solo SOA-1.3) | no |
+| SOA-2 | Validazione su hardware del core New e del renderer Exact sul Media Engine | in corso | 1.5 (parte subito) | 6 | SOA-1.1 | sì |
+| SOA-3 | Core New completo: le stesse funzioni del Classic | consigliato | 1.6 (SOA-3.1-3.4 in 1.5) | 10,5 | SOA-2.2, CMP-1.2, CMP-3.2, CMP-3.3, CMP-11.1, CMP-12.1 (+1) | sì |
+| SOA-4 | Core New veloce: il budget del mirror | consigliato | 1.6 (SOA-4.7 dopo gate) | 18 | SOA-2.4, SOA-3.1, PRF-2.2, PRF-8.6 (+1) | sì |
+| SOA-5 | Scheduler a scadenza unica con timer letti dal vivo | consigliato | 1.6 | 10,5 | CMP-12.1, ENG-3.3 | sì |
+| SOA-6 | Renderer Exact sul Media Engine pronto per la release | in corso | 1.6 | 13,5 | SOA-2.2, SAV-7.5, PRF-11.5 (solo SOA-6.7) | sì |
+| SOA-7 | Mirror: due GBA su ogni PSP per le ROM identiche | consigliato | 2.0 (SOA-7.2 e SOA-7.4 dopo gate) | 14 | LNK-12, SOA-4, SOA-6.1, GIO-1.2 (solo SOA-7.4) | sì |
+| SOA-8 | Hardware PSP al limite: misure e risorse ferme | consigliato | 1.6 | 10 | SOA-1.1, PRF-5.2, PRF-6.1 | sì |
+| SOA-9 | Audio: mixer M4A nativo e sul Media Engine | condizionato | dopo gate | 12,5 | SOA-4.1, SOA-6.6 (solo SOA-9.4) | sì |
+| SOA-10 | Core New predefinito, poi ritiro del Classic | condizionato | 2.0 | 4,5 | SOA-3.7, SOA-4.2 | sì |
+| **Totale** | **113 epic, 511 storie** | | | **896,5** | | |
 
 ## Catalogo delle capacità obiettivo
 
@@ -750,7 +834,42 @@ Le correzioni del controllo delle dipendenze sono applicate nelle sezioni 1-8 in
 **Domanda aperta della seconda passata**
 - **Bit riservati di ROM_OPEN.** CMP-2.5 tratta il significato dato ai bit di value2 che CMP-1.4 aveva riservato come cambio di formato, quindi va nel bump del runtime log della 1.6 (R3); come scritto, CMP-2.5 e CMP-8.4 creano da sole un bump della 1.6. Se invece usare bit riservati vale come compatibile per R1, restano v6, e lo stesso vale per CMP-6.2, CMP-8.3 e CMP-8.4.
 
-Le altre domande della seconda passata sono chiuse: SAV-2.8 controlla `slot_parsed`; il test di LNK-16.5 resta scritto in LNK-16.2, che possiede il parser; R4 è una regola generale; CMP-9.1 si fa nella sessione di PRF-8.6, sulla 1.4.3 pubblicata; «SAV-2 rilasciato» è un gate di rilascio, non una dipendenza; il valore di `browser_view` lo prende la prima storia che esce, come gli id d'azione; PRF-11.4 confronta con la release precedente. UI-3 ed ENG-1.4 citano F-012 come condizione nel testo, non come dipendenza. È chiusa anche la (c), l'ordine dei merge: prima `features/save-read-fixes`, nella 1.4.4 dopo un rebase sulla 1.4.3, poi `features/builtin-open-bios`, ribasato una volta dopo il tag 1.4.4 e unito nella 1.5 dopo ENG-2.1.
+Le altre domande della seconda passata sono chiuse: SAV-2.8 controlla `slot_parsed`; il test di LNK-16.5 resta scritto in LNK-16.2, che possiede il parser; R4 è una regola generale; CMP-9.1 si fa nella sessione di PRF-8.6, sulla 1.4.3 pubblicata; «SAV-2 rilasciato» è un gate di rilascio, non una dipendenza; il valore di `browser_view` lo prende la prima storia che esce, come gli id d'azione; PRF-11.4 confronta con la release precedente. UI-3 ed ENG-1.4 citano F-012 come condizione nel testo, non come dipendenza. È chiusa anche la (c), l'ordine dei merge: prima `features/save-read-fixes`, nella 1.4.4 dopo un rebase sulla 1.4.3, poi `features/builtin-open-bios`, ribasato una volta dopo il tag 1.4.4 e unito nella 1.5 dopo ENG-2.1. Dal 2026-11-04 la (l) la riapre per l'epica.
+
+**Aggiunte del 2026-11-04 (epica state-of-the-art-development)**
+- (l) **Merge del BIOS integrato e del core New verso develop.** Il main dell'epica contiene già BIOS integrato, core New ed Exact; New ed Exact sono opzioni non predefinite e il BIOS integrato entra solo senza un `gba_bios.bin` valido. Proposta: le release escono da main (`release/X.Y.Z`, poi develop e master), compresa la 1.4.4: con un `gba_bios.bin` valido il BIOS integrato non cambia nulla e i savestate fatti con `gba_bios.bin` restano uguali a quelli della 1.4.3. Alternativa: la 1.4.4 esce da develop con il solo `wip/save-store`, e main entra in develop dopo il tag, come diceva la (c).
+- (m) **Lavoro solo Classic.** Proposta: le storie di velocità solo Classic (PRF-7, PRF-8 tranne PRF-8.6, PRF-9.2-9.6, PRF-10 tranne PRF-10.1, ENG-12) restano congelate finché SOA-10.1 non decide; le correzioni di correttezza del Classic (CMP-5, CMP-11.2-11.6, CMP-12.3-12.6) restano attive finché il Classic è il predefinito.
+- (n) **Verdetti rivisti.** PRF-14 superata da SOA-6 (in corso); PRF-13 assorbita da SOA-9 (condizionato); LNK-12 consigliato insieme a SOA-7 (2.0). Da confermare.
+- (o) **Obiettivi di SOA-4 e SOA-7.** Al massimo 7,0 ms di emulazione per frame su MKSC con New e almeno 59,7 fps nella gara in link vengono dal budget di un frame con due macchine; SOA-2.4 li conferma o li corregge per iscritto.
+
+## Riconciliazione con il nuovo core e il renderer (2026-11-04)
+
+Questo backlog è stato scritto sulla 1.4.3 con il solo core Classic (`cpu.c`, `mips_emit.h`, `mips_stub.S`). Intanto erano stati costruiti, su branch separati, il core New (`features/arm-core`) e il renderer Exact sul Media Engine (`features/gba-renderer`). Dal 2026-11-04 il main dell'epica `state-of-the-art-development` li contiene tutti e tre insieme al BIOS integrato, e il gruppo SOA (sezione 9) ne raccoglie il lavoro. La tabella dice che cosa cambia per le voci che li toccano; il testo delle epic resta quello della revisione del 2026-11-02, con una nota in cima dove serve.
+
+| Voce | Situazione dal 2026-11-04 | Che cosa cambia |
+|---|---|---|
+| CMP-1 | Unito nel main dell'epica; il core New esegue il BIOS integrato attraverso i gestori di `memory.c`. | CMP-1.1: restano revisione, build PSP, prova breve su PSP-1000 e il merge verso develop secondo la decisione (l). CMP-1.2: l'HLE va anche nel core New (SOA-3.3), con lo stesso modulo `bios_hle`. |
+| CMP-3.2, CMP-3.3 | Anche `arm_gba.c:340` scrive 0xE55EC002 dopo un IRQ. | Correzione e casi valgono per i due core (SOA-3.3, SOA-3.4). |
+| CMP-5 | Il core New non ha il percorso veloce dello stack. | Correzione solo Classic; per il New basta il caso `ewram_stack` verde (SOA-3.5). |
+| CMP-11 | Il core New passa SingleStepTests e il lockstep con mGBA su MKSC, FireRed e LeafGreen. | CMP-11.1 serve ai due core; CMP-11.2-11.6 sono solo Classic. |
+| CMP-12 | Il core New ha tempi esatti, prefetch compreso; i timer stanno in `main.c`, condivisi. | CMP-12.1 serve ai due core; CMP-12.2 è sostituita da SOA-5.3; CMP-12.3-12.6 solo Classic; per il New conta la core-rom (SOA-3.5). |
+| PRF-7 | Il core New ha dispatch cache (4096 voci), return stack (16) e link diretti. | Solo Classic, congelata dalla decisione (m). |
+| PRF-8 | Il core New ha una mappa del codice a granuli di 32 byte. | PRF-8.6 (suite SMC misurata) serve ai due core; il resto è solo Classic e congelato (m); per il New c'è SOA-4.5. |
+| PRF-9 | `update_gba` è condiviso. | PRF-9.1 va con lo scheduler (SOA-5); PRF-9.2-9.6 solo Classic, congelate (m). |
+| PRF-10 | Il layout conta per i due core. | PRF-10.1 (esperimento di padding) serve ai due; il resto è solo Classic e congelato (m); per il New c'è SOA-4.3. |
+| PRF-11 | La presentazione cambia con il ME. | Sta nello stesso branch del ME; PRF-11.5 serve a SOA-6.7. |
+| PRF-13 | Il ME è occupato dal renderer Exact; avvio e licenza del ME sono risolti dal PRX nostro. | Assorbita da SOA-9 (mixer M4A nativo, poi un solo programma ME). Verdetto: condizionato, con il gate di SOA-9. |
+| PRF-14 | Implementata in `features/gba-renderer`: log delle scritture, `media_engine.prx`, `video_me.c`; mai provata su console. | Superata da SOA-6, che ne prende gli obiettivi (latenza, soak, divergenze). Il verdetto «sconsigliato» decade. |
+| LNK-12 | Indicazione dell'utente del 2026-11-02: il mirror serve alla gara a 60 fps. | Verdetto rivisto: consigliato, milestone 2.0, insieme a SOA-7. La parte CPU di LNK-12.8 è in gran parte fatta (lo stato del core New sta in una struct). |
+| ENG-3 | I due core hanno tempi diversi. | Golden e hash di replay si tengono per core. |
+| ENG-5 | Il core New ha test host propri (interprete IR, Unicorn). | ENG-5.2 e ENG-5.3 solo Classic; ENG-5.1 ed ENG-5.4 per tutti. |
+| ENG-6 | PPSSPP headless era già stato costruito nella milestone 3. | SOA-1.4 lo rende riproducibile; ENG-6.1 parte da lì. |
+| ENG-10.4 | È la stessa lista di suite di terzi che serve a check-core. | SOA-1.3 la estende. |
+| ENG-12 | L'interprete IR del core New è già un motore di riferimento indipendente. | ENG-12.5 non serve al New; il resto è solo Classic e congelato (m). |
+| ENG-14 | I due core scrivono codice a run time. | ENG-14.1 ed ENG-14.4 per i due core (ENG-14.4 con SOA-8.1). |
+| PRF-5 | Il core New usa le cache del Classic (`ARM_CACHE_OPS` 0x20000). | PRF-5.3 dimensiona le cache per i due core. |
+
+Restano fuori dal repository due lavori citati dal backlog: `features/save-read-fixes` (SAV-1 in corso e SAV-2.8, non committato) va unito in `wip/save-store` quando chi lo ha lo pubblica; il pacchetto di prova della milestone 3 si rifà da main (SOA-2.1).
 
 ## 1. Salvataggi, stati e affidabilità
 
@@ -1201,6 +1320,8 @@ Questo gruppo decide se un gioco parte e se gira come sull'hardware: BIOS integr
 
 ### CMP-1 — BIOS GBA aperto integrato (avvio senza gba_bios.bin)
 
+> **2026-11-04:** CMP-1.1: restano revisione, build PSP, prova breve su PSP-1000 e il merge verso develop secondo la decisione (l). CMP-1.2: l'HLE va anche nel core New (SOA-3.3), con lo stesso modulo `bios_hle` (vedi «Riconciliazione con il nuovo core e il renderer»).
+
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
 | in corso | 1.5 (CMP-1.7 dopo gate) | 10 gg | CMP-3.1, SAV-2.7, ENG-2.1, ENG-1.6 |
@@ -1251,6 +1372,7 @@ Il suo `source/bios/README.md` elenca i difetti del BIOS aperto:
 - Se la decisione (e) rifiuta la correzione di IntrWait, CMP-1 non raggiunge il suo obiettivo: il limite ai flag 0-7 resta scritto in `source/bios/README.md`, e CMP-1.5 ed EXT-3.3 partono senza CMP-1.3.
 
 #### CMP-1.1 — Chiudere e fondere il branch features/builtin-open-bios · S, 1 gg · dipende da: SAV-2.7, ENG-2.1 · PSP: sì
+- **Stato 2026-11-04:** già nel main dell'epica con il core New e il renderer Exact; restano revisione, build PSP, prova breve su PSP-1000 e merge verso develop (decisione (l)).
 - **Cosa:** Il lavoro è implementato e committato; manca solo il merge. Il branch contiene:
   - `load_bios` che restituisce −1 se il file manca o è una copia dell'integrato, e −2 se non è un BIOS GBA (vettore di reset `EA000018`), con `MSG_ERR_BIOS_INVALID`;
   - l'immagine in `source/src/open_bios.h` (sha256 `661a9afb…`, uguale a libretro 5819380) e il sorgente ReGBA 313ddd0 in `source/bios/`;
@@ -1520,6 +1642,8 @@ Però non spediamo nessuna tabella: il repository non ha mai avuto un `game_conf
 
 ### CMP-3 — HALT conforme a GBATEK, open bus del BIOS a run time e ROM di prova del core
 
+> **2026-11-04:** CMP-3.2, CMP-3.3: Correzione e casi valgono per i due core (SOA-3.3, SOA-3.4) (vedi «Riconciliazione con il nuovo core e il renderer»).
+
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
 | consigliato | 1.5 | 3,25 gg | SAV-2.6 |
@@ -1647,6 +1771,8 @@ Senza evidenza non si spedisce.
 - **Licenza:** codice nuovo GPL-2.0-or-later, scritto dalla decodifica degli indirizzi ARM7 di GBATEK.
 
 ### CMP-5 — Stack in EWRAM corretto nel percorso veloce di LDM/STM/PUSH/POP
+
+> **2026-11-04:** Correzione solo Classic; per il New basta il caso `ewram_stack` verde (SOA-3.5) (vedi «Riconciliazione con il nuovo core e il renderer»).
 
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
@@ -2075,6 +2201,8 @@ CMP-5.3 è condizionata: si spedisce solo se il costo resta sotto le soglie di c
 
 ### CMP-11 — Semantica ARM7TDMI nel dynarec: casi della core-rom, MSR, BX, banco FIQ, trasferimenti ^ e IRQ sbloccati
 
+> **2026-11-04:** CMP-11.1 serve ai due core; CMP-11.2-11.6 sono solo Classic (vedi «Riconciliazione con il nuovo core e il renderer»).
+
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
 | consigliato | 1.6 (CMP-11.1 in 1.5) | 7 gg | CMP-3.1, ENG-10.4, ENG-3.3, PRF-1.5, CMP-3.2 (solo CMP-11.6) |
@@ -2200,6 +2328,8 @@ Lo stub `execute_ror_flags_reg` (`mips_stub.S:3610-3625`) e le macro `arm_genera
 - **Licenza:** codice nuovo GPL-2.0-or-later.
 
 ### CMP-12 — Tempi del core al ciclo: timer letti dal vivo, cicli dei salti, store multipli controllati, finestra di prefetch
+
+> **2026-11-04:** CMP-12.1 serve ai due core; CMP-12.2 è sostituita da SOA-5.3; CMP-12.3-12.6 solo Classic; per il New conta la core-rom (SOA-3.5) (vedi «Riconciliazione con il nuovo core e il renderer»).
 
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
@@ -2561,6 +2691,8 @@ Il gruppo copre misura e velocità: metodo A/B, strumentazione, benchmark, budge
 
 ### PRF-5 — Dimensionamento della memoria: buffer ROM a passi di 1 MiB, cache JIT e pagine per modello
 
+> **2026-11-04:** PRF-5.3 dimensiona le cache per i due core (vedi «Riconciliazione con il nuovo core e il renderer»).
+
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
 | consigliato | 1.6 (PRF-5.3-5.4 dopo gate) | 8 gg | PRF-1.1, PRF-1.5, PRF-4.1, PRF-4.2, CMP-1.4, F-120 |
@@ -2662,6 +2794,8 @@ Il gruppo copre misura e velocità: metodo A/B, strumentazione, benchmark, budge
 
 ### PRF-7 — Dispatch cache per i salti indiretti (prima solo BIOS e ROM)
 
+> **2026-11-04:** Solo Classic, congelata dalla decisione (m) (vedi «Riconciliazione con il nuovo core e il renderer»).
+
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
 | condizionato | dopo gate (misura in 1.6) | 13 gg | PRF-1.1, PRF-1.3, PRF-2.3, PRF-2.5, PRF-3.1, CMP-1.4, ENG-15.4, F-120, F-137, PRF-8.6 (solo PRF-7.6) |
@@ -2724,6 +2858,8 @@ Il gruppo copre misura e velocità: metodo A/B, strumentazione, benchmark, budge
 - **Licenza:** codice nuovo GPL-2.0-or-later.
 
 ### PRF-8 — SMC avanzato: suite misurata, meno trappole e ritraduzioni, gate appresi, thunk stabili e link diretti RAM
+
+> **2026-11-04:** PRF-8.6 (suite SMC misurata) serve ai due core; il resto è solo Classic e congelato (m); per il New c'è SOA-4.5 (vedi «Riconciliazione con il nuovo core e il renderer»).
 
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
@@ -2846,6 +2982,8 @@ Il gruppo copre misura e velocità: metodo A/B, strumentazione, benchmark, budge
 
 ### PRF-9 — Percorsi rapidi esatti per registri IRQ, scheduler, cambi di modo e attese
 
+> **2026-11-04:** PRF-9.1 va con lo scheduler (SOA-5); PRF-9.2-9.6 solo Classic, congelate (m) (vedi «Riconciliazione con il nuovo core e il renderer»).
+
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
 | condizionato | dopo gate (PRF-9.2 e PRF-9.5 in 1.6) | 10,75 gg | PRF-1.1, PRF-1.3, PRF-2.2, PRF-2.3, PRF-3.1, PRF-8.6, CMP-1.4, CMP-3.1, CMP-11.2-11.6, ENG-15.4, F-120, F-124, F-137 |
@@ -2916,6 +3054,8 @@ Il gruppo copre misura e velocità: metodo A/B, strumentazione, benchmark, budge
 
 ### PRF-10 — Layout dell'I-cache fissato, dati caldi a set fisso e controllo del budget del nucleo caldo
 
+> **2026-11-04:** PRF-10.1 (esperimento di padding) serve ai due; il resto è solo Classic e congelato (m); per il New c'è SOA-4.3 (vedi «Riconciliazione con il nuovo core e il renderer»).
+
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
 | condizionato | dopo gate (PRF-10.1 in 1.6) | 8,25 gg | PRF-1.1, PRF-3.1, F-120, F-137, F-138 |
@@ -2977,6 +3117,8 @@ Il gruppo copre misura e velocità: metodo A/B, strumentazione, benchmark, budge
 - **Licenza:** codice nuovo GPL-2.0-or-later.
 
 ### PRF-11 — Latenza dell'input misurata e ridotta, triplo buffer senza latenza aggiunta
+
+> **2026-11-04:** Sta nello stesso branch del ME; PRF-11.5 serve a SOA-6.7 (vedi «Riconciliazione con il nuovo core e il renderer»).
 
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
@@ -3113,6 +3255,8 @@ Il gruppo copre misura e velocità: metodo A/B, strumentazione, benchmark, budge
 
 ### PRF-13 — Media Engine: prima l'audio
 
+> **2026-11-04:** Assorbita da SOA-9 (mixer M4A nativo, poi un solo programma ME). Verdetto: condizionato, con il gate di SOA-9 (vedi «Riconciliazione con il nuovo core e il renderer»).
+
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
 | condizionato | dopo gate | 14 gg | PRF-1.5, SAV-7.5, F-137 |
@@ -3163,6 +3307,8 @@ Il gruppo copre misura e velocità: metodo A/B, strumentazione, benchmark, budge
 - **Accettazione:** zero freeze, hash identici, guadagno di throughput significativo sul titolo del gate.
 
 ### PRF-14 — Media Engine: renderer video opzionale
+
+> **2026-11-04:** Superata da SOA-6, che ne prende gli obiettivi (latenza, soak, divergenze). Il verdetto «sconsigliato» decade (vedi «Riconciliazione con il nuovo core e il renderer»).
 
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
@@ -5217,6 +5363,8 @@ Il gruppo copre la verifica su hardware del cavo tra versioni diverse e le altre
 
 ### LNK-12 — Link a due core per la stessa ROM
 
+> **2026-11-04:** Verdetto rivisto: consigliato, milestone 2.0, insieme a SOA-7. La parte CPU di LNK-12.8 è in gran parte fatta (lo stato del core New sta in una struct) (vedi «Riconciliazione con il nuovo core e il renderer»).
+
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
 | sconsigliato (dietro gate) | dopo gate | 36 gg | F-007, F-025, F-027, F-120, F-122, LNK-1.3, LNK-2.2, LNK-7.1, LNK-8.1 |
@@ -5700,6 +5848,8 @@ Il gruppo copre tre cose: come rilasciamo (gate, prerelease, manifest, sorgente)
 
 ### ENG-3 — Replay deterministico con hash dello stato ospite
 
+> **2026-11-04:** Golden e hash di replay si tengono per core (vedi «Riconciliazione con il nuovo core e il renderer»).
+
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
 | consigliato | 1.6 | 8,75 gg | ENG-2.2, ENG-10.3, F-027 (solo ENG-3.6), CMP-7.3 (solo ENG-3.7), SAV-2.6, CMP-1.1, CMP-3.1, CMP-11.1, CMP-12.1 e UI-10.5 (solo ENG-3.5) |
@@ -5810,6 +5960,8 @@ Il gruppo copre tre cose: come rilasciamo (gate, prerelease, manifest, sorgente)
 
 ### ENG-5 — Test host del core, prova di regressione e test dell'emettitore MIPS
 
+> **2026-11-04:** ENG-5.2 e ENG-5.3 solo Classic; ENG-5.1 ed ENG-5.4 per tutti (vedi «Riconciliazione con il nuovo core e il renderer»).
+
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
 | consigliato | 1.6 | 5 gg | F-004 (solo ENG-5.3) |
@@ -5856,6 +6008,8 @@ Il gruppo copre tre cose: come rilasciamo (gate, prerelease, manifest, sorgente)
 - **Accettazione:** Un modulo puro aggiunto senza test fa fallire `make check`, col nome del modulo.
 
 ### ENG-6 — Rete di regressione PPSSPP: e2e dell'EBOOT, golden video e colori GE
+
+> **2026-11-04:** SOA-1.4 lo rende riproducibile; ENG-6.1 parte da lì (vedi «Riconciliazione con il nuovo core e il renderer»).
 
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
@@ -6030,6 +6184,8 @@ Il gruppo copre tre cose: come rilasciamo (gate, prerelease, manifest, sorgente)
 
 ### ENG-10 — Fixture ridistribuibili: ROM di test GPL e strumenti per salvataggi Gen-3
 
+> **2026-11-04:** ENG-10.4: SOA-1.3 la estende (vedi «Riconciliazione con il nuovo core e il renderer»).
+
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
 | consigliato | 1.6 (ENG-10.1 in 1.4.4; ENG-10.4 in 1.5) | 4,5 gg | SAV-2.6 (solo ENG-10.3) |
@@ -6123,6 +6279,8 @@ Il gruppo copre tre cose: come rilasciamo (gate, prerelease, manifest, sorgente)
 - **Accettazione:** Numeri pubblicati con metodo e incertezza, da 3 serie di 30 pressioni per modello e renderer; la mediana misurata con la fotocamera differisce di al massimo un vblank (16,7 ms) dal valore previsto dalla telemetria di PRF-11.5 sulle stesse scene; nessuna affermazione senza misura.
 
 ### ENG-12 — Build qemu-mipsel del dynarec con oracolo su corpus, controllo del codice stantio e interprete di riferimento
+
+> **2026-11-04:** ENG-12.5 non serve al New; il resto è solo Classic e congelato (m) (vedi «Riconciliazione con il nuovo core e il renderer»).
 
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
@@ -6218,6 +6376,8 @@ Il gruppo copre tre cose: come rilasciamo (gate, prerelease, manifest, sorgente)
 - **Licenza:** codice nuovo GPL-2.0-or-later.
 
 ### ENG-14 — Strumenti di coerenza della I-cache e del JIT
+
+> **2026-11-04:** ENG-14.1 ed ENG-14.4 per i due core (ENG-14.4 con SOA-8.1) (vedi «Riconciliazione con il nuovo core e il renderer»).
 
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
@@ -6901,3 +7061,625 @@ Non si sa quali titoli siano colpiti.
   - PSP-1000 e PSP Go: 20 cicli e una sospensione con l'USB attivo.
 - **Accettazione:** nessun errore di file system; il gioco riprende con lo stesso salvataggio; durante il link la voce si rifiuta con il motivo; i testi, motivo compreso, ci sono nelle 5 lingue.
 - **Licenza:** codice nuovo GPL-2.0-or-later.
+
+## 9. Stato dell'arte: nuovo core, Media Engine, mirror e hardware PSP (SOA)
+
+Il gruppo copre l'epica `state-of-the-art-development`: un core ARM scritto da zero, il renderer Exact sul Media Engine, il mirror (due GBA su ogni PSP per le ROM identiche) e l'uso misurato di ogni risorsa della PSP che oggi resta ferma. L'indicazione è dell'utente (2026-11-02): studiare a fondo l'hardware, poi costruire core e renderer nostri, senza copiare codice di altri progetti, fino alla gara di Mario Kart: Super Circuit (MKSC) a 60 fps in link. Le idee di altri progetti si possono usare; il loro codice no, salvo le importazioni con licenza del principio 7.
+
+**Cosa esiste già nel main dell'epica (2026-11-04)**
+- **Core New** (`source/src/arm_core.h`, `arm_ir.h`, `arm_decode.c`, `arm_interp.c`, `arm_mips.c`, `arm_gba.c`): decoder, IR a op da 8 byte, interprete IR e traduttore MIPS per Allegrex (solo MIPS32 più `ext`, `ins`, `rotr`, `rotrv`, `clz`, `min`, `max`; nessuna istruzione VFPU). Tempi al ciclo come funzione pura del flusso di istruzioni, buffer di prefetch compreso; flag N/Z pigri, liveness dei flag, propagazione delle costanti, uscite tipizzate, dispatch cache da 4096 voci, return stack da 16, link diretti, mappa del codice a granuli di 32 byte. SingleStepTests: 0 falliti (2.183.600 casi passati, il resto documentato o imprevedibile); lockstep con mGBA 0.10.3 senza divergenze su MKSC (174,7 milioni di istruzioni), FireRed e LeafGreen (1,49 miliardi ciascuno); jsmolka, armwrestler e FuzzARM verdi; backend identico all'interprete su tutti i casi (Unicorn, `scripts/build-unicorn.sh`). Sul Mac 10,8 istruzioni host per istruzione guest su MKSC. Nell'emulatore si sceglie con Prestazioni > Avanzate > CPU core (Classic predefinito, New sperimentale); passa per i gestori di `memory.c`, quindi esegue anche il BIOS integrato.
+- **Renderer Exact** (`source/src/gba_ppu.c`, `gba_ppu_log.c`, `video_me.c`, `source/prx/media_engine/`): PPU per scanline in C portabile, identica al pixel a mGBA (build a 16 bit) su 5.428 frame di MKSC, 14.914 di FireRed, 5.756 di LeafGreen, la suite video di mGBA e 33 demo tonc, con le dissolvenze scure a un passo di tolleranza. Sul firmware custom disegna sul Media Engine tramite un log delle scritture video e un PRX kernel (programma ME di 8,3 KB); altrove disegna sulla CPU. Show FPS termina con ME o CPU.
+- **BIOS integrato** (CMP-1): ripiego senza `gba_bios.bin`, valido con i due core.
+- **Mai provato su console**: il pacchetto di prova della milestone 3 (core New più ME) è pronto dal 2026-11-03 ma non è stato installato (SOA-2).
+
+**Fatti misurati sull'hardware** (documentazione pubblica dell'hardware, pspautotests, PPSSPP, uOFW e misure nostre; quelli segnati «da misurare» non sono verificati)
+
+| Risorsa | Fatto | Dove serve |
+|---|---|---|
+| Allegrex a 333 MHz | salto preso circa 3 cicli con il delay slot; `mult` latenza 7, `div` 21; load-to-use in L1 circa 3 cicli; `ext`/`ins`/`rotr`/`clz`/`min`/`max`/`madd`/`seb`/`seh`/`wsbw` coprono ROR, LDRSB/LDRSH, MLA/UMLAL, saturazioni ed estrazione dei flag | SOA-4 |
+| I-cache | 16 KiB, 2 vie, linee da 64 byte; un miss costa circa 215 ns (circa 72 cicli) | SOA-4.3 |
+| D-cache | 16 KiB, write-back e write-allocate; nessuna coerenza hardware con GE, DMA e ME | SOA-6, SOA-8 |
+| Scratchpad | 16 KiB a 0x00010000, solo CPU principale; latenza da misurare | SOA-4.6, SOA-8.1 |
+| RAM principale (PSP-1000) | accesso casuale circa 72 cicli; `lw` sequenziale circa 294 MB/s, `lv.q` circa 668 MB/s | SOA-8.2 |
+| VFPU | 128 registri da 32 bit; `lv.q`/`sv.q` solo allineati a 16 byte; nessun SIMD intero; assente sul ME | SOA-6.3, SOA-8.2 |
+| Media Engine | secondo Allegrex senza VFPU, stesso clock, cache proprie non coerenti; vede la RAM principale agli stessi indirizzi, non la VRAM né la scratchpad; si avvia solo da kernel, senza syscall; mailbox nella RAM non cached, semaforo hardware a 0xBC100048, interrupt tra le CPU a 0xBC100044 (IRQ 31 sulla CPU principale) | SOA-6, SOA-7.2, SOA-9.4 |
+| Contesa del bus | il ME che sonda la RAM non cached senza pause ha portato l'RTT ad-hoc da 17 a 44 ms (misura nostra); il mix audio sul ME rallenta del 10-20% le texture del GE lette dalla RAM | SOA-6.1, SOA-6.2 |
+| GE | VRAM 2 MiB (4 MiB dalla PSP-2000); 5551 è bit per bit il BGR555 del GBA; sprite testurizzati dalla VRAM a strisce ≤ 128 px 8,3 ns/pixel, a tutta larghezza 38,3 (a 222/111 MHz); un livello 240×160 dalla VRAM circa 0,21 ms a 333/166 | SOA-6.4 |
+| DMA | `sceDmacMemcpy` circa 236 byte/µs, un trasferimento per volta, il chiamante resta bloccato | SOA-8.3 |
+| Memoria | 32 MiB sulla PSP-1000 (24 per l'utente), 64 dalla 2000 (circa 55 con MEMSIZE=1); partizione volatile da 4 MiB a 0x08400000 | SOA-8.4 |
+| Tempi | VBlank è l'IRQ 30, disponibile in modo utente; la PSP va a 59,94 Hz, il GBA a 59,73 (un frame PSP in più ogni circa 281); `sceKernelDelayThread` sotto i 200 µs dura 210-230 µs; i thread WLAN stanno a priorità 0x27 | SOA-8.5 |
+| Costi nostri (1.4.3) | MKSC con il Classic: circa 12,5 ms di emulazione per frame, circa 5 ms per frame disegnato; il mix M4A è il codice più caldo; in link 41-42 fps con il 59% dei frame disegnati | obiettivi di SOA-4, SOA-6, SOA-7 |
+
+**Idee mai usate, o da fare meglio, che il gruppo prova**
+1. Renderer identico al pixel sul ME guidato da un log delle scritture, con il processore principale che non aspetta mai (fatto, da portare in release con SOA-6).
+2. ME che dorme con `halt` e interrupt invece di sondare la RAM, per non togliere banda al Wi-Fi (SOA-6.1).
+3. Flag di sincronizzazione fuori dalla DDR, nella memoria locale del ME o nella SRAM condivisa a 0xBFC00000 (SOA-6.2, da misurare: nessuno lo documenta).
+4. Nel mirror, la CPU della seconda GBA eseguita dal ME con il codice del nostro traduttore, che non usa la VFPU (SOA-7.2).
+5. Nel mirror, la macchina dell'altro giocatore senza PPU né mixer: ognuno vede solo la propria (SOA-7.3).
+6. Mixer M4A nativo, identico al bit al codice del gioco, poi sul ME (SOA-9).
+7. Frame del ME mostrato direttamente a scala 1x, senza passare dal GE (SOA-6.4).
+8. Uno scheduler a scadenza unica con i timer calcolati alla lettura, condiviso dai due core (SOA-5).
+
+**Regola per il core.** Dal 2026-11-04 «modifica al core» comprende anche `arm_*.c`. Finché il Classic è il predefinito (SOA-10), ogni correzione di semantica o di tempi si fa o si verifica su entrambi i core, e il core New si accetta con la core-rom, check-core (SingleStepTests, lockstep con mGBA, Unicorn) e compare-benchmarks 3+3. Gli hash di replay (ENG-3) si confrontano per core: i due core hanno tempi diversi.
+
+### SOA-1 — Ambiente di verifica riproducibile per core, renderer e Media Engine
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 (parte subito) | 6,5 gg | ENG-10.4 (solo SOA-1.3) |
+
+**Copre:** nessuna capacità del catalogo; serve al lavoro in parallelo di più persone e agenti.
+
+**Obiettivo:** su una macchina pulita (macOS arm64 e Linux x86_64) un solo comando prepara tutto, con versioni e sha256 fissati, in al massimo 30 minuti; poi `make check`, `make test-sanitize`, `make check-core`, `make check-render`, la build PSP e l'avvio dell'EBOOT in PPSSPP headless passano senza altri passi. La CI esegue su ogni PR verso il main dell'epica `make check` e le versioni rapide di check-core e check-render (al massimo 10 minuti).
+
+**Da noi oggi:** toolchain pspdev, mGBA 0.10.3 a 16 bit, Unicorn con le patch Allegrex, i dati di SingleStepTests e delle suite di terzi e PPSSPP headless stavano nella cartella temporanea di una sessione e sono andati persi; esiste solo `scripts/build-unicorn.sh`. Senza PSPSDK `make check` si ferma su `test_perf_dma_probe` (`PSP_SDK_INCLUDE` nel `Makefile`), e `scripts/check-lifecycle.sh` richiede `rg`.
+
+**Come ci arriviamo:**
+- Uno script `scripts/setup-dev.sh` scarica e verifica tutto in `ext/` (ignorato da Git), senza binari nel repository (`scripts/check-tree.sh`).
+- Ogni strumento a versione fissata, con lo sha256 scritto nello script.
+- Le versioni rapide dei check usano un sottoinsieme fisso di casi, scelto perché ogni mutante noto del core e del renderer lo fa fallire.
+
+**Gate prima di iniziare:** nessuno.
+
+**Rischi:**
+- Le patch di Unicorn per le istruzioni Allegrex vanno tenute allineate alla versione fissata.
+- I dati di SingleStepTests sono grandi: si scaricano, non si copiano nel repository.
+
+#### SOA-1.1 — scripts/setup-dev.sh: toolchain pspdev e header SDK a versione fissata in ext/ · S, 1 gg · dipende da: — · PSP: no
+- **Cosa:** script idempotente che scarica la toolchain pspdev per macOS arm64 e Linux x86_64, ne verifica lo sha256 e la mette in `ext/pspdev`; stampa le variabili da esportare (`PATH`, `PSPDEV`).
+- **File:** `scripts/setup-dev.sh`, `.gitignore`, `CONTRIBUTING.md`
+- **Test:** due esecuzioni di fila non riscaricano nulla; uno sha256 sbagliato ferma lo script con un messaggio.
+- **Accettazione:** su una macchina pulita `scripts/setup-dev.sh` poi `make psp-build` producono `EBOOT.PBP`.
+- **Licenza:** solo script nostri; la toolchain resta fuori dal repository.
+
+#### SOA-1.2 — mGBA 0.10.3 a 16 bit e harness di render e lockstep ricostruiti dallo script · S, 1 gg · dipende da: SOA-1.1 · PSP: no
+- **Cosa:** lo script costruisce mGBA 0.10.3 in `ext/mgba-0.10.3/build16` con `-DCOLOR_16_BIT` e `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` (su macOS `-framework CoreFoundation`), e la build normale per `check-rom-link`.
+- **File:** `scripts/setup-dev.sh`, `scripts/check-render.sh`, `scripts/check-core.sh`, `scripts/check-rom-link.sh`
+- **Test:** `make check-render` con le ROM dell'utente indicate dalle variabili già documentate.
+- **Accettazione:** check-render e il lockstep di check-core girano senza percorsi scritti a mano.
+- **Licenza:** mGBA (MPL-2.0) solo come strumento, fuori dal repository.
+
+#### SOA-1.3 — Unicorn con le patch Allegrex e dati di test della CPU a hash fissi · M, 1,5 gg · dipende da: SOA-1.1, ENG-10.4 · PSP: no
+- **Cosa:** `scripts/build-unicorn.sh` chiamato dallo script di preparazione; SingleStepTests ARM7TDMI, jsmolka gba-tests, armwrestler e FuzzARM scaricati a commit e sha256 fissati (estende la lista di ENG-10.4).
+- **File:** `scripts/setup-dev.sh`, `scripts/build-unicorn.sh`, `scripts/check-core.sh`
+- **Test:** `make check-core` completo su una macchina pulita.
+- **Accettazione:** `SST_DIR`, `MGBA_DIR` e la libreria Unicorn hanno valori predefiniti in `ext/`; check-core trova tutto da solo.
+- **Licenza:** dati e strumenti di terzi fuori dal repository, con licenza e commit scritti nello script.
+
+#### SOA-1.4 — PPSSPP headless ricostruibile e make check-eboot · M, 1,5 gg · dipende da: SOA-1.1 · PSP: no
+- **Cosa:** PPSSPP headless a commit fissato in `ext/`; `make check-eboot` avvia l'EBOOT con Classic e New su tre ROM indicate dall'utente per N frame e controlla che non ci siano crash e che il salvataggio di FireRed resti valido. È il primo passo di ENG-6.1; il ME in PPSSPP resta in ripiego sulla CPU.
+- **File:** `scripts/setup-dev.sh`, `scripts/check-eboot.sh`, `Makefile`
+- **Test:** un EBOOT con un crash voluto fa fallire il controllo.
+- **Accettazione:** `make check-eboot` riproduce le prove PPSSPP della milestone 3 (gara MKSC di 20.000 frame, FireRed con salvataggio, LeafGreen) con i due core.
+- **Licenza:** PPSSPP (GPL-2.0-or-later) solo come strumento, fuori dal repository.
+
+#### SOA-1.5 — check-core e check-render rapidi per la CI e per ogni PR verso main · S, 1 gg · dipende da: SOA-1.2, SOA-1.3 · PSP: no
+- **Cosa:** `make check-core-quick` e `make check-render-quick`: sottoinsieme fisso di SingleStepTests, un milione di istruzioni di lockstep per gioco e 300 frame di render per gioco; job CI che li esegue quando cambiano `arm_*`, `gba_ppu*`, `video_me.c` o `source/prx/media_engine/`.
+- **File:** `Makefile`, `scripts/check-core.sh`, `scripts/check-render.sh`, workflow CI di ENG-2.5
+- **Test:** un mutante del decoder e uno del renderer fanno fallire le versioni rapide.
+- **Accettazione:** al massimo 10 minuti in CI; il job è obbligatorio per le PR verso il main dell'epica.
+- **Licenza:** nessuna nuova.
+
+#### SOA-1.6 — make check senza dipendenze nascoste · S, 0,5 gg · dipende da: — · PSP: no
+- **Cosa:** `check-lifecycle.sh` funziona anche senza `rg` (ripiego su `grep -E`); senza PSPSDK `make check` dice quale variabile impostare invece di fallire a metà compilazione.
+- **File:** `scripts/check-lifecycle.sh`, `Makefile`
+- **Test:** `make check` con un `PATH` senza `rg` e senza `psp-config`.
+- **Accettazione:** il messaggio indica `scripts/setup-dev.sh`; con lo SDK presente nulla cambia.
+- **Licenza:** nessuna nuova.
+
+### SOA-2 — Validazione su hardware del core New e del renderer Exact sul Media Engine
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| in corso | 1.5 (parte subito) | 6 gg | SOA-1.1 |
+
+**Copre:** F-037 (prima prova su console del renderer ME).
+
+**Obiettivo:** numeri misurati su PSP-1000 e PSP-2000, legati allo sha256 di `EBOOT.PBP` in `docs/HARDWARE-RESULTS.md`: MKSC da solo con Classic e New (ms di emulazione per frame, mediana e p95, frame disegnati), Exact sulla CPU e sul ME (ms di rendering, frame disegnati), una gara in link e uno scambio FireRed↔LeafGreen con New ed Exact nei due ruoli, FireRed e LeafGreen 10 minuti con salvataggio; zero crash e 20 cicli di sleep/wake con il ME attivo.
+
+**Da noi oggi:** il pacchetto di prova della milestone 3 (EBOOT 40cb4c21…) è pronto dal 2026-11-03 con un installer che aspetta le due PSP e archivia prima i log; non è mai stato installato. PPSSPP esegue l'EBOOT con i due core, il ME solo nel ripiego sulla CPU. I record 9, 10 e 11 del runtime log sono i contatori del ME, il record 12 il core di ogni ROM aperta.
+
+**Come ci arriviamo:** una sola sessione per modello, con la Diagnostica che registra ogni prova; poi l'analisi dei log con `tools/decode_runtime_log.py` e una decisione scritta per ogni gate che dipende da questi numeri.
+
+**Gate prima di iniziare:** nessuno; serve il permesso dell'utente per installare sulle sue console.
+
+**Rischi:**
+- Il ME può bloccare la console: il ripiego sulla CPU e l'opzione Exact spenta di default limitano il danno.
+- La PSP-1000 ha un Memory Stick da 31 MB: le ROM vanno scambiate con il salvataggio messo al sicuro prima.
+
+#### SOA-2.1 — Build di prova da main con New ed Exact e installer che archivia prima i log · S, 0,5 gg · dipende da: SOA-1.1 · PSP: sì
+- **Cosa:** pacchetto da main con `media_engine.prx`, `exception.prx` ed EBOOT; script che, per ogni PSP montata, copia i log in `artifacts/`, installa ed espelle.
+- **File:** `scripts/package-release.sh`, `scripts/check-package.sh`
+- **Test:** `check-package.sh` sul pacchetto.
+- **Accettazione:** sha256 dell'EBOOT installato uguale su entrambe le console.
+- **Licenza:** nessuna nuova.
+
+#### SOA-2.2 — Sessione da soli: MKSC, FireRed, LeafGreen e Golden Sun su Classic/New × CPU/ME · M, 1,5 gg · dipende da: SOA-2.1 · PSP: sì
+- **Cosa:** per ogni gioco e combinazione una registrazione della Diagnostica di 60 s; Reset ROM dopo ogni cambio di core.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** report salvati e decodificati.
+- **Accettazione:** tabella completa per PSP-1000 e PSP-2000, con frame emulati, frame disegnati, ms di emulazione e di rendering.
+- **Licenza:** nessuna.
+
+#### SOA-2.3 — Sessione link: gara MKSC e scambio FireRed↔LeafGreen con New ed Exact nei due ruoli · S, 1 gg · dipende da: SOA-2.2 · PSP: sì
+- **Cosa:** una gara per ruolo e uno scambio per ruolo, con i contatori del link (gruppi 4-8) e RTT con il ME acceso e spento.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** `tools/analyze_link_benchmark.py` sui log.
+- **Accettazione:** fps, attese e RTT per ruolo; scambio salvato su entrambe le console e accettato da `tools/gen3_sav_check.py` (ENG-10.1).
+- **Licenza:** nessuna.
+
+#### SOA-2.4 — Analisi dei log e decisioni scritte per i gate di SOA-4, SOA-6 e SOA-7 · S, 1 gg · dipende da: SOA-2.2, SOA-2.3 · PSP: no
+- **Cosa:** per ogni gate un sì o un no con i numeri: obiettivo di SOA-4 confermato o corretto, scelta tra renderer e CPU di B sul ME per SOA-7.2, priorità tra SOA-6.1 e SOA-6.3.
+- **File:** `docs/DESIGN-DECISIONS.md`
+- **Test:** nessuno.
+- **Accettazione:** ogni numero rimanda al report e allo sha256 dell'EBOOT.
+- **Licenza:** nessuna.
+
+#### SOA-2.5 — Correzione dei difetti trovati su hardware · M, 2 gg · dipende da: SOA-2.4 · PSP: sì
+- **Cosa:** un commit per difetto, ciascuno con il test host che lo riproduce quando è possibile; i difetti più grandi aprono una storia nell'epic giusta.
+- **File:** secondo il difetto
+- **Test:** il test del difetto, `make check`, check-core e check-render.
+- **Accettazione:** la sessione di SOA-2.2 ripetuta senza il difetto.
+- **Licenza:** nessuna nuova.
+
+### SOA-3 — Core New completo: le stesse funzioni del Classic
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 (SOA-3.1-3.4 in 1.5) | 10,5 gg | SOA-2.2, CMP-1.2, CMP-3.2, CMP-3.3, CMP-11.1, CMP-12.1, CMP-9.1 |
+
+**Copre:** nessuna capacità del catalogo; parità del core New.
+
+**Obiettivo:** con il core New funziona tutto ciò che oggi funziona con il Classic: idle loop di `game_config.txt`, BIOS integrato con HLE di Div e open bus a run time, HALT conforme, savestate scambiabili tra core e tra BIOS, trucchi, link lockstep e Pokémon, avanti veloce. La core-rom (CMP-3.1, CMP-11.1, CMP-12.1, EXT-3) è verde con New su PSP-1000 e su un secondo modello, e i 40 titoli di CMP-9.4 arrivano al gameplay e salvano con New.
+
+**Da noi oggi:** la work RAM non è allineata per l'accesso diretto (circa +4-6% di istruzioni host); con New gli idle loop di `game_config.txt` non vengono saltati; il core New vive nelle cache del Classic con `-DARM_CACHE_OPS=0x20000u`; dopo un IRQ `arm_gba.c:340` scrive sempre 0xE55EC002 in `bios_read_protect`, il valore del BIOS ufficiale; il BIOS integrato non è mai stato provato con New.
+
+**Come ci arriviamo:** ogni funzione passa dalla stessa colla di `arm_gba.c`; dove il Classic ha codice proprio (HLE, idle loop) il core New usa lo stesso modulo puro, così i due core non divergono.
+
+**Gate prima di iniziare:** SOA-2.2 non mostra crash sistematici del core New.
+
+**Rischi:** gli idle loop saltati cambiano i tempi osservati dal gioco; si accettano solo con hash di replay identici a quelli senza salto, come per CMP-2.4.
+
+#### SOA-3.1 — Work RAM allineata per l'accesso diretto del core New · S, 1 gg · dipende da: SOA-2.2 · PSP: sì
+- **Cosa:** IWRAM ed EWRAM allineate in modo che il codice generato usi un solo registro base per regione.
+- **File:** `source/src/memory.c`, `source/src/arm_gba.c`, `source/src/arm_mips.c`
+- **Test:** check-core completo; misura delle istruzioni host per istruzione guest sul Mac.
+- **Accettazione:** almeno il 4% di istruzioni host in meno su MKSC, nessuna differenza di hash.
+- **Licenza:** nessuna nuova.
+
+#### SOA-3.2 — Idle loop di game_config.txt con il core New · M, 1,5 gg · dipende da: SOA-2.2 · PSP: sì
+- **Cosa:** le voci `idle_loop_eliminate_target` valgono anche con New, con la stessa semantica del Classic.
+- **File:** `source/src/arm_gba.c`, `source/src/arm_mips.c`, `source/src/memory.c`
+- **Test:** caso host con un ciclo di attesa noto; replay di 2 minuti identico con e senza salto.
+- **Accettazione:** guadagno misurato su due titoli con idle loop in tabella, hash identici.
+- **Licenza:** nessuna nuova.
+
+#### SOA-3.3 — BIOS integrato con il core New: HLE di Div/DivArm e open bus a run time · M, 2 gg · dipende da: CMP-1.2, CMP-3.3 · PSP: sì
+- **Cosa:** le SWI 6/7 in HLE nell'IR del core New con il modulo `bios_hle` di CMP-1.2 e la stessa chiave `bios_div_hle`; `bios_read_protect` scritto a run time dopo SWI e IRQ con il valore del BIOS caricato (CMP-3.3), non fisso.
+- **File:** `source/src/arm_decode.c`, `source/src/arm_interp.c`, `source/src/arm_mips.c`, `source/src/arm_gba.c`
+- **Test:** `cases_bios.c` della core-rom con New; check-core.
+- **Accettazione:** con il BIOS integrato e New gli esiti di CMP-1.2 coincidono con quelli del Classic.
+- **Licenza:** nessuna nuova.
+
+#### SOA-3.4 — HALT e IRQ sbloccati con il core New · S, 1 gg · dipende da: CMP-3.2, CMP-11.1 · PSP: sì
+- **Cosa:** i casi `halt_ime0`, `halt_cpsr_i` e quelli di CMP-11.6 verdi con New.
+- **File:** `source/src/arm_gba.c`, `source/src/main.c`
+- **Test:** core-rom con New su PSP.
+- **Accettazione:** casi verdi su PSP-1000 e su un secondo modello.
+- **Licenza:** nessuna nuova.
+
+#### SOA-3.5 — Core-rom completa verde con New su due modelli · M, 1,5 gg · dipende da: CMP-11.1, CMP-12.1, SOA-3.3, SOA-3.4 · PSP: sì
+- **Cosa:** tutti i casi di CMP-3.1, CMP-11.1, CMP-12.1, EXT-3 e il caso `ewram_stack` di CMP-5.1 eseguiti con New; ogni FAIL apre una correzione nel core New.
+- **File:** `docs/HARDWARE-RESULTS.md`, `source/src/arm_*.c` secondo i FAIL
+- **Test:** core-rom su PSP-1000 e PSP-2000.
+- **Accettazione:** 100% dei casi verdi con New, oppure ogni FAIL documentato come differenza voluta.
+- **Licenza:** nessuna nuova.
+
+#### SOA-3.6 — Savestate tra core e tra BIOS: matrice delle quattro combinazioni · S, 1 gg · dipende da: SOA-3.3 · PSP: sì
+- **Cosa:** test host che salva con un core e un BIOS e ricarica con l'altro core, per le quattro combinazioni; prova su PSP con FireRed.
+- **File:** `tests/test_open_bios.py` o un test nuovo, `source/src/arm_gba.c`
+- **Test:** il test host.
+- **Accettazione:** lo stesso BIOS carica con entrambi i core; l'altro BIOS è rifiutato con il messaggio giusto.
+- **Licenza:** nessuna nuova.
+
+#### SOA-3.7 — Passata di compatibilità con New sui 40 titoli di CMP-9.4 · M, 2,5 gg · dipende da: SOA-3.5, CMP-9.1 · PSP: sì
+- **Cosa:** gameplay, salvataggio, riavvio e ricarica con New su PSP-1000 e PSP-2000.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** sessione hardware.
+- **Accettazione:** almeno 38 titoli su 40; ogni titolo fallito con la causa misurata e una storia aperta.
+- **Licenza:** nessuna.
+
+### SOA-4 — Core New veloce: il budget del mirror
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 (SOA-4.7 dopo gate) | 18 gg | SOA-2.4, SOA-3.1, PRF-2.2, PRF-8.6, SOA-8.1 (solo SOA-4.6) |
+
+**Copre:** F-030 dispatch cache (fatta nel core New), F-034 disciplina dell'I-cache per il core New, F-038 invalidazione SMC per il core New.
+
+**Obiettivo:** con New, MKSC in gara costa al massimo 7,0 ms di emulazione per frame (mediana, p95 ≤ 9 ms) su PSP-1000 e PSP-2000, misurati con compare-benchmarks 3+3; nessuno dei 5 titoli di riferimento è più lento che con il Classic; la traduzione costa al massimo il doppio del Classic per istruzione; gli hash per frame restano identici prima e dopo ogni ottimizzazione, con l'interprete IR come oracolo. Il numero viene dal budget di un frame con due macchine nel mirror (SOA-7); SOA-2.4 lo conferma o lo corregge per iscritto.
+
+**Da noi oggi:** 10,8 istruzioni host per istruzione guest su MKSC (Mac, Unicorn). Ci sono già dispatch cache, return stack, link diretti, flag pigri, liveness e propagazione delle costanti. La ricerca stima, senza misure sul nostro core: accessi in linea 4-8%, disciplina dell'I-cache 5-10%, MUL in linea 1-3%, ritiro SMC parziale fino a +27% nei giochi che riscrivono il proprio codice, superblocchi 1-3%.
+
+**Come ci arriviamo:** prima il profilo su console (SOA-4.1), poi solo le ottimizzazioni che il profilo giustifica, una per commit, ciascuna con check-core e A/B 3+3.
+
+**Gate prima di iniziare:** SOA-2.4 scritto. SOA-4.7: SOA-4.2 e SOA-4.3 non bastano all'obiettivo. SOA-4.6: SOA-8.1 misura la scratchpad più veloce della D-cache sotto carico.
+
+**Rischi:**
+- Ottimizzare il codice emesso serve a poco se il tempo sta nel dispatcher e negli eventi: per questo il profilo viene prima.
+- Una regione predetta male costa più di oggi: la guardia deve ricadere sul percorso lento senza ritradurre in ciclo.
+
+#### SOA-4.1 — Profilo del core New su console: campioni per PC e per fase · M, 1,5 gg · dipende da: SOA-2.2, PRF-2.2 · PSP: sì
+- **Cosa:** campionamento a intervalli fissi del PC host e della fase (codice emesso, dispatch, accessi, eventi, traduzione), solo nella build diagnostica.
+- **File:** `source/src/arm_gba.c`, `source/src/perf_monitor.c`, `tools/`
+- **Test:** il profilo di MKSC su PSP-1000 somma al 100% del tempo di emulazione.
+- **Accettazione:** ripartizione per fase pubblicata in `docs/DESIGN-DECISIONS.md` per MKSC, FireRed e un titolo SMC.
+- **Licenza:** nessuna nuova.
+
+#### SOA-4.2 — Accessi in memoria in linea con regione predetta per sito · L, 4 gg · dipende da: SOA-4.1 · PSP: sì
+- **Cosa:** ogni sito di accesso predice la regione (relativo a SP → IWRAM, indirizzi costanti risolti in traduzione) dietro una guardia in linea; percorso lento fuori linea, senza argomento PC; tabella base/maschera di 16 voci.
+- **File:** `source/src/arm_mips.c`, `source/src/arm_mips.h`
+- **Test:** check-core completo; mutante della guardia catturato.
+- **Accettazione:** almeno il 4% di tempo di emulazione in meno su MKSC (3+3), hash identici.
+- **Licenza:** nessuna nuova.
+
+#### SOA-4.3 — Disciplina dell'I-cache: runtime caldo contiguo ≤ 6 KiB e percorsi lenti lontani · M, 2,5 gg · dipende da: SOA-4.1 · PSP: sì
+- **Cosa:** runtime caldo del core New in una sezione contigua, percorsi lenti del codice generato in una regione separata; controllo di dimensione nel gate di build.
+- **File:** `source/src/arm_mips.c`, `source/Makefile`
+- **Test:** il gate di build fallisce se il runtime caldo supera 6 KiB.
+- **Accettazione:** guadagno misurato 3+3 su due modelli, oppure la causa scritta.
+- **Licenza:** nessuna nuova.
+
+#### SOA-4.4 — MUL con interlock calcolato in linea e cicli dei salti fissati in traduzione · S, 1 gg · dipende da: SOA-4.1 · PSP: no
+- **Cosa:** i cicli di interlock della MUL calcolati con `clz` nel codice emesso, senza chiamate; i cicli dei salti costanti nel blocco.
+- **File:** `source/src/arm_mips.c`
+- **Test:** SingleStepTests (cicli compresi) e lockstep con mGBA.
+- **Accettazione:** 0 differenze di cicli, nessuna chiamata per MUL nel codice emesso.
+- **Licenza:** nessuna nuova.
+
+#### SOA-4.5 — SMC: ritiro dei soli blocchi toccati e interprete per i blocchi invalidati spesso · M, 3 gg · dipende da: SOA-4.1, PRF-8.6 · PSP: sì
+- **Cosa:** uno store su codice tradotto ritira solo i blocchi che coprono la parola; dopo N invalidazioni un blocco gira nell'interprete IR.
+- **File:** `source/src/arm_mips.c`, `source/src/arm_interp.c`, `source/src/arm_gba.c`
+- **Test:** scene SMC di PRF-8.6; controllo di codice stantio per istruzione sul Mac.
+- **Accettazione:** zero esecuzioni stantie; guadagno misurato sulle scene SMC di PRF-8.6.
+- **Licenza:** nessuna nuova.
+
+#### SOA-4.6 — Stato caldo del core nella scratchpad · S, 1,5 gg · dipende da: SOA-8.1 · PSP: sì
+- **Cosa:** registri guest, contatore dei cicli e tabella di dispatch più calda nella scratchpad da 16 KiB, se SOA-8.1 la misura più veloce della D-cache sotto carico.
+- **File:** `source/src/arm_mips.c`, `source/src/arm_gba.c`
+- **Test:** A/B 3+3.
+- **Accettazione:** guadagno significativo, altrimenti la storia si chiude con il numero.
+- **Licenza:** nessuna nuova.
+
+#### SOA-4.7 — (condizionata) Superblocchi sulle tracce calde · M, 3 gg · dipende da: SOA-4.2, SOA-4.3 · PSP: sì
+- **Cosa:** i blocchi caldi uniti lungo il percorso più frequente, con uscite laterali verso i blocchi normali.
+- **File:** `source/src/arm_mips.c`
+- **Test:** check-core, A/B 3+3.
+- **Accettazione:** almeno il 2% sul bench, altrimenti si ritira.
+- **Licenza:** nessuna nuova.
+
+#### SOA-4.8 — Traduzione più rapida: costo per istruzione misurato e ridotto · S, 1,5 gg · dipende da: SOA-4.1 · PSP: no
+- **Cosa:** contatore dei cicli spesi a tradurre; meno copie nell'IR e decodifica in tabella dove il profilo lo indica.
+- **File:** `source/src/arm_decode.c`, `source/src/arm_mips.c`
+- **Test:** check-core; misura sul Mac e su PSP.
+- **Accettazione:** traduzione entro il doppio del Classic per istruzione.
+- **Licenza:** nessuna nuova.
+
+### SOA-5 — Scheduler a scadenza unica con timer letti dal vivo
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 | 10,5 gg | CMP-12.1, ENG-3.3 |
+
+**Copre:** F-165 tempi del core al ciclo (timer); sostituisce CMP-12.2 e comprende PRF-9.1.
+
+**Obiettivo:** un solo registro di scadenza e una coda ordinata di eventi per entrambi i core; timer calcolati alla lettura; eventi di riga solo quando qualcuno li osserva (IRQ, DMA, renderer per scanline). I 43 casi timer di CMP-12.1 PASS con Classic e New su due modelli; replay identico a se stesso (ENG-3); check-rom-link verde; almeno il 5% di lavoro per frame in meno su MKSC con New (3+3, PSP-1000 e PSP-2000).
+
+**Da noi oggi:** `update_gba` in `main.c` scorre righe, timer, DMA, suono e SIO a ogni passata; i timer si aggiornano a passi, non alla lettura; il link sincronizza i suoi eventi sulle passate di `update_gba`.
+
+**Come ci arriviamo:**
+- Prima un modulo puro `event_queue` testato sull'host.
+- Poi `update_gba` guidato dalla coda, con lo stesso ordine di oggi a parità di ciclo, così il replay resta confrontabile.
+- Gli eventi del link (SIO) restano al ciclo della scrittura, come oggi con il core New.
+
+**Gate prima di iniziare:** CMP-12.1 registrato sulla 1.4.3.
+
+**Rischi:** il link è sensibile all'ordine degli eventi: check-rom-link e i profili `psp-stalls` devono restare verdi a ogni passo.
+
+#### SOA-5.1 — Modulo puro event_queue con test host · S, 1 gg · dipende da: — · PSP: no
+- **Cosa:** coda ordinata di eventi a capacità fissa: inserimento, cancellazione, riprogrammazione, prossima scadenza, contatore a 32 bit che si riavvolge.
+- **File:** `source/src/event_queue.c`, `source/src/event_queue.h`, `tests/test_event_queue.c`, `Makefile`
+- **Test:** test host normali e ASan/UBSan, fuzz di 100.000 operazioni contro un modello lineare.
+- **Accettazione:** nessuna allocazione, nessuna differenza dal modello.
+- **Licenza:** nessuna nuova.
+
+#### SOA-5.2 — update_gba guidato dalla coda: righe, timer, DMA e SIO come eventi · L, 4 gg · dipende da: SOA-5.1, CMP-12.1 · PSP: sì
+- **Cosa:** `update_gba` serve solo l'evento in scadenza; i due core ricevono una sola scadenza.
+- **File:** `source/src/main.c`, `source/src/memory.c`, `source/src/arm_gba.c`, `source/src/cpu.c`
+- **Test:** core-rom, check-rom-link, replay di ENG-3.
+- **Accettazione:** casi timer e link verdi, nessuna regressione nel bench.
+- **Licenza:** nessuna nuova.
+
+#### SOA-5.3 — Timer letti dal vivo, avviati e fermati al ciclo (sostituisce CMP-12.2) · M, 2 gg · dipende da: SOA-5.2 · PSP: sì
+- **Cosa:** la lettura di TMxCNT_L calcola il valore dal ciclo corrente; avvio, arresto e cascata al ciclo della scrittura. Prende accettazione e test di CMP-12.2.
+- **File:** `source/src/main.c`, `source/src/memory.c`
+- **Test:** i 43 casi timer di CMP-12.1.
+- **Accettazione:** quella di CMP-12.2, con entrambi i core.
+- **Licenza:** nessuna nuova.
+
+#### SOA-5.4 — Eventi di riga saltati quando nessuno li osserva · M, 2 gg · dipende da: SOA-5.2 · PSP: sì
+- **Cosa:** HBlank e HDraw programmati solo se servono a un IRQ, a un DMA o al renderer per scanline; VCOUNT e DISPSTAT calcolati alla lettura.
+- **File:** `source/src/main.c`, `source/src/memory.c`
+- **Test:** core-rom, check-render, replay.
+- **Accettazione:** pixel identici in check-render; guadagno misurato su MKSC.
+- **Licenza:** nessuna nuova.
+
+#### SOA-5.5 — Verifica su due modelli: core-rom, link, replay e A/B · S, 1,5 gg · dipende da: SOA-5.3, SOA-5.4, ENG-3.3 · PSP: sì
+- **Cosa:** sessione hardware con core-rom, una gara MKSC in link, uno scambio Pokémon e compare-benchmarks 3+3 sui due core.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** sessione hardware.
+- **Accettazione:** l'obiettivo dell'epic.
+- **Licenza:** nessuna.
+
+### SOA-6 — Renderer Exact sul Media Engine pronto per la release
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| in corso | 1.6 | 13,5 gg | SOA-2.2, SAV-7.5, PRF-11.5 (solo SOA-6.7) |
+
+**Copre:** F-037 renderer sul Media Engine; supera PRF-14 e ne prende gli obiettivi di latenza, soak e divergenze.
+
+**Obiettivo:** con Exact sul ME il video costa al processore principale al massimo 0,8 ms per frame (mediana) su MKSC; MKSC da solo con New disegna il 100% dei frame a velocità piena (≥ 59,7 fps mediani) su PSP-1000 e PSP-2000; l'RTT ad-hoc con il ME acceso resta entro +1 ms da quello con il ME spento; latenza dal campione al latch ≤ 33 ms sul 99% dei frame (PRF-11.5); 0 freeze in 8 ore e in 100 sleep/wake su PSP-1000 e su Go o PSP-2000; ritorno alla CPU entro un frame se il ME non risponde; 0 pixel diversi in check-render attraverso il log.
+
+**Da noi oggi:** `gba_ppu_log` registra registri video per riga e blocchi da 64 byte di palette, OAM e VRAM scritti; `media_engine.prx` (programma ME di 8,3 KB) prende lo slot sysevent SceMeRpc per la sospensione; `video_me.c` sonda il ME con back-off; il frame passa dal GE; `psp_video.c` chiama `sceKernelDcacheWritebackAll` a ogni frame.
+
+**Come ci arriviamo:** prima le due cose che proteggono il link e la CPU (attesa a interrupt, copie senza CPU), poi presentazione e soak; ogni passo con check-render attraverso il log e una prova su console.
+
+**Gate prima di iniziare:** SOA-2.2 mostra Exact sul ME funzionante su almeno un modello.
+
+**Rischi:**
+- PPSSPP non esegue il ME: ogni accettazione è su hardware.
+- Prendere il ME spegne i servizi audio e video di Sony che usano il ME; l'emulatore non li usa.
+- Sospensione e ripresa con il ME acceso sono il punto più fragile: il soak è obbligatorio prima della release.
+
+#### SOA-6.1 — Attesa del ME con halt e interrupt invece del polling · M, 2,5 gg · dipende da: SOA-2.2 · PSP: sì
+- **Cosa:** il ME aspetta il lavoro con `halt` e un interrupt tra le CPU (0xBC100044), e la CPU principale riceve la fine frame con l'IRQ 31 invece di sondare.
+- **File:** `source/prx/media_engine/`, `source/src/video_me.c`
+- **Test:** check-render attraverso il log; RTT ad-hoc con ME acceso e spento (gruppo 6 di LINK_COUNTERS).
+- **Accettazione:** RTT entro +1 ms; nessun frame perso in più rispetto al polling.
+- **Licenza:** nessuna nuova.
+
+#### SOA-6.2 — Esperimento: flag di sincronizzazione nella memoria locale del ME o nella SRAM condivisa · S, 1,5 gg · dipende da: SOA-6.1 · PSP: sì
+- **Cosa:** misura dell'RTT ad-hoc e del tempo di consegna con il flag nella DDR non cached, nella memoria locale del ME e nella SRAM a 0xBFC00000.
+- **File:** `source/prx/media_engine/`, `docs/DESIGN-DECISIONS.md`
+- **Test:** sessione hardware.
+- **Accettazione:** decisione scritta con i numeri; la variante migliore diventa quella di serie.
+- **Licenza:** nessuna nuova.
+
+#### SOA-6.3 — Copie delle pagine sporche senza CPU e writeback per intervallo · M, 2 gg · dipende da: SOA-2.2 · PSP: sì
+- **Cosa:** pagine sporche copiate con `lv.q`/`sv.q` o con `sceDmacMemcpy` da un thread ausiliario; writeback della D-cache solo sugli intervalli toccati invece di `sceKernelDcacheWritebackAll`.
+- **File:** `source/src/gba_ppu_log.c`, `source/src/video_me.c`, `source/src/psp_video.c`
+- **Test:** check-render; misura del tempo di consegna su console.
+- **Accettazione:** costo video sul processore principale ≤ 0,8 ms per frame su MKSC.
+- **Licenza:** nessuna nuova.
+
+#### SOA-6.4 — Presentazione: strisce ≤ 128 px dalla VRAM e scan-out diretto a scala 1x · M, 2 gg · dipende da: SOA-2.2 · PSP: sì
+- **Cosa:** texture in VRAM disegnata dal GE a strisce di al massimo 128 px; a scala 1x il display legge direttamente il frame del ME, senza il GE.
+- **File:** `source/src/psp_video.c`, `source/src/video_me.c`
+- **Test:** foto su PSP-1000 per ogni scala; check-video.
+- **Accettazione:** tempo di GE misurato e pubblicato; immagine identica.
+- **Licenza:** nessuna nuova.
+
+#### SOA-6.5 — Codice caldo del ME entro 16 KiB e dati nella memoria locale del ME · M, 2 gg · dipende da: SOA-2.2 · PSP: sì
+- **Cosa:** il ciclo di rendering e i dati caldi del ME stanno nella sua I-cache e nella sua memoria locale; misura del tempo di rendering per frame sul ME.
+- **File:** `source/prx/media_engine/`, `source/src/gba_ppu.c`
+- **Test:** check-render; tempi del ME nei record 9-11.
+- **Accettazione:** rendering di MKSC sul ME sotto 12 ms per frame al p99.
+- **Licenza:** nessuna nuova.
+
+#### SOA-6.6 — Sospensione, ripresa e soak di 8 ore e 100 sleep/wake · M, 2,5 gg · dipende da: SOA-6.1, SAV-7.5 · PSP: sì
+- **Cosa:** il ME si ferma prima della sospensione e riparte dopo; ritorno alla CPU per frame se il ME non risponde; soak su PSP-1000 e su Go o PSP-2000 (obiettivi di PRF-14.4).
+- **File:** `source/prx/media_engine/`, `source/src/video_me.c`, `source/src/main.c`
+- **Test:** soak hardware; simulatore di ENG-8 se disponibile.
+- **Accettazione:** 0 freeze, 0 cold boot al risveglio.
+- **Licenza:** nessuna nuova.
+
+#### SOA-6.7 — Latenza misurata e frame di latenza scritto nell'aiuto · S, 1 gg · dipende da: PRF-11.5, SOA-6.4 · PSP: sì
+- **Cosa:** telemetria di PRF-11.5 con Exact sul ME e sulla CPU; testo d'aiuto dell'opzione nelle cinque lingue.
+- **File:** `source/src/text/message_*.h`, `docs/DESIGN-DECISIONS.md`
+- **Test:** check-messages.
+- **Accettazione:** latenza ≤ 33 ms sul 99% dei frame, oppure l'aiuto dice il frame in più.
+- **Licenza:** nessuna nuova.
+
+### SOA-7 — Mirror: due GBA su ogni PSP per le ROM identiche
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 (SOA-7.2 e SOA-7.4 dopo gate) | 14 gg | LNK-12, SOA-4, SOA-6.1, GIO-1.2 (solo SOA-7.4) |
+
+**Copre:** F-110 link GBA con la stessa ROM per ogni gioco (due core), insieme a LNK-12, di cui rivede il verdetto.
+
+**Obiettivo:** gara MKSC in link a ≥ 59,7 fps mediani con p99 ≤ 17 ms in entrambi i ruoli tra PSP-1000 e PSP-2000; 20 sessioni di fila senza discordanze; la tecnica si sceglie da sola: mirror per ROM identiche, cavo esatto o relay per le altre (FireRed↔LeafGreen resta sul relay Pokémon).
+
+**Da noi oggi:** il cavo esatto arriva a 41-42 fps nella gara MKSC; LNK-12 descrive istanza B, scambio degli input e ritardo dall'RTT. Lo stato del core New sta già in una struct con un host separato (`ArmMipsHost`), quindi la parte CPU di LNK-12.8 è in gran parte fatta; `memory.c`, `update_gba` e il suono restano globali.
+
+**Come ci arriviamo:** le storie di LNK-12 restano il percorso principale; SOA-7 aggiunge la misura con il core New, la macchina B senza PPU né mixer e due esperimenti dietro gate (CPU di B sul ME, rollback).
+
+**Gate prima di iniziare:** SOA-7.1 mostra due macchine con New entro 15 ms per frame su PSP-1000 (B senza rendering). SOA-7.2: SOA-7.1 non ci sta e il ME ha tempo libero dopo SOA-6.5. SOA-7.4: margine CPU di almeno 4 ms per frame dopo SOA-7.3.
+
+**Rischi:**
+- Il determinismo tra PSP-1000 e PSP-2000 è obbligatorio: nessun evento può dipendere da tempi dell'host (regola già rispettata dal core New).
+- La PSP-1000 ha meno memoria: la seconda istanza si alloca solo in sessione.
+
+#### SOA-7.1 — Budget a due core con New: macchina B senza rendering né audio · S, 1,5 gg · dipende da: SOA-4.1, LNK-12.1 · PSP: sì
+- **Cosa:** misura su console di due istanze del core New che eseguono MKSC, con B senza PPU e senza mixer.
+- **File:** `docs/DESIGN-DECISIONS.md`
+- **Test:** sessione hardware.
+- **Accettazione:** numero scritto e gate deciso.
+- **Licenza:** nessuna nuova.
+
+#### SOA-7.2 — (condizionata) Spike: la CPU della macchina B sul Media Engine · L, 5 gg · dipende da: SOA-6.1, SOA-7.1 · PSP: sì
+- **Cosa:** il ME esegue il codice generato dal traduttore per la macchina B, con cache del codice e sincronizzazione proprie; confronto con il ME usato come renderer.
+- **File:** `source/prx/media_engine/`, `source/src/arm_mips.c`
+- **Test:** hash per frame di B uguali sul ME e sulla CPU principale.
+- **Accettazione:** decisione scritta: renderer o CPU di B sul ME.
+- **Licenza:** nessuna nuova.
+
+#### SOA-7.3 — Macchina B senza PPU né mixer: solo lo stato che il gioco osserva · M, 2,5 gg · dipende da: LNK-12.3 · PSP: sì
+- **Cosa:** la macchina B aggiorna registri, IRQ, DMA e timer ma non disegna e non mixa l'audio.
+- **File:** `source/src/main.c`, `source/src/memory.c`, `source/src/arm_gba.c`
+- **Test:** hash di stato di B uguali con e senza PPU e mixer.
+- **Accettazione:** tempo per frame di B ridotto della quota di rendering e audio misurata.
+- **Licenza:** nessuna nuova.
+
+#### SOA-7.4 — (condizionata) Rollback di 1-2 frame con snapshot in memoria · L, 5 gg · dipende da: SOA-7.3, GIO-1.2 · PSP: sì
+- **Cosa:** input dell'altro giocatore previsti e corretti con il ripristino di uno snapshot in RAM e la riesecuzione, solo se il margine CPU lo permette.
+- **File:** `source/src/main.c`, `source/src/link_cable.c`
+- **Test:** discordanze 0 in 20 sessioni; replay identico.
+- **Accettazione:** latenza percepita ridotta di almeno un frame senza scendere sotto 59,7 fps.
+- **Licenza:** nessuna nuova.
+
+### SOA-8 — Hardware PSP al limite: misure e risorse ferme
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 | 10 gg | SOA-1.1, PRF-5.2 (solo SOA-8.3), PRF-6.1 (solo SOA-8.4) |
+
+**Copre:** nessuna capacità nuova del catalogo; lavora con PRF-5, PRF-6 ed ENG-14.4.
+
+**Obiettivo:** ogni risorsa della tabella del gruppo misurata su PSP-1000 e su uno slim, con i numeri in `docs/DESIGN-DECISIONS.md`, e usata dove porta almeno il 2% o 0,3 ms per frame: scratchpad, VFPU per le copie, DMA, 333/166 MHz, VRAM da 4 MiB e MEMSIZE=1 dalla PSP-2000, partizione volatile, VBlank come ritmo.
+
+**Da noi oggi:** nessun uso di scratchpad, VFPU, DMAC o IRQ del VBlank; ROM paginata sulla PSP-1000; nessuna misura delle cache su console.
+
+**Come ci arriviamo:** prima le sonde (SOA-8.1), poi solo gli usi che le sonde giustificano.
+
+**Gate prima di iniziare:** nessuno per SOA-8.1; le altre storie partono dai numeri di SOA-8.1.
+
+**Rischi:** la VFPU richiede `PSP_THREAD_ATTR_VFPU` sul thread; `lvl.q`/`lvr.q` corrompono i registri FPU sulla PSP-1000, quindi solo copie allineate.
+
+#### SOA-8.1 — Sonda su console: scratchpad, D-cache, RAM e geometria delle cache · S, 1,5 gg · dipende da: SOA-1.1 · PSP: sì
+- **Cosa:** build diagnostica che misura latenza e banda di scratchpad, D-cache e RAM, e linea, vie e capacità delle due cache (estende ENG-14.4).
+- **File:** `source/src/`, `docs/DESIGN-DECISIONS.md`
+- **Test:** sessione su PSP-1000 e su uno slim.
+- **Accettazione:** tabella pubblicata; ENG-14.4 chiusa con gli stessi numeri.
+- **Licenza:** nessuna nuova.
+
+#### SOA-8.2 — Copie di blocco con lv.q/sv.q per savestate, snapshot e rewind · S, 1,5 gg · dipende da: SOA-8.1 · PSP: sì
+- **Cosa:** funzione di copia allineata a 16 byte con la VFPU, usata da savestate, snapshot del ME e anello del rewind.
+- **File:** `source/src/`, `source/src/memory.c`
+- **Test:** test host con il ripiego C; prova su PSP.
+- **Accettazione:** copia di 96 KiB almeno 2× più rapida che con `memcpy`.
+- **Licenza:** nessuna nuova.
+
+#### SOA-8.3 — Pagine ROM della PSP-1000 lette con sceDmacMemcpy da un thread ausiliario · M, 2 gg · dipende da: SOA-8.1, PRF-5.2 · PSP: sì
+- **Cosa:** il prefetch delle pagine ROM e le copie grandi passano dal DMA, senza tempo CPU, con writeback e invalidazione espliciti.
+- **File:** `source/src/memory.c`
+- **Test:** titolo da 32 MiB su PSP-1000; hash della pagina copiata.
+- **Accettazione:** meno tempo di emulazione perso nei cambi di pagina, misurato 3+3.
+- **Licenza:** nessuna nuova.
+
+#### SOA-8.4 — Modelli 2000+: ROM residente, partizione volatile e VRAM da 4 MiB · M, 2,5 gg · dipende da: PRF-6.1 · PSP: sì
+- **Cosa:** con MEMSIZE=1 e la partizione volatile la ROM sta tutta in memoria fino a 32 MiB; `sceGeEdramSetSize(0x400000)` per il ME e il GE dove serve.
+- **File:** `source/src/memory.c`, `source/src/psp_video.c`, `source/Makefile`
+- **Test:** soak di sospensione di PRF-6.3.
+- **Accettazione:** nessuna pagina ROM letta dal Memory Stick in gioco sui modelli 2000+.
+- **Licenza:** nessuna nuova.
+
+#### SOA-8.5 — Ritmo sul VBlank e ricampionamento 59,73→59,94 Hz senza scatti · M, 2 gg · dipende da: SOA-8.1 · PSP: sì
+- **Cosa:** il frame si chiude sull'IRQ 30 del VBlank; l'audio si ricampiona per assorbire la differenza tra 59,73 e 59,94 Hz, senza ripetere un frame ogni circa 281.
+- **File:** `source/src/main.c`, `source/src/sound.c`, `source/src/psp_video.c`
+- **Test:** misura dei frame ripetuti e dei buchi audio in 10 minuti.
+- **Accettazione:** zero frame ripetuti e zero buchi audio in 10 minuti di MKSC.
+- **Licenza:** nessuna nuova.
+
+#### SOA-8.6 — Clock 333/166 MHz verificati in ogni percorso · S, 0,5 gg · dipende da: — · PSP: sì
+- **Cosa:** controllo che gioco, menu, link e ME girino a 333/166 MHz, con il clock registrato nel runtime log.
+- **File:** `source/src/main.c`
+- **Test:** sessione hardware.
+- **Accettazione:** clock registrato e uguale in ogni percorso.
+- **Licenza:** nessuna nuova.
+
+### SOA-9 — Audio: mixer M4A nativo e sul Media Engine
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 12,5 gg | SOA-4.1, SOA-6.6 (solo SOA-9.4) |
+
+**Copre:** F-037 (passo audio); assorbe PRF-13, il cui avvio del ME è già risolto dal PRX nostro.
+
+**Obiettivo:** se il gate passa, il mixer M4A (MP2000) dei giochi che lo usano gira nativo con campioni identici al bit (hash audio) a quelli del codice del gioco su 5 titoli, e libera almeno 1,5 ms per frame su MKSC; sul ME solo se SOA-6 lascia tempo libero al ME.
+
+**Da noi oggi:** il codice più caldo di MKSC è il ciclo di ricampionamento del mixer M4A in IWRAM (0x03002890-0x030028D8), copiato dalla ROM; l'audio è sintetizzato sul thread di emulazione.
+
+**Come ci arriviamo:** riconoscimento del mixer per firma, modulo puro testato sull'host contro l'esecuzione del codice del gioco, aggancio con interruttore in entrambi i core.
+
+**Gate prima di iniziare:** SOA-4.1 misura il mixer ad almeno l'8% del tempo di emulazione su 3 titoli M4A.
+
+**Rischi:** varianti del mixer tra giochi; un mixer non riconosciuto resta sul codice del gioco.
+
+#### SOA-9.1 — Firma del mixer M4A e quota misurata sui titoli di riferimento · S, 1,5 gg · dipende da: SOA-4.1 · PSP: sì
+- **Cosa:** riconoscimento del ciclo del mixer per sequenza di istruzioni e quota del tempo su MKSC e altri titoli M4A.
+- **File:** `tools/`, `docs/DESIGN-DECISIONS.md`
+- **Test:** firma trovata nei titoli di prova, nessun falso positivo su 20 titoli.
+- **Accettazione:** gate deciso con i numeri.
+- **Licenza:** nessuna nuova.
+
+#### SOA-9.2 — Mixer M4A nativo in C con hash audio identici · L, 5 gg · dipende da: SOA-9.1 · PSP: no
+- **Cosa:** modulo puro che riproduce il ciclo del mixer dal suo stato in memoria, verificato sull'host contro l'esecuzione del codice del gioco nell'interprete IR.
+- **File:** `source/src/m4a_mixer.c`, `source/src/m4a_mixer.h`, `tests/test_m4a_mixer.c`, `Makefile`
+- **Test:** hash dei campioni su 5 titoli, ASan/UBSan.
+- **Accettazione:** campioni identici al bit.
+- **Licenza:** nessuna nuova.
+
+#### SOA-9.3 — Aggancio nei due core con interruttore e ripiego · M, 2 gg · dipende da: SOA-9.2 · PSP: sì
+- **Cosa:** il core che entra nel mixer riconosciuto chiama il modulo nativo e ne salta il ciclo; interruttore di emergenza (ENG-15.4).
+- **File:** `source/src/arm_gba.c`, `source/src/cpu.c`
+- **Test:** replay identico con e senza; A/B 3+3.
+- **Accettazione:** almeno 1,5 ms per frame liberati su MKSC.
+- **Licenza:** nessuna nuova.
+
+#### SOA-9.4 — (condizionata) Mixer sul ME accanto al renderer, con un solo programma ME · L, 4 gg · dipende da: SOA-9.3, SOA-6.6 · PSP: sì
+- **Cosa:** il programma del ME esegue il mixer nativo dopo il rendering del frame, se il tempo del ME lo permette; ritorno alla CPU per frame.
+- **File:** `source/prx/media_engine/`, `source/src/sound.c`
+- **Test:** hash audio; soak di SOA-6.6 ripetuto.
+- **Accettazione:** nessun frame video perso in più; audio identico.
+- **Licenza:** nessuna nuova.
+
+### SOA-10 — Core New predefinito, poi ritiro del Classic
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | 2.0 | 4,5 gg | SOA-3.7, SOA-4.2 |
+
+**Copre:** nessuna capacità del catalogo.
+
+**Obiettivo:** New diventa il predefinito quando, su PSP-1000 e PSP-2000, i 40 titoli di CMP-9.4 vanno almeno come con il Classic (bench 3+3, nessun titolo oltre −0,3%), la core-rom è verde e il replay è identico tra i due modelli. Dopo una release con il Classic come ripiego senza segnalazioni bloccanti, il Classic si rimuove e si chiudono le storie che riguardano solo lui.
+
+**Da noi oggi:** due core nello stesso EBOOT; il Classic è il predefinito.
+
+**Come ci arriviamo:** confronto finale, cambio del predefinito con migrazione delle impostazioni, poi rimozione in una release successiva.
+
+**Gate prima di iniziare:** SOA-3.7 e SOA-4 chiusi.
+
+**Rischi:** un titolo che funziona solo con il Classic: resta il ripiego per gioco finché la causa non è corretta nel New.
+
+#### SOA-10.1 — Confronto finale Classic/New e decisione scritta · S, 1,5 gg · dipende da: SOA-3.7, SOA-4.2 · PSP: sì
+- **Cosa:** bench 3+3 sui 40 titoli e due modelli, core-rom e replay.
+- **File:** `docs/DESIGN-DECISIONS.md`
+- **Test:** sessione hardware.
+- **Accettazione:** decisione scritta con i numeri; decide anche le storie congelate dalla decisione (m).
+- **Licenza:** nessuna.
+
+#### SOA-10.2 — New predefinito, con migrazione delle impostazioni e Classic come ripiego per gioco · S, 1 gg · dipende da: SOA-10.1 · PSP: sì
+- **Cosa:** valore predefinito cambiato con il bump di ConfigModel; chiave per gioco in `game_config.txt` per tornare al Classic.
+- **File:** `source/src/config_model.c`, `source/src/memory.c`, `README.md`, `CHANGELOG.md`
+- **Test:** test di migrazione di ConfigModel.
+- **Accettazione:** chi aveva scelto Classic lo mantiene; gli altri passano a New.
+- **Licenza:** nessuna nuova.
+
+#### SOA-10.3 — Rimozione del Classic e chiusura delle storie solo Classic · M, 2 gg · dipende da: SOA-10.2 · PSP: no
+- **Cosa:** via `cpu.c`, `mips_emit.h`, `mips_stub.S` e l'opzione CPU core; le storie solo Classic chiuse con il motivo.
+- **File:** `source/src/`, `source/Makefile`, `Makefile`, `docs/BACKLOG.md`
+- **Test:** `make check`, check-core, check-render, build PSP.
+- **Accettazione:** EBOOT più piccolo, tutti i check verdi.
+- **Licenza:** nessuna nuova.
