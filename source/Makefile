@@ -30,7 +30,7 @@ EXTRA_TARGETS = EBOOT.PBP
 # Headers that every main object is rebuilt on when they change.
 COMMON_FILE = \
  common.h adhoc_peer.h codebreaker.h dynarec_worklist.h fast_forward_audio.h fast_forward_policy.h gba_sio.h gba_ppu.h gba_ppu_log.h video_me.h link_audio_wait.h link_cable.h link_net.h power_lifecycle.h runtime_log.h runtime_log_psp.h runtime_log_store.h sound_math.h video_adaptive.h video_mosaic.h perf_metrics.h perf_monitor.h perf_report.h menu_model.h menu_layout.h menu_catalog.h config_model.h config_store.h psp_adhoc.h \
- cpu.h memory.h video.h psp_video.h input.h sound.h main.h message.h mh_print.h gui.h zip.h png.h \
+ cpu.h memory.h video.h psp_video.h input.h sound.h main.h message.h mh_print.h gui.h zip.h zip_rom.h png.h \
  ku_bridge.h exception.h ch_print.h \
  arm_core.h arm_ir.h arm_mips.h arm_gba.h
 
@@ -39,7 +39,7 @@ MESSAGE_FILE = \
  src/text/message_cht.h src/text/message_ita.h
 
 MAINOBJS = \
- cpu.o memory.o gba_ppu.o gba_ppu_log.o video_me.o video_dispatch_state.o video_dispatch.o video_cc_wrap.o video_old_wrap.o psp_video.o input.o sound.o main.o message.o mh_print.o gui.o zip.o png.o \
+ cpu.o memory.o gba_ppu.o gba_ppu_log.o video_me.o video_dispatch_state.o video_dispatch.o video_cc_wrap.o video_old_wrap.o psp_video.o input.o sound.o main.o message.o mh_print.o gui.o zip.o zip_rom.o png.o \
  mips_stub.o video_blend_mips.o \
  arm_decode.o arm_interp.o arm_mips.o arm_gba.o \
  ku_bridge.o exception.o cheats.o codebreaker.o ch_print.o \
