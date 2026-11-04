@@ -49,7 +49,8 @@ own GBA BIOS, add it as `gba_bios.bin`:
 PSP/GAME/GBARushPSP/
 ├── EBOOT.PBP
 ├── exception.prx
-└── gba_bios.bin      (optional)
+├── gba_bios.bin      (optional)
+└── roms/             (optional)
 ```
 
 Without `gba_bios.bin` the emulator uses its built-in open-source BIOS; a
@@ -65,9 +66,11 @@ you have savestates made with it. Each BIOS keeps its own automatic savestate
 (`<rom>_auto.svs` with `gba_bios.bin`, `<rom>_auto-builtin.svs` with the
 built-in BIOS), so switching never overwrites the other one.
 
-Start GBA Rush PSP from the PSP Game menu and select a ROM. A `dir.ini` beside
-the EBOOT can point ROMs, saves, states, screenshots, cheats and box art to
-separate directories.
+Start GBA Rush PSP from the PSP Game menu and select a ROM. The ROM list opens
+in `roms/` when that folder exists, otherwise in the EBOOT folder; saves,
+savestates and the other files stay in the EBOOT folder. An optional `dir.ini`
+beside the EBOOT can point ROMs, saves, states, screenshots, cheats and box art
+to separate directories.
 
 To upgrade, replace only `EBOOT.PBP` and `exception.prx`. Keep the BIOS, ROMs,
 saves, savestates, cheat lists and configuration files. Back up important save
