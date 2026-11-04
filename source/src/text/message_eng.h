@@ -1103,6 +1103,10 @@
   "Input trace saved",
   // MSG_TRACE_FAILED
   "Input trace operation failed",
+  // MSG_TRACE_STATE_MISMATCH
+  "Trace savestate missing or changed",
+  // MSG_TRACE_RTC_WARNING
+  "RTC game: replay hashes may diverge",
 
   // MSG_FF_PROFILE_LABEL
   "Fast-forward profile : %s",

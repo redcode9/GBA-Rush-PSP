@@ -1103,6 +1103,10 @@
   "Traccia input salvata",
   // MSG_TRACE_FAILED
   "Operazione sulla traccia non riuscita",
+  // MSG_TRACE_STATE_MISMATCH
+  "Stato della traccia mancante o diverso",
+  // MSG_TRACE_RTC_WARNING
+  "Gioco con RTC: gli hash possono divergere",
 
   // MSG_FF_PROFILE_LABEL
   "Profilo avanti veloce: %s",
