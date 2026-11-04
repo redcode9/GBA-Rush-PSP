@@ -57,7 +57,7 @@
   "Torna al gioco",
 
   // MSG_MAIN_MENU_10
-  "Modalita riposo",
+  "Modalità riposo",
 
   // MSG_MAIN_MENU_11
   "Esci da GBA Rush PSP",
@@ -96,7 +96,7 @@
   FONT_BTN_CIRCLE_GBK ":Torna al gioco",
 
   // MSG_MAIN_MENU_HELP_10
-  FONT_BTN_CIRCLE_GBK ":Entra in modalita riposo",
+  FONT_BTN_CIRCLE_GBK ":Entra in modalità riposo",
 
   // MSG_MAIN_MENU_HELP_11
   FONT_BTN_CIRCLE_GBK ":Esci emulatore",
@@ -105,7 +105,7 @@
   "Opzioni prestazioni",
 
   // MSG_OPTION_MENU_0
-  "Modalita display : %s",
+  "Modalità display: %s",
 
   // MSG_OPTION_MENU_1
   "Ingrandimento    : %d%%",
@@ -189,7 +189,7 @@
   FONT_BTN_CIRCLE_GBK ":Menu principale   " FONT_BTN_CROSS_GBK ":Esci",
 
   // MSG_OPTION_MENU_BLOCK_CHECKSUM_REUSE
-  "Modalita RAM dynarec : %s",
+  "Modalità RAM dynarec: %s",
 
   // MSG_OPTION_MENU_HELP_BLOCK_CHECKSUM_REUSE
   FONT_CURSOR_LEFT_GBK FONT_CURSOR_RIGHT_GBK ":Cambia   " FONT_BTN_CROSS_GBK ":Esci",
@@ -374,7 +374,7 @@
   "Abilita analogico     : %s",
 
   // MSG_A_PAD_MENU_5
-  "Sensibilita analogico : %d",
+  "Sensibilità analogico: %d",
 
   // MSG_A_PAD_MENU_6
   "Indietro",
@@ -419,7 +419,7 @@
   FONT_CURSOR_LEFT_GBK FONT_CURSOR_RIGHT_GBK ":Cambia pagina   " FONT_BTN_CROSS_GBK ":Esci",
 
   // MSG_NON_LOAD_GAME
-  "Il gioco non e` avviato",
+  "Il gioco non è avviato",
 
   // MSG_DAYW_0
   "DOM",
@@ -443,7 +443,7 @@
   "SAB",
 
   // MSG_YES
-  "SI",
+  "SI'",
 
   // MSG_NO
   "NO",
@@ -524,13 +524,13 @@
   "%02d_%02d_%04d_%s%02d_%02d_%02d_%03d",
 
   // MSG_ERR_SET_DIR_0
-  "ERRORE [%s] La cartella specificata e` invalida.",
+  "ERRORE [%s] La cartella specificata è invalida.",
 
   // MSG_ERR_SET_DIR_1
   "ERRORE [%s] Non specificato.",
 
   // MSG_ERR_SET_DIR_2
-  "Si e` verificato un errore. e` impostato sulle seguenti cartelle:\n%s",
+  "Si è verificato un errore. E' impostato sulle seguenti cartelle:\n%s",
 
   // png.c
   // MSG_ERR_SS_PNG_0
@@ -548,13 +548,13 @@
 
   // main.c
   // MSG_GBA_SLEEP_MODE
-  "MODALITA RIPOSO",
+  "MODALITA' RIPOSO",
 
   // MSG_ERR_LOAD_DIR_INI
-  "Impossibile caricare il file dir.ini.\nTutto e` impostato nella seguente cartella:\n%s",
+  "Impossibile caricare il file dir.ini.\nTutto è impostato nella seguente cartella:\n%s",
 
   // MSG_ERR_BIOS_INVALID
-  "gba_bios.bin non e` un'immagine BIOS GBA da 16 KB.\nViene usato il BIOS integrato.",
+  "gba_bios.bin non è un'immagine BIOS GBA da 16 KB.\nViene usato il BIOS integrato.",
 
   // MSG_ERR_STATE_NEEDS_BIOS_FILE
   "Stato di salvataggio creato con gba_bios.bin.\nPer caricarlo, rimetti gba_bios.bin nella\ncartella dell'emulatore, esci da GBA Rush PSP e riaprilo.",
@@ -600,7 +600,7 @@
   "Slot salvataggio rapido: AUTO",
 
   // MSG_YES_NO
-  FONT_BTN_CIRCLE_GBK ":Si   " FONT_BTN_CROSS_GBK ":No",
+  FONT_BTN_CIRCLE_GBK ":Sì   " FONT_BTN_CROSS_GBK ":No",
 
   // MSG_BLANK
   "",
@@ -671,13 +671,13 @@
   FONT_BTN_CIRCLE_GBK ":Ripristina tema predefinito   " FONT_BTN_CROSS_GBK ":Esci",
 
   // MSG_TOOLTIP_MAGNIFICATION
-  "Funziona quando la Modalita display e` UTENTE GU.",
+  "Funziona quando la Modalità display è UTENTE GU.",
 
   // MSG_TOOLTIP_VIDEO_RENDERER
-  "Vecchio: TempGBA originale+correzioni.\n         Potrebbe essere piu veloce ma con alcuni problemi.\nNuovo: Riscritto per Libretro gpsp, piu accurato.\nEsatto: nuovo, identico a mGBA pixel per pixel; in prova.\n        Disegna sul Media Engine con un firmware\n        personalizzato, altrimenti e` piu lento.",
+  "Vecchio: TempGBA originale+correzioni.\n         Potrebbe essere più veloce ma con alcuni problemi.\nNuovo: Riscritto per Libretro gpsp, più accurato.\nEsatto: nuovo, identico a mGBA pixel per pixel; in prova.\n        Disegna sul Media Engine con un firmware\n        personalizzato, altrimenti è più lento.",
 
   // MSG_TOOLTIP_OAM_HIJACKING
-  "Puo solo essere usato con il NUOVO render.\nCorregge alcuni errori di visualizzazione in certi giochi.",
+  "Può solo essere usato con il NUOVO render.\nCorregge alcuni errori di visualizzazione in certi giochi.",
 
   // MSG_TOOLTIP_FRAMESKIP_TYPE
   "AUTO: L'emulatore salta automaticamente i fotogrammi quando serve.\nMANUAL: L'emulatore salta i fotogrammi in base al valore impostato sotto.\nOFF: Nessun fotogramma saltato.",
@@ -686,16 +686,16 @@
   "Seleziona quanti fotogrammi saltare (*/10).",
 
   // MSG_TOOLTIP_RAM_DYNAREC_MODE
-  "Scarico completo: Ricompila tutta la RAM quando c'e` un cambiamento.\n                  Sicuro, ma lento.\nParziale no riutilizzo: Ricompila solo il blocco di RAM cambiato. Bilanciato.\nParziale + riutilizzo: Tiene solo i blocchi di RAM i cui dati combaciano.\n                            Veloce, ma meno sicuro.",
+  "Scarico completo: Ricompila tutta la RAM quando c'è un cambiamento.\n                  Sicuro, ma lento.\nParziale no riutilizzo: Ricompila solo il blocco di RAM cambiato. Bilanciato.\nParziale + riutilizzo: Tiene solo i blocchi di RAM i cui dati combaciano.\n                            Veloce, ma meno sicuro.",
 
   // MSG_TOOLTIP_HBLANK_WIN_START
-  "H-Blank e` usato da alcuni giochi per visualizzare degli effetti.\nSeleziona la linea di partenza. 0=OFF",
+  "H-Blank è usato da alcuni giochi per visualizzare degli effetti.\nSeleziona la linea di partenza. 0=OFF",
 
   // MSG_TOOLTIP_HBLANK_WIN_END
-  "H-Blank e` usato da alcuni giochi per visualizzare degli effetti.\nSeleziona la linea di fine. 0=OFF | 1-160=area visibile schermo |\n                                   | 161-227=V-Blank",
+  "H-Blank è usato da alcuni giochi per visualizzare degli effetti.\nSeleziona la linea di fine. 0=OFF | 1-160=area visibile schermo |\n                                   | 161-227=V-Blank",
 
   // MSG_TOOLTIP_STACK_OPTIMIZE
-  "AUTO: Accumula cicli inattivi e li salta in blocco. Veloce.\nOFF: Ogni ciclo e` emulato normalmente. Accurato, ma lento.",
+  "AUTO: Accumula cicli inattivi e li salta in blocco. Veloce.\nOFF: Ogni ciclo è emulato normalmente. Accurato, ma lento.",
 
   // MSG_TOOLTIP_AUTO_BACKUP
   "Quando scrivere il file salvataggio.\nAUTO: Quando salvi in gioco.\nSolo Uscita: Scrive il file quando si esce dall'emulatore.",
@@ -1013,7 +1013,7 @@
   // MSG_CATEGORY_HELP_AUDIO
   "Imposta l'uscita audio",
   // MSG_CATEGORY_HELP_PERFORMANCE
-  "Imposta velocita e compatibilita",
+  "Imposta velocità e compatibilità",
   // MSG_CATEGORY_HELP_CONTROLS
   "Configura tasti e input analogico",
   // MSG_CATEGORY_HELP_LINK_CABLE
@@ -1111,7 +1111,7 @@
   // MSG_FF_ACTIVATION_LABEL
   "Attivazione          : %s",
   // MSG_FF_SPEED_LABEL
-  "Velocita             : %s",
+  "Velocità            : %s",
   // MSG_FF_PRESENTATION_LABEL
   "Visualizzazione      : %s",
   // MSG_FF_AUDIO_LABEL
@@ -1129,9 +1129,9 @@
   // MSG_FF_HELP_PRESENTATION
   "Mostra 60, 30 o 15 aggiornamenti al secondo",
   // MSG_FF_HELP_AUDIO
-  "Disattiva l'audio o comprimilo alle velocita fisse",
+  "Disattiva l'audio o comprimilo alle velocità fisse",
   // MSG_FF_HELP_ADVANCED
-  "Controlli di compatibilita e temporizzazione",
+  "Controlli di compatibilità e temporizzazione",
   // MSG_FF_PROFILE_MODERN
   "Moderno",
   // MSG_FF_PROFILE_CLASSIC
