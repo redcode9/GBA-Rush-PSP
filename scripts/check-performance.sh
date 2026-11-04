@@ -13,6 +13,14 @@ then
   exit 1
 fi
 
+# Replay state hashes go to a caller's array; the caller writes the file.
+if rg -q 'FILE_|sceIo|fopen|fwrite|printf|malloc\(|calloc\(|realloc\(|free\(' \
+  source/src/state_hash.c
+then
+  echo "State hashing performs allocation or file access" >&2
+  exit 1
+fi
+
 if rg -q 'perf_report_format|main_perf_write_report' \
   source/src/cpu.c source/src/memory.c source/src/psp_video.c \
   source/src/sound.c source/src/video_dispatch.c
