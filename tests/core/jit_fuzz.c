@@ -673,6 +673,10 @@ int main(int argc, char **argv)
       return 1;
   printf("jit_fuzz: 9 self-modifying loops agree, %u blocks dropped\n",
    jit->stats.dropped);
+  /* Host instructions per guest instruction over the random cases, a
+     before and after number for changes to the generated code. */
+  mips_unicorn_count(NULL);
+  mips_unicorn_executed = 0;
   for(i = 0; i < cases; i++)
   {
     if(run_case(seed + i))
@@ -682,9 +686,11 @@ int main(int argc, char **argv)
   }
   printf("jit_fuzz: %u/%u cases agree (seeds %u-%u), %llu guest "
    "instructions; %u blocks compiled, %u links, %u dispatch misses, %u "
-   "bails, %u dropped, %u flushes, %llu slow accesses\n", passed, i, seed,
-   seed + i - 1, guest_instructions, jit->stats.blocks, jit->stats.links,
+   "bails, %u dropped, %u flushes, %llu slow accesses; %.2f MIPS "
+   "instructions per guest instruction\n", passed, i, seed, seed + i - 1,
+   guest_instructions, jit->stats.blocks, jit->stats.links,
    jit->stats.misses, jit->stats.bails, jit->stats.dropped,
-   jit->stats.flushes, mips_unicorn_calls);
+   jit->stats.flushes, mips_unicorn_calls, guest_instructions ?
+   (double)mips_unicorn_executed / (double)guest_instructions : 0.0);
   return passed == i ? 0 : 1;
 }

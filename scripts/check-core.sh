@@ -12,6 +12,7 @@ set -eu
 #   BIOS      a GBA BIOS, for lockstep runs (instruction by instruction,
 #             then block by block) of
 #   MKSC      Mario Kart: Super Circuit (Europe), tests/core/mksc_race.txt
+#             (BIOS and MKSC alone run the translation bench on it)
 #   ROM SAVE  FireRed or LeafGreen and a save whose last Pokemon Center
 #             visit was in a town, tests/rom_link/firered_trade.txt
 #   UNICORN_DIR  Unicorn 2.1, for the MIPS backend (arm_mips.c): its
@@ -60,6 +61,13 @@ if [ -n "${SST_DIR:-}" ]; then
   tail -2 "$out/single_step.log"
 else
   echo "check-core: SST_DIR not set, SingleStepTests skipped"
+fi
+
+if [ -n "${BIOS:-}" ] && [ -n "${MKSC:-}" ]; then
+  # What translating the game's code costs, and how much code it makes.
+  ${CC:-cc} -std=c99 -O2 -Wall -Wextra -Werror -Isource/src \
+    tests/core/translate_bench.c $core_sources -o "$out/translate_bench"
+  "$out/translate_bench" --repeat 5 "$MKSC" "$BIOS"
 fi
 
 if [ -z "${MGBA_DIR:-}" ] || [ -z "${BIOS:-}" ]; then
