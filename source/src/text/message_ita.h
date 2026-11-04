@@ -553,8 +553,14 @@
   // MSG_ERR_LOAD_DIR_INI
   "Impossibile caricare il file dir.ini.\nTutto e` impostato nella seguente cartella:\n%s",
 
-  // MSG_ERR_BIOS_NONE
-  "Impossibile caricare il file BIOS.",
+  // MSG_ERR_BIOS_INVALID
+  "gba_bios.bin non e` un'immagine BIOS GBA da 16 KB.\nViene usato il BIOS integrato.",
+
+  // MSG_ERR_STATE_NEEDS_BIOS_FILE
+  "Stato di salvataggio creato con gba_bios.bin.\nPer caricarlo, rimetti gba_bios.bin nella\ncartella dell'emulatore, esci da GBA Rush PSP e riaprilo.",
+
+  // MSG_ERR_STATE_NEEDS_BUILTIN_BIOS
+  "Stato di salvataggio creato con il BIOS integrato.\nPer caricarlo, sposta gba_bios.bin fuori dalla\ncartella dell'emulatore, esci da GBA Rush PSP e riaprilo.",
 
   // MSG_ERR_LOAD_GAMEPACK
   "Impossibile caricare il file di gioco.",

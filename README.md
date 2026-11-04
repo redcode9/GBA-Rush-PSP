@@ -13,8 +13,9 @@ retains the emulator core, renderers, interface, compatibility work and
 launcher developed across gpSP, gpSP Kai, TempGBA and TempGBA4PSP-mod. The
 fork is maintained separately and does not imply upstream endorsement.
 
-You must provide your own legally obtained GBA BIOS and ROM dumps. Neither is
-included in this repository or its releases.
+You must provide your own legally obtained ROM dumps; none are included in
+this repository or its releases. A dump of the GBA BIOS is optional: without
+one, GBA Rush PSP uses the open-source BIOS built into the EBOOT.
 
 ## Features
 
@@ -31,6 +32,8 @@ included in this repository or its releases.
 - Two-PSP GBA link cable over local ad-hoc Wi-Fi, with a full-speed mode for
   Pokemon trades and battles across Ruby, Sapphire, Emerald, FireRed and
   LeafGreen.
+- Starts without a BIOS dump, using a built-in open-source GBA BIOS when
+  `gba_bios.bin` is missing.
 - Suspend and resume recovery for audio, ROM access, saves and video state.
 - Box art, recent ROMs, themes, configurable controls and per-game settings.
 - Japanese, English, Simplified Chinese, Traditional Chinese and Italian UI.
@@ -39,15 +42,28 @@ included in this repository or its releases.
 
 ## Install and upgrade
 
-Copy the release folder to `PSP/GAME/GBARushPSP/`, then add your own
-`gba_bios.bin`:
+Copy the release folder to `PSP/GAME/GBARushPSP/`. If you have a dump of your
+own GBA BIOS, add it as `gba_bios.bin`:
 
 ```text
 PSP/GAME/GBARushPSP/
 ├── EBOOT.PBP
 ├── exception.prx
-└── gba_bios.bin
+└── gba_bios.bin      (optional)
 ```
+
+Without `gba_bios.bin` the emulator uses its built-in open-source BIOS; a
+`gba_bios.bin` that is not a 16 KB GBA BIOS is reported at startup and the
+built-in one is used instead. Some games behave differently with the built-in
+BIOS ([source/bios](source/bios/README.md) lists the known differences), so a
+dump of your own BIOS stays the more compatible choice and is always used when
+present. The BIOS is read when the emulator starts, so restart it after adding
+or moving `gba_bios.bin`.
+
+A savestate loads only with the BIOS it was saved with: keep `gba_bios.bin` if
+you have savestates made with it. Each BIOS keeps its own automatic savestate
+(`<rom>_auto.svs` with `gba_bios.bin`, `<rom>_auto-builtin.svs` with the
+built-in BIOS), so switching never overwrites the other one.
 
 Start GBA Rush PSP from the PSP Game menu and select a ROM. A `dir.ini` beside
 the EBOOT can point ROMs, saves, states, screenshots, cheats and box art to
@@ -192,8 +208,9 @@ make package VERSION=1.4.3
 
 The package command creates a reproducible ZIP and SHA-256 checksum under
 `dist/`, then verifies the archive manifest. The archive includes the license
-notices, installation guide and current link test checklist. It never includes
-BIOS files, ROMs, saves, settings or cheat databases.
+notices (with the built-in BIOS notes in `source/bios/README.md`), installation
+guide and current link test checklist. It never includes `gba_bios.bin`, ROMs,
+saves, settings or cheat databases.
 
 ### Performance comparison
 
@@ -232,7 +249,10 @@ Takka and the gpSP Kai contributors; Nebuleon, Normmatt, BassAceGold and the
 TempGBA community; Phoe-nix; andymcca; JxPv2; and every contributor to the
 [direct upstream repository](https://github.com/andymcca/TempGBA4PSP-mod).
 Relevant fixes from [libretro/gpSP](https://github.com/libretro/gpsp) are
-retained with source history and notices.
+retained with source history and notices. The built-in BIOS is Normmatt's
+open-source GBA BIOS, based on the VBA and VBA-M HLE BIOS, as shipped by
+libretro/gpSP and Nebuleon's ReGBA; its source and notices are in
+[source/bios](source/bios/README.md).
 
 The emulator is GPL-2.0-or-later; see [LICENSE](LICENSE), [NOTICE](NOTICE),
 `source/copyright` and source headers. The launcher builder is

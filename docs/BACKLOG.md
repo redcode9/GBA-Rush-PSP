@@ -1,0 +1,6903 @@
+# Backlog di GBA Rush PSP
+
+- **Perimetro:** le capacità obiettivo del catalogo che GBA Rush PSP non ha, o ha solo in parte, comprese quelle che l'analisi sconsiglia e che restano dietro un gate, più i difetti nostri emersi lungo la strada (salvataggi, EEPROM, zip). Ogni epic ha un obiettivo misurabile (principio 8).
+- **Base e data:** release 1.4.3 (`develop` ee57fba, uscita il 2026-11-02 come release del link); revisione del 2026-11-02. I riferimenti `file:riga` sono stati spostati sulla 1.4.3. `features/save-read-fixes` (SAV-1 in corso e SAV-2.8) parte da d6ef51f e non è committato. `features/builtin-open-bios` (CMP-1, con `source/bios/`) è committato sopra la 1.4.3 e dal 2026-11-04 è su origin, insieme a questo backlog.
+- **Metodo:** si parte dall'analisi del 2026-11-01 (verdetto e roadmap a fasi). Ogni epic è stata verificata sul nostro codice, e un controllo di copertura ha incrociato capacità, dipendenze e milestone. La revisione del 2026-11-02 ha riallineato il backlog alla 1.4.3 pubblicata e ha alzato ogni obiettivo (vedi «Correzioni applicate»).
+- **Codice di terzi:** solo da fonti con licenza compatibile, a commit fissato (principio 7). I pezzi di origine libretro (BIOS aperto, tabella dei giochi, correzioni del core, rfu.c, relay di Advance Wars) vengono da libretro/gpsp al commit 5819380; il sorgente del BIOS aperto in `source/bios/` viene da ReGBA 313ddd0. La base discende da TempGBA e da gpSP.
+- **Dimensione:** 103 epic, 456 storie, circa 790 giorni-sviluppatore: circa 392 nelle milestone numerate e circa 398 dietro un gate.
+
+## Come leggerlo
+
+**Verdetti**
+
+| Verdetto | Epic | Significato |
+|---|---|---|
+| in corso | 2 | Lavoro già aperto in un branch non ancora unito: CMP-1 (BIOS aperto, `features/builtin-open-bios`) e SAV-1 (lettura del `.sav`, `features/save-read-fixes`). |
+| consigliato | 60 | Da fare, nella milestone indicata. |
+| condizionato | 29 | Parte solo se il gate scritto nell'epic («Gate prima di iniziare») dà sì con un numero misurato; prima si pianifica solo la misura. In ENG-6, UI-7 e UI-16 il gate riguarda solo alcune storie. |
+| sconsigliato (dietro gate) | 12 | L'analisi lo sconsiglia: resta dietro un gate come le condizionate, e prima di partire il verdetto va rivisto per iscritto. |
+
+**Taglie e stime.** Ogni storia ha una taglia e una stima in giorni-sviluppatore (gg), cioè giorni di lavoro di una persona. La stima di un'epic è la somma delle sue storie. Le attese di calendario (7 giorni di prerelease, segnalazioni per i gate di domanda) restano fuori. La taglia dice quanto è grande il pezzo, ma per il piano conta la stima.
+
+| Taglia | Storie | Stima |
+|---|---|---|
+| S | 237 | 0,25-2 gg, di solito 0,5-1 |
+| M | 190 | 1-4 gg, di solito 1,5-3 |
+| L | 27 | 3-6 gg, di solito 4-5 |
+| XL | 2 | oltre una settimana: PRF-14.1 (8 gg) e LNK-12.3 (14 gg), entrambe dietro un gate |
+
+**ID.** `SAV-2.3` è la terza storia dell'epic SAV-2. I gruppi sono: SAV salvataggi, stati e affidabilità; CMP compatibilità e core; PRF prestazioni; UI interfaccia e UX; GIO funzioni di gioco; LNK link e multiplayer; ENG ingegneria, verifica e presentazione; EXT altre capacità e difetti nostri. Le sezioni 1-8 che seguono questa panoramica hanno lo stesso ordine. `F-001`…`F-172` sono le capacità obiettivo del catalogo (vedi «Catalogo delle capacità obiettivo»; F-164 non è più usata): una dipendenza scritta F-xxx vale per tutte le epic che coprono quella capacità. `NC-1`…`NC-4` sono voci nostre dell'analisi del 2026-11-01 (tre difetti e la modalità USB), fuori dal catalogo.
+
+**PSP.** «sì» vuol dire che l'accettazione richiede prove su PSP reale, di regola PSP-1000 più un secondo modello; «no» vuol dire che l'epic si chiude con test host, script, strumenti desktop o documenti. PPSSPP non vale come prova. Anche ogni storia porta questa voce.
+
+**Nell'indice delle epic.** La milestone è quella del piano qui sotto; tra parentesi ci sono le storie che il piano anticipa o rinvia. Le dipendenze F-xxx sono scritte come l'epic che copre la capacità. «(+N)» indica altre N dipendenze, elencate nel corpo dell'epic.
+
+**Dentro ogni epic** si trovano verdetto, milestone, stima e dipendenze, le capacità del catalogo coperte, l'obiettivo misurabile, lo stato del nostro codice sulla 1.4.3, come ci arriviamo, il gate e i rischi. Ogni storia dice cosa si fa, quali file tocca, i test, l'accettazione e la licenza.
+
+## Principi
+
+Ogni epic segue questi principi:
+
+1. **Provato sull'hardware.** Un'epic con PSP = sì è chiusa solo quando passa su console reali, di regola PSP-1000 (circa 24 MB di RAM utente) più un secondo modello, con i risultati in `docs/HARDWARE-RESULTS.md` legati allo sha256 di `EBOOT.PBP` (lo zip di release contiene `EBOOT.PBP` ed `exception.prx`, non l'ELF). PPSSPP è una rete di regressione, non una prova; una build non provata su console esce come prerelease.
+2. **Nessuna perdita di dati.** I salvataggi vengono prima di tutto. Le letture sono limitate, le scritture sono transazionali con un `.bak` verificato, e un errore non diventa mai un salvataggio vuoto. Ogni funzione nuova che scrive file (stati, trucchi, preferiti, invio tra PSP) passa dallo stesso store.
+3. **Cinque lingue.** Ogni testo nuovo entra in `enum MESSAGE_ITEM` e nelle cinque tabelle `message_*.h` (jpn, eng, chs, cht, ita) nello stesso ordine. `scripts/check-messages.sh` e `scripts/check-menu-layout.sh` restano verdi, e l'ordine delle categorie del menu non cambia.
+4. **Logica testabile sull'host.** La logica pura sta in piccoli moduli `name.c`/`name.h` (tipi stdint, niente SDK PSP), ciascuno con `tests/test_<modulo>.c` nelle regole normale e ASan/UBSan del `Makefile`. La colla PSP resta in `main.c`, `gui.c`, `sound.c`, `psp_video.c` e `psp_adhoc.c`.
+5. **Prima la misura, poi la promessa.** Nessuna affermazione di velocità senza `scripts/compare-benchmarks.py` (3 run di base e 3 del candidato, con i campi coincidenti). Niente allocazioni né I/O su file in `cpu.c`, `memory.c`, `psp_video.c`, `sound.c`, `video_dispatch.c` e `update_gba`; il renderer si sceglie una volta per frame e il video resta su libGU. I gate sono numeri scritti in `docs/DESIGN-DECISIONS.md`, e un gate fallito chiude l'epic con il motivo. I report salvati su PSP prima della 1.4.3 non valgono come base: in quei report i contatori a 64 bit (durata, frame, tempi totali) sono senza senso, mentre restano validi i percentili a 32 bit; come base valgono solo i report di EBOOT pubblicati, legati allo sha256 (principio 1).
+6. **Formati e regole PSP rispettati.** Le impostazioni sono versionate e le vecchie migrano. Runtime log v5, perf report v6 e `LINK_NET_VERSION` cambiano solo insieme a decoder e test, con queste regole:
+   - **R1 (già prassi per i valori del decoder; da confermare per tipi di evento e motivi di flush, vedi «Decisioni aperte»).** Un valore aggiunto in fondo a un enum del runtime log (tipo di evento, motivo di flush, valore del decoder) non cambia `RUNTIME_LOG_VERSION`: nessun valore esistente cambia significato e i decoder vecchi lo mostrano come `event-N` (`tools/decode_runtime_log.py:162`). È già la prassi per i valori del decoder: le 1.4.1, 1.4.2 e 1.4.3 hanno aggiunto i gruppi 4, 5-6 e 7-8 di LINK_COUNTERS restando v5, e un decoder vecchio li mostra come `counters-N` (`tools/decode_runtime_log.py:221`). La storia aggiorna comunque decoder e test. Cambiare il layout di un record, o il significato di un valore o di un flag esistente, chiede il bump della release. `runtime_log.h:16` dice ancora che i valori degli enum fanno parte del formato: lo aggiorna SAV-1.6 (1.4.4), il primo tipo di evento nuovo dalla v5.
+   - **R2.** Il perf report cambia versione a ogni modifica, nel bump unico della release (R3). Il protocollo del link cambia versione quando cambia la posizione o il significato di un campo esistente, o quando l'altra PSP deve capire un messaggio nuovo per collegarsi. Un campo accodato a un messaggio, o un bit in un byte che le release precedenti non leggono, non cambia versione a due condizioni: un test host prova che il formato precedente resta accettato e che il prefisso dei messaggi di oggi non è cambiato; CHANGELOG e note di rilascio dicono che cosa perde una coppia mista. Così la 1.4.3 ha esteso START (byte 14 di flag), POKEMON_PAIR (byte 32-35, ciclo dell'host) e il byte 36 dell'intestazione di link_net (ANSWER_NOW).
+   - **R3.** Un solo bump per formato per release. Nella 1.5 lo fa ENG-1.6 (runtime log 5→6, perf report 6→7). Dalla 1.6 lo fa la prima storia della release che cambia il formato (costante, decoder per la versione vecchia e la nuova, test, riga del CHANGELOG), e le altre storie della stessa release vi aggiungono i propri campi.
+   - **R4.** I log scritti dopo la 1.5 sono v6. Da ENG-1.6 in poi i test del decoder tengono campioni v5 e v6, e ogni storia successiva che aggiunge valori vi aggiunge solo i suoi casi; la dipendenza da ENG-1.6 può passare per altre storie. R1-R4 valgono per ogni storia, anche dove il testo non le cita.
+
+   Savestate e avanti veloce restano spenti durante il link. Il thread di emulazione ha priorità 32 e scende a 0x77, la più bassa per un thread utente, mentre un link lockstep è connesso (`main.c:222-228`, `main_link_set_priority` `:505-522`; priorità vista ed esito nel gruppo 7 di LINK_COUNTERS). Thread ad-hoc (0x1C-0x1E), audio (0x08) e callback (0x11) stanno numericamente sotto in entrambi i casi; un thread nuovo tra 32 e 0x77 gira solo quando l'emulazione attende, ma in lockstep la precede sempre. Solo il worker ad-hoc chiama `sceNet*`, il callback di alimentazione non fa I/O e attende al massimo il semaforo audio (500 ms, 50 ms da SAV-7.6), e il link fissa 333 MHz. Ogni funzione rischiosa ha un interruttore a run time (F-143).
+7. **Licenza pulita.** Il codice di terzi entra solo con una licenza dichiarata e compatibile, a commit fissato, con intestazioni e crediti intatti: la base TempGBA e gpSP con i crediti dei rispettivi autori, libretro/gpsp a 5819380, il sorgente del BIOS aperto da ReGBA (autori VBA, VBA-M e Normmatt; immagine identica a quella di libretro 5819380), zlib e, se si importa il modulo GB, TGB Dual da MasterBoy. Un file senza licenza dichiarata non entra, e un file solo GPL-2.0 legherebbe l'EBOOT a GPL-2.0-only e lo terrebbe fuori dal launcher GPL-3.0. I file nuovi hanno l'intestazione GPL-2.0-or-later (GBA Rush PSP, 2026 Piero Carrieri), e in Git non entra nessun binario (`scripts/check-tree.sh`). README, CHANGELOG, NOTICE, commenti, messaggi di commit, descrizioni di PR e questo backlog citano altri progetti solo come fonte del codice o dei dati che importiamo, come strumenti o come riferimenti tecnici (per esempio mGBA, PPSSPP, GBATEK), mai per confronto, e non citano autori, commit, versioni o issue di progetti da cui non prendiamo nulla; restano i crediti obbligatori del codice importato. ENG-2.6 lo controlla.
+8. **Obiettivo misurabile.** Un'epic non si chiude quando la funzione esiste, ma quando raggiunge il suo **Obiettivo**, scritto come requisito nostro e misurabile: fps mediani e p99 su PSP-1000 e su un secondo modello con `scripts/compare-benchmarks.py` (3+3 run), latenza in ms con il metodo di misura, cicli senza guasti, titoli che arrivano al gameplay e salvano, oppure una prova pass/fail (test host, `make test-sanitize`, righe in `docs/HARDWARE-RESULTS.md` legate allo sha256 di `EBOOT.PBP`). Dove un titolo va già a velocità piena conta il margine del bench senza limite, con il p99 e i salvataggi verificati su due modelli; nel link, dove il bench non si applica, conta il p99 del tempo di frame nei due ruoli. Dove un numero più alto non ha senso, l'obiettivo è la qualità: nessuna perdita di dati, affidabilità su N cicli, riscontro chiaro nelle 5 lingue, testabilità, meno memoria. Un obiettivo è sempre un numero o una prova nostri, mai un confronto.
+
+## Piano per milestone
+
+Il piano è quello proposto dal controllo di copertura, con quattro modifiche:
+- le otto epic EXT sono collocate come dicono le rispettive sezioni;
+- gli ADR EXT-6.1, EXT-7.1 ed EXT-8.1 passano dalla 1.5 alla 1.6, perché dipendono da ENG-17.3 (`docs/DESIGN-DECISIONS.md`), che sta nella 1.6;
+- la prova «installazione pulita senza dialoghi» passa dalla 1.4.4 alla 1.5 (UI-1.4, dopo CMP-1.1): senza il BIOS integrato la base esce se manca `gba_bios.bin` (`source/src/main.c:1564-1568`, chiamata a `:1655`);
+- le stime contano ogni storia nella milestone in cui si fa, misure di gate comprese.
+
+Regola di assegnazione. Un'epic sta nella milestone in cui si chiudono le sue storie senza gate. Se il gate riguarda il cuore dell'epic (vale per tutte le condizionate e sconsigliate tranne ENG-6, UI-7 e UI-16), l'epic sta in «dopo gate», e nelle milestone numerate entrano solo la misura del gate e i pezzi indipendenti. Le correzioni elencate in «Correzioni applicate» sono già nelle sezioni 1-8, e i numeri qui sotto contano le sezioni corrette. Una modifica al core si accetta con la core-rom di CMP-3.1 (1.5), l'oracolo di replay di ENG-3 e le baseline per modello di PRF-1.5 (1.6). Per modifica al core si intende ogni cambiamento del codice che esegue la CPU emulata o ne conta i tempi: dynarec e stub (`cpu.c`, `mips_emit.h`, `mips_stub.S`), timer e IRQ di `main.c`; non lo sono le funzioni dei savestate né l'immagine del BIOS integrato. Per questo le correzioni di CMP-11 e CMP-12 stanno nella 1.6, e nella 1.5 si registrano solo i casi di test sulla 1.4.3 pubblicata. Fanno eccezione CMP-1.2, CMP-1.4, CMP-3.2, CMP-3.3 e SAV-6.1, che entrano nella 1.5 con la core-rom verde e compare-benchmarks 3+3 sul build che le contiene (vedi «Decisioni aperte», (j)). EXT-1.1 ed EXT-5.1 toccano solo la EEPROM e si accettano con i test host sul vero `memory.c` e la ROM dei salvataggi su due modelli. La 1.4.4 non contiene modifiche al core, e le correzioni che evitano perdite di dati vengono prima di tutto.
+
+| Milestone | Obiettivo | Epic | Storie | Stima |
+|---|---|---|---|---|
+| 1.4.4 | Nessun salvataggio troncato, svuotato o perso | 5 | 32 | 29,25 gg |
+| 1.5 | Avvio senza `gba_bios.bin`, stati validati, salvataggio protetto, toast | 19 | 87 | 105 gg |
+| 1.6 | Core misurabile e verificabile, poi più corretto; trucchi sicuri | 23 | 106 | 150,25 gg |
+| 2.0 | Interfaccia 2.0, riavvolgimento, stanze, invio di salvataggi | 18 | 52 | 107,75 gg |
+| dopo gate | Solo se il gate dà sì | 38 | 179 | 398,25 gg |
+| **Totale** | | **103** | **456** | **790,5 gg** |
+
+### 1.4.4 — nessun salvataggio perso
+
+**Obiettivo.** Nessuna build deve più troncare, svuotare o perdere un salvataggio. È anche il primo rilascio che passa dal canale prerelease, con le righe hardware legate allo sha256 di `EBOOT.PBP`. La 1.4.3, uscita il 2026-11-02 come release del link (link lockstep più veloce, frameskip e priorità 0x77 durante il lockstep, correzione della pagina Prestazioni), non contiene storie di questo backlog: un `.sav` illeggibile può ancora essere sovrascritto dal primo flush.
+
+**Ordine di lavoro:**
+1. Rebase di `features/save-read-fixes` sulla 1.4.3 (gui.c e main.c sono cambiati) e merge: SAV-1, in corso, e SAV-2.8 sono il primo lavoro della 1.4.4.
+2. Il resto di SAV-1 e SAV-2, poi ENG-1, ENG-18 ed EXT-1. Nessun tag, nemmeno rc, prima di SAV-1.6: fino ad allora un `.sav` di dimensione non nativa si riscrive alla dimensione del chip senza copia `.orig`.
+3. `features/builtin-open-bios`, già ribasato sulla 1.4.3, resta fuori fino al tag 1.4.4, poi si ribasa su quel tag (CMP-1.1, nella 1.5).
+
+**Epic:** SAV-1, SAV-2, ENG-1 (tranne ENG-1.6, che va nella 1.5), ENG-18, EXT-1.
+
+**Storie anticipate:**
+- LNK-1.1: sessione accoppiata sulla 1.4.3 pubblicata, con due gare di MKSC e una coppia mista 1.4.2 + 1.4.3, prima di ogni modifica al link;
+- ENG-10.1: validatore Gen-3 per gli scambi di prova;
+- UI-1.1, UI-1.2 e UI-1.5: `dir.ini` facoltativo senza dialogo, `apply_theme` che non cancella più `tempgba_theme.cfg` (`gui.c:120-125`), una perdita di dati dell'utente, e uno zip che si installa estraendolo alla radice senza sovrascrivere file dell'utente. UI-1.2 dipende da UI-1.1;
+- ENG-2.6: controllo dei nomi vietati in `make check` e in `make release-gate`, da quando il backlog entra nel repository.
+
+SAV-2.8 e SAV-2.9 correggono due difetti nostri che perdono lo stato AUTO: «Carica stato da file» salvava il gioco in corso nello slot AUTO prima di caricare (`gui.c:4112-4123`), quindi sovrascriveva lo stato AUTO scelto (fatto nel branch dei salvataggi), e una sospensione con aperta la domanda di ripresa (`gui.c:3087-3094`) scrive l'AUTO dalla macchina appena resettata.
+
+**Stima:** circa 29,25 gg, 32 storie. EXT-5 (NC-2) resta nella 1.5, perché non si sa quali titoli colpisca.
+
+**Criteri di uscita:**
+- `make check` e `make test-sanitize` verdi, compresi la matrice tag × dimensione di SAV-1.1 (45 casi e fuzz da 200.000 passi; tag SRAM con `.sav` da 64 KiB → scrittura di 65536 byte) e i test di taglio a ogni passo dello store (SAV-2.1), con i guasti iniettati del file system finto di SAV-1.2.
+- Matrice di lettura di SAV-1.8 su PSP-1000 e su un secondo modello: Flash 128, Flash 64, SRAM ed EEPROM, ciascuno con un `.sav` nativo e con uno da 128 KiB. Dimensione e CRC sono quelli attesi dopo un salvataggio e dopo l'uscita.
+- 100 spegnimenti forzati su PSP-1000 e 100 su un secondo modello (Go se disponibile), con la ROM di SAV-2.6: zero `.sav` vuoti o corti; al massimo si perde l'ultima generazione non ancora promossa.
+- Uno scambio FireRed/Emerald tra due PSP con il nuovo store, e i due `.sav` accettati da `tools/gen3_sav_check.py`.
+- Righe di LNK-1.1 in `docs/HARDWARE-RESULTS.md` con lo sha256 di `EBOOT.PBP` della 1.4.3 pubblicata: 2 coppie × 2 ruoli, ciascuna con 3 scambi e 1 lotta, una gara di MKSC per ruolo e la coppia mista 1.4.2 + 1.4.3, con una sessione di scambi e una gara per ruolo.
+- EXT-1: il caso «scrittura prima della lettura» su EEPROM da 8 KiB fallisce sulla 1.4.2 e passa sul candidato, e un DMA da 49 unità non promuove il chip (`tests/test_eeprom.c`); `eeprom8k_wfirst` dà PASS su due modelli con un `.sav` di 8192 byte.
+- Senza `dir.ini`, ma con `gba_bios.bin` presente, l'emulatore arriva al browser senza dialoghi, e i colori personalizzati restano dopo un riavvio (`tests/test_theme_boot.py`).
+- UI-1.5: lo zip estratto alla radice installa in `PSP/GAME/GBARushPSP` su PSP-1000 e Go; l'aggiornamento sopra una 1.4.3 non tocca salvataggi, stati e config, e `check-package.sh` rifiuta nello zip `dir.ini`, `*.cfg`, `*.sav`, `*.svs` e ogni ROM o BIOS.
+- SAV-2.8: scegliere `<rom>_auto.svs` da «Carica stato da file» ripristina lo stato che il file aveva prima della scelta, e ogni altro file scrive prima il backup AUTO come oggi; provato su PSP-1000 nella sessione di SAV-2.7.
+- SAV-2.9: una sospensione con aperta la domanda di ripresa non cambia `<rom>_auto.svs`, provato su PSP-1000 nella sessione di SAV-2.7.
+- ENG-2.6: `make check` e `make release-gate` falliscono con una parola vietata nel tree, nei nomi dei file o nei messaggi di commit della release; 0 occorrenze sul tree della 1.4.4.
+- 1.4.4-rc.1 è pubblicata come prerelease, con note generate da `make release-gate` e moduli di issue attivi. Lo stesso binario diventa stabile dopo 72 h senza segnalazioni; se è stato provato un solo modello resta prerelease.
+
+### 1.5 — il gioco parte senza gba_bios.bin
+
+**Obiettivo.** Il gioco parte senza `gba_bios.bin`. Gli stati vengono validati e si possono annullare. Il salvataggio è protetto attorno a link, sospensione e guasti, e il gioco dà riscontro con toast nelle cinque lingue.
+
+**Ordine di lavoro:**
+1. Rebase di CMP-1.1 dopo il tag 1.4.4.
+2. CMP-3.1, che serve a CMP-1.2 (o CMP-1.7), CMP-1.3, EXT-3, SAV-6.1 e ai casi CPU e di tempi di CMP-11.1 e CMP-12.1, registrati sulla 1.4.3 pubblicata prima di ogni correzione.
+3. SAV-4, il cui gate chiede il BIOS già unito.
+
+SAV-6 sale dalla 1.6 perché il BIOS aperto, con le sue SWI vuote, rende più probabili i salti non mappabili. ENG-15 resta qui, così la stessa release dà tracce dei blocchi in campo.
+
+**Epic:** CMP-1, CMP-3, SAV-3, SAV-4, SAV-6, SAV-7, UI-1, UI-2, UI-3, UI-5, UI-6, LNK-1, LNK-2, LNK-3, ENG-15, EXT-2, EXT-3, EXT-4, EXT-5.
+
+**Storie anticipate:**
+- UI-4.1, UI-4.2 e UI-4.4 (accordi e menu senza HOME), che servono a UI-1.4 e UI-6.2; EXT-4.1 entra nello stesso bump di ConfigModel di UI-4.2;
+- UI-12.1 e CMP-5.1;
+- ENG-1.6, proprietaria dell'unico bump dei formati (runtime log 6, perf report 7);
+- PRF-2.1 e PRF-4.1, che entrano nello stesso bump;
+- ENG-2.1, prima del merge del BIOS;
+- ENG-8.3, insieme a SAV-7;
+- ENG-9.1;
+- SAV-8.1, nella stessa sessione di SAV-7.5;
+- UI-9.1, UI-9.4 e UI-9.6: accenti, sonda dei nomi file e ROM con nomi non ASCII;
+- UI-10.5: reset del gioco sicuro e annullabile;
+- ENG-10.4, CMP-11.1 e CMP-12.1: suite di terzi a hash fissi, casi CPU e casi di tempi e bus, registrati sulla 1.4.3 pubblicata prima di ogni correzione;
+- PRF-8.6 e CMP-9.1: suite SMC e di riferimento e sessione sui 13 titoli difficili, sulla 1.4.3 pubblicata.
+
+Nella sessione hardware si misurano anche i gate CMP-6.1 e CMP-10.1, si fa l'esperimento di SAV-8.1, si fanno PRF-8.6 e CMP-9.1 sulla 1.4.3 pubblicata e si fa la foto del gate di UI-7.1. Restano fuori dalla 1.5 LNK-3.5, EXT-3.3 ed EXT-5.3 (dopo gate) ed ENG-15.5 (solo su richiesta).
+
+**Stima:** circa 105 gg, 87 storie, con i doppioni già fusi. Per accorciarla, UI-6 ed ENG-15 possono passare nella 1.6, UI-9.1, UI-9.4 e UI-9.6 tornare nella 1.6 insieme, e PRF-8.6 e CMP-9.1 passare insieme all'inizio della 1.6, senza rompere dipendenze.
+
+**Criteri di uscita:**
+- Gate di CMP-1, senza `gba_bios.bin` su PSP-1000:
+  - almeno 7 titoli su 8 della lista di CMP-1.5 arrivano al gameplay e salvano;
+  - i titoli falliti sono elencati nel README, con la SWI sospetta in `source/bios/README.md`;
+  - lo scambio FireRed/Emerald con un PSP per BIOS riesce nei due versi;
+  - i report di CMP-1.6 sono salvati.
+- Un'installazione pulita (solo `EBOOT.PBP` ed `exception.prx`, senza `gba_bios.bin` né `dir.ini`) arriva al browser senza dialoghi su PSP-1000 e su un secondo modello (UI-1.4, dopo CMP-1.1).
+- EXT-3: la core-rom con `gba_bios.bin` passa al 100% su PSP-1000. Con il BIOS integrato ogni FAIL è descritto in `source/bios/README.md`, e un FAIL su LZ77, RL, Huffman, CpuSet o CpuFastSet blocca la release finché non è corretto o motivato lì.
+- La core-rom di CMP-3.1 è verde su PSP-1000 e su un secondo modello (`halt_ime0`, `halt_cpsr_i` e i casi open bus), e compare-benchmarks con 3+3 run su FireRed e MKSC non dà FAIL.
+- Casi CPU (CMP-11.1) e di tempi e bus (CMP-12.1) eseguiti sulla 1.4.3 pubblicata su PSP-1000 e su un secondo modello, con ogni esito in `docs/HARDWARE-RESULTS.md` e i FAIL attesi elencati; tutti i casi passano in mGBA; nella stessa sessione gli esiti di jsmolka `arm.gba`, `thumb.gba` e `memory.gba` e delle sezioni timer e timing della suite di mGBA (ENG-10.4).
+- PRF-8.6: tabella scena × modello completa sulla 1.4.3 (30 scene, 180 catture), con il memo che dà i numeri ai gate di PRF-7.6, PRF-8.7-8.10, PRF-9.4 e PRF-9.6; CMP-9.1: una riga per titolo difficile e modello, con la decisione sui gate di CMP-9.2 e CMP-9.3.
+- SAV-4.6: dieci stati reali della 1.4.2 si caricano, nessuno stato valido viene rifiutato, e ogni rifiuto ha il motivo nel log. Il fuzz del decoder gira in `make test-sanitize`.
+- SAV-3.4: dopo uno scambio reale, la generazione 1 ripristinata ha lo stesso CRC32 della copia, e l'avvio del link rallenta di meno di 1 s.
+- SAV-7.5 su PSP-1000, PSP-3000 e Go (o una PSP-2000 dichiarata): 11 situazioni × 20 cicli con 0 spegnimenti al posto dello standby, 0 blocchi, 0 letture della ROM fallite al risveglio e 0 salvataggi persi, e POWER→standby ≤ 1 s al p95; SAV-7.6: 60 standby con ogni combinazione di bit, senza ROM non riaperte né audio muto, e l'attesa del callback sul semaforo audio limitata a 50 ms; SAV-8.1 decide per iscritto il gate di SAV-8. SAV-6.6: 20 guasti di fila con la ROM di test su PSP-1000 e su un secondo modello, senza crash della console.
+- In gioco non compare nessun dialogo modale per i tasti stato o per i blocchi del link. check-messages, check-menu-layout e il controllo di larghezza di ENG-9.1 sono verdi nelle 5 lingue.
+- Due turbo tenuti insieme pulsano entrambi (test di `input_model`), e in una sessione link il turbo resta attivo al ritmo normale (UI-5.2, come decide LNK-3), e l'azione Screenshot scrive in `PICTURE/GBARushPSP/` un PNG (mediana ≤ 4 KB sui frame di riferimento) che la colonna Foto dell'XMB apre, in al massimo 60 ms al p95 su PSP-1000.
+- UI-9.6: 30/30 ROM della cartella di prova (nomi accentati, giapponesi e cinesi) trovate e aperte su due modelli, con 0 salvataggi orfani; UI-10.5: in sessione link il reset si rifiuta con il motivo, fuori sessione batteria e AUTO si scrivono prima del reset.
+- EXT-2, su PSP-1000: lo zip corrotto e quello troncato mostrano il messaggio e tornano al browser; lo zip scritto in streaming si carica; lo zip valido da 16 MiB carica al massimo il 10% più lento (3+3 run).
+- EXT-4: dopo un riavvio, e riaprendo il browser nella stessa sessione, il browser si apre nell'ultima vista usata; le altre impostazioni migrano intatte, cambiare vista non scrive sul Memory Stick e con 500 ROM su PSP-1000 l'apertura in carosello non è più lenta che sulla 1.4.3.
+- EXT-5:
+  - su una ROM paginata da 32 MiB l'ultima pagina torna corretta dopo un comando EEPROM (test host, che fallisce sulla 1.4.2);
+  - con ROM fino a 16 MiB non cambia nulla;
+  - la variante da 32 MiB della ROM di test salva e rilegge su due modelli, e l'esito della LDRH decide il gate di EXT-5.3.
+- LNK-1.3 ha righe per AW2, MKSC, Sonic Battle e link-rom su PSP-1000 e 2000 nei due ruoli, con un sì/no scritto per i gate di LNK-6.3, 9, 10, 11 e 12. Con un partner 1.4.0 compare il motivo «versione diversa» con «1.4.0»; con un partner 1.4.1-1.4.4 la sessione si collega e il menu mostra «1.4.x» (LNK-2.2).
+- C'è un solo bump dei formati, di ENG-1.6 (runtime log 6, perf report 7), con decoder e test nello stesso commit, e compare-benchmarks legge sia i report 6 sia i 7 e rifiuta quelli con version minore di 1.4.3.
+- Il watchdog registra un blocco provocato nella build diagnostica (record STALL), e il riavvio successivo segnala la sessione non chiusa.
+- Prerelease per almeno 7 giorni, poi lo stesso binario diventa stabile. Se è stato provato un solo modello resta prerelease.
+
+### 1.6 — core misurabile, poi più corretto
+
+**Obiettivo.** Il core diventa misurabile e verificabile, e solo dopo più corretto. I trucchi diventano sicuri e comodi.
+
+**Ordine di lavoro:**
+1. Strumentazione e profili: PRF-2, PRF-3, PRF-4, ENG-2.2.
+2. Baseline per modello della 1.6 (PRF-1.5), dopo PRF-2.2, PRF-2.3 e PRF-3.1.
+3. Oracolo di replay (ENG-3).
+4. Modifiche al core confrontate con baseline e oracolo: CMP-2.4, CMP-5.2, PRF-5.2, poi CMP-11.2-11.6 e CMP-12.2-12.5 (CMP-12.4 prima di CMP-12.5), e per ultima CMP-9.4.
+
+**Epic:** UI-4, UI-14, CMP-2, CMP-5, CMP-7, CMP-9, CMP-11, CMP-12, PRF-2, PRF-3, PRF-4, PRF-5, GIO-3, GIO-4, GIO-6, LNK-4, ENG-2, ENG-3, ENG-5, ENG-6, ENG-10, ENG-17, ENG-19.
+
+**Storie anticipate:**
+- UI-7.1;
+- UI-12.2, UI-12.3 e UI-12.4, quest'ultima con la proposta sul tasto TRIANGOLO del browser, da confermare (vedi «Decisioni aperte»);
+- ENG-16.1, ENG-16.2 ed ENG-16.3;
+- ENG-14.1, CMP-8.1 e CMP-8.4;
+- PRF-1.1-1.6: metodo A/B, strumenti e baseline della 1.6; l'epic si chiude nella 2.0 con la suite pubblica di scene;
+- gli ADR EXT-6.1, EXT-7.1 ed EXT-8.1, dopo ENG-17.3.
+
+Qui si fanno anche gli esperimenti dei gate: PRF-10.1, PRF-11.1, PRF-12.1, PRF-9.2, PRF-9.5, PRF-11.5 e la misura di PRF-7 con PRF-2.3 e PRF-2.5. Restano dopo il gate CMP-5.3, CMP-7.4, CMP-9.2, CMP-9.3, CMP-9.5, CMP-12.6, PRF-5.3-5.4 ed ENG-6.3-6.5; l'ex UI-14.3 è ora UI-13.4, dopo il gate con UI-13. ENG-6.6, il ripiego di F-127 su PSP (modalità testpat con una foto per modalità su PSP-1000), resta nella 1.6 anche se lo spike PPSSPP fallisce.
+
+**Stima:** circa 150,25 gg, 106 storie. È la milestone più pesante. GIO-6, UI-12.2-12.4 ed ENG-19 possono scivolare nella 2.0 senza rompere dipendenze, e così CMP-12.5 e CMP-9.4 insieme: allora CMP-9 e CMP-12 si chiudono nella 2.0 e passano nella riga «Epic:» della 2.0.
+
+**Criteri di uscita:**
+- Baseline pubblicata per PSP-1000 e per uno slim, con almeno 5 titoli × 3 run alternati. `make release-gate` fallisce su p99, sul massimo robusto e sui frame oltre 1,5 volte il budget al minuto.
+- L'overhead della strumentazione è al massimo l'1% del throughput (PRF-2.6), e due run dello stesso build sullo stesso slot differiscono meno dell'1% (PRF-3.4). `docs/RAM-BUDGET.md` riporta numeri misurati su PSP-1000 e su uno slim.
+- PRF-11.5: telemetria della latenza nel report della 1.6 su 5 scene e due modelli, con la latenza media per scena e la decisione sui gate di PRF-11.6 e PRF-11.7 in `docs/DESIGN-DECISIONS.md`.
+- Replay con hash per frame: autoverifica e perturbazione verdi, corpus pubblico su ROM GPL identico su PSP-1000 e PSP-2000 (ENG-3.5), replay identico sui titoli con RTC grazie all'orologio guest (CMP-7.3).
+- CMP-5.2:
+  - caso `ewram_stack` verde su PSP-1000 e su un secondo modello, con i cicli di uno STM di 4 parole in EWRAM uguali agli stati di attesa della EWRAM, e test dell'emettitore (ENG-5.2) verde;
+  - compare-benchmarks con 3+3 run su FireRed e Golden Sun, senza regressioni;
+  - replay identico;
+  - Kirby NiDL e Mario Golf corretti con le opzioni di default.
+- CMP-2: nei test host `game_config.txt` prevale sulla tabella. Un idle loop della tabella si accende solo se il replay di 2 minuti resta identico e il titolo guadagna almeno il 2% su PSP-1000.
+- CMP-11: tutti i casi CPU della core-rom verdi su PSP-1000 e su un secondo modello, con «Stack optimize» acceso e spento; Golden Sun: L'Era Perduta, Mario Golf: Advance Tour e Mario Tennis: Power Tour arrivano al gameplay, salvano e ricaricano sui due modelli, e OpenLara arriva al primo livello e gira 10 minuti senza blocchi; nessun test di jsmolka `arm.gba` e `thumb.gba` che passava sulla 1.4.3 fallisce.
+- CMP-12: i 103 casi fuori da `cases_bus` verdi sul build di release su PSP-1000 e PSP-2000, e i 12 di `cases_bus` verdi sulla 1.4.3 o, se il gate di CMP-12.6 dà sì, dopo CMP-12.6; nel bench nessun titolo oltre −0,3% e la geomedia entro il rumore di PRF-3.4; EBOOT al massimo 2 KiB più grande; le sezioni dei timer e del timing della suite di mGBA salgono rispetto alla 1.4.3 e nessuna sezione di jsmolka o di mGBA scende.
+- CMP-9.4: elenco pubblicato di almeno 40 titoli, ciascuno con gameplay, salvataggio, riavvio e ricarica su PSP-1000 e PSP-2000 e la riga legata allo sha256 di `EBOOT.PBP`; i 13 titoli difficili salvano sui due modelli, oppure hanno la causa misurata e una CMP-9.5 aperta; nessuno dei 13 mostra difetti grafici a vista sui due modelli, oppure CMP-9.3 è aperta; fra i 13, i cinque titoli di guida (Big Mutha Truckers, Driver 2 Advance, Need for Speed: Underground, Need for Speed: Underground 2 e Street Racing Syndicate) in gara hanno una mediana di almeno 59,7 fps e un margine del bench senza limite di almeno il 10% (≥ 65,7 fps) sui due modelli, con il p99 pubblicato, e OpenLara al primo livello ha una mediana di almeno 59,7 fps sui due modelli, con il p99 pubblicato; Pokémon MonoMyth arriva al primo salvataggio dopo la sua schermata di controllo; per ogni numero che resta sotto, la causa misurata e una storia aperta.
+- GIO-3, GIO-4 e GIO-6:
+  - il fuzz da 100.000 mutazioni non trova errori;
+  - i trucchi costano al massimo 1 ms per frame su PSP-1000;
+  - una lista di 200 voci si carica da sola, e le scelte si conservano su PSP-1000 e 3000;
+  - il pack è riproducibile (due build danno lo stesso zip), ha almeno 50 liste e 1.700 voci accettate e ha i crediti CC BY-SA.
+- `-Werror` attivo sul codice del progetto, profili release e diagnostic, CI verde sulle PR, e nessuna stringa diagnostica nell'ELF release.
+- L'esito dello spike PPSSPP (ENG-6.1) e di ogni gate valutato qui (PRF-7, PRF-9, PRF-10, PRF-11, PRF-12, PRF-5.3-5.4, CMP-8, CMP-9.5), con PRF-9.4 e PRF-9.6 decisi da PRF-9.2 e PRF-9.5 e PRF-11.6 e PRF-11.7 decisi da PRF-11.5, è scritto come sì/no, con i numeri, in `docs/DESIGN-DECISIONS.md`. Lì stanno anche gli ADR EXT-6.1, EXT-7.1 ed EXT-8.1, con id unici.
+- Prerelease per almeno 7 giorni; per diventare stabile servono righe hardware su due modelli.
+
+### 2.0 — interfaccia 2.0, riavvolgimento, stanze
+
+**Obiettivo.** Interfaccia 2.0 nelle cinque lingue, riavvolgimento, stanze e invio di salvataggi tra PSP.
+
+**Ordine di lavoro:**
+1. UI-8, il batch GE sotto l'API di `gui.c`.
+2. UI-9.2-9.3, UI-10 e UI-11, con un solo sfondo sul frame congelato.
+3. ENG-9.2.
+4. ENG-16.4, con le immagini fatte sulla nuova UI.
+
+ENG-7.3, o una coppia hardware, va fatta prima del cambio di formato di LNK-5 e LNK-7, che escono insieme in un solo bump. GIO-1 parte quando SAV-4, PRF-2, PRF-4 ed ENG-3 sono già rilasciati.
+
+**Epic:** PRF-1, UI-7, UI-8, UI-9, UI-10, UI-11, UI-12, UI-16, GIO-1, GIO-5, GIO-7, LNK-5, LNK-6, LNK-7, ENG-7, ENG-8, ENG-9, ENG-16.
+
+Restano dopo il gate UI-9.5, UI-16.3, GIO-1.6, LNK-6.3 ed ENG-8.2; l'ex GIO-7.5 è ora LNK-16.5, dopo il gate con LNK-16. UI-7.3 si unisce solo dopo il gate di colore di UI-7.2.
+
+**Stima:** circa 107,75 gg, 52 storie.
+
+**Criteri di uscita:**
+- Golden per lingua e per tema in `make check`. Su PSP-1000 il tempo di frame del menu non è peggiore del riferimento registrato prima di UI-8 (media e p95, 3 run), e gli atlanti dei font occupano al massimo 1 MiB in memoria.
+- Il pattern di colore GE (F-127 in PPSSPP o, se lo spike fallisce, le foto su PSP-1000 di ENG-6.6) è verde prima di unire UI-7.2, UI-7.3 e UI-8.2.
+- GIO-1, su ogni modello, in Emerald, Minish Cap, Golden Sun, MKSC e Driver 2 per 10 minuti ciascuno:
+  - cattura ammortizzata di al massimo 1 ms per frame e nessuna oltre 3 ms, oppure 0 frame persi;
+  - almeno 45 s di Emerald con 2 MiB;
+  - hash dello stato guest uguale prima della cattura e dopo il ripristino.
+
+  Dove il gate fallisce, il riavvolgimento resta spento di default.
+- Prova a tre console di LNK-5.5; trasferimenti interrotti di LNK-7.4 senza file corrotti; riga ppsspp-link-pair o hardware registrata prima del bump di `LINK_NET_VERSION`.
+- GIO-7 su PSP-1000 e Go: una bolla con salvataggi separati e una bolla autonoma partono 10 volte senza perdere salvataggi. GIO-5: la pagina trucchi aperta dal browser e quella in gioco restano coerenti dopo 10 cicli su PSP-1000 e 3000.
+- UI-11.3: 20 cicli per ciascuna di 4 situazioni (gioco, menu, scheda di pausa, scheda di risveglio) su PSP-1000, PSP-3000 e Go, con 0 schermi neri e 0 tasti della risposta passati al gioco. UI-12.5: con 2.000 ROM la lista usa al massimo 256 KiB e lascia almeno 1 MiB libero su PSP-1000.
+- UI-7.3: filtri LCD allineati a ogni scala, con il costo pubblicato (compare-benchmarks 3+3 al 150% e in 16:9 Sharp). UI-16.2: 200 cambi per modello con heap identico al byte e p95 ≤ 0,8 s su PSP-1000.
+- README con media reali (al massimo 200 KB per immagine e 3 MB in tutto), con la tabella di compatibilità per gioco generata dai report e con la tabella per scena della suite di PRF-1.7 (almeno 40 scene da almeno 35 giochi × 2 modelli × 3 run, ENG-16.5).
+- Prerelease per almeno 7 giorni; per diventare stabile servono righe hardware su due modelli, Go compreso.
+
+### Dopo gate
+
+**Obiettivo.** Qui stanno le epic che partono solo se un gate misurabile dà sì. Finché il gate non dà sì restano chiuse, con la decisione in `docs/DESIGN-DECISIONS.md`.
+
+**Dove si misurano i gate:**
+- SAV-5: dati di SAV-2.4, nella 1.4.4. SAV-8: matrice di SAV-7.5 ed esperimento SAV-8.1, entrambi nella 1.5.
+- CMP-1.7: decisione (e), prima del merge del branch del BIOS. CMP-6 e CMP-10: sessione hardware della 1.5. CMP-8: nella 1.6. CMP-9: CMP-9.1 nella 1.5, sulla 1.4.3 pubblicata, e CMP-9.4 alla fine della 1.6. CMP-12.6: casi `cases_bus` di CMP-12.1, nella 1.5. CMP-4: record di guasto dal campo, dopo SAV-6.
+- PRF-7, 9, 10, 11 e 12: baseline della 1.6, con PRF-9.2, PRF-9.5 e PRF-11.5; PRF-7.6, PRF-8.7-8.9 e PRF-9.4 usano anche le scene di PRF-8.6 (1.5). PRF-6: dopo PRF-5, o se GIO-1 la chiede. PRF-8.1-8.5 dopo PRF-7; PRF-8.7 e PRF-8.9 con PRF-8.6; PRF-8.8 e PRF-8.10 con la classificazione delle trappole di PRF-8.1; PRF-8.11 dopo l'ultima storia di PRF-8 entrata o ritirata. PRF-13 dopo PRF-7, 9 e 12; PRF-14 dopo PRF-13.
+- UI-13: misura dell'heap su PSP-1000 (almeno 2 MiB liberi con i buffer dell'arte). UI-15: termini di libretro-thumbnails; se vietano il download, l'epic si ferma alla rinomina. UI-17: spike UI-17.1, cioè un PMF nostro riprodotto dall'XMB su PSP-1000 e Go.
+- GIO-2: oracolo di ENG-3 su 5 giochi e determinismo tra modelli per 10 minuti, con GIO-1 rilasciato da almeno un ciclo.
+- LNK-8: una segnalazione riproducibile di scelta errata, oppure una terza tecnica pronta; LNK-8.1 sta fuori dal gate e si consegna con la prima tecnica che la usa. LNK-9, 11 e 12: dati di LNK-1.3. LNK-10: dati di LNK-1.1 o LNK-1.3 in una sessione Pokémon. LNK-16: LNK-5 e GIO-7.1-7.3 consegnati, e la rete che parte a metà partita senza frame oltre 50 ms.
+- GIO-8, LNK-13, 14, 15 e 17: segnalazioni contate con ENG-18.
+- ENG-4: tracce del corpus che non arrivano più allo stato atteso dopo due modifiche di timing, oppure il gate di ENG-11. ENG-11: ore hardware di due release. ENG-12: spike di 2 giorni, pianificabile nella 1.6; ENG-12.5 dopo ENG-12.2, con la core-rom CPU verde e un difetto del dynarec arrivato in una release che la core-rom, le suite di ENG-10.4 e il replay non riproducono. ENG-13 ed ENG-14: dopo ENG-12; ENG-14.4 anche senza lo spike, con l'esperimento di padding di PRF-10.1 o un bug di codice stantio visto solo su hardware.
+- EXT-3.3: un titolo che fallisce con il BIOS integrato, gira con `gba_bios.bin` e usa SoundBias o MultiBoot. EXT-5.3: l'esito della LDRH di EXT-5.2. EXT-6.2 ed EXT-8.2: almeno 3 richieste distinte, per EXT-6.2 contate dal rilascio della 1.6, che porta la pagina Scorciatoie (UI-4.3); EXT-8.3 dopo 20 cicli per modello senza errori di file system. EXT-7.2: almeno 20 immagini originali con licenza CC-BY-4.0 o CC0 e provenienza dichiarata, con UI-13.1 rilasciata.
+
+**Epic:** SAV-5, SAV-8, CMP-4, CMP-6, CMP-8, CMP-10, PRF-6, PRF-7, PRF-8, PRF-9, PRF-10, PRF-11, PRF-12, PRF-13, PRF-14, UI-13, UI-15, UI-17, GIO-2, GIO-8, LNK-8, LNK-9, LNK-10, LNK-11, LNK-12, LNK-13, LNK-14, LNK-15, LNK-16, LNK-17, ENG-4, ENG-11, ENG-12, ENG-13, ENG-14, EXT-6, EXT-7, EXT-8.
+
+**Storie condizionate di epic già pianificate:** CMP-1.7, CMP-5.3, CMP-7.4, CMP-9.2, CMP-9.3, CMP-9.5, CMP-12.6, PRF-5.3-5.4, UI-9.5, UI-16.3, GIO-1.6, LNK-3.5, LNK-6.3, ENG-6.3-6.5, ENG-8.2, ENG-15.5, EXT-3.3, EXT-5.3. UI-13.4 (ex UI-14.3) e LNK-16.5 (ex GIO-7.5) stanno già dopo gate, nelle epic di arrivo. UI-17.3 (splash) non dipende dallo spike e si può anticipare quando si vuole.
+
+**Stima:** circa 398,25 gg, 179 storie.
+
+**Criteri di uscita:**
+- Un'epic entra in una milestone numerata solo quando il suo gate è registrato come sì in `docs/DESIGN-DECISIONS.md`, con numeri e build. Un gate fallito chiude l'epic, con il motivo.
+- Valgono i criteri di stop scritti nelle epic:
+  - PRF-7: nessun guadagno significativo di almeno il 2% dopo PRF-7.5 (voci BIOS e ROM; PRF-7.6 ha un gate proprio);
+  - PRF-13 e PRF-14: un freeze nel soak di 8 ore o nei 100 cicli di sleep/wake;
+  - PRF-14: rendering sul ME oltre circa 11 ms, o risparmio netto sotto 1 ms.
+- Le soglie di domanda si contano su issue e Discussions, con un'etichetta per funzione (ENG-18): GIO-8 almeno 15 richieste distinte nei 90 giorni dopo la 2.0; LNK-14, LNK-15 e LNK-17 almeno 5 ciascuna; LNK-13, EXT-6.2 ed EXT-8.2 almeno 3.
+- Le epic sconsigliate (CMP-10, PRF-14, UI-17, GIO-8, LNK-12, LNK-14, LNK-15, LNK-17, ENG-13, EXT-6, EXT-7, EXT-8) partono solo con il gate superato e con il verdetto rivisto per iscritto.
+
+## Indice delle epic
+
+| ID | Titolo | Verdetto | Milestone | gg | Dipendenze principali | PSP |
+|---|---|---|---|---|---|---|
+| SAV-1 | Lettura del .sav corretta: tipo dal tag ROM, dimensione nativa, mai un'immagine vuota sopra il file | in corso | 1.4.4 | 5,5 | SAV-2.1 (solo SAV-1.6) | sì |
+| SAV-2 | Ogni scrittura del .sav è una transazione con .bak verificato | consigliato | 1.4.4 | 10,5 | SAV-1.2-1.4, SAV-1.8 | sì |
+| SAV-3 | Tre copie verificate del salvataggio prima di ogni sessione link, ripristinabili dal menu | consigliato | 1.5 | 2,5 | SAV-2.1, SAV-2.3 | sì |
+| SAV-4 | Formato savestate v2: identità ROM, CRC, validazione prima di applicare, annulla | consigliato | 1.5 | 6 | SAV-1.7, SAV-2.5, CMP-1.1 | sì |
+| SAV-5 | Writer del salvataggio fuori dal thread di emulazione | condizionato | dopo gate | 3,5 | SAV-2 (gate su SAV-2.4) | sì |
+| SAV-6 | Un errore di emulazione non costa la sessione né il salvataggio | consigliato | 1.5 | 5,5 | SAV-2.3, SAV-2.6, CMP-3.1 | sì |
+| SAV-7 | Sospensione e ripresa sicure | consigliato | 1.5 | 5,5 | SAV-2.3, SAV-2.5, SAV-2.6, SAV-3.2 | sì |
+| SAV-8 | Parcheggio prima della sospensione: lock durante il gioco, AUTO e handle chiusi | condizionato | dopo gate (SAV-8.1 in 1.5) | 3,5 | SAV-7.5 | sì |
+| CMP-1 | BIOS GBA aperto integrato (avvio senza gba_bios.bin) | in corso | 1.5 (CMP-1.7 dopo gate) | 10 | CMP-3.1, SAV-2.7, ENG-2.1, ENG-1.6 | sì |
+| CMP-2 | Tabella dei giochi compilata, con override dell'utente | consigliato | 1.6 | 8,5 | ENG-3, PRF-1.1, PRF-1.5, CMP-1.4, ENG-1.6, ENG-2 (solo CMP-2.4) | sì |
+| CMP-3 | HALT conforme a GBATEK, open bus del BIOS a run time e ROM di prova del core | consigliato | 1.5 | 3,25 | SAV-2.6 | sì |
+| CMP-4 | Maschera a 28 bit del PC guest | condizionato | dopo gate | 1 | CMP-3.1, SAV-6, ENG-17, ENG-1.6 | sì |
+| CMP-5 | Stack in EWRAM corretto nel percorso veloce di LDM/STM/PUSH/POP | consigliato | 1.6 (CMP-5.1 in 1.5; CMP-5.3 dopo gate) | 5 | CMP-3.1, ENG-5, PRF-1.1, PRF-1.5, ENG-3 | sì |
+| CMP-6 | Mirroring delle ROM da 1 MiB (Classic NES Series) | condizionato | dopo gate (CMP-6.1 in 1.5) | 3 | CMP-3.1, ENG-3, CMP-12.5 (solo CMP-6.4) | sì |
+| CMP-7 | RTC della cartuccia: protocollo testato, modalità 12/24 h, orologio guest | consigliato | 1.6 (CMP-7.4 dopo gate) | 5 | SAV-4 | sì |
+| CMP-8 | ROM hack: righe per CRC, ripiego stretto e header non standard | condizionato | dopo gate (CMP-8.1 e CMP-8.4 in 1.6) | 3,5 | CMP-2.1-2.2, CMP-1.4, SAV-1, ENG-1 | sì |
+| CMP-9 | Titoli difficili: elenco pubblicato di giochi che arrivano al gameplay e salvano | consigliato | 1.6 (CMP-9.1 in 1.5; CMP-9.2, CMP-9.3 e CMP-9.5 dopo gate) | 9,25 | PRF-8.6, CMP-11, CMP-12, ENG-16.3, PRF-3.1, PRF-8 e ENG-6 (solo CMP-9.2-9.3), ENG-3 (solo CMP-9.5) | sì |
+| CMP-10 | Handshake del Game Boy Player | sconsigliato | dopo gate (CMP-10.1 in 1.5) | 2,5 | SAV-4 | sì |
+| CMP-11 | Semantica ARM7TDMI nel dynarec: casi della core-rom, MSR, BX, banco FIQ, trasferimenti ^ e IRQ sbloccati | consigliato | 1.6 (CMP-11.1 in 1.5) | 7 | CMP-3.1, ENG-10.4, ENG-3, PRF-1.5, CMP-3.2 (solo CMP-11.6) | sì |
+| CMP-12 | Tempi del core al ciclo: timer letti dal vivo, cicli dei salti, store multipli controllati, finestra di prefetch | consigliato | 1.6 (CMP-12.1 in 1.5; CMP-12.6 dopo gate) | 15,5 | CMP-3.1, SAV-2.6, ENG-10.4, ENG-3, PRF-1.5, PRF-8.6 (+1) | sì |
+| PRF-1 | Metodo A/B, gate di regressione e baseline per modello pubblicate | consigliato | 2.0 (PRF-1.1-1.6 in 1.6) | 11,5 | PRF-2.1-2.3, PRF-3.1, PRF-4.1, CMP-1.4, ENG-1, ENG-3.2 (solo PRF-1.7) | sì |
+| PRF-2 | Strumentazione per fasi: tempo di lavoro, fasi campionate, dispatch, prelazioni | consigliato | 1.6 (PRF-2.1 in 1.5) | 9 | PRF-3.2, ENG-1.6, ENG-2 | sì |
+| PRF-3 | Benchmark senza limite e deterministico | consigliato | 1.6 | 5 | PRF-1.1, PRF-2.1, ENG-1.6, ENG-2 | sì |
+| PRF-4 | Budget di memoria per console: misura dell'heap, numeri misurati, soglia prima del link | consigliato | 1.6 (PRF-4.1 in 1.5) | 5,5 | LNK-2, LNK-3.2, ENG-1.6, ENG-2 | sì |
+| PRF-5 | Dimensionamento della memoria: buffer ROM a passi di 1 MiB, cache JIT e pagine per modello | consigliato | 1.6 (PRF-5.3-5.4 dopo gate) | 8 | PRF-4.1-4.2, PRF-1.1, PRF-1.5, CMP-1.4, ENG-3 | sì |
+| PRF-6 | Partizione volatile da 4 MiB per pagine ROM e rewind | condizionato | dopo gate | 7 | PRF-4.1, ENG-2, ENG-3, SAV-7.5 | sì |
+| PRF-7 | Dispatch cache per i salti indiretti (prima solo BIOS e ROM) | condizionato | dopo gate (misura in 1.6) | 13 | PRF-1.1, PRF-1.3, PRF-2.3, PRF-2.5, PRF-3.1, CMP-1.4, ENG-2, ENG-3, ENG-15.4, PRF-8.6 (solo PRF-7.6) | sì |
+| PRF-8 | SMC avanzato: suite misurata, meno trappole e ritraduzioni, gate appresi, thunk stabili e link diretti RAM | condizionato | dopo gate (PRF-8.6 in 1.5) | 27,5 | PRF-1.1, PRF-1.3, PRF-7.5, PRF-2.3, PRF-3.1, CMP-1.4, CMP-2.2, CMP-12.4, ENG-15.4 (+7) | sì |
+| PRF-9 | Percorsi rapidi esatti per registri IRQ, scheduler, cambi di modo e attese | condizionato | dopo gate (PRF-9.2 e PRF-9.5 in 1.6) | 10,75 | PRF-1.1, PRF-1.3, PRF-2.2-2.3, PRF-3.1, PRF-8.6, CMP-11.2-11.6, ENG-3, ENG-15.4 (+4) | sì |
+| PRF-10 | Layout dell'I-cache fissato, dati caldi a set fisso e controllo del budget del nucleo caldo | condizionato | dopo gate (PRF-10.1 in 1.6) | 8,25 | PRF-1.1, PRF-3.1, ENG-2, ENG-3 | sì |
+| PRF-11 | Latenza dell'input misurata e ridotta, triplo buffer senza latenza aggiunta | condizionato | dopo gate (PRF-11.1 e PRF-11.5 in 1.6) | 13,75 | PRF-1.5, PRF-2.1, ENG-1.6, ENG-3, ENG-15.4 | sì |
+| PRF-12 | Mix audio a 32 kHz come opzione misurata | condizionato | dopo gate (PRF-12.1 in 1.6) | 6,5 | PRF-1.1, PRF-3.2, CMP-1.4, ENG-2 | sì |
+| PRF-13 | Media Engine: prima l'audio | condizionato | dopo gate | 14 | PRF-1.5, ENG-2, SAV-7.5 | sì |
+| PRF-14 | Media Engine: renderer video opzionale | sconsigliato | dopo gate | 16,5 | PRF-13.4, PRF-2.2, PRF-11.5, ENG-6 | sì |
+| UI-1 | Primo avvio senza configurazione e colori del tema persistenti | consigliato | 1.5 (UI-1.1, UI-1.2 e UI-1.5 in 1.4.4) | 2,75 | UI-2.2, UI-4.4, CMP-1.1 | sì |
+| UI-2 | Notifiche non modali: un anello di toast localizzati | consigliato | 1.5 | 2,5 | — | sì |
+| UI-3 | Salvataggio e caricamento rapido senza prompt, annullabili | consigliato | 1.5 | 2,25 | LNK-3.2, SAV-4.5 | sì |
+| UI-4 | Accordi per gioco, pagina delle scorciatoie e menu senza HOME | consigliato | 1.6 (UI-4.1, UI-4.2 e UI-4.4 in 1.5) | 8 | UI-2.2, UI-12.4 | sì |
+| UI-5 | Input affidabile: turbo per tasto e isteresi dello stick | consigliato | 1.5 | 3,25 | UI-2.2 | sì |
+| UI-6 | Screenshot PNG funzionanti | consigliato | 1.5 | 4,25 | UI-2.2, UI-4.2, SAV-7.1 | sì |
+| UI-7 | Opzioni video: 2x intero, sharp bilinear a ogni scala e filtri LCD | condizionato | 2.0 (UI-7.1 in 1.6) | 6 | ENG-6.5 o, se lo spike PPSSPP fallisce, ENG-6.6; UI-10.1 | sì |
+| UI-8 | Strato di disegno GE a lista unica sotto l'API di gui.c | consigliato | 2.0 | 11,5 | PRF-4, ENG-6.5 o, se lo spike PPSSPP fallisce, ENG-6.6 | sì |
+| UI-9 | Testo: accenti, nomi non ASCII, stringhe nelle tabelle e font anti-aliasing nelle 5 lingue | consigliato | 2.0 (UI-9.1, UI-9.4 e UI-9.6 in 1.5; UI-9.5 dopo gate) | 15 | UI-8.5, PRF-4, ENG-1.6 | sì |
+| UI-10 | Menu di gioco sopra il frame in pausa, con anteprima live, miniature e reset annullabile | consigliato | 2.0 (UI-10.5 in 1.5) | 6,75 | UI-8.3, UI-12.4, SAV-2.3 | sì |
+| UI-11 | Stato nelle righe del menu, pausa e risveglio sul frame congelato | consigliato | 2.0 | 3 | UI-4.2, UI-10.1, SAV-7.5, SAV-7.6, ENG-8.1 | sì |
+| UI-12 | Libreria: ultimo gioco, nomi puliti, badge, preferiti e vista unificata | consigliato | 2.0 (UI-12.1 in 1.5; UI-12.2-12.4 in 1.6) | 9,5 | PRF-4, EXT-4.1, UI-9.6 | sì |
+| UI-13 | Arte dei giochi: sfondi 480x272, layout artistico e barre laterali | condizionato | dopo gate | 8,5 | PRF-4, UI-8.2, UI-14.1, EXT-4.1 | sì |
+| UI-14 | Schermata di caricamento con avanzamento reale e tempi delle fasi | consigliato | 1.6 | 2 | ENG-1.6 | sì |
+| UI-15 | Strumento desktop: recupero e rinomina della box art | condizionato | dopo gate | 4,5 | — | no |
+| UI-16 | Cambio gioco nel processo, verificato con la misura dell'heap | condizionato | 2.0 (UI-16.3 dopo gate) | 5,5 | PRF-4, UI-2.2, ENG-1.6, ENG-6.2 | sì |
+| UI-17 | Icona XMB animata e splash all'avvio | sconsigliato | dopo gate | 4,5 | — | sì |
+| GIO-1 | Riavvolgimento, passo 1: anello di snapshot in ogni release | consigliato | 2.0 (GIO-1.6 dopo gate) | 25 | SAV-4, PRF-2, PRF-4, ENG-3 (+7) | sì |
+| GIO-2 | Riavvolgimento, passo 2: retromarcia fluida con audio invertito | condizionato | dopo gate | 16,5 | GIO-1.4, ENG-3, PRF-1, PRF-4, CMP-7.3, ENG-1.6 (solo GIO-2.5) | sì |
+| GIO-3 | Motore dei trucchi a prova di input ostile | consigliato | 1.6 | 12 | CMP-1.1, LNK-3.2, ENG-1.6 (solo GIO-3.3) | sì |
+| GIO-4 | Trucchi per gioco: caricamento automatico, scelte ricordate, import RetroArch | consigliato | 1.6 | 8 | GIO-3.1-3.2, SAV-2 | sì |
+| GIO-5 | Pagina trucchi: apertura dal browser e comodità | consigliato | 2.0 | 5,5 | GIO-4.2, GIO-4.4, UI-2, UI-12.4 | sì |
+| GIO-6 | Pack di trucchi pronto e LEGGIMI dei trucchi | consigliato | 1.6 | 6 | GIO-4.3-4.4, ENG-1 | no |
+| GIO-7 | Launcher single-game: salvataggi per bolla e bolla autonoma | consigliato | 2.0 | 7 | SAV-2, ENG-1 | sì |
+| GIO-8 | Modulo Game Boy / Game Boy Color | sconsigliato | dopo gate | 37,5 | PRF-1, PRF-4, SAV-2, SAV-4, SAV-5, CMP-7.3 (+2) | sì |
+| LNK-1 | Verifica del link su hardware: sessioni accoppiate e contatori che decidono i gate | consigliato | 1.5 (LNK-1.1 in 1.4.4) | 5,25 | ENG-1.6 e CMP-1.4 (solo LNK-1.2), CMP-1.1 (solo LNK-1.3) | sì |
+| LNK-2 | Il link spiega i suoi fallimenti: versione, ricerca, canale | consigliato | 1.5 | 7 | LNK-1.1-1.2 | sì |
+| LNK-3 | Integrità della sessione: cheat in pausa, blocchi con motivo, impronta del relay | consigliato | 1.5 (LNK-3.5 dopo gate) | 6 | UI-2, LNK-1.1-1.2, LNK-2.2, SAV-3 | sì |
+| LNK-4 | Stato del link durante il gioco | consigliato | 1.6 | 3,25 | UI-2 | sì |
+| LNK-5 | Stanze 0-99 con elenco, motivi di accesso e nome del partner | consigliato | 2.0 | 9,5 | LNK-2.2-2.3 | sì |
+| LNK-6 | Cuscinetto audio durante il link | consigliato | 2.0 (LNK-6.3 dopo gate) | 4,5 | LNK-1.1-1.3, ENG-1.6 | sì |
+| LNK-7 | Inviare un save o uno stato dentro una sessione aperta | consigliato | 2.0 | 11 | LNK-2.2, LNK-5.3, SAV-2, SAV-4, UI-2 | sì |
+| LNK-8 | Tecnica scelta per gioco, con override | condizionato | dopo gate | 3 | LNK-2.2 | sì |
+| LNK-9 | Ritmo fisso della sessione | condizionato | dopo gate | 4 | LNK-1.3, LNK-2.2 | sì |
+| LNK-10 | Meno datagrammi nelle stanze Pokémon | condizionato | dopo gate | 3,75 | LNK-1.3, PRF-1.1 | sì |
+| LNK-11 | Relay Advance Wars | condizionato | dopo gate | 11,5 | LNK-1.3, LNK-2.2, LNK-8.1 | sì |
+| LNK-12 | Link a due core per la stessa ROM | sconsigliato | dopo gate | 36 | LNK-1.3, LNK-2.2, LNK-7.1, LNK-8.1, ENG-3 (+4) | sì |
+| LNK-13 | Relay Pokémon a 3-4 giocatori via cavo | condizionato | dopo gate | 13 | LNK-1.1, LNK-2.2 | sì |
+| LNK-14 | Wireless Adapter (AGB-015): Union Room, Trade Center, 3-4 PSP | sconsigliato | dopo gate | 18 | LNK-1.1, LNK-2.2, LNK-5.1, LNK-8.1, LNK-13.1 | sì |
+| LNK-15 | Mystery Gift Gen-3 da file, tutto sulla PSP | sconsigliato | dopo gate | 9,5 | LNK-14.2, SAV-2 | sì |
+| LNK-16 | Link automatico senza menu | condizionato | dopo gate | 6,5 | LNK-4.2, LNK-5.3, GIO-7.3 | sì |
+| LNK-17 | Link Game Boy (GB/GBC) | sconsigliato | dopo gate | 14 | GIO-8, LNK-7.1 | sì |
+| ENG-1 | Rilascio onesto: gate meccanico, canale prerelease, manifest e sorgente corrispondente | consigliato | 1.4.4 (ENG-1.6 in 1.5) | 7,5 | SAV-1, SAV-2 | sì |
+| ENG-2 | Profili di build, gate di build, lint degli script e CI | consigliato | 1.6 (ENG-2.6 in 1.4.4; ENG-2.1 in 1.5) | 7 | ENG-1.2-1.3 | sì |
+| ENG-3 | Replay deterministico con hash dello stato ospite | consigliato | 1.6 | 8,75 | ENG-2.2, ENG-10.3, SAV-2.6, CMP-1.1, PRF-4, CMP-7.3, CMP-3.1, CMP-11.1, CMP-12.1, UI-10.5 | sì |
+| ENG-4 | Script di input con condizioni sulla RAM | condizionato | dopo gate | 5 | ENG-3.3-3.4, ENG-6.2 | sì |
+| ENG-5 | Test host del core, prova di regressione e test dell'emettitore MIPS | consigliato | 1.6 | 5 | SAV-1 | no |
+| ENG-6 | Rete di regressione PPSSPP: e2e dell'EBOOT, golden video e colori GE | condizionato | 1.6 (ENG-6.3-6.5 dopo gate) | 9 | ENG-1.6, ENG-2.2, ENG-2.4, ENG-3.5, SAV-2.6 (+2) | sì |
+| ENG-7 | Link sull'EBOOT reale: modello di guasti di rete condiviso e coppia PPSSPP | consigliato | 2.0 | 5,25 | ENG-6.1-6.2, ENG-1.2, CMP-1.1 | sì |
+| ENG-8 | Simulatori di sospensione e HOME | consigliato | 2.0 (ENG-8.3 in 1.5; ENG-8.2 dopo gate) | 3 | ENG-2.2, ENG-6.2, ENG-6.3 (solo ENG-8.2), ENG-7.3, SAV-7.6 (solo ENG-8.3) | sì |
+| ENG-9 | Larghezza dei testi in cinque lingue e automazione dei menu | consigliato | 2.0 (ENG-9.1 in 1.5) | 3,5 | UI-8, UI-6, ENG-6.2 | sì |
+| ENG-10 | Fixture ridistribuibili: ROM di test GPL e strumenti per salvataggi Gen-3 | consigliato | 1.6 (ENG-10.1 in 1.4.4; ENG-10.4 in 1.5) | 4,5 | SAV-2.6 (solo ENG-10.3) | no |
+| ENG-11 | Rig hardware non presidiato a due PSP | condizionato | dopo gate | 9 | ENG-2.2, ENG-3.3, ENG-6.2, ENG-10.2-10.3, ENG-15.2, PRF-11.5 | sì |
+| ENG-12 | Build qemu-mipsel del dynarec con oracolo su corpus, controllo del codice stantio e interprete di riferimento | condizionato | dopo gate | 17 | ENG-2.5, ENG-3.3, ENG-3.5, ENG-5.2, ENG-7.1, CMP-1.1, CMP-12.4, CMP-11.1-11.6 (+3) | sì |
+| ENG-13 | Build desktop dell'emulatore completo | sconsigliato | dopo gate | 5 | ENG-12.2, ENG-7.1 | no |
+| ENG-14 | Strumenti di coerenza della I-cache e del JIT | condizionato | dopo gate (ENG-14.1 in 1.6) | 6,5 | ENG-2.2, ENG-3.5, ENG-12.2, PRF-10.1 | sì |
+| ENG-15 | Sicurezza sul campo: watchdog di stallo, prove dei freeze e interruttori di emergenza | consigliato | 1.5 (ENG-15.5 su richiesta) | 7,5 | ENG-1.6, ENG-18.2 | sì |
+| ENG-16 | README: presentazione, guide pratiche e tabella di compatibilità generata | consigliato | 2.0 (ENG-16.1-16.3 in 1.6) | 6 | ENG-1.2, ENG-1.6, ENG-17.2, PRF-1, ENG-9.2 | sì |
+| ENG-17 | Documentazione di ingegneria: mappa dei test, architettura, decisioni, debug | consigliato | 1.6 | 4,25 | ENG-5.4 | no |
+| ENG-18 | Raccolta delle segnalazioni e presenza nella comunità | consigliato | 1.4.4 | 1,5 | ENG-1.5 | no |
+| ENG-19 | Rapporto vivo con upstream libretro/gpsp | consigliato | 1.6 | 3,25 | — | no |
+| EXT-1 | EEPROM da 8 KiB riconosciuta anche dalle scritture | consigliato | 1.4.4 | 1,5 | SAV-2.6 (solo EXT-1.2) | sì |
+| EXT-2 | Zip: il caricamento si ferma sugli errori e verifica il CRC32 | consigliato | 1.5 | 2 | — | sì |
+| EXT-3 | BIOS aperto: vettori di riferimento delle SWI, SoundBias e MultiBoot | consigliato | 1.5 (EXT-3.3 dopo gate) | 3 | CMP-1.1-1.3, CMP-3.1 | sì |
+| EXT-4 | Vista del browser ricordata | consigliato | 1.5 | 0,5 | — (bump di ConfigModel con UI-4.2) | sì |
+| EXT-5 | EEPROM sulle cartucce oltre 16 MiB | consigliato | 1.5 (EXT-5.3 dopo gate) | 3 | EXT-1.1, SAV-2.6 | sì |
+| EXT-6 | Uscita dal gioco con una tenuta | sconsigliato | dopo gate (EXT-6.1 in 1.6) | 1,25 | ENG-17.3, UI-4.3 | sì |
+| EXT-7 | Pacchetti di arte pronti | sconsigliato | dopo gate (EXT-7.1 in 1.6) | 1,75 | ENG-17.3, UI-13.1 | sì |
+| EXT-8 | Modalità USB per il giocatore | sconsigliato | dopo gate (EXT-8.1 in 1.6) | 3,75 | ENG-17.3 | sì |
+| **Totale** | **103 epic, 456 storie** | | | **790,5** | | |
+
+## Catalogo delle capacità obiettivo
+
+Le capacità del catalogo sono 171. Le 144 incluse sono coperte da almeno un'epic. Le 27 escluse non hanno un'epic, e la tabella dice perché. Il controllo di copertura aveva trovato quattro capacità coperte solo in parte e quattro voci nostre rimaste senza storia (tre difetti e la modalità USB): sono diventate EXT-1…EXT-8. La colonna «Da noi (1.4.3)» dice lo stato del nostro codice sulla 1.4.3 pubblicata: manca, parziale, insufficiente (c'è, con un difetto verificato), presente, solido (presente e coperto da test o prove), non misurato (nel codice, senza misura o prova su hardware).
+
+### Salvataggi (SAV)
+
+| F | Capacità | Da noi (1.4.3) | Epic |
+|---|---|---|---|
+| F-001 | Lettura del .sav limitata; una lettura fallita non diventa un salvataggio vuoto | insufficiente | SAV-1 |
+| F-002 | Tipo di salvataggio dal tag della ROM; .sav da 64 KiB alla dimensione nativa | insufficiente | SAV-1 |
+| F-003 | Scritture del .sav transazionali, con backup | manca | SAV-2 |
+| F-004 | Test host con guasti iniettati sui percorsi di salvataggio | manca | SAV-1 |
+| F-005 | Backup del salvataggio prima di ogni sessione link | manca | SAV-3 |
+| F-006 | Scrittura del .sav fuori dal thread di emulazione | manca | SAV-5 |
+| F-007 | Formato savestate validato e scritto in modo atomico | insufficiente | SAV-4 |
+| F-008 | Un guasto di emulazione riavvia il gioco invece di uscire | insufficiente | SAV-6 |
+| F-009 | Sospensione e ripresa sicure | parziale | SAV-7, SAV-8 |
+| F-010 | Salvataggi sulla Memory Stick in tempi brevi, anche nei giochi lenti e dopo gli scambi | presente | SAV-2 |
+| F-011 | Immagini .sav fisse da 128 KiB | manca | esclusa: scelta di progetto: il `.sav` resta alla dimensione nativa del chip; i file da 128 KiB si leggono per prefisso (SAV-1) |
+
+### Compatibilità e core (CMP)
+
+| F | Capacità | Da noi (1.4.3) | Epic |
+|---|---|---|---|
+| F-012 | BIOS GBA aperto integrato | manca (in corso) | CMP-1, EXT-3 |
+| F-013 | Tabella dei giochi compilata, sovrascrivibile dall'utente | parziale | CMP-2 |
+| F-014 | HALT che si sveglia con IE&IF anche con IME=0 | manca | CMP-3 |
+| F-015 | Maschera a 28 bit del PC guest | manca | CMP-4 |
+| F-016 | Stack in EWRAM nel percorso veloce di LDM/STM/PUSH/POP | insufficiente | CMP-5 |
+| F-017 | Mirroring delle ROM da 1 MiB (Classic NES Series) | manca | CMP-6 |
+| F-018 | RTC della cartuccia robusto a sospensione, fusi e cambi d'ora | parziale | CMP-7 |
+| F-019 | Configurazione automatica delle ROM hack | manca | CMP-8 |
+| F-020 | Titoli difficili: gameplay e salvataggio verificati | non misurato | CMP-9 |
+| F-021 | Handshake seriale del Game Boy Player | manca | CMP-10 |
+| F-022 | FIFO DirectSound più veloce della frequenza d'uscita | presente | esclusa: nessun difetto noto; l'ascolto di PRF-8.6 sui due modelli lo ricontrolla |
+| F-023 | Limite di cicli degli sprite per scanline | presente | esclusa: il budget per riga è già modellato (1210 cicli, 954 con H-Blank Interval Free: `video_cc.cc:166`, `:1776`); nessun difetto noto |
+| F-165 | Tempi del core al ciclo: timer letti dal vivo, cicli dei salti, finestra di prefetch | insufficiente | CMP-12 |
+
+### Prestazioni (PRF)
+
+| F | Capacità | Da noi (1.4.3) | Epic |
+|---|---|---|---|
+| F-024 | Metodo di misura su hardware, strumenti A/B e fps per modello pubblicati | parziale | PRF-1 |
+| F-025 | Strumentazione: timer per fase, contatori di dispatch, prelazioni | parziale | PRF-2 |
+| F-026 | Benchmark senza limite di velocità | parziale | PRF-3 |
+| F-027 | Budget di memoria per console: soglia d'avvio, misura dell'heap, numeri documentati | parziale | PRF-4 |
+| F-028 | Dimensionamento della memoria: ROM residente e cache JIT dimensionate all'avvio | parziale | PRF-5 |
+| F-029 | Partizione volatile da 4 MiB come memoria in più | manca | PRF-6 |
+| F-030 | Dispatch cache per i salti indiretti | manca | PRF-7 (voci RAM a invalidazione precisa in PRF-7.6) |
+| F-031 | Gate SMC appresi (ingresso e traduzione) | manca | PRF-8 (8.1-8.2) |
+| F-032 | Thunk stabili e link diretti in RAM | manca | PRF-8 (8.3-8.5) |
+| F-033 | Percorsi rapidi esatti per registri IRQ, scheduler, cambi di modo e attese | parziale | PRF-9 |
+| F-034 | Layout dell'I-cache fissato, dati caldi a set fisso della D-cache e report del budget del nucleo caldo | manca | PRF-10 |
+| F-035 | Triplo buffer contro il tearing | parziale | PRF-11 (11.1-11.4, 11.7) |
+| F-036 | Mix audio del core a frequenza ridotta | parziale | PRF-12 |
+| F-037 | Renderer sul Media Engine | manca | PRF-13 (audio), PRF-14 (video, con la latenza del percorso CPU) |
+| F-038 | Modello di invalidazione SMC | parziale | PRF-8 (8.6-8.10), CMP-12.4 (store multipli) |
+| F-039 | Disciplina dell'I-cache del JIT | presente | ENG-14 (14.1-14.2) |
+| F-040 | Buffer di appoggio in VRAM e ordine nativo dei canali GE | solido | esclusa: il blit scrive senza copia intermedia |
+| F-041 | Sincronizzazione GE differita | presente | esclusa: si aspetta il GE solo prima del flip (`video_sync_present`, `psp_video.c:377`) e le attese GE sono già nel report |
+| F-042 | Latenza audio limitata | solido | esclusa: ring corto svuotato da un thread audio; nessun difetto noto |
+| F-043 | Opzioni di volume, frameskip e clock della CPU | solido | esclusa: già nel menu, con i profili per gioco |
+| F-166 | Patch in place degli immediati riscritti dal gioco | manca | PRF-8 (8.8) |
+| F-167 | Salto esatto dei cicli di attesa puri | manca | PRF-9 (9.5-9.6) |
+| F-168 | Latenza dell'input misurata, con budget per scena | non misurato | PRF-11 (11.5-11.7) |
+| F-169 | Ritmo e flip alla riga 160 | manca | PRF-11 (11.8) |
+
+### Interfaccia e UX (UI)
+
+| F | Capacità | Da noi (1.4.3) | Epic |
+|---|---|---|---|
+| F-044 | Primo avvio senza configurazione | insufficiente | UI-1 |
+| F-045 | Toast e indicatori di stato | manca | UI-2 |
+| F-046 | Salvataggio e caricamento rapidi senza conferma, con riscontro | parziale | UI-3 |
+| F-047 | Tasti turbo | insufficiente | UI-5 |
+| F-048 | Tasto per gli screenshot | manca | UI-6 |
+| F-049 | Layout e temi del browser | parziale | UI-1 (difetto del tema), UI-13, EXT-4 |
+| F-050 | Rimappatura completa con accordi, conflitti e pagina dei comandi | parziale | UI-4 |
+| F-051 | Tenute START+SELECT: menu senza HOME, uscita con tenuta lunga | manca | UI-4, EXT-6 |
+| F-052 | Tasto che cicla le modalità video, con toast | manca | UI-4 |
+| F-053 | Interfaccia disegnata col GE | parziale | UI-8 |
+| F-054 | Font dell'interfaccia con anti-aliasing | manca | UI-9 |
+| F-055 | Menu di gioco sopra il gioco in pausa, con anteprima live | parziale | UI-10 |
+| F-056 | Righe del menu con stato live | parziale | UI-11 |
+| F-057 | Schermata di risveglio e di pausa sul frame congelato | parziale | UI-11 |
+| F-058 | Scala intera 2x (ritagliata) | parziale | UI-7 |
+| F-059 | Sharp bilinear a ogni scala | parziale | UI-7 |
+| F-060 | Barre laterali con l'arte o il gioco sfocati | manca | UI-13 |
+| F-061 | Preferiti | manca | UI-12 |
+| F-062 | Arte dei giochi: box art e sfondi 480x272 | parziale | UI-13 |
+| F-063 | Strumenti desktop per l'arte e repository d'arte separato | manca | UI-15, EXT-7 |
+| F-064 | Schermata di caricamento con arte, fasi e avanzamento in byte | parziale | UI-14; l'arte dietro il caricamento è UI-13.4 (ex UI-14.3), dopo il gate di UI-13 |
+| F-065 | Ultimo gioco preselezionato | parziale | UI-12 |
+| F-066 | Nomi dei giochi puliti nella lista | manca | UI-12 |
+| F-067 | Badge del salvataggio, dimensione della ROM e numero di giochi nel browser | manca | UI-12 |
+| F-068 | Libreria: sottocartelle unite in una lista ordinata | parziale | UI-12 |
+| F-069 | Ritorno alla lista senza riavvio, verificato con la misura dell'heap | parziale | UI-16 |
+| F-070 | Icona XMB animata e splash d'avvio | manca | UI-17 |
+| F-071 | Modalità dello stick con isteresi per stick consumati | parziale | UI-5 |
+| F-072 | Pagina degli slot di stato e stati del gioco visibili dal browser | solido | esclusa: 10 slot più AUTO con anteprima; la sicurezza del formato è F-007 (SAV-4) |
+| F-073 | HOME come tasto del menu | solido | esclusa: HOME apre il menu senza moduli aggiuntivi; il ripiego senza HOME è F-051 (UI-4.4) |
+| F-074 | Contatore FPS | solido | esclusa: contatore FPS già in gioco |
+| F-075 | Livello della batteria nell'intestazione | solido | esclusa: l'intestazione del menu mostra già il livello della batteria |
+| F-076 | Modi di scala 1x, 408x272 e 480x272 | solido | esclusa: 1x, 1,5x GU e SW, USER fino al 200% e 16:9 adattive (`main.h:31-37`) |
+| F-077 | Correzione colore GBA e fusione dei frame | manca | esclusa: nessuna richiesta registrata; si riapre con almeno 3 richieste distinte contate con ENG-18; i colori GBC sono in F-092 (GIO-8) |
+| F-078 | Lingue dell'interfaccia | solido | esclusa: 5 lingue; ogni testo nuovo va nelle 5 tabelle (principio 3) |
+| F-079 | Profili video per console | solido | esclusa: profili video per gioco; i default per console servono solo con GIO-8 |
+| F-080 | Migrazione della configurazione all'aggiornamento | presente | esclusa: config versionata, migrata da v1 e v2 e coperta da `tests/test_config_model.c`; il ritorno a una release precedente è un rischio scritto in UI-4 |
+| F-081 | Avviso di avvio fallito con il motivo | parziale | SAV-1, EXT-2 |
+| F-082 | Chiudere il menu non passa tasti al gioco e non rimanda lo standby | parziale | SAV-7 (SAV-7.6) |
+| F-170 | Filtri LCD (griglia, punti, scanline) allineati ai pixel del gioco, combinabili con ogni filtro e scala | manca | UI-7 (UI-7.3) |
+| F-171 | ROM con nomi non ASCII trovate, aperte e mostrate, con salvataggi dal nome stabile | non misurato | UI-9 (UI-9.4, UI-9.6) |
+| F-172 | Reset del gioco dal menu sicuro e annullabile | parziale | UI-10 (UI-10.5) |
+
+### Funzioni di gioco (GIO)
+
+| F | Capacità | Da noi (1.4.3) | Epic |
+|---|---|---|---|
+| F-083 | Riavvolgimento | manca | GIO-1, GIO-2 |
+| F-084 | Trucchi caricati per gioco, con le scelte ricordate | manca | GIO-4 |
+| F-085 | Import dei .cht di RetroArch | manca | GIO-4 |
+| F-086 | Motore dei trucchi sicuro anche con input ostile | insufficiente | GIO-3 |
+| F-087 | Trucchi aperti dalla lista dei giochi | manca | GIO-5 |
+| F-088 | Comodità della pagina trucchi | parziale | GIO-5 |
+| F-089 | Pack di trucchi pronto e LEGGIMI dei trucchi | manca | GIO-6 |
+| F-090 | Launcher single-game: salvataggi per bolla e bolla autonoma | parziale | GIO-7; il collegamento automatico dalla bolla è LNK-16.5 (ex GIO-7.5) |
+| F-091 | Core Game Boy / Game Boy Color | manca | GIO-8 |
+| F-092 | Colori GB/GBC: palette SGB, scelta della palette, LCD del GBC | manca | GIO-8 |
+| F-093 | Orologio delle cartucce GB (RTC MBC3) | manca | GIO-8 |
+| F-094 | Trucchi GameShark per GB/GBC | manca | GIO-8 |
+| F-095 | Salvataggi GB/GBC scritti a RAM ferma | manca | GIO-8 |
+| F-096 | Tipi di codice dei trucchi | solido | esclusa: CodeBreaker cifrato con hook, GS/PAR v1-v3, patch ROM; la sicurezza è F-086 (GIO-3) |
+| F-097 | Preset dell'avanti veloce | solido | esclusa: preset dell'avanti veloce già nel menu |
+
+### Link e multiplayer (LNK)
+
+| F | Capacità | Da noi (1.4.3) | Epic |
+|---|---|---|---|
+| F-098 | Blocchi di sessione con il motivo | parziale | LNK-3 |
+| F-099 | Controllo di versione e fallimenti del link spiegati | parziale | LNK-2 |
+| F-100 | Indicatore della sessione link durante il gioco | manca | LNK-4 |
+| F-101 | Guida alla configurazione e soluzione dei problemi del link | manca | LNK-2 |
+| F-102 | Impronta di desincronizzazione | manca | LNK-3 |
+| F-103 | Dissolvenze audio durante il link (cuscinetto) | manca | LNK-6 |
+| F-104 | Stanze 0-99 con elenco e motivi di accesso | manca | LNK-5 |
+| F-105 | Nickname wireless | manca | LNK-5 |
+| F-106 | Tecnica di link scelta per gioco, con override | parziale | LNK-8 |
+| F-107 | Ritmo fisso della sessione | parziale | LNK-9 |
+| F-108 | Meno datagrammi per frame | parziale | LNK-10 |
+| F-109 | Condivisione di salvataggi e stati tra PSP | manca | LNK-7 |
+| F-110 | Link GBA con la stessa ROM per ogni gioco (due core) | parziale | LNK-11 (relay AW), LNK-12 (due core) |
+| F-111 | Emulazione del Wireless Adapter (AGB-015) | manca | LNK-14 |
+| F-112 | Mystery Gift Gen-3 | manca | LNK-15 |
+| F-113 | Link automatico senza interfaccia | manca | LNK-16 |
+| F-114 | Link Game Boy con trasferimento della cartuccia | manca | LNK-17 |
+| F-115 | Link Pokémon Gen-3 tra versioni diverse | non misurato | LNK-1 |
+| F-116 | Avviso di WLAN spento | presente | esclusa: con il WLAN spento il menu Link lo dice nelle 5 lingue e la rete non parte (`gui.c:4985-4986`, `main.c:699`); il link automatico ha il suo indicatore (LNK-16) |
+| F-117 | Trasporto del link affidabile | solido | esclusa: link_net con prova CBMC ripetuta a ogni modifica; è la base di LNK-7 e LNK-14 |
+
+### Ingegneria, verifica e presentazione (ENG)
+
+| F | Capacità | Da noi (1.4.3) | Epic |
+|---|---|---|---|
+| F-118 | Note di rilascio con l'ambito di validazione e promozione onesta | insufficiente | ENG-1 |
+| F-119 | Canale beta/prerelease | manca | ENG-1 |
+| F-120 | Replay con hash dello stato guest per frame | parziale | ENG-3 |
+| F-121 | Script di input con condizioni sulla RAM | parziale | ENG-4 |
+| F-122 | Test host dello stato del core GBA | parziale | ENG-5 |
+| F-123 | Prova che il test di regressione fallisce sulla versione precedente | manca | ENG-5 |
+| F-124 | Test della codifica dell'emettitore MIPS | manca | ENG-5 |
+| F-125 | Suite e2e PPSSPP dell'EBOOT reale | manca | ENG-6 |
+| F-126 | Golden video in PPSSPP | manca | ENG-6 |
+| F-127 | Pattern dell'ordine dei colori GE e gate di colore del blit | manca | ENG-6: ENG-6.5 in PPSSPP; se lo spike PPSSPP fallisce, il ripiego su PSP è ENG-6.6 |
+| F-128 | Test ad-hoc con due istanze PPSSPP | manca | ENG-7 |
+| F-129 | Guasti di rete iniettati sulla console | parziale | ENG-7 |
+| F-130 | Simulatori di sospensione e HOME | parziale | ENG-8 |
+| F-131 | Automazione dei menu e golden di confronto | manca | ENG-9 |
+| F-132 | Strumenti per fixture di salvataggi Gen-3 | parziale | ENG-10 |
+| F-133 | Rig hardware non presidiato a due PSP | manca | ENG-11 |
+| F-134 | Build qemu-mipsel del dynarec con oracolo su corpus | manca | ENG-12 |
+| F-135 | Build desktop dell'emulatore completo | manca | ENG-13 |
+| F-136 | Sonde dell'I-cache, verifica di coerenza del JIT, simulazione della cache | manca | ENG-14 |
+| F-137 | Profili di build con build diagnostiche etichettate | parziale | ENG-2 |
+| F-138 | Gate di build | parziale | ENG-2 |
+| F-139 | Manifest di build e di rilascio con checksum | parziale | ENG-1 |
+| F-140 | Pacchetto del sorgente corrispondente | manca | ENG-1 |
+| F-141 | Lint della sintassi degli script | parziale | ENG-2 |
+| F-142 | Watchdog di stallo e prove dei freeze | parziale | ENG-15 |
+| F-143 | Chiavi di configurazione avanzate e interruttori a run time | parziale | ENG-15 |
+| F-144 | README con immagini e media | parziale | ENG-16 |
+| F-145 | Sezioni pratiche del README | parziale | ENG-16 |
+| F-146 | Tabella di compatibilità per gioco | manca | ENG-16 |
+| F-147 | Mappa della copertura dei test | manca | ENG-17 |
+| F-148 | Documenti di architettura, thread e responsabilità dei sottosistemi | parziale | ENG-17 |
+| F-149 | Registro delle decisioni e degli esperimenti scartati | manca | ENG-17 |
+| F-150 | TROUBLESHOOTING.md: mappa dei sintomi | manca | ENG-17 |
+| F-151 | Modello per le segnalazioni di bug | manca | ENG-18 |
+| F-152 | Raccolta delle segnalazioni e presenza nella comunità | manca | ENG-18 |
+| F-153 | Rapporto vivo con upstream | manca | ENG-19 |
+| F-154 | Schermata delle eccezioni | presente | SAV-6 (SAV-6.5) |
+| F-155 | Pacchetto di rilascio riproducibile e verificato | non misurato | esclusa: lo zip ha il suo `.sha256` verificato da `check-package.sh`; manifest, SHA256SUMS e sorgente sono F-139 e F-140 (ENG-1), la riproducibilità dell'EBOOT la misura ENG-2.5 |
+| F-156 | Suite di test host e runner | solido | esclusa: test host con gemelli ASan/UBSan in `make check` e `make test-sanitize`; il volume mancante è F-122 (ENG-5) e F-004 (SAV-1) |
+| F-157 | Telemetria nelle release | solido | esclusa: il runtime log v5 si scrive anche nelle release (`runtime_log.h:25`) |
+| F-158 | Integrazione continua | manca | ENG-2 (ENG-2.5) |
+| F-159 | Verifica formale | solido | esclusa: prova CBMC di link_net (`make check-cbmc`), ripetuta a ogni modifica |
+| F-160 | Changelog e percorso d'installazione stabile | solido | esclusa: CHANGELOG nel formato Keep a Changelog e cartella `PSP/GAME/GBARushPSP` invariata; lo zip da estrarre alla radice è UI-1.5 (F-044) |
+| F-161 | Storia pubblica | solido | esclusa: storia e tag pubblici dalla 1.0.0 |
+| F-162 | Igiene del repository | parziale | ENG-2 (ENG-2.1, ENG-2.6) |
+| F-163 | Fixture di test ridistribuibili | solido | esclusa: ogni fixture si compila da sorgenti GPL o si scarica a hash fisso, mai committata (ENG-3.5, ENG-10, ENG-12) |
+
+### Fuori dall'elenco F
+
+- NC-1, EEPROM da 8 KiB riconosciuta anche dalle scritture → EXT-1. NC-2, EEPROM sulle cartucce oltre 16 MiB → EXT-5. NC-3, zip che si ferma sugli errori e controlla il CRC32 → EXT-2. NC-4, modalità USB per il giocatore → EXT-8 (l'ADR è EXT-8.1, nella 1.6; il resto aspetta il gate).
+- SAV-2.8 (Carica stato da file non sovrascrive lo stato AUTO scelto) corregge un difetto nostro di perdita dati, trovato preparando il branch del BIOS e verificato su `origin/develop` (`gui.c:4112-4123`): nessuna capacità del catalogo. SAV-2.9 (una sospensione durante la domanda di ripresa non perde lo stato AUTO) è un difetto nostro dello stesso tipo, trovato rivedendo il branch dei salvataggi.
+- LNK-13 (relay Pokémon a 3-4 giocatori via cavo) non copre una capacità del catalogo; LNK-1 copre ora F-115.
+- Un'uscita diretta non si patcha mai verso una traduzione mancante: quando la destinazione non si traduce, `cpu.c:3437-3438` restituisce errore senza patchare. Il bad jump che resta (`cpu.c:2865-2879`) è coperto da SAV-6.1.
+- Il codice morto `draw_volume_status`/`init_input_kernel`, segnalato il 2026-11-01, non ha storia: è pulizia banale.
+- CMP-11 corregge difetti nostri della semantica ARM7TDMI nel dynarec (MSR, Rn=PC, BX, banco FIQ, trasferimenti ^, IRQ sbloccati): nessuna capacità del catalogo.
+
+## Rischi trasversali
+
+1. **Carico di lavoro.** Le 103 epic sommano circa 790 gg: circa 392 nelle milestone numerate (1.4.4 ≈ 29,25, 1.5 ≈ 105, 1.6 ≈ 150,25, 2.0 ≈ 107,75) e circa 398 dietro i gate. Con un solo manutentore la 2.0 arriva dopo più di un anno di calendario, e la 1.6 è il punto più fragile.
+2. **Esposizione fino alla 1.4.4.** La correzione dei salvataggi pesa circa 29,25 gg, contro le circa 1,25 settimane-sviluppatore stimate il 2026-11-01. La 1.4.3 è uscita come release del link, senza queste correzioni: finché la 1.4.4 non esce, ogni gioco SRAM con un `.sav` da 64 KiB lo perde al primo salvataggio successivo (il file diventa di 1 byte: `memory.c:3179-3213`, `:3200`, `:3244-3262`), e un `.sav` illeggibile può essere sovrascritto dal primo flush (`memory.c:3160-3220`, `:3687`). La 1.4.4 va prima di tutto, anche prima del merge del BIOS.
+3. **Hardware.** Quasi ogni uscita richiede una PSP-1000 più un secondo modello. Alcune storie chiedono di più:
+   - SAV-2.7 preferisce una Go (ef0:), GIO-7 e UI-11.3 la richiedono;
+   - SAV-7.5 e SAV-7.6 vogliono una PSP-3000 accanto alla PSP-1000, e anche UI-11.3;
+   - SAV-8.1 vuole 1000, 2000, 3000 e Go;
+   - UI-4.4 vuole una Go con ARK-4 e una 3000 con PRO-C e con LME;
+   - il gate di CMP-4 vuole un GBA vero.
+
+   Non si sa quali modelli siano disponibili. Senza di essi le build restano prerelease, come vuole la regola, e alcuni gate non si chiudono.
+4. **Memoria della PSP-1000 (circa 24 MB per l'utente).** Si contendono lo spazio:
+   - immagine del BIOS e tabella `game_db`;
+   - trucchi, oggi circa 665 KiB di `.bss` secondo GIO-3;
+   - atlanti dei font (fino a 1 MiB) e buffer dell'arte (2 × 255 KB);
+   - anello del riavvolgimento e lista unificata (fino a 256 KiB).
+
+   La misura completa (PRF-4.2) arriva nella 1.6, con PRF-4.1 anticipata nella 1.5: fino ad allora le storie della 1.5 usano pool statici.
+5. **Formati condivisi.** Runtime log, perf report, ConfigModel, id d'azione, `LINK_NET_VERSION`, `LINK_CABLE_PROTOCOL` e trailer dei savestate. Le storie seguono le regole R1-R4 del principio 6: un valore aggiunto in fondo a un enum del runtime log non cambia versione (R1: già prassi per i valori del decoder, da confermare per tipi di evento e motivi di flush); perf report, protocollo del link, layout e significati esistenti cambiano solo nel bump unico della release (R2-R3), che nella 1.5 è di ENG-1.6 e dalla 1.6 della prima storia della release che cambia il formato; gli id d'azione si assegnano in ordine di merge. Se R1 viene rifiutata, SAV-1.6, SAV-1.7 e SAV-2.4 portano i propri eventi nel bump di ENG-1.6 nella 1.5, insieme a SAV-4.4, SAV-6.4, SAV-7.6, UI-6.2 e UI-9.4, e gli eventi aggiunti dopo vanno nel bump della release in cui escono. La 1.4.3 ha esteso tre messaggi del link senza cambiare versione (R2): una coppia 1.4.3 host + 1.4.1/1.4.2 joiner può dare a MKSC una parola sbagliata all'avvio della gara (dedotto dal codice); lo misura la coppia mista di LNK-1.1, e se MKSC si rompe le note della 1.4.4 dicono che i giochi lockstep chiedono la stessa versione dalla 1.4.3 in poi.
+6. **Spike PPSSPP.** Se ENG-6.1 fallisce, ENG-6.3-6.5 ed ENG-8.2 si fermano, ENG-7.3 passa alla coppia hardware, e tutto ciò che aspetta F-126 o F-127 (UI-7.2, UI-7.3, UI-8.2, CMP-9.3, PRF-14.2) ha bisogno del ripiego su PSP: per F-127 è ENG-6.6, che esce comunque. In ogni caso PPSSPP non è una prova.
+7. **BIOS aperto.**
+   - Le SWI vuote (audio del BIOS, MultiBoot, HardReset) e IntrWait con r0=0 possono rompere titoli che la passata su 8 titoli non vede. Il BIOS ufficiale resta il preferito, ed EXT-3 aggiunge i vettori di riferimento.
+   - Il sorgente in `source/bios/` viene da ReGBA 313ddd0, con un'immagine identica a quella di libretro 5819380 (`source/bios/README.md:22-31`, nel branch). La regola del progetto dice «libretro a commit fissato», quindi va registrata come eccezione voluta; per la licenza non cambia nulla.
+8. **Licenze.**
+   - Il codice di terzi entra solo come dice il principio 7.
+   - GIO-8.2 importa intatto TGB Dual da MasterBoy a commit fissato (320bb5e) e registra le nostre patch in `source/gb/tgbdual/GBA-RUSH-CHANGES.md`.
+   - `rfu.c` e il relay di Advance Wars vanno presi da libretro/gpsp a commit fissato 5819380.
+   - Da verificare: CC BY-SA del pack di trucchi, termini di libretro-thumbnails (UI-15.1) e licenza del bootstrap del Media Engine (PRF-13.1).
+9. **Gate di domanda.** Il 2026-11-01 il nostro tracker conteneva solo PR del manutentore, e i download erano circa 100 in tutto. È probabile che GIO-8, LNK-13, LNK-14, LNK-15, LNK-17, EXT-6.2 ed EXT-8.2 non passino mai il gate: è l'esito onesto, ma va detto agli utenti.
+10. **Cadenza dei rilasci.** Ogni release richiede 7 giorni di prerelease e righe hardware. Con milestone da 105-150 gg il canale stabile resterebbe fermo a lungo: conviene pubblicare una rc da develop a ogni epic chiusa, promuovendo lo stesso binario.
+
+## Correzioni applicate
+
+Le correzioni del controllo delle dipendenze sono applicate nelle sezioni 1-8 in due passate (2026-11-02). La prima porta le storie da 413 a 411 e la stima da 703,75 a 700,75 gg: UI-2.3 e GIO-3.4 sono tolte perché doppioni, UI-14.3 e GIO-7.5 sono diventate UI-13.4 e LNK-16.5, e le sezioni lo dicono con una riga «Storie tolte in revisione» o «Storie spostate». La seconda aggiunge SAV-2.8 ed ENG-6.6 e corregge alcune stime: in tutto 413 storie e 700,25 gg. Nessuna dipendenza punta a id inesistenti e non ci sono cicli tra storie, neanche leggendo ogni F-xxx come «tutta l'epic».
+
+**Stallo e cicli**
+- Stallo GIO-7.5 ↔ LNK-16: GIO-7.5 è ora LNK-16.5, tra LNK-16.3 e LNK-16.4 (0,5 gg invece di 1; dipende da LNK-16.3 e GIO-7.3). LNK-16.2 dipende da GIO-7.3 invece che da F-090 e definisce una sola volta l'argomento di link della bolla (`--link-role`, `--link-room`) nel modulo `launch_args` di GIO-7.1; LNK-16.4 dipende anche da LNK-16.5, e il gate di LNK-16 chiede GIO-7.1-7.3 consegnati.
+- Ciclo nei gate di LNK-8: LNK-8.1 (funzione pura, 0,5 gg) esce dal gate, che ora vale solo per LNK-8.2 e LNK-8.3, e si consegna con la prima tecnica che la usa.
+
+**Riferimenti ristretti**
+- F-018 → CMP-7.3 in ENG-3.7, GIO-2.3 e GIO-8.9, e nel testo di GIO-2.1.
+- F-143 → ENG-15.4 in PRF-7.3, PRF-8.5 e PRF-9.3.
+- F-009 → SAV-7.5 in UI-11.3, PRF-6.2, PRF-13.1 e GIO-1.7.
+- F-130 → ENG-8.1 in UI-11.3.
+- F-013 → CMP-2.2 in PRF-8.2.
+- F-098 → LNK-3.2 in PRF-4.3, GIO-1.4 e nell'epic GIO-3.
+- F-024 tolta da CMP-3.2, che usa `scripts/compare-benchmarks.py` com'è, con 3+3 run; PRF-1 esce dalla tabella di CMP-3.
+
+**Storie spostate**
+- UI-14.3 è ora UI-13.4, dopo UI-13.3 (dipende da UI-14.1 e UI-13.1): UI-13 sale a 8,5 gg, UI-14 scende a 2 gg, resta nella 1.6 e non dipende più da UI-13.
+- GIO-7.5 è ora LNK-16.5 (vedi sopra): GIO-7 scende a 7 gg e si chiama «salvataggi per bolla e bolla autonoma».
+- ENG-16 si chiude nella 2.0: ENG-16.1-16.3 nella 1.6, ENG-16.4 dopo ENG-9.2.
+- GIO-1.7 dipende da «F-029 solo se l'anello sta nella partizione volatile».
+- UI-7.2 e UI-8.2 dipendono da «F-127 o, se lo spike PPSSPP fallisce, …», anche nelle tabelle di UI-7 e UI-8 e nel gate di UI-7; dalla seconda passata il ripiego è ENG-6.6.
+- LNK-3.5 è «condizionata, non prima della 1.6», e la tabella di LNK-3 dice «1.5 (LNK-3.5 dopo gate)».
+- EXT-6.1, EXT-7.1 ed EXT-8.1 passano nella 1.6, dopo ENG-17.3, anche nelle tabelle delle rispettive epic. La citazione dell'ADR in UI-4.4, uscita nella 1.5, la aggiunge EXT-6.1 nella 1.6, come commento in `source/src/input.c`.
+
+**Prerequisiti**
+- CMP-1.1 dipende da SAV-2.7 ed ENG-2.1: il branch del BIOS, committato e ribasato sulla 1.4.3, entra in develop solo dopo il tag 1.4.4, con un rebase su quel tag e il merge dopo ENG-2.1. Lo dicono anche i rischi di SAV-1 e il testo di ENG-2.1; la tabella di CMP-1 dipende da CMP-3.1, SAV-2.7, ENG-2.1 ed ENG-1.6.
+- LNK-2.2, LNK-3.4 e LNK-6.2 dipendono da LNK-1.1, l'unica baseline accoppiata sulla 1.4.3 pubblicata.
+- GIO-1.2 e GIO-1.5 dipendono da ENG-3.1 ed ENG-3.3 e chiedono su PSP lo stesso hash dello stato guest prima della cattura e dopo il ripristino, salvataggio escluso; GIO-1.2 ora ha PSP: sì.
+- Il gate di GIO-1 chiede F-007 (stato v2); la lettura da memoria (`FILE_READ_MEM`) è scritta come compito di GIO-1.2.
+
+**Risorse condivise**
+- Versioni dei formati: ENG-1.6 è l'unica proprietaria del bump della 1.5 (runtime log 5→6, perf report 6→7, decoder per le versioni vecchie e nuove, test, riga del CHANGELOG) e sale a 2 gg (oggi 2,25); ENG-1 si chiude con la 1.4.4. CMP-1.4, LNK-1.2, PRF-2.1, PRF-4.1 ed ENG-15.2-15.3 aggiungono i propri campi dentro quel bump; CMP-2.5, PRF-1.3, PRF-2.1-2.3, PRF-3.1, GIO-1.5 e GIO-3.3 dipendono da ENG-1.6. Le storie delle release successive seguono le regole R1-R4 del principio 6 (seconda passata).
+- ConfigModel e id d'azione: nessuna storia fissa più `CONFIG_MODEL_VERSION` 3, il limite 0-19 o `BUTTON_ID_REWIND` = 20. UI-3.1, UI-4.2, UI-5.3, UI-6.2, UI-11.2, UI-11.3, GIO-1.4, EXT-4.1, EXT-6.2 e PRF-12.3 parlano di «bump di ConfigModel della release» e di id assegnati in ordine di merge; le migrazioni (v1 e v2 leggibili) restano.
+- Tipo di BIOS nel runtime log: lo scrive solo CMP-1.4, nel value2 di ROM_OPEN. LNK-1.2 non scrive più `bios_builtin` nel record link-command, dipende da CMP-1.4 e il suo decoder legge ROM_OPEN.
+- Nickname del partner: LNK-5.4 mostra il nickname solo se ogni carattere si disegna con i font di oggi, altrimenti l'etichetta attuale; i nickname non disegnabili sono una condizione di partenza di UI-9.5. La tabella di LNK-5 non dipende più da F-054.
+- Chiave dei risultati hardware: le righe di `docs/HARDWARE-RESULTS.md` sono legate allo sha256 di `EBOOT.PBP` (ENG-1.1), anche in CMP-1.5, CMP-6.1, PRF-1.6, UI-4.4, LNK-1.1, EXT-1.2 ed EXT-5.2.
+
+**Doppioni fusi**
+- SAV-4.5 = UI-3.2: resta SAV-4.5, l'unica voce «Annulla ultimo salvataggio» (`savestate_undo_last` su `<slot>.svs.bak`, tenuto dallo store). UI-3.2 è solo il toast che dopo un salvataggio rapido rimanda alla voce: 0,25 gg, dipende da UI-3.1 e SAV-4.5, senza `<slot>.svs.prev` né F-007.
+- GIO-3.4 = LNK-3.1: GIO-3.4 è tolta; LNK-3.1 ne copre il lavoro (trucchi inerti in sessione, hook CodeBreaker, regola in check-lifecycle) e lo dice. GIO-3 scende a 12 gg.
+- UI-2.3 ≈ LNK-3.2: UI-2.3 è tolta. LNK-3.2 prende `tests/test_state_hotkeys.py`, mostra il toast solo per i tasti stato in gioco e lascia invariato il dialogo nel menu (1,5 gg); UI-2 scende a 2,5 gg e UI-3.1 dipende da LNK-3.2.
+- ROM di test: SAV-2.6 è l'unica ROM dei tipi di salvataggio e crea l'include comune (`tests/gba-rom.mk`), il protocollo d'esito di CMP-3.1 (esito a schermo più firma) e `tools/decode_test_rom.py` (2,5 gg). CMP-3.1 li riusa e dipende da SAV-2.6 (1,25 gg). Il decoder è uno solo, `tools/decode_test_rom.py`: CMP-3.1 vi aggiunge i nomi dei casi della core-rom ed EXT-3.1-3.2 l'opzione `--emit-vectors`; ENG-10.3 fa solo la ROM raster (1,5 gg); EXT-1.2 ed EXT-5.2 diventano target della ROM di SAV-2.6, e anche ENG-3.5 ed ENG-6.3 usano quella ROM.
+- `--vary` di compare-benchmarks: vive solo in CMP-1.4 ed è ripetibile. PRF-1.1 tiene il verdetto esatto su N≥3 run (1 gg); PRF-5.2, PRF-7.3, PRF-8.5, PRF-9.3 e PRF-12.1 dipendono da CMP-1.4, e CMP-1.6 usa `--vary bios --vary swi-div-hle`.
+- Due gate di rilascio: PRF-1.6 è un controllo chiamato da `scripts/release_gate.py` (F-118, ENG-1.2), senza `make perf-gate`, ed ENG-1.2 lo dice. F-138 esce dalle dipendenze di PRF-1.6 e di PRF-1.
+- Sfondo sul frame congelato: lo costruisce una volta UI-10.1; UI-11.2 lo riusa e ne dipende (0,5 gg), e UI-11 sta tutta nella 2.0 (3 gg).
+- Log d'input per frame: GIO-2.1 estende la traccia di ENG-3.2 (`input_trace`) invece di creare `rewind_log`, e ne dipende; ENG-3.2 dice che l'intestazione ha una versione e il record per frame può crescere.
+- TRIANGOLO nel browser: la decisione è di UI-12.4, come proposta da confermare (vedi «Decisioni aperte»). UI-12.4 mappa TRIANGOLO in `get_gui_input` (`input.c` e `input.h`, 3,5 gg), e UI-4.3 e UI-10.2 usano quella mappatura; GIO-5.3 aggiunge «Trucchi…» al suo menu e ne dipende, e il gate di GIO-5 dice «decisione sul tasto presa in UI-12.4».
+- Parser della mappa dei test: uno solo, `scripts/makefile_tests.py`, creato da ENG-5.4 e riusato da ENG-17.1 (0,75 gg, dipende da ENG-5.4).
+
+**Minori**
+- SAV-7 ha la riga «Storie tolte in revisione» per SAV-7.4: `sleep_flag` e lo stato di `power_lifecycle` si scrivono nello stesso ramo del callback di alimentazione (`main.c:1995-2011`), quindi una seconda condizione d'uscita non prende eventi persi.
+- La tabella di ENG-2 dipende da ENG-1.2 ed ENG-1.3, come le sue storie.
+- Il gate di EXT-6.2 conta le richieste dal rilascio della 1.6, che porta la pagina Scorciatoie (UI-4.3).
+- Il «Copre» di SAV-1 segue l'elenco canonico: F-001 è la lettura limitata, F-002 il tipo dal tag.
+
+**Seconda passata (2026-11-02)**
+- Milestone delle tabelle allineate al piano con uno script; le introduzioni di SAV, CMP, PRF, UI, GIO, LNK, ENG ed EXT e i testi delle epic che le contraddicevano sono riscritti. PRF-1.5 è ora la baseline della 1.6 (dipende da PRF-2.2, PRF-2.3 e PRF-3.1), e CMP-9.1 si fa in quella sessione.
+- F-012 come dipendenza diventa CMP-1.1 (merge del branch del BIOS) in SAV-4, UI-1, GIO-1, GIO-3, LNK-1, LNK-1.3, ENG-3, ENG-3.5, ENG-6, ENG-6.1, ENG-7, ENG-7.3, ENG-12 ed ENG-12.1, e nei gate di GIO-1 e GIO-3. F-012 resta dove è solo testo o copertura (EXT-3.3 compresa).
+- Un solo decoder per il protocollo d'esito: `tools/decode_test_rom.py` di SAV-2.6. CMP-3.1 vi aggiunge i nomi dei casi della core-rom e un caso di test (1,5 → 1,25 gg, CMP-3 a 3,25 gg); EXT-3.1-3.2 vi mettono `--emit-vectors`. `tools/decode_core_rom.py` non esiste più.
+- Ripiego di F-127: ENG-6.6, nuova (S, 0,5 gg, 1.6), è la modalità testpat su PSP lanciata dall'autorun di ENG-6.2, con una foto per modalità su PSP-1000 e senza PPSSPP. ENG-6.5 scende a 1 gg, dipende da ENG-6.6 e non chiede più la PSP; il gate di ENG-6 dice che ENG-6.6 esce anche se lo spike fallisce. UI-7.2, UI-8.2, le tabelle di UI-7 e UI-8 e il gate di UI-7 dicono «F-127 o, se lo spike PPSSPP fallisce, ENG-6.6».
+- Turbo nel link: UI-5 segue LNK-3, proprietaria di F-098, e lascia il turbo attivo in sessione. UI-5.1 e UI-5.2 perdono la disattivazione e il suo toast; UI-5.2 scende a 0,75 gg e tiene il contatore per frame, che lascia fuori le attese del link. UI-2.2 passa da UI-5.2 a UI-5.3; UI-5 a 3,25 gg.
+- UI-1.1 (1.4.4) prova senza `dir.ini` e con `gba_bios.bin`. L'installazione pulita (solo `EBOOT.PBP` ed `exception.prx`) passa a UI-1.4, nella sessione hardware della 1.5, e UI-1.4 dipende da CMP-1.1.
+- TRIANGOLO: la mappatura in `get_gui_input` è di UI-12.4; UI-4.3 e UI-10.2 ne dipendono e la usano, anche nelle tabelle di UI-4 e UI-10.
+- `browser_view` di EXT-4.1: UI-12.5 e UI-13.2 vi aggiungono un valore ciascuna (per UI-13.2 «Arte») invece di una «terza vista», con il limite che cresce nel bump di ConfigModel della release, e dipendono da EXT-4.1.
+- UI-13 copre anche F-064 (arte dietro il caricamento, UI-13.4). La frase del README sullo strumento di composizione passa da EXT-7.1, ora solo ADR, a UI-15.3.
+- Regola dei formati del principio 6 applicata. SAV-1.6 aggiorna il commento di `runtime_log.h:16` e tiene v5; SAV-1.7, SAV-2.4 e SAV-6.4 citano la stessa regola. Gli eventi aggiunti in fondo all'enum da CMP-4.2, UI-9.4, UI-14.2, UI-16.1, GIO-1.7, GIO-2.5, GIO-3.3 e LNK-6.2 non cambiano versione; i rispettivi test leggono log v5 e v6 e dipendono da ENG-1.6. LNK-5.2, LNK-7.3, LNK-11.2, LNK-12.5 e LNK-14.2 aggiungono valori in fondo all'enum senza bump. CMP-2.5, CMP-6.2, CMP-8.3, CMP-8.4, GIO-1.5 ed ENG-8.1 (significato nuovo del byte dei flag, 2.0) vanno nel bump della release in cui escono. I campi del perf report di PRF-1.3, PRF-2.2-2.5 e PRF-3.1-3.3 vanno nel bump della 1.6. ENG-1.6 elenca solo CMP-1.4, LNK-1.2, PRF-2.1, PRF-4.1 ed ENG-15.2-15.3.
+- LNK-1.2 scende a S, 1,5 gg: bump, lettura dei v5 e riga del CHANGELOG sono di ENG-1.6. LNK-1 a 4,5 gg (oggi 5,25, con LNK-1.1 a 2,25 gg).
+- LNK: la tabella di LNK-5 dipende solo da LNK-2.2 e LNK-2.3 (la frase sui nickname resta nei rischi); LNK-14.2 dipende anche da LNK-8.1; LNK-16.4 riprende l'accettazione di GIO-7.5 (bolla riuscita 10 volte su 10 su due PSP, anche con Emerald + FireRed); LNK-16.2 aggiunge `--link-role` e `--link-room` al modulo `launch_args` di GIO-7.1, e il test «ruoli e stanze validi e non validi» è di LNK-16.5 ma resta scritto in LNK-16.2, che possiede il parser.
+- PRF: PRF-1.2 e PRF-1.5 dipendono da ENG-1.6; PRF-7.5, PRF-8.5 e PRF-9.3, e le tabelle di PRF-7, 8 e 9, dipendono da PRF-1.1 e PRF-1.3; PRF-1.5 confronta i due BIOS con `--vary bios --vary swi-div-hle`, come CMP-1.6.
+- SAV: la tabella di SAV-2 cita SAV-1.8; SAV-3 dipende da SAV-2.1 e SAV-2.3, SAV-7 da SAV-2.3, SAV-2.5, SAV-2.6 e SAV-3.2.
+- SAV-2.8, nuova (S, 0,5 gg, 1.4.4): «Carica stato da file» non sovrascrive più lo stato AUTO scelto (`gui.c:4112-4123`): il backup AUTO si salta quando il parser riconosce il file AUTO (`slot_parsed`), con un controllo in `scripts/check-lifecycle.sh`. SAV-2 sale a 9,5 gg (oggi 10,5) e SAV-2.7 ne dipende.
+- ENG: ENG-4.3 esporta la mappa del linker di ogni ROM di test da `tests/gba-rom.mk`; la tabella di ENG-8 dice «ENG-6.3 (solo ENG-8.2)» ed «ENG-7.3 (solo ENG-8.2)».
+- In chiusura: R4 è diventata una regola generale (i test del decoder tengono campioni v5 e v6 da ENG-1.6 in poi), quindi le storie non devono ripeterla; PRF-11.4 confronta la latenza con la release precedente; il test di LNK-16.5 resta scritto in LNK-16.2, che possiede il parser.
+- GIO: GIO-1.5 aggiunge righe a `docs/HARDWARE-RESULTS.md` con le colonne di ENG-1.1; GIO-8.5 e GIO-8.10 usano il bump di ConfigModel della release, condiviso se escono insieme.
+
+**Revisione del 2026-11-02 (base 1.4.3)**
+- La 1.4.3 è uscita il 2026-11-02 come release del link, senza storie di questo backlog. La prima milestone, quella dei salvataggi, diventa 1.4.4, e LNK-1.1 misura la 1.4.3 pubblicata con due gare di MKSC e una coppia mista. I riferimenti `file:riga` sono stati spostati sulla 1.4.3 (ee57fba), e quelli dentro codice cambiato sono stati ricontrollati.
+- Il backlog entra nel repository come `docs/BACKLOG.md` e descrive solo il nostro codice, l'hardware e i nostri obiettivi. Ogni epic ha un **Obiettivo** misurabile (principio 8); «Copre» elenca le capacità del catalogo, «Come ci arriviamo» raccoglie le scelte di progetto, e il verdetto delle epic sconsigliate diventa «sconsigliato (dietro gate)». ENG-2.6 controlla i nomi vietati.
+- SAV-1 è in corso nel branch `features/save-read-fixes` (SAV-1.1-1.5 e SAV-1.7 implementate, non verificate; SAV-1.2 ridotta, con la metà transazionale passata a SAV-2.1), e SAV-2.8 è fatta nello stesso branch, che entra per primo nella 1.4.4. Il branch del BIOS si ribasa dopo il tag 1.4.4.
+- Principio 6: R1 vale già per i valori del decoder; per tipi di evento e motivi di flush resta la decisione (d). R2 distingue i campi accodati, che non cambiano la versione del protocollo del link, dai campi cambiati. In lockstep l'emulatore scende a 0x77.
+- Due epic nuove: CMP-11 (semantica ARM7TDMI nel dynarec, 7 gg) e CMP-12 (tempi del core al ciclo, 15,5 gg). I casi di test si registrano sulla 1.4.3 pubblicata nella 1.5 (CMP-11.1, CMP-12.1); le correzioni entrano nella 1.6, con l'oracolo di replay e le baseline per modello. CMP-6.4 diventa una verifica (S, 1 gg), perché la finestra di prefetch è di CMP-12.5.
+- CMP-9 diventa «Titoli difficili: elenco pubblicato di giochi che arrivano al gameplay e salvano» (consigliato, 1.6): CMP-9.1 passa nella 1.5, nella sessione di PRF-8.6, e CMP-9.4 pubblica almeno 40 titoli. PRF-1 si chiude nella 2.0 con la suite pubblica di scene (PRF-1.7). PRF-8, PRF-9, PRF-10 e PRF-11 hanno storie nuove dietro i propri gate, con le misure (PRF-8.6, PRF-9.2, PRF-9.5, PRF-11.5) nelle milestone numerate.
+- Storie nuove: SAV-2.9, SAV-7.6, CMP-1.7, CMP-9.4, CMP-9.5, CMP-11.1-11.6, CMP-12.1-12.6, PRF-1.7, PRF-8.6-8.11, PRF-9.4-9.6, PRF-10.6, PRF-11.5-11.8, UI-1.5, UI-7.3, UI-9.6, UI-10.5, LNK-14.7, ENG-2.6, ENG-12.4-12.6, ENG-14.4, ENG-16.5. Storie spostate di milestone: SAV-8.1, CMP-9.1, ENG-10.4, UI-9.1 e UI-9.4 nella 1.5; PRF-9.2 nella 1.6. Epic riviste: LNK-10 (solo stanze Pokémon), SAV-8 (parcheggio prima della sospensione), LNK-1 (copre F-115).
+- Catalogo: F-164 esce; F-010, F-038, F-039, F-081, F-082, F-115, F-154, F-158 e F-162 entrano con un'epic; nuove capacità F-165-F-172 (tempi del core, patch degli immediati, salto delle attese, latenza dell'input, ritmo alla riga 160, filtri LCD, nomi non ASCII, reset sicuro).
+- Quattro storie chiudono obiettivi che nessuna storia verificava: PRF-8.11 rifà la suite di PRF-8.6 sull'ultima build, CMP-1.7 corregge Div e DivArm nel sorgente del BIOS se l'HLE viene rifiutata, ENG-12.6 registra il corpus locale della build qemu ed ENG-14.4 misura la geometria delle cache.
+- Le storie passano da 413 a 456 e la stima da 700,25 a 790,5 gg.
+
+**Pubblicazione del 2026-11-04**
+- `features/builtin-open-bios` è committato in due commit (il sorgente ReGBA, poi il BIOS integrato), ribasato sulla 1.4.3 e pubblicato su origin con questo backlog. Nel rebase è andato in conflitto solo il CHANGELOG. Il CHANGELOG e `source/bios/README.md` ora dicono che anche la 1.4.3 non controlla il BIOS dei savestate. Sono aggiornati l'intestazione, l'ordine di lavoro della 1.4.4, i rischi di SAV-1, il «Da noi oggi» di CMP-1, i passi di CMP-1.1 e il suo test con un `gba_bios.bin` valido, che ora confronta con la 1.4.3.
+
+## Decisioni aperte
+
+**Da confermare**
+- (a) **TRIANGOLO nel browser.** Proposta in UI-12.4: TRIANGOLO apre un menu di opzioni per ROM, come sull'XMB, con «Aggiungi ai preferiti / Togli dai preferiti»; GIO-5.3 aggiunge poi «Trucchi…» allo stesso menu. È l'unico tasto libero del browser: START apre, SELECT alterna lista e carosello, QUADRATO sale di cartella. UI-12.4 lo mappa in `get_gui_input`, che oggi non lo mappa; UI-4.3 («△ svuota» nella pagina Scorciatoie, 1.6) e UI-10.2 (△ tenuto nel menu Video, 2.0) dipendono da UI-12.4 e usano la sua mappatura.
+- (b) **Nickname non disegnabili.** LNK-5.4 aspetta UI-9.5: fino ad allora un nickname che i font di oggi non disegnano lascia l'etichetta attuale e fa partire UI-9.5. L'alternativa era convertire in LNK-5.4 da UTF-8 a Shift-JIS e GBK.
+- (d) **Regola R1 per tipi di evento e motivi di flush.** Da quando l'enum esiste non è stato aggiunto nessun tipo di evento né motivo di flush (25 tipi e 8 motivi dalla v3); i bump 3→4 e 4→5 hanno cambiato il significato dei record del link. I valori del decoder si aggiungono già senza bump (gruppi 4-8 di LINK_COUNTERS, 1.4.1-1.4.3). Resta da confermare la regola per tipi di evento e motivi di flush. Se viene rifiutata, SAV-1.6 e SAV-2.4 (e SAV-1.7) portano i propri eventi nel bump di ENG-1.6 nella 1.5, insieme a SAV-7.6 e UI-6.2, e gli eventi aggiunti dopo (CMP-4.2, UI-9.4, UI-14.2, UI-16.1, GIO-1.7, GIO-2.5, GIO-3.3, LNK-6.2 e i valori nuovi di LNK) vanno nel bump della release in cui escono (R3).
+- (e) **Div/DivArm e IntrWait nel BIOS aperto.** Da decidere prima del merge del branch del BIOS. Proposta: sì a entrambe, Div e DivArm in HLE (CMP-1.2) e la correzione di IntrWait (CMP-1.3). Se l'HLE viene rifiutata, Div e DivArm si correggono nel sorgente del BIOS integrato (CMP-1.7), che prende il posto di CMP-1.2 nella 1.5; se viene rifiutata la correzione di IntrWait, CMP-1 non raggiunge il suo obiettivo e il limite ai flag 0-7 resta scritto in `source/bios/README.md`.
+- (f) **Linea 1.4.x dopo la 1.4.3.** Proposta: la 1.4.x riceve solo correzioni per la sicurezza dei dati e per difetti del link già spediti; ENG-1.6 e ogni modifica dell'EBOOT che non sia una di queste vanno nella 1.5. UI-1.1 e UI-1.2 valgono come sicurezza dei dati dell'utente: UI-1.1 toglie l'`apply_theme` che sovrascrive i colori e UI-1.2 smette di cancellare `tempgba_theme.cfg`.
+- (g) **Elenco dei nomi vietati.** ENG-2.6 tiene nel repository solo gli SHA-256 delle parole, così `make check` e la CI le controllano senza nominarle; l'alternativa è un elenco fuori dal repository, che la CI non può leggere.
+- (h) **Tag contro dimensione nei ROM hack.** Con SAV-1 il tag della ROM vince sempre sulla dimensione del file: un ROM hack portato a SRAM che tiene la stringa Flash o EEPROM non salva più. Si accetta e si documenta, oppure una riga per CRC di CMP-8 forza il tipo.
+- (i) **Obiettivo dove gli fps sono già al massimo.** Dove un titolo va già a velocità piena, l'obiettivo è il margine del bench senza limite (almeno il 10%), con il p99 e i salvataggi verificati su due modelli (principio 8, CMP-9, PRF-8); nel link, dove il bench non si applica, il p99 del tempo di frame nei due ruoli (LNK-11, LNK-12): da confermare come misura.
+- (j) **Modifiche al core nella 1.5.** CMP-1.2, CMP-1.4, CMP-3.2, CMP-3.3 e SAV-6.1 cambiano il core prima dell'oracolo di replay (ENG-3) e delle baseline per modello (PRF-1.5), con la core-rom e compare-benchmarks 3+3: CMP-1.2, CMP-3.2 e CMP-3.3 servono all'avvio senza `gba_bios.bin`, CMP-1.4 conta le SWI per il runtime log e il perf report, SAV-6.1 toglie il blocco della console su un salto non mappabile. Da confermare; con le stesse condizioni potrebbero entrare nella 1.5 anche CMP-11.2 e CMP-11.3, una riga ciascuna (1,25 gg in più nella 1.5 e in meno nella 1.6).
+- (k) **Prima risposta alle issue.** ENG-18 promette una prima risposta entro 48 ore, registrata in `docs/TRIAGE.md`: è un impegno di tempo per chi mantiene il progetto. Proposta: 48 ore; un tempo diverso va scritto qui e in ENG-18.
+- **Firma fuori dalla SRAM.** Una cartuccia ha un solo chip di salvataggio, quindi i target Flash ed EEPROM di SAV-2.6 scrivono la firma di CMP-3.1 in un blocco riservato del proprio chip; la core-rom e la ROM raster, con tag SRAM, la tengono in SRAM.
+- **Report vecchi in GIO-1.5.** Il suo test di compare-benchmarks confronta un report più vecchio sui campi comuni invece di rifiutarlo, come chiedono ENG-1.6 e il gate di GIO-1 (rewind spento contro una baseline di prima del rewind).
+- **Stime.** UI-3.2 è a 0,25 gg (con 0,5 UI-3 torna a 2,5 gg). GIO-1.2, ora con prova su PSP, forse +0,5 gg. GIO-5.3 resta a 3 gg anche se la mappatura del tasto è passata a UI-12.4 (forse da −0,25 a −0,5 gg).
+- **UI-11.1** non ha dipendenze e potrebbe uscire nella 1.6, anche se UI-11 ora sta tutta nella 2.0.
+
+**Domanda aperta della seconda passata**
+- **Bit riservati di ROM_OPEN.** CMP-2.5 tratta il significato dato ai bit di value2 che CMP-1.4 aveva riservato come cambio di formato, quindi va nel bump del runtime log della 1.6 (R3); come scritto, CMP-2.5 e CMP-8.4 creano da sole un bump della 1.6. Se invece usare bit riservati vale come compatibile per R1, restano v6, e lo stesso vale per CMP-6.2, CMP-8.3 e CMP-8.4.
+
+Le altre domande della seconda passata sono chiuse: SAV-2.8 controlla `slot_parsed`; il test di LNK-16.5 resta scritto in LNK-16.2, che possiede il parser; R4 è una regola generale; CMP-9.1 si fa nella sessione di PRF-8.6, sulla 1.4.3 pubblicata; «SAV-2 rilasciato» è un gate di rilascio, non una dipendenza; il valore di `browser_view` lo prende la prima storia che esce, come gli id d'azione; PRF-11.4 confronta con la release precedente. UI-3 ed ENG-1.4 citano F-012 come condizione nel testo, non come dipendenza. È chiusa anche la (c), l'ordine dei merge: prima `features/save-read-fixes`, nella 1.4.4 dopo un rebase sulla 1.4.3, poi `features/builtin-open-bios`, ribasato una volta dopo il tag 1.4.4 e unito nella 1.5 dopo ENG-2.1.
+
+## 1. Salvataggi, stati e affidabilità
+
+Il gruppo copre lettura e scrittura del `.sav`, i savestate, i guasti di emulazione e la sospensione. La priorità è la 1.4.4 (SAV-1 e SAV-2), che chiude difetti di perdita dati presenti in tutte le release fino alla 1.4.3; SAV-1 è in corso nel branch `features/save-read-fixes`, che entra per primo. SAV-3, SAV-4, SAV-6 e SAV-7 seguono nella 1.5, con l'esperimento SAV-8.1, mentre SAV-5 e SAV-8 partono solo se scatta il gate misurato di ciascuna. Nessuna storia aggiunge impostazioni, quindi `config_model` non cambia. I numeri di riga si riferiscono alla 1.4.3 (ee57fba); il lavoro del branch non è ancora committato.
+
+### SAV-1 — Lettura del .sav corretta: tipo dal tag ROM, dimensione nativa, mai un'immagine vuota sopra il file
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| in corso | 1.4.4 | 5,5 gg | — (solo SAV-1.6 usa SAV-2.1) |
+
+**Copre:** F-001 lettura del `.sav` limitata alla capacità (una lettura fallita non diventa un salvataggio vuoto), F-002 tipo di salvataggio dal tag ROM (`.sav` da 64 KiB alla dimensione nativa), F-004 prove di persistenza con guasti di I/O iniettabili, F-081 avviso di avvio fallito con il motivo (con EXT-2)
+**Obiettivo:** Nessuna sequenza di guasti di lettura scrive sul `.sav` un'immagine vuota o parziale: dopo un esito FAILED ogni scrittura di quel `.sav` è bloccata, con un test host sul vero `memory.c` e un controllo di sorgente. Il `.sav` resta alla dimensione nativa del chip (EEPROM 512 B o 8 KiB, SRAM 32 o 64 KiB, Flash 64 o 128 KiB); i file da 128 KiB, come quelli che scrive libretro gpSP, si leggono per prefisso e l'originale incoerente resta come `<rom>.sav.orig`. Un salvataggio illeggibile apre due domande nelle 5 lingue (riprovare; giocare senza salvare, con il file intatto) e due no tornano alla lista. Matrice tag × dimensione da 45 casi e fuzz da 200.000 passi verdi in `make test` e `make test-sanitize`; matrice di SAV-1.8 su PSP-1000 e su un secondo modello; ogni decisione su tipo, taglia ed esito nel runtime log delle build di release.
+**Da noi oggi:** `load_backup` (`source/src/memory.c:3160-3220`) riempie di 0xFF il buffer statico da 128 KiB (`:185`, `:3165`) e legge `file_length` byte senza limite (`:3173-3175`). Lo switch sulla dimensione (`:3179-3213`) scavalca il tipo trovato da `load_backup_id` (`:3055`): nel caso 0x10000 assegna `sram_size = BACKUP_FLASH` (`:3200`) e `save_backup` scrive `sram_size` byte (`:3244-3262`), quindi un gioco SRAM con `.sav` da 64 KiB torna su disco come file da 1 byte. Se apertura o lettura falliscono resta l'immagine 0xFF, `load_gamepak` ignora l'esito (`:3687`) e il primo flush (`update_backup` `:3274-3284`, chiamato da `main.c:1140-1141`) la scrive sopra il file vero. Il pattern di I/O iniettabile esiste già per le impostazioni (`config_store.h:12-23`, finto in `tests/test_config_store.c`). Il lavoro è in corso nel branch `features/save-read-fixes` (da d6ef51f, non committato, da ribasare sulla 1.4.3, che ha cambiato `gui.c` e `main.c`): SAV-1.1-1.5 e SAV-1.7 sono implementate, SAV-1.2 in forma ridotta; `tests/test_save_format.c`, `tests/test_save_store.c` (con `tests/fake_store_io.c/.h`), `tests/test_memory_backup.c` e lo scenario di annullamento di `tests/test_startup.py` sono registrati nel `Makefile`, regole normale e sanitize. Verificato solo con clang e uno shim freestanding (UBSan in trap), con 26 mutanti del codice e 8 delle regole di `check-lifecycle.sh` uccisi; non verificati `make check`, `make test-sanitize` con ASan, la build PSP e l'hardware (SAV-1.8). Mancano SAV-1.6, SAV-1.8 e gli eventi del runtime log di SAV-1.6 e SAV-1.7.
+**Come ci arriviamo:**
+- Il file resta alla dimensione nativa del chip (EEPROM 512 B o 8 KiB, SRAM 32 o 64 KiB, Flash 64 o 128 KiB), portabile su flash cart e su PC.
+- Una lettura fallita non blocca il gioco: si può riprovare, giocare senza salvare (scritture bloccate, file intatto) o tornare alla lista.
+- Le immagini da 128 KiB, come quelle che scrive libretro gpSP, si leggono per prefisso, e il file originale incoerente resta come `<rom>.sav.orig`: l'importazione è reversibile.
+- Ogni decisione su tipo, taglia ed esito va nel runtime log anche in release.
+- Il difetto da 1 byte e il blocco delle scritture si provano su host compilando il vero `memory.c` con il file system finto, non solo con moduli isolati.
+- Un argine immediato impedisce agli stati alterati di indicizzare fuori da `gamepak_backup`, prima del formato v2 (SAV-4).
+**Gate prima di iniziare:** nessuno: il lavoro è in corso. Uscita: `make test` e `make test-sanitize` verdi e matrice di SAV-1.8 su PSP-1000 più un secondo modello; con un solo modello la build esce come prerelease.
+**Rischi:** i file già troncati a 1 byte hanno perso i dati, si può solo registrarlo; una ROM senza tag con file da 64 KiB resta ambigua, quindi il tipo lo decide il gioco come oggi (`memory.c:2017`, `:2105`) con SRAM e Flash entrambe a 64 KiB, invece di forzare Flash e rompere i ROM hack SRAM; con più tag vince il primo trovato dalla fine (`memory.c:3073-3155`) e ora il tag vince sulla dimensione, quindi ogni disaccordo va nel log e in `.orig`; il blocco delle scritture deve coprire ogni percorso (flush periodico, uscita, menu, cambio ROM), per questo c'è un controllo di sorgente; la lettura per prefisso delle immagini EEPROM da 128 KiB presuppone i dati all'offset 0 (vero per noi, `memory.c:1941`), da confermare con un file libretro reale. Finché manca SAV-1.6 un `.sav` di dimensione non nativa si riscrive alla dimensione del chip senza copia `.orig`: nessun tag, nemmeno rc, prima di SAV-1.6. Il tag vince sempre: un ROM hack portato a SRAM che tiene la stringa Flash o EEPROM non salva più (decisione aperta (h)). Gli stati salvati dalle 1.4.x riportano tipo di salvataggio e ID Flash fino a SAV-4: la riparazione di SAV-1.7 corregge solo i valori impossibili. Il controllo d'esistenza tratta come presente un file il cui stat fallisce con una cartella dei salvataggi che non si apre: lo verifica SAV-1.8. Il branch `features/builtin-open-bios` (committato sopra la 1.4.3) riscrive `load_state`, `load_state_silent` e `save_state` in `memory.c` e aggiunge voci a `MESSAGE_ITEM`, cioè gli stessi punti di SAV-1.5, SAV-1.7 e SAV-2.5: il branch dei salvataggi entra per primo nella 1.4.4; dopo il tag 1.4.4 si fa un solo rebase del branch del BIOS (CMP-1.1), e niente di quel branch entra in develop prima. Su develop SAV-1.7 copre quindi i due punti di lettura e SAV-2.5 scrive la coda senza parola BIOS; il rebase li porta sul punto unico e sulla coda del branch.
+
+#### SAV-1.1 — Modulo puro save_format: tipo dal tag, taglia nativa, clamp · S, 0,5 gg · dipende da: — · PSP: no
+- **Cosa:** Implementata nel branch `features/save-read-fixes` (`source/src/save_format.c/.h`), non verificata su PSP. Nuovo modulo puro che decide tipo e taglia. Il tag ROM decide il tipo e la dimensione del file sceglie solo la taglia dentro quel tipo. Senza tag valgono le regole di oggi (512 B e 8 KiB EEPROM, 32 KiB SRAM, 128 KiB Flash 128), tranne 64 KiB: il tipo resta deciso dal gioco al primo accesso (`memory.c:2017`, `:2105`), ma SRAM e Flash partono entrambe da 64 KiB, così nessun esito scrive 1 byte. Per EEPROM la taglia la decide il gioco come oggi (DMA da 17 unità = 8 KiB); un file più grande si legge per i primi 8 KiB. Un file oltre 128 KiB si legge per i primi 128 KiB. Il modulo restituisce layout, flag di incoerenza (file diverso dalla taglia nativa) e dimensione di scrittura: 0 finché il tipo è ignoto (come oggi), altrimenti mai sotto 512 B né sopra il buffer. Solo enum e `uint32_t`.
+- **File:** `source/src/save_format.c` (nuovo), `source/src/save_format.h` (nuovo), `tests/test_save_format.c` (nuovo), `Makefile`
+- **Test:** matrice tag (SRAM, FLASH64, FLASH128, EEPROM, nessuno) per dimensioni (0, cioè assente o vuoto, 1, 512 B, 8, 32, 64, 128 KiB, 128 KiB + 16 B, 200 KiB) con tipo, taglia, incoerenza e dimensione di scrittura attesi (in `tests/test_save_format.c`, matrice da 45 casi e fuzz da 200.000 passi); regressione: tag SRAM e file da 64 KiB danno una scrittura di 65536 byte; registrazione nei 4 punti del `Makefile` (`Makefile:9-13`), `make test` e `make test-sanitize`.
+- **Accettazione:** con tipo noto nessuna combinazione scrive meno di 512 o più di 131072 byte; il tag vince sempre sulla dimensione; ASan e UBSan puliti.
+- **Licenza:** codice nuovo GPL-2.0-or-later (GBA Rush PSP, 2026 Piero Carrieri).
+
+#### SAV-1.2 — Interfaccia SaveStoreIo (exists, read, write) e file system finto con guasti iniettabili · S, 0,5 gg · dipende da: — · PSP: no
+- **Cosa:** Implementata nel branch, in forma ridotta: `save_store.h` definisce `SaveStoreIo` con `exists`, `read` (capacità e dimensione reale) e `write`; i percorsi si uniscono con un controllo (`SAVE_STORE_PATH_MAX` 512). File assente o di 0 byte = NOT_FOUND; file presente ma illeggibile, lettura corta o percorso troppo lungo = FAILED. `tests/fake_store_io.c/.h` è un file system in memoria con open, lettura e scrittura fallite o corte. La metà transazionale (scrittura in streaming, flush, move, remove, crc32, con i guasti di ciascuna operazione) passa a SAV-2.1, l'unica che la usa.
+- **File:** `source/src/save_store.h` (nuovo), `tests/fake_store_io.c` (nuovo), `tests/fake_store_io.h` (nuovo), `tests/test_save_store.c` (nuovo), `Makefile`
+- **Test:** per ogni interruttore un'asserzione che ne osserva l'effetto, così i test dello store non possono passare a vuoto; `make test` e `make test-sanitize`.
+- **Accettazione:** ogni guasto elencato è iniettabile e osservato da almeno un test; nessun leak né comportamento indefinito; `tests/test_config_store.c` invariato.
+- **Licenza:** codice nuovo GPL-2.0-or-later, sul modello del nostro `tests/test_config_store.c`.
+
+#### SAV-1.3 — save_store_load: assente, letto o illeggibile · S, 0,5 gg · dipende da: SAV-1.2 · PSP: no
+- **Cosa:** Implementata nel branch, non verificata su PSP. Caricamento puro con tre esiti. File assente o da 0 byte: NOT_FOUND, cartuccia vergine, scritture consentite. File presente ma open o read falliscono, o arrivano meno byte del dichiarato: FAILED, scritture bloccate, file intatto. Un file oltre la capacità si legge per i primi 128 KiB e se ne riporta la dimensione reale. I percorsi si compongono con `snprintf` controllato: un percorso troppo lungo è un errore esplicito, mai un troncamento (oggi `sprintf`, `memory.c:3167`).
+- **File:** `source/src/save_store.c` (nuovo), `source/src/save_store.h`, `tests/test_save_store.c`
+- **Test:** file assente, vuoto, letto, lettura corta, open fallita su file presente, read fallita, file da 200 KiB, percorso troppo lungo; ASan senza scritture oltre la capacità.
+- **Accettazione:** FAILED non viene mai confuso con NOT_FOUND; il buffer non viene mai scritto oltre la capacità; durante il caricamento non avvengono scritture né rename.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### SAV-1.4 — load_backup ricablato, binding sceIo condiviso e blocco delle scritture · M, 1,5 gg · dipende da: SAV-1.1, SAV-1.3 · PSP: no
+- **Cosa:** Implementata nel branch, non verificata su PSP: `backup_write_blocked` in `memory.c`, e `tests/test_memory_backup.c` porta il vero `memory.c` attraverso `load_gamepak`. Il binding sceIo delle impostazioni (`gui.c:6067-6183`) diventa condiviso e implementa anche `SaveStoreIo` (lato lettura: `exists` con `sceIoGetstat`, `read` a ciclo come `config_io_read`); non nasce un secondo binding in `main.c`. `memory.c` riceve la tabella come puntatore impostato all'avvio, così i test host passano il finto. `load_backup` passa da `save_store_load` e `save_format_resolve`; lo switch sulla dimensione (`memory.c:3179-3213`) viene cancellato. Un esito FAILED imposta `backup_write_blocked`. `save_backup` resta l'unico punto che scrive il `.sav` (lo chiamano `update_backup`, `update_backup_immediately`, `quit` a `main.c:1788`, `menu_suspend` a `gui.c:3943`, i cambi di ROM a `gui.c:3961` e `:4156`) e rispetta il blocco. `load_gamepak` restituisce l'esito al chiamante.
+- **File:** `source/src/memory.c`, `source/src/memory.h`, `source/src/gui.c`, `source/src/gui.h`, `source/src/main.c`, `tests/test_memory_backup.c` (nuovo), `Makefile`, `scripts/check-lifecycle.sh`
+- **Test:** `tests/test_memory_backup.c` compila il vero `memory.c` con `tests/host_dma_stubs.c` e il finto, alle stesse condizioni di `test_perf_dma_probe` (`Makefile:249-265`, intestazioni PSP SDK): tag SRAM e file da 64 KiB, scrittura del gioco, `update_backup_immediately`, file finale di 65536 byte; dopo una lettura FAILED nessuna scrittura da flush periodico, uscita o cambio ROM; file da 200 KiB senza overflow sotto ASan. `scripts/check-lifecycle.sh`: fuori da `save_backup` nessun `FILE_OPEN` o `FILE_WRITE` su `backup_filename`, e il blocco è controllato prima di qualsiasi I/O.
+- **Accettazione:** il `.sav` da 64 KiB di un gioco SRAM resta di 65536 byte; un `.sav` da 200 KiB non sfora il buffer; dopo una lettura fallita nessun percorso tocca il file; in `memory.c` non restano chiamate `FILE_*` sul `.sav`.
+
+#### SAV-1.5 — Avviso di salvataggio illeggibile: riprova o gioca senza salvare · S, 0,5 gg · dipende da: SAV-1.4 · PSP: sì
+- **Cosa:** Implementata nel branch. Il controllo sta in `load_gamepak`, unico punto comune a tutti i caricamenti di ROM (menu a `gui.c:3952`, ROM più stato a `gui.c:4052`, ROM recenti, avvio), ma dopo `scePowerUnlock` (`memory.c:3694`): il lock è preso a `:3639` e un dialogo lì dentro rimanderebbe lo standby finché resta aperto. Un esito FAILED apre due domande con `yesno_dialog` (`main.c:2337`): «Il salvataggio non si legge. Riprovare?» e, se no, «Giocare senza salvare? Il file resta com'è.». Un nuovo tentativo che non trova il file conta come illeggibile. Due no annullano il caricamento (`LOAD_GAMEPAK_CANCELLED` = -3, distinto da -1 e dal -2 di `load_file_zip`) e tornano alla lista delle ROM; all'avvio due no aprono il menu. Mentre le domande sono aperte il nome della ROM è vuoto, così una sospensione non scrive lo stato AUTO. Le nuove voci `MSG_*` vanno nell'enum `MESSAGE_ITEM` prima di `MSG_END` e nei cinque `message_*.h`, nello stesso ordine.
+- **File:** `source/src/memory.c`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `tests/test_memory_backup.c`, `tests/test_startup.py`, `scripts/check-lifecycle.sh`
+- **Test:** `scripts/check-messages.sh`; `scripts/check-lifecycle.sh`: in `load_gamepak` nessun dialogo fra `scePowerLock` e `scePowerUnlock`; `test_memory_backup.c`: Riprova rilegge, Gioca senza salvare mantiene il blocco; `tests/test_startup.py`: lo scenario di annullamento; PSP: una directory chiamata `<rom>.sav` nella cartella dei salvataggi (`sceIoGetstat` la trova, `sceIoOpen` dovrebbe rifiutarla: da confermare alla prima prova, altrimenti guasto iniettato in una build diagnostica F-137).
+- **Accettazione:** Riprova rilegge davvero il file; con Gioca senza salvare la data di modifica del `.sav` resta invariata dopo l'uscita; `check-messages.sh` verde.
+
+#### SAV-1.6 — .sav.orig conservato dallo store ed evento SAVE_LOAD nel runtime log · S, 0,5 gg · dipende da: SAV-1.4, SAV-2.1 · PSP: no
+- **Cosa:** Quando `save_format` segnala incoerenza (taglia diversa da quella nativa, file oltre 128 KiB, file troncato da versioni precedenti), la prima transazione di SAV-2.1 conserva il vecchio primario come `<rom>.sav.orig`: il `.bak` appena creato viene spostato, senza copie né spazio in più, se `.orig` non esiste già. Finché `.orig` manca lo store non cancella mai quel `.bak`; se lo spostamento fallisce, la scrittura successiva fallisce in modo visibile (SAV-2.3) invece di perdere l'originale. Un nuovo evento `RUNTIME_LOG_EVENT_SAVE_LOAD`, in coda all'enum (`runtime_log.h:51-75`), registra tipo, taglia, dimensione del file, esito e incoerenza. Per la regola R1 (principio 6 della panoramica) un valore in coda all'enum non cambia `RUNTIME_LOG_VERSION`: il formato resta v5 (il decoder mostra già gli eventi ignoti come `event-N`, `tools/decode_runtime_log.py:162`) e il decoder impara nome e valori. È il primo tipo di evento nuovo dalla v5: la regola sui valori del decoder l'hanno già usata i gruppi di LINK_COUNTERS delle 1.4.1-1.4.3. Per questo aggiorna anche il commento d'intestazione di `runtime_log.h:16`, che oggi dice che i valori degli enum fanno parte del formato: dopo dirà che un valore aggiunto in coda a un enum mantiene la versione, mentre il layout dei record e il significato dei valori esistenti fanno parte del formato. Se la regola viene rifiutata, l'evento passa nel bump di ENG-1.6 nella 1.5.
+- **File:** `source/src/save_store.c`, `source/src/memory.c`, `source/src/runtime_log.h` (evento e commento d'intestazione), `tools/decode_runtime_log.py`, `tests/test_save_store.c`, `tests/test_decode_runtime_log.py`
+- **Test:** `test_save_store.c`: `.orig` creato una sola volta e mai sovrascritto, taglio di corrente a ogni passo, move fallita che lascia il `.bak`; `tests/test_decode_runtime_log.py`: decodifica di SAVE_LOAD; i gruppi 7 e 8 di LINK_COUNTERS si decodificano per nome, e il gruppo dopo l'ultimo noto (il massimo di LINK_COUNTERS più 1) come counters-N.
+- **Accettazione:** ogni decisione su tipo e taglia si legge nel runtime log di una build di release; `.orig` esiste solo dopo un'incoerenza e poi non cambia più; nessuna sequenza di guasti perde il file originale.
+
+#### SAV-1.7 — Argine immediato per gli stati che indicizzano fuori dal buffer · S, 0,5 gg · dipende da: SAV-1.1 · PSP: no
+- **Cosa:** Implementata nel branch (`save_format_sanitize`, con ripiego sui valori in uso prima del caricamento); manca l'evento del runtime log. Dopo `SAVESTATE_BLOCK(read)` (`memory.c:3801` e `:3842`; nel branch del BIOS aperto `load_state` passa già da `load_state_silent`, quindi il punto è uno) si riportano in range i campi che indicizzano `gamepak_backup` o ne fissano la lunghezza: `flash_bank` (`:2039`, `:2211`), `eeprom_address` ed `eeprom_counter` (`:1935`, `:1941`, `:1981`), `sram_size`, `flash_size` ed `eeprom_size` (lunghezza scritta da `save_backup`, `:3244-3262`) e `backup_type`. Lo fa una funzione pura `save_format_sanitize`, che restituisce la maschera dei campi corretti; la maschera va nel runtime log con un evento in coda all'enum, che per la stessa regola di SAV-1.6 (R1) lascia il formato a v5. Non è la validazione completa di SAV-4: chiude solo letture e scritture fuori buffer.
+- **File:** `source/src/save_format.c`, `source/src/save_format.h`, `source/src/memory.c`, `source/src/runtime_log.h`, `tools/decode_runtime_log.py`, `tests/test_save_format.c`, `tests/test_decode_runtime_log.py`
+- **Test:** ogni campo fuori range torna al valore sicuro ed è segnato nella maschera; i valori validi restano invariati; decodifica del nuovo evento; ASan.
+- **Accettazione:** nessun valore letto da un `.svs` fa leggere o scrivere fuori da `gamepak_backup`; gli stati validi si caricano identici.
+
+#### SAV-1.8 — Validazione hardware del percorso di lettura · S, 1 gg · dipende da: SAV-1.4, SAV-1.5, SAV-1.6, SAV-1.7 · PSP: sì
+- **Cosa:** Matrice su PSP-1000 e su un secondo modello (2000, 3000 o Go). Quattro giochi: uno Flash 128 KiB, uno Flash 64 KiB, uno SRAM e uno EEPROM, ognuno con il `.sav` nativo e con un `.sav` da 128 KiB scritto da libretro gpSP; il gioco SRAM anche con un file da 64 KiB. Il caso illeggibile usa la directory `<rom>.sav`. Dopo un salvataggio nel gioco e dopo l'uscita si controllano dimensione e CRC del file e si raccoglie il runtime log. `docs/saves.md` elenca i file creati e spiega come ripristinarli.
+- **File:** `docs/saves.md` (nuovo, breve)
+- **Test:** matrice completa sui due modelli; un evento SAVE_LOAD per ogni avvio, con l'esito atteso; un caso con lo stat del `.sav` che fallisce e la cartella dei salvataggi che non si apre.
+- **Accettazione:** un `.sav` cambia dimensione solo per tornare a quella nativa, sempre con `.orig` accanto; nessun `.sav` viene sovrascritto dopo una lettura fallita; esiti e modelli provati sono nelle note di rilascio con l'ambito della validazione (F-118); nessun `.sav` né ROM entra in Git (`scripts/check-tree.sh`).
+
+### SAV-2 — Ogni scrittura del .sav è una transazione con .bak verificato
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.4.4 | 10,5 gg | SAV-1.2, SAV-1.3, SAV-1.4, SAV-1.8 |
+
+**Copre:** F-003 scritture del salvataggio transazionali con copia di riserva, F-010 salvataggi sulla Memory Stick in tempi brevi, anche nei giochi lenti e dopo gli scambi. SAV-2.8 e SAV-2.9 chiudono due difetti nostri che perdono lo stato AUTO.
+**Obiettivo:** Ogni scrittura del `.sav`, anche quella di routine, è una transazione: `.tmp`, sync, verifica del CRC rileggendo il file, rename verificato su entrambi i nomi; il `.sav.bak` tiene la generazione precedente verificata. 0 `.sav` vuoti o corti in 200 spegnimenti forzati (100 su PSP-1000 e 100 su un secondo modello, Go per `ef0:` se c'è), con al massimo l'ultima generazione non promossa persa; test host che tagliano la corrente dopo ogni passo. Dall'ultima scrittura del gioco alla fine del flush passa al massimo 1 s al p99 nelle tre sessioni di SAV-2.4. Gli stati `.svs` passano dallo stesso store in streaming, senza buffer da 512 KiB, e né «Carica stato da file» né la domanda di ripresa perdono più lo stato AUTO.
+**Da noi oggi:** `save_backup` (`memory.c:3225-3270`) riapre il `.sav` con `psp_fopen` «w», che tronca il file (`main.c:2404-2430`, `PSP_O_TRUNC`), non controlla i byte scritti (`memory.c:3262`) né la chiusura (`psp_fclose` non restituisce nulla, `main.c:2436-2443`) e azzera comunque `backup_update` (`memory.c:3282`, `:3292`). Non ci sono `.tmp`, rename, sync né `.bak`. Gli stati si scrivono allo stesso modo, con una `safe_malloc` da 512 KiB (`memory.c:3890`, `:3937`) che se fallisce chiude l'emulatore (`main.c:2448-2459`). Nel repo esistono già due store tmp+rename testati, `config_store.c:73-143` e `runtime_log_store.c:45-80` (che però cancella il `.bak` a fine scrittura, `:79`, e nel recupero, `:38-39`); il binding sceIo di `gui.c:6067-6183` non controlla la chiusura né verifica i rename. Nel branch `features/save-read-fixes` SAV-2.8 è fatta, con la regola in `scripts/check-lifecycle.sh`; manca la prova su PSP di SAV-2.7.
+**Come ci arriviamo:**
+- Ogni scrittura, anche quella di routine, è una transazione completa: `.tmp`, sync, verifica del CRC rileggendo il file, rename.
+- Il `.sav.bak` tiene sempre la generazione precedente, già verificata e a dimensione nativa.
+- Se la corrente salta fra i due rename, il recupero promuove il `.tmp` già verificato.
+- Ogni rename è verificato su entrambi i nomi, e i test host tagliano la corrente dopo ogni singolo passo.
+- Un errore lascia il salvataggio in sospeso con nuovi tentativi e un solo avviso; uscendo dal menu si chiede se riprovare, invece di perdere i dati in silenzio.
+- Ogni flush è misurato nel runtime log, così SAV-5 si decide sui numeri.
+- Gli stati `.svs` passano dallo stesso store in streaming, senza buffer da 512 KiB: uno stato interrotto non distrugge più il precedente e salvare non può più chiudere l'emulatore.
+- Il binding condiviso corregge anche la scrittura di `tempgba.cfg` (chiusura controllata, rename verificato).
+**Gate prima di iniziare:** nessuno. Uscita: test di taglio a ogni passo verdi; 100 spegnimenti forzati su PSP-1000 e 100 su un secondo modello, preferibilmente PSP Go per `ef0:`, senza nessun `.sav` vuoto o corto (si perde al massimo l'ultima generazione non promossa); uno scambio FireRed/Emerald fra due PSP completato con il nuovo store.
+**Rischi:** lo stall si allunga (tmp, sync, rilettura, due rename) e resta sul thread di emulazione finché SAV-5 non scatta: con 64-128 KiB da scrivere e verificare sono probabili frame oltre 33 ms, da guardare soprattutto nello scambio in link, dove il gioco salva a sessione aperta; FAT non rinomina sopra un file esistente, quindi ordine dei rename e tabella di recupero devono essere esatti; serve spazio per una seconda copia (con il Memory Stick pieno la scrittura fallisce senza danni, con avviso); `sceIoSync` può essere lento su alcune Memory Stick o su `ef0:` del PSP Go, va misurato prima di tenerlo a ogni flush; uscendo da HOME il callback concede 2 s in tutto (`main.c:197`, `:1970-1988`), quindi su quel percorso niente dialoghi; la ROM di test richiede devkitARM come `tests/link-rom`; accanto ai `.sav` compaiono file nuovi (`.tmp`, `.bak`, `.orig`) da spiegare in `docs/saves.md`.
+
+#### SAV-2.1 — Scrittura in streaming e recupero nello store puro · M, 2 gg · dipende da: SAV-1.2, SAV-1.3 · PSP: no
+- **Cosa:** Completa `SaveStoreIo` con la metà transazionale lasciata da SAV-1.2: `open_write`, `write`, `close` con esito, `flush` sul device del percorso, `move`, `remove` e `crc32` a blocchi, e il finto di `tests/fake_store_io.c` riceve ENOSPC dopo N byte, errore alla chiusura, flush fallito, move fallita, move che mente nei due versi e taglio di corrente dopo il passo k. API `save_store_begin`, `save_store_append`, `save_store_commit`, più `save_store_write` per un buffer intero. La sequenza è: recupero; scrittura del `.tmp` a pezzi con CRC32 progressivo; chiusura controllata; flush; verifica di dimensione e CRC rileggendo il `.tmp` a blocchi; rimozione del vecchio `.bak` (salvo la regola `.orig` di SAV-1.6); primario rinominato in `.bak`; `.tmp` rinominato in primario, verificando i nomi dopo ogni move; flush finale. Se un passo fallisce il primario precedente resta dov'è o viene rimesso al suo posto. Recupero: un `.tmp` con il primario presente viene rimosso; se il primario manca e c'è il `.bak`, si promuove il `.tmp` se esiste (era già verificato, perché il primario si sposta solo dopo la verifica), altrimenti si ripristina il `.bak`. CRC32 da zlib, lo stesso di `runtime_log.c`; su host `-lz` come `test_runtime_log` (`Makefile:193-200`, `:392-399`).
+- **File:** `source/src/save_store.c`, `source/src/save_store.h`, `tests/test_save_store.c`, `tests/fake_store_io.c`, `Makefile`
+- **Test:** per ogni passo k si taglia la corrente e si riavvia (recupero più caricamento): l'immagine è sempre la vecchia o la nuova, mai vuota se prima ce n'era una; scrittura corta, ENOSPC, errore di chiusura (lo rileva la verifica), flush fallito, move fallita, move che mente nei due versi; streaming a pezzi da 1 byte, 16 KiB e 512 KiB; `make test-sanitize`.
+- **Accettazione:** nessuna sequenza di guasti lascia senza un'immagine valida un salvataggio che ne aveva una; codici di esito distinti per scrittura, verifica, backup, promozione e ripristino.
+- **Licenza:** codice nuovo GPL-2.0-or-later che parte dal nostro `config_store.c`; crc32 da `source/src/zlib` (licenza zlib, già nel repo).
+
+#### SAV-2.2 — Binding sceIo condiviso, lato scrittura · S, 0,5 gg · dipende da: SAV-1.4 · PSP: no
+- **Cosa:** Nel binding condiviso di `gui.c` (SAV-1.4): `write` a ciclo con l'esito di `sceIoClose` controllato (oggi ignorato, `gui.c:6105-6127` e `main.c:2436-2443`); `flush` con `sceIoSync` sul device del percorso passato come contesto (`ms0:` o `ef0:`), non più solo quello di `main_path` (`gui.c:6130-6146`); `move` con `sceIoRename` seguito da `sceIoGetstat` su entrambi i nomi; `crc32` a blocchi da 16 KiB in un buffer statico. Anche il salvataggio di `tempgba.cfg` ne beneficia.
+- **File:** `source/src/gui.c`, `source/src/gui.h`
+- **Test:** `tests/test_config_store.c` invariato e verde; `scripts/check-lifecycle.sh`: il binding non chiama `safe_malloc`; verifica su PSP in SAV-2.7.
+- **Accettazione:** ogni esito negativo di `sceIo*` diventa un errore; nessuna allocazione dinamica.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### SAV-2.3 — save_backup tramite lo store, con nuovi tentativi e avvisi · M, 1,5 gg · dipende da: SAV-2.1, SAV-2.2 · PSP: no
+- **Cosa:** `save_backup` scrive con lo store alla taglia nativa, e `backup_update` si azzera solo se la scrittura riesce (oggi sempre, `:3282` e `:3292`). Dopo un errore il tentativo successivo arriva dopo circa 300 frame invece di 10, con un solo avviso per sessione (`error_msg` per ora, un toast con F-045). `quit`, `menu_suspend` e i cambi di ROM fanno un ultimo tentativo; se dal menu fallisce compare «Salvataggio non scritto: riprovare?». Uscendo da HOME nessun dialogo per il limite di 2 s, solo il log. `update_backup_immediately` restituisce l'esito (serve a SAV-3.2). Le stringhe vanno nei cinque file.
+- **File:** `source/src/memory.c`, `source/src/memory.h`, `source/src/main.c`, `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `tests/test_memory_backup.c`, `scripts/check-lifecycle.sh`
+- **Test:** `test_memory_backup.c` con il finto: una scrittura fallita lascia `backup_update` armato, il tentativo arriva dopo circa 300 frame, l'avviso compare una volta, il disco è sempre vecchio o nuovo; `scripts/check-messages.sh`; `scripts/check-lifecycle.sh`: nessun `FILE_OPEN` in `save_backup`.
+- **Accettazione:** un errore di scrittura non perde mai il salvataggio in RAM finché il gioco resta aperto; il `.sav` su disco è sempre il vecchio o il nuovo.
+
+#### SAV-2.4 — Misura di ogni flush nel runtime log · S, 0,5 gg · dipende da: SAV-2.3 · PSP: sì
+- **Cosa:** Un nuovo evento `RUNTIME_LOG_EVENT_SAVE_WRITE`, in coda all'enum, registra durata in µs, byte, esito e numero di tentativi. Il formato resta v5 per la stessa regola di SAV-1.6 (R1); decoder e test vengono aggiornati. Tre sessioni su PSP-1000 (un gioco Flash 128 KiB, uno SRAM e una sessione link con scambio) formano la baseline del gate di SAV-5.
+- **File:** `source/src/runtime_log.h`, `source/src/memory.c`, `tools/decode_runtime_log.py`, `tests/test_decode_runtime_log.py`
+- **Test:** `tests/test_decode_runtime_log.py`: decodifica di SAVE_WRITE; PSP-1000: tre runtime log con p50, p95 e massimo della durata.
+- **Accettazione:** ogni flush lascia un record; dall'ultima scrittura del gioco alla fine del flush passa al massimo 1 s al p99 (10 frame più la durata registrata) nelle tre sessioni; la baseline accompagna la decisione su SAV-5.
+
+#### SAV-2.5 — Stati .svs in streaming tramite lo store, senza il buffer da 512 KiB · M, 1 gg · dipende da: SAV-2.1, SAV-2.2 · PSP: sì
+- **Cosa:** `save_state` e `save_state_silent` (`memory.c:3861-3967`) non allocano più 512 KiB (`:3890`, `:3937`). `FILE_WRITE_MEM` (`common.h:90`) accoda in un buffer statico da 16 KiB che si svuota con `save_store_append`; dopo i moduli si riempie di zeri fino alla coda fissa (parola BIOS e snapshot SIO, come nel branch del BIOS aperto) e si chiude con `save_store_commit`. Il formato resta identico (512 KiB) e `<slot>.svs.bak` conserva la generazione precedente, che sarà l'annulla di SAV-4.5. Niente buffer fisso: `init_gamepak_buffer` (`memory.c:2877-2903`) dimezza la cache ROM partendo da 32 MiB, quindi su PSP-1000 un buffer statico grande può portarla da 16 a 8 MiB.
+- **File:** `source/src/memory.c`, `source/src/common.h`, `scripts/check-lifecycle.sh`
+- **Test:** `scripts/check-lifecycle.sh`: in `save_state*` nessuna `safe_malloc` né `FILE_OPEN(..., WRITE)`; PSP: spegnimento forzato durante il salvataggio di uno stato, poi lo stato precedente si carica; uno stato scritto con `gba_bios.bin` dalla nuova build si carica in 1.4.2 e viceversa.
+- **Accettazione:** uno stato interrotto non distrugge il precedente; salvare uno stato non può più chiudere l'emulatore per memoria esaurita; il formato su disco non cambia.
+
+#### SAV-2.6 — ROM di test dei salvataggi, con include e protocollo d'esito comuni alle ROM di test (devkitARM, solo sorgente) · M, 2,5 gg · dipende da: — · PSP: sì
+- **Cosa:** `tests/save-rom`, sul modello di `tests/link-rom`, è l'unica ROM di test dei tipi di salvataggio. Un target per tipo di salvataggio (sram32, sram64, flash64, flash128 con cambio di banco, eeprom512 ed eeprom8k via DMA, senza tag), ciascuno con il proprio tag. All'avvio la ROM verifica e mostra la generazione salvata e il suo pattern; scrive una nuova generazione ogni secondo o premendo A; con L+R+START salta a un indirizzo non mappabile, per SAV-6. Così si fanno 100 tagli di corrente senza salvare a mano in un gioco commerciale, e si copre la SRAM da 64 KiB, che nessun gioco commerciale usa. La storia crea anche l'infrastruttura comune a ogni ROM GBA di test nuova. Un solo include Makefile, `tests/gba-rom.mk`, ricavato da `tests/link-rom/Makefile`: devkitARM senza libgba, `-Werror`, tag dell'header per target, `.gba` fuori da Git. Un solo protocollo d'esito, quello descritto da CMP-3.1: un caso per comportamento, PASS o FAIL su schermo e una firma in SRAM (magic, bitmap dei casi, CRC, marcatore di «caso avviato») che si legge dal `.sav`. Una cartuccia ha un solo chip di salvataggio, quindi i target Flash ed EEPROM scrivono la stessa firma in un blocco riservato del proprio chip. Il codice comune sta in `tests/gba-rom/result.c` e `tests/gba-rom/result.h`; `tools/decode_test_rom.py` legge la firma di ogni ROM che usa il protocollo. Include e protocollo li riusano `tests/core-rom` (CMP-3.1) e la ROM raster di ENG-10.3; EXT-1.2 ed EXT-5.2 aggiungono i propri target a questa ROM. CMP-12.1 aggiunge i suoi casi del bus del backup (`tests/save-rom/source/cases_bus.c`: LDRB, LDRH, LDRSH e LDR in SRAM, ID Flash letti con LDRH) nei target sram32 e flash128 di questa ROM.
+- **File:** `tests/gba-rom.mk` (nuovo), `tests/gba-rom/result.c` (nuovo), `tests/gba-rom/result.h` (nuovo), `tests/save-rom/Makefile` (nuovo), `tests/save-rom/source/main.c` (nuovo), `tests/save-rom/.gitignore` (nuovo), `tools/decode_test_rom.py` (nuovo), `tests/test_decode_test_rom.py` (nuovo), `Makefile`
+- **Test:** `scripts/check-tree.sh`: nessun `.gba` né `.sav` versionato; `tests/test_decode_test_rom.py`, nella regola dei test Python del `Makefile`: firme sintetiche in SRAM, Flash ed EEPROM, compresa una ferma al marcatore di «caso avviato» e una con il CRC sbagliato; build di ogni target con `-Werror`; in mGBA, usato come riferimento, ogni target dà PASS e lascia un `.sav` della dimensione nativa; PSP-1000: ogni target salva e rilegge la propria generazione, e il decoder legge la firma dal `.sav`.
+- **Accettazione:** build ripetibile con `DEVKITARM` tramite `tests/gba-rom.mk`; il pattern permette di riconoscere un'immagine parziale; la firma di ogni target si legge dal `.sav` con `tools/decode_test_rom.py`.
+- **Licenza:** codice nuovo GPL-2.0-or-later, compilato senza libgba come `tests/link-rom`; il `.gba` non entra in Git.
+
+#### SAV-2.7 — Validazione hardware delle scritture e rilascio 1.4.4 · M, 1,5 gg · dipende da: SAV-2.3, SAV-2.4, SAV-2.5, SAV-2.6, SAV-2.8, SAV-2.9, SAV-1.8 · PSP: sì
+- **Cosa:** Con la ROM di test, 100 spegnimenti forzati durante scritture continue su PSP-1000 (batteria tolta) e 100 su un secondo modello, preferibilmente PSP Go (POWER tenuto premuto). Poi Memory Stick pieno e uno scambio FireRed/Emerald fra due PSP con il nuovo store, perché il gioco salva a sessione aperta e lì cade lo stall più lungo. Si scrivono il CHANGELOG 1.4.4 (Fixed, comportamento visibile, senza risultati dei test) e le note con l'ambito della validazione; senza il secondo modello la build esce come prerelease.
+- **File:** `CHANGELOG.md`, `docs/saves.md`
+- **Test:** 100 tagli per modello; Memory Stick pieno: avviso, `.sav` precedente intatto, salvataggio riuscito dopo aver liberato spazio; scambio completato con entrambi i `.sav` validi; eventi SAVE_WRITE con esiti coerenti; «Carica stato da file» con `<rom>_auto.svs` (SAV-2.8); una sospensione con la domanda di ripresa aperta (SAV-2.9).
+- **Accettazione:** 0 file vuoti o corti su 200 tagli; al massimo si perde l'ultima generazione non promossa; lo scambio non cade per uno stall di salvataggio.
+
+#### SAV-2.8 — Carica stato da file non sovrascrive lo stato AUTO scelto · S, 0,5 gg · dipende da: — · PSP: sì
+- **Cosa:** Fatta nel branch `features/save-read-fixes`, da provare su PSP-1000 in SAV-2.7. In «Carica stato da file», ramo «Scenario 3: Same ROM» (`gui.c:4112-4123`), prima di caricare il file scelto il codice salva il gioco in corso nello slot AUTO con `action_savestate_slot(AUTO_SAVESTATE_SLOT)` (`gui.c:4121`). Se il file scelto è proprio lo stato AUTO della ROM in corso (`<rom>_auto.svs`; dopo CMP-1.1, con il BIOS integrato, anche `<rom>_auto-builtin.svs`), viene sovrascritto con il gioco in corso e poi caricato: lo stato che il giocatore voleva è perso. Correzione: il salvataggio AUTO prima del caricamento si fa solo se `slot_parsed` è diverso da `AUTO_SAVESTATE_SLOT`. Il parser ricava già lo slot dal nome del file (`gui.c:4092-4093`), e dopo il rebase del branch del BIOS (CMP-1.1) riconosce anche `_auto-builtin`. Se il file AUTO scelto è dell'altro BIOS, il caricamento viene rifiutato e il gioco in corso resta com'è, quindi saltare il salvataggio non perde nulla. Per ogni altro file resta tutto come oggi.
+- **File:** `source/src/gui.c`, `scripts/check-lifecycle.sh`, `CHANGELOG.md` (Fixed)
+- **Test:** `scripts/check-lifecycle.sh`: nel ramo «stessa ROM» di «Carica stato da file», `action_savestate_slot(AUTO_SAVESTATE_SLOT)` sta sotto la condizione `slot_parsed != AUTO_SAVESTATE_SLOT`. Su PSP-1000, nella sessione di SAV-2.7: «Carica stato da file» su `<rom>_auto.svs` e su `<rom>_0.svs`.
+- **Accettazione:** scegliendo `<rom>_auto.svs` da «Carica stato da file» torna lo stato che il file conteneva prima della scelta; scegliendo un altro file il salvataggio AUTO si scrive ancora prima del caricamento; `make check` verde.
+- **Licenza:** codice nuovo GPL-2.0-or-later (GBA Rush PSP, 2026 Piero Carrieri).
+
+#### SAV-2.9 — Una sospensione durante la domanda di ripresa non perde lo stato AUTO · S, 0,5 gg · dipende da: — · PSP: sì
+- **Cosa:** Dopo il caricamento di una ROM, `maybe_load_auto_savestate()` (`gui.c:3087-3094`, chiamata da `gui.c:3988` e da `main.c:1750`) chiede se riprendere dallo stato AUTO. Se la PSP va in standby mentre la domanda è aperta, `psp_sleep_loop` scrive `<rom>_auto.svs` dalla macchina appena resettata (`main_power_save_if_pending`, `main.c:1854-1862`) e lo stato AUTO di prima è perso. Come per le domande di SAV-1.5, il nome della ROM resta vuoto mentre la domanda è aperta e torna subito dopo la risposta, prima di `action_loadstate_slot`: una sospensione in quel momento non scrive nessun AUTO.
+- **File:** `source/src/gui.c`, `tests/test_startup.py`, `scripts/check-lifecycle.sh`, `CHANGELOG.md`
+- **Test:** `tests/test_startup.py`, che compila già la funzione da sola: durante `yesno_dialog` il nome della ROM è vuoto, dopo la risposta torna, e con il sì lo stato si carica; `scripts/check-lifecycle.sh`: in `maybe_load_auto_savestate` nessun `yesno_dialog` con il nome della ROM impostato; PSP-1000, nella sessione di SAV-2.7: standby con la domanda aperta, ripresa, sì.
+- **Accettazione:** una sospensione con la domanda aperta non cambia mai `<rom>_auto.svs`; con il sì torna lo stato che il file aveva prima; voce CHANGELOG (Fixed); `make check` verde.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### SAV-3 — Tre copie verificate del salvataggio prima di ogni sessione link, ripristinabili dal menu
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 | 2,5 gg | SAV-2.1, SAV-2.3 |
+
+**Copre:** F-005 copia del salvataggio prima della sessione link
+**Obiettivo:** Prima di ogni sessione link il `.sav` viene scritto e copiato in tre generazioni ruotate (`.link1`-`.link3`), ognuna verificata dallo store; se il `.sav` non si scrive il link non parte e il motivo si vede nelle 5 lingue. Dopo uno scambio reale tra due PSP, la generazione 1 ripristinata dal menu Link ha lo stesso CRC32 della copia, il ripristino si annulla (il `.sav` corrente diventa `.bak`) e l'avvio del link rallenta di meno di 1 s.
+**Da noi oggi:** `main_link_start` (`main.c:693-750`) controlla il WLAN (`:699`), ferma il fast-forward, chiude la sessione precedente, fissa i 333 MHz (`:719`) e avvia la rete (`:720`), ma non fa né flush né copia del salvataggio, e `save_backup` tronca il `.sav` sul posto (`memory.c:3238`). La rotazione a slot è già un pattern del repo (`runtime_log_store_rotate`, `runtime_log_store.h:43`). Durante il link gli stati sono bloccati (`memory.c:3773-3777`, `:3870-3874`).
+**Come ci arriviamo:**
+- Tre generazioni ruotate (`.link1`, `.link2`, `.link3`), ognuna scritta e verificata dallo store di SAV-2: anche dopo due sessioni andate male resta una copia di prima.
+- Il flush prima dell'avvio è obbligatorio: se il `.sav` non si scrive il link non parte e l'utente sa perché.
+- Si ripristina dal menu Link vedendo data e ora di ogni copia; il `.sav` corrente diventa `.bak`, quindi anche il ripristino si annulla.
+- Durante la sessione ogni PSP continua a salvare normalmente.
+**Gate prima di iniziare:** SAV-2 rilasciato. Uscita: uno scambio reale fra due PSP seguito dal ripristino della generazione 1, identico bit per bit (CRC32), con l'avvio del link rallentato di meno di 1 s.
+**Rischi:** fino a 3 × 128 KiB in più per gioco; l'avvio del link si allunga di una scrittura verificata, misurata in SAV-3.4; il ripristino a gioco aperto richiede un reset, altrimenti il primo flush riscriverebbe il `.sav` con l'immagine in RAM; la copia va fatta prima del lock di SAV-7.3, perché l'annidamento di `scePowerLock` non è verificato.
+
+#### SAV-3.1 — save_store_ring_push: rotazione verificata delle generazioni · S, 0,5 gg · dipende da: SAV-2.1 · PSP: no
+- **Cosa:** Funzione pura in `save_store.c`: rimuove la generazione più vecchia, sposta `.link2` in `.link3` e `.link1` in `.link2` verificando i nomi, poi scrive i dati come `.link1` con lo store. Usa `SaveStoreIo`, non `RuntimeLogStoreIo`, per avere i move verificati.
+- **File:** `source/src/save_store.c`, `source/src/save_store.h`, `tests/test_save_store.c`
+- **Test:** rotazione con 0, 1, 2 e 3 generazioni presenti; taglio a ogni passo senza perdere nessuna generazione valida a parte la più vecchia; move che mente.
+- **Accettazione:** dopo n inserimenti esistono min(n, 3) generazioni, la più recente in `.link1`; nessun guasto lascia un `.link1` parziale.
+
+#### SAV-3.2 — Flush e copia in main_link_start · S, 0,5 gg · dipende da: SAV-3.1, SAV-2.3 · PSP: no
+- **Cosa:** Se è caricato un gioco con salvataggio, dopo `gba_sio_prepare` e `main_link_disconnect` e prima di `set_cpu_clock(PSP_CLOCK_333)` e `psp_adhoc_start`, si chiama `update_backup_immediately` controllandone l'esito, poi `save_store_ring_push` con l'immagine appena verificata. Se uno dei due fallisce il link non parte: nuovo valore di `MainLinkEnd` (`main.h:127-137`, solo locale, non va in rete) con il suo messaggio nei cinque file e il nome nel decoder del runtime log. Quando arriverà F-098 il motivo passerà dal suo sistema di blocchi.
+- **File:** `source/src/main.c`, `source/src/main.h`, `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `scripts/check-lifecycle.sh`, `tools/decode_runtime_log.py`, `tests/test_decode_runtime_log.py`
+- **Test:** `scripts/check-lifecycle.sh`: in `main_link_start` la copia viene prima di `psp_adhoc_start` e la regola esistente su `gba_sio_prepare` resta verde; `scripts/check-messages.sh`; `tests/test_decode_runtime_log.py`.
+- **Accettazione:** nessuna sessione parte con una scrittura batteria in sospeso; senza ROM o con un gioco senza salvataggio il link parte come oggi.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### SAV-3.3 — Ripristina salvataggio pre-link nel menu Link · M, 1 gg · dipende da: SAV-3.2 · PSP: no
+- **Cosa:** Nuova voce in `link_options` (`gui.c:5262-5275`) che elenca le generazioni presenti con data e ora (`sceIoGetstat`). Una sola conferma, che dice chiaramente che il gioco ripartirà; poi, insieme: scrittura sul `.sav` tramite lo store (il corrente diventa `.bak`), ricarica dell'immagine in `gamepak_backup` e reset del gioco. Niente ripristino senza reset, perché il primo flush lo annullerebbe in silenzio. La voce è disattivata durante una sessione (`main_link_active`) e senza un gioco caricato.
+- **File:** `source/src/gui.c`, `source/src/memory.c`, `source/src/memory.h`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`
+- **Test:** `test_save_store.c`: ripristino da `.link2` con `.bak` aggiornato; `scripts/check-messages.sh` e `scripts/check-menu-layout.sh` (ordine delle categorie invariato); `scripts/check-lifecycle.sh`: l'azione è protetta da `main_link_active`.
+- **Accettazione:** il ripristino si annulla rimettendo il `.bak`; la voce non è attiva durante una sessione; dopo il ripristino il gioco riparte con il salvataggio scelto.
+
+#### SAV-3.4 — Validazione con uno scambio reale · S, 0,5 gg · dipende da: SAV-3.3 · PSP: sì
+- **Cosa:** Due PSP, almeno una PSP-1000: scambio Pokémon via link, poi su una console si ripristina la generazione 1 e si verifica che il CRC32 del `.sav` coincida con quello della copia. Il runtime log dà il tempo aggiunto all'avvio del link. Si aggiornano il CHANGELOG (Added) e `docs/saves.md`.
+- **File:** `CHANGELOG.md`, `docs/saves.md`
+- **Test:** due PSP, scambio e ripristino; durata della copia pre-link nel runtime log.
+- **Accettazione:** ripristino identico bit per bit; avvio del link più lento di meno di 1 s, misurato; nessun `.sav` di giochi commerciali in Git.
+
+### SAV-4 — Formato savestate v2: identità ROM, CRC, validazione prima di applicare, annulla
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 | 6 gg | SAV-1.7, SAV-2.5, CMP-1.1 (merge del branch del BIOS aperto) |
+
+**Copre:** F-007 savestate validati prima di applicarli
+**Obiettivo:** Uno stato di un'altra ROM, troncato o alterato si rifiuta con il motivo prima di toccare la macchina: identità della ROM (CRC32 dell'header e dimensione), CRC32 del payload e controlli di range su ogni campo dell'inventario. Gli stati delle 1.4.x si caricano dopo gli stessi controlli (10 stati reali, 0 stati validi rifiutati) e le 1.4.x caricano gli stati nuovi. «Annulla ultimo salvataggio» ripristina lo slot sovrascritto. Fuzz host in `make test-sanitize` e prova CBMC del decoder del trailer verdi; nessuna allocazione da 512 KiB né in salvataggio né in caricamento; restano 10 slot più AUTO con anteprima.
+**Da noi oggi:** Lo stato è un dump grezzo di 512 KiB (`memory.c:303`): screenshot, ora, blocchi dei moduli in ordine fisso (`SAVESTATE_BLOCK`, `:3724-3730`) e snapshot SIO in coda (`:305`). Non ci sono magic, versione, controllo del gioco né controlli di range: `load_state` legge dal file direttamente nelle variabili vive (`:3795-3803`), quindi un file corto lascia uno stato misto, e `flash_bank` ed `eeprom_address` letti dallo stato indicizzano `gamepak_backup` (`:2039`, `:2211`, `:1935-1981`). Il caricamento da file accetta `.svs` di qualsiasi ROM (`gui.c:4052` e seguenti). Nel branch `features/builtin-open-bios` (implementato, non ancora unito) ogni stato porta una parola BIOS a `SAVESTATE_BIOS_OFFSET`, subito prima dello snapshot SIO, viene rifiutato con l'altro BIOS, e lo stato AUTO è separato per BIOS (`<rom>_auto-builtin.svs`).
+**Come ci arriviamo:**
+- Identità della ROM (CRC32 dell'header 0xA0-0xBF e dimensione del file) e CRC32 del payload: uno stato di un'altra ROM o alterato viene rifiutato, spiegando il motivo, prima di toccare qualcosa.
+- Compatibilità nei due versi: il trailer sta dopo i 512 KiB e 1.4.x legge a offset fissi (`memory.c:3799`, `:3740`), quindi carica ancora gli stati nuovi; gli stati vecchi senza trailer si caricano dopo gli stessi controlli.
+- La decisione sul BIOS resta la parola del branch; il trailer aggiunge il CRC32 del BIOS attivo solo per il log e i rapporti di bug.
+- «Annulla ultimo salvataggio» usa il `.svs.bak` dello store, ed è la base del quick save senza conferma (F-046).
+- Nessuna allocazione da 512 KiB né in salvataggio (SAV-2.5) né in caricamento: la validazione legge il file in streaming con un buffer statico da 16 KiB.
+- Il decoder del trailer è provato con CBMC (`make check-cbmc`) come `link_net`, e `tools/decode_savestate.py` legge gli stati su PC.
+- Restano 10 slot più AUTO con anteprima a piena risoluzione (`gui.c:2963-2964`).
+**Gate prima di iniziare:** SAV-2.5 unito e branch del BIOS aperto unito, perché la parola BIOS fa parte del formato. Uscita: fuzz host e prova CBMC verdi; su hardware gli stati 1.4.2 fatti con `gba_bios.bin` si caricano nella nuova build e quelli nuovi in 1.4.2; nessuno stato 1.4.2 valido viene rifiutato.
+**Rischi:** controlli troppo stretti possono rifiutare stati legacy strani ma validi, quindi ogni rifiuto registra campo e valore e i limiti vengono dal codice che usa il campo; la passata degli offset deve seguire esattamente le macro dei moduli, per questo un test di copertura fallisce se un campo dell'inventario non ha il suo caso; l'identità basata sull'header lascia passare un ROM hack con lo stesso header (se cambia la dimensione si mostra solo un avviso); i due renderer hanno blocchi video diversi (`video.c:3245-3252`, `video_cc.cc:2676-2683`); leggere il file due volte allunga il caricamento, da misurare in SAV-4.6.
+
+#### SAV-4.1 — Modulo puro savestate_trailer: trailer v2 dopo i 512 KiB · M, 1 gg · dipende da: — · PSP: no
+- **Cosa:** Un trailer di 48 byte dopo il payload: magic, versione, lunghezza e CRC32 del payload, game code e versione software (header 0xAC e 0xBC), CRC32 dell'header ROM 0xA0-0xBF, dimensione del file ROM, CRC32 del BIOS attivo (solo diagnostica), versione dell'emulatore, CRC32 del trailer stesso. Esiti del decoder: legacy (esattamente 512 KiB senza trailer), v2 valido, danneggiato, versione più nuova, altra ROM, stessa ROM con dimensione diversa (avviso). Il tipo di BIOS non si decide qui: resta la parola a `SAVESTATE_BIOS_OFFSET` del branch. Lo screenshot resta all'offset 0 (`gui.c:2913-2945`) e lo snapshot SIO al suo offset fisso.
+- **File:** `source/src/savestate_trailer.c` (nuovo), `source/src/savestate_trailer.h` (nuovo), `tests/test_savestate_trailer.c` (nuovo), `proofs/cbmc/prove_savestate_trailer.c` (nuovo), `scripts/check-cbmc.sh`, `Makefile`
+- **Test:** andata e ritorno; ogni campo alterato produce l'esito atteso; fuzz deterministico a seme fisso su 100k input sotto ASan e UBSan; `make check-cbmc`: il decoder non legge fuori buffer per nessun input fino a 64 byte.
+- **Accettazione:** il decoder non legge mai oltre la lunghezza data; un file legacy si riconosce solo dalla dimensione esatta.
+- **Licenza:** codice nuovo GPL-2.0-or-later; crc32 da `source/src/zlib` (licenza zlib, già nel repo).
+
+#### SAV-4.2 — Inventario dei campi e modulo puro savestate_check · M, 1,5 gg · dipende da: SAV-1.7 · PSP: no
+- **Cosa:** Si elenca, con il `file:riga` dove viene usato, ogni campo dei blocchi di stato che fa da indice, lunghezza, modo o enum. In `memory.c` (`:3971-4008`): `backup_type`, `sram_size`, `flash_size`, `flash_mode`, `flash_bank`, `flash_command_position`, `eeprom_size`, `eeprom_mode`, `eeprom_address_length`, `eeprom_address`, `eeprom_counter`, i campi RTC, `dma`, VCOUNT e DISPSTAT dentro `io_registers`. In `cpu.c` modo CPU e CPSR in `reg` (`cpu.c:4223-4226`); in `sound.c` `sound_buffer_base`, `gbc_sound_buffer_index`, `wave_bank`, `noise_index` e gli indici FIFO (`sound.c:1618-1645`); poi i timer di `main.c` (`:2466-2473`), `input.c` (`:569-572`) e i due renderer. Ogni limite viene dal nostro codice che usa il campo. `savestate_check` prende una struct di valori e restituisce il primo campo non valido; sostituisce l'argine di SAV-1.7.
+- **File:** `source/src/savestate_check.c` (nuovo), `source/src/savestate_check.h` (nuovo), `tests/test_savestate_check.c` (nuovo), `Makefile`
+- **Test:** per ogni campo il limite valido passa e il primo valore non valido viene rifiutato con il nome del campo; un test di copertura fallisce se un campo dell'inventario non ha il suo caso; `make test-sanitize`.
+- **Accettazione:** ogni campo che indicizza un array o fissa una lunghezza viene controllato; gli stati 1.4.2 validi raccolti in SAV-4.6 passano.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### SAV-4.3 — Scrittura del trailer v2 e decoder per PC · S, 0,5 gg · dipende da: SAV-4.1, SAV-2.5 · PSP: no
+- **Cosa:** Lo streaming writer di SAV-2.5 accoda dopo i 512 KiB il trailer, calcolato dal CRC progressivo del payload. Un nuovo `tools/decode_savestate.py` legge un `.svs` e stampa esito del trailer, ROM, BIOS e versione, per i rapporti di bug e per controllare su PC gli stati scritti dalla PSP.
+- **File:** `source/src/memory.c`, `tools/decode_savestate.py` (nuovo), `tests/test_decode_savestate.py` (nuovo), `Makefile`
+- **Test:** `tests/test_decode_savestate.py` su un vettore d'oro condiviso con `tests/test_savestate_trailer.c` e su un file legacy, nella regola dei test Python del `Makefile`.
+- **Accettazione:** ogni stato nuovo misura 512 KiB più 48 byte e il decoder lo riconosce come v2; un file legacy viene riconosciuto come tale.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### SAV-4.4 — Caricamento validato prima di applicare · M, 1,5 gg · dipende da: SAV-4.1, SAV-4.2, SAV-4.3 · PSP: sì
+- **Cosa:** `load_state_silent`, unico punto dopo il branch del BIOS, procede in tre passate. Offset: un nuovo tipo `FILE_DRY_*` nelle macro dei moduli (una funzione `*_dry_savestate` per modulo, una riga ciascuna) avanza solo un contatore e annota l'offset dei campi dell'inventario, senza I/O. Controllo: il file si legge in streaming con un buffer statico da 16 KiB, si verificano trailer e CRC, si leggono solo i campi dell'inventario ai propri offset e decide `savestate_check`. Applicazione: il percorso di lettura di oggi (`SAVESTATE_BLOCK(read)`), solo dopo il via libera; una lettura corta in questa fase (Memory Stick tolta) resetta il gioco con un messaggio invece di lasciarlo misto. I rifiuti spiegano il motivo (altra ROM, file danneggiato, versione più nuova); la dimensione ROM diversa dà un avviso con conferma; il rifiuto per BIOS resta quello del branch. Ogni rifiuto registra campo e valore nel runtime log.
+- **File:** `source/src/common.h`, `source/src/memory.c`, `source/src/cpu.c`, `source/src/input.c`, `source/src/main.c`, `source/src/sound.c`, `source/src/video.c`, `source/src/video_cc.cc`, `source/src/video_dispatch.c`, `source/src/runtime_log.h`, `tools/decode_runtime_log.py`, `tests/test_decode_runtime_log.py`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`
+- **Test:** `test_savestate_check.c` e `test_savestate_trailer.c` verdi; `scripts/check-lifecycle.sh`: in `load_state*` nessuna `safe_malloc`, e `SAVESTATE_BLOCK(read)` compare solo dopo `savestate_check`; `scripts/check-messages.sh`; PSP: uno stato di un'altra ROM rinominato e uno con un byte alterato vengono rifiutati con il motivo, e in nessuno dei due casi il gioco in corso cambia.
+- **Accettazione:** un rifiuto lascia il gioco esattamente dov'era; gli stati validi si caricano come prima, stesso frame e stesso audio.
+
+#### SAV-4.5 — Annulla ultimo salvataggio di stato · S, 0,5 gg · dipende da: SAV-2.5 · PSP: no
+- **Cosa:** Nel menu stati (`savestate_options`, `gui.c:5202-5218`) compare una voce solo se esiste `<slot>.svs.bak`. Rimette la generazione precedente tramite lo store e la corrente diventa `.bak`, quindi anche l'annulla si annulla. È bloccata durante il link come gli altri comandi degli stati (`memory.c:3773-3777`). L'API `savestate_undo_last(slot)` serve al quick save di F-046. È l'unico «Annulla ultimo salvataggio»: il toast che UI-3.2 mostra dopo un salvataggio rapido rimanda a questa voce. Stringhe nei cinque file.
+- **File:** `source/src/gui.c`, `source/src/memory.c`, `source/src/memory.h`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`
+- **Test:** `test_save_store.c`: scambio fra `.svs` e `.svs.bak` con taglio a ogni passo; `scripts/check-messages.sh`; `scripts/check-lifecycle.sh`: la voce è protetta da `main_link_active`.
+- **Accettazione:** l'annulla non perde mai nessuna delle due generazioni.
+
+#### SAV-4.6 — Migrazione e compatibilità verificate · S, 1 gg · dipende da: SAV-4.4, SAV-4.5 · PSP: sì
+- **Cosa:** Un test host costruisce un file legacy (512 KiB senza trailer) e uno v2 e li fa passare per decoder e controlli. Su PSP si caricano nella nuova build dieci stati reali salvati con 1.4.2, di giochi diversi, anche fermi nel BIOS o in halt; gli stati nuovi fatti con `gba_bios.bin` si caricano in 1.4.2; si provano annulla e rifiuti e si misura il tempo di caricamento rispetto a prima. `tests/test_startup.py` va aggiornato se cambia `maybe_load_auto_savestate` (`gui.c:3087`). CHANGELOG nelle sezioni Changed e Added.
+- **File:** `tests/test_savestate_trailer.c`, `tests/test_startup.py`, `CHANGELOG.md`, `docs/saves.md`
+- **Test:** host, percorsi legacy e v2; PSP-1000 e un secondo modello: matrice di compatibilità nei due versi, annulla, rifiuti, tempo di caricamento.
+- **Accettazione:** nessuno stato 1.4.2 valido viene rifiutato e ogni rifiuto ha il suo motivo nel log; 1.4.2 carica gli stati v2 fatti con `gba_bios.bin`; nessuno stato di giochi commerciali in Git.
+
+### SAV-5 — Writer del salvataggio fuori dal thread di emulazione
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 3,5 gg | SAV-2 (gate su SAV-2.4) |
+
+**Copre:** F-006 writer della batteria fuori dal thread di emulazione
+**Obiettivo:** Se il gate scatta: nessun I/O di salvataggio sul thread di emulazione (controllo di sorgente), copia sul thread sotto 1 ms nella variante con snapshot, scrittura atomica con la transazione di SAV-2, e sui dati di SAV-2.4 rifatti dopo l'epic, con la scrittura sul worker, nessun frame oltre 33 ms, nessun underrun audio e nessuna pausa link di almeno 100 ms in coincidenza con un flush; la durata del flush sul worker si registra ma non è più una soglia; compare-benchmarks 3+3 senza regressioni.
+**Da noi oggi:** Il flush è sincrono sul thread di emulazione: avviene `WRITE_BACKUP_DELAY` = 10 frame dopo l'ultima scrittura del gioco (`memory.c:189`, `:3274-3284`), chiamato da `update_gba` a fine frame (`main.c:1140-1141`). È I/O dentro `update_gba`, contro la regola di progetto. La durata non è mai stata misurata; SAV-2 la allunga e la misura (SAV-2.4).
+**Come ci arriviamo:**
+- Il worker scrive con la transazione di SAV-2 (tmp, verifica, `.bak`): fuori dal thread e atomico.
+- Sul thread di emulazione resta solo una copia misurata, di al massimo 128 KiB.
+- La consegna a generazioni è testata su host, con interleaving simulati fra gioco e worker.
+- Il worker tiene `scePowerLock` solo durante la propria scrittura, e il callback di alimentazione non lo aspetta e resta senza I/O.
+- Si fa solo se i numeri lo chiedono.
+**Gate prima di iniziare:** dati di SAV-2.4 su PSP-1000 da tre sessioni (Flash 128 KiB, SRAM, link). L'epica parte se si verifica almeno una condizione: p95 della durata del flush oltre 8 ms; almeno un frame oltre 33 ms o un underrun audio in coincidenza con un flush; una pausa link di almeno 100 ms (`RUNTIME_LOG_EVENT_LINK_PAUSE_END`) in coincidenza con un flush. Se nessuna si verifica l'epica resta ferma e la regola resta documentata come eccezione. Previsione: la prima soglia è la più probabile, perché la transazione di SAV-2 allunga ogni flush.
+**Rischi:** accesso in parallelo, perché il gioco può scrivere in `gamepak_backup` durante la copia, quindi la generazione si prende dopo la copia; priorità, perché un worker sopra 32 gira solo quando l'emulazione attende e in lockstep l'emulatore scende a 0x77 (0x40 nella 1.4.2), quindi lì il worker lo precede sempre: la scrittura non deve allungare le attese del link (nessuna pausa nuova di 100 ms o più nel log), e va verificato che il worker non affami i thread ad-hoc e non ne venga affamato; lo snapshot statico da 128 KiB ha lo stesso rischio a gradino della cache ROM su PSP-1000 (`memory.c:2877-2903`), quindi decide la misura di F-027; ogni punto di chiusura deve aspettare il worker con un timeout, e uscendo da HOME ci sono 2 s in tutto (`main.c:197`).
+
+#### SAV-5.1 — Modulo puro save_writer: consegna a generazioni · S, 1 gg · dipende da: — · PSP: no
+- **Cosa:** Tre contatori, sul modello di `power_lifecycle` (`power_lifecycle.h:30-41`): la generazione sporca alzata dal gioco, quella copiata nello snapshot, quella scritta dal worker. Decisioni pure: copiare ora, aspettare o, dopo un errore, ripianificare con un intervallo più lungo. Il gioco può scrivere mentre il worker scrive: la generazione si prende dopo la copia, quindi la scrittura successiva recupera i dati nuovi.
+- **File:** `source/src/save_writer.c` (nuovo), `source/src/save_writer.h` (nuovo), `tests/test_save_writer.c` (nuovo), `Makefile`
+- **Test:** interleaving simulati (gioco che scrive durante la copia e durante la scrittura), errore con nuovo tentativo, svuotamento con lavoro pendente, timeout; `make test-sanitize`.
+- **Accettazione:** nessun interleaving perde una generazione sporca; lo svuotamento finisce oppure segnala il timeout.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### SAV-5.2 — Thread writer con snapshot o scrittura a blocchi · M, 1 gg · dipende da: SAV-5.1, SAV-2.3 · PSP: sì
+- **Cosa:** Un thread worker con priorità numericamente sopra 32 (fuori dal lockstep gira quando l'emulazione attende; in lockstep la precede), stack piccolo e un semaforo. Variante scelta con la misura di F-027: se su PSP-1000 c'è margine sopra la soglia di 16 MiB della cache ROM, buffer statico da 128 KiB per lo snapshot e a fine frame `update_backup` fa solo la copia e il segnale; altrimenti il worker scrive a blocchi da 16 KiB direttamente da `gamepak_backup` e, se la generazione è cambiata durante la scrittura, riscrive subito. Il worker chiama lo store e tiene `scePowerLock` solo durante la propria scrittura; il callback di alimentazione non aspetta il worker. Si misura la durata della copia.
+- **File:** `source/src/main.c`, `source/src/memory.c`, `source/src/memory.h`, `scripts/check-lifecycle.sh`
+- **Test:** `scripts/check-lifecycle.sh`: nessuna chiamata `FILE_*` o `sceIo*` raggiungibile da `update_backup`, priorità del worker sopra 32, `power_callback` senza `sceKernelDelayThread` né I/O; PSP: durata della copia misurata a 222 e a 333 MHz.
+- **Accettazione:** nessun I/O di salvataggio sul thread di emulazione; copia sotto 1 ms nella variante con snapshot; i thread ad-hoc restano numericamente sotto 32; la cache ROM di PSP-1000 non si dimezza.
+
+#### SAV-5.3 — Svuotamento sincronizzato nei punti critici · S, 0,5 gg · dipende da: SAV-5.2 · PSP: sì
+- **Cosa:** `quit`, `menu_suspend`, cambio ROM, inizio link (SAV-3.2), sospensione (SAV-7.2) e guasto (SAV-6.3) aspettano il worker per circa 1,5 s al massimo, poi ripiegano sulla scrittura sincrona. L'uscita da HOME rispetta il limite di 2 s del callback (`main.c:197`).
+- **File:** `source/src/main.c`, `source/src/gui.c`, `source/src/memory.c`
+- **Test:** `test_save_writer.c`: casi di svuotamento; PSP: uscita, cambio ROM e sospensione subito dopo un salvataggio nel gioco, con il `.sav` aggiornato in tutti i casi.
+- **Accettazione:** nessun percorso di chiusura lascia una generazione non scritta senza registrarlo.
+
+#### SAV-5.4 — Misura A/B del guadagno · S, 1 gg · dipende da: SAV-5.3 · PSP: sì
+- **Cosa:** Confronto con `scripts/compare-benchmarks.py`: 3 run di base e 3 candidate con gli stessi campi. Con gli eventi SAVE_WRITE si verifica che nessun frame oltre 33 ms né underrun audio dipenda dai flush e che uno scambio Pokémon non abbia pause link di almeno 100 ms in coincidenza con un flush. Senza questo confronto non si dichiara alcun miglioramento di velocità.
+- **File:** `CHANGELOG.md`
+- **Test:** PSP-1000: 3+3 run con `compare-benchmarks.py`; sessione link con scambio.
+- **Accettazione:** sui nuovi dati, con la scrittura sul worker, nessun frame oltre 33 ms, nessun underrun audio e nessuna pausa link di almeno 100 ms in coincidenza con un flush; la copia sul thread di emulazione resta sotto 1 ms nella variante con snapshot; compare-benchmarks 3+3 senza regressioni.
+
+### SAV-6 — Un errore di emulazione non costa la sessione né il salvataggio
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 | 5,5 gg | SAV-2.3, SAV-2.6, CMP-3.1 (solo SAV-6.1) |
+
+**Copre:** F-008 contenimento dei guasti di emulazione, F-154 schermata delle eccezioni (SAV-6.5)
+**Obiettivo:** Con la ROM di test, 20 guasti di fila su PSP-1000 e su un secondo modello senza crash della console: compare un menu nelle 5 lingue (Riavvia, Carica stato, Esci; dopo tre guasti in 60 s solo Esci), la batteria scritta nell'ultimo secondo va in `<rom>.sav.rescue` e il `.sav` buono resta intatto, e ogni guasto lascia un record (PC, CPSR, regione, riempimento della cache) nel runtime log anche nelle build di release. Dalla schermata di crash nativa X mette in salvo anche la batteria non ancora scritta.
+**Da noi oggi:** Un bad jump al livello 0 del lookup stampa «bad jump», aspetta 5 s e chiama `quit()` (`source/src/cpu.c:2864-2879`). `quit` scrive solo una scrittura batteria in sospeso (`main.c:1788`), anche se il gioco era a metà di un salvataggio, e non scrive lo stato AUTO, che scrive soltanto `menu_quit_action` (`gui.c:3360-3365`). La schermata di crash nativa (`source/src/exception.c:34-93`) mostra i registri e con X scrive `tempgba_crash.log`, ma non mette in salvo la batteria non ancora scritta.
+**Come ci arriviamo:**
+- Dopo il guasto compare un menu (Riavvia, Carica stato, Esci), così il giocatore sceglie come proseguire; dopo tre guasti in 60 s resta solo Esci.
+- Se il gioco ha scritto la batteria nell'ultimo secondo prima del guasto, l'immagine va in `<rom>.sav.rescue` e il `.sav` buono resta com'è.
+- Il guasto lascia un record nel runtime log anche nelle build di release, con PC, CPSR, regione e riempimento della cache.
+- Premendo X nella schermata di crash nativa si mette in salvo anche la batteria non scritta.
+- Si riproduce su hardware con la ROM di test, non solo con giochi commerciali.
+**Gate prima di iniziare:** nessuno. Uscita: con la ROM di test (SAV-2.6) su PSP-1000 e un secondo modello, 20 guasti di fila senza crash della console, menu corretto, `.sav` o `.rescue` come previsto.
+**Rischi:** tornare dal lookup con i registri del dynarec vivi è delicato e serve un sync dell'I-cache che PPSSPP non modella, quindi l'accettazione vale solo su hardware; il percorso del guasto può nascondere bug del dynarec, per questo ogni guasto va nel log; scrivere file dalla schermata di crash dipende dallo stato del sistema, quindi solo su richiesta e mai sul `.sav`; F-015 cambia la frequenza dei guasti, che va misurata prima e dopo.
+
+#### SAV-6.1 — Contenimento del salto non mappabile in cpu.c · M, 2 gg · dipende da: CMP-3.1 · PSP: sì
+- **Cosa:** Nel caso default di `block_lookup_address_body` al livello 0 (`cpu.c:2864-2879`) spariscono stampa, attesa e `quit()`. Si registrano PC, CPSR e regione in variabili globali e si alza `guest_fault_pending`; poi si azzera il bit T, si mette il PC a 0 e si restituisce il blocco tradotto del vettore di reset, con la stessa sincronizzazione dell'I-cache del percorso normale di traduzione. A fine frame (`main.c:1136-1141`) `update_gba` vede il flag ed entra nel percorso del guasto, fuori dal codice tradotto, come già fa per il menu.
+- **File:** `source/src/cpu.c`, `source/src/cpu.h`, `source/src/main.c`
+- **Test:** `scripts/check-lifecycle.sh`: in `block_lookup_address_body` nessuna `quit()` né `sceKernelDelayThread`; PSP con la ROM di test: L+R+START non blocca la console (la validazione completa è in SAV-6.6); core-rom di CMP-3.1 verde e compare-benchmarks 3+3 su FireRed e MKSC senza regressioni, perché la storia cambia `cpu.c`.
+- **Accettazione:** un salto non mappabile non fa più crashare la console; il gioco si ferma al primo passaggio di frame dopo il guasto.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### SAV-6.2 — Menu del guasto: Riavvia, Carica stato, Esci · S, 1 gg · dipende da: SAV-6.1 · PSP: no
+- **Cosa:** Il percorso del guasto chiude prima un'eventuale sessione link (nuovo valore di `MainLinkEnd`, con messaggio e nome nel decoder), poi apre un menu con tre scelte: Riavvia il gioco (`reset_gba`), Carica stato (apre il menu stati), Esci. Lo stato AUTO non viene scritto, per non sostituire quello buono con uno stato guasto. Dopo tre guasti in 60 s resta solo Esci. Stringhe nei cinque file.
+- **File:** `source/src/gui.c`, `source/src/main.c`, `source/src/main.h`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `tools/decode_runtime_log.py`, `tests/test_decode_runtime_log.py`
+- **Test:** `scripts/check-messages.sh`; `scripts/check-lifecycle.sh`: il percorso del guasto non chiama `action_savestate_slot`; `tests/test_decode_runtime_log.py`: il nuovo motivo di fine link.
+- **Accettazione:** ogni scelta porta allo stato previsto; il contatore impedisce un ciclo infinito di guasti; un guasto durante il link chiude la sessione con il suo motivo.
+
+#### SAV-6.3 — Batteria in salvo senza fidarsi del gioco impazzito · S, 0,5 gg · dipende da: SAV-6.1, SAV-2.3 · PSP: sì
+- **Cosa:** `memory.c` annota il frame dell'ultima scrittura batteria del gioco (un contatore, nessun I/O). Al guasto, se c'è una scrittura in sospeso fatta nei 60 frame precedenti, l'immagine RAM va in `<rom>.sav.rescue` tramite lo store e il `.sav` resta quello dell'ultimo flush. Se la scrittura è più vecchia, per esempio con il salvataggio automatico spento (`option_update_backup`, `main.c:1140`), si fa un flush normale. Il menu dice all'utente dove sono i dati.
+- **File:** `source/src/memory.c`, `source/src/memory.h`, `source/src/main.c`, `docs/saves.md`
+- **Test:** PSP con la ROM di test: scrittura e guasto entro 1 s creano il `.rescue` e lasciano invariato il `.sav`; un guasto 5 s dopo la scrittura con il salvataggio automatico spento aggiorna il `.sav`.
+- **Accettazione:** un guasto durante un salvataggio non sostituisce mai il `.sav` buono.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### SAV-6.4 — Record del guasto nel runtime log · S, 0,5 gg · dipende da: SAV-6.1 · PSP: no
+- **Cosa:** Un nuovo evento `RUNTIME_LOG_EVENT_GUEST_FAULT`, in coda all'enum, registra PC, CPSR, regione e riempimento della cache di traduzione, e fa scrivere subito il log su disco con un nuovo motivo di flush in coda a `RUNTIME_LOG_FLUSH_*` (`runtime_log.h:80-87`). La versione del formato non cambia per la regola R1 (principio 6 della panoramica): evento e motivo di flush sono valori in coda ai rispettivi enum. Decoder e test vengono aggiornati. Lo stesso record serve a F-142.
+- **File:** `source/src/runtime_log.h`, `source/src/main.c`, `tools/decode_runtime_log.py`, `tests/test_decode_runtime_log.py`
+- **Test:** `tests/test_decode_runtime_log.py`: decodifica di GUEST_FAULT e del nuovo motivo di flush.
+- **Accettazione:** ogni guasto in una build di release lascia un record leggibile.
+
+#### SAV-6.5 — Schermata di crash nativa: batteria in salvo su richiesta · S, 0,5 gg · dipende da: — · PSP: sì
+- **Cosa:** In `ExceptionHandler` (`source/src/exception.c:34-93`), premendo X, oltre a `tempgba_crash.log` si scrive `<rom>.sav.rescue` se c'era una scrittura batteria in sospeso. `gamepak_backup` si legge con un accessor di `memory.c`. Non si scrive mai il `.sav` e non si fa nessun rename. Il testo a schermo viene aggiornato.
+- **File:** `source/src/exception.c`, `source/src/memory.c`, `source/src/memory.h`
+- **Test:** `scripts/check-lifecycle.sh`: `exception.c` non apre il percorso del `.sav`; PSP: un crash provocato con una build diagnostica (F-137) produce un `.rescue` corretto.
+- **Accettazione:** dopo un crash nativo con un salvataggio in sospeso, i dati del gioco si recuperano dal `.rescue`.
+
+#### SAV-6.6 — Validazione con la ROM di test e rilascio · S, 1 gg · dipende da: SAV-6.2, SAV-6.3, SAV-6.4, SAV-6.5, SAV-2.6 · PSP: sì
+- **Cosa:** Su PSP-1000 e su un secondo modello, 20 guasti di fila con la ROM di test, con e senza una scrittura appena fatta, provando ogni scelta del menu e raccogliendo il runtime log. Se F-015 è disponibile si misura la frequenza dei guasti prima e dopo su due giochi noti. CHANGELOG (Fixed: un errore di emulazione non chiude più l'emulatore) e `docs/saves.md` (il file `.rescue`).
+- **File:** `CHANGELOG.md`, `docs/saves.md`
+- **Test:** 20 guasti per modello; 20 record GUEST_FAULT nel runtime log.
+- **Accettazione:** 0 crash della console e 0 `.sav` sovrascritti da una scrittura a metà.
+
+### SAV-7 — Sospensione e ripresa sicure
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 | 5,5 gg | SAV-2.3, SAV-2.5, SAV-2.6, SAV-3.2 |
+
+**Copre:** F-009 sospensione e ripresa sicure, F-082 chiudere il menu non passa tasti al gioco e non rimanda lo standby (SAV-7.6)
+**Obiettivo:** Matrice di SAV-7.5: 11 situazioni × 20 cicli su PSP-1000, PSP-3000 e Go (una PSP-2000 al posto della Go, dichiarata, se la Go manca), con 0 spegnimenti al posto dello standby, 0 blocchi, 0 letture della ROM fallite al risveglio e 0 `.sav` persi; tempo dallo scatto del POWER allo standby ≤ 1 s al p95, dal runtime log; tabella per modello e situazione in `docs/saves.md`. Ingresso in standby corretto con ogni combinazione di bit, con i bit grezzi di ogni callback nel runtime log: 60 cicli (20 per modello) senza ROM non riaperte né audio muto. Callback senza I/O, con la sola attesa del semaforo audio limitata a 50 ms (il thread audio lo tiene per un'uscita da 800 campioni a 48 kHz, circa 17 ms); nella finestra di sospensione nessuna allocazione né dialogo, e la batteria in sospeso si scrive prima dello stato AUTO. Alla chiusura del menu nessuna attesa: un tasto tenuto non rimanda mai lo standby e non arriva al gioco.
+**Da noi oggi:** Il callback (`main.c:1993-2015`) non fa I/O, ma `sound_power_suspend` e `sound_power_resume` prendono `sound_sema` con un limite di 500 ms (`sound.c:179`, `:945-978`). Il callback agisce solo su SUSPENDING e RESUME_COMPLETE: `PSP_POWER_CB_POWER_SWITCH` (`libpower/psppower.h:28`) non si legge mai, e `power_lifecycle_resume` ignora una ripresa senza sospensione registrata (`power_lifecycle.c:48-57`). In `psp_sleep_loop` (`main.c:1893-1922`) il thread di emulazione ferma video e link e poi scrive lo stato AUTO da 512 KiB dentro la finestra di sospensione (`main_power_save_if_pending` `:1854-1862`, `auto_savestate_sleep` `gui.c:2981-2986`): `action_savestate_slot` chiama `copy_screen` (`gui.c:3037`), che alloca con `safe_malloc` (`psp_video.c:874`) e attende VBlank e GE dopo `video_power_suspend`, poi `save_state_silent` alloca 512 KiB (`memory.c:3937`); se una delle due fallisce compare un dialogo e l'emulatore esce (`main.c:2448-2459`). Una sospensione da POWER non scrive la batteria in sospeso (commento in `memory.c:179-182`). Avvio e chiusura del link non usano `scePowerLock` (`main.c:693-750`, `:542-597`), mentre caricamento della ROM, scritture e stati lo usano (`memory.c:3639`, `:3236`, `:3942`). In chiusura del menu `gui.c:5926-5946` prende `scePowerLock` e gira su `get_pad_input` senza pause finché ogni tasto non è rilasciato: con un tasto tenuto lo standby non parte. Oltre a `save_backup`, alle scritture degli stati e alla scansione del browser, `scePowerLock` racchiude `setup_main`, il caricamento della ROM in `load_gamepak`, il file del tema, la lista dei recenti, le anteprime degli stati, la `.cfg` del gioco e la chiusura del menu; nessuno durante il gioco, quindi su una ROM paginata la sospensione può cadere dentro `load_gamepak_page` (`memory.c:2799-2815`), e una lettura fallita dà a quell'accesso una pagina di 0xFF (`memory.c:2818-2837`).
+**Come ci arriviamo:**
+- Il callback resta senza I/O, e la sola attesa, quella del semaforo audio, scende da 500 a 50 ms con una scadenza propria per sospensione e ripresa.
+- Alla sospensione si scrive prima la batteria in sospeso, piccola e transazionale, poi lo stato AUTO: un taglio non corrompe nulla e un errore si ritenta al risveglio.
+- Nella finestra di sospensione non ci sono allocazioni né dialoghi: lo screenshot si legge direttamente dalla texture e lo stato si scrive in streaming.
+- Lo stato AUTO resta la rete di sicurezza se la batteria si scarica durante lo standby.
+- La matrice viene pubblicata per modello e per situazione, con i conteggi e le celle non provate elencate.
+- Ogni combinazione dei bit del callback ha una regola provata su host, e alla chiusura del menu i tasti tenuti vanno in una maschera invece che in un ciclo d'attesa (SAV-7.6).
+**Gate prima di iniziare:** nessuno. Uscita: matrice di SAV-7.5 su PSP-1000, PSP-3000 e Go (o una PSP-2000 dichiarata al posto della Go) con 0 spegnimenti al posto dello standby, 0 blocchi, 0 letture della ROM fallite al risveglio, 0 salvataggi persi e POWER→standby ≤ 1 s al p95; con un modello in meno la build resta prerelease finché non è coperto.
+**Rischi:** il tempo che il sistema concede fra SUSPENDING e lo spegnimento non è documentato, e uno stato AUTO da 512 KiB con la sua verifica potrebbe non finire (in quel caso resta il precedente); `scePowerLock` preso dentro la finestra di sospensione, che `save_backup` e `save_state_silent` già prendono, ha effetti non documentati e va osservato nella matrice e in SAV-8.1; sul PSP Go la memoria interna `ef0:` si comporta in modo diverso dalla Memory Stick; tenere il POWER durante l'avvio del link ritarda lo standby di qualche secondo e la guida deve dirlo (F-101); la PSP-3000 è obbligatoria nella matrice; un callback di risveglio può portare POWER_SWITCH: contarlo come ingresso parcheggerebbe il gioco per 2 s dopo ogni risveglio, per questo SAV-7.6 lo ignora quando arriva con RESUMING o RESUME_COMPLETE; per le celle del link serve una seconda PSP.
+
+**Storie tolte in revisione:** SAV-7.4: `sleep_flag` e lo stato di `power_lifecycle` si scrivono nello stesso ramo del callback di alimentazione (`main.c:1995-2011`), quindi una seconda condizione d'uscita non intercetta nessun evento perso.
+
+#### SAV-7.1 — Finestra di sospensione senza allocazioni né dialoghi · S, 1 gg · dipende da: SAV-2.5 · PSP: sì
+- **Cosa:** `save_state*` leggono lo screenshot direttamente da `screen_texture` riga per riga durante la scrittura in streaming (un accessor in `psp_video.c` con lo stesso ciclo di `copy_screen`, `psp_video.c:878-886`), invece di ricevere una copia allocata: niente `copy_screen` nei salvataggi di stato (`gui.c:3019`, `:3037`). Nel percorso di sospensione la sincronizzazione con il GE si fa prima di `video_power_suspend` (`main.c:1902`). La scrittura dell'AUTO passa dallo store ed è atomica: se viene tagliata resta l'AUTO precedente. Da `psp_sleep_loop` non è raggiungibile nessuna `safe_malloc`, `error_msg` o `yesno_dialog`; un errore va solo nel runtime log.
+- **File:** `source/src/main.c`, `source/src/gui.c`, `source/src/memory.c`, `source/src/psp_video.c`, `source/src/psp_video.h`, `scripts/check-lifecycle.sh`
+- **Test:** `scripts/check-lifecycle.sh`: `psp_sleep_loop`, `main_power_save_if_pending` e `auto_savestate_sleep` non raggiungono `safe_malloc`, `copy_screen`, `error_msg` né `yesno_dialog`; `scripts/check-video.sh` verde; PSP: 20 sospensioni con il tasto POWER durante il gioco, con un AUTO caricabile dopo ciascuna e anteprima corretta.
+- **Accettazione:** mentre la PSP si sospende non può comparire nessun dialogo; un AUTO interrotto non distrugge quello precedente.
+
+#### SAV-7.2 — Batteria in sospeso scritta per prima alla sospensione · S, 0,5 gg · dipende da: SAV-2.3 · PSP: sì
+- **Cosa:** `psp_sleep_loop` chiama `update_backup_immediately`, tramite lo store, prima dello stato AUTO. Se la scrittura fallisce resta in sospeso e si ritenta al risveglio. Si aggiorna il commento di `memory.c:179-182`, secondo cui una sospensione da POWER scrive solo uno stato.
+- **File:** `source/src/main.c`, `source/src/memory.c`
+- **Test:** `scripts/check-lifecycle.sh`: in `psp_sleep_loop` la scrittura della batteria precede `main_power_save_if_pending`; PSP-1000 con la ROM di test: si scrive, si sospende entro 1 s, si toglie la batteria durante lo standby e si riaccende.
+- **Accettazione:** togliendo la batteria durante lo standby di una PSP-1000, al riavvio il `.sav` contiene l'ultima generazione scritta dal gioco prima della sospensione.
+
+#### SAV-7.3 — POWER tenuto durante l'avvio e la chiusura del link · S, 0,5 gg · dipende da: SAV-3.2 · PSP: sì
+- **Cosa:** `scePowerLock` e `scePowerUnlock` racchiudono l'avvio della rete in `main_link_start`, da prima di `psp_adhoc_start` (`main.c:720`) a dopo `link_cable_start` (`:734`), e la chiusura in `main_link_close` (`main.c:542-597`), tranne quando la chiusura avviene per sospensione (`MAIN_LINK_END_SUSPEND`, chiamata da `psp_sleep_loop` a `main.c:1904`): prendere il lock dentro la finestra di sospensione ha effetti non documentati. La copia pre-link (SAV-3.2) resta prima del lock, così i lock non si annidano. `quit()` non può uscire con il lock preso.
+- **File:** `source/src/main.c`, `scripts/check-lifecycle.sh`
+- **Test:** `scripts/check-lifecycle.sh`: in `main_link_start` e `main_link_close` ogni `scePowerLock` ha il suo `scePowerUnlock` su tutti i return, e nessun lock nel ramo `MAIN_LINK_END_SUSPEND`; PSP: premendo POWER durante l'avvio del link la console si sospende solo dopo che il link è partito o fallito, e alla ripresa il link risulta chiuso con motivo SUSPEND.
+- **Accettazione:** nessuna sospensione a metà dell'avvio o della chiusura della rete; nessun lock preso durante una sospensione già in corso.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### SAV-7.5 — Matrice hardware di sospensione e ripresa · M, 2,5 gg · dipende da: SAV-7.1, SAV-7.2, SAV-7.3, SAV-7.6, SAV-2.6 · PSP: sì
+- **Cosa:** Su PSP-1000, PSP-3000 e Go (una PSP-2000 al posto della Go, dichiarata, se la Go manca) si provano 11 situazioni da 20 cicli ciascuna: gioco fermo; durante una scrittura batteria con la ROM di test; durante il salvataggio di uno stato; durante il caricamento di una ROM; durante l'avvio del link; in sessione link con due PSP; durante la chiusura del link; nel menu; subito dopo una ripresa; nel browser mentre scorrono le copertine; in gioco con una ROM da 32 MiB paginata su PSP-1000, contando le letture della ROM fallite dal perf report. Per ogni ciclo si registra il tempo dal POWER all'ultimo frame. Dal runtime log si ricava se la ripresa è riuscita, se il `.sav` è intatto (CRC del pattern), se l'AUTO si carica e se ci sono stati blocchi. La tabella va in `docs/saves.md` con i modelli mancanti dichiarati; la build resta prerelease finché manca un modello oltre al 1000. Nella stessa sessione si fa l'esperimento di SAV-8.1.
+- **File:** `docs/saves.md`, `CHANGELOG.md`
+- **Test:** matrice completa sui tre modelli, con il tempo dal POWER all'ultimo frame per ogni ciclo; eventi POWER_SUSPEND e POWER_RESUME sempre in coppia.
+- **Accettazione:** 0 spegnimenti al posto dello standby, 0 blocchi, 0 letture della ROM fallite al risveglio e 0 salvataggi persi nelle celle provate; POWER→standby ≤ 1 s al p95; celle non provate elencate.
+
+#### SAV-7.6 — Ingresso in standby con ogni combinazione di bit e chiusura del menu senza attese · S, 1 gg · dipende da: — · PSP: sì
+- **Cosa:** `power_callback` (`main.c:1993-2015`) agisce oggi solo su SUSPENDING e RESUME_COMPLETE; POWER_SWITCH (`libpower/psppower.h:28`) non si legge, e una ripresa senza sospensione registrata si ignora (`power_lifecycle.c:48-57`). Tre regole in `power_lifecycle`: POWER_SWITCH conta come ingresso come SUSPENDING, ma non quando arriva con RESUMING o RESUME_COMPLETE; un RESUME_COMPLETE arrivato dopo un POWER_SWITCH senza SUSPENDING vale come ripresa (`main_power_service` riapre la ROM e riserva l'audio); se dopo un POWER_SWITCH non arriva né SUSPENDING né RESUME_COMPLETE entro 2 s, `psp_sleep_loop` esce, `power_lifecycle` torna a RUNNING, il thread principale riserva di nuovo l'audio e riapre la ROM, e il log lo registra. Il callback accumula i bit grezzi in una variabile volatile e il thread principale li scrive nel runtime log con un evento nuovo in coda all'enum (R1). In chiusura del menu (`gui.c:5926-5946`) il ciclo su `get_pad_input` sotto `scePowerLock` sparisce: i tasti tenuti finiscono in una maschera che `update_input` (`input.c:357-392`) toglie dai tasti del gioco finché ognuno non viene rilasciato, e un tasto premuto dopo passa subito. `sound_power_suspend` e `sound_power_resume` (`sound.c:945-978`) attendono `sound_sema` al massimo 50 ms, con una costante propria accanto a `SOUND_OPERATION_TIMEOUT` (`sound.c:179`), che resta al thread audio.
+- **File:** `source/src/main.c`, `source/src/power_lifecycle.c`, `source/src/power_lifecycle.h`, `source/src/gui.c`, `source/src/input.c`, `source/src/sound.c`, `source/src/runtime_log.h`, `tools/decode_runtime_log.py`, `tests/test_power_lifecycle.c`, `tests/test_decode_runtime_log.py`, `tests/test_menu_keys.py` (nuovo, estrazione come `tests/test_browser_text.py`), `scripts/check-lifecycle.sh`, `CHANGELOG.md`
+- **Test:** `tests/test_power_lifecycle.c`: POWER_SWITCH da solo, SUSPENDING da solo, entrambi, ripresa senza sospensione, POWER_SWITCH con RESUMING o RESUME_COMPLETE e timeout di 2 s, ciascuno con un mutante che il test rileva; `tests/test_menu_keys.py`: un tasto tenuto alla chiusura non arriva al gioco, uno premuto dopo sì; `scripts/check-lifecycle.sh` (vieta già I/O e chiamate `sceKernel` nel callback, `:103-116`): nessun ciclo d'attesa dei tasti in `gui.c`, e la regola di `:148-155` chiede la costante da 50 ms in `sound_power_suspend` e `sound_power_resume`; decodifica dell'evento dei bit grezzi; hardware: 20 standby per modello su PSP-1000, PSP-3000 e Go, con i bit decodificati.
+- **Accettazione:** 0 ROM non riaperte e 0 audio muto in 60 standby; un tasto tenuto alla chiusura del menu non rimanda mai lo standby e non arriva al gioco; il callback resta senza I/O, con la sola attesa del semaforo audio limitata a 50 ms (la regola di `check-lifecycle.sh:148-155` controlla la nuova costante); voce CHANGELOG (Fixed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### SAV-8 — Parcheggio prima della sospensione: lock durante il gioco, AUTO e handle chiusi
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate (SAV-8.1 in 1.5) | 3,5 gg | SAV-7.5 |
+
+**Copre:** F-009 sospensione e ripresa sicure (tenuta del POWER)
+**Obiettivo:** Se il gate scatta: il thread di emulazione parcheggia prima della sospensione (batteria scritta com'è, handle della ROM chiuso, audio e link fermi, AUTO scritto con Memory Stick e video attivi), con il lock preso all'ingresso in gioco e lasciato solo a parcheggio finito; il callback segna la richiesta, senza I/O né attese. Se la sospensione non arriva entro 2 s il gioco riprende e riprende il lock. Matrice ripetuta sui tre modelli di SAV-7.5: 0 AUTO tagliati, 0 letture della ROM fallite al risveglio, standby mai ritardato oltre 2 s; ogni regola del parcheggio ha un test host con un mutante.
+**Da noi oggi:** Lo stato AUTO da 512 KiB si scrive dopo l'evento SUSPENDING, dentro la finestra in cui il sistema sta già spegnendo (`main.c:1854-1862`, chiamato da `psp_sleep_loop` a `:1906`). Quanto tempo conceda il sistema non è documentato. `scePowerLock` racchiude `save_backup`, le scritture degli stati, la scansione del browser, `setup_main`, il caricamento della ROM in `load_gamepak`, il file del tema, la lista dei recenti, le anteprime degli stati, la `.cfg` del gioco e la chiusura del menu (SAV-7); nessun lock è tenuto durante il gioco.
+**Come ci arriviamo:**
+- La rete di sicurezza contro la batteria scarica resta, ma la scrittura avviene con Memory Stick e video ancora pienamente attivi.
+- Il thread di emulazione parcheggia prima della sospensione (batteria, handle della ROM, audio e link, poi AUTO) e solo allora lascia il lock preso all'ingresso in gioco; se la sospensione non arriva entro 2 s il gioco riprende.
+- Il callback si limita a segnare la richiesta, senza I/O né attese.
+- Il comportamento del lock viene misurato per ogni modello (SAV-8.1) prima di affidarcisi.
+**Gate prima di iniziare:** servono due condizioni. (1) In una cella di SAV-7.5 si registra almeno uno tra: AUTO tagliato o fallito, spegnimento al posto dello standby, blocco, lettura della ROM fallita al risveglio. (2) L'esperimento di SAV-8.1 conferma su 1000, 2000, 3000 e Go che una richiesta di POWER arrivata durante `scePowerLock` viene consegnata dopo l'unlock, che l'applicazione la vede mentre il lock è preso, che tenere il lock per 1 s non provoca uno spegnimento forzato e che SUSPENDING arriva con il lock preso. Senza (1) l'epica non serve; senza (2) non è fattibile.
+**Rischi:** tenere il POWER mentre il gioco gira non è un comportamento documentato, e un thread bloccato impedirebbe lo standby, quindi serve un timeout di rilascio; se la tenuta dura troppo il sistema potrebbe forzare lo spegnimento; il comportamento può cambiare su PSP Go e fra firmware e CFW diversi; PPSSPP non implementa `scePowerLock`: per il lock valgono solo test host e hardware.
+
+#### SAV-8.1 — Esperimento: il POWER aspetta l'unlock? · S, 1 gg · dipende da: SAV-7.5 · PSP: sì
+- **Cosa:** Una build diagnostica (F-137) tiene `scePowerLock` e, quando arriva la richiesta di POWER, aspetta 0,5, 1 o 2 s prima di sbloccare, registrando i tempi. Su 1000, 2000, 3000 e Go risponde a sei domande: la richiesta viene consegnata dopo l'unlock? Il callback riceve il bit `PSP_POWER_CB_POWER_SWITCH` mentre il lock è preso, così che l'applicazione sappia di dover salvare? Il sistema forza lo spegnimento? Due lock annidati funzionano? SUSPENDING arriva con il lock preso? Che cosa fa `scePowerLock` chiamato dopo SUSPENDING, cosa che `save_backup` e `save_state_silent` fanno già? Si fa nella sessione hardware di SAV-7.5.
+- **File:** `source/src/main.c` (dietro una define diagnostica)
+- **Test:** 4 modelli per 3 durate per 10 prove, con runtime log.
+- **Accettazione:** un rapporto con l'esito per ogni modello e la decisione scritta di procedere o no.
+- **Licenza:** codice nuovo GPL-2.0-or-later (solo nella build diagnostica).
+
+#### SAV-8.2 — Parcheggio prima della sospensione: AUTO, lock e handle chiusi · S, 1,5 gg · dipende da: SAV-8.1 · PSP: no
+- **Cosa:** Solo se SAV-8.1 è positivo. Il lock si prende all'ingresso in gioco e si lascia solo a parcheggio finito. Al parcheggio il thread di emulazione scrive la batteria com'è in quel momento, chiude l'handle della ROM, ferma audio e link, scrive l'AUTO, poi sblocca. Se la sospensione non arriva entro 2 s il gioco riprende e riprende il lock; `quit` e il cambio ROM rilasciano sempre il lock.
+- **File:** `source/src/main.c`, `source/src/power_lifecycle.c`, `source/src/power_lifecycle.h`, `tests/test_power_lifecycle.c`, `scripts/check-lifecycle.sh`
+- **Test:** `tests/test_power_lifecycle.c`, un caso per regola e ciascuno con un mutante: una rinuncia non lascia il lock prima del parcheggio; il limite d'attesa è la somma dei limiti dei passi; uno standby preso sulla scheda di risveglio è una nuova sospensione; la batteria scritta è quella del parcheggio; il timeout di 2 s. `scripts/check-lifecycle.sh`: `power_callback` senza I/O né attese. PPSSPP non vale come prova del lock.
+- **Accettazione:** nessun percorso tiene il POWER oltre il timeout.
+
+#### SAV-8.3 — Matrice ripetuta e rilascio · S, 1 gg · dipende da: SAV-8.2 · PSP: sì
+- **Cosa:** Si ripetono le celle di SAV-7.5 legate alla sospensione sugli stessi modelli di SAV-7.5 e si confronta il tasso di AUTO tagliati prima e dopo, poi il CHANGELOG.
+- **File:** `docs/saves.md`, `CHANGELOG.md`
+- **Test:** matrice di sospensione sugli stessi modelli di SAV-7.5.
+- **Accettazione:** 0 AUTO tagliati, 0 letture della ROM fallite al risveglio e nessun ritardo dello standby oltre 2 s, sugli stessi modelli di SAV-7.5.
+
+## 2. Compatibilità e core
+
+Questo gruppo decide se un gioco parte e se gira come sull'hardware: BIOS integrato, tabella dei giochi, HALT e open bus, stack in EWRAM, mirror delle ROM, RTC, ROM hack, titoli difficili, semantica della CPU e tempi del core. Nella 1.5 vanno chiusi il BIOS integrato (in corso) e la ROM di prova del core, con la prova del difetto dello stack (CMP-5.1), le misure dei gate di CMP-6 e CMP-10 (CMP-6.1, CMP-10.1), i casi CPU e di tempi registrati sulla 1.4.3 pubblicata (CMP-11.1, CMP-12.1) e la sessione sui titoli difficili (CMP-9.1). Nella 1.6 seguono tabella dei giochi, stack in EWRAM, RTC, le correzioni della CPU e dei tempi (CMP-11, CMP-12) e l'elenco pubblicato dei titoli (CMP-9.4), con CMP-8.1 e CMP-8.4. Il resto parte solo dopo che passa il suo gate, compresi CMP-5.3, CMP-7.4, CMP-9.2, CMP-9.3, CMP-9.5 e CMP-12.6.
+
+### CMP-1 — BIOS GBA aperto integrato (avvio senza gba_bios.bin)
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| in corso | 1.5 (CMP-1.7 dopo gate) | 10 gg | CMP-3.1, SAV-2.7, ENG-2.1, ENG-1.6 |
+
+**Copre:** F-012 BIOS GBA aperto integrato.
+
+**Obiettivo:**
+- Senza `gba_bios.bin` almeno 7 titoli su 8 della lista di CMP-1.5 arrivano al gameplay e salvano su PSP-1000, e lo scambio FireRed/Emerald riesce con un PSP per BIOS nei due versi; i titoli che falliscono sono nel README, con la SWI sospetta in `source/bios/README.md`.
+- Div e DivArm danno gli stessi registri e flag del BIOS ufficiale su 16 coppie, da ARM e da Thumb, compresi divisore 0 e INT32_MIN/−1, senza blocchi, con il costo in cicli misurato: con l'HLE di CMP-1.2 se la decisione (e) la accetta, altrimenti con la correzione nel sorgente del BIOS integrato (CMP-1.7).
+- IntrWait termina anche sui flag 8-13 (CMP-1.3, proposta nella decisione (e)), e togliendo la patch si torna all'immagine di libretro/gpsp a commit fissato.
+- Tipo di BIOS, stato dell'HLE e numero di SWI nel runtime log e nel perf report di ogni build di release; un savestate dell'altro BIOS è rifiutato con un messaggio nelle cinque lingue.
+- Con un `gba_bios.bin` valido il comportamento resta quello della release precedente finché CMP-1.6 non misura un guadagno di almeno il 2% con 3+3 run.
+
+**Da noi oggi:** Sulla 1.4.3, se manca `gba_bios.bin` l'emulatore esce (`source/src/main.c:1556-1568`), e `load_bios` non controlla nulla (`source/src/memory.c:3701-3718`). Ogni SWI entra nel BIOS: `arm_swi` e `thumb_swi` chiamano `execute_swi` (`source/src/mips_emit.h:2657-2675`, `:2725-2742`), che passa in modalità supervisore con `set_cpu_mode` (`source/src/mips_stub.S:3322-3350`). Nessuna SWI è in HLE. Il branch `features/builtin-open-bios` è **implementato ma non ancora fuso**: due commit sopra la 1.4.3, su origin dal 2026-11-04. Entra dopo il tag 1.4.4, con un rebase su quel tag (CMP-1.1). Contiene:
+- il ripiego sul BIOS aperto, con un avviso se `gba_bios.bin` non è valido;
+- il sorgente ReGBA in `source/bios/`;
+- il tipo di BIOS registrato in ogni savestate, che viene rifiutato con l'altro BIOS;
+- un savestate automatico per ciascun BIOS.
+
+Il suo `source/bios/README.md` elenca i difetti del BIOS aperto:
+- Div e DivArm restituiscono il resto senza segno;
+- r3 va perso perché il gestore SWI lo ripristina (`source/bios/source/core.s:93`, `:102`);
+- Div e DivArm si bloccano dividendo 0, 1 o −1 per 0 e dividendo −2^31 per una potenza di due;
+- IntrWait guarda solo i flag 0-7;
+- le funzioni audio del BIOS, MultiBoot e HardReset non fanno nulla.
+
+**Come ci arriviamo:**
+- Div e DivArm in HLE, se la decisione (e) lo accetta, con i casi limite misurati sul BIOS ufficiale (divisore 0, INT32_MIN/−1), mai un `div` dal risultato indefinito. Altrimenti la stessa correzione va nel sorgente del BIOS integrato (CMP-1.7), che prende il posto di CMP-1.2 nella 1.5: le storie che dipendono da CMP-1.2 (CMP-1.4, CMP-1.5, EXT-3.2) dipendono allora da CMP-1.7.
+- IntrWait corretto, se la decisione (e) lo accetta, con una parola a 0x4B4 e la stessa correzione nel sorgente, verificata da un test che ricostruisce l'immagine di origine.
+- Con il BIOS ufficiale l'HLE resta spenta finché il benchmark non mostra un guadagno.
+- Savestate legato al BIOS che l'ha creato, con un savestate automatico per ciascun BIOS.
+- Sorgente nel repository con header e crediti originali (VBA, VBA-M, Normmatt; GPL-2.0-or-later).
+- Con un header non standard resta in uso il BIOS ufficiale (CMP-8.4).
+- Costo del BIOS integrato misurato con 3+3 run e scritto nel README.
+
+**Gate prima di iniziare:** nessuno, il lavoro è in corso; CMP-1.7 parte solo se la decisione (e) rifiuta l'HLE di CMP-1.2. Per la release 1.5 servono:
+- `make check` e `test-sanitize` verdi;
+- CMP-1.5 superata: almeno 7 titoli su 8 arrivano al gameplay con il BIOS integrato su PSP-1000 (i titoli che falliscono sono elencati nel README), e lo scambio FireRed/Emerald riesce con un PSP per BIOS;
+- i report di CMP-1.6 salvati.
+
+**Rischi:**
+- Altre SWI restano vuote o diverse dall'originale: audio del BIOS, MultiBoot, HardReset, e IntrWait con r0=0, che aspetta sempre l'IRQ successivo (`softwareinterrupts.c:230-244`). I titoli che le usano possono fallire, quindi il BIOS ufficiale resta la scelta consigliata.
+- Con l'HLE attiva la scansione dei blocchi non deve più contare SWI 6/7 come uscite (`cpu.c:2923-2930`, `:3029-3044`), altrimenti `block_exits` si disallinea. libretro/gpsp a commit fissato 5819380 lo gestisce con `is_div_swi` (`cpu_threaded.c:96`, `:2809`, `:2901`).
+- L'HLE cambia la durata delle Div rispetto al codice del BIOS. Per questo resta legata al BIOS integrato finché CMP-1.6 non decide altrimenti.
+- Rifiutare i savestate dell'altro BIOS può infastidire chi aggiunge `gba_bios.bin` in un secondo momento. È la scelta sicura, e il savestate automatico separato limita il danno.
+- La patch di IntrWait va tenuta allineata al sorgente modificato. `open_bios.h` resta un array di 16 KiB.
+- Il trailer v2 dei savestate di F-007 deve conservare la parola del BIOS a `SAVESTATE_BIOS_OFFSET`.
+- Se la decisione (e) rifiuta la correzione di IntrWait, CMP-1 non raggiunge il suo obiettivo: il limite ai flag 0-7 resta scritto in `source/bios/README.md`, e CMP-1.5 ed EXT-3.3 partono senza CMP-1.3.
+
+#### CMP-1.1 — Chiudere e fondere il branch features/builtin-open-bios · S, 1 gg · dipende da: SAV-2.7, ENG-2.1 · PSP: sì
+- **Cosa:** Il lavoro è implementato e committato; manca solo il merge. Il branch contiene:
+  - `load_bios` che restituisce −1 se il file manca o è una copia dell'integrato, e −2 se non è un BIOS GBA (vettore di reset `EA000018`), con `MSG_ERR_BIOS_INVALID`;
+  - l'immagine in `source/src/open_bios.h` (sha256 `661a9afb…`, uguale a libretro 5819380) e il sorgente ReGBA 313ddd0 in `source/bios/`;
+  - le chiavi `bios_rom_hack_*` ignorate con il BIOS integrato;
+  - la parola `OPEN` a `SAVESTATE_BIOS_OFFSET` e il rifiuto dei savestate dell'altro BIOS;
+  - il file `<rom>_auto-builtin.svs`;
+  - tre messaggi nelle cinque lingue;
+  - la voce nella sezione Unreleased del CHANGELOG.
+
+  Resta da fare, in quest'ordine:
+  1. tag della 1.4.4 (SAV-2.7), poi un solo rebase del branch su develop;
+  2. revisione del diff, build PSP, check verdi e una prova breve su PSP-1000;
+  3. merge su develop, dopo ENG-2.1.
+
+  Niente del branch entra in develop prima del tag. Il branch riscrive `load_state`, `load_state_silent` e `save_state` in `memory.c` e aggiunge voci a `MESSAGE_ITEM`; nella 1.4.4 SAV-1.7 e SAV-2.5 cambiano le stesse funzioni e SAV-1.5 aggiunge stringhe alle stesse tabelle dei messaggi. ENG-2.1 serve prima del merge perché oggi `scripts/check-tree.sh:50` confronta le estensioni rispettando le maiuscole e lascia passare `GBA_BIOS.BIN` o `GAME.GBA`.
+- **File:** `source/src/memory.c`, `source/src/memory.h`, `source/src/open_bios.h`, `source/src/main.c`, `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_{jpn,eng,chs,cht,ita}.h`, `source/bios/`, `.gitattributes`, `tests/test_open_bios.py`, `Makefile`, `source/Makefile`, `NOTICE`, `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `scripts/package-release.sh`, `scripts/check-package.sh`
+- **Test:**
+  - `tests/test_open_bios.py`: sha256; `load_bios` con file assente, corto, non BIOS, valido o copia dell'integrato; patch dei byte ignorate; marcatore del savestate.
+  - `scripts/check-messages.sh`, `scripts/check-tree.sh`, `make test-sanitize`.
+  - Su PSP-1000, senza `gba_bios.bin`: FireRed e Golden Sun.
+- **Accettazione:**
+  - FireRed e Golden Sun arrivano al gameplay su PSP-1000 senza `gba_bios.bin`.
+  - Con un `gba_bios.bin` valido `bios_builtin` vale 0 e il comportamento è quello della 1.4.3.
+  - Un `gba_bios.bin` di 1000 byte mostra il messaggio e si usa il BIOS integrato.
+  - Un savestate fatto con l'altro BIOS mostra il messaggio giusto.
+  - Tutti i check sono verdi.
+- **Licenza:** Sorgente da ReGBA a commit 313ddd0 (GPL-2.0-or-later; VBA Development Team, VBA-M Development Team, Normmatt), immagine identica a libretro/gpsp a commit fissato 5819380; header e crediti restano in NOTICE e README.
+
+#### CMP-1.2 — Div e DivArm in HLE nel dynarec · M, 2,5 gg · dipende da: CMP-1.1, CMP-3.1 · PSP: sì
+- **Cosa:** Parte solo se la decisione (e) la accetta (vedi «Decisioni aperte»). Oggi ogni Div entra nel BIOS: costa quattro cambi di modalità (l'ingresso, i due `msr` del gestore e il ritorno) e, con il BIOS integrato, il risultato è sbagliato.
+  - **Modulo puro** `source/src/bios_hle.c/.h`. `gba_bios_div(num, den)` restituisce in r0 il quoziente, in r1 il resto con il segno del dividendo e in r3 il quoziente in valore assoluto. Per i casi limite, cioè divisore 0 con dividendo 0, 1 o −1 e la coppia INT32_MIN/−1, usa i valori che la core-rom misura sul BIOS ufficiale. Quando il BIOS ufficiale si bloccherebbe (|dividendo| > 1 diviso 0), restituisce lo stesso risultato del caso ±1; il comportamento è documentato.
+  - **Traduzione.** Le SWI 0x06/0x07 in ARM (`cpu.c:1998`) e Thumb (`cpu.c:2444`) emettono `div`, `mflo`, `mfhi` e il valore assoluto in r3, con la sequenza di libretro/gpsp a commit fissato 5819380 (`mips/mips_emit.h:1889-1903`). Quando il divisore è 0 o la coppia è INT32_MIN/−1, un salto porta a uno stub di `mips_stub.S` che chiama `gba_bios_div`. Con l'HLE attiva, i predicati delle uscite di blocco (`cpu.c:2923-2930`, `:3029-3044`) non contano più SWI 6/7. Flag e altri registri restano invariati. A run time si scrive anche `bios_read_protect = 0xE3A02004` (vedi CMP-3.3).
+  - **Cicli.** Si addebita un costo fisso, uguale alla media che la core-rom misura sul BIOS ufficiale nel nostro emulatore.
+  - **Attivazione.** Si controlla con la chiave di `game_config.txt` `bios_div_hle = auto|yes|no`. `auto` la attiva solo con il BIOS integrato. La scelta si fa al caricamento della ROM, prima che si traduca qualunque blocco. La chiave va documentata nel README. Vanno aggiornati anche CHANGELOG e `source/bios/README.md`.
+- **File:** `source/src/bios_hle.c`, `source/src/bios_hle.h`, `tests/test_bios_hle.c`, `Makefile`, `source/Makefile`, `source/src/cpu.c`, `source/src/mips_emit.h`, `source/src/mips_stub.S`, `source/src/memory.c`, `tests/core-rom/source/cases_bios.c`, `README.md`, `source/bios/README.md`, `CHANGELOG.md`
+- **Test:**
+  - `tests/test_bios_hle.c`: segni misti, segno del resto, r3, divisore 0 con dividendo 0, 1, −1 e 7, INT32_MIN/−1 senza comportamento indefinito; regole normali e ASan/UBSan.
+  - core-rom `cases_bios.c`: 16 coppie per Div e DivArm, chiamate da ARM e da Thumb. I valori attesi (r0, r1, r2, r3, r12 e flag) si registrano con il BIOS ufficiale e si confrontano con BIOS integrato più HLE; un timer misura i cicli; il caso `bios_openbus_swi` si ripete subito dopo una Div in HLE.
+  - F-124, se disponibile.
+  - Su PSP-1000 con i due BIOS.
+- **Accettazione:**
+  - Con il BIOS integrato e l'HLE, ogni coppia dà gli stessi registri e flag del BIOS ufficiale.
+  - Non ci sono blocchi con 0, 1 o −1 diviso 0.
+  - Con `bios_div_hle = no` il comportamento è quello di oggi.
+  - Con il BIOS ufficiale e `auto` il codice emesso non cambia.
+  - Dopo una Div in HLE una lettura protetta del BIOS dà 0xE3A02004 (caso `bios_openbus_swi` ripetuto in `cases_bios.c`).
+  - `make test` e `test-sanitize` sono verdi.
+- **Licenza:** codice nuovo GPL-2.0-or-later; la sequenza di traduzione viene da libretro/gpsp a commit fissato 5819380 (`cpu_threaded.c:96`, `:1727-1735`, `:2298-2306`; `mips/mips_emit.h:1889-1903`; GPL-2.0-or-later), citata nel commento.
+
+#### CMP-1.3 — IntrWait che termina anche sui flag 8-13 · S, 0,5 gg · dipende da: CMP-1.1, CMP-3.1 · PSP: sì
+- **Cosa:** Parte solo se la decisione (e) la accetta (vedi «Decisioni aperte»). `CheckInterrupts` restituisce `bool` (`softwareinterrupts.c:209-222`). Con la libtonc di ReGBA il compilatore ha emesso `tst r1,#255` a 0x4B4. Così, se arriva solo un flag tra 8 e 13 (DMA, tastiera, Game Pak), IntrWait lo azzera e continua ad aspettare. La correzione:
+  - patch di una parola in `open_bios.h`: a 0x4B4 `E31100FF` diventa `E1110001` (`tst r1,r1`). In quel punto r1 contiene già `waitFlags & IF` a 16 bit (`ands` a 0x4A8);
+  - la stessa correzione nel sorgente (`return flags != 0`), con un avviso di modifica datato;
+  - README di `source/bios` e commento di `open_bios.h`: l'immagine diventa "libretro 5819380 più patch a 0x4B4". Vanno aggiornati anche NOTICE e CHANGELOG.
+
+  Il caso con r0=0 (`softwareinterrupts.c:230-244`) resta documentato e non si corregge finché un titolo non lo richiede.
+- **File:** `source/src/open_bios.h`, `source/bios/source/softwareinterrupts.c`, `source/bios/README.md`, `NOTICE`, `tests/test_open_bios.py`, `tests/core-rom/source/cases_bios.c`, `CHANGELOG.md`
+- **Test:**
+  - `test_open_bios.py`: sha256 dell'immagine corretta; rimettendo `E31100FF` si torna a `661a9afb…`; nessun altro byte cambia.
+  - core-rom: `IntrWait(1, 0x0100)` con un DMA0 che alza l'IRQ. Prima della chiamata la ROM scrive un marcatore, così il decoder riconosce un blocco.
+  - PSP-1000, nella sessione di CMP-1.5.
+- **Accettazione:**
+  - Con il BIOS integrato, il caso DMA ritorna in PPSSPP e su PSP-1000; senza patch si blocca.
+  - `test_open_bios.py` è verde con entrambi gli sha256.
+  - Nessun titolo di CMP-1.5 regredisce.
+- **Licenza:** modifica a codice GPL-2.0-or-later (VBA, VBA-M, Normmatt), con avviso datato nei file toccati (GPL-2.0 §2a). I crediti restano invariati.
+
+#### CMP-1.4 — Tipo di BIOS e SWI nel runtime log (v6) e nel perf report (v7) · M, 1,5 gg · dipende da: CMP-1.1, CMP-1.2, ENG-1.6 · PSP: no
+- **Cosa:**
+  - **Classificazione.** All'avvio si calcola il CRC32 di `bios.rom` con la zlib già presente (`source/src/zlib/crc32.c`). Tre esiti: `official` (81977335, SHA-1 `300c20df…`, il dump ufficiale noto), `other` (vettore di reset valido ma CRC diverso, per esempio un dump da DS), `builtin`.
+  - **Runtime log.** Il value2 di ROM_OPEN, che oggi vale 0 (`runtime_log_psp.c:226-227`), porta il tipo di BIOS nei bit 0-1 e l'HLE nel bit 2; gli altri bit sono riservati. Nessun bump proprio: il campo entra nel bump della 1.5 di ENG-1.6, che porta `RUNTIME_LOG_VERSION` da 5 a 6 (`runtime_log.h:25`). È l'unico punto in cui il tipo di BIOS entra nel runtime log: LNK-1.2 non lo scrive nel record link-command, e il suo decoder lo legge da ROM_OPEN.
+  - **Perf report.** Le chiavi `bios`, `swi-div-hle` e `swi-calls` entrano nel report v7 dello stesso bump di ENG-1.6 (`PERF_REPORT_VERSION` da 6 a 7, `perf_report.h:26`). `swi-calls` è un contatore incrementato in `execute_swi` e nello stub HLE.
+  - **compare-benchmarks.** `bios` e `swi-div-hle` entrano in `OPTIONAL_MATCH_FIELDS` (riga 30). La nuova opzione `--vary FIELD` permette a baseline e candidato di differire solo nei campi nominati, a patto che ciascuno resti uguale dentro ciascun lato. Si può ripetere: PRF-5.2 e PRF-12.1 variano due campi ciascuna. L'opzione nasce solo qui; PRF-1.1 non la aggiunge.
+  - **Pagina game_config.** Una riga tecnica `bios: … ; div hle: on|off`: la pagina usa già testo tecnico non tradotto (`gui.c:4745-4808`).
+  - **Decoder e CHANGELOG.** Il decoder mostra BIOS e HLE dai bit di ROM_OPEN. La lettura di v6 accanto a v5 e la riga del CHANGELOG sui formati 6 e 7 sono di ENG-1.6.
+  - **Altri cluster.** I campi degli altri cluster che escono nella 1.5 entrano nello stesso bump di ENG-1.6.
+- **File:** `source/src/memory.c`, `source/src/memory.h`, `source/src/mips_stub.S`, `source/src/runtime_log.h`, `source/src/runtime_log_psp.c`, `source/src/runtime_log_psp.h`, `source/src/perf_report.c`, `source/src/perf_report.h`, `source/src/perf_metrics.h`, `source/src/main.c`, `source/src/gui.c`, `tools/decode_runtime_log.py`, `scripts/compare-benchmarks.py`, `tests/test_runtime_log.c`, `tests/test_perf_report.c`, `tests/test_decode_runtime_log.py`, `tests/test_compare_benchmarks.py`, `tests/test_open_bios.py`
+- **Test:**
+  - `test_open_bios.py`: CRC dell'integrato e un buffer sintetico classificato come `other`. Nel repository c'è solo la costante del CRC, mai un BIOS ufficiale.
+  - `test_runtime_log`: i bit di ROM_OPEN.
+  - `test_decode_runtime_log.py`: un log v5 si legge ancora; un log v6 mostra `bios=builtin div_hle=1`.
+  - `test_perf_report`: le tre chiavi.
+  - `test_compare_benchmarks.py`: BIOS diversi rifiutati senza `--vary` e accettati con `--vary bios`; un lato con due BIOS mescolati viene rifiutato; con `--vary bios --vary swi-div-hle` passano report che differiscono in entrambi i campi, mentre con il solo `--vary bios` la differenza di HLE resta un errore.
+- **Accettazione:**
+  - Un log 1.4.2 si decodifica ancora.
+  - Un log v6 mostra BIOS e HLE.
+  - compare-benchmarks rifiuta run con BIOS diversi se manca `--vary`.
+  - Il CRC 81977335 è confermato su un dump reale prima del merge.
+  - `make test` e `test-sanitize` sono verdi.
+- **Licenza:** codice nuovo GPL-2.0-or-later; crc32 dalla zlib nel tree (licenza zlib).
+
+#### CMP-1.5 — Passata di compatibilità su PSP con il BIOS integrato · M, 1,5 gg · dipende da: CMP-1.2, CMP-1.3, CMP-1.4 · PSP: sì
+- **Cosa:** Sul candidato 1.5, senza `gba_bios.bin`, su PSP-1000: The Minish Cap, Golden Sun, Kirby & the Amazing Mirror, DK: King of Swing, Gradius Galaxies, Bubble Bobble Old & New, Blackthorne e Colin McRae Rally 2.0. Per ogni titolo si verificano:
+  - avvio;
+  - 10 minuti di gioco, con un salvataggio a batteria e la ricarica;
+  - audio presente;
+  - runtime log salvato.
+
+  Se il tester ha un BIOS ufficiale, rifà lo stesso percorso con quello come riferimento. Poi uno scambio FireRed/Emerald via link: un PSP usa il BIOS integrato, l'altro `gba_bios.bin` (PSP-1000 più un 2000/3000), nei due versi. Gli esiti vanno in `docs/HARDWARE-RESULTS.md` con lo sha256 di EBOOT.PBP. I titoli che falliscono finiscono nel README tra quelli che richiedono `gba_bios.bin`, con la SWI sospetta in `source/bios/README.md`.
+- **File:** `docs/HARDWARE-RESULTS.md`, `README.md`, `source/bios/README.md`
+- **Test:** sessione hardware con il runtime log decodificato (`bios=builtin`, `div_hle=1`).
+- **Accettazione:**
+  - Almeno 7 titoli su 8 arrivano al gameplay e salvano con il BIOS integrato.
+  - Lo scambio riesce nei due versi e i due salvataggi si ricaricano.
+  - Ogni titolo che fallisce è nel README.
+- **Licenza:** nessun codice. ROM e BIOS sono dell'utente e non entrano nel repository.
+
+#### CMP-1.6 — Benchmark SWI-intensivo sui due BIOS · S, 1 gg · dipende da: CMP-1.4, CMP-1.5 · PSP: sì
+- **Cosa:** Si scelgono i due titoli di CMP-1.5 con più `swi-calls` per frame in un run Diagnostics; si prevedono Colin McRae Rally 2.0 e Golden Sun, da confermare. Su PSP-1000 si fanno 3+3 run con compare-benchmarks, con vsync e frameskip fissi, misurando throughput e velocità di fast-forward:
+  - (a) `gba_bios.bin` contro il BIOS integrato (`--vary bios --vary swi-div-hle`: con `auto` l'HLE segue il BIOS);
+  - (b) `gba_bios.bin` con `bios_div_hle = no` contro `yes` (`--vary swi-div-hle`).
+
+  I numeri vanno in `docs/HARDWARE-RESULTS.md`, più una frase nel README sul costo del BIOS integrato. `auto` attiva l'HLE anche con il BIOS ufficiale solo se valgono tutte e tre le condizioni (e se ne dà conto nel CHANGELOG):
+  - (b) dà almeno +2% di velocità di fast-forward su un titolo;
+  - compare-benchmarks non segnala regressioni;
+  - i titoli di CMP-1.5 girano con l'HLE e il BIOS ufficiale.
+
+  Altrimenti l'HLE resta limitata al BIOS integrato.
+- **File:** `docs/HARDWARE-RESULTS.md`, `README.md`, `source/src/memory.c`, `CHANGELOG.md`
+- **Test:** compare-benchmarks 3+3 per (a) e per (b).
+- **Accettazione:**
+  - Report salvati con `bios` e `swi-div-hle` coerenti.
+  - Decisione sull'HLE con il BIOS ufficiale scritta insieme ai numeri.
+  - Nessuna affermazione di velocità senza i 3+3 run.
+- **Licenza:** nessun codice, a parte l'eventuale cambio del default.
+
+#### CMP-1.7 — Div e DivArm corretti nel sorgente del BIOS integrato (se l'HLE è rifiutata) · M, 2 gg · dipende da: CMP-1.1, CMP-3.1 · PSP: sì
+- **Cosa:** Parte solo se la decisione (e) rifiuta l'HLE di CMP-1.2 (vedi «Decisioni aperte»), e allora ne prende il posto nella 1.5. Div e DivArm si riscrivono in `source/bios/source/divide.s`: quoziente in r0, resto con il segno del dividendo in r1, quoziente in valore assoluto in r3. Per i casi limite (divisore 0 con dividendo 0, 1 o −1, la coppia INT32_MIN/−1) si usano i valori che la core-rom misura sul BIOS ufficiale; con |dividendo| > 1 diviso 0, dove il BIOS ufficiale si bloccherebbe, lo stesso risultato del caso ±1, come in CMP-1.2. Dopo Div e DivArm il gestore SWI non rimette più il vecchio r3 (`source/bios/source/core.s:93`, `:102`). L'immagine segue il metodo di CMP-1.3: parole patchate in `open_bios.h`, con la routine nuova in un'area libera se c'è; altrimenti si ricompila da sorgente con una versione fissa di devkitARM e un nuovo sha256. I file toccati portano un avviso di modifica datato. Il dynarec non cambia.
+- **File:** `source/bios/source/divide.s`, `source/bios/source/core.s`, `source/src/open_bios.h`, `source/bios/README.md`, `tests/test_open_bios.py`, `tests/core-rom/source/cases_bios.c`, `NOTICE`, `CHANGELOG.md`
+- **Test:**
+  - `test_open_bios.py`: c'è il nuovo sha256; togliendo tutte le patch, compresa quella di CMP-1.3 se c'è, si torna a `661a9afb…`; nessun altro byte cambia.
+  - core-rom `cases_bios.c`: le 16 coppie di CMP-1.2 per Div e DivArm, chiamate da ARM e da Thumb, con r0, r1, r2, r3, r12 e i flag registrati sul BIOS ufficiale e confrontati con il BIOS integrato; un timer misura i cicli.
+  - PSP-1000 con i due BIOS, nella sessione di CMP-1.5.
+- **Accettazione:**
+  - Con il BIOS integrato ogni coppia dà gli stessi registri e flag del BIOS ufficiale, da ARM e da Thumb.
+  - Nessun blocco con 0, 1 o −1 diviso 0, né con −2^31 diviso una potenza di due.
+  - L'EBOOT differisce dalla build precedente solo nei byte dell'immagine del BIOS.
+  - Nessun titolo di CMP-1.5 regredisce; `make test` e `test-sanitize` sono verdi.
+- **Licenza:** modifica a codice GPL-2.0-or-later (VBA, VBA-M, Normmatt), con avviso datato nei file toccati (GPL-2.0 §2a). I crediti restano invariati.
+
+### CMP-2 — Tabella dei giochi compilata, con override dell'utente
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 | 8,5 gg | CMP-1.4, ENG-1.6, PRF-1.1, PRF-1.5, F-120, F-137 (solo CMP-2.4) |
+
+**Copre:** F-013 tabella dei giochi.
+
+**Obiettivo:** Le 200 righe di libretro/gpsp a commit fissato 5819380 compilate nell'EBOOT; `game_config.txt` vince sempre e `game_db = off` spegne la tabella; un idle loop della tabella si accende solo sulla ROM verificata per CRC32, dopo una replay di 2 minuti identica, +2% su PSP-1000 e zero violazioni nella verifica diagnostica; almeno 10 righe verificate con i report salvati; profilo attivo visibile nella pagina game_config e nel runtime log.
+
+**Da noi oggi:** Il `game_config.txt` dell'utente viene letto dalla cartella dell'EBOOT (`memory.c:33`; `load_game_config`, `memory.c:3460-3560`). Cerca per game_name, game_code e vendor_code, più `filename_match`. Le chiavi sono:
+- `idle_loop_eliminate_target`, fino a 16 (`cpu.h:199`);
+- `smc_gate`/`smc_cutpoint`, solo IWRAM e ARM (`cpu.c:3275-3292`);
+- `iwram_stack_optimize`;
+- `bios_rom_hack_*`.
+
+Però non spediamo nessuna tabella: il repository non ha mai avuto un `game_config.txt`, `scripts/package-release.sh:23-26` non lo include e il README non lo nomina. Ogni gioco parte quindi dai default. La pagina game_config mostra header, idle loop e gate caricati (`gui.c:4745-4808`).
+
+**Come ci arriviamo:**
+- `game_config.txt` vince sempre, e `game_db = off` spegne la riga compilata.
+- Gli idle loop della tabella valgono solo sulla ROM su cui sono stati verificati (la nostra riga porta il CRC32 del primo MiB). Così un hack di FireRed non riceve l'idle loop di FireRed.
+- Una guardia di plausibilità (salto all'indietro, ciclo di al massimo 64 byte) e l'accensione solo dopo replay e benchmark.
+- Fino a 16 idle loop e limiti controllati sui gate. In libretro/gpsp a commit fissato 5819380 il ciclo dei gate non ha controlli sui limiti (`gba_memory.c:1923-1939`).
+- L'RTC si accende alla prima scrittura GPIO (`memory.c:2276-2277`): Boktai 1 e 2 funzionano senza una riga, mentre il `gba_over.h` di libretro/gpsp, tra i Boktai, contiene solo U33J.
+- Il profilo attivo è visibile nella pagina game_config e nel runtime log dei build di release.
+- I dati vengono da `gba_over.h` di libretro/gpsp a commit fissato 5819380 (200 righe per codice di gioco, 111 con un idle loop, fino a 3 gate e i flag di salvataggio, RTC, rumble, modalità seriale e GBA Player), copiati alla lettera e confrontabili con diff.
+
+**Gate prima di iniziare:** nessuno per 2.1-2.3 e 2.5. Gli idle loop della tabella (2.4) si accendono un titolo alla volta, e solo se:
+- la replay F-120 di 2 minuti non si blocca e passa dagli stessi checkpoint;
+- compare-benchmarks 3+3 su PSP-1000 dà almeno +2% di velocità di fast-forward o di throughput, senza regressioni segnalate;
+- la verifica della build diagnostica (CMP-2.4) non trova violazioni.
+
+**Rischi:**
+- Un idle loop sbagliato blocca il gioco. CRC, guardia, verifica e override limitano il rischio.
+- Le righe sono tarate sul dynarec libretro. La semantica è la stessa (PC del salto, `mips_emit.h:641-668`) ma i confini dei blocchi cambiano. `is_smc_gate` ignora i gate Thumb: va esteso solo se una riga verificata lo richiede.
+- I flag di salvataggio possono contraddire F-002. La precedenza va scritta e testata: utente, poi tabella, poi tag della ROM, poi dimensione del `.sav`.
+- Il CRC32 del primo MiB costa tempo di caricamento. Si calcola solo quando serve, con un tetto di 300 ms su PSP-1000 per una ROM paginata da 32 MiB.
+- `gba_over.h` non ha intestazione: va trattato come GPL-2.0-or-later del progetto libretro/gpsp e citato in NOTICE.
+
+#### CMP-2.1 — Modulo game_db e tabella libretro a commit fisso · M, 1,5 gg · dipende da: — · PSP: no
+- **Cosa:** Nuovo modulo puro `source/src/game_db.c/.h` (stdint, senza SDK PSP). Include due tabelle:
+  - `source/src/gba_over.h`, copiato alla lettera da libretro/gpsp a commit fissato 5819380, con le definizioni `ini_t` e `FLAGS_*` dello stesso commit (`gba_memory.c:1861-1883`). Una riga di `.gitattributes` ne conserva i byte. Sta in `source/src/` come la zlib vendorizzata;
+  - `source/src/game_db_rows.h`, con le nostre righe: codice, CRC32 della ROM verificata, `idle_verified`, `save_hint`.
+
+  `game_db_lookup(code, crc32, &profile)` riempie un `GameDbProfile` con flags, idle[4], gates[3], save_hint e source. Una riga con CRC vince su una riga per solo codice; più righe con lo stesso codice si fondono entro i limiti. Nessuna allocazione e nessun generatore.
+- **File:** `source/src/game_db.c`, `source/src/game_db.h`, `source/src/game_db_rows.h`, `source/src/gba_over.h`, `.gitattributes`, `tests/test_game_db.c`, `Makefile`, `NOTICE`
+- **Test:** `tests/test_game_db.c`, con regole normali e ASan/UBSan:
+  - BPEE restituisce l'idle loop 0x80008ce e FLASH128;
+  - ci sono 200 righe;
+  - un codice assente non dà profilo;
+  - una riga con CRC vince;
+  - più righe con lo stesso codice non sforano i limiti;
+  - un codice non alfanumerico viene gestito.
+- **Accettazione:**
+  - `make test` e `test-sanitize` sono verdi.
+  - Le 200 righe di upstream sono presenti.
+  - Il modulo non dipende dall'SDK.
+  - NOTICE cita libretro 5819380.
+- **Licenza:** `gba_over.h` da libretro/gpsp a commit fissato 5819380 (GPL-2.0-or-later; Exophase e contributori libretro), copiato alla lettera; `game_db.c/.h` codice nuovo GPL-2.0-or-later.
+
+#### CMP-2.2 — Applicare il profilo al caricamento, con game_config.txt che vince · M, 2 gg · dipende da: CMP-2.1 · PSP: sì
+- **Cosa:** In `load_gamepak` (`memory.c:3626-3698`), dopo la lettura dell'header:
+  1. `game_db_lookup` per codice;
+  2. CRC32 del primo MiB, calcolato solo se la riga ha idle loop o se un blocco dell'utente usa il filtro `crc32`;
+  3. applicazione del profilo:
+     - gli idle loop vengono applicati solo se la riga è verificata (2.4) e il CRC coincide;
+     - i gate passano da `add_smc_gate`;
+     - `save_hint` resta a disposizione di F-002 e, finché F-002 non c'è, viene solo mostrato;
+     - i flag seriali, rumble e GBP vengono conservati per F-106, F-111 e CMP-10;
+  4. `load_game_config`, che può sovrascrivere tutto.
+
+  Nuove chiavi: `crc32 = XXXXXXXX`, un filtro come `filename_match`, e `game_db = off`. Chiavi e precedenza vanno nel README; serve anche la voce nel CHANGELOG.
+- **File:** `source/src/memory.c`, `source/src/cpu.c`, `source/src/cpu.h`, `source/src/game_db.h`, `README.md`, `CHANGELOG.md`, `tests/test_game_config.py`
+- **Test:**
+  - `tests/test_game_config.py` compila `load_game_config` e `apply_game_config_option` estratti da `memory.c`, con lo stesso metodo di `test_open_bios.py`. Casi: solo tabella, solo utente, utente che sovrascrive, `game_db = off`, filtro `crc32` che rifiuta il blocco, riga non verificata senza idle loop.
+  - PSP-1000: Emerald e FireRed.
+- **Accettazione:**
+  - Senza `game_config.txt`, un titolo presente in tabella carica flag e gate.
+  - `game_db = off` riporta ai default.
+  - Il filtro `crc32` funziona.
+  - Il tempo di caricamento aggiunto è misurato.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-2.3 — Guardia di plausibilità per gli idle loop della tabella · S, 1 gg · dipende da: CMP-2.2 · PSP: sì
+- **Cosa:** La funzione pura `game_db_idle_branch_ok(branch_pc, target_pc)` è vera solo per un salto all'indietro con un ciclo di al massimo 64 byte. `generate_branch_no_cycle_update` (`mips_emit.h:641-668`) la applica agli idle loop della tabella; quelli scritti dall'utente restano fidati. I PC scartati si contano e compaiono nella pagina game_config.
+- **File:** `source/src/game_db.h`, `source/src/mips_emit.h`, `source/src/cpu.c`, `source/src/gui.c`, `tests/test_game_db.c`
+- **Test:**
+  - `test_game_db`: un salto corto all'indietro passa; un salto in avanti e un ciclo di 200 byte no.
+  - psp-objdump di `cpu.o` prima e dopo: le funzioni che emettono i salti senza idle loop non cambiano.
+  - PSP-1000.
+- **Accettazione:**
+  - Un idle loop della tabella che non è un ciclo stretto viene ignorato e segnalato.
+  - Il codice emesso per i salti normali resta identico.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-2.4 — Idle loop della tabella attivi solo se verificati · M, 3,5 gg · dipende da: CMP-2.3, F-120, PRF-1.1, PRF-1.5, F-137 · PSP: sì
+- **Cosa:** Ogni nostra riga ha il bit `idle_verified` e il CRC32 della ROM verificata. Le righe non verificate non attivano idle loop, ma flag e gate restano attivi. Per ogni titolo si fa una replay F-120 di 2 minuti con e senza idle loop, poi compare-benchmarks 3+3 su PSP-1000. L'idle loop si accende solo se valgono tutte queste condizioni:
+  - la replay non si blocca;
+  - i checkpoint coincidono;
+  - la velocità di fast-forward o il throughput salgono di almeno il 2%;
+  - compare-benchmarks non segnala regressioni.
+
+  Primo lotto: Pokemon R/S/E/FR/LG, Golden Sun 1/2, MKSC, Advance Wars 1/2.
+
+  Nella build diagnostica, a ogni salto di un idle loop della tabella si fotografano registri e memoria, e al prossimo evento si controlla che nulla sia cambiato prima dell'IRQ. Una riga si accende solo con zero violazioni, oltre alla replay e al +2%. Advance Wars 1 e 2 si provano per primi. Se PRF-9.6 è già fatta, una riga si accende solo dove il salto esatto non copre il ciclo.
+- **File:** `source/src/game_db_rows.h`, `docs/HARDWARE-RESULTS.md`, `tests/test_game_db.c`
+- **Test:**
+  - `test_game_db`: una riga non verificata o con un CRC diverso non porta idle loop.
+  - Replay F-120 per ogni titolo.
+  - compare-benchmarks su PSP-1000.
+- **Accettazione:**
+  - Almeno 10 righe verificate, con i report salvati.
+  - Di default non è attivo nessun idle loop non verificato.
+  - Nessuna riga accesa salta lavoro guest: zero violazioni nella verifica diagnostica.
+- **Licenza:** codice nuovo GPL-2.0-or-later; cambiano solo le nostre righe, quelle di upstream restano invariate.
+
+#### CMP-2.5 — Profilo attivo nella pagina game_config e nel runtime log · S, 0,5 gg · dipende da: CMP-2.2, CMP-1.4, ENG-1.6 · PSP: no
+- **Cosa:** La pagina game_config (`gui.c:4745-4808`) aggiunge righe tecniche: CRC32, sorgente del profilo (table, game_config.txt, both o none), flag applicati e idle loop scartati. ROM_OPEN porta la sorgente in due bit riservati da CMP-1.4. Dare un significato a bit riservati cambia il formato: la sorgente entra nel bump del runtime log della 1.6, che fa la prima storia della 1.6 a cambiare il formato (regola R3 del principio 6), con decoder e test.
+- **File:** `source/src/gui.c`, `source/src/memory.c`, `source/src/runtime_log.h`, `source/src/runtime_log_psp.c`, `tools/decode_runtime_log.py`, `tests/test_decode_runtime_log.py`, `tests/test_runtime_log.c`, `CHANGELOG.md`
+- **Test:**
+  - `test_decode_runtime_log.py`: i bit della sorgente nel log della 1.6; i log v5 e v6 si leggono ancora.
+  - `scripts/check-menu-layout.sh` invariato.
+- **Accettazione:**
+  - La pagina mostra la riga attiva e da dove viene.
+  - Il decoder stampa `profile=table|user|both|none`.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### CMP-3 — HALT conforme a GBATEK, open bus del BIOS a run time e ROM di prova del core
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 | 3,25 gg | SAV-2.6 |
+
+**Copre:** F-014 HALT che si sveglia con IE&IF anche con IME=0.
+
+**Obiettivo:** Casi core-rom `halt_ime0`, `halt_cpsr_i` e `bios_openbus_*` verdi su PSP-1000 e su un secondo modello (sulla 1.4.2 falliscono), con esito su schermo e firma in SRAM; latenza IRQ di 9 cicli invariata; compare-benchmarks 3+3 su FireRed e MKSC senza regressioni; open bus giusto anche nel percorso HLE di Div, quando c'è (CMP-1.2).
+
+**Da noi oggi:** `update_gba` sveglia una CPU in HALT solo con `cpu_interrupt()`, quando IF≠0 e IME e CPSR.I lo permettono (`source/src/main.c:1227-1257`). Con IME=0 o CPSR.I=1 il ciclo di `main.c:1265` non termina e il gioco resta fermo. La latenza IRQ di 9 cicli è già presente (`main.c:1250-1253`). Lo 0xE3A02004 dopo una SWI è un'istruzione C dentro `arm_swi`/`thumb_swi` (`mips_emit.h:2659`, `:2727`): viene eseguita quando il blocco si traduce, non quando gira. A run time resta quindi lo 0xE55EC002 dell'ultimo IRQ (`main.c:397`). Nessun test esegue `cpu.c` o `update_gba`.
+
+**Come ci arriviamo:**
+- Risveglio conforme a GBATEK, mantenendo la latenza IRQ di 9 cicli. Il ramo nuovo scatta solo dove oggi la CPU resterebbe ferma per sempre.
+- Una ROM di prova pubblica (`tests/core-rom`) che gira su PSP e PPSSPP e firma l'esito in SRAM.
+- Open bus dopo una SWI scritto a run time, anche nel percorso HLE di Div (CMP-1.2).
+
+**Gate prima di iniziare:** nessuno. Accettazione: i casi della core-rom passano su PSP-1000 e su un secondo modello e compare-benchmarks 3+3 su FireRed e MKSC non segnala regressioni.
+
+**Rischi:**
+- STOP con IME=0: GBATEK non è esplicito, quindi resta com'è finché un test non dice altro.
+- Durante il gestore IRQ, GBATEK indica 0xE25EF004. Restituiamo 0xE55EC002, il valore di dopo l'IRQ. Si lascia così finché un titolo non lo richiede.
+- La ROM di prova richiede devkitARM, come `tests/link-rom`. I `.gba` non entrano in Git.
+- CMP-11.6 cambia l'ingresso degli IRQ già pendenti sbloccati da una scrittura di CPSR; la latenza di 9 cicli di CMP-3.2 resta per gli IRQ che si alzano.
+
+#### CMP-3.1 — ROM di prova del core (tests/core-rom) con esito su schermo e in SRAM · M, 1,25 gg · dipende da: SAV-2.6 · PSP: sì
+- **Cosa:** Nuova ROM GBA di test in C e assembly, compilata con devkitARM. Il Makefile usa l'include condiviso da tutte le ROM di test GBA (per esempio `tests/gba-rom.mk`) e l'esito segue il protocollo condiviso, schermo più firma in SRAM. Include e protocollo li crea SAV-2.6 nella 1.4.4, seguendo il disegno descritto qui; questa storia porta i suoi casi, lo script di build e i nomi dei casi della core-rom in `tools/decode_test_rom.py` (SAV-2.6).
+  - Un caso per ogni comportamento.
+  - PASS/FAIL su schermo.
+  - Una firma in SRAM (magic, bitmap dei casi, CRC, marcatore di "caso avviato"), con header SRAM_V.
+  - Primi casi: `halt_ime0`, `halt_cpsr_i`, `bios_openbus_swi`, `bios_openbus_irq`, `bios_openbus_boot`. Gli altri epic aggiungono i propri (per CMP-1, `cases_bios.c`).
+  - `scripts/check-core-rom.sh` compila la ROM se trova DEVKITARM; `tools/decode_test_rom.py` (SAV-2.6) legge la firma da un `.sav` e mostra i nomi dei casi della core-rom.
+- **File:** `tests/core-rom/Makefile`, `tests/core-rom/.gitignore`, `tests/core-rom/source/main.c`, `tests/core-rom/source/cases_irq.c`, `scripts/check-core-rom.sh`, `tools/decode_test_rom.py`, `tests/test_decode_test_rom.py`, `Makefile`
+- **Test:**
+  - `tests/test_decode_test_rom.py`: un caso in più, una firma sintetica della core-rom stampata con i nomi dei suoi casi.
+  - Build con `-Werror`.
+  - PPSSPP e PSP-1000.
+  - `scripts/check-tree.sh` rifiuta i `.gba` prodotti.
+- **Accettazione:**
+  - La ROM compila senza warning.
+  - Gira su PPSSPP e PSP-1000 e il decoder legge la firma.
+  - Su 1.4.2 `halt_ime0` risulta FAIL.
+- **Licenza:** codice nuovo GPL-2.0-or-later, scritto da GBATEK. Le suite pubbliche (jsmolka, mGBA) restano esterne.
+
+#### CMP-3.2 — HALT termina su IE&IF anche con IME=0 o CPSR.I=1 · S, 1,5 gg · dipende da: CMP-3.1 · PSP: sì
+- **Cosa:** Nuovo header `source/src/gba_irq.h`, con due funzioni `static inline` (precedente: `video_mosaic.h`):
+  - `gba_irq_halt_wakes(halt_state, ie, if_, stop_mask)`;
+  - `gba_irq_enters(ie, if_, ime, cpsr)`.
+
+  In `update_gba` (`main.c:1221-1257`), quando IE&IF&maschera≠0 e la CPU è in HALT, la si sveglia anche con IME=0 o CPSR.I=1 e riparte dopo l'istruzione di halt, senza IRQ. L'IRQ si consegna solo se `gba_irq_enters` lo permette, con la latenza di 9 cicli invariata. STOP non cambia. Il controllo nuovo sta nel ramo già preso quando IF≠0. Serve la voce nel CHANGELOG.
+- **File:** `source/src/gba_irq.h`, `tests/test_gba_irq.c`, `Makefile`, `source/src/main.c`, `CHANGELOG.md`
+- **Test:**
+  - `tests/test_gba_irq.c` (normale e ASan/UBSan), tabella di verità: HALT con IME=0 si sveglia senza IRQ; IME=1 con CPSR.I=0 porta all'IRQ; STOP con maschera 0x3080; IE&IF=0 non ha effetto.
+  - core-rom `halt_ime0` e `halt_cpsr_i` su PPSSPP, su PSP-1000 e su un secondo modello.
+  - `scripts/compare-benchmarks.py` com'è oggi, 3+3 su FireRed e MKSC, senza aspettare PRF-1.
+- **Accettazione:**
+  - I casi passano su PSP-1000 e su un secondo modello (su 1.4.2 falliscono).
+  - compare-benchmarks non segnala regressioni.
+  - `make test` e `test-sanitize` sono verdi.
+- **Licenza:** codice nuovo GPL-2.0-or-later, scritto dalla specifica GBATEK.
+
+#### CMP-3.3 — Valore open bus del BIOS dopo una SWI scritto a run time · S, 0,5 gg · dipende da: CMP-3.1 · PSP: sì
+- **Cosa:** L'assegnazione 0xE3A02004 esce dalle macro di traduzione (`mips_emit.h:2659`, `:2727`) e va in `execute_swi` (`mips_stub.S:3322`), che la esegue a ogni SWI; lo stesso fa lo stub HLE di CMP-1.2. Valori attesi:
+  - 0xE129F000 dopo l'avvio (`memory.c:2982` alla base);
+  - 0xE55EC002 dall'IRQ in poi (`main.c:397`);
+  - 0xE3A02004 dopo una SWI.
+- **File:** `source/src/mips_emit.h`, `source/src/mips_stub.S`
+- **Test:**
+  - core-rom `bios_openbus_swi`: una lettura protetta subito dopo una SWI dà 0xE3A02004. Oggi, se c'è stato un IRQ, dà 0xE55EC002.
+  - F-124, se il codice emesso cambia.
+- **Accettazione:**
+  - Il caso passa su PPSSPP, su PSP-1000 e su un secondo modello.
+  - compare-benchmarks non segnala regressioni.
+- **Licenza:** codice nuovo GPL-2.0-or-later; i valori vengono da GBATEK.
+
+### CMP-4 — Maschera a 28 bit del PC guest
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 1 gg | CMP-3.1, F-008, F-149, ENG-1.6 |
+
+**Copre:** F-015 maschera a 28 bit del PC guest.
+
+**Obiettivo:** Se il gate passa: un salto con i bit alti non chiude più l'emulatore, zero istruzioni in più nel percorso caldo (psp-objdump), ogni PC mascherato lascia un record nel runtime log di release, e la decisione è documentata con il caso core-rom `pc_high` e le sue fonti.
+
+**Da noi oggi:** La ricerca dei blocchi sceglie la regione con `switch (pc >> 24)` (`cpu.c:2792-2863`). Un PC con i bit alti finisce nel ramo default, che mostra "bad jump" e chiude l'emulatore dopo 5 secondi (`cpu.c:2865-2881`). Non c'è accesso fuori dai limiti, ma la partita è persa e nel runtime log non resta traccia.
+
+**Come ci arriviamo:**
+- La maschera si applica solo nel ramo che oggi chiude l'emulatore: nessuna istruzione in più nel percorso caldo.
+- Ogni PC mascherato lascia un record nel runtime log dei build di release.
+- La decisione si basa su un caso di test pubblico e su un decision record (F-149).
+
+**Gate prima di iniziare:** serve almeno una di queste evidenze:
+- un record di bad jump con i bit alti nei log del campo (dopo F-008);
+- una segnalazione su un titolo reale;
+- un risultato pubblicato del caso core-rom `pc_high` su un GBA vero.
+
+Senza evidenza non si spedisce.
+
+**Rischi:**
+- Il comportamento dell'hardware è incerto: GBATEK dice che i 4 bit alti del bus non sono usati, ma mGBA tratta le letture da 0x10000000 in su come open bus.
+- Un PC spazzatura mascherato può eseguire codice valido ma sbagliato. Per le regioni non eseguibili resta F-008.
+- Il gioco vede il PC mascherato (per esempio con `mov r0, pc`): è una differenza accettata e documentata.
+
+#### CMP-4.1 — Caso core-rom pc_high e decisione documentata · S, 0,5 gg · dipende da: CMP-3.1, F-149 · PSP: sì
+- **Cosa:** Aggiungere alla core-rom un salto a `0x10000000 | etichetta` in ARM e in Thumb (BX); su 1.4.2 atteso il bad jump. Scrivere il decision record con le due letture possibili (bus a 28 bit oppure open bus) e il criterio per scegliere.
+- **File:** `tests/core-rom/source/cases_pc.c`, `docs/DESIGN-DECISIONS.md`
+- **Test:**
+  - PPSSPP e PSP-1000 con 1.4.2.
+  - Un GBA vero, se un collaboratore ne ha uno.
+- **Accettazione:**
+  - Il caso dà l'esito previsto.
+  - La decisione è scritta con le fonti.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-4.2 — Maschera solo nel ramo del bad jump, con record nel runtime log · S, 0,5 gg · dipende da: CMP-4.1, F-008, ENG-1.6 · PSP: sì
+- **Cosa:** Nel ramo default di `block_lookup_address_body` (`cpu.c:2865-2881`), se `pc>>28 != 0` si applica `pc &= 0x0FFFFFFF` e lo switch si ripete una sola volta. Un nuovo tipo di evento con il PC originale va in fondo all'enum: non cambia `RUNTIME_LOG_VERSION` (regola R1 del principio 6), ma aggiorna decoder e test. Le regioni che restano non mappabili passano a F-008.
+- **File:** `source/src/cpu.c`, `source/src/runtime_log.h`, `source/src/runtime_log_psp.c`, `tools/decode_runtime_log.py`, `tests/test_decode_runtime_log.py`, `tests/test_runtime_log.c`, `CHANGELOG.md`
+- **Test:**
+  - core-rom `pc_high` su PPSSPP e PSP-1000.
+  - `test_decode_runtime_log.py`: il nuovo evento; i log v5 e v6 si leggono ancora.
+  - compare-benchmarks 3+3.
+- **Accettazione:**
+  - Il salto con i bit alti prosegue.
+  - Il record compare nel log decodificato.
+  - Il percorso caldo non cambia.
+- **Licenza:** codice nuovo GPL-2.0-or-later, scritto dalla decodifica degli indirizzi ARM7 di GBATEK.
+
+### CMP-5 — Stack in EWRAM corretto nel percorso veloce di LDM/STM/PUSH/POP
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 (CMP-5.1 in 1.5; CMP-5.3 dopo gate) | 5 gg | CMP-3.1, PRF-1.1, PRF-1.5, F-120, F-124 |
+
+**Copre:** F-016 stack in EWRAM nel percorso LDM/STM.
+
+**Obiettivo:** Con le opzioni di default il caso `ewram_stack` è verde su PSP-1000 e su un secondo modello, Kirby: Nightmare in Dreamland e Mario Golf: Advance Tour sono giocabili senza righe per gioco, e il ramo EWRAM addebita gli stati di attesa reali; compare-benchmarks 3+3 su due titoli senza regressioni e replay identiche.
+
+**Da noi oggi:** Con `iwram_stack_optimize` (default 1, `cpu.c:41`, rimesso a 1 a ogni ROM) e `option_stack_optimize` (default 1, `main.c:59`), il percorso veloce scrive in `iwram + (SP & 0x7FFC)` (`mips_emit.h:2112-2130`; Thumb `:2525`). Con SP in EWRAM, i dati finiscono in cima all'IWRAM, sopra lo stack IRQ e il vettore a 0x03007FFC: è una corruzione silenziosa. Il `game_config.txt` di gpSP 0.9, nella storia di libretro (commit 2823a4c e c5778be), metteva `iwram_stack_optimize = no` per Kirby: Nightmare in Dreamland, Mario Golf: Advance Tour, Mario Party Advance, Shining Soul 1/2, Tales of Phantasia, Ninja Five-0, Bleach Advance, Aladdin, Robopon 2 e altri. Noi però non spediamo `game_config.txt`. Gli store del percorso veloce, inoltre, saltano il controllo SMC (`mips_emit.h:2023-2028`).
+
+**Come ci arriviamo:**
+- Funziona di default anche con lo stack in EWRAM, senza righe per singolo gioco.
+- Il ramo EWRAM addebita gli stati di attesa della EWRAM, coerentemente con il nostro modello di cicli.
+- L'opzione "Stack optimize" resta come interruttore per i confronti A/B: nessuna migrazione di `config_model` e nessun testo nuovo.
+- L'eventuale controllo SMC sugli store dello stack (5.3) chiude il buco SMC del percorso veloce.
+
+**Gate prima di iniziare:** nessuno. Si spedisce solo con:
+- il caso core-rom `ewram_stack` verde su PSP-1000 e su un secondo modello;
+- F-124 verde;
+- compare-benchmarks 3+3 su due titoli con lo stack in IWRAM, senza regressioni;
+- replay F-120 identica, dove esiste;
+- Kirby NiDL e Mario Golf: Advance Tour corretti con le opzioni di default.
+
+CMP-5.3 è condizionata: si spedisce solo se il costo resta sotto le soglie di compare-benchmarks, oppure se un titolo sovrascrive con lo stack codice già tradotto, oppure se parte PRF-8.7, che richiede ogni scrittura su codice RAM segnalata.
+
+**Rischi:**
+- È il percorso di memoria più usato da ogni gioco: un errore nel codice emesso rompe tutto.
+- Ogni LDM/STM su SP guadagna un ramo, il cui costo va misurato.
+- Con lo stack in EWRAM, l'addebito dei cicli cambia i tempi di quei titoli, che oggi sono rotti.
+- Che quei titoli siano davvero rotti su 1.4.2 è dedotto, non osservato: lo misura la 5.1.
+
+#### CMP-5.1 — Caso core-rom ewram_stack e prova del difetto su 1.4.2 · S, 1 gg · dipende da: CMP-3.1 · PSP: sì
+- **Cosa:** Aggiungere alla core-rom STM/LDM in ARM e PUSH/POP in Thumb con SP in EWRAM. Il caso verifica che i valori si rileggano dalla EWRAM e che l'IWRAM a 0x03007Fxx resti intatta. Nella stessa sessione si provano Kirby: Nightmare in Dreamland e Mario Golf: Advance Tour (dump dell'utente) su 1.4.2 con le opzioni di default. Se il difetto si conferma, il README elenca i titoli di gpSP 0.9 e il rimedio fino alla 5.2: impostare "Stack optimize" sul valore che lo spegne, oppure `iwram_stack_optimize = no` in `game_config.txt`.
+- **File:** `tests/core-rom/source/cases_stack.c`, `docs/HARDWARE-RESULTS.md`, `README.md`
+- **Test:**
+  - core-rom su 1.4.2 in PPSSPP e su PSP-1000: atteso FAIL.
+  - I due titoli.
+- **Accettazione:**
+  - Il caso riproduce la corruzione.
+  - Per i due titoli c'è una riga con l'esito.
+  - La nota nel README è presente se il difetto è confermato.
+- **Licenza:** codice nuovo GPL-2.0-or-later. Dal vecchio `game_config.txt` si usano solo i nomi dei titoli, come fatti.
+
+#### CMP-5.2 — Percorso veloce con test della regione di SP e trampolino EWRAM · M, 2,5 gg · dipende da: CMP-5.1, F-124, PRF-1.1, PRF-1.5, F-120 · PSP: sì
+- **Cosa:** In `arm_block_memory` (`mips_emit.h:2112-2130`) e `thumb_block_memory_sp` (`:2525`) si controlla a run time il bit 24 di SP. Per l'IWRAM l'accesso resta in linea. Per la EWRAM si passa da un trampolino, emesso una sola volta, che ricalcola l'indirizzo sulla EWRAM e addebita gli stati di attesa per il numero di parole. L'opzione e `iwram_stack_optimize = no` restano come interruttori del percorso generico. Serve la voce nel CHANGELOG.
+- **File:** `source/src/mips_emit.h`, `source/src/mips_stub.S`, `source/src/cpu.c`, `tests/core-rom/source/cases_stack.c`, `CHANGELOG.md`
+- **Test:**
+  - F-124.
+  - core-rom `ewram_stack` su PSP-1000 e su un secondo modello, con i cicli di uno STM di 4 parole in EWRAM misurati con TM0.
+  - compare-benchmarks 3+3 su FireRed e Golden Sun.
+  - Replay F-120.
+  - Kirby NiDL e Mario Golf: Advance Tour su PSP-1000.
+- **Accettazione:**
+  - `ewram_stack` passa su PSP-1000 e su un secondo modello, e i cicli di uno STM di 4 parole in EWRAM, misurati con TM0 nel caso, sono quelli degli stati di attesa della EWRAM.
+  - Nessuna regressione segnalata.
+  - Le replay coincidono.
+  - I due titoli sono giocabili con le opzioni di default.
+- **Licenza:** da libretro/gpsp a commit fissato 5819380 (`mips/mips_emit.h:1399-1419`, `:2768-2772`; GPL-2.0-or-later; Exophase, David Guillen Fandos), adattato al nostro layout e citato nel commento.
+
+#### CMP-5.3 — (condizionato) Controllo SMC sugli store dello stack in IWRAM · M, 1,5 gg · dipende da: CMP-5.2, PRF-1.1 · PSP: sì
+- **Cosa:** Nel percorso veloce IWRAM, uno stub chiamato una volta per istruzione controlla il bit di codice di `iwram_metadata`. Riusa la regola di `store_u32a_iwram_stack_smc` (`mips_stub.S:1144-1165`: invalida solo se la destinazione è ≥ SP, così SMOL e il mixer HQ restano corretti) e `post_write_metadata_aligned_iwram`. Si spedisce solo se il costo resta sotto le soglie di compare-benchmarks, oppure se un titolo sovrascrive con lo stack codice già tradotto, oppure se parte PRF-8.7, che richiede ogni scrittura su codice RAM segnalata.
+- **File:** `source/src/mips_emit.h`, `source/src/mips_stub.S`, `tests/core-rom/source/cases_stack.c`
+- **Test:**
+  - core-rom: un PUSH sopra una funzione tradotta in IWRAM, poi la funzione viene eseguita.
+  - compare-benchmarks 3+3.
+- **Accettazione:** il caso passa e il costo resta sotto le soglie; altrimenti la storia si chiude senza merge.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### CMP-6 — Mirroring delle ROM da 1 MiB (Classic NES Series)
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate (CMP-6.1 in 1.5) | 3 gg | CMP-3.1, F-120, CMP-12.5 (solo CMP-6.4) |
+
+**Copre:** F-017 mirroring delle ROM da 1 MiB.
+
+**Obiettivo:** Se il gate passa: i Classic NES Series del gate arrivano al gameplay e salvano sul dynarec, su PSP-1000 e su un secondo modello, con zero byte di RAM in più per il mirror e la regione 0x0D lasciata all'EEPROM; con le ROM fino a 16 MiB non cambia nulla.
+
+**Da noi oggi:** Le ROM che stanno nel buffer sono mappate per `gamepak_size`, seguite da `MAP_NULL` nelle tre finestre (`memory.c:2846-2875`). Le letture oltre la fine vanno all'open bus della CPU (`memory.c:768-805`). `MAP_REGION` accetta già un numero di blocchi da ripetere (`memory.c:2703-2707`). I Classic NES non sono mai stati provati.
+
+**Come ci arriviamo:**
+- Mirror senza copia, con i soli puntatori di `MAP_REGION`: zero RAM in più (un'immagine copiata da 4 MiB peserebbe su PSP-1000).
+- I giochi restano sul dynarec.
+- La regione 0x0D resta all'EEPROM per le ROM fino a 16 MiB.
+- Prima si misura se serve davvero.
+
+**Gate prima di iniziare:** almeno un titolo Classic NES Series (dump dell'utente) non parte o si ferma su 1.4.2 (CMP-6.1). Se partono tutti, l'epic si chiude.
+
+**Rischi:**
+- Dopo il mirror potrebbero fallire per codice che riscrive istruzioni già prelevate: la finestra di prefetch è di CMP-12.5, e CMP-6.4 verifica solo i titoli del gate.
+- Una ROM da 1 MiB non NES che si aspetta l'open bus: nessun caso noto; `mirror = no` la esclude.
+- DMA e trucchi devono vedere lo stesso mirror.
+
+#### CMP-6.1 — Gate: Classic NES Series su 1.4.2 · S, 0,5 gg · dipende da: — · PSP: sì
+- **Cosa:** Provare 3-5 titoli su 1.4.2 in PPSSPP e su PSP-1000, annotando per ognuno l'esito: avvio, schermo nero, schermata anti-emulazione o bad jump.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** sessione con il runtime log.
+- **Accettazione:**
+  - Una riga per titolo, con lo sha256 di EBOOT.PBP.
+  - Si prosegue solo se almeno un titolo fallisce.
+- **Licenza:** nessun codice. Le ROM sono dell'utente.
+
+#### CMP-6.2 — Mirroring senza copia tramite MAP_REGION · S, 1 gg · dipende da: CMP-6.1, CMP-3.1 · PSP: sì
+- **Cosa:** In `init_memory_gamepak` (`memory.c:2866-2874`), una ROM di esattamente 1 MiB, oppure marcata con `mirror = yes` in `game_config.txt`, viene ripetuta su 0x08-0x0A, 0x0A-0x0C e 0x0C-0x0D con `mirror_blocks = gamepak_size >> 15`. La regione 0x0D resta all'EEPROM. `READ_GAMEPAK` (`memory.c:768-783`) maschera per dimensione. Il bit "mirror" entra nel bump del runtime log della sua release (regola R3 del principio 6).
+- **File:** `source/src/memory.c`, `tests/test_rom_map.c`, `Makefile`, `tests/core-rom/source/cases_rom.c`, `source/src/runtime_log.h`, `tools/decode_runtime_log.py`, `CHANGELOG.md`
+- **Test:**
+  - `tests/test_rom_map.c`, compilato con `memory.c` e `host_dma_stubs.c` come `test_perf_dma_probe`, normale e ASan/UBSan: 0x08100000 == 0x08000000; 0x0D legge l'EEPROM; una ROM da 4 MiB non viene ripetuta.
+  - core-rom.
+  - I titoli del gate su PSP-1000 e su un secondo modello.
+- **Accettazione:**
+  - I titoli falliti nella 6.1 arrivano al gameplay e salvano sul dynarec su PSP-1000 e su un secondo modello, oppure il motivo residuo è diagnosticato e, se è il codice che riscrive le istruzioni successive, apre CMP-6.4.
+  - Nessuna RAM in più.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-6.3 — (condizionato) Letture oltre la fine della ROM · S, 0,5 gg · dipende da: CMP-6.2, CMP-3.1 · PSP: sì
+- **Cosa:** Per le ROM senza mirror, restituire `(addr>>1)&0xFFFF` invece dell'open bus della CPU (`memory.c:786-805`), solo se un titolo o una fonte hardware lo richiede.
+- **File:** `source/src/memory.c`, `tests/test_rom_map.c`, `tests/core-rom/source/cases_rom.c`
+- **Test:** `test_rom_map` e core-rom.
+- **Accettazione:** comportamento confermato prima del merge.
+- **Licenza:** codice nuovo GPL-2.0-or-later; il comportamento viene da GBATEK.
+
+#### CMP-6.4 — (condizionato) Classic NES sul dynarec con la finestra di prefetch di CMP-12.5 · S, 1 gg · dipende da: CMP-6.2, CMP-12.5 · PSP: sì
+- **Cosa:** Solo se dopo CMP-6.2 i titoli del gate falliscono ancora per codice che riscrive le istruzioni successive. La finestra di prefetch è di CMP-12.5: qui si verificano solo i titoli del gate, sul dynarec.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** i titoli del gate su PSP-1000 e su un secondo modello; replay F-120; compare-benchmarks su un titolo non NES.
+- **Accettazione:** i titoli sono giocabili sui due modelli; nessuna regressione.
+- **Licenza:** nessun codice.
+
+### CMP-7 — RTC della cartuccia: protocollo testato, modalità 12/24 h, orologio guest
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 (CMP-7.4 dopo gate) | 5 gg | F-007 |
+
+**Copre:** F-018 RTC della cartuccia.
+
+**Obiettivo:** Protocollo RTC in un modulo puro con test host; modalità 12 e 24 h corrette (13:05 diventa 1:05 PM con il bit 6); savestate 1.x invariati byte per byte; replay identico sui titoli con RTC grazie all'orologio guest; nessun messaggio «batteria interna esaurita» in Ruby, Emerald e Boktai su PSP-1000.
+
+**Da noi oggi:** Ogni lettura usa `sceRtcGetCurrentClockLocalTime` (`memory.c:2340`, `:2364`), e l'RTC si accende alla prima scrittura GPIO (`memory.c:2276-2277`). I difetti:
+- la scrittura dello stato fa l'OR di `value & 1` proprio quando quel bit vale 0, e salva in `rtc_status` il residuo del comando precedente (`memory.c:2385-2388`, `:2399`);
+- l'ora è sempre a 24 h;
+- le scritture dell'ora vengono ignorate (`memory.c:2402-2404`);
+- dopo `load_state` la pagina GPIO non viene riscritta (lo fa solo `load_gamepak_page`, `memory.c:2841`);
+- non ci sono test.
+
+**Come ci arriviamo:**
+- Un modulo puro con test di protocollo, mantenendo invariato il formato dei savestate 1.x (`memory.c:3991-3998`).
+- Scrittura dello stato e modalità 12/24 h corrette (bit 6).
+- Di default l'orologio a muro; quello guest serve solo per replay e link a due core.
+- L'accensione alla prima scrittura GPIO resta: Boktai non ha bisogno di righe in tabella.
+
+**Gate prima di iniziare:** nessuno per 7.1-7.3. La 7.4 si fa solo se un titolo reale scrive l'ora nel chip e poi la mostra sbagliata.
+
+**Rischi:**
+- Una riscrittura sbagliata rompe gli eventi a tempo di Pokemon ("batteria interna esaurita"): servono trascrizioni nei test e una prova su hardware.
+- Un savestate preso a metà di una trasmissione può perdere quella trasmissione.
+- La guardia che non lascia tornare indietro l'ora può sembrare un blocco: va limitata alla sessione e registrata.
+- Il bit PM in modalità 12 h va verificato su GBATEK e sul datasheet S-3511A.
+
+#### CMP-7.1 — Modulo gba_rtc puro con test di protocollo · M, 2 gg · dipende da: — · PSP: no
+- **Cosa:** `source/src/gba_rtc.c/.h` (stdint). `GbaRtc` ha gli stessi campi e dimensioni di oggi (`memory.c:162-170`), con `uint32_t` al posto degli enum. Il modulo:
+  - cattura il bit SIO nella scrittura dello stato e azzera i dati prima dell'input;
+  - azzera il protocollo quando CS è basso;
+  - rispetta la direzione GPIO;
+  - restituisce l'ora a 12 o 24 h secondo il bit 6.
+
+  L'ora viene passata dal chiamante. Il modulo contiene anche la guardia contro i salti all'indietro.
+- **File:** `source/src/gba_rtc.c`, `source/src/gba_rtc.h`, `tests/test_gba_rtc.c`, `Makefile`
+- **Test:** `tests/test_gba_rtc.c`, normale e ASan/UBSan:
+  - reset;
+  - scrittura e rilettura dello stato;
+  - data e ora in 7 byte BCD;
+  - solo l'ora;
+  - CS basso a metà comando;
+  - maschera di direzione;
+  - 13:05 in 12 h;
+  - guardia all'indietro.
+- **Accettazione:**
+  - `make test` e `test-sanitize` sono verdi.
+  - La trascrizione dell'init di Pokemon dà i valori attesi.
+- **Licenza:** codice nuovo GPL-2.0-or-later, scritto da GBATEK e dal datasheet S-3511A.
+
+#### CMP-7.2 — memory.c delega a gba_rtc senza cambiare il formato dei savestate · S, 1 gg · dipende da: CMP-7.1 · PSP: sì
+- **Cosa:** `write_rtc` (`memory.c:2260-2460`) diventa codice di raccordo verso il modulo; la lettura di `sceRtcGetCurrentClockLocalTime` resta in `memory.c`. Il blocco del savestate (`memory.c:3991-3998`) serializza gli stessi campi, nello stesso ordine e con le stesse dimensioni. Dopo `load_state`, i 6 byte GPIO della pagina 0 vengono riscritti. Serve la voce nel CHANGELOG.
+- **File:** `source/src/memory.c`, `source/src/gba_rtc.h`, `tests/test_memory_rtc.c`, `Makefile`, `CHANGELOG.md`
+- **Test:**
+  - `tests/test_memory_rtc.c`, con `memory.c` e `host_dma_stubs.c` (stub a `:152`): savestate uguale byte per byte; pagina GPIO riscritta.
+  - Su PSP-1000: Ruby, Emerald e Boktai, più un savestate 1.4.2 di un gioco con RTC.
+- **Accettazione:**
+  - Nessun messaggio "batteria esaurita".
+  - I savestate 1.4.2 si caricano.
+  - L'ora mostrata coincide con quella del PSP.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-7.3 — Sorgente dell'orologio: a muro (default) o a frame guest, con guardia · S, 0,5 gg · dipende da: CMP-7.1 · PSP: no
+- **Cosa:** Due sorgenti:
+  - a muro, il default, con la guardia di sessione;
+  - guest: una base più frame × 280896/16777216 secondi, con un contatore a 64 bit avanzato una volta per frame.
+
+  F-120 e F-110 fissano la base dall'intestazione della traccia, quindi il savestate non cambia. Nessuna interfaccia utente.
+- **File:** `source/src/gba_rtc.c`, `source/src/gba_rtc.h`, `source/src/main.c`, `tests/test_gba_rtc.c`
+- **Test:** `test_gba_rtc`:
+  - la sorgente guest è ripetibile;
+  - la guardia trattiene l'ora;
+  - nessun avvolgimento dopo 2^32 cicli.
+- **Accettazione:** F-120 ottiene hash ripetibili sui titoli con RTC.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-7.4 — (condizionato) Ora impostata dal gioco conservata per gioco · M, 1,5 gg · dipende da: CMP-7.2, F-007 · PSP: sì
+- **Cosa:** Le scritture `RTC_WRITE_TIME` e `WRITE_TIME_FULL` (`memory.c:2402-2404`) diventano uno scarto in secondi dall'orologio a muro, salvato per gioco con config versionato e migrazione. Se compare una voce di menu, servono le stringhe nelle cinque lingue.
+- **File:** `source/src/gba_rtc.c`, `source/src/memory.c`, `source/src/config_model.c`, `source/src/config_model.h`, `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_{jpn,eng,chs,cht,ita}.h`, `tests/test_gba_rtc.c`, `tests/test_config_model.c`
+- **Test:**
+  - `test_gba_rtc`: scarto.
+  - `test_config_model`: migrazione.
+  - `scripts/check-messages.sh`.
+  - Il titolo del gate.
+- **Accettazione:**
+  - L'ora resta quella impostata tra un riavvio e l'altro.
+  - I config vecchi migrano.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### CMP-8 — ROM hack: righe per CRC, ripiego stretto e header non standard
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate (CMP-8.1 e CMP-8.4 in 1.6) | 3,5 gg | CMP-1.4, CMP-2.1, CMP-2.2, F-002, F-118 |
+
+**Copre:** F-019 configurazione automatica delle ROM hack.
+
+**Obiettivo:** Gli hack del corpus che falliscono con i default salvano e ricaricano su PSP-1000 grazie a righe CRC; il ripiego per ROM sconosciute non cambia il comportamento di nessun altro titolo del corpus e non forza mai il BIOS né la modalità seriale; ogni decisione è nel runtime log e si spegne con `game_db = off`.
+
+**Da noi oggi:** Non c'è nessuna euristica. Il tipo di salvataggio viene dalla dimensione del `.sav` e dal tag nella ROM (`memory.c:3178-3214`; `load_backup_id`, `memory.c:3055`). L'RTC si accende alla prima scrittura GPIO. Con "Boot from BIOS" attivo (`option_boot_mode`, default 0, `main.c:63`) e il BIOS ufficiale, una ROM con l'header rotto si ferma sul logo.
+
+**Come ci arriviamo:**
+- Righe con chiave CRC32 per gli hack noti, invece di una regola cieca.
+- Il ripiego scatta solo per ROM sconosciute oltre 16 MiB con motore Pokemon e senza un `.sav` in conflitto, e suggerisce solo il tipo di salvataggio: non forza mai il BIOS né la modalità seriale.
+- Con un header non valido e l'avvio dal BIOS si salta l'intro e si tiene il BIOS ufficiale.
+- Ogni decisione viene registrata e si può spegnere con `game_db = off`.
+
+**Gate prima di iniziare:** per 8.1-8.3, un corpus di almeno 5 hack popolari che falliscono con i default (CMP-8.1). La 8.4 non ha gate: il controllo è deterministico e non tocca gli header validi.
+
+**Rischi:**
+- Una regola cieca su ROM sconosciute sbaglia tipo di salvataggio e BIOS: il ripiego resta stretto, con log e override.
+- Falsi positivi su ROM sconosciute legittime: servono condizioni strette, log e override.
+- Nel repository non entrano hack: tutto dipende dai dump dell'utente.
+- Dipende dalla funzione di decisione del salvataggio di F-002.
+- Con SAV-1 il tag della ROM vince sulla dimensione del file: un ROM hack portato a SRAM che tiene la stringa Flash o EEPROM non salva più, finché una riga per CRC non ne forza il tipo (vedi «Decisioni aperte», (h)).
+
+#### CMP-8.1 — Corpus di hack misurato su 1.4.2 (gate) · S, 1 gg · dipende da: F-118 · PSP: sì
+- **Cosa:** Provare 5-10 hack, tra cui Unbound, Radical Red, Emerald Rogue e Heart & Soul. Per ognuno annotare:
+  - avvio;
+  - tipo di salvataggio;
+  - salvataggio e ricarica;
+  - eventi RTC;
+  - BIOS necessario;
+  - CRC32 del primo MiB.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** sessione PPSSPP e PSP-1000 con il runtime log.
+- **Accettazione:**
+  - Una riga per hack.
+  - L'elenco dei fallimenti da coprire.
+- **Licenza:** nessun codice.
+
+#### CMP-8.2 — Righe per hack noti con chiave CRC · S, 1 gg · dipende da: CMP-8.1, CMP-2.2 · PSP: sì
+- **Cosa:** Righe CRC32 in `game_db_rows.h` per gli hack falliti, con tipo di salvataggio e idle loop spento. Il README spiega come scrivere righe proprie con `crc32`.
+- **File:** `source/src/game_db_rows.h`, `README.md`, `tests/test_game_db.c`
+- **Test:**
+  - `test_game_db`: la riga CRC dell'hack vince su quella del gioco originale.
+  - Gli hack del corpus.
+- **Accettazione:** gli hack falliti salvano e ricaricano su PSP-1000.
+- **Licenza:** nessun codice: solo righe di dati nostre, con CRC misurati da noi.
+
+#### CMP-8.3 — Ripiego stretto per ROM sconosciute oltre 16 MiB con motore Pokemon · S, 1 gg · dipende da: CMP-8.1, CMP-2.1, CMP-1.4, F-002 · PSP: sì
+- **Cosa:** `game_db_hack_fallback(header, rom_size, sav_size)` scatta solo se valgono tutte queste condizioni:
+  - nessuna riga e nessun blocco dell'utente corrisponde;
+  - la ROM supera 16 MiB;
+  - c'è una firma Pokemon (BPR\*, BPG\*, BPE\*, AXV\*, AXP\* oppure il titolo POKEMON);
+  - non c'è un `.sav` di dimensione incompatibile.
+
+  In quel caso suggerisce FLASH128 a F-002. Il bit "ripiego" entra nel bump del runtime log della sua release (regola R3 del principio 6); la decisione compare anche nella pagina game_config.
+- **File:** `source/src/game_db.c`, `source/src/game_db.h`, `source/src/memory.c`, `source/src/runtime_log.h`, `tools/decode_runtime_log.py`, `tests/test_game_db.c`
+- **Test:** `test_game_db`:
+  - hack da 32 MiB senza `.sav` → FLASH128;
+  - stessa ROM con un `.sav` da 32 KiB → nessun suggerimento;
+  - ROM retail in tabella → nessun suggerimento;
+  - ROM da 8 MiB → nessun suggerimento;
+  - `game_db = off`.
+- **Accettazione:**
+  - Un hack sconosciuto salva al primo avvio su PSP-1000.
+  - Nessun altro titolo del corpus cambia comportamento.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-8.4 — Header non valido con "Boot from BIOS": partire direttamente · S, 0,5 gg · dipende da: CMP-2.1, CMP-1.4 · PSP: sì
+- **Cosa:** Con `option_boot_mode` attivo (`cpu.c:4191-4215`) e il BIOS ufficiale, si controlla l'header: byte fisso 0x96 a 0xB2, complemento a 0xBD e CRC32 del logo a 0x04-0x9F. Se il controllo fallisce, quella ROM parte direttamente (percorso di avvio senza BIOS di `init_cpu`) invece di fermarsi sul logo. Con il BIOS integrato non cambia nulla. Il bit "header non standard" entra nel bump del runtime log della 1.6 (regola R3 del principio 6).
+- **File:** `source/src/game_db.c`, `source/src/game_db.h`, `source/src/cpu.c`, `source/src/main.c`, `tests/test_game_db.c`, `CHANGELOG.md`
+- **Test:**
+  - `test_game_db`: header valido, complemento sbagliato, byte 0xB2 sbagliato, logo alterato.
+  - Un homebrew con complemento errato su PSP-1000.
+- **Accettazione:**
+  - La ROM rotta arriva al gioco.
+  - Le ROM valide mostrano ancora l'intro.
+  - Il flag compare nel log.
+- **Licenza:** codice nuovo GPL-2.0-or-later; nel repository c'è solo il CRC32 del logo, non i suoi byte.
+
+### CMP-9 — Titoli difficili: elenco pubblicato di giochi che arrivano al gameplay e salvano
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 (CMP-9.1 in 1.5; CMP-9.2, CMP-9.3 e CMP-9.5 dopo gate) | 9,25 gg | PRF-8.6, CMP-11.3, CMP-11.4, CMP-12.2, CMP-12.3, CMP-12.4, CMP-12.5, ENG-16.3, F-031 (solo CMP-9.2), F-126 (solo CMP-9.3), F-120 (solo CMP-9.5), PRF-3.1 (solo CMP-9.2 e CMP-9.4) |
+
+**Copre:** F-020 titoli difficili: gameplay e salvataggio verificati.
+
+**Obiettivo:**
+- Elenco pubblicato di almeno 40 titoli GBA. Per ognuno, su PSP-1000 e PSP-2000: gameplay raggiunto, salvataggio in gioco scritto, riavvio e ricarica riusciti, fps mediani e p99 in ms dal perf report, con ogni riga legata allo sha256 di `EBOOT.PBP`.
+- I 13 titoli difficili arrivano al salvataggio su entrambi i modelli, oppure hanno la causa misurata in `docs/DESIGN-DECISIONS.md` e una CMP-9.5 aperta: Big Mutha Truckers, Driver 2 Advance, FIFA 07, Final Fantasy Tactics Advance, Golden Sun: L'Era Perduta, Mario Golf: Advance Tour, Mario Tennis: Power Tour, Need for Speed: Underground, Need for Speed: Underground 2, OpenLara (build GBA dell'utente), Pokémon MonoMyth, Sonic Advance 2 e Street Racing Syndicate.
+- Nessuno dei 13 titoli difficili mostra difetti grafici a vista su PSP-1000 e PSP-2000, secondo l'esito di PRF-8.6 e di CMP-9.4; un difetto che si riproduce lo corregge CMP-9.3.
+- I cinque titoli di guida (Big Mutha Truckers, Driver 2 Advance, Need for Speed: Underground, Need for Speed: Underground 2 e Street Racing Syndicate) in gara hanno una mediana di almeno 59,7 fps e, oltre la velocità piena, un margine del bench senza limite (PRF-3.1) di almeno il 10% (≥ 65,7 fps) su PSP-1000 e PSP-2000, con il p99 pubblicato, salvataggio e ricarica; per Big Mutha Truckers e Street Racing Syndicate è la stessa clausola di PRF-8 per le scene con codice in VRAM. Driver 2 Advance lo misura CMP-9.4 e, se il gate di CMP-9.2 dà sì, lo raggiunge CMP-9.2. OpenLara al primo livello ha una mediana di almeno 59,7 fps sui due modelli, con il p99 pubblicato. Se un numero resta sotto, la causa misurata apre una storia PRF (per Driver 2 Advance, se la causa è F-031, la storia è CMP-9.2).
+- Pokémon MonoMyth arriva al primo salvataggio dopo la sua schermata di controllo.
+- Ogni correzione è generale e parte da un caso della core-rom: mai codice per titolo.
+
+**Da noi oggi:** Mai misurati su hardware: la lettura del codice dice solo dove guardare.
+- Need for Speed: Underground probabilmente parte: dopo un overflow `UPDATE_TIMER` aggiunge la ricarica e poi scrive il registro (`main.c:445-448`), quindi una lettura subito dopo dà la ricarica.
+- Big Mutha Truckers e Street Racing Syndicate eseguono codice in VRAM, che traduciamo (`cpu.c:2809-2815`) e che ogni store singolo e ogni DMA invalidano (`memory.c:1023-1032`, `:621`, `:642`); uno STM la cui ultima parola cade su dati no (CMP-12.4).
+- Pokémon MonoMyth probabilmente si ferma alla sua schermata di controllo: timer letti in ritardo, finestra di prefetch assente, istruzione ARM saltata a 0 cicli (CMP-12).
+- Golden Sun: L'Era Perduta, Mario Golf: Advance Tour e Mario Tennis: Power Tour probabilmente saltano un'istruzione dopo un `bx pc` a un indirizzo 4k+2 nel gestore IRQ (CMP-11.3).
+- OpenLara probabilmente si ferma sul banco FIQ (CMP-11.4); FIFA 07 riscrive con store multipli codice già tradotto (CMP-12.4).
+- Rendiamo per scanline sulla CPU, con il riferimento affine ricaricato nelle scritture in HBlank e il DMA HBlank prima della riga successiva (`main.c:1050-1060`). La cache scrivibile è di 2 MiB (`cpu.c:73`) e Diagnostica ne conta già i flush (`perf_metrics.h:73-75`).
+- Per gli altri titoli non sappiamo.
+
+**Come ci arriviamo:**
+- Si misura prima, sulla 1.4.3 pubblicata e su due modelli (CMP-9.1), e si ripete dopo CMP-11 e CMP-12 (CMP-9.4).
+- Si corregge solo ciò che si riproduce, con un caso della core-rom e una correzione generale nel core (CMP-9.5); per Driver 2 Advance il rimedio è F-031, non un caso speciale.
+- L'elenco verifica salvataggio, riavvio e ricarica, non solo l'avvio, ed è generato dalle righe di `docs/HARDWARE-RESULTS.md` nella tabella del README di ENG-16.3.
+
+**Gate prima di iniziare:** nessuno per CMP-9.1 e CMP-9.4. CMP-9.2: F-031 pronto e Driver 2 Advance sotto 59,7 fps mediani su PSP-1000 in CMP-9.1, oppure sotto il margine del bench del 10% in CMP-9.4. CMP-9.3: un difetto grafico a vista di un titolo difficile riprodotto in PRF-8.6 o in CMP-9.4. CMP-9.5: un titolo difficile non arriva al gameplay o non salva su PSP-1000 e PSP-2000 in CMP-9.4.
+
+**Rischi:**
+- Rendiamo per scanline sulla CPU, con i registri video letti riga per riga, e CMP-9.3 parte solo se un difetto grafico si riproduce.
+- Driver 2 Advance dipende da F-031.
+- Un titolo può esistere in tre o più dump diversi: ogni riga porta il CRC32 del dump provato. I giochi senza salvataggio contano solo con il gameplay.
+- L'elenco dipende dai dump dell'utente: nel repository non entra nessuna ROM.
+
+#### CMP-9.1 — Sessione di misura sui 13 titoli difficili sulla 1.4.3 · S, 1,5 gg · dipende da: PRF-8.6 · PSP: sì
+- **Cosa:** Nella sessione di PRF-8.6, sulla 1.4.3 pubblicata, su PSP-1000 e PSP-2000, per ognuno dei 13 titoli: punto raggiunto (avvio, schermata di controllo, gameplay), salvataggio in gioco, riavvio e ricarica. Fps p50 e p99 e `dynarec-writable-flushes` vengono dalle catture di PRF-8.6; per i titoli che non ha (Pokémon MonoMyth, Golden Sun: L'Era Perduta, Final Fantasy Tactics Advance) e per NFSU e OpenLara, se arrivano al gameplay, 3 run Diagnostica in più. Gli esiti a vista e d'ascolto (difetti grafici dei titoli difficili, audio) vengono da PRF-8.6; il lavoro di questa storia sono salvataggio, riavvio e ricarica sui 13 titoli e sui due modelli.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** sessione hardware con i report salvati.
+- **Accettazione:** una riga per titolo e modello, con lo sha256 di `EBOOT.PBP` e il CRC32 del dump; decisione sui gate di CMP-9.2 e CMP-9.3 (quello di CMP-9.5 lo decide CMP-9.4).
+- **Licenza:** nessun codice.
+
+#### CMP-9.2 — (condizionato) Driver 2 Advance a velocità piena con i gate di F-031 · S, 0,5 gg · dipende da: CMP-9.1, F-031, PRF-3.1 · PSP: sì
+- **Cosa:** Verifica di accettazione su Driver 2 Advance quando F-031 è pronto.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** compare-benchmarks 3+3 su PSP-1000 e PSP-2000; bench senza limite di PRF-3.1, 3 run per modello; replay F-120 con hash identici.
+- **Accettazione:** mediana di almeno 59,7 fps e, oltre la velocità piena, margine del bench senza limite (PRF-3.1) di almeno il 10% (≥ 65,7 fps) su PSP-1000 e PSP-2000, con il p99 pubblicato; salvataggio e ricarica riusciti; flush della cache scrivibile al minuto ridotti di oltre il 90%.
+- **Licenza:** nessun codice.
+
+#### CMP-9.3 — (condizionato) Difetti grafici dei titoli difficili sul renderer per scanline, se si riproducono · M, 2 gg · dipende da: CMP-9.1, F-126 · PSP: sì
+- **Cosa:** Diagnosticare con il renderer per scanline (ricarica di BG2X/Y, palette a metà frame) e correggere in `video.c` o `video_cc.cc`.
+- **File:** `source/src/video.c`, `source/src/video_cc.cc`, `source/src/memory.c`
+- **Test:**
+  - Golden di F-126.
+  - Verifica della scena su hardware.
+- **Accettazione:**
+  - La scena è corretta su PSP-1000 e PSP-2000.
+  - Le altre golden non cambiano.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-9.4 — Elenco pubblicato: almeno 40 titoli al gameplay e al salvataggio su due modelli · M, 3,25 gg · dipende da: CMP-9.1, CMP-11.3, CMP-11.4, CMP-12.2, CMP-12.3, CMP-12.4, CMP-12.5, ENG-16.3, PRF-3.1 · PSP: sì
+- **Cosa:** Dopo CMP-11 e CMP-12, per ogni titolo su PSP-1000 e PSP-2000: gameplay, salvataggio in gioco (dove il gioco salva), riavvio, ricarica, fps mediani e p99 in ms dal perf report. Le colonne di fps sono quelle a ritmo normale (cattura Diagnostica da 60 s, p50 e p99 in ms); nel README i numeri del bench senza limite stanno solo nella tabella per scena di PRF-1.7. Per i cinque titoli difficili di guida (Big Mutha Truckers, Driver 2 Advance, Need for Speed: Underground, Need for Speed: Underground 2 e Street Racing Syndicate), quando vanno a velocità piena, si fanno anche 3 run del bench senza limite di PRF-3.1 per modello, e il margine va nelle righe di questi titoli in `docs/HARDWARE-RESULTS.md`. `scripts/compat-table.py` (ENG-16.3) aggiunge le colonne gameplay, salvataggio e ricarica alla tabella che scrive nel README, con le stesse unità, leggendole dalle righe di `docs/HARDWARE-RESULTS.md`: nessun secondo file. Nella stessa sessione si rifanno la core-rom (CMP-3.1, CMP-11.1, CMP-12.1) e le suite di ENG-10.4, che chiudono CMP-12, e il controllo a vista di PRF-8.6 sui difetti grafici dei titoli difficili, sui due modelli.
+- **File:** `scripts/compat-table.py`, `tests/test_compat_table.py`, `docs/HARDWARE-RESULTS.md`, `README.md`
+- **Test:** `tests/test_compat_table.py` con righe sintetiche (titolo senza salvataggio, ricarica fallita, cella «non provato»); sessione hardware.
+- **Accettazione:** almeno 40 titoli; i 13 difficili hanno gameplay e salvataggio sui due modelli, oppure la causa scritta e una CMP-9.5 aperta; nessuno dei 13 mostra difetti grafici a vista sui due modelli, oppure CMP-9.3 è aperta; i cinque titoli di guida (Big Mutha Truckers, Driver 2 Advance, Need for Speed: Underground, Need for Speed: Underground 2 e Street Racing Syndicate) hanno il margine del bench di almeno il 10% sui due modelli, oppure la causa misurata e una storia aperta; OpenLara ha una mediana di almeno 59,7 fps sui due modelli, oppure la causa misurata e una storia aperta; Pokémon MonoMyth arriva al primo salvataggio dopo la sua schermata di controllo; ogni riga è legata allo sha256 di `EBOOT.PBP`; core-rom e suite rifatte sul build di release su PSP-1000 e PSP-2000, con i 103 casi di CMP-12 fuori da `cases_bus` tutti PASS, le sezioni dei timer e del timing della suite di mGBA in salita rispetto alla 1.4.3 e nessuna sezione di jsmolka o di mGBA in discesa.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-9.5 — (condizionato) Correzione generale per un titolo difficile rimasto · M, 2 gg · dipende da: CMP-9.4, F-120 · PSP: sì
+- **Cosa:** Prima un caso della core-rom che riproduce la causa, poi la correzione nel core. Mai codice per titolo.
+- **File:** `tests/core-rom/source/` (caso nuovo), i file del core che la causa indica, `CHANGELOG.md`
+- **Test:** il caso nuovo in mGBA, in PPSSPP e sui due modelli; replay F-120 delle altre tracce.
+- **Accettazione:** il titolo arriva al gameplay e salva sui due modelli; il replay delle altre tracce resta invariato, oppure ogni differenza è spiegata in `docs/DESIGN-DECISIONS.md`.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### CMP-10 — Handshake del Game Boy Player
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| sconsigliato (dietro gate) | dopo gate (CMP-10.1 in 1.5) | 2,5 gg | F-007 |
+
+**Copre:** F-021 handshake seriale del Game Boy Player.
+
+**Obiettivo:** I tre titoli GBP arrivano al gameplay, salvano e ricaricano senza handshake su PSP-1000 e su un secondo modello, e nessuna combinazione di D-pad e stick produce KEYINPUT 0x030F (esito in `docs/HARDWARE-RESULTS.md`); se serve il porting, i savestate fatti durante l'handshake si ricaricano.
+
+**Da noi oggi:** Non c'è codice GBP. Senza l'iniezione dei tasti con tutte le direzioni premute, i giochi girano normalmente, senza rumble. I titoli GBP sono tre, con 9 righe GBA Player in `gba_over.h` di libretro/gpsp a commit fissato 5819380: Mario & Luigi SS, Pokemon Pinball R&S e Super Mario Advance 4. Il PSP non ha rumble.
+
+**Come ci arriviamo:**
+- Nessun lavoro finché un gioco non si comporta male.
+- Se servirà, il dispositivo vivrà in `gba_sio` e il suo stato entrerà nel trailer v2 dei savestate.
+
+**Gate prima di iniziare:** un titolo che si blocca o si comporta male senza handshake (CMP-10.1).
+
+**Rischi:**
+- Sul PSP il valore è nullo.
+- Se l'input potesse premere le quattro direzioni insieme, il gioco entrerebbe in modalità GBP.
+
+#### CMP-10.1 — Verifica dei titoli GBP senza handshake e dell'input · S, 0,5 gg · dipende da: — · PSP: sì
+- **Cosa:** Portare al gameplay i tre titoli, con un salvataggio e la ricarica. Controllare in `input.c` che D-pad e stick non possano dare KEYINPUT 0x030F.
+- **File:** `source/src/input.c`, `docs/HARDWARE-RESULTS.md`
+- **Test:**
+  - Sessione PPSSPP, PSP-1000 e un secondo modello.
+  - Lettura di `input.c`.
+- **Accettazione:**
+  - I tre titoli arrivano al gameplay, salvano e ricaricano su PSP-1000 e su un secondo modello.
+  - La combinazione non è producibile, oppure viene filtrata.
+- **Licenza:** nessun codice, salvo un eventuale filtro nuovo.
+
+#### CMP-10.2 — (solo se la 10.1 fallisce) Porting di gbp.c come dispositivo SIO · M, 2 gg · dipende da: CMP-10.1, F-007 · PSP: sì
+- **Cosa:** `gbp.c` da libretro/gpsp a commit fissato 5819380 come dispositivo di `gba_sio.c`, con lo stato nel trailer v2 di F-007. Il rumble non ha uscita.
+- **File:** `source/src/gba_sio.c`, `source/src/gba_sio.h`, `source/src/gbp.c`, `source/src/gbp.h`, `tests/test_gbp.c`, `Makefile`
+- **Test:**
+  - `tests/test_gbp.c` (normale e ASan/UBSan): handshake; stato salvato e ripristinato a metà sequenza.
+  - Il titolo del gate.
+- **Accettazione:**
+  - Il titolo gira.
+  - I savestate fatti durante l'handshake si ricaricano.
+- **Licenza:** `gbp.c` da libretro/gpsp a commit fissato 5819380 (GPL-2.0-or-later, Copyright 2024 David Guillen Fandos), con l'header originale e un avviso di modifica datato.
+
+### CMP-11 — Semantica ARM7TDMI nel dynarec: casi della core-rom, MSR, BX, banco FIQ, trasferimenti ^ e IRQ sbloccati
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 (CMP-11.1 in 1.5) | 7 gg | CMP-3.1, ENG-10.4, ENG-3.3, PRF-1.5, CMP-3.2 (solo CMP-11.6) |
+
+**Copre:** nessuna capacità del catalogo; difetto nostro (semantica ARM7TDMI nel dynarec: MSR, Rn=PC, BX, banco FIQ, trasferimenti ^, IRQ sbloccati).
+
+**Obiettivo:**
+- Tutti i casi CPU della core-rom verdi sul build di release (dynarec, opzioni di default), su PSP-1000 e su un secondo modello, con «Stack optimize» acceso e spento, e in mGBA. I valori attesi vengono dalla specifica (ARM ARM, datasheet ARM7TDMI, GBATEK), mai da un emulatore; l'esito va su schermo e nella firma in SRAM.
+- I casi coprono: oltre 10.000 combinazioni di shift per registro; ogni coppia ordinata dei modi privilegiati, con tre metodi; IRQ preso in FIQ; LDM/STM ^ con base bancata; BX a 4k+2; salti dentro una serie condizionale; MSR in modo User e MSR CPSR_x e CPSR_s; Rn=PC a PC+12; IRQ già pendente sbloccato da un MSR o da un ritorno da SPSR, preso prima dell'istruzione successiva.
+- Ogni correzione è sempre attiva, senza switch di compilazione né interruttori: compare-benchmarks 3+3 non segnala regressioni e il ramo senza FIQ di `set_cpu_mode` non ha istruzioni in più (psp-objdump).
+- Golden Sun: L'Era Perduta, Mario Golf: Advance Tour e Mario Tennis: Power Tour arrivano al gameplay, salvano e ricaricano su PSP-1000 e su un secondo modello; OpenLara (build GBA dell'utente) arriva al primo livello e gira 10 minuti senza blocchi sui due modelli.
+- Gli esiti di jsmolka `arm.gba` e `thumb.gba` si registrano sulla 1.4.3 nella 1.5; dalla 1.6 nessun test rosso resta senza una storia e nessun test verde torna rosso. Dalla 1.6 la core-rom è nel corpus di replay (ENG-3.5); entra nella build qemu, con i mutanti CPU rossi, quando ENG-12 supera il suo gate.
+
+**Da noi oggi:** Il core non ha un interprete (`cpu.c:21`): ogni istruzione passa dal dynarec, e nessun test ne verifica la semantica. Sono già corretti:
+- gli shift per registro (byte basso di Rs, risultati per 32 e oltre, Rm=PC a PC+12: `mips_emit.h:877-931`, `mips_stub.S:3535-3607`);
+- un MSR che sblocca un IRQ non viene rieseguito al ritorno (`mips_emit.h:1809`, `main.c:390`);
+- LDM {pc}^ (`mips_emit.h:1997-2000`, `:2030-2032`);
+- i salti dentro una serie di istruzioni con la stessa condizione, perché ogni istruzione condizionale ha il suo controllo (`cpu.c:516-532`, `:2007-2011`).
+
+Sono sbagliati:
+- un MSR CPSR senza il campo f riporta NZCV a un valore vecchio, anche in modo User (`mips_stub.S:3465-3485`);
+- con lo shift per registro, Rn=PC legge PC+8 invece di PC+12 (`mips_emit.h:1576-1577`);
+- un BX verso ARM con il bit 1 a 1 arrotonda in su e salta un'istruzione (`cpu.c:2904`);
+- il FIQ non ha i suoi r8-r12, e un IRQ preso in FIQ li perde (`cpu.c:4141-4178`, `mips_emit.h:1915-1947`);
+- LDM/STM ^ senza PC calcolano l'indirizzo da r13/r14 del banco User (`mips_emit.h:2106-2110`);
+- un IRQ già pendente, sbloccato da un MSR o da un ritorno da SPSR, entra solo dopo la latenza di 9 cicli e il punto di update successivo (`main.c:1227-1262`): le istruzioni dopo l'MSR girano prima del gestore, e una finestra di una sola istruzione non serve l'IRQ.
+
+Lo stub `execute_ror_flags_reg` (`mips_stub.S:3610-3625`) e le macro `arm_generate_op_load_yes/no` (`mips_emit.h:1571-1574`) non sono usati.
+
+**Come ci arriviamo:**
+- Prima i casi, poi le correzioni: CMP-11.1 registra gli esiti sulla 1.4.3 pubblicata nella 1.5; le correzioni entrano nella 1.6, con l'oracolo di replay (ENG-3.3) e le baseline per modello (PRF-1.5) già disponibili.
+- I valori attesi si scrivono dalla specifica. Dove l'ARM ARM lascia UNPREDICTABLE decide il datasheet ARM7TDMI, e un GBA vero quando un collaboratore ne ha uno (lo stesso criterio di CMP-4.1).
+- Ogni correzione sta nel punto che tutti i chiamanti usano ed è sempre attiva; il costo si guarda con psp-objdump sul percorso caldo e con compare-benchmarks 3+3.
+- Ogni storia di codice rifà la core-rom e le suite di ENG-10.4 sui due modelli prima del merge: un test verde che diventa rosso blocca il merge. La release che contiene una correzione mette `core-rom` e `suite-terzi` tra i test richiesti del gate di rilascio (ENG-1.2).
+
+**Gate prima di iniziare:** nessuno. Le correzioni (CMP-11.2-11.6) si accettano solo con l'oracolo di replay (ENG-3.3) e le baseline per modello (PRF-1.5).
+
+**Rischi:**
+- Golden Sun: L'Era Perduta, Mario Golf: Advance Tour e Mario Tennis: Power Tour cambiano comportamento nel codice IRQ (CMP-11.3): si giocano 10 minuti ciascuno sui due modelli.
+- `set_cpu_mode` gira a ogni IRQ: il ramo senza FIQ non deve allungarsi.
+- Uno stato salvato in FIQ da una versione precedente può tornare con r8-r12 sbagliati: lo dice il CHANGELOG.
+- Fondere i controlli di condizione per velocità è permesso solo se `cpu_cond_run` resta verde.
+- Oggi ogni cambio di modo passa da `set_cpu_mode` in C. Un percorso rapido (PRF-9.4) entra solo se i casi di CMP-11.1 sono verdi, i mutanti «IRQ pendente ignorato» e «r14 del modo non salvato» sono rossi e l'interruttore è registrato secondo ENG-15.4; il report A/B scrive lo stato effettivo dell'interruttore in ogni braccio, non solo quello compilato.
+- CMP-11.6 anticipa l'ingresso di alcuni IRQ: le replay di ENG-3 possono divergere dove un IRQ si sblocca con una scrittura di CPSR, e ogni divergenza va spiegata prima del merge.
+- La ROM richiede devkitARM, come le altre ROM di test; i `.gba` non entrano in Git.
+
+#### CMP-11.1 — Casi CPU della core-rom: shift per registro, cambi di modo, BX, serie condizionali e IRQ sbloccati · M, 2,25 gg · dipende da: CMP-3.1, ENG-10.4 · PSP: sì
+- **Cosa:** Nuovo gruppo di casi nella core-rom di CMP-3.1: `tests/core-rom/source/cases_cpu.c`, con le parti ARM e Thumb in `cases_cpu_asm.s`, e `tests/core-rom/gen_shift_table.py`, che scrive `shift_table.h` con i risultati attesi calcolati dalla specifica ARM7TDMI. I valori attesi vengono da ARM ARM, datasheet ARM7TDMI e GBATEK, mai da un emulatore. Casi:
+  - `cpu_shift_reg`: LSL, LSR, ASR e ROR per registro, oltre 10.000 combinazioni: 8 valori di Rm; 32 di Rs, con byte basso 0, 1, 31, 32, 33, 255 e bit 8-31 a 1; C iniziale 0 e 1. Le forme sono 7: ARM MOVS, ARM MOV (NZCV invariati), operando di ADD, Rm=Rs, Rm=PC (PC+12), Thumb con C letto dopo, Thumb con C morto. La firma riporta il numero di differenze e l'indice della prima.
+  - `cpu_pc12_rn`: ADD, SUB, AND e CMP con Rn=PC leggono PC+12 con shift per registro e PC+8 con shift immediato.
+  - `cpu_msr_c_flags`: CMP, poi MSR CPSR_c (immediato e registro) in ogni modo privilegiato e in System; MRS e un'istruzione condizionale vedono i flag del CMP. In modo User un MSR CPSR_c non cambia nulla. Anche MSR CPSR_x e CPSR_s, senza il campo f, lasciano NZCV invariati.
+  - `cpu_irq_after_msr`: un IRQ del timer sbloccato da MSR CPSR_c (in SVC e in System) e da MSR CPSR_fc. Il gestore gira una volta, l'MSR non si ripete, ogni istruzione dopo l'MSR gira una sola volta e SPSR_irq contiene i flag vivi. Il punto d'ingresso lo verifica `cpu_irq_unmask`.
+  - `cpu_irq_unmask`: un IRQ del timer già pendente, sbloccato da MSR CPSR_c, MSR CPSR_fc, SUBS pc, lr o LDM {pc}^, entra prima dell'istruzione successiva, con LR_irq = istruzione successiva + 4; una finestra di una sola istruzione con I=0 serve l'IRQ. Caso di controllo: un IRQ che si alza con I=0 entra dopo la latenza di 9 cicli.
+  - `cpu_mode_pairs`: ogni coppia ordinata di IRQ, SVC, ABT, UND e System, con MSR immediato, MSR registro e ritorno da SPSR dove esiste (MOVS pc, SUBS pc, LDM {pc}^ verso ARM e verso Thumb). r13 e r14 di ogni banco hanno valori distinti e si rileggono alla fine. Non legge NZCV dopo MSR CPSR_c: è il compito di `cpu_msr_c_flags`.
+  - `cpu_fiq_bank`: le stesse coppie con il FIQ, con r8-r14 del FIQ distinti da quelli condivisi; in più IRQ preso in FIQ con gli IRQ abilitati (r8-r12 del FIQ uguali al ritorno), FIQ→SVC→FIQ, uscita da FIQ verso un modo diverso da quello di partenza, SWI da FIQ.
+  - `cpu_user_bank`: LDM e STM ^ senza PC, e STM ^ con PC, da IRQ, SVC e FIQ, con base r13 (e r8 in FIQ): l'indirizzo viene dalla base del modo corrente e si trasferiscono i registri User.
+  - `cpu_bx_align`: Thumb BX PC a un indirizzo 4k+2, BX Rm con Rm=4k+2 da ARM e da Thumb, MOVS pc, lr con lr=4k+2: si prosegue dalla parola a 4k; per BX PC è l'istruzione subito dopo il BX.
+  - `cpu_cond_run`: salto in avanti e all'indietro in mezzo a 8 istruzioni ARM con la stessa condizione falsa: nessuna viene eseguita.
+
+  La ROM si esegue due volte, con «Stack optimize» acceso e spento. `tools/decode_test_rom.py` (SAV-2.6) impara i nomi dei casi. Nella stessa sessione hardware, gli esiti di jsmolka `arm.gba` e `thumb.gba` sulla 1.4.3 (scaricati con ENG-10.4) vanno in `docs/HARDWARE-RESULTS.md`: ogni test rosso diventa un caso della core-rom o una storia di CMP-11. La core-rom entra nel corpus di ENG-3.5; quando ENG-12 supera il suo gate, ENG-12.2 riceve i mutanti «MSR senza collapse dei flag» e «BX dual arrotondato in su», che questi casi devono far fallire.
+- **File:** `tests/core-rom/source/cases_cpu.c`, `tests/core-rom/source/cases_cpu_asm.s`, `tests/core-rom/gen_shift_table.py`, `tests/core-rom/Makefile`, `tools/decode_test_rom.py`, `tests/test_decode_test_rom.py`, `tests/test_gen_shift_table.py`, `docs/HARDWARE-RESULTS.md`
+- **Test:**
+  - `tests/test_gen_shift_table.py` in test-tools, con valori noti: Rs=0x100 non sposta e lascia C; LSL di 32 dà 0 con C=Rm[0]; LSR di 33 dà 0 con C=0; ROR di 32 lascia Rm con C=Rm[31].
+  - La ROM in mGBA come riferimento, in PPSSPP, e su PSP-1000 e su un secondo modello con la 1.4.3 pubblicata; build con `-Werror`.
+  - Un GBA vero, se un collaboratore ne ha uno, decide i casi che l'ARM ARM lascia UNPREDICTABLE (Rn=PC con shift per registro, BX verso ARM a 4k+2) e la latenza di `cpu_irq_unmask`; senza, valgono il datasheet ARM7TDMI e mGBA.
+- **Accettazione:**
+  - In mGBA tutti i casi passano.
+  - Sulla 1.4.3 l'esito di ogni caso è in `docs/HARDWARE-RESULTS.md`, legato allo sha256 di `EBOOT.PBP`. Atteso: verdi `cpu_shift_reg`, `cpu_mode_pairs` e `cpu_cond_run`; rossi `cpu_pc12_rn`, `cpu_msr_c_flags`, `cpu_irq_after_msr` (SPSR_irq con NZCV vecchi), `cpu_irq_unmask`, `cpu_fiq_bank`, `cpu_user_bank` e `cpu_bx_align`.
+  - Gli esiti di jsmolka `arm.gba` e `thumb.gba` sulla 1.4.3 sono registrati.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-11.2 — NZCV vivi in MSR CPSR_c e PC+12 per Rn con shift per registro · S, 0,75 gg · dipende da: CMP-11.1, ENG-3.3, PRF-1.5 · PSP: sì
+- **Cosa:** Due letture sbagliate del dynarec, una riga ciascuna, più due resti morti.
+  - `execute_store_cpsr` (`mips_stub.S:3465-3485`) completa i bit non scritti con `reg[REG_CPSR]`, dove NZCV sono quelli dell'ultimo collapse, e poi li estrae nei registri dei flag ($20-$23). Un MSR senza il campo f (CPSR_c, CPSR_x, CPSR_s) riporta così i flag indietro, anche in modo User. Si aggiunge `collapse_flags_body` (`:174-179`) su `$2` subito dopo il `lw` di `REG_CPSR`: 4 istruzioni per MSR, nessun cambiamento nel codice emesso.
+  - Con lo shift per registro (bit 25 a 0 e bit 4 a 1) Rn=PC deve leggere PC+12, come già legge Rm. `arm_op_check_yes` (`mips_emit.h:1576-1577`) usa sempre 8: in quel caso l'offset diventa 12.
+  - Si tolgono lo stub inutilizzato `execute_ror_flags_reg` (`mips_stub.S:3610-3625`, `.global` a `:58`, prototipo a `mips_emit.h:58`), che con shift da 33 a 255 e i 5 bit bassi diversi da zero darebbe un risultato sbagliato, e le macro inutilizzate `arm_generate_op_load_yes/no` (`mips_emit.h:1571-1574`).
+
+  Serve la voce nel CHANGELOG.
+- **File:** `source/src/mips_stub.S`, `source/src/mips_emit.h`, `CHANGELOG.md`
+- **Test:** core-rom `cpu_msr_c_flags`, `cpu_irq_after_msr` e `cpu_pc12_rn` in mGBA, in PPSSPP, su PSP-1000 e su un secondo modello; la sola pulizia lascia identico psp-objdump di `cpu.o`, controllato prima delle due correzioni; replay ENG-3 su 6 tracce, ogni divergenza spiegata; compare-benchmarks 3+3 su FireRed e MKSC.
+- **Accettazione:** i tre casi passano sui due modelli (sulla 1.4.3 falliscono); al più 4 istruzioni MIPS in più per MSR; compare-benchmarks non segnala regressioni.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-11.3 — BX verso ARM con il bit 1 a 1: si prosegue dalla parola sotto · S, 0,5 gg · dipende da: CMP-11.1, ENG-3.3, PRF-1.5 · PSP: sì
+- **Cosa:** `block_lookup_address_dual` (`cpu.c:2894-2906`) arrotonda in su un indirizzo ARM con il bit 1 a 1: `(pc + 2) & ~3`. L'ARM7TDMI ignora il bit 1 nel prelievo e GBATEK allinea R15 azzerando i due bit bassi, quindi la destinazione è `pc & ~3`. Esempio: un Thumb `BX PC` a un indirizzo 4k+2 legge 4k+6 (`thumb_bx` passa pc+4, `mips_emit.h:2717-2723`); oggi riparte da 4k+8 e salta l'istruzione ARM a 4k+4.
+  - Tutti i salti dual passano di qui (BX ARM e Thumb, uscita dual verso update_gba, ritorni da SPSR). La correzione è `return block_lookup_address_arm(pc);`, perché `block_lookup_address_arm` azzera già i bit 0-1 (`cpu.c:2627-2629`).
+  - Golden Sun: L'Era Perduta, Mario Golf: Advance Tour e Mario Tennis: Power Tour hanno probabilmente un `bx pc` a un indirizzo 4k+2 nel gestore IRQ copiato in IWRAM. Prima della correzione lo si conferma sul dump dell'utente con il debugger di mGBA, disassemblando il gestore: il debugger di PPSSPP mostra il codice MIPS, non quello GBA. La prova della correzione resta il caso `cpu_bx_align`.
+
+  Nessuno switch e nessun interruttore. Serve la voce nel CHANGELOG.
+- **File:** `source/src/cpu.c`, `CHANGELOG.md`
+- **Test:** core-rom `cpu_bx_align` in mGBA, in PPSSPP, su PSP-1000 e su un secondo modello; i tre titoli (dump dell'utente) 10 minuti ciascuno sui due modelli, con una battaglia o una partita, un salvataggio e la ricarica; replay ENG-3 su 6 tracce; compare-benchmarks 3+3 su Golden Sun: L'Era Perduta e FireRed.
+- **Accettazione:** il caso passa sui due modelli (sulla 1.4.3 fallisce); i tre titoli arrivano al gameplay, salvano e ricaricano sui due modelli senza regressioni; compare-benchmarks non segnala regressioni.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-11.4 — Banco FIQ completo in set_cpu_mode e nei trasferimenti ^ · M, 1,5 gg · dipende da: CMP-11.1, ENG-3.3, PRF-1.5 · PSP: sì
+- **Cosa:** `set_cpu_mode` (`cpu.c:4141-4178`) gestisce male gli r8-r12 del FIQ: entrando in FIQ salva r8-r14 nel banco del modo vecchio ma dal banco FIQ carica solo SP e LR; uscendo non salva quelli del FIQ; verso un modo diverso da quello di partenza carica r8-r12 da uno slot mai scritto. Un IRQ preso in FIQ con gli IRQ abilitati (`main.c:394`) lascia così r8-r12 a zero o vecchi, sia al gestore sia al ritorno in FIQ. Si riscrive la logica dalla specifica dei banchi:
+  - r8-r12 condivisi in `reg_mode[MODE_USER][0..4]` mentre si è in FIQ;
+  - r8-r14 del FIQ in `reg_mode[MODE_FIQ][0..6]`;
+  - r13 e r14 degli altri modi come oggi.
+
+  Si usano gli slot di `reg_mode` che esistono già: il formato dei savestate non cambia. Il ramo senza FIQ resta com'è oggi: due confronti con MODE_FIQ e lo scambio di r13 e r14. La stessa correzione va in `force_user_mode_body` (`mips_emit.h:1915-1947`). Tutti i chiamanti passano di qui: IRQ (`main.c:394`), ritorno da SPSR (`mips_emit.h:1075`), MSR (`:1789`), SWI (`mips_stub.S:3342`), avvio (`cpu.c:4200`, `:4214`). Serve la voce nel CHANGELOG, con la nota sugli stati salvati in FIQ dalle versioni precedenti.
+- **File:** `source/src/cpu.c`, `source/src/mips_emit.h`, `CHANGELOG.md`
+- **Test:** core-rom `cpu_fiq_bank` e `cpu_mode_pairs` in PPSSPP, su PSP-1000 e su un secondo modello, con «Stack optimize» acceso e spento; psp-objdump del ramo senza FIQ di `set_cpu_mode`, prima e dopo; replay ENG-3 su 6 tracce che non entrano in FIQ; compare-benchmarks 3+3 su FireRed e MKSC; OpenLara (build GBA dell'utente, mai nel repository) 10 minuti su PSP-1000 e su un secondo modello.
+- **Accettazione:** i due casi passano sui due modelli (sulla 1.4.3 `cpu_fiq_bank` fallisce); il ramo senza FIQ non ha istruzioni in più; compare-benchmarks non segnala regressioni e le 6 replay sono identiche; OpenLara arriva al primo livello e gira 10 minuti senza blocchi sui due modelli, con fps mediani e p99 in `docs/HARDWARE-RESULTS.md`. La storia riguarda la correttezza: il costo dei cambi di modo è la misura del gate di PRF-9.4. Se OpenLara si ferma per un altro motivo, quel blocco riceve una storia sua con il PC.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-11.5 — LDM/STM ^ senza PC: indirizzo dalla base del modo corrente · S, 1 gg · dipende da: CMP-11.1, CMP-11.4, ENG-3.3, PRF-1.5 · PSP: sì
+- **Cosa:** In `arm_block_memory` (`mips_emit.h:2101-2110`) il prologo che porta dentro i registri User (`execute_force_user_mode_prologue`, `mips_stub.S:3650-3664`) gira prima del calcolo dell'indirizzo: una base r13 o r14 (r8-r14 in FIQ) usa quindi il valore User invece di quello del modo corrente, nel percorso generico e in quello veloce dello stack (`mips_emit.h:2112-2116`). La correzione calcola l'indirizzo in a2 prima del prologo, e i due stub conservano `$6` attorno alla chiamata C. Il caso copre anche STM ^ con PC, che trasferisce i registri User (`mips_emit.h:1957-1958`). Il writeback con ^ resta UNPREDICTABLE e non cambia. Nessun titolo noto usa questa forma: la storia chiude il caso della core-rom. Serve la voce nel CHANGELOG.
+- **File:** `source/src/mips_emit.h`, `source/src/mips_stub.S`, `CHANGELOG.md`
+- **Test:** core-rom `cpu_user_bank`, con «Stack optimize» acceso e spento, in PPSSPP, su PSP-1000 e su un secondo modello; compare-benchmarks 3+3 su FireRed e MKSC.
+- **Accettazione:** il caso passa sui due modelli (sulla 1.4.3 fallisce con base bancata); compare-benchmarks non segnala regressioni.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-11.6 — IRQ già pendente preso subito quando una scrittura di CPSR lo sblocca · S, 1 gg · dipende da: CMP-11.1, CMP-3.2, ENG-3.3, PRF-1.5 · PSP: sì
+- **Cosa:** `update_gba` tratta lo sblocco come un IRQ appena alzato: arma la latenza di 9 cicli (`main.c:1227-1253`, `:1259-1262`) anche quando l'IRQ era già pendente e lo sblocca un MSR (`execute_store_cpsr`, `mips_stub.S:3465-3509`) o un ritorno da SPSR (`execute_spsr_restore`, `:3358-3430`). Così le istruzioni dopo l'MSR girano prima del gestore, e una finestra breve (un MSR che abilita, uno che disabilita) non serve l'IRQ, che aspetta lo sblocco successivo. Sull'ARM7TDMI l'eccezione si prende alla fine dell'istruzione che azzera I.
+  - Quando `execute_store_cpsr_body` (`mips_emit.h:1778-1799`) o `execute_spsr_restore_body` (`:1073-1083`) trovano IE&IF&IME con I azzerato, segnano l'ingresso immediato: `irq_delay_pending = 1`, `irq_ticks = 0`. `update_gba` chiama allora `cpu_interrupt` nello stesso passaggio, con il PC già salvato in `REG_PC`.
+  - La latenza di 9 cicli resta per gli IRQ che si alzano e per le scritture di IE, IF e IME: CMP-3.2 non cambia.
+
+  Dopo questa storia ENG-12.2 può aggiungere il mutante «LR dell'IRQ preso dopo un MSR = indirizzo dell'MSR + 4». Serve la voce nel CHANGELOG.
+- **File:** `source/src/mips_emit.h`, `source/src/main.c`, `CHANGELOG.md`
+- **Test:** core-rom `cpu_irq_unmask` in mGBA, in PPSSPP, su PSP-1000 e su un secondo modello, e su un GBA vero se un collaboratore ne ha uno; replay ENG-3 su 6 tracce, con ogni divergenza in `docs/DESIGN-DECISIONS.md` (primo frame e sblocco che la causa); compare-benchmarks 3+3 su FireRed e MKSC; FireRed, Golden Sun: L'Era Perduta e MKSC 10 minuti ciascuno su PSP-1000.
+- **Accettazione:** il caso passa sui due modelli (sulla 1.4.3 fallisce) e il caso di controllo resta a 9 cicli; nessuna regressione nei titoli e in compare-benchmarks; se mGBA o un GBA vero danno un esito diverso dal datasheet, la storia si chiude senza merge e la decisione va in `docs/DESIGN-DECISIONS.md`.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### CMP-12 — Tempi del core al ciclo: timer letti dal vivo, cicli dei salti, store multipli controllati, finestra di prefetch
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 (CMP-12.1 in 1.5; CMP-12.6 dopo gate) | 15,5 gg | CMP-3.1, SAV-2.6, ENG-10.4, ENG-3.3, PRF-1.5, PRF-8.6 ed ENG-2.2 (solo CMP-12.4) |
+
+**Copre:** F-165 tempi del core al ciclo; F-038 modello di invalidazione SMC (store multipli, CMP-12.4).
+
+**Obiettivo:**
+- 115 casi di tempi, bus e store multipli (43 timer, 15 finestra di prefetch, 30 cicli dei salti, 4 codice in VRAM, 12 bus del backup, 11 store multipli), con il valore atteso registrato in mGBA e confrontato con GBATEK. I 103 casi fuori da `cases_bus` sono tutti PASS sul build di release su PSP-1000 e PSP-2000, con esito su schermo e firma in SRAM (il caso PUSH degli store multipli con lo stack optimize spento); un caso su cui mGBA e GBATEK non concordano conta solo dopo la conferma su un GBA vero; i 12 di `cases_bus` sono PASS sulla 1.4.3 oppure, se il gate di CMP-12.6 dà sì, dopo CMP-12.6. I FAIL della 1.4.3 sono pubblicati in `docs/HARDWARE-RESULTS.md` e restano la prova di regressione.
+- La finestra di prefetch vale per store singoli, STM, PUSH e SWP, in ARM e in Thumb, in IWRAM, EWRAM e VRAM. Ogni parola di uno store multiplo su codice tradotto lo invalida, anche in VRAM e in IWRAM sopra e sotto SP (con lo stack optimize spento finché CMP-5.3 non entra), e su I/O ha l'avviso e il ciclo giusti: zero esecuzioni stantie nel controllo per istruzione sulle scene di PRF-8.6.
+- Le sezioni dei timer e del timing della suite di mGBA salgono rispetto alla 1.4.3 su PSP-1000 e PSP-2000, e nessuna sezione di jsmolka o di mGBA scende.
+- Costo: nel bench di PRF-3, 3+3 run per modello su 5 titoli, nessun titolo oltre −0,3% e la geomedia entro il rumore misurato da PRF-3.4; zero istruzioni in più nel percorso veloce degli store (psp-objdump di `mips_stub.o`); EBOOT al massimo 2 KiB più grande con i timer dal vivo (CMP-12.2); formato dei savestate invariato.
+- Correzioni generali, mai codice per titolo.
+
+**Da noi oggi:**
+- I timer avanzano solo in `update_gba` (`main.c:406-450`, `:1030-1033`). Gli stub di load I/O leggono `io_registers` così com'è (`mips_stub.S:1575-1608`, `:2090-2112`), e così quelli delle LDR non allineate e di LDM e POP (`:2197`, `:2308`, `:2418`, `:2605`) e i gestori C usati dal DMA (`memory.c:683-728`): una lettura di TMxCNT_L può essere vecchia di una slice, fino a 960 cicli.
+- Un timer avviato a metà slice paga anche i cicli prima dell'avvio (`main.c:341-347`, `mips_stub.S:3146-3156`); una scrittura di TMxCNT_H su un timer in corsa viene ignorata (`main.c:324-326`); se una slice supera più di un periodo si conta un solo overflow e il registro riceve un valore troncato (`main.c:445-448`).
+- Uno store sulle due istruzioni successive fa girare subito il codice nuovo (`mips_stub.S:3238-3243`).
+- Un'istruzione ARM condizionale saltata costa 0 cicli (`cpu.c:518-534`, `:2007-2011`); un Bcc Thumb non preso paga la ricarica (`mips_emit.h:2610-2621`); i salti indiretti non la pagano (`mips_emit.h:700-702`, `:755-763`). Un ciclo subs/bne di 1024 giri costa 4093 cicli in ARM e 4096 in Thumb, contro 4094 sull'hardware.
+- Le parole non finali di STM, STMIA e PUSH passano da `execute_aligned_store32` (`mips_emit.h:1981-1983`, `:2393-2395`): non allineano il contatore, non controllano l'SMC in EWRAM e in VRAM (`mips_stub.S:3016-3019`, `:3053-3055`), in IWRAM controllano solo con la destinazione sopra SP e tolgono i tag della sola parola senza ritirare il blocco (`:1144-1165`, `:1252-1270`), e su I/O perdono l'avviso (`:3026-3047`). Solo l'ultima parola passa dallo store controllato (`mips_emit.h:1990-1995`, `:2402-2406`). Con lo stack optimize spento PUSH con LR non ha nessuna parola controllata (`mips_emit.h:2414-2415`, `:2432-2436`).
+- Già giusti: la lettura di TMxCNT_L subito dopo un overflow dà la ricarica (`main.c:445-448`, fine della slice a `:1193-1198`); le letture a 16 e 32 bit dal backup ripetono il byte, con l'estensione di segno di LDRSH (`memory.c:820-831`, `mips_stub.S:816-833`, `:1912`, `:2013`); il codice in VRAM si traduce (`cpu.c:2809-2815`) e ogni store singolo e ogni DMA in VRAM controllano l'SMC (`memory.c:1023-1032`, tabelle DMA a `:621` e `:642`); gli store singoli e l'ultima parola degli store multipli allineano già il contatore senza costo (`mips_emit.h:1833-1838`, `:2359-2364`, `:1990-1995`).
+- Il buffer di prefetch della cartuccia non è modellato (`memory.c:1141-1163`). Nessun test esegue `cpu.c`, `mips_emit.h` o `mips_stub.S`.
+
+**Come ci arriviamo:**
+- Un caso di test per ogni comportamento, nella core-rom e nella ROM dei salvataggi, con esito su schermo e firma in SRAM su due modelli; i FAIL della 1.4.3 si pubblicano nella 1.5, prima di ogni correzione.
+- Nessuna istruzione in più nel percorso veloce degli store (psp-objdump di `mips_stub.o`). Il costo dei load ha un budget scritto (CMP-12.2); la crescita del codice emesso si misura con i contatori `dynarec-*-high-water` del perf report su un replay ENG-3 fisso.
+- Prima ogni parola degli store multipli controllata (CMP-12.4), poi la finestra di prefetch, che così vale anche per STM e PUSH.
+- Correzioni generali, mai codice per titolo. Ogni storia di codice rifà la core-rom e le suite di ENG-10.4 sui due modelli: un test verde che diventa rosso blocca il merge. La release che contiene una correzione mette `core-rom` e `suite-terzi` tra i test richiesti del gate di rilascio (ENG-1.2).
+
+**Gate prima di iniziare:** nessuno per CMP-12.1-12.5: ogni storia di codice passa il replay ENG-3 e compare-benchmarks 3+3 su PSP-1000 e PSP-2000. CMP-12.6 parte solo se i casi `cases_bus` di CMP-12.1 danno torto alle nostre letture non allineate dal backup.
+
+**Rischi:**
+- Cambiano i tempi visti da ogni gioco: ogni differenza di replay va spiegata in `docs/DESIGN-DECISIONS.md`.
+- I valori attesi vengono da mGBA e GBATEK; dove non concordano, il caso resta «da confermare su GBA reale», è elencato a parte in `docs/HARDWARE-RESULTS.md` e non blocca la storia.
+- Il buffer di prefetch della cartuccia resta fuori finché un caso o un titolo non lo chiede.
+- Controllare ogni parola degli store multipli può far intrappolare il mixer HQ su parole di dati: la storia si ferma e documenta i PC prima del merge (FireRed e Heart & Soul, audio confrontato).
+- Il caso PUSH usa lo stack optimize spento finché CMP-5.3 non controlla il percorso veloce dello stack.
+
+#### CMP-12.1 — Casi di tempi e bus nella core-rom e nella ROM dei salvataggi · M, 3,25 gg · dipende da: CMP-3.1, SAV-2.6, ENG-10.4 · PSP: sì
+- **Cosa:** Cinque gruppi di casi, 104 in tutto. Ogni valore atteso si registra in mGBA e si confronta con GBATEK; un caso in disaccordo è marcato «da confermare su GBA reale».
+  - `cases_timer.c` (43): 4 timer × 4 prescaler con un loop subs/bne di 1024 giri in IWRAM, in ARM e in Thumb (32); timer 0 con i 4 prescaler in EWRAM, in ARM (4); ritardo d'avvio e valore tenuto allo stop; lettura subito dopo l'overflow, che deve dare la ricarica; cascata letta dal vivo; IRQ abilitato su un timer in corsa e prescaler cambiato in corsa; slice che supera più di un periodo.
+  - `cases_prefetch.c` (15): store sulla prima istruzione seguente, sulla seconda e subito oltre, in ARM e in Thumb, a freddo e dopo una ritraduzione (12); STM, PUSH e SWP nella finestra (3).
+  - `cases_branch.c` (30), con i cicli misurati da TM0 a prescaler 1, in IWRAM e in EWRAM: in ARM B, BL, Bcc preso e non preso, BX, MOV pc, LDR pc, LDM con pc e un'istruzione condizionale saltata (18); in Thumb B, Bcc preso e non preso, BL, BX e POP con pc (12). BX a 4k+2 e il salto in una serie condizionale sono casi CPU di CMP-11.1.
+  - `cases_vram.c` (4): routine ARM e Thumb copiate in VRAM OBJ ed eseguite, poi riscritte dalla CPU e da DMA3: deve girare la versione nuova.
+  - `tests/save-rom/source/cases_bus.c` (12), nei target sram32 e flash128 di SAV-2.6: in SRAM LDRB, LDRH e LDRSH a indirizzo pari e dispari (6) e LDR agli offset 0-3 (4); in Flash ID del produttore e del dispositivo letti con LDRH (2).
+
+  Nella sessione hardware di CMP-11.1 si registrano anche, sulla 1.4.3, i test superati per sezione delle sezioni timer e timing della suite di mGBA e di jsmolka `memory.gba`, scaricate da ENG-10.4, legati allo sha256 di `EBOOT.PBP`.
+- **File:** `tests/core-rom/source/cases_timer.c`, `tests/core-rom/source/cases_prefetch.c`, `tests/core-rom/source/cases_branch.c`, `tests/core-rom/source/cases_vram.c`, `tests/save-rom/source/cases_bus.c`, `tools/decode_test_rom.py`, `tests/test_decode_test_rom.py`, `docs/HARDWARE-RESULTS.md`
+- **Test:** build con `-Werror`; mGBA come riferimento; PPSSPP; PSP-1000 e PSP-2000 con la 1.4.3 pubblicata.
+- **Accettazione:** 104 casi, tutti PASS in mGBA; i FAIL della 1.4.3 su PSP-1000 e PSP-2000 sono in `docs/HARDWARE-RESULTS.md` e fanno da prova di regressione per CMP-12.2-12.5; il decoder mostra i nomi dei casi; i punteggi per sezione delle suite sono registrati.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-12.2 — Timer letti dal vivo, avviati e fermati al ciclo giusto · M, 3 gg · dipende da: CMP-12.1, ENG-3.3, PRF-1.5 · PSP: sì
+- **Cosa:** Nuovo header puro `source/src/gba_timer.h`, con funzioni `static inline` e tipi stdint (precedente: `video_mosaic.h`). Dà il contatore di un timer a qualsiasi ciclo della slice e il numero di overflow passati, e tiene il valore del registro sempre in [ricarica, 0xFFFF]. Poi:
+  - **lettura:** gli stub di load I/O (`mips_stub.S:1325`, `:1450`, `:1575`, `:1688`, `:1839`, `:1949`, `:2090`, `:2197`, `:2308`, `:2418` e `:2605`, quest'ultimo usato da LDM e POP) e i gestori C `read8/16/32_io_registers` (`memory.c:683-728`), usati dal DMA, chiamano il C solo per 0x100-0x10F; gli altri registri restano sul percorso di oggi;
+  - **avvio:** `timer_control_high` (`main.c:320-371`) fa partire il conteggio dal ciclo della scrittura più il ritardo d'avvio, senza addebitare la parte di slice già passata. Gli store singoli allineano già il contatore nello slot di ritardo (`mips_emit.h:1833-1838`, `:2359-2364`), quindi l'avvio non aggiunge istruzioni; l'avvio da una parola non finale di STM è di CMP-12.4;
+  - **stop:** il registro tiene il valore del ciclo dello stop;
+  - **timer in corsa:** una scrittura di TMxCNT_H aggiorna IRQ, prescaler e count-up senza ricaricare;
+  - **overflow:** `UPDATE_TIMER` (`main.c:406-450`) conta tutti gli overflow della slice, per IRQ, cascata e FIFO, e non scrive mai un valore fuori intervallo;
+  - **posizione dei load:** oggi i load non allineano il contatore (`mips_emit.h:1826-1831`, `:2353-2357`). Uno spike di mezza giornata misura due varianti, l'allineamento nello slot di ritardo solo per i load non relativi a SP né al PC e una tabella laterale indirizzo nativo → cicli pendenti letta solo dal percorso lento dei timer; si tiene la più economica che sta nel budget, con l'esito in `docs/DESIGN-DECISIONS.md`. Se vince la tabella, la stessa posizione serve poi all'avvio di un trasferimento seriale (`gba_sio.c`), da valutare nelle epic del link.
+- **File:** `source/src/gba_timer.h` (nuovo), `tests/test_gba_timer.c` (nuovo), `Makefile`, `source/src/main.c`, `source/src/memory.c`, `source/src/mips_stub.S`, `source/src/mips_emit.h`, `docs/DESIGN-DECISIONS.md`, `CHANGELOG.md`
+- **Test:** `tests/test_gba_timer.c`, normale e ASan/UBSan (quattro prescaler, cascata, più overflow in una slice, valore mai fuori intervallo, avvio e stop a metà slice); core-rom `cases_timer`; replay ENG-3 su 5 tracce, con differenze solo dopo letture dei timer, ognuna spiegata; compare-benchmarks 3+3 su 5 titoli su PSP-1000 e PSP-2000; contatori `dynarec-*-high-water` su un replay ENG-3 fisso, prima e dopo.
+- **Accettazione:** `cases_timer` 43/43 su PSP-1000 e PSP-2000, con la posizione al ciclo esatta in ogni lettura I/O e nessun sito escluso; nel bench geomedia entro il rumore misurato da PRF-3.4 e nessun titolo oltre −0,3%; EBOOT al massimo 2 KiB più grande; formato dei savestate invariato; voce nel CHANGELOG.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-12.3 — Cicli dei salti e delle istruzioni saltate come sull'ARM7TDMI · M, 1,5 gg · dipende da: CMP-12.1, ENG-3.3, PRF-1.5 · PSP: sì
+- **Cosa:** Tre correzioni del conteggio dei cicli nel traduttore.
+  - **Istruzione ARM condizionale saltata:** costa 1S con l'attesa di fetch della sua regione; oggi costa 0. `arm_base_cycles` e l'attesa di fetch passano prima dell'intestazione condizionale (`cpu.c:518-534`, `:2007-2011`), così l'addiu già emessa nello slot di ritardo (`mips_emit.h:1086-1093`) le sottrae su tutti e due i percorsi.
+  - **Bcc Thumb non preso:** costa 1S. La ricarica 1N+1S (`mips_emit.h:2610-2621`) passa al percorso preso: nel `nop` dopo il `j` di uscita (`mips_emit.h:677-678`) per le uscite nel blocco e verso BIOS e ROM; per le uscite RAM fuori dal blocco, che con la politica RAM di default prendono l'uscita di lookup (`cpu.c:114-116`, `mips_emit.h:680-683`), costa un'istruzione sul percorso preso.
+  - **Salti indiretti:** BX, MOV e ADD su pc, LDR pc, POP e LDM con pc pagano la ricarica. I 2 cicli base entrano nell'addiu già emessa (`mips_emit.h:700-702`); le attese della regione di destinazione le calcola lo stub di lookup (`mips_stub.S:378-415`), con una riga nel budget.
+- **File:** `source/src/cpu.c`, `source/src/mips_emit.h`, `source/src/mips_stub.S`, `docs/DESIGN-DECISIONS.md`, `CHANGELOG.md`
+- **Test:** core-rom `cases_branch` e `cases_timer`; contatori `dynarec-*-high-water` del perf report su un replay ENG-3 fisso, prima e dopo; replay ENG-3 su 5 tracce; compare-benchmarks 3+3 su 5 titoli.
+- **Accettazione:** `cases_branch` 30/30 su PSP-1000 e PSP-2000; zero byte in più per le uscite nel blocco, verso BIOS e verso ROM; la crescita per le uscite RAM fuori dal blocco e il costo dello stub di lookup sono misurati e scritti in `docs/DESIGN-DECISIONS.md`; nel bench nessun titolo oltre −0,3%, e ogni variazione di fps oltre lo 0,3% per titolo è spiegata nello stesso file; voce nel CHANGELOG.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-12.4 — Store multipli su codice tradotto e su I/O: ogni parola controllata · M, 3,5 gg · dipende da: CMP-12.1, PRF-8.6, ENG-2.2, ENG-3.3, PRF-1.5 · PSP: sì
+- **Cosa:** Le parole non finali di STM in ARM e di STMIA e PUSH in Thumb passano da `execute_aligned_store32` (`mips_emit.h:1981-1983`, `:2393-2395`), e solo l'ultima passa dallo store controllato (`mips_emit.h:1990-1995`, `:2402-2406`). La correzione:
+  - in `execute_aligned_store32` (`mips_stub.S:3011-3085`) i rami EWRAM, VRAM e IWRAM, sotto e sopra SP, leggono prima dello store il bit di codice della parola (`*_metadata[3]`, come `post_write_metadata_core`, `:1224-1241`) e il valore vecchio; se è codice e il valore cambia, chiamano `partial_clear_metadata` e accendono un flag di trappola pendente, perché lo stub non conosce il PC guest;
+  - l'ultimo store di ogni STM, STMIA e PUSH passa da uno stub con il PC successivo (`execute_store_u32`); per PUSH con LR serve un'emissione nuova (`mips_emit.h:2414-2415`, `:2432-2436`). Con il flag acceso lo stub rientra da `lookup_pc`, come `smc_write`;
+  - `post_write_metadata_aligned_iwram` (`mips_stub.S:1252-1269`), che toglie i tag della sola parola e lascia raggiungibile il blocco, passa allo stesso percorso;
+  - su I/O una parola non finale passa da `write_io_epilogue` come lo store singolo (`:2928-2945`), con il contatore allineato, così l'avviso di `write_io_register32` non si perde (`:3026-3047`): un timer avviato o un IRQ abilitato da una parola non finale si comporta come da uno store singolo.
+
+  Il percorso veloce dello stack (`mips_emit.h:2112-2130`, `:2525-2541`) resta a CMP-5.3. Nella build diagnostica (F-137) ogni istruzione RAM eseguita confronta l'opcode in memoria con la copia dopo il `ReuseHeader` (`cpu.c:124-135`) e conta le esecuzioni stantie; la build qemu riusa lo stesso controllo (ENG-12.4).
+- **File:** `source/src/mips_stub.S`, `source/src/mips_emit.h`, `source/src/cpu.c`, `tests/core-rom/source/cases_stm.c` (nuovo), `docs/DESIGN-DECISIONS.md`, `CHANGELOG.md`
+- **Test:**
+  - core-rom `cases_stm`, 11 casi: STM ARM su codice tradotto con l'ultima parola su dati, in IWRAM sotto SP, in IWRAM sopra SP con base diversa da SP, in EWRAM e in VRAM (4); STMIA Thumb in EWRAM e in IWRAM (2); STM a cavallo di due blocchi; CpuFastSet su codice tradotto, poi chiamato; PUSH con LR, con lo stack optimize spento, su una routine tradotta che non inizia sulla parola scritta; un timer avviato e un IRQ abilitato da una parola non finale (2).
+  - controllo stantio per istruzione, nella build diagnostica, sulle scene di PRF-8.6.
+  - replay ENG-3 su 5 tracce, FireRed compreso per il mixer in IWRAM, con ogni differenza spiegata; compare-benchmarks 3+3 su FireRed, Golden Sun, Unbound e Heart & Soul su PSP-1000 e PSP-2000; confronto dell'audio registrato su Unbound e Heart & Soul.
+- **Accettazione:** `cases_stm` 11/11 su PSP-1000 e PSP-2000 (PUSH con lo stack optimize spento); sulla 1.4.3 falliscono i casi con l'ultima parola su dati, PUSH con LR e le due parole su I/O; zero esecuzioni stantie da store multipli nel controllo per istruzione, in tutte le regioni; nessun titolo oltre −0,3% nel bench; audio invariato; su FireRed `dynarec-writable-flushes` non cresce. Se il mixer HQ comincia a intrappolare su parole di dati, la storia si ferma e documenta i PC prima del merge. Voce nel CHANGELOG (Fixed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-12.5 — Finestra di prefetch: uno store sulle due istruzioni già prelevate non le cambia · L, 4 gg · dipende da: CMP-12.1, CMP-12.4, ENG-3.3, PRF-1.5 · PSP: sì
+- **Cosa:** Uno store colpisce codice tradotto (`smc_write`, `mips_stub.S:3230-3260`, poi `partial_clear_metadata`, `cpu.c:3841-3898`) a un indirizzo in [pc successivo, pc successivo + 2 istruzioni). Le due istruzioni vecchie girano una volta; il codice nuovo gira al prossimo ingresso da un salto. Oggi `lookup_pc` ritraduce dal pc successivo e il codice nuovo gira subito. Non abbiamo un interprete (`cpu.c:21`), quindi uno spike di 1 gg sceglie tra due strade, con l'esito in `docs/DESIGN-DECISIONS.md`:
+  - (a) riprendere il blocco nativo corrente, che contiene ancora la traduzione vecchia della finestra, e forzare l'uscita al primo salto, anche per i salti all'indietro dentro il blocco (`mips_emit.h:676-678`), così i rientri trovano la traduzione nuova. Vale solo con la pulizia parziale; con la pulizia totale (`cpu.c:3843-3847`) serve la (b);
+  - (b) salvare le due istruzioni vecchie prima dello store e tradurle in un'area di appoggio come blocco usa e getta che esce al pc dopo la finestra.
+
+  Lo spike prova un ciclo che riscrive l'istruzione due parole più avanti. Sono coperti store singoli, STM, PUSH e SWP (che usa già lo store controllato, `mips_emit.h:2162-2177`); ARM e Thumb; IWRAM, EWRAM e VRAM. Gli store multipli arrivano qui grazie a CMP-12.4. Il caso PUSH usa lo stack optimize spento finché CMP-5.3 non controlla il percorso veloce dello stack (`mips_emit.h:2112-2130`, `:2525-2541`).
+- **File:** `source/src/mips_stub.S`, `source/src/cpu.c`, `source/src/mips_emit.h`, `source/src/memory.c`, `docs/DESIGN-DECISIONS.md`, `CHANGELOG.md`
+- **Test:** core-rom `cases_prefetch`; replay ENG-3 identico su 5 tracce senza colpi nella finestra; psp-objdump degli stub di store di `mips_stub.o` prima e dopo, con il percorso veloce identico; compare-benchmarks 3+3 su 2 titoli con SMC frequente.
+- **Accettazione:** `cases_prefetch` 15/15 su PSP-1000 e PSP-2000 (PUSH con lo stack optimize spento); percorso veloce degli store identico; nessun titolo oltre −0,3%; voce nel CHANGELOG.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### CMP-12.6 — (condizionata) Byte dell'indirizzo esatto nelle letture a 16 e 32 bit dal backup · S, 0,25 gg · dipende da: CMP-12.1, ENG-3.3 · PSP: sì
+- **Cosa:** Si fa solo se i casi `cases_bus` di CMP-12.1 mostrano, in mGBA e secondo GBATEK, che una lettura non allineata dal backup prende il byte dell'indirizzo esatto. Oggi prende quello dell'indirizzo allineato (`mips_stub.S:819`, `:828`; `memory.c:2495`, `:2515`). La correzione è un'istruzione per stub e due righe in `memory.c`; LDRSH mantiene l'estensione di segno (`mips_stub.S:1912`, `:2013`).
+- **File:** `source/src/mips_stub.S`, `source/src/memory.c`, `CHANGELOG.md`
+- **Test:** `cases_bus` in mGBA, su PSP-1000 e PSP-2000; compare-benchmarks 3+3 su un titolo SRAM e uno Flash.
+- **Accettazione:** `cases_bus` 12/12 sui due modelli; nessuna regressione.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+## 3. Prestazioni
+
+Il gruppo copre misura e velocità: metodo A/B, strumentazione, benchmark, budget di memoria per console e le ottimizzazioni del core e della presentazione (residenza della ROM, partizione volatile, dispatch cache, SMC, percorsi rapidi, layout delle cache, latenza dell'input e triplo buffer, audio a 32 kHz, Media Engine). Nella 1.5 vanno PRF-2.1 e PRF-4.1, dentro il bump dei formati di ENG-1.6, e la misura della suite SMC sulla 1.4.3 pubblicata (PRF-8.6). Nella 1.6 vanno PRF-1.1-1.6, PRF-2, PRF-3 e PRF-4, perché ogni altro gate si decide con i numeri di questi epic, e PRF-5 (PRF-5.3 e PRF-5.4 dopo il proprio gate); la suite pubblica di scene (PRF-1.7) è della 2.0. Nella 1.6 vanno anche le misure che decidono gli altri gate: i contatori di PRF-2.3 e PRF-2.5 per PRF-7, PRF-9.2 e PRF-9.5 per PRF-9, PRF-10.1, PRF-11.1, PRF-11.5 e PRF-12.1. Il resto di questi epic parte solo quando il suo gate misurato passa. Il BIOS integrato non è in questo gruppo: è CMP-1 (F-012), in corso sul branch `features/builtin-open-bios`, e qui se ne usa solo il campo `bios` del report.
+
+### PRF-1 — Metodo A/B, gate di regressione e baseline per modello pubblicate
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 (PRF-1.1-1.6 in 1.6) | 11,5 gg | PRF-2.1, PRF-2.2, PRF-2.3, PRF-3.1, PRF-4.1, CMP-1.4, ENG-1.6, F-118, F-139, ENG-3.2 (solo PRF-1.7) |
+
+**Copre:** F-024 metodo A/B e gate di regressione.
+
+**Obiettivo:**
+- Ogni affermazione di velocità con almeno 3+3 run alternati per braccio e per modello, su PSP-1000 e uno slim, con il test esatto di PRF-1.1, che dice «non decidibile» invece di affermare una differenza.
+- Gate automatici sugli estremi: p99, massimo ripetuto in almeno 2 run, frame oltre 1,5× budget al minuto, work p95.
+- Tabella per modello generata dai report grezzi committati, con mediana, min-max, p99 e frame oltre 1,5× budget al minuto, «non misurato» dove manca il dato: almeno 5 titoli × 3 run per modello alla 1.6, almeno 40 scene GBA da almeno 35 giochi alla 2.0 (PRF-1.7).
+- Il gate di release rifiuta uno stabile senza un confronto PASS sul set PSP-1000.
+
+**Da noi oggi:** `scripts/compare-benchmarks.py` confronta le mediane di esattamente 3 report per build (`nargs=3`, `scripts/compare-benchmarks.py:241-242`, controllato da `scripts/check-performance.sh:34`) e richiede impostazioni uguali (MATCH_FIELDS, `scripts/compare-benchmarks.py:15-26`; opzionali, `scripts/compare-benchmarks.py:30-44`). Fallisce su throughput −2%, frame-time p95 +5%, più underrun, skip +0,5 punti o fast-forward −2% (`scripts/compare-benchmarks.py:130-192`). Il report v6 contiene già frame-time p99 e max (`source/src/perf_report.c:257-263`), ma nessun gate li usa. I report restano sulla Memory Stick (`source/src/main.c:2166-2275`): nel repository non ci sono un archivio né una cifra per modello. Fino alla 1.4.2 i contatori a 64 bit dei report salvati su PSP uscivano sbagliati, quindi il throughput di compare-benchmarks su quei report non aveva senso (`scripts/compare-benchmarks.py:81-92`); la 1.4.3 li scrive senza printf (`perf_report.c:108-124`), con lo stesso formato v6: un report valido si riconosce solo da version ≥ 1.4.3.
+
+**Come ci arriviamo:**
+- Verdetto onesto con pochi run: test di permutazione esatto sui valori per run. Con 3+3 si arriva a p=0,05 solo a separazione completa, e lo strumento lo dice. Con 3 run per braccio l'approssimazione normale darebbe p circa 10 volte troppo piccoli (t=2,78: 0,005 invece di 0,05 con 4 gradi di libertà).
+- Gate automatici sugli estremi: p99, massimo ripetuto in almeno 2 run, frame oltre 1,5× budget al minuto, work p95. Uno stutter periodico è proprio la classe che una media per run non vede.
+- Tabella per modello generata dai report grezzi committati, con min-max, build, BIOS e data, e "non misurato" dove manca il dato.
+- L'alternanza dei bracci si verifica dall'ora di cattura scritta nel report (`--order-check`) e l'affermazione dichiarata prima (`--claim`) compare nell'esito.
+- Controllo delle prestazioni dentro il gate di release (F-118, `scripts/release_gate.py` di ENG-1.2), non un gate a parte.
+
+**Gate prima di iniziare:** nessuno. Uscita: tabella generata per PSP-1000 e uno slim con almeno 5 titoli × 3 run alternati; da lì ogni modifica che afferma un guadagno passa dal nuovo compare-benchmarks.
+
+**Rischi:**
+- Con 3+3 il test esatto non scende sotto p=0,05: guadagni sotto il 2% richiedono 5+5 run e sessioni più lunghe.
+- La tabella può mostrare titoli pesanti sotto la velocità piena: si pubblica comunque, con il contesto (F-118).
+- Circa 4 KB per report: si conservano solo le baseline di ogni release.
+- I report contengono titolo e game code, mai dati della ROM; ROM e BIOS restano fuori dal repository (`scripts/check-tree.sh`).
+
+#### PRF-1.1 — compare-benchmarks: verdetto esatto su N≥3 run per braccio · S, 1 gg · dipende da: — · PSP: no
+- **Cosa:** `--baseline` e `--candidate` accettano da 3 a N report ciascuno, anche in numero diverso (`nargs='+'` con `MIN_RUNS = 3`). Per ogni metrica si stampano mediana, minimo, massimo e il verdetto di un test di permutazione esatto unilaterale sui valori per run; se il test non può decidere, l'esito dice "non decidibile, servono circa N run per braccio". Le soglie di FAIL restano identiche. `scripts/check-performance.sh:34` controlla `MIN_RUNS` invece di `nargs=3`; `CONTRIBUTING.md:68-75` spiega il verdetto.
+- **File:** `scripts/compare-benchmarks.py`, `scripts/check-performance.sh`, `tests/test_compare_benchmarks.py`, `CONTRIBUTING.md`
+- **Test:** `test_exact_permutation_complete_separation_3v3` (p=0,05); `test_overlap_is_undecided_with_runs_needed`; `test_unequal_run_counts_4v3`; `test_fewer_than_three_runs_rejected` (codice 2); `test_legacy_v6_fixtures_same_pass_fail`; `make check`.
+- **Accettazione:** i fixture v6 esistenti danno lo stesso PASS/FAIL di oggi; con intervalli sovrapposti il verdetto non afferma mai una differenza; meno di 3 run per braccio esce con codice 2; solo libreria standard.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-1.2 — Gate sugli estremi: p99, massimo robusto, work p95, frame oltre 1,5× budget al minuto · S, 1 gg · dipende da: PRF-1.1, PRF-2.1, ENG-1.6 · PSP: no
+- **Cosa:** Due gate valgono subito anche sui report v6, che hanno già frame-time p99 e max (`perf_report.c:257-263`): FAIL se p99 peggiora oltre il 5%, oppure se il massimo supera 1,5× quello di riferimento in almeno 2 run candidati (un picco isolato non basta). Con i campi v7 di PRF-2.1 se ne aggiungono altri due: work p95 oltre +5% e frame oltre 1,5× budget al minuto in crescita oltre max(+1 al minuto, +20%). Con report v6 questi ultimi vengono saltati con una nota esplicita.
+- **File:** `scripts/compare-benchmarks.py`, `tests/test_compare_benchmarks.py`
+- **Test:** `test_p99_regression_fails_on_v6`; `test_single_max_spike_ignored`; `test_repeated_max_spike_fails`; `test_work_p95_regression_fails`; `test_over_budget_per_minute_increase_fails`; `test_v6_reports_skip_v7_gates_with_note`.
+- **Accettazione:** uno stutter sintetico (un frame da 40 ms ogni 3 s) fa fallire il candidato anche con p95 e p99 invariati; un picco in un solo run non fa fallire.
+
+#### PRF-1.3 — Ordine alternato verificato, ora di cattura e affermazione dichiarata prima · S, 1 gg · dipende da: PRF-1.1, PRF-2.1, ENG-1.6 · PSP: no
+- **Cosa:** Il report aggiunge `capture-local-time` nel bump del perf report della 1.6 (principio 6), letto dall'RTC in `main_perf_start` (`main.c:2091-2131`), fuori dai moduli caldi. `compare-benchmarks --order-check` segnala i bracci eseguiti a blocchi (AAABBB) invece che alternati (ABAB o ABBA); con `--strict` fallisce. `--claim 'throughput>=+3'` dice se l'affermazione scritta prima del run regge in modo significativo. `docs/PERFORMANCE.md` (nuovo se manca) descrive il protocollo: 333 MHz, stesso slot, un run di riscaldamento scartato, ordine alternato, affermazione scritta prima, link spento, batteria annotata, BIOS dal campo `bios` di CMP-1.4 (che qui non si duplica).
+- **File:** `source/src/perf_report.c`, `source/src/perf_report.h`, `source/src/perf_monitor.h`, `source/src/main.c`, `scripts/compare-benchmarks.py`, `docs/PERFORMANCE.md`, `tests/test_perf_report.c`, `tests/test_compare_benchmarks.py`
+- **Test:** `test_perf_report.c`: chiave `capture-local-time` e lunghezza massima entro `PERF_REPORT_CAPACITY`; `test_order_check_blocked_arms_warns`; `test_order_check_strict_fails`; `test_claim_holds_only_when_significant`; `make test-sanitize`.
+- **Accettazione:** un set AAABBB viene segnalato e con `--strict` fallisce; un `--claim` non significativo esce come "non dimostrato".
+
+#### PRF-1.4 — Archivio delle baseline e tabella per modello generata · M, 2 gg · dipende da: PRF-1.1 · PSP: no
+- **Cosa:** I report grezzi `.txt` vanno in `benchmarks/<modello>/<game-code>-r<rev>/<versione>/` (lo schema già usato da PRF-8.6, nuovo se manca; solo testo). `scripts/perf-table.py` genera la tabella di `docs/PERFORMANCE.md`: per modello e titolo fps mediani con min-max, work p50/p99, frame p99, frame oltre 1,5× al minuto, underrun, renderer, clock, BIOS, build, numero di run e data. Scrive "non misurato" dove manca un gruppo e rifiuta i gruppi con MATCH_FIELDS discordi. Il nuovo test Python entra in `test-tools`.
+- **File:** `scripts/perf-table.py` (nuovo), `tests/test_perf_table.py` (nuovo), `Makefile` (`test-tools`, :129-132), `benchmarks/README.md` (nuovo se manca), `docs/PERFORMANCE.md`
+- **Test:** `test_groups_by_model_and_game`; `test_not_measured_cell`; `test_mismatched_group_rejected`; `test_markdown_is_stable`; `scripts/check-tree.sh` verde.
+- **Accettazione:** rigenerare la tabella dagli stessi report non produce differenze; nell'archivio entrano solo file di testo.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-1.5 — Sessione hardware: baseline 1.6 per PSP-1000 e uno slim · M, 2,5 gg · dipende da: PRF-1.3, PRF-1.4, PRF-2.2, PRF-2.3, PRF-3.1, PRF-4.1, CMP-1.4, ENG-1.6 · PSP: sì
+- **Cosa:** Con il candidato 1.6 (report dopo il bump della 1.6, con i campi v7 e quelli di PRF-2 e PRF-3), su PSP-1000 a 333 MHz e su un PSP-2000 o 3000 (Go se disponibile): Unbound in battaglia doppia, Heart & Soul in una scena pesante, Golden Sun in battaglia con psinergia, MKSC e Doom II. Per ogni titolo 3 run alternati con il bench (PRF-3) e 3 a ritmo normale; Old contro New renderer su due titoli; un titolo con i due BIOS (`--vary bios --vary swi-div-hle`, come CMP-1.6). Si committano i report, si genera la tabella e un breve memo in `docs/PERFORMANCE.md` decide il go o no-go di ogni gate da PRF-5 a PRF-14.
+- **File:** `benchmarks/**`, `docs/PERFORMANCE.md`, `docs/HARDWARE-RESULTS.md` (F-118)
+- **Test:** hardware, almeno 30 run per modello; `scripts/perf-table.py` rigenera senza differenze; `--order-check` su ogni gruppo.
+- **Accettazione:** ogni cella ha almeno 3 run con ordine alternato verificato; il memo dà una decisione per ogni gate da PRF-5 a PRF-14; le righe "Validato su" sono pronte per F-118.
+
+#### PRF-1.6 — Controllo delle prestazioni nel gate di release · S, 1 gg · dipende da: PRF-1.4, F-139, F-118 · PSP: no
+- **Cosa:** compare-benchmarks guadagna una modalità a gruppi (`--baseline-dir`/`--candidate-dir`) che confronta ogni gruppo titolo×modello e fallisce al primo FAIL o gruppo mancante. Non è un secondo gate: è un controllo che `scripts/release_gate.py` (F-118, ENG-1.2) richiama, così il gate di release rifiuta un tag stabile senza un confronto PASS del candidato (sha256 di EBOOT.PBP dal manifest F-139) sul set PSP-1000.
+- **File:** `scripts/compare-benchmarks.py`, `scripts/release_gate.py`, `tests/test_compare_benchmarks.py`, `tests/test_release_gate.py`
+- **Test:** `test_group_mode_fails_on_any_group`; `test_missing_group_fails`; `test_group_mode_pass`; `tests/test_release_gate.py`: stabile rifiutato senza confronto PASS sul set PSP-1000.
+- **Accettazione:** un gruppo di riferimento senza candidato fa fallire il controllo e quindi `make release-gate CHANNEL=stable`; l'esito elenca il risultato di ogni gruppo.
+
+#### PRF-1.7 — Suite pubblica di almeno 40 scene per modello · M, 3 gg · dipende da: PRF-1.4, PRF-1.5, PRF-3.1, ENG-3.2 · PSP: sì
+- **Cosa:** `benchmarks/scenes.txt` elenca almeno 40 scene GBA da almeno 35 giochi; per ognuna gioco, revisione, descrizione, durata di 60 s e traccia v2. Gli stati restano in locale, mai in Git; le scene si scelgono, dove possibile, tra i titoli dell'elenco di CMP-9.4 che arrivano al gameplay; dove il gioco coincide si riusano gli stati di PRF-8.6 e di CMP-9.4. Ogni scena gira con il benchmark deterministico (PRF-3) in 3 run alternati su PSP-1000 e uno slim, e sulla Go se disponibile. `scripts/perf-table.py` raggruppa per scena e scrive mediana, minimo, p99 e frame oltre 1,5× budget al minuto; ENG-16.5 porta la tabella nel README.
+- **File:** `benchmarks/scenes.txt` (nuovo), `benchmarks/**`, `scripts/perf-table.py`, `tests/test_perf_table.py`, `docs/PERFORMANCE.md`
+- **Test:** `tests/test_perf_table.py` con i gruppi per scena; `--order-check` su ogni gruppo; hardware: almeno 240 run.
+- **Accettazione:** almeno 40 scene da almeno 35 giochi su PSP-1000 e uno slim, con la colonna Go misurata o «non misurato»; ogni cella ha 3 run alternati e un report committato legato allo sha256 di `EBOOT.PBP`; rigenerare la tabella non cambia nulla.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### PRF-2 — Strumentazione per fasi: tempo di lavoro, fasi campionate, dispatch, prelazioni
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 (PRF-2.1 in 1.5) | 9 gg | PRF-3.2, ENG-1.6, F-137 |
+
+**Copre:** F-025 strumentazione per fasi.
+
+**Obiettivo:** Nelle build di release, dal menu Diagnostica: tempo di lavoro per frame, fasi campionate, contatori di dispatch e SMC e prelazioni, senza letture di clock in più a cattura spenta. Su PSP-1000 e uno slim l'overhead del campionamento resta entro l'1% del throughput del bench, la somma delle fasi non supera il tempo di lavoro e il timer di scanline sta entro ±10% dalla differenza con il braccio render-off.
+
+**Da noi oggi:** perf_metrics tiene l'istogramma frame-to-frame a passi di 250 µs e quello delle attese GE a 50 µs (`source/src/perf_metrics.h:24-28`), le attese per sito (backpressure, present, audio, :48-55), DMA, I/O del gamepak, iterazioni di update_gba e contatori del dynarec; il report è v6 (`source/src/perf_report.h:26`). `renderer-total-us` cronometra solo `(*update_screen)()` (`main.c:1099-1111`), non le 160 chiamate a update_scanline (`main.c:1052-1053`). Mancano tempo di lavoro, mixing, dispatch, SMC e prelazioni.
+
+**Come ci arriviamo:**
+- Tempo di lavoro dagli stessi timestamp già letti, in ogni build di release dal menu Diagnostica: un utente può mandare un report confrontabile.
+- Fasi su frame campionati (1 su 11): il costo della sonda è calibrato e scritto nel report, e i frame campionati restano fuori dagli istogrammi, quindi p95 e p99 non pagano lo strumento.
+- Contatori di dispatch e SMC letti come delta: un incremento nel lookup C, niente nel percorso asm, nessuna chiamata nel percorso caldo.
+- Il timer di scanline si valida contro il braccio render-off del bench (PRF-3.2), che non usa strumentazione.
+
+**Gate prima di iniziare:** nessuno. Uscita su hardware (PRF-2.6): overhead del campionamento al massimo 1% del throughput bench, somma delle fasi non oltre il tempo di lavoro, timer di scanline entro ±10% dalla differenza con render-off.
+
+**Rischi:**
+- Il costo di una lettura di clock e di `sceKernelReferThreadRunStatus` sul nostro hardware è sconosciuto: campionamento, auto-calibrazione e validazione in PRF-2.6.
+- `PERF_REPORT_CAPACITY` (3336 byte, `perf_report.h:29`) va alzata; il buffer sta sullo stack del thread principale (`main.c:2178`), che ha 512 KiB (`main.c:42`), quindi lo stack non è un problema.
+- `sceKernelReferThreadRunStatus` potrebbe mancare in PPSSPP o su alcuni firmware: serve il percorso "non disponibile".
+- Nessun test host compila cpu.c: i contatori si affidano a controlli sorgente e all'hardware.
+- Il passaggio a v7 lo fa solo ENG-1.6, una volta per la 1.5: CMP-1.4, PRF-2.1 e PRF-4.1 aggiungono lì i propri campi. Dalla 1.6 le storie che aggiungono campi al report (PRF-1.3, PRF-2.2-2.5, PRF-3.1-3.3 e le successive) li mettono nel solo bump del perf report della propria release, fatto dalla prima storia della release che cambia il formato (costante, compare-benchmarks per la versione vecchia e la nuova, test, riga del CHANGELOG; principio 6). Nessuna storia PRF fa un bump proprio fuori da questa regola.
+
+#### PRF-2.1 — Tempo di lavoro per frame, frame in ritardo e oltre budget (report v7) · S, 2 gg · dipende da: ENG-1.6 · PSP: no
+- **Cosa:** perf_metrics somma le attese registrate nel frame (backpressure, present, audio, GE) e registra work = frame_time − attese in un secondo istogramma da 250 µs. Conta tre cose: frame con work oltre 16 743 µs, frame con frame_time oltre 25 115 µs (1,5× budget) e frame senza attesa di backpressure (in ritardo). Usa solo tempi già misurati (`main.c:1449-1465`; `source/src/psp_video.c:297-299`, `:384-391`). Le chiavi nuove entrano nel report v7 con `PERF_REPORT_CAPACITY` aggiornata; il passaggio a v7 è il bump di ENG-1.6, e qui si aggiungono solo i campi. compare-benchmarks le legge come opzionali. Ogni campo a 64 bit passa da `perf_report_append_u64` (`perf_report.c:108-124`), e `scripts/check-performance.sh` vieta `%ll`, `PRIu64` e `PRId64` in `source/src`. Il report v7 aggiunge `link-lockstep-frames`, i frame emulati durante la cattura con un link lockstep connesso, così vale anche per un link aperto a metà cattura: in lockstep il frameskip effettivo è AUTO con al massimo un frame saltato (`main.c:1310-1316`), mentre il report fissa quello del menu (`main.c:2106-2107`). compare-benchmarks lo legge come campo opzionale e rifiuta un report con valore maggiore di 0 con il motivo «cattura durante un link lockstep: frameskip forzato e priorità 0x77», salvo `--allow-link` con entrambi i bracci in lockstep.
+- **File:** `source/src/perf_metrics.c`, `source/src/perf_metrics.h`, `source/src/perf_monitor.c`, `source/src/perf_monitor.h`, `source/src/perf_report.c`, `source/src/perf_report.h`, `source/src/psp_video.c` (`video_adaptive_frame_complete`, :338-363), `scripts/compare-benchmarks.py`, `tests/test_perf_metrics.c`, `tests/test_perf_monitor.c`, `tests/test_perf_report.c`, `tests/test_compare_benchmarks.py`
+- **Test:** `test_perf_metrics.c`: `test_work_time_subtracts_waits`, `test_work_time_clamps_at_zero`, `test_waits_reset_each_frame`, `test_over_budget_and_late_counts`, saturazione; `test_perf_report.c`: chiavi nuove, lunghezza massima entro la capacità; `make test-sanitize`; `scripts/check-performance.sh` verde; `tests/test_perf_report.c` scrive 2^40+1 e lo rilegge esatto, e scrive e rilegge `link-lockstep-frames`; `tests/test_compare_benchmarks.py`: report con link rifiutato, accettato con `--allow-link`, report v6 senza il campo accettato.
+- **Accettazione:** nessuna nuova chiamata a `sceKernelGetSystemTimeLow` (controllo sorgente sul numero di call site in `main.c` e `psp_video.c`); i report v6 restano leggibili da compare-benchmarks; la v7 è unica per tutta la 1.5.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-2.2 — Timer di fase su frame campionati: update_gba, update_scanline, PSG audio · M, 2,5 gg · dipende da: PRF-2.1, ENG-1.6 · PSP: no
+- **Cosa:** Durante una cattura, un frame ogni 11 (11 è primo, quindi non si allinea ai periodi 2-6 tipici dei giochi) `main.c` misura update_gba all'ingresso e all'uscita (`main.c:990-1267`), update_scanline (`:1052-1053`) e update_gbc_sound (`:1024-1028`, `:1113`); le fasi annidate si sottraggono. All'avvio della cattura 64 letture consecutive calibrano il costo della sonda, che va nel report come `probe-read-ns` e `probe-reads`. I frame campionati restano fuori dagli istogrammi di frame e work. Il direct sound (`sound_timer`, da circa 220 a circa 530 chiamate per frame secondo la frequenza del gioco) non si cronometra: lo misura il braccio audio-off di PRF-3.2.
+- **File:** `source/src/perf_metrics.c`, `source/src/perf_metrics.h`, `source/src/perf_monitor.c`, `source/src/perf_monitor.h`, `source/src/main.c`, `source/src/perf_report.c`, `tests/test_perf_metrics.c`, `tests/test_perf_report.c`, `scripts/check-performance.sh`
+- **Test:** `test_phase_stride_is_deterministic_and_coprime`; `test_nested_phase_subtraction`; `test_sampled_frames_excluded_from_histograms`; `test_probe_cost_reported`; `check-performance.sh`: in update_gba le letture di clock compaiono solo sotto il flag di campionamento.
+- **Accettazione:** a cattura spenta il costo è un solo test di flag per scanline; il report contiene i campi `phase-*` e `probe-*`, entrati nel bump del perf report della 1.6 (principio 6); su dati sintetici la somma delle fasi non supera il work dei frame campionati.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-2.3 — Contatori di dispatch per regione e di SMC · S, 1 gg · dipende da: PRF-2.1, ENG-1.6 · PSP: no
+- **Cosa:** cpu.c incrementa contatori u32 per BIOS, EWRAM, IWRAM, VRAM e ROM nei rami di `block_lookup_address_body` (`source/src/cpu.c:2784-2885`), solo con `translation_recursion_level` a 0 (`:2871`): così conta i dispatch a run-time e non i collegamenti fatti durante la traduzione. Un contatore per area in `partial_clear_metadata` (`:3841`) conta i clear SMC. perf_monitor li legge come delta (con wrap u32) all'avvio e allo stop della cattura. Il report aggiunge `dispatch-lookups-*` e `smc-partial-clears-*` nel bump del perf report della 1.6 (principio 6).
+- **File:** `source/src/cpu.c`, `source/src/cpu.h`, `source/src/perf_monitor.c`, `source/src/perf_metrics.c`, `source/src/perf_metrics.h`, `source/src/perf_report.c`, `source/src/main.c`, `tests/test_perf_metrics.c`, `tests/test_perf_report.c`, `scripts/check-performance.sh`
+- **Test:** `test_counter_delta_wraps_u32`; `test_perf_report.c`: chiavi dispatch e smc; controllo sorgente: incremento solo sotto `translation_recursion_level == 0`.
+- **Accettazione:** il report mostra i lookup per frame divisi per regione; nel percorso di lookup si aggiunge un solo incremento di memoria.
+
+#### PRF-2.4 — Prelazioni del thread di emulazione, divise tra lavoro e attesa · S, 1 gg · dipende da: PRF-2.1 · PSP: no
+- **Cosa:** Durante una cattura `main.c` legge `sceKernelReferThreadRunStatus` del thread di emulazione prima di `synchronize()` (`main.c:1147`) e dopo il flip (`:1152-1153`). I delta di `threadPreemptCount` e `intrPreemptCount` vanno a lavoro o ad attesa; perf_metrics tiene totali, massimo per frame e un istogramma a 7 classi. Se la chiamata fallisce lo strumento si spegne e il report scrive `preempt-available=0`; il tempo delle chiamate è auto-misurato.
+- **File:** `source/src/main.c`, `source/src/perf_metrics.c`, `source/src/perf_metrics.h`, `source/src/perf_monitor.c`, `source/src/perf_report.c`, `tests/test_perf_metrics.c`, `tests/test_perf_report.c`
+- **Test:** `test_preempt_histogram_bins`; `test_preempt_unavailable_path`; `test_preempt_max_per_frame`.
+- **Accettazione:** il report separa prelazioni in lavoro e in attesa; se la chiamata fallisce la cattura continua e lo segnala.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-2.5 — Sonda del costo del lookup (solo build diagnostica) · S, 1 gg · dipende da: PRF-2.3, F-137 · PSP: sì
+- **Cosa:** Una voce di Diagnostica, solo nella build diagnostica, cronometra 10 000 chiamate a `block_lookup_address_arm` e `_thumb` su un PC ROM già tradotto e su un PC RAM, e scrive `lookup-rom-ns` e `lookup-ram-ns` nel report. Il costo dello stub asm (salvataggio e ripristino dei registri, `jal` e `jr`, `source/src/mips_stub.S:378-415`) si aggiunge come stima documentata. Serve a trasformare i contatori di PRF-2.3 in millisecondi per il gate di PRF-7. La voce segue lo schema delle altre (`gui.c:5311-5312`), con etichetta e testo d'aiuto nelle 5 lingue; la sua callback sta a livello di file, come le opzioni di avanti veloce (`gui.c:3220-3290`).
+- **File:** `source/src/main.c`, `source/src/gui.c` (menu Diagnostica, ~:5312), `source/src/cpu.h`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `source/src/perf_report.c`
+- **Test:** `scripts/check-messages.sh`; `test_perf_report.c`: chiavi assenti nei report di release; hardware: valori stabili entro ±10% su 3 esecuzioni.
+- **Accettazione:** la voce compare solo nella build diagnostica (F-137, o `DIAGNOSTIC_INPUT_TRACE` in attesa); le stringhe nuove sono nelle 5 lingue nello stesso ordine.
+
+#### PRF-2.6 — Validazione su hardware della strumentazione · S, 1,5 gg · dipende da: PRF-2.2, PRF-2.4, PRF-3.2 · PSP: sì
+- **Cosa:** Su PSP-1000 e uno slim, bench (PRF-3) con campionamento di fase acceso e spento, 3+3 alternati. Si verificano l'overhead, la coerenza della somma delle fasi, il timer di scanline contro la differenza con il braccio render-off e le prelazioni durante una sessione link breve.
+- **File:** `docs/PERFORMANCE.md`, `benchmarks/**`
+- **Test:** hardware: 12 run di bench e una sessione link breve con cattura.
+- **Accettazione:** overhead al massimo 1% del throughput; somma delle fasi non oltre il work; timer di scanline entro ±10% dalla differenza render-off; nella cattura in lockstep, che porta `link-lockstep-frames` maggiore di 0, crescono anche le prelazioni in lavoro rispetto alla cattura senza link, perché l'emulatore gira a 0x77 e ogni thread lo precede (`main.c:222-228`); il report le separa e `docs/PERFORMANCE.md` lo spiega.
+
+### PRF-3 — Benchmark senza limite e deterministico
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 | 5 gg | PRF-1.1, PRF-2.1, ENG-1.6, F-137 |
+
+**Copre:** F-026 benchmark senza limite.
+
+**Obiettivo:** Benchmark senza limite da uno slot di stato (e da una traccia nella build diagnostica), 3600 frame, report salvato da solo; due run dello stesso build sullo stesso slot differiscono meno dell'1% di throughput su PSP-1000; voce nel menu Diagnostica nelle cinque lingue, rifiutata durante il link con il motivo a schermo.
+
+**Da noi oggi:** La Diagnostica misura a ritmo normale (`source/src/main.c:2090-2140`). Il fast-forward a velocità Massima mostra 60, 30 o 15 aggiornamenti al secondo secondo la presentazione (`source/src/fast_forward_policy.h:50-56`; `source/src/text/message_eng.h:1118-1121`). Non esiste una misura fissa, senza limite e senza salti di frame. Il replay delle tracce d'ingresso esiste solo nelle build diagnostiche (`source/src/input_trace.h`; `source/Makefile:46-50`).
+
+**Come ci arriviamo:**
+- Parte da uno slot di stato e, in build diagnostica, riproduce una traccia d'ingresso: i due bracci fanno lo stesso lavoro.
+- Il report si salva da solo a fine run e i campi bench sono nei campi da far combaciare: un bench non si confronta per errore con una sessione normale.
+- Il mixing audio resta attivo e si scarta solo l'uscita, quindi si misura il costo vero del frame.
+- I bracci render-off e audio-off danno il costo di rendering e audio senza strumentazione e validano i timer di PRF-2.
+- Voce nel menu Diagnostica in cinque lingue, bloccata durante il link con il motivo a schermo.
+
+**Gate prima di iniziare:** nessuno. Uscita: due run consecutivi dello stesso build sullo stesso slot differiscono meno dell'1% di throughput sul PSP-1000 (PRF-3.4).
+
+**Rischi:**
+- Senza input, da uno slot, il bench non esercita le scene che richiedono input: per quelle serve la traccia (build diagnostica).
+- I giochi con orologio leggono l'ora reale: piccole differenze tra run.
+- Con l'uscita audio scartata il ring non deve riempirsi né bloccare il thread di emulazione.
+
+#### PRF-3.1 — Benchmark senza limite da uno slot di stato · M, 2 gg · dipende da: PRF-2.1, ENG-1.6 · PSP: sì
+- **Cosa:** Nuova voce Diagnostica "Benchmark senza limite", con testo d'aiuto. Carica lo slot corrente ed esegue 3600 frame senza attese vblank, senza frameskip (ogni frame renderizzato) e con VSync spento. Il mixing audio continua, ma i campioni si scartano prima del canale, quindi il thread di emulazione non aspetta mai l'audio. A fine run la cattura si ferma e il report si salva. perf_monitor conta i frame del bench (idle, in corso, fatto); `main.c` salta il ritmo in `synchronize()` (`main.c:1295-1480`). Rifiuta l'avvio durante un link o senza slot, mostrando il motivo. La callback della voce sta a livello di file, come le opzioni di avanti veloce (`gui.c:3220-3290`). Il report aggiunge `bench-mode`, `bench-frames`, `bench-render`, `bench-audio` e `bench-input` nel bump del perf report della 1.6 (principio 6).
+- **File:** `source/src/main.c`, `source/src/perf_monitor.c`, `source/src/perf_monitor.h`, `source/src/perf_report.c`, `source/src/sound.c`, `source/src/gui.c` (menu Diagnostica, ~:5312), `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `CHANGELOG.md`, `tests/test_perf_monitor.c`, `tests/test_perf_report.c`
+- **Test:** `test_perf_monitor.c`: `test_bench_counts_frames_and_stops`, `test_bench_refused_while_capture_active`; `test_perf_report.c`: chiavi bench; `scripts/check-messages.sh` e `scripts/check-menu-layout.sh` (ordine delle categorie invariato); hardware: un run completa e salva il report.
+- **Accettazione:** durante un link il bench non parte e il motivo viene mostrato; a fine run il gioco torna al ritmo normale e l'audio riprende senza underrun; voce CHANGELOG (Added) scritta come comportamento visibile.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-3.2 — Bracci render-off e audio-off (build diagnostica) · S, 1 gg · dipende da: PRF-3.1, F-137 · PSP: sì
+- **Cosa:** Due varianti del bench. render-off salta update_scanline e update_screen. audio-off salta solo la scrittura dei campioni nel ring, in `sound_timer` e `update_gbc_sound`, con un flag dell'emulatore distinto da `sound_on` (`source/src/sound.c:622`): FIFO, DMA e IRQ restano identici. La differenza con il bench normale dà il costo di rendering e audio senza strumentazione. Le callback delle due voci stanno a livello di file, come le opzioni di avanti veloce (`gui.c:3220-3290`).
+- **File:** `source/src/main.c`, `source/src/sound.c`, `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `source/src/perf_report.c`, `tests/test_perf_report.c`
+- **Test:** `test_perf_report.c`: `bench-render=0` e `bench-audio=0`; controllo sorgente: il flag audio-off non tocca `fifo_base` né le richieste DMA; hardware in PRF-2.6.
+- **Accettazione:** con render-off o audio-off lo stato guest a fine bench è identico al bench normale (hash F-120 quando disponibile).
+
+#### PRF-3.3 — Replay di traccia nel bench (build diagnostica) · S, 1 gg · dipende da: PRF-3.1, F-137 · PSP: sì
+- **Cosa:** Se una traccia input_trace è pronta, il bench la riproduce invece di non dare input e si ferma alla fine della traccia. Il report scrive `bench-input=trace` e il checksum della traccia.
+- **File:** `source/src/main.c`, `source/src/input_trace.c`, `source/src/input_trace.h`, `source/src/input.c`, `source/src/perf_report.c`, `tests/test_input_trace.c`, `tests/test_perf_report.c`
+- **Test:** `test_input_trace.c`: la fine della traccia viene segnalata al bench; `test_perf_report.c`: checksum della traccia nel report.
+- **Accettazione:** due bench con la stessa traccia e lo stesso slot eseguono lo stesso numero di frame e arrivano allo stesso stato (hash F-120).
+
+#### PRF-3.4 — compare-benchmarks per i bench e rumore misurato su hardware · S, 1 gg · dipende da: PRF-3.1, PRF-1.1 · PSP: sì
+- **Cosa:** `bench-mode`, `bench-render`, `bench-audio`, `bench-input` e `bench-frames` entrano tra i campi opzionali da far combaciare, così un bench non si confronta con una sessione normale. Sullo stesso build si misura su hardware il rumore tra run (3+3) e lo si annota in `docs/PERFORMANCE.md`.
+- **File:** `scripts/compare-benchmarks.py`, `tests/test_compare_benchmarks.py`, `docs/PERFORMANCE.md`
+- **Test:** `test_bench_vs_paced_rejected`; hardware: 6 run sul PSP-1000.
+- **Accettazione:** due run consecutivi dello stesso build sullo stesso slot differiscono meno dell'1% di throughput su PSP-1000; il valore misurato e il numero di run consigliato sono scritti in `docs/PERFORMANCE.md`, e se il rumore resta sopra l'1% PRF-3 non si chiude finché la causa non è misurata.
+
+### PRF-4 — Budget di memoria per console: misura dell'heap, numeri misurati, soglia prima del link
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 (PRF-4.1 in 1.5) | 5,5 gg | ENG-1.6, LNK-3.2, F-099, F-137 |
+
+**Copre:** F-027 budget di memoria per console.
+
+**Obiettivo:** Misura della memoria in ogni runtime log di release; `docs/RAM-BUDGET.md` con numeri misurati su PSP-1000 e uno slim in almeno 8 situazioni per modello; un link rifiutato per memoria insufficiente mostra il motivo nelle cinque lingue e lo scrive nel runtime log, senza blocchi.
+
+**Da noi oggi:** Se nessun buffer ROM si alloca, MSG_ERR_MALLOC e uscita (`source/src/memory.c:2877-2904`). Il report scrive `memory-low-water` da `sceKernelTotalFreeMemSize` ad avvio e stop della cattura (`source/src/main.c:2129`, `:2139`). Con `PSP_HEAP_SIZE_KB(-2048)` (`main.c:49`) l'heap newlib prende tutta la memoria utente tranne 2 MiB, quindi quel campo misura probabilmente solo la memoria fuori heap (inferenza da verificare). Il runtime log (v5, `source/src/runtime_log.h:25`) registra il modello; non ci sono misura dell'heap, soglia né documento di budget.
+
+**Come ci arriviamo:**
+- Misura della memoria nel runtime log di ogni build di release.
+- Numeri misurati su PSP-1000 e slim reali.
+- Immagine e heap per console vengono dalla misura fatta dal nostro EBOOT stesso.
+- Distingue heap newlib e memoria kernel fuori heap, che è quella dei moduli di rete del link.
+- Il link rifiutato per memoria insufficiente mostra il motivo nelle cinque lingue e lo scrive nel runtime log, senza fermare il gioco.
+
+**Gate prima di iniziare:** nessuno. Uscita: `docs/RAM-BUDGET.md` con numeri misurati su PSP-1000 e uno slim, e una misura della memoria in ogni runtime log.
+
+**Rischi:**
+- `mallinfo()` di newlib su PSP va verificata, come i simboli `__executable_start` e `_end` con `BUILD_PRX = 1` (`source/Makefile:18`).
+- La ricerca del blocco più grande gira fuori dai momenti critici e libera tutto ciò che alloca.
+- `memory-low-water` mantiene il significato attuale: si aggiungono campi e si documenta il vecchio.
+- Il runtime log v6 lo introduce solo ENG-1.6, nello stesso bump del report v7: CMP-1.4, LNK-1.2 e PRF-4.1 aggiungono lì i propri campi.
+
+#### PRF-4.1 — Misura della memoria nel runtime log (v6) e nel report (v7) · M, 2 gg · dipende da: ENG-1.6 · PSP: no
+- **Cosa:** Nuovo modulo puro `mem_stats` (stdint, nessun SDK): struttura della misura, ricerca binaria del blocco più grande con allocatore iniettato (passo 4 KiB), codifica nei campi del record del runtime log. La parte PSP sta in `main.c`. La misura parte dopo `init_gamepak_buffer` (`main.c:1657`), al caricamento della ROM, all'avvio del link e ad avvio e stop della cattura. Registra immagine (`_end − __executable_start`), heap libero (`mallinfo`), blocco più grande, memoria kernel fuori heap (`sceKernelTotalFreeMemSize`, `sceKernelMaxFreeMemSize`), buffer ROM e pagine. Nuovo evento `RUNTIME_LOG_EVENT_MEMORY_STATS` nella v6, dentro il bump di ENG-1.6 (lo stesso in cui CMP-1.4 e LNK-1.2 aggiungono i propri campi), con la sua decodifica e i test. Nel report v7, nello stesso bump: `heap-free-*`, `heap-largest-*` e `kernel-free-low`.
+- **File:** `source/src/mem_stats.c` (nuovo), `source/src/mem_stats.h` (nuovo), `tests/test_mem_stats.c` (nuovo), `Makefile` (regole normale e ASan/UBSan), `source/Makefile` (MAINOBJS, COMMON_FILE), `source/src/main.c`, `source/src/runtime_log.c`, `source/src/runtime_log.h`, `source/src/runtime_log_psp.c`, `tools/decode_runtime_log.py`, `tests/test_runtime_log.c`, `tests/test_decode_runtime_log.py`, `source/src/perf_report.c`, `tests/test_perf_report.c`
+- **Test:** `test_mem_stats.c`: `test_largest_block_bisection_fake_allocator`, `test_zero_memory`, `test_encode_decode_roundtrip`; `test_runtime_log.c`: nuovo evento; `test_decode_runtime_log.py`: decodifica della misura; `make test-sanitize`.
+- **Accettazione:** ogni avvio scrive una misura; `decode_runtime_log.py` la stampa in KiB; la sonda del blocco più grande non gira nei moduli caldi e libera tutto ciò che alloca; nessun cambio di versione proprio: evento e chiavi entrano nel bump di ENG-1.6.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-4.2 — docs/RAM-BUDGET.md misurato su hardware · S, 1,5 gg · dipende da: PRF-4.1 · PSP: sì
+- **Cosa:** Su PSP-1000 e uno slim (Go se disponibile) si raccolgono misure della memoria all'avvio, dopo ROM da 8, 16 e 32 MiB (normali e zip), a menu aperto, al salvataggio e al caricamento di uno stato, all'inizio e al picco di una sessione link e durante una cattura Diagnostica. Il documento dà un numero per console (immagine più heap all'avvio) e la riserva minima dopo il caricamento. Alimenta PRF-5, le soglie dei gate UI e il limite di build di F-138.
+- **File:** `docs/RAM-BUDGET.md` (nuovo), `benchmarks/` (log decodificati, testo)
+- **Test:** hardware: almeno 8 situazioni per modello.
+- **Accettazione:** ogni numero indica modello, build e situazione; la riserva proposta copre il picco più alto osservato più un margine scritto nel documento.
+
+#### PRF-4.3 — Soglia di memoria prima del link, con motivo localizzato · S, 1 gg · dipende da: PRF-4.2, PRF-4.4, LNK-3.2, F-099 · PSP: sì
+- **Cosa:** Prima di caricare i moduli di rete, `mem_stats_link_ok` (funzione pura) confronta la memoria con il fabbisogno misurato in PRF-4.2 più un margine. Se la memoria non basta il link non parte, il menu mostra il motivo nelle 5 lingue e il runtime log registra la misura.
+- **File:** `source/src/mem_stats.c`, `source/src/mem_stats.h`, `source/src/main.c`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `tests/test_mem_stats.c`, `CHANGELOG.md`
+- **Test:** `test_link_floor_boundaries`; `scripts/check-messages.sh`; hardware: con la memoria trattenuta di PRF-4.4 sotto soglia il link viene rifiutato in modo pulito, senza blocchi.
+- **Accettazione:** il thread ad-hoc resta l'unico a chiamare `sceNet*`; nessun blocco nel callback di alimentazione; voce CHANGELOG (Changed).
+
+#### PRF-4.4 — Memoria trattenuta e traccia delle allocazioni (solo build diagnostica) · S, 1 gg · dipende da: PRF-4.1, F-137 · PSP: no
+- **Cosa:** Nella build diagnostica `memory_hold_kib`, letto da un file nella cartella dell'emulatore, trattiene memoria fin dall'avvio per simulare un PSP-1000 o un Go in PPSSPP: utile, ma non è una prova. Una traccia delle allocazioni con `-Wl,--wrap=malloc,--wrap=free` scrive dimensione e chiamante in un anello del modulo mem_stats, scaricato allo stop della cattura.
+- **File:** `source/src/main.c`, `source/src/alloc_trace_psp.c` (nuovo, solo diagnostica), `source/src/mem_stats.c`, `source/src/mem_stats.h`, `source/Makefile`, `tests/test_mem_stats.c`
+- **Test:** `test_trace_ring_overwrites_oldest`; controllo: nessun simbolo della traccia nell'ELF di release (F-138).
+- **Accettazione:** la build di release è identica a prima: nessun wrap e nessuna memoria trattenuta.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### PRF-5 — Dimensionamento della memoria: buffer ROM a passi di 1 MiB, cache JIT e pagine per modello
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 (PRF-5.3-5.4 dopo gate) | 8 gg | PRF-1.1, PRF-1.5, PRF-4.1, PRF-4.2, CMP-1.4, F-120 |
+
+**Copre:** F-028 dimensionamento della memoria.
+
+**Obiettivo:** Su PSP-1000 il buffer ROM è il blocco più grande meno la riserva misurata da PRF-4.2, a passi di 1 MiB, e tiene almeno 14 MiB di ROM residente (se serve con le cache JIT ridotte da PRF-5.3, quando il suo gate passa), oppure la causa misurata è in `docs/RAM-BUDGET.md`; l'heap libero dopo il caricamento non scende mai sotto la riserva; `gamepak-miss-count` cala in modo significativo nell'A/B 3+3 su una ROM da 16 MiB; con PRF-5.4, se il suo gate passa, una pagina ancora nel buffer non si rilegge mai dal file; le cache JIT cambiano dimensione solo se i contatori lo chiedono, con hash F-120 identici.
+
+**Da noi oggi:** `init_gamepak_buffer` prova 32 MiB e dimezza fino al successo (`source/src/memory.c:2877-2904`), all'avvio, prima della scelta della ROM (`main.c:1657`); con `PSP_LARGE_MEMORY = 1` (`source/Makefile:22`) sui 64 MB entra tutto. Le pagine da 32 KiB si sfrattano in ordine di caricamento: il timestamp si scrive solo in `load_gamepak_page` (`memory.c:2781`), e il codice tradotto legge la ROM da `memory_map_read` in asm senza passare dal C (`source/src/mips_stub.S:664-690`). Le cache JIT sono statiche, 4+2 MiB su ogni modello (`cpu.c:72-73`, `:173-177`), e flush e high-water sono già nel report (`perf_report.c:238-248`), con valori validi solo nei report della 1.4.3 e successive.
+
+**Come ci arriviamo:**
+- Passo da 1 MiB, con la riserva dopo il caricamento presa dalla misura (PRF-4.2), non da una costante. Sul PSP-1000 il solo passo da 1 MiB vale fino a circa 5 MiB di ROM residente in più della 1.4.3 (stima, da misurare); per andare oltre servono le cache JIT ridotte di PRF-5.3.
+- Le cache JIT cambiano dimensione solo se i contatori del report lo chiedono (flush readonly, high-water).
+- La sostituzione delle pagine diventa second chance con soft-fault, che vede anche le letture del codice tradotto; un timestamp nel percorso C non le vedrebbe.
+- Logica in un modulo puro con test host.
+
+**Gate prima di iniziare:** PRF-5.1 e PRF-5.2: misura di PRF-4.2 sul PSP-1000. PRF-5.3: le baseline PRF-1.5 mostrano `dynarec-readonly-flushes` maggiore di zero in 10 minuti su un titolo di riferimento nei 64 MB, oppure `dynarec-readonly-high-water` sotto il 50% su tutti i titoli del PSP-1000. PRF-5.4: dopo PRF-5.2, sul PSP-1000 con ROM da 16-32 MiB, `gamepak-miss-count` oltre 1 al secondo oppure `gamepak-rom-read-total-us` almeno all'1% del lavoro.
+
+**Rischi:**
+- Meno heap libero dopo il caricamento può far fallire zip, boxart, stati e link: riserva dalla misura e prova con la memoria trattenuta di PRF-4.4.
+- Cache JIT più piccole sul PSP-1000 possono causare tempeste di ritraduzione: default invariato salvo gate.
+- Allocare le cache a run-time cambia indirizzi e layout dell'I-cache: va fatto insieme a PRF-10.2.
+- Il soft-fault di PRF-5.4 costa un passaggio in C per ogni pagina riferita: va misurato contro i miss risparmiati.
+
+#### PRF-5.1 — Modulo puro mem_budget · S, 1 gg · dipende da: PRF-4.1 · PSP: no
+- **Cosa:** `mem_budget_rom_buffer(largest, reserve, rom_cap)` restituisce un multiplo di 1 MiB tra 1 MiB e 32 MiB che lascia libera la riserva; sotto 1 MiB mantiene il ripiego attuale a dimezzamenti, fino a un minimo di pagine. `mem_budget_jit(model, stats)` restituisce le dimensioni delle due cache, con default 4+2 MiB invariato.
+- **File:** `source/src/mem_budget.c` (nuovo), `source/src/mem_budget.h` (nuovo), `tests/test_mem_budget.c` (nuovo), `Makefile`, `source/Makefile`
+- **Test:** `test_rom_buffer_steps_of_1mib`; `test_reserve_respected`; `test_below_one_mib_falls_back`; `test_cap_32mib`; `test_jit_default_unchanged`; `make test-sanitize`.
+- **Accettazione:** nessun ingresso porta a un buffer con zero pagine.
+
+#### PRF-5.2 — Buffer ROM a passi di 1 MiB con riserva misurata · M, 2 gg · dipende da: PRF-5.1, PRF-4.2, PRF-1.1, CMP-1.4 · PSP: sì
+- **Cosa:** `init_gamepak_buffer` (`memory.c:2877-2904`) chiede a mem_budget la dimensione, cioè il blocco più grande disponibile meno la riserva di PRF-4.2, invece di provare 32 MiB e dimezzare. Il caso "nessuna memoria" resta MSG_ERR_MALLOC. La misura della memoria registra la scelta. Poiché `gamepak-ram-buffer-size` e `gamepak-ram-pages` sono campi da far combaciare (`scripts/compare-benchmarks.py:31-33`), l'A/B li indica con `--vary` (CMP-1.4).
+- **File:** `source/src/memory.c`, `source/src/main.c`, `source/src/mem_budget.c`, `CHANGELOG.md`, `docs/RAM-BUDGET.md` (se il buffer resta sotto 14 MiB)
+- **Test:** `tests/test_mem_budget.c`; `test_perf_dma_probe` invariato (build con SDK); hardware PSP-1000: A/B 3+3 su una ROM da 16 MiB con `--vary gamepak-ram-buffer-size --vary gamepak-ram-pages`.
+- **Accettazione:** sul PSP-1000 il buffer è di almeno 14 MiB, oppure la causa misurata è in `docs/RAM-BUDGET.md`; l'heap libero dopo il caricamento non scende sotto la riserva; `gamepak-miss-count` cala in modo significativo nell'A/B; voce CHANGELOG (Changed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-5.3 — Cache JIT allocate all'avvio e dimensionate per modello (con gate) · M, 2,5 gg · dipende da: PRF-5.1, PRF-1.5, F-120 · PSP: sì
+- **Cosa:** `readonly_code_cache` e `writable_code_cache` (`cpu.c:173-177`) diventano puntatori. L'allocazione con `memalign`, prima del buffer ROM e con le dimensioni di `mem_budget_jit`, avviene in `main.c`, perché la regola del progetto vieta allocazioni in cpu.c, che riceve solo puntatori e dimensioni. Limiti (`cpu.c:3518`, `:3522`), reset (`:4076`, `:4099`) e dump (`:4131-4136`) usano le dimensioni a run-time. Il default cambia solo se il gate dell'epic lo chiede.
+- **File:** `source/src/cpu.c`, `source/src/cpu.h`, `source/src/main.c`, `source/src/mem_budget.c`, `tests/test_mem_budget.c`, `scripts/check-performance.sh`
+- **Test:** `test_mem_budget.c`: fasce per modello; controllo sorgente: nessun array statico dimensionato con `READONLY_CODE_CACHE_SIZE` e nessuna allocazione in cpu.c; oracolo F-120 identico prima e dopo su 3 tracce; hardware: A/B 3+3.
+- **Accettazione:** con le dimensioni di default il comportamento è identico (stesso hash F-120); con la dimensione nuova i flush readonly spariscono sul titolo che ha fatto scattare il gate.
+
+#### PRF-5.4 — Sostituzione delle pagine ROM second chance con soft-fault (con gate) · M, 2,5 gg · dipende da: PRF-5.2 · PSP: sì
+- **Cosa:** Oggi si sfratta la pagina caricata da più tempo (timestamp scritto solo in `memory.c:2781`). Aggiornarlo in `READ_GAMEPAK` (`memory.c:770-784`) non basta: le letture del codice tradotto trovano la pagina in `memory_map_read` dall'asm (`mips_stub.S:664-690`) e non passano dal C. Si usa quindi un second chance. Una lancetta, chiamata una volta per frame al vblank, smappa poche voci di `memory_map_read` e azzera il bit "riferita" di quelle pagine. Il primo accesso a una pagina smappata entra in `load_gamepak_page`, che con una mappa inversa la trova ancora nel buffer, la rimappa senza I/O e segna il bit. Lo sfratto sceglie la prima pagina non riferita. `read_rom_region` e `read_rom_block` (`memory.c:775-781`) si invalidano a ogni smappatura. La politica sta nel modulo puro `rom_page_map`, riusato da PRF-6.2; il report aggiunge `gamepak-soft-faults`.
+- **File:** `source/src/memory.c`, `source/src/memory.h`, `source/src/main.c`, `source/src/rom_page_map.c` (nuovo), `source/src/rom_page_map.h` (nuovo), `tests/test_rom_page_map.c` (nuovo), `source/src/perf_report.c`, `tests/test_perf_report.c`, `Makefile`, `source/Makefile`
+- **Test:** `test_second_chance_spares_referenced_pages`; `test_soft_fault_remaps_without_io`; `test_hand_wraps`; `test_perf_report.c`: `gamepak-soft-faults`; `make test-sanitize`; hardware: A/B 3+3.
+- **Accettazione:** `gamepak-miss-count` cala in modo significativo senza peggiorare il work p95; una pagina ancora nel buffer non viene mai riletta dal file (soft-fault contati a parte dai miss).
+
+### PRF-6 — Partizione volatile da 4 MiB per pagine ROM e rewind
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 7 gg | PRF-4.1, SAV-7.5, F-120, F-137 |
+
+**Copre:** F-029 partizione volatile da 4 MiB.
+
+**Obiettivo:** Se il gate passa: 100 sospensioni su PSP-1000 e uno slim con una ROM da 32 MiB e pagine nella partizione, zero crash e hash F-120 identici a un run senza partizione; callback di alimentazione senza attese (controllo sorgente); se il lock fallisce l'emulatore funziona come oggi.
+
+**Da noi oggi:** Nessun uso di VolatileMem in `source/src` (git grep su origin/develop). Il callback di alimentazione rilascia o riprenota il canale audio e registra l'evento, senza attese (`source/src/main.c:1990-2015`). `psp_sleep_loop` chiude il file ROM e parcheggia il thread (`main.c:1893-1922`) e `main_power_service` lo riapre al risveglio (`:1927-1962`).
+
+**Come ci arriviamo:**
+- Il callback di alimentazione resta non bloccante: il rilascio avviene in `psp_sleep_loop`, sul thread di emulazione.
+- Nella partizione vanno solo dati ricostruibili: pagine ROM in sola lettura e un anello del rewind che si azzera. Al risveglio si riprova il lock e si riparte vuoti: nessun puntatore alla partizione sopravvive allo sleep.
+- Un solo allocatore (`vm_pool`) per i due inquilini, con confine controllato e rilascio unico prima dello sleep, testato sull'host.
+
+**Gate prima di iniziare:** (1) Dopo PRF-5, sul PSP-1000 i titoli di riferimento da 16-32 MiB restano paginati e la lettura della ROM vale almeno l'1% del lavoro o coincide con frame oltre 1,5× budget; oppure (2) il rewind di GIO-1 (F-083) chiede la partizione per l'anello sul PSP-1000. In entrambi i casi lo spike PRF-6.1 deve riuscire su PSP-1000 e uno slim, con il comportamento attraverso lo sleep documentato. PRF-6.1 e PRF-6.4 servono a entrambi i casi, PRF-6.2 e PRF-6.3 solo al caso (1).
+
+**Rischi:**
+- Il comportamento della partizione attraverso lo sleep sui nostri firmware e CFW è sconosciuto.
+- Il main loop potrebbe leggere pagine dopo che il sistema ha ripreso la partizione, e un puntatore rimasto dopo il risveglio può resettare la console: per questo il flush della cache JIT readonly, la ripartenza da vuoti e la verifica con gli hash.
+- Su Vita/Adrenaline la partizione potrebbe non esistere: si ripiega sul solo heap.
+
+#### PRF-6.1 — Spike: partizione volatile su ogni modello · S, 1,5 gg · dipende da: PRF-4.1, F-137 · PSP: sì
+- **Cosa:** Una build diagnostica prova `sceKernelVolatileMemTryLock` e registra esito, base e dimensione nel runtime log. Scrive un motivo di prova nella partizione e lo verifica dopo un ciclo di sleep, su PSP-1000, 2000, 3000 e Go con i CFW in uso (ARK-4, PRO/LME). Il risultato va in `docs/RAM-BUDGET.md`.
+- **File:** `source/src/main.c` (solo diagnostica), `docs/RAM-BUDGET.md`
+- **Test:** hardware: 4 modelli dove disponibili, 5 cicli di sleep ciascuno.
+- **Accettazione:** per ogni modello sono documentati lock riuscito o no, dimensione, contenuto dopo il risveglio e stato del lock.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-6.2 — Pagine ROM nella partizione volatile, invalidate attorno allo sleep · M, 3 gg · dipende da: PRF-6.1, PRF-6.4, SAV-7.5 · PSP: sì
+- **Cosa:** Il page cache passa a due segmenti, buffer heap più pagine ritagliate da `vm_pool`, gestiti da `rom_page_map` (quello di PRF-5.4 se esiste, altrimenti creato qui con lo sfratto attuale). `psp_sleep_loop` (`main.c:1893-1922`) toglie le pagine della partizione dalla mappa e la sblocca prima di parcheggiare. Al risveglio (`main_power_service`, `:1945-1961`) si riprova il lock: se riesce le pagine ripartono vuote, altrimenti il cache torna al solo heap. Se il sistema è andato in sleep prima che il main loop sbloccasse, si svuota anche la cache JIT di sola lettura. Il callback di alimentazione non cambia.
+- **File:** `source/src/memory.c`, `source/src/main.c`, `source/src/rom_page_map.c`, `source/src/rom_page_map.h`, `tests/test_rom_page_map.c`, `scripts/check-lifecycle.sh` (guardia: nessuna chiamata VolatileMem nel callback)
+- **Test:** `test_two_segment_map`; `test_segment_dropped_unmaps_pages`; `scripts/check-lifecycle.sh` e `scripts/check-video.sh` verdi; `make test-sanitize`.
+- **Accettazione:** nessuna chiamata VolatileMem nel callback (controllo sorgente); se il lock fallisce l'emulatore funziona come oggi.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-6.3 — Soak: 100 sospensioni con pagine nella partizione · S, 1,5 gg · dipende da: PRF-6.2, F-120 · PSP: sì
+- **Cosa:** Su PSP-1000 e uno slim, con una ROM da 32 MiB: 100 cicli di POWER durante il gioco, nel menu e durante il caricamento di una pagina. L'hash di stato guest (F-120) su una traccia deve coincidere con un run senza partizione. Si confrontano anche miss di pagina e p99.
+- **File:** `docs/RAM-BUDGET.md`, `benchmarks/**`
+- **Test:** hardware: 200 cicli totali.
+- **Accettazione:** nessun crash o blocco, hash identici; un solo crash ferma l'epic (kill).
+
+#### PRF-6.4 — Allocatore vm_pool per i due inquilini (pagine ROM e rewind) · S, 1 gg · dipende da: PRF-6.1 · PSP: no
+- **Cosa:** Modulo puro `vm_pool`: il rewind (F-083) ritaglia dall'alto, il page cache dal basso, il confine è controllato, il rilascio prima dello sleep è unico e al risveglio entrambi gli inquilini ripartono vuoti. Serve al caso (1) e al caso (2) del gate.
+- **File:** `source/src/vm_pool.c` (nuovo), `source/src/vm_pool.h` (nuovo), `tests/test_vm_pool.c` (nuovo), `Makefile`, `source/Makefile`
+- **Test:** `test_carve_top_and_bottom_do_not_overlap`; `test_release_drops_both_tenants`; `test_single_tenant_gets_whole_pool`; `make test-sanitize`.
+- **Accettazione:** si fa solo se il gate dell'epic passa in uno dei due casi; con un solo inquilino questo può usare l'intera partizione.
+
+### PRF-7 — Dispatch cache per i salti indiretti (prima solo BIOS e ROM)
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate (misura in 1.6) | 13 gg | PRF-1.1, PRF-1.3, PRF-2.3, PRF-2.5, PRF-3.1, CMP-1.4, ENG-15.4, F-120, F-137, PRF-8.6 (solo PRF-7.6) |
+
+**Copre:** F-030 dispatch cache dei salti indiretti.
+
+**Obiettivo:** Se il gate passa: nessuna voce stantia (invariante unica imposta da un controllo sorgente, mutante catturato da F-120 prima di ogni A/B); controllo del budget di cicli prima della sonda in ogni stub; v1 BIOS e ROM con un guadagno significativo di almeno il 2% nel bench, altrimenti kill; voci RAM con hit ≥ 95% su Doom II e Duke Nukem Advance anche con 10-20 clear SMC per frame e lavoro per frame almeno il 5% in meno della v1 (3+3, PSP-1000 e slim).
+
+**Da noi oggi:** I tre stub (`source/src/mips_stub.S:378-415`) controllano il budget di cicli in $17 con `blez`, poi salvano i registri, chiamano il lookup C e li ricaricano. Il lookup trova i blocchi RAM con i tag nei metadati e quelli ROM con un hash e una catena (`source/src/cpu.c:2784-2891`). Non ci sono cache davanti al lookup né contatori di dispatch. Al salto $1, $2, $5 e $6 sono liberi (mappa in `source/src/mips_emit.h:401-430`).
+
+**Come ci arriviamo:**
+- La v1 accetta solo destinazioni BIOS e ROM: i flush SMC della RAM non toccano la tabella, che si svuota solo al reset della cache readonly (`cpu.c:4076`).
+- La sonda sta dopo il controllo del budget in ogni stub che la usa, `_dual` compreso.
+- Un'invariante unica, imposta da un controllo sorgente (ogni `readonly_next_code = readonly_code_cache` è seguito da `dispatch_cache_clear`), e un mutante catturato dall'oracolo F-120 prima dell'A/B.
+- Voci RAM solo se i contatori lo giustificano, con invalidazione precisa: ogni blocco ritirato cancella la sola sua voce, in O(1), senza svuotare la tabella.
+
+**Gate prima di iniziare:** con PRF-2.3 e PRF-2.5, lookup indiretti × costo almeno al 3% del tempo di lavoro mediano su almeno 2 titoli di riferimento sotto 59 fps sul PSP-1000, oppure almeno al 5% su uno; oracolo F-120 disponibile. Kill: nessun miglioramento significativo (test esatto) di almeno il 2% nel bench dopo PRF-7.5. PRF-7.6 ha un gate e un A/B propri: dopo PRF-7.5, lookup verso EWRAM, IWRAM e VRAM × costo almeno al 3% del lavoro su una scena di PRF-8.6. Il kill di PRF-7.5 vale solo per le voci BIOS e ROM.
+
+**Rischi:**
+- Una voce stantia salta in codice morto. Contromisure: invariante unica, controllo sorgente, mutante, oracolo su hardware (PPSSPP nasconde questa classe di bug).
+- Il guadagno principale è evitare salvataggio e ripristino dei registri e la chiamata C: può risultare piccolo.
+- Pressione sulla D-cache da 16 KiB: la dimensione delle tabelle si sceglie con la misura.
+
+#### PRF-7.1 — Modulo puro dispatch_cache · S, 1 gg · dipende da: PRF-2.3, PRF-2.5 · PSP: no
+- **Cosa:** Tabella direct-mapped di coppie {chiave = PC grezzo, indirizzo nativo u32}, con un numero di voci per set di istruzioni, potenza di due, scelto dalla misura dei contatori di PRF-2.3 (prima prova: 256). `put` accetta solo PC BIOS (0x00) e ROM (0x08-0x0D); `get` e `clear` completano l'interfaccia. Il layout dei dati è quello che legge la sonda asm, verificato da static assert su dimensione e offset.
+- **File:** `source/src/dispatch_cache.c` (nuovo), `source/src/dispatch_cache.h` (nuovo), `tests/test_dispatch_cache.c` (nuovo), `Makefile`, `source/Makefile`
+- **Test:** `test_put_rejects_ram_regions`; `test_collision_overwrites`; `test_clear_invalidates_all`; `test_unaligned_pc_misses`; `make test-sanitize`.
+- **Accettazione:** sull'host gli indirizzi sono u32 finti, nessuna dipendenza dalla dimensione dei puntatori.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-7.2 — Sonda asm negli stub indiretti e riempimento nel lookup · M, 2,5 gg · dipende da: PRF-7.1, F-120 · PSP: sì
+- **Cosa:** In `mips_indirect_branch_arm` e `_thumb` (`source/src/mips_stub.S:378-402`), dopo `blez $17` e lo `sw` nel delay slot, circa 8 istruzioni su $1, $2, $5 e $6 cercano $4 nella tabella; in caso di hit saltano con `jr` al codice nativo, altrimenti si prosegue come oggi. `block_lookup_address_arm` e `_thumb` (`cpu.c:2887-2891`) riempiono la tabella quando riescono al livello 0. Ogni reset di `readonly_next_code` (`cpu.c:4076`) e ogni clear del metadata BIOS chiama `dispatch_cache_clear`, imposto da un controllo in `scripts/check-performance.sh`. Nella v1 `_dual` resta sul percorso C.
+- **File:** `source/src/mips_stub.S`, `source/src/cpu.c`, `source/src/dispatch_cache.c`, `source/src/dispatch_cache.h`, `scripts/check-performance.sh`
+- **Test:** `tests/test_dispatch_cache.c`; controllo sorgente: ogni `readonly_next_code = readonly_code_cache` è seguito da `dispatch_cache_clear`; revisione dei registri liberi contro `source/src/mips_emit.h:401-430`; replay F-120 su hardware.
+- **Accettazione:** il controllo del budget di cicli resta la prima istruzione di ogni stub; con la tabella vuota il comportamento è identico a oggi (hash F-120); quota di BSS scritta (budget di PRF-8).
+
+#### PRF-7.3 — Contatori hit, miss e clear, e interruttore a run-time · S, 1 gg · dipende da: PRF-7.2, ENG-15.4, CMP-1.4 · PSP: no
+- **Cosa:** Contatori u32 letti come delta, con lo schema di PRF-2.3. Una chiave per utenti esperti (ENG-15.4) spegne il riempimento: la tabella resta vuota e la sonda manca sempre. Lo stato dell'interruttore va nel report come `dispatch-cache` ed entra tra i campi opzionali da far combaciare, così l'A/B con l'interruttore usa `--vary dispatch-cache` (CMP-1.4).
+- **File:** `source/src/cpu.c`, `source/src/dispatch_cache.c`, `source/src/perf_monitor.c`, `source/src/perf_report.c`, `scripts/compare-benchmarks.py`, `tests/test_perf_report.c`, `tests/test_dispatch_cache.c`, `tests/test_compare_benchmarks.py`
+- **Test:** `test_perf_report.c`: chiavi `dispatch-cache-*`; `test_dispatch_cache.c`: `disabled_never_fills`; `test_compare_benchmarks.py`: interruttore diverso rifiutato senza `--vary`.
+- **Accettazione:** con l'interruttore spento l'hash F-120 è identico a quello della build senza cache.
+
+#### PRF-7.4 — Stress di invalidazione e mutante · M, 2 gg · dipende da: PRF-7.2, F-120, F-137 · PSP: sì
+- **Cosa:** Nella build diagnostica un hook forza un flush della cache readonly ogni N frame. Un mutante che salta `dispatch_cache_clear` (patch di testo in `tests/mutants/`) deve far divergere l'oracolo F-120 o andare in crash su una traccia; senza mutante l'oracolo resta identico.
+- **File:** `source/src/cpu.c` (hook diagnostico), `source/src/main.c`, `tests/mutants/dispatch_cache_skip_clear.patch` (nuovo, testo)
+- **Test:** hardware: traccia con flush forzato, con e senza mutante, su PSP-1000.
+- **Accettazione:** il mutante viene catturato; la build corretta resta identica con flush ogni 60 frame.
+
+#### PRF-7.5 — A/B su hardware della dispatch cache · M, 2 gg · dipende da: PRF-7.3, PRF-7.4, PRF-3.1, PRF-1.1, PRF-1.3 · PSP: sì
+- **Cosa:** Bench 3+3 alternati su PSP-1000 e uno slim, sui titoli che hanno fatto scattare il gate. 10 tracce, tra cui Unbound, Heart & Soul e Golden Sun, con hash identici alla build precedente. compare-benchmarks deve dare PASS con il miglioramento scritto prima (`--claim`).
+- **File:** `benchmarks/**`, `docs/PERFORMANCE.md`
+- **Test:** hardware: 12 run di bench e 20 replay.
+- **Accettazione:** hash identici su tutte le tracce; guadagno significativo di almeno il 2%, altrimenti kill.
+
+#### PRF-7.6 — Voci RAM a invalidazione precisa e stub _dual (con gate) · L, 4,5 gg · dipende da: PRF-7.5, PRF-2.3, PRF-8.6 · PSP: sì
+- **Cosa:** `partial_clear_metadata_arm/_thumb` (`cpu.c:3900-3982`), per ogni parola con tag di inizio blocco che azzerano, cancellano la sola voce con quella chiave (O(1)); i flush completi e `clear_metadata_area` svuotano solo le voci riempite, tenute in una lista. Un PC in uno specchio della RAM ha lo stesso blocco ma una chiave diversa, quindi non si mette in cache. Lo stub `_dual` aggiorna CPSR.T in asm, dopo il controllo del budget.
+- **File:** `source/src/mips_stub.S`, `source/src/cpu.c`, `source/src/dispatch_cache.c`, `source/src/dispatch_cache.h`, `tests/test_dispatch_cache.c`, `tests/mutants/`
+- **Test:** `test_ram_entry_forgotten_on_retire`; `test_mirror_pc_not_cached`; `test_full_clear_resets_only_filled`; `test_rom_entries_survive_ram_retire`; mutante «non dimentica la voce» catturato da F-120; hardware: A/B 3+3 contro la build con le sole voci BIOS e ROM.
+- **Accettazione:** hit della dispatch cache sui salti verso la RAM ≥ 95% su Doom II e Duke Nukem Advance anche con 10-20 clear SMC per frame (contatori di PRF-7.3); lavoro per frame almeno il 5% in meno della build con le sole voci BIOS e ROM (3+3, PSP-1000 e slim); hash identici su 3 titoli SMC su due modelli; quota di BSS scritta (budget di PRF-8).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### PRF-8 — SMC avanzato: suite misurata, meno trappole e ritraduzioni, gate appresi, thunk stabili e link diretti RAM
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate (PRF-8.6 in 1.5) | 27,5 gg | PRF-1.1, PRF-1.3, PRF-2.2, PRF-2.3, PRF-3.1, PRF-4.1 (solo PRF-8.11), PRF-7.5, CMP-1.4, CMP-2.2, CMP-5.2, CMP-5.3, CMP-12.4, ENG-15.4, F-120, F-124, F-137 |
+
+**Copre:** F-031 gate SMC appresi; F-032 thunk stabili e link diretti in RAM; F-038 modello di invalidazione SMC; F-166 patch in place degli immediati riscritti.
+
+**Obiettivo:** Uscita di PRF-8, con compare-benchmarks 3+3 alternati e mediane su PSP-1000 e uno slim, sui nostri stati:
+- Doom II a velocità piena (mediana ≥ 59,7 fps) su PSP-1000 e sul modello slim, con un margine del bench senza limite (PRF-3.1) di almeno il 10% e il p99 pubblicato, oppure la causa misurata in `docs/DESIGN-DECISIONS.md` e una storia aperta; Ice Nine e Kill.Switch ≥ 59,0; Duke Nukem Advance ≥ 58,5; LEGO Drome Racers ≥ 58,0; Top Gear Rally ≥ 57,5; Hot Wheels: Stunt Track Challenge ≥ 52,0 sui due modelli, con il p99 pubblicato; Payback ≥ 6,5.
+- Le altre scene SMC di PRF-8.6 e le due con codice in VRAM a velocità piena, con un margine del bench senza limite (PRF-3.1) di almeno il 10% (≥ 65,7 fps): oltre la velocità piena conta solo il margine.
+- Le scene di riferimento senza FAIL; zero esecuzioni stantie nel controllo per istruzione su tutte le scene; hash F-120 identici a interruttore acceso e spento.
+- Le strutture nuove di PRF-7, PRF-8 e PRF-9 (patch degli immediati, voci RAM della dispatch cache, attese pure, contatori) pesano al massimo 64 KiB di BSS in tutto e 0 byte di heap; l'heap libero all'avvio su PSP-1000 resta entro 64 KiB da quello della build precedente alla prima storia di PRF-7, PRF-8 o PRF-9 entrata, e il buffer ROM non perde nessun passo da 1 MiB (misura di PRF-4.1).
+
+**Da noi oggi:** I gate SMC arrivano solo dalle righe `smc_gate` e `smc_cutpoint` di game_config.txt (`source/src/memory.c:3413-3416`; `source/src/cpu.c:3276-3292`, `:3363-3370`); nulla viene appreso o salvato. Il clear è parziale per parola, con riuso multiversione via checksum (`cpu.c:124-135`, `:3534-3611`, `:3841-3900`), e il DMA invalida per parola (`memory.c:2592-2600`); i bit di codice sono per parola (`mips_stub.S:1225-1233`), quindi uno store di un byte o di mezza parola su una parola di codice intrappola sempre. Mancano: uno store dello stesso valore intrappola e ritraduce; nessuna patch degli immediati; le parole non finali degli store multipli non sono controllate (le corregge CMP-12.4). I target RAM non sono collegati direttamente, salvo con la politica full-flush (`cpu.c:2865-2870`, `:3843`). Un salto con PC calcolato, come add/sub pc, pc, #imm, passa sempre dal lookup C completo (`mips_emit.h:755-759`, `mips_stub.S:378-389`).
+
+**Come ci arriviamo:**
+- Prima la misura sulla 1.4.3 pubblicata (PRF-8.6), su 30 scene e due modelli: ogni storia ha un gate scritto con quei numeri.
+- Gate appresi una volta in build diagnostica e spediti come righe CRC nella tabella per gioco (CMP-2.2), sovrascrivibili da game_config.txt: nessun apprendimento a ogni avvio e lo stesso comportamento in ogni sessione.
+- Il thunk è il prologo stesso del blocco ritirato, senza memoria in più, insieme al clear per parola e al riuso via checksum.
+- Uno store dello stesso valore non intrappola e un immediato riscritto si patcha in place: esatti perché ogni scrittura su codice RAM è segnalata (CMP-12.4, CMP-5.2, CMP-5.3 e i percorsi C).
+- Ogni passo ha un mutante che l'oracolo F-120 deve catturare su tre titoli SMC e due modelli, e il controllo per istruzione della build diagnostica (CMP-12.4) resta a zero.
+- Tabelle in BSS, mai heap, con il budget scritto sopra.
+- Alla fine la suite di PRF-8.6 si rifà sull'ultima build e controlla ogni numero sopra (PRF-8.11): PRF-8 non si chiude senza.
+
+**Gate prima di iniziare:**
+- PRF-8.6: nessuno; è la misura, nella 1.5.
+- PRF-8.1-8.5: dopo PRF-7, lookup verso EWRAM e IWRAM × costo almeno al 3% del lavoro, oppure ritraduzioni RAM e clear SMC almeno al 5% del lavoro stimato, su un titolo sotto 59 fps mediani sul PSP-1000; oracolo F-120 con mutanti disponibile.
+- PRF-8.7: PRF-8.6 mostra, su una scena sotto 59,5 fps mediani, almeno 5 ritraduzioni RAM per frame (compilations più reuse-hits, contate dopo 10 s) oppure più di 1 flush della cache scrivibile al minuto.
+- PRF-8.8: la classificazione delle trappole di PRF-8.1, rifatta dopo PRF-8.7, mostra le modifiche solo-immediato ad almeno il 20% delle ritraduzioni rimaste su una scena sotto 59,5 fps.
+- PRF-8.9: dopo le storie di PRF-8 già fatte, la traduzione RAM vale ancora almeno il 5% del lavoro su una scena sotto 59,5 fps (fasi di PRF-2.2).
+- PRF-8.10: nella build diagnostica (conteggi di PRF-8.1) i lookup indiretti dai salti add/sub pc, pc, #imm valgono almeno 1000 per frame su una scena sotto 59,5 fps.
+- PRF-8.11: dopo l'ultima storia di PRF-8 entrata o ritirata, se almeno una tra PRF-8.1 e PRF-8.10 è entrata.
+
+**Rischi:**
+- Un thunk non riscritto esegue codice vecchio: mutanti e oracolo su tre titoli SMC e due modelli.
+- I gate appresi valgono per una revisione della ROM: chiave CRC (CMP-2.2).
+- Saltare la trappola per uno store dello stesso valore è giusto solo se ogni percorso di scrittura su codice RAM è segnalato: il commento sopra `post_write_metadata_core` elenca i percorsi e il controllo per istruzione lo verifica.
+- Complessità alta nel cuore del dynarec: ogni pezzo che non raggiunge il suo numero si ritira.
+
+#### PRF-8.1 — Punti caldi e classi delle trappole SMC (build diagnostica) · S, 2 gg · dipende da: PRF-2.3, F-137 · PSP: no
+- **Cosa:** Un modulo puro `hot_pc` tiene i K PC più frequenti; cpu.c gli passa i clear parziali e le ritraduzioni RAM per PC. Allo stop della cattura `main.c` scrive i 16 PC più caldi in `benchmarks/smc-<game-code>.txt`; l'I/O resta fuori dai moduli caldi. Oltre ai 16 PC più caldi, `hot_pc` classifica ogni trappola confrontando l'opcode tradotto (copia dopo il `ReuseHeader`, `cpu.c:124-135`) con la parola in memoria: stesso valore, solo campo immediato ARM (bit 11:0 di un'istruzione di elaborazione dati), solo imm8 Thumb, solo offset di LDR/STR, altro. Il report della build diagnostica scrive i conteggi per classe e le 16 parole con più modifiche solo-immediato, e conta i lookup indiretti dai salti add/sub pc, pc, #imm.
+- **File:** `source/src/hot_pc.c` (nuovo), `source/src/hot_pc.h` (nuovo), `tests/test_hot_pc.c` (nuovo), `source/src/cpu.c`, `source/src/main.c`, `Makefile`, `source/Makefile`
+- **Test:** `test_topk_keeps_most_frequent`; `test_topk_stable_ties`; `test_classify_same_value`; `test_classify_arm_dp_imm_only`; `test_classify_thumb_imm8`; `test_classify_other`; `make test-sanitize`.
+- **Accettazione:** nessuna allocazione e nessun I/O in cpu.c (`scripts/check-performance.sh`); nella build di release il codice è assente; la somma delle classi è uguale al totale delle trappole; i numeri decidono i gate di PRF-8.8 e PRF-8.10.
+
+#### PRF-8.2 — Gate SMC appresi una volta e spediti come dati · M, 2 gg · dipende da: PRF-8.1, CMP-2.2, F-120 · PSP: sì
+- **Cosa:** `scripts/smc-gates.py` trasforma i punti caldi in righe `smc_gate` candidate per la tabella per gioco di CMP-2.2 (chiave CRC). Dopo revisione e oracolo le righe entrano nella tabella compilata e `add_smc_gate` (`cpu.c:3276-3285`) le riceve da lì. game_config.txt continua a funzionare e l'utente può sovrascrivere. Prima di generare righe `smc_gate` per un titolo si legge la classificazione delle trappole di PRF-8.1, rifatta dopo PRF-8.7 se è stata fatta: i titoli che si ripatchano con gli stessi byte non intrappolano più e non ricevono righe; le righe servono solo per le trappole che restano.
+- **File:** `scripts/smc-gates.py` (nuovo), `tests/test_smc_gates.py` (nuovo), `Makefile` (`test-tools`), `source/src/memory.c` (caricamento dei gate, ~:3413-3416), `source/src/cpu.c`
+- **Test:** `test_candidates_from_hotspots`; `test_only_iwram_pcs_kept` (come `add_smc_gate`); `test_stable_output_order`; oracolo F-120 su un titolo con gate.
+- **Accettazione:** un gate dalla tabella e la stessa riga in game_config.txt danno lo stesso hash; dopo PRF-8.7, zero trappole della classe «stesso valore» su Mario Golf: Advance Tour, Mario Tennis: Power Tour e Golden Sun: L'Era Perduta, senza righe di gate scritte per questi titoli.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-8.3 — Prologo stabile come thunk dei blocchi RAM · L, 4 gg · dipende da: PRF-7.5, F-120, F-124 · PSP: sì
+- **Cosa:** Quando `partial_clear_metadata` (`cpu.c:3841-3900`) ritira un blocco RAM, il suo prologo viene riscritto in un salto a uno stub di ri-lookup con il PC del blocco. Quando lo stesso PC viene ritradotto o riusato via checksum, il vecchio prologo salta al blocco nuovo. Nessuna memoria extra; la coerenza dell'I-cache usa le cache op per linea esistenti.
+- **File:** `source/src/cpu.c`, `source/src/mips_emit.h`, `source/src/mips_stub.S`
+- **Test:** oracolo F-120 su 3 titoli SMC; mutante "prologo non riscritto" catturato; test di codifica MIPS (F-124) per lo stub di ri-lookup.
+- **Accettazione:** hash identici su Unbound, Heart & Soul e Golden Sun.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-8.4 — Collegamenti diretti RAM→RAM attraverso i thunk · M, 3 gg · dipende da: PRF-8.3 · PSP: sì
+- **Cosa:** I target collegabili, oggi solo BIOS e ROM (`cpu.c:2865-2870`), si estendono ai blocchi RAM della stessa area, che saltano al prologo stabile; l'invalidazione è garantita da PRF-8.3.
+- **File:** `source/src/cpu.c`, `source/src/mips_emit.h`
+- **Test:** oracolo F-120 e mutanti; hardware: A/B 3+3.
+- **Accettazione:** guadagno significativo sul titolo del gate, hash identici.
+
+#### PRF-8.5 — Verifica su hardware e interruttore a run-time · M, 2 gg · dipende da: PRF-8.4, ENG-15.4, CMP-1.4, PRF-1.1, PRF-1.3 · PSP: sì
+- **Cosa:** Oracolo su Unbound, Heart & Soul e Golden Sun, su PSP-1000 e PSP-2000; A/B 3+3. Una chiave (ENG-15.4) riporta al comportamento attuale; il suo stato va nel report come `smc-thunks` e l'A/B con l'interruttore usa `--vary smc-thunks` (CMP-1.4).
+- **File:** `benchmarks/**`, `docs/PERFORMANCE.md`, `source/src/cpu.c`, `source/src/perf_report.c`, `scripts/compare-benchmarks.py`
+- **Test:** hardware: 6 replay e 12 run di bench.
+- **Accettazione:** hash identici e guadagno significativo, altrimenti kill e rimozione del codice.
+
+#### PRF-8.6 — Suite SMC e di riferimento misurata sulla 1.4.3 · M, 3 gg · dipende da: — · PSP: sì
+- **Cosa:** Stati di salvataggio nostri, mai nel repository, su 30 scene, con la 1.4.3 pubblicata (sha256 di `EBOOT.PBP`) su PSP-1000 e su uno slim:
+  - 18 titoli con codice automodificante: Back to Stone, Doom II, Duke Nukem Advance, FIFA 07, Ford Racing 3, Hot Wheels: Stunt Track Challenge, Ice Nine, Kill.Switch, LEGO Drome Racers, Mario Golf: Advance Tour, Mario Tennis: Power Tour, Max Payne, Need for Speed Carbon: Own the City, Need for Speed: Most Wanted, Payback, Smashing Drive, SSX 3, Top Gear Rally;
+  - 2 con codice in VRAM: Big Mutha Truckers e Street Racing Syndicate;
+  - 5 di riferimento: Unbound in battaglia doppia, Heart & Soul in una scena pesante, Golden Sun in battaglia, MKSC, Emerald in battaglia;
+  - 3 altri titoli difficili di CMP-9: Driver 2 Advance, Need for Speed: Underground 2 e Sonic Advance 2, con il controllo a vista dei difetti grafici e l'ascolto dell'audio;
+  - Need for Speed: Underground e OpenLara solo come controllo d'avvio.
+
+  Per scena 3 catture Diagnostica da 60 s: fps p50 e p99, frame-time p95 e p99, `dynarec-compilations`, `dynarec-reuse-hits` e `dynarec-writable-flushes` per frame. Le ritraduzioni RAM per frame si contano dopo 10 s di riscaldamento, perché `dynarec-compilations` conta anche i blocchi ROM (`cpu.c:3731`). Si annotano i difetti visibili (codice stantio, blocchi, titoli che non partono). I report valgono come base perché la 1.4.3 scrive i contatori a 64 bit in modo corretto. Un memo dà, per ogni gate che usa questi numeri (PRF-7.6, PRF-8.7-8.10, PRF-9.4, PRF-9.6, CMP-9), le scene sotto 59,5 fps mediani e i valori misurati. Se una di queste scene supera 1 flush della cache scrivibile al minuto, il memo apre una storia per conservare il riuso oltre il flush completo; se il DMA su codice pesa su Top Gear Rally (molti clear parziali per trasferimento), ne apre una per raccogliere le parole colpite da un trasferimento in un solo clear.
+- **File:** `docs/HARDWARE-RESULTS.md` (nuovo se manca), `benchmarks/<modello>/<game-code>-r<rev>/<versione>/` (report .txt, qui con la versione 1.4.3), `benchmarks/README.md` (nuovo: descrive lo schema), `docs/PERFORMANCE.md` (nuovo se manca)
+- **Test:** hardware: 180 catture; `scripts/compare-benchmarks.py` legge ogni gruppo di 3 senza errori; `scripts/check-tree.sh` verde (solo testo).
+- **Accettazione:** tabella scena × modello completa, con «non avviabile» o «difetto visibile» dove serve; memo con i numeri per ogni gate citato.
+- **Licenza:** nessun codice.
+
+#### PRF-8.7 — Store dello stesso valore su codice senza trappola (con gate) · M, 2 gg · dipende da: CMP-12.4, CMP-5.2, CMP-5.3, PRF-8.6, PRF-2.3, F-120 · PSP: sì
+- **Cosa:** In `post_write_metadata_core` (`mips_stub.S:1224-1241`) e negli store u8/u16/u32 su EWRAM, IWRAM e VRAM (`:2700-2960`) il bit di codice si legge prima dello store; se è acceso si confrontano valore vecchio e nuovo e, se coincidono, lo store prosegue come uno store normale, senza `smc_write`. Lo stesso in `check_smc_write` (`memory.c:918-931`) per i percorsi C e il DMA, che riceve il valore vecchio letto prima della scrittura (oggi la scrittura la precede: `:934-937`, `:956-959`, `:1025-1032`). È esatto solo perché ogni scrittura su codice RAM è segnalata: le parole degli store multipli (CMP-12.4), gli store del percorso veloce dello stack (CMP-5.3), il trampolino EWRAM dello stack (CMP-5.2) e i percorsi C. Il commento sopra `post_write_metadata_core` elenca questi percorsi. Il contatore `smc-same-value-stores` entra nel bump del perf report della release.
+- **File:** `source/src/mips_stub.S`, `source/src/memory.c`, `source/src/perf_metrics.c`, `source/src/perf_report.c`, `tests/core-rom/source/cases_smc.c` (nuovo se manca), `tests/test_perf_report.c`, `CHANGELOG.md`
+- **Test:** core-rom `same_store` (un ciclo tradotto riscrive la propria parola con lo stesso valore: risultato giusto e zero ritraduzioni) e `changed_store` (valore diverso: ritraduce come oggi); mutante «confronta solo il byte basso» catturato; controllo stantio per istruzione a zero sulle scene di PRF-8.6; replay F-120 con gli stessi checkpoint; compare-benchmarks 3+3 su Doom II, Duke Nukem Advance, Hot Wheels: Stunt Track Challenge, Top Gear Rally, Mario Tennis: Power Tour e Unbound.
+- **Accettazione:** zero trappole e zero ritraduzioni per uno store dello stesso valore su codice (contatore a zero su `same_store`), senza registrazioni per mezza parola né interruttori adattivi; clear SMC per frame almeno il 60% in meno su Doom II e Duke Nukem Advance rispetto alla build precedente (contatori di PRF-2.3); nessun FAIL su Hot Wheels, Top Gear Rally, Mario Tennis e Mario Golf; il merge richiede il controllo stantio a zero su tutte le scene di PRF-8.6; quota di BSS scritta (budget di PRF-8); voce CHANGELOG (Changed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-8.8 — Patch in place degli immediati riscritti dal gioco (con gate) · L, 4 gg · dipende da: PRF-8.7, PRF-8.1, F-124, F-120 · PSP: sì
+- **Cosa:** Una parola RAM diventa «patchabile» quando una sua trappola cambia solo il campo immediato di un'istruzione ARM di elaborazione dati (non MSR, Rd e Rn diversi da pc). Da lì ogni traduzione di quella parola emette l'operando in una forma fissa di due istruzioni (lui/ori in un temporaneo) e registra l'indirizzo nativo in una tabella in BSS. Alla trappola successiva, se la differenza resta nel campo immediato (e il carry del rotatore non cambia dove è usato), `smc_write` (`mips_stub.S:3234-3243`) riscrive tutti i siti registrati, li pubblica con `flush_cache_line` (`cpu.c:3413-3418`), aggiorna la copia degli opcode dopo il `ReuseHeader` e il suo checksum (o toglie il blocco dalla catena di riuso) e non chiama `partial_clear_metadata`. Ogni altra modifica segue la strada di oggi e la parola si dimentica. Tutto si azzera a ogni flush completo. Vale in IWRAM e in EWRAM; altre forme (imm8 Thumb, offset di LDR/STR) solo se la classificazione delle trappole le trova sopra il 5% di quelle rimaste.
+- **File:** `source/src/mips_emit.h` (emettitori ARM con immediato), `source/src/cpu.c`, `source/src/cpu.h`, `source/src/mips_stub.S`, `tests/core-rom/source/cases_smc.c` (nuovo se manca), `CHANGELOG.md`
+- **Test:** F-124: codifica della forma fissa e della patch; core-rom `imm_patch` (un ADD #imm riscritto a ogni iterazione, somma attesa); mutante «immediato sbagliato di un bit» catturato da F-120 su Doom II, Duke Nukem Advance e Ice Nine; controllo stantio a zero; compare-benchmarks 3+3; bench senza limite di PRF-3.1 su Doom II, 3 run per modello.
+- **Accettazione:** Doom II a velocità piena (mediana ≥ 59,7 fps) su PSP-1000 e sul modello slim, con un margine del bench senza limite (PRF-3.1) di almeno il 10% e il p99 pubblicato, oppure la causa misurata in `docs/DESIGN-DECISIONS.md` e una storia aperta; Ice Nine ≥ 59,0 e Duke Nukem Advance ≥ 58,5 mediani su PSP-1000 e slim (3+3); almeno il 95% delle modifiche solo-immediato servite da una patch senza ritraduzione, in IWRAM e in EWRAM; zero istruzioni stantie; tabelle in BSS entro 16 KiB, nessuna allocazione in `cpu.c`; voce CHANGELOG (Changed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-8.9 — Costo della traduzione RAM (con gate) · S, 1,5 gg · dipende da: PRF-8.6, PRF-2.2, F-120 · PSP: sì
+- **Cosa:** Solo dove misurato utile: prefiltro dei punti d'uscita ARM in `scan_block` (`cpu.c:3297-3407`); bit di scrittura dei flag da una tabella costruita all'avvio eseguendo la macro esistente, con autocontrollo; scansione RAM ARM in una funzione propria se il compilatore ne tiene lo stato sullo stack. Il codice emesso non cambia. La build resta -O2 con LTO (`source/Makefile:63`, `:68`, `:106`), che non duplica il ciclo del traduttore Thumb: nessun controllo di build in più.
+- **File:** `source/src/cpu.c`
+- **Test:** hash F-120 identici su 10 tracce; misura per fasi su Doom II e Duke Nukem Advance prima e dopo.
+- **Accettazione:** costo medio della traduzione RAM ≤ 500 cicli CPU per istruzione guest su PSP-1000 (fasi di PRF-2.2 su Doom II e Duke Nukem Advance), oppure il 20% in meno della build precedente se questa è già sotto; codice emesso identico (hash F-120 identici); zero chiamate kernel di cache per pubblicare codice (controllo di ENG-14.1); ogni pezzo che non guadagna si ritira.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-8.10 — add/sub pc, pc, #imm dentro il blocco come salto interno (con gate) · S, 1 gg · dipende da: PRF-8.6, PRF-8.1, PRF-2.3, F-120, F-124, ENG-15.4 · PSP: sì
+- **Cosa:** In `scan_block` (`cpu.c:3297-3407`) un'istruzione ARM di elaborazione dati senza S, con Rd = Rn = pc e operando immediato, la cui destinazione (pc + 8 ± imm) cade nello stesso blocco, si registra come uscita interna. `check_store_reg_pc_no_flags` (`mips_emit.h:755-759`) emette per lei un salto condizionale patchato come le altre uscite interne (`cpu.c:3677-3686`), con lo stesso addebito di cicli e lo stesso controllo del budget del salto indiretto, e senza link RAM, che la politica parziale vieta (`cpu.c:114-116`). Una destinazione fuori dal blocco resta indiretta. Interruttore a run-time (ENG-15.4), con lo stato nel report.
+- **File:** `source/src/cpu.c`, `source/src/mips_emit.h`, `tests/core-rom/source/cases_smc.c` (nuovo se manca), `CHANGELOG.md`
+- **Test:** core-rom `alu_pc` (addcc pc, pc, #imm in un ciclo in IWRAM, somma attesa); F-124 per la codifica del salto emesso; hash F-120 identici a interruttore acceso e spento; compare-benchmarks 3+3 su Doom II e Duke Nukem Advance.
+- **Accettazione:** zero lookup per questi salti con destinazione nello stesso blocco RAM (contatore della build diagnostica); hash identici a interruttore acceso e spento; lavoro per frame almeno l'1,5% in meno su Doom II e su Duke Nukem Advance (3+3, PSP-1000 e slim), altrimenti si ritira; voce CHANGELOG (Changed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-8.11 — Misura d'uscita di PRF-8 sull'ultima build · M, 3 gg · dipende da: PRF-8.6, PRF-3.1, PRF-4.1, CMP-12.4, F-120 · PSP: sì
+- **Cosa:** Dopo l'ultima storia di PRF-8 entrata o ritirata si rifà la suite di PRF-8.6 sull'ultima build (sha256 di `EBOOT.PBP`), su PSP-1000 e sullo stesso slim: 30 scene con 3 catture Diagnostica da 60 s ciascuna, più 3 run del bench senza limite (PRF-3.1) per ognuna delle 20 scene con codice automodificante o in VRAM. Si controlla ogni numero dell'Obiettivo di PRF-8: le soglie per titolo, il margine del 10% sulle altre scene, le scene di riferimento senza FAIL, il controllo stantio per istruzione a zero su tutte le scene (build diagnostica di CMP-12.4), gli hash F-120 identici a interruttori accesi e spenti, la BSS di PRF-7, PRF-8 e PRF-9 dalla mappa del linker e l'heap libero all'avvio dalla misura di PRF-4.1 su PSP-1000. Per ogni numero mancato si scrive la causa misurata in `docs/DESIGN-DECISIONS.md` e si apre una storia.
+- **File:** `docs/HARDWARE-RESULTS.md`, `benchmarks/<modello>/<game-code>-r<rev>/<versione>/`, `docs/PERFORMANCE.md`, `docs/DESIGN-DECISIONS.md`
+- **Test:** hardware: 180 catture e 120 run del bench; `scripts/compare-benchmarks.py` contro i gruppi della 1.4.3 di PRF-8.6.
+- **Accettazione:** tabella scena × modello completa in `docs/HARDWARE-RESULTS.md`, legata allo sha256 dell'`EBOOT.PBP`, con ogni numero dei quattro punti dell'Obiettivo di PRF-8 segnato come raggiunto o mancato; zero esecuzioni stantie; BSS entro 64 KiB e heap d'avvio entro il budget; ogni numero mancato ha la sua causa e una storia aperta. PRF-8 non si chiude prima.
+- **Licenza:** nessun codice.
+
+### PRF-9 — Percorsi rapidi esatti per registri IRQ, scheduler, cambi di modo e attese
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate (PRF-9.2 e PRF-9.5 in 1.6) | 10,75 gg | PRF-1.1, PRF-1.3, PRF-2.2, PRF-2.3, PRF-3.1, PRF-8.6, CMP-1.4, CMP-3.1, CMP-11.2-11.6, ENG-15.4, F-120, F-124, F-137 |
+
+**Copre:** F-033 percorsi rapidi esatti per registri IRQ, scheduler, cambi di modo e attese; F-167 salto esatto dei cicli di attesa puri.
+
+**Obiettivo:**
+- Ogni percorso rapido dà hash F-120 identici con e senza il percorso su 5 tracce, bit a bit, compreso il salto delle attese; ogni percorso di PRF-9.3, PRF-9.4 e PRF-9.6 ha il suo interruttore (ENG-15.4) e il report A/B scrive lo stato effettivo in ogni braccio.
+- Cambi di modo senza chiamata C (PRF-9.4): lavoro per frame almeno il 4% in meno su Unbound in battaglia doppia e almeno il 5% in meno su OpenLara (3+3, PSP-1000 e slim), con tutti i casi CPU della core-rom verdi a interruttore acceso.
+- Salto esatto delle attese (PRF-9.6): almeno l'80% dei cicli spesi in attese pure eliminato sulle scene di riferimento; lavoro per frame almeno il 3% in meno su Doom II e avanti veloce almeno il 5% più veloce su due titoli leggeri; nessun blocco in 20 minuti su 5 titoli.
+- Store a IE, IF e IME (PRF-9.3) e servizi di update_gba (PRF-9.1): guadagno significativo nel bench, altrimenti si ritirano.
+
+**Da noi oggi:** Il controllo IRQ è già in linea e salta tutto con IF a zero (`source/src/main.c:1221-1257`); i timer inattivi sono saltati (`main.c:410`); SIO e link sono serviti solo se attivi (`main.c:1015-1022`, `:1184-1210`). Le scritture a IE, IF e IME passano da `write_io_register16` in C (`source/src/memory.c:1742-1767`). Ogni passata di update_gba chiama `perf_monitor_record_gba_update_iteration` e `main_power_service` (`main.c:1009-1011`), che legge due volte lo stato e fa due chiamate anche quando non c'è nulla da fare (`main.c:1927-1945`). Ogni cambio di modo (MSR che cambia modo, ritorno da SPSR) passa da `set_cpu_mode` in C attraverso `execute_spsr_restore` ed `execute_store_cpsr` (`mips_stub.S:3358-3380`, `:3459-3504`), con salvataggio e ricarica di tutti i registri guest.
+
+**Come ci arriviamo:**
+- Si toccano solo i punti che la misura indica: il controllo IRQ in linea con IF a zero e il servizio seriale solo se attivo esistono già.
+- Una sola build di release con un interruttore a run-time per ogni percorso (ENG-15.4), nessuno switch di compilazione da tenere allineato.
+- Oracolo F-120 con stato guest identico per ogni modifica, bit a bit anche nel salto delle attese, e un mutante per percorso.
+- I cambi di modo in asm partono solo dopo il banco FIQ e i flag di MSR corretti (CMP-11.2, CMP-11.4) e riusano i casi CPU della core-rom.
+
+**Gate prima di iniziare:** PRF-9.2 e PRF-9.5 sono le misure e stanno nella 1.6. PRF-9.1 e PRF-9.3: fasi di PRF-2.2, tempo proprio di update_gba (escluse scanline e audio) almeno al 10% del lavoro, oppure almeno 300 scritture IE/IF/IME per frame (PRF-9.2), su un titolo sotto 59 fps sul PSP-1000; oracolo F-120 disponibile. PRF-9.4: PRF-9.2 conta almeno 300 cambi di modo per frame su una scena di PRF-8.6, oppure il costo stimato dei cambi di modo vale almeno il 2% del lavoro. PRF-9.6: PRF-9.5 mostra attese pure almeno al 5% del lavoro su una scena sotto 59,5 fps mediani, oppure un guadagno stimato di almeno il 5% in avanti veloce su due titoli.
+
+**Rischi:**
+- Guadagno probabilmente piccolo, perché molte scorciatoie esistono già: il gate evita lavoro inutile.
+- Lo stub asm per IE, IF e IME deve restituire lo stesso alert IRQ del C, o cambia la temporizzazione degli IRQ.
+- Il percorso rapido dei cambi di modo deve prendere il percorso C quando c'è un IRQ pendente: i due mutanti lo verificano.
+- Un ciclo di attesa che legge un registro con effetti (contatori dei timer, KEYINPUT con l'IRQ della tastiera abilitato, SIO, GPIO, backup) non si salta mai.
+
+#### PRF-9.1 — Un solo test di flag per i servizi di ogni passata di update_gba · S, 1 gg · dipende da: PRF-2.2, PRF-3.1, F-120 · PSP: sì
+- **Cosa:** `main_power_service()` e `perf_monitor_record_gba_update_iteration()` (`main.c:1009-1011`) diventano un solo controllo su una parola di servizio. La impostano i callback di alimentazione e di uscita (scrittura atomica di un flag; il callback resta non bloccante) e `main_perf_start` e `_stop`. Durante una cattura il conteggio delle iterazioni resta identico.
+- **File:** `source/src/main.c`, `source/src/perf_monitor.c`, `source/src/perf_monitor.h`, `tests/test_power_lifecycle.c`, `scripts/check-lifecycle.sh`
+- **Test:** `test_power_lifecycle.c` invariato; controllo sorgente: il callback scrive solo flag; hardware: bench A/B 3+3.
+- **Accettazione:** stato guest identico (hash F-120); sospensione e uscita funzionano come prima (20 cicli); guadagno significativo nel bench (test esatto, 3+3), altrimenti si ritira.
+
+#### PRF-9.2 — Contatori delle scritture a IE, IF e IME e dei cambi di modo (build diagnostica) · S, 0,75 gg · dipende da: PRF-2.3, F-137 · PSP: no
+- **Cosa:** Nella build diagnostica `write_io_register16` (`memory.c:1742-1767`) conta le scritture agli offset 0x200, 0x202 e 0x208. Con il costo della chiamata C stimato da PRF-2.5 decide il gate di PRF-9.3. Conta anche i cambi di modo per MSR e per ritorno da SPSR (`execute_store_cpsr`, `execute_spsr_restore`).
+- **File:** `source/src/memory.c`, `source/src/mips_emit.h` (corpi C dei due stub, solo build diagnostica), `source/src/perf_monitor.c`, `source/src/perf_report.c`, `tests/test_perf_report.c`
+- **Test:** `test_perf_report.c`: chiavi `io-irq-writes-*` e `mode-switches-*`.
+- **Accettazione:** nessun codice nuovo nella build di release; i numeri decidono i gate di PRF-9.3 e PRF-9.4.
+
+#### PRF-9.3 — Percorso rapido asm per gli store a IE, IF e IME (con gate) · M, 2,5 gg · dipende da: PRF-9.2, F-120, ENG-15.4, CMP-1.4, PRF-1.1, PRF-1.3 · PSP: sì
+- **Cosa:** Nel gestore degli store I/O di `mips_stub.S`, per IE, IF e IME, scrittura in linea con la stessa semantica di `memory.c:1742-1767`: maschera 0x3FFF, acknowledge di IF, bit 0 di IME. Restituisce l'alert IRQ quando IE&IF è diverso da zero con IME e IRQ ARM abilitati; ogni altro offset va al C come oggi. L'interruttore (ENG-15.4) va nel report come `irq-io-inline` (A/B con `--vary irq-io-inline` di CMP-1.4).
+- **File:** `source/src/mips_stub.S`, `source/src/memory.c` (commento di riferimento), `source/src/perf_report.c`, `scripts/compare-benchmarks.py`
+- **Test:** oracolo F-120 su 5 tracce, inclusi titoli con IRQ HBlank e timer; mutante "alert IRQ mancante" catturato; hardware: bench A/B 3+3.
+- **Accettazione:** hash identici; guadagno significativo, altrimenti si ritira.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-9.4 — Cambi di modo della CPU senza chiamata C (con gate) · M, 2,5 gg · dipende da: PRF-9.2, CMP-11.2-11.6, F-120, F-124, ENG-15.4 · PSP: sì
+- **Cosa:** In `execute_spsr_restore` ed `execute_store_cpsr` (`mips_stub.S:3358-3380`, `:3459-3504`) il caso comune si fa in asm: prima il test dell'IRQ pendente del corpo C (se vale, resta il percorso C di oggi), poi lo scambio dei banchi r13/r14, e r8-r12 per il FIQ, direttamente sui registri host e su `reg_mode`, senza salvare e ricaricare tutti i registri guest. Interruttore a run-time (ENG-15.4) con lo stato nel report (`mode-switch-asm`); il report A/B scrive lo stato effettivo dell'interruttore in ogni braccio, non solo quello compilato.
+- **File:** `source/src/mips_stub.S`, `source/src/mips_emit.h`, `source/src/cpu.c`, `source/src/perf_report.c`, `tests/mutants/` (due patch di testo), `CHANGELOG.md`
+- **Test:** tutti i casi CPU della core-rom di CMP-11.1 a interruttore acceso e spento; due mutanti, «IRQ pendente ignorato» e «r14 del modo non salvato», fanno fallire la core-rom in PPSSPP e su PSP-1000; F-124 per lo stub; hash F-120 identici a interruttore acceso e spento su 5 tracce; compare-benchmarks 3+3 su Unbound e OpenLara.
+- **Accettazione:** lavoro per frame almeno il 4% in meno su Unbound in battaglia doppia e almeno il 5% in meno su OpenLara (3+3, PSP-1000 e slim); hash identici; core-rom verde a interruttore acceso e mutanti rossi; quota di BSS scritta (budget di PRF-8); voce CHANGELOG (Changed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-9.5 — Cicli spesi nelle attese pure (build diagnostica, misura del gate) · S, 0,5 gg · dipende da: PRF-2.2, F-137 · PSP: sì
+- **Cosa:** Nella build diagnostica `scan_block` (`cpu.c:3297-3407`) segna le attese candidate: un salto all'indietro nello stesso blocco il cui corpo ha solo load senza writeback, ALU e confronti, con ogni registro letto non scritto nel corpo o scritto prima nella stessa iterazione e i registri d'indirizzo mai scritti. Un contatore somma per frame i cicli spesi dentro le attese segnate, senza saltare nulla, e il report li scrive come quota del lavoro. Nella stessa sessione si leggono i contatori di PRF-9.2. Decide il gate di PRF-9.6.
+- **File:** `source/src/cpu.c` (solo build diagnostica), `source/src/perf_report.c`, `tests/test_perf_report.c`
+- **Test:** `test_perf_report.c`: chiavi assenti nei report di release; hardware: le scene di PRF-8.6 e l'avanti veloce su due titoli leggeri, su PSP-1000.
+- **Accettazione:** nessun codice nuovo nella build di release; il memo dà la quota delle attese pure per scena e la decisione sul gate di PRF-9.6.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-9.6 — Salto esatto dei cicli di attesa puri (con gate) · L, 3,5 gg · dipende da: PRF-9.5, PRF-8.6, F-120, F-124, ENG-15.4, CMP-3.1 · PSP: sì
+- **Cosa:** Sui cicli che PRF-9.5 riconosce, al ramo all'indietro (`generate_branch_no_cycle_update`, `mips_emit.h:636-668`) uno stub calcola quante iterazioni mancano allo scadere del budget, le addebita tutte insieme con lo stesso sforamento del ciclo eseguito e chiama `update_gba`. Lo stato resta identico bit a bit, perché `mips_update_gba` chiama `update_gba` senza il conteggio residuo (`mips_stub.S:274-294`) e `update_gba` addebita `reg[EXECUTE_CYCLES]` (`main.c:1013`). Veto per la vita della traduzione se un load tocca contatori dei timer, KEYINPUT con l'IRQ della tastiera abilitato, SIO, GPIO o backup. Interruttore a run-time (ENG-15.4) e una modalità di verifica (build diagnostica) che non salta e controlla registri e memoria invariati al prossimo evento.
+- **File:** `source/src/cpu.c`, `source/src/cpu.h`, `source/src/mips_emit.h`, `source/src/mips_stub.S`, `source/src/main.c` (veto in `update_gba`), `tests/core-rom/source/cases_idle.c` (nuovo), `CHANGELOG.md`
+- **Test:** core-rom: attesa su VCOUNT saltata, attesa su un timer non saltata, ciclo con uno store rifiutato; F-124 per lo stub; hash F-120 identici a interruttore acceso e spento su 10 tracce; verifica a zero violazioni sulle scene di PRF-8.6; compare-benchmarks 3+3.
+- **Accettazione:** stato guest per frame identico bit a bit con e senza il salto (hash F-120 su 10 tracce, non solo stessi checkpoint); almeno l'80% dei cicli spesi in attese pure eliminato sulle scene di riferimento; lavoro per frame almeno il 3% in meno su Doom II e avanti veloce almeno il 5% più veloce su due titoli leggeri (3+3, PSP-1000 e slim); nessun blocco in 20 minuti su 5 titoli; quota di BSS scritta; voce CHANGELOG (Changed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### PRF-10 — Layout dell'I-cache fissato, dati caldi a set fisso e controllo del budget del nucleo caldo
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate (PRF-10.1 in 1.6) | 8,25 gg | PRF-1.1, PRF-3.1, F-120, F-137, F-138 |
+
+**Copre:** F-034 layout dell'I-cache fissato, dati caldi a set fisso della D-cache e report del budget del nucleo caldo.
+
+**Obiettivo:** Se il gate passa: con il layout fissato, sia il padding di 3000 byte sia una modifica del solo frontend (2-3 KiB di .text in più) spostano il throughput del bench di meno dell'1% su ogni scena di riferimento (test esatto, 3+3, PSP-1000 e slim); il budget del nucleo caldo fallisce nel gate di build; l'ELF non ha mai più segmenti PT_LOAD o program header dell'ultimo EBOOT avviato su PSP-1000 e su uno slim.
+
+**Da noi oggi:** Nessun ordine di link né controllo (`source/Makefile:40-106`), con `-flto` (`:68`, `:106`) e `-falign-functions=32` (`:66`). Le cache JIT sono in BSS con `ALIGN_DATA` = `aligned(4)` (`source/src/common.h:51`; `source/src/cpu.c:173-176`): l'indirizzo delle cache modulo 8 KiB cambia a ogni modifica di codice o dati, quindi ogni modifica può spostare le prestazioni.
+
+**Come ci arriviamo:**
+- Prima l'esperimento di padding: senza un rumore oltre il 2% non si fa nulla.
+- Primo intervento di una riga, l'allineamento delle cache JIT a 8 KiB con offset scelto dall'A/B; l'ordine di link viene dopo, solo se serve e se `-flto` lo permette; i dati caldi a set fisso solo se le oscillazioni restano.
+- Il controllo del budget caldo e del numero di segmenti dell'ELF fallisce nel gate di build (F-138).
+
+**Gate prima di iniziare:** esperimento PRF-10.1: due build identiche salvo 3000 byte di padding differiscono di oltre il 2% di throughput bench (test esatto significativo) su almeno un modello. PRF-10.6: PRF-10.1 mostra oscillazioni oltre il 2% e PRF-10.2 e PRF-10.3 non le tolgono.
+
+**Rischi:**
+- Con `-flto` l'ordine delle funzioni potrebbe non essere controllabile.
+- I guadagni cambiano da modello a modello e possono sparire senza il controllo.
+- L'allineamento a 8 KiB costa fino a circa 16 KiB di BSS.
+
+#### PRF-10.1 — Esperimento di padding (il gate) · S, 1,5 gg · dipende da: PRF-3.1, PRF-1.1, F-137 · PSP: sì
+- **Cosa:** Un flag di build diagnostico `PADDING_PROBE_BYTES` aggiunge una funzione fredda e un array BSS. Bench 3+3 alternati, build con 0 contro 3000 byte, su PSP-1000 e uno slim sugli stessi titoli. Risultato e decisione vanno in `docs/PERFORMANCE.md`.
+- **File:** `source/Makefile`, `source/src/padding_probe.c` (nuovo, solo diagnostica), `docs/PERFORMANCE.md`
+- **Test:** hardware: 12 run per modello.
+- **Accettazione:** la decisione go o no-go viene dal test esatto.
+
+#### PRF-10.2 — Cache JIT allineate a 8 KiB con offset fisso · S, 0,5 gg · dipende da: PRF-10.1, F-120 · PSP: sì
+- **Cosa:** Le cache in BSS (`cpu.c:173-176`), oggi allineate a 4 byte, si allineano a 8 KiB (o `memalign(8192)` se PRF-5.3 è attivo), più un offset scelto con l'A/B.
+- **File:** `source/src/cpu.c`
+- **Test:** controllo ELF in F-138: indirizzo delle cache modulo 8192 uguale all'offset atteso; oracolo F-120 invariato; hardware: A/B.
+- **Accettazione:** nessun cambio semantico (hash identici).
+
+#### PRF-10.3 — Ordine di link del percorso caldo (spike con LTO) · M, 2 gg · dipende da: PRF-10.1 · PSP: sì
+- **Cosa:** Una sezione `.text` dedicata raccoglie update_gba, i gestori di memoria di `mips_stub.S`, update_scanline con i renderer e il mixing audio. Si verifica che `-flto` (`source/Makefile:68`, `:106`) conservi l'ordine; se non lo fa, lo si documenta e si resta al solo PRF-10.2.
+- **File:** `source/Makefile`, `source/src/mips_stub.S`, `source/src/main.c`, `source/src/video_dispatch.c`, `source/src/sound.c`, `source/src/cpu.c`
+- **Test:** `psp-nm -n` mostra le funzioni calde contigue; oracolo F-120 invariato; hardware: A/B.
+- **Accettazione:** il nucleo caldo sta entro 16 KiB, oppure è documentato perché no.
+
+#### PRF-10.4 — Report del budget caldo e controllo di build · S, 1,75 gg · dipende da: PRF-10.3, F-138 · PSP: no
+- **Cosa:** `scripts/check-layout.py` legge `psp-nm -S -n` dell'ELF. Confronta la dimensione del nucleo caldo con il budget (16 KiB di I-cache) e il set dei simboli caldi (indirizzo modulo 8 KiB diviso 64) con un file atteso committato. Avvisa sempre; con `--strict` fallisce nel gate di build F-138. `scripts/check-layout.py` fallisce anche se l'ELF ha più segmenti PT_LOAD o più program header dei valori registrati in `source/layout/elf_segments.txt` per l'ultimo EBOOT avviato su hardware; il file si aggiorna solo dopo una prova su PSP-1000 e su uno slim.
+- **File:** `scripts/check-layout.py` (nuovo), `tests/test_check_layout.py` (nuovo), `tests/fixtures/layout_nm.txt` (nuovo, testo), `source/layout/hot_symbols.txt` (nuovo), `source/layout/elf_segments.txt` (nuovo), `Makefile`
+- **Test:** `test_budget_over_fails_strict`; `test_moved_symbol_reported`; `test_parses_psp_nm_fixture`; `test_more_segments_than_recorded_fails` su una fixture di testo.
+- **Accettazione:** funziona senza toolchain sui fixture di testo.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-10.5 — A/B su hardware del layout fissato · S, 1 gg · dipende da: PRF-10.2, PRF-10.3 · PSP: sì
+- **Cosa:** Bench 3+3 su due modelli, build fissata contro non fissata. Poi si ripete l'esperimento di padding sulla build fissata: la variazione deve sparire.
+- **File:** `benchmarks/**`, `docs/PERFORMANCE.md`
+- **Test:** hardware: 24 run.
+- **Accettazione:** il padding non sposta più il throughput in modo significativo, e nemmeno una modifica del solo frontend (2-3 KiB di .text in più): meno dell'1% su ogni scena di riferimento.
+
+#### PRF-10.6 — Dati caldi degli stub a un offset fisso di set della D-cache (con gate) · S, 1,5 gg · dipende da: PRF-10.1, PRF-10.4 · PSP: sì
+- **Cosa:** I dati letti a ogni accesso del codice tradotto (`reg[]`, tabelle `memory_map_read/write`, puntatori a palette e OAM, `reg_mode`, `spsr`) vanno in una sezione propria, posta da un frammento di script di link a un offset fisso modulo 8 KiB, con un riempimento che lascia gli altri dati dove sono. La sezione resta nel segmento dati esistente: nessun PT_LOAD in più; il riempimento non deve diventare una sezione NOBITS separata, che dividerebbe il segmento, e lo verifica il controllo di PRF-10.4.
+- **File:** `source/Makefile`, `source/layout/hot_data.ld` (nuovo), `source/src/cpu.c`, `source/src/memory.c`, `scripts/check-layout.py`
+- **Test:** controllo ELF: offset atteso e segmenti invariati; F-120 invariato; esperimento di padding e di modifica del solo frontend ripetuto, 3+3 su due modelli.
+- **Accettazione:** con layout fissato e dati caldi a set fisso, padding e modifica del solo frontend spostano il throughput del bench di meno dell'1% su ogni scena di riferimento (3+3, PSP-1000 e slim).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### PRF-11 — Latenza dell'input misurata e ridotta, triplo buffer senza latenza aggiunta
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate (PRF-11.1 e PRF-11.5 in 1.6) | 13,75 gg | PRF-1.5, PRF-2.1, ENG-1.6, ENG-15.4, F-120 |
+
+**Copre:** F-035 triplo buffer contro il tearing; F-168 latenza dell'input misurata, con budget per scena; F-169 ritmo e flip alla riga 160.
+
+**Obiettivo:**
+- Misura in ogni build di release (PRF-11.5, nella 1.6): età del campione del pad, vblank dal poll al latch, flip agganciati subito o al vblank dopo, swap fuori dal vblank, nel perf report su PSP-1000 e uno slim.
+- Con le storie che i gate fanno partire: dal campione del pad al latch del frame di reazione, media ≤ 33,0 ms su ogni scena a velocità piena, comprese Heart & Soul in una scena pesante e Unbound in battaglia doppia (Doom II quando PRF-8 lo porta a velocità piena), su PSP-1000 e uno slim; latch nel vblank atteso per almeno il 99,9% dei flip a ritmo normale; frame con un vblank in più ≤ 1%; swap fuori dal periodo di vblank ≤ 0,1% dei frame; nessuna attesa aggiunta per avere un campione fresco (0 µs per frame) fuori da PRF-11.8.
+- Con il ritmo alla riga 160 (PRF-11.8): media ≤ 17,5 ms, con hash F-120 identici a interruttore acceso e spento; l'unica attesa per un campione fresco è la lettura dopo il vblank, al più 0,8 ms e solo se il frame precedente ha lasciato almeno 1,5 ms.
+- Con il triplo buffer: ≤ 2 vblank − 0,8 ms di media a ritmo normale, nessun vblank in più in nessuna scena e zero cuciture nel test di scorrimento.
+- Quando c'è ENG-11.4, la fotocamera conferma i valori della telemetria entro un vblank.
+
+**Da noi oggi:** Due framebuffer 5551 a 0x000000 e 0x044000, la texture GBA a 0x088000 e la destinazione sharp a 0x0A8000; il layout dell'EDRAM finisce a 0x128000 (`source/src/psp_video.c:14-39`). `flip_screen` aspetta il GE, aspetta il vblank solo con VSync acceso e poi chiama `sceGuSwapBuffers` (`psp_video.c:375-396`); VSync è spento di default (`source/src/main.c:78`; `source/src/config_model.c:196`). Quindi, con due soli buffer e VSync spento, una cucitura può presentarsi con frame in ritardo, recuperi e avanti veloce, ma nessuno l'ha osservata. Il nostro codice non imposta il modo dello swap (nessuna `sceGuSwapBuffersBehaviour` né `sceDisplaySetFrameBuf` in `source/`; l'unico swap è `psp_video.c:395`), quindi non sappiamo se il flip si aggancia subito o al vblank successivo: nel primo caso il frame di reazione si vede circa 2 vblank meno 0,8 ms dopo il campione (circa 33 ms), nel secondo circa 3 vblank meno 0,8 ms (circa 49 ms). Il pad si legge una volta per frame alla riga 160 (`update_input`, `input.c:343-358`, chiamata da `main.c:1096`) con `sceCtrlSetSamplingCycle(0)` (`input.c:476-480`). In lockstep l'attesa del vblank risponde al link (`main_link_wait_vblank`, `main.c:790-808`).
+
+**Come ci arriviamo:**
+- Prima si misura (PRF-11.1 per la cucitura, PRF-11.5 per la latenza), poi si cambia solo ciò che la misura chiede.
+- La latenza si legge in ogni build di release dal perf report, con la fotocamera di ENG-11.4 come controllo.
+- Il flip si invia prima dell'attesa del vblank, appena il GE è libero, con il modo di aggancio impostato da noi (PRF-11.7); il triplo buffer parte da quel punto d'invio.
+- La scelta del buffer sta in un modulo puro con test host sulle sequenze di avanti veloce e recupero: un buffer mai disegnato non va mai in scena.
+- Si resta su libGU con una guardia in `scripts/check-video.sh` (mai più di un flip in attesa) e un `#error` se l'EDRAM non basta.
+- Nessuna attesa aggiunta per avere un campione fresco, salvo la lettura dopo il vblank di PRF-11.8, al più 0,8 ms e solo nel margine lasciato dal frame precedente.
+
+**Gate prima di iniziare:** PRF-11.1 e PRF-11.5 sono misure e stanno nella 1.6. PRF-11.2-11.4: con VSync spento, cucitura visibile nel test di scorrimento su hardware in almeno uno scenario (ritmo normale, recupero dopo frame in ritardo, avanti veloce); oppure, con VSync acceso, almeno il 2% di frame in ritardo con attesa present sui titoli pesanti (la quantizzazione che il terzo buffer elimina). PRF-11.6: PRF-11.5 misura un'età media del campione di almeno 5 ms su una scena pesante a velocità piena. PRF-11.7: PRF-11.5 misura `flip-latch-next` oltre l'1% dei flip a ritmo normale, oppure parte PRF-11.3 o PRF-11.8. PRF-11.8: la telemetria di PRF-11.5, dopo PRF-11.7 se è servita, mostra 2 vblank dal campione al latch a velocità piena.
+
+**Rischi:**
+- Una coda più lunga aggiungerebbe un frame di latenza: la scelta del frame più recente lo evita, ma va misurata (PRF-11.4).
+- Il testo sovrapposto (FPS, volume) disegnato dalla CPU in `draw_frame` deve restare sincronizzato con il GE.
+- Il terzo buffer costa 272 KiB di EDRAM e lascia 592 KiB liberi per l'interfaccia GE futura (F-053).
+- Spostare il confine del frame alla riga 160 (PRF-11.8) tocca ritmo, frameskip, avanti veloce, stati e link: interruttore a run-time, hash identici a interruttore acceso e spento, link e avanti veloce con il ritmo di oggi.
+
+#### PRF-11.1 — Misura del gate: cucitura e frame in ritardo · S, 1 gg · dipende da: PRF-2.1, PRF-1.5 · PSP: sì
+- **Cosa:** Su hardware, con VSync spento e acceso, una ROM di prova con scorrimento verticale, costruita con il devkitARM già usato da `tests/link-rom`, viene ripresa con una fotocamera a ritmo normale, dopo frame in ritardo e in fast-forward. Sui titoli pesanti si leggono i frame in ritardo e le attese present e GE di PRF-2.1.
+- **File:** `tests/scroll-rom/` (nuovo, solo sorgente), `docs/PERFORMANCE.md`
+- **Test:** hardware: PSP-1000 e uno slim.
+- **Accettazione:** il go o no-go è documentato con foto o video e con i numeri.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-11.2 — Modulo puro frame_ring · S, 1 gg · dipende da: PRF-11.1 · PSP: no
+- **Cosa:** Sceglie il buffer di disegno tra tre, escludendo quello visualizzato e quello in attesa di flip. Un flag "riempito" impedisce che un buffer mai disegnato vada in scena. Un nuovo frame completo sostituisce quello in attesa.
+- **File:** `source/src/frame_ring.c` (nuovo), `source/src/frame_ring.h` (nuovo), `tests/test_frame_ring.c` (nuovo), `Makefile`, `source/Makefile`
+- **Test:** `test_never_draws_into_displayed_or_pending`; `test_unfilled_buffer_never_shown`; `test_newest_replaces_pending`; `test_two_buffer_fallback`; `make test-sanitize`.
+- **Accettazione:** nessuna sequenza di flip porta in scena un buffer non riempito.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-11.3 — Triplo buffer in psp_video.c · M, 2,5 gg · dipende da: PRF-11.2, PRF-11.7 · PSP: sì
+- **Cosa:** Terzo framebuffer 5551 a 0x128000, dove oggi finisce il layout (`psp_video.c:14-39`). `flip_screen` (`:375-396`) usa frame_ring e `sceDisplaySetFrameBuf` agganciato al vblank al posto di `sceGuSwapBuffers`. Parte dal punto d'invio di PRF-11.7: il flip agganciato al vblank si invia prima dell'attesa, appena il GE è libero (controllo senza attesa); una richiesta inviata dopo l'inizio del vblank si aggancia al vblank seguente e aggiunge un frame. `draw_frame` resta l'unico bersaglio per il GE e per il testo (`mh_print`, `ch_print`). Il menu e il risveglio (`video_power_resume`, `:318-329`) reimpostano l'anello. Si resta su libGU (`scripts/check-video.sh`) con una guardia nuova: mai più di un flip in attesa.
+- **File:** `source/src/psp_video.c`, `source/src/psp_video.h`, `source/src/frame_ring.c`, `scripts/check-video.sh`, `tests/test_perf_video_sentinel.c`, `tests/host_psp_video_stubs.c`, `CHANGELOG.md`
+- **Test:** `tests/test_perf_video_sentinel.c` aggiornato; `scripts/check-video.sh`; `#error` se il terzo buffer supera l'EDRAM.
+- **Accettazione:** menu, Diagnostica e risveglio funzionano come prima; voce CHANGELOG (Changed).
+
+#### PRF-11.4 — Verifica su hardware: cucitura, latenza, fast-forward · S, 1,5 gg · dipende da: PRF-11.3, PRF-11.5 · PSP: sì
+- **Cosa:** Test di scorrimento senza cucitura con VSync spento. Latenza dall'input all'immagine, misurata con una fotocamera a 240 fps su 20 campioni nella stessa scena, non peggiore della release precedente. Fast-forward Smooth, Balanced e Performance senza frame neri o vecchi. 20 cicli di sleep.
+- **File:** `docs/PERFORMANCE.md`
+- **Test:** hardware: PSP-1000 e uno slim.
+- **Accettazione:** dal campione al latch del frame di reazione ≤ 2 vblank − 0,8 ms di media a ritmo normale (telemetria di PRF-11.5), nessun vblank in più in nessuna scena, latenza mediana alla fotocamera uguale o migliore della release precedente e nessun frame nero, altrimenti si ritira.
+
+#### PRF-11.5 — Latenza dell'input: telemetria nel perf report · M, 1,75 gg · dipende da: PRF-2.1, ENG-1.6 · PSP: sì
+- **Cosa:** `update_input` (`input.c:343-358`) salva `ctrl_data.TimeStamp` e `sceDisplayGetVcount()` al poll; `flip_screen` (`psp_video.c:375-396`) salva vcount e tempo dello swap e, subito dopo lo swap e al vblank seguente, legge con `sceDisplayGetFrameBuf` il buffer in scansione: così conta i flip agganciati subito e quelli agganciati al vblank dopo (`flip-latch-now`, `flip-latch-next`), perché la posizione dello swap non dice quale modo usa `sceGuSwapBuffers`. perf_metrics registra l'età del campione al poll (istogramma a 250 µs), i vblank dal poll al latch del frame successivo (istogramma 0-7) e gli swap fuori dal periodo di vblank. Il report aggiunge `input-sample-age-*`, `poll-to-latch-*`, `flip-latch-*` e `swaps-outside-vblank` nel bump del perf report della 1.6; compare-benchmarks li legge come opzionali. `docs/PERFORMANCE.md` descrive la misura e il budget; la verifica con fotocamera è di ENG-11.4, che usa questi valori come riferimento. Se `flip-latch-next` supera l'1% dei flip a ritmo normale, il memo apre PRF-11.7.
+- **File:** `source/src/input.c`, `source/src/psp_video.c`, `source/src/perf_metrics.c`, `source/src/perf_metrics.h`, `source/src/perf_monitor.c`, `source/src/perf_report.c`, `scripts/compare-benchmarks.py`, `tests/test_perf_metrics.c`, `tests/test_perf_report.c`, `tests/test_compare_benchmarks.py`, `docs/PERFORMANCE.md`
+- **Test:** `test_sample_age_histogram`, `test_poll_to_latch_counts_next_frame`, `test_swap_outside_vblank_counted`, `test_flip_latch_now_and_next`; chiavi nel report entro la capacità; hardware: Advance Wars 2, Emerald, Fire Emblem, Heart & Soul in una scena pesante e Unbound in battaglia doppia, su PSP-1000 e slim (Doom II solo dopo PRF-8).
+- **Accettazione:** report con i campi su 5 scene e due modelli; memo con la latenza media dal campione al latch del frame di reazione per scena e la decisione sui gate di PRF-11.6 e PRF-11.7; nessuna lettura di clock in più fuori dalla cattura.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-11.6 — Campionamento del pad più fitto del frame (con gate) · S, 1 gg · dipende da: PRF-11.5 · PSP: sì
+- **Cosa:** `init_input` (`input.c:476-480`) passa da `sceCtrlSetSamplingCycle(0)` a un ciclo a timer, scelto dall'istogramma dell'età di PRF-11.5, e riapplicato dopo il risveglio.
+- **File:** `source/src/input.c`, `source/src/main.c`
+- **Test:** hardware: istogramma dell'età prima e dopo; bench 3+3 senza FAIL; 20 sospensioni.
+- **Accettazione:** età media del campione ≤ 3 ms anche sulle scene pesanti, nessun FAIL di compare-benchmarks; altrimenti si ritira.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-11.7 — Flip inviato prima del vblank (con gate) · S, 1 gg · dipende da: PRF-11.5 · PSP: sì
+- **Cosa:** `init_video` (`psp_video.c:230`) e `video_power_resume` (`:318-329`) impostano `sceGuSwapBuffersBehaviour(PSP_DISPLAY_SETBUF_NEXTFRAME)`. A fine frame, se l'emulazione è in anticipo, testo sovrapposto e `flip_screen` (`:375-396`) vengono prima dell'attesa del vblank di `synchronize` (`main.c:1449-1465`), appena il GE è libero (controllo senza attesa): il latch cade nel vblank atteso e non strappa. Se il frame è in ritardo il flip parte subito come oggi. In lockstep resta il ritmo di oggi. Si resta su libGU.
+- **File:** `source/src/psp_video.c`, `source/src/psp_video.h`, `source/src/main.c`, `scripts/check-video.sh`, `tests/host_psp_video_stubs.c`, `tests/test_perf_video_sentinel.c`, `CHANGELOG.md`
+- **Test:** telemetria di PRF-11.5 prima e dopo, sulle sue 5 scene e due modelli; test di scorrimento di PRF-11.1; compare-benchmarks 3+3; 20 sospensioni.
+- **Accettazione:** latch nel vblank atteso per almeno il 99,9% dei flip a ritmo normale, nessuno oltre, qualunque sia il default dell'SDK; frame con un vblank in più ≤ 1% e swap fuori dal periodo di vblank ≤ 0,1% dei frame (telemetria di PRF-11.5); dal campione al latch del frame di reazione ≤ 33,0 ms di media su ogni scena a velocità piena; zero cuciture a ritmo normale; compare-benchmarks senza FAIL; voce CHANGELOG (Changed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### PRF-11.8 — Ritmo e flip alla riga 160 (con gate) · L, 4 gg · dipende da: PRF-11.5, PRF-11.7, F-120, ENG-15.4 · PSP: sì
+- **Cosa:** In `update_gba`, alla riga 160 (`main.c:1090-1131`), dopo `update_screen` il frame si presenta subito: testo sovrapposto, flip inviato prima del vblank (PRF-11.7), attesa del vblank con le decisioni di frameskip e avanti veloce di `synchronize` (`main.c:1295-1480`) spostate qui, poi `update_input` con un campione preso dopo la fine del vblank (lettura bloccante del pad, al più circa 0,8 ms, solo se il frame precedente ha lasciato almeno 1,5 ms; altrimenti il campione disponibile), poi l'IRQ di VBlank. Le righe 160-227 e 0-159 del frame dopo si emulano nell'intervallo successivo; `synchronize_sound` resta a fine frame. Con un link aperto, in avanti veloce e in recupero resta il ritmo di oggi. Interruttore a run-time (ENG-15.4) con lo stato nel report.
+- **File:** `source/src/main.c`, `source/src/psp_video.c`, `source/src/input.c`, `source/src/perf_report.c`, `tests/test_fast_forward_policy.c`, `CHANGELOG.md`
+- **Test:** telemetria di PRF-11.5 su 6 scene e due modelli; hash F-120 identici a interruttore acceso e spento su 10 tracce; compare-benchmarks 3+3; avanti veloce, frameskip, menu, stati e 20 sospensioni come prima; una sessione link breve con il ritmo di oggi.
+- **Accettazione:** dal campione al latch del frame di reazione ≤ 17,5 ms di media su ogni scena a velocità piena, PSP-1000 e slim (fotocamera di ENG-11.4, quando c'è, entro un vblank dal valore previsto); throughput entro le soglie di compare-benchmarks; hash identici a interruttore acceso e spento; link e avanti veloce con il ritmo di oggi; voce CHANGELOG (Changed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### PRF-12 — Mix audio a 32 kHz come opzione misurata
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate (PRF-12.1 in 1.6) | 6,5 gg | PRF-1.1, PRF-3.2, CMP-1.4, F-137 |
+
+**Copre:** F-036 mix audio del core a frequenza ridotta.
+
+**Obiettivo:** Opzione per gioco a 32000 Hz solo se il bench guadagna almeno il 2% (significativo) senza underrun in 30 minuti; a 48 kHz l'uscita resta identica (hash audio); nessun ricampionatore software e deriva A/V nulla in 30 minuti a 32 kHz.
+
+**Da noi oggi:** Il mix avviene a 48 kHz in un ring s32 svuotato da un thread audio e va dritto nel SRC hardware (`source/src/sound.h:25-27`; `source/src/sound.c:22`, `:975`), che accetta da 8000 a 48000 Hz, 32000 compreso (`sound.c:1438-1443`). `SOUND_FREQUENCY` è una costante usata nei passi dei canali (`sound.c:316`, `:387`, `:421`, `:516`, `:703`, `:1117`, `:1608`) e in `SOUND_UPDATE_FREQUENCY_STEP` (`source/src/main.c:289-290`); `SOUND_SAMPLES` = 800 è un frame a 60 Hz a 48 kHz. Il costo del mixing non è misurato.
+
+**Come ci arriviamo:**
+- 32000 Hz direttamente nel SRC hardware: nessun ricampionatore software e nessun secondo ring che possa derivare.
+- Opzione per gioco solo se il guadagno è misurato; 48 kHz resta il default. Il taglio è di un terzo (48 → 32 kHz): il guadagno atteso si stima su questa proporzione.
+- Test host di sound_math sui passi a entrambe le frequenze e hash dell'uscita a 48 kHz identico a oggi.
+
+**Gate prima di iniziare:** la fase audio (update_gbc_sound più il braccio audio-off) vale almeno 1 ms per frame su un titolo pesante, e la build A/B a 32000 Hz guadagna almeno il 2% di throughput bench (significativo, con `--vary audio-sample-rate --vary audio-samples`) a 222 o 333 MHz, senza underrun in 30 minuti.
+
+**Rischi:**
+- Il blocco d'uscita di 800 frame vale un frame a 60 Hz solo a 48 kHz: a 32 kHz servono 533,33 frame, quindi un blocco diverso (per esempio 512 o 544) e la verifica di `fast_forward_audio_required_samples` (`sound.c:1335`) e del ring contro gli underrun.
+- Aliasing diverso udibile: opzione, non default.
+- Il callback di alimentazione riprenota già il canale (`main.c:1990-2015`): con la frequenza a run-time deve leggere quella corrente senza corse con un cambio in corso.
+
+#### PRF-12.1 — Misura del gate: build A/B a 32000 Hz · S, 1,5 gg · dipende da: PRF-3.2, PRF-1.1, CMP-1.4, F-137 · PSP: sì
+- **Cosa:** Build diagnostica con `SOUND_FREQUENCY` a 32000 e un blocco d'uscita adeguato. Bench 3+3 a 333 e 222 MHz su due titoli pesanti, con il braccio audio-off come riferimento; i report differiscono in `audio-sample-rate` e `audio-samples`, già tra i campi da far combaciare (`scripts/compare-benchmarks.py:36-37`), quindi il confronto usa `--vary` (CMP-1.4). Più 30 minuti senza underrun.
+- **File:** `source/src/sound.h` (define diagnostico condizionale), `source/Makefile`, `docs/PERFORMANCE.md`
+- **Test:** hardware: 24 run e 2 sessioni da 30 minuti.
+- **Accettazione:** decisione go o no-go dal test esatto.
+
+#### PRF-12.2 — Frequenza di mix a run-time · M, 2,5 gg · dipende da: PRF-12.1 · PSP: sì
+- **Cosa:** `SOUND_FREQUENCY` e `SOUND_SAMPLES` (`sound.h:25-27`) diventano valori a run-time. I passi in sound.c (`:316`, `:387`, `:421`, `:516`, `:703`, `:1117`, `:1608`) e `SOUND_UPDATE_FREQUENCY_STEP` (`main.c:289-290`) si ricalcolano al cambio. `psp_sound_frequency` (`sound.c:1434-1443`) riprenota il canale SRC dal thread di emulazione, mai dal callback, e la riprenotazione nel callback di alimentazione usa la frequenza corrente. Durante il link la frequenza non cambia.
+- **File:** `source/src/sound.c`, `source/src/sound.h`, `source/src/sound_math.c`, `source/src/sound_math.h`, `source/src/main.c`, `tests/test_sound_math.c`
+- **Test:** `test_sound_math.c`: passi a 32000 e 48000, nessun overflow di FIXED08_24; `tests/test_fast_forward_audio.c` con blocchi diversi da 800; hardware: 30 minuti.
+- **Accettazione:** a 48 kHz l'uscita è identica a oggi (hash audio); il cambio di frequenza fuori dal link non produce click né underrun.
+
+#### PRF-12.3 — Opzione per gioco "Qualità audio" · S, 1,5 gg · dipende da: PRF-12.2 · PSP: no
+- **Cosa:** Un valore nuovo in config_model (CONFIG_MODEL_VALUE_COUNT +1 rispetto al valore al momento del merge, oggi 45 a `source/src/config_model.h:10`) nel bump di ConfigModel della release, con migrazione che lascia i config vecchi a 48 kHz. Voce nel menu audio con testo d'aiuto, stringhe nelle 5 lingue, profili per gioco. `audio-sample-rate` è già tra i campi opzionali di compare-benchmarks.
+- **File:** `source/src/config_model.c`, `source/src/config_model.h`, `source/src/config_store.c`, `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `tests/test_config_model.c`, `tests/test_config_store.c`, `CHANGELOG.md`
+- **Test:** `test_config_model.c`: migrazione dalla versione precedente con default 48000; `scripts/check-messages.sh`; `scripts/check-menu-layout.sh`.
+- **Accettazione:** un config vecchio si carica senza perdite; voce CHANGELOG (Added).
+
+#### PRF-12.4 — Verifica d'ascolto e di deriva · S, 1 gg · dipende da: PRF-12.3 · PSP: sì
+- **Cosa:** Sul PSP-1000, 30 minuti per titolo a 32 kHz senza underrun e con sincronia A/V invariata. Si registra l'uscita e si confrontano gli spettri a 48 e 32 kHz: la perdita attesa sta sopra circa 16 kHz, coerente con l'uscita a 32 768 Hz del GBA.
+- **File:** `docs/PERFORMANCE.md`
+- **Test:** hardware: 3 titoli.
+- **Accettazione:** zero underrun, A/V invariato.
+
+### PRF-13 — Media Engine: prima l'audio
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 14 gg | PRF-1.5, SAV-7.5, F-137 |
+
+**Copre:** F-037 renderer sul Media Engine (primo passo: audio).
+
+**Obiettivo:** Se il gate passa: audio sul ME con hash identici al percorso CPU su 3 titoli; ritorno alla CPU entro un frame se il ME non risponde; 8 ore e 100 sleep/wake su PSP Go e PSP-1000 senza freeze; guadagno di throughput significativo sul titolo del gate.
+
+**Da noi oggi:** L'audio è sintetizzato sul thread di emulazione e svuotato da un thread audio (`source/src/sound.c:21-24`, `:1277`, `:1486`). Non c'è codice ME. Esiste già un PRX kernel costruito dal sorgente e caricato con kubridge (`source/prx/exceptionHandler/`, `source/src/exception.c:99-115`).
+
+**Come ci arriviamo:**
+- La sintesi sta in un modulo puro condiviso tra CPU e ME, quindi l'uguaglianza degli hash audio si verifica sull'host; il ME è solo un esecutore.
+- Il PRX del ME segue lo schema già in uso: sorgente nel repository e caricamento con `kuKernelLoadModule` (`source/src/exception.c:111`), nessuna dipendenza nuova.
+- Teardown e reinizializzazione nel `main_power_service`, mai nel callback; si disattiva da solo su Vita/Adrenaline.
+- Nessun thread nuovo: il watchdog è un controllo nel main loop.
+
+**Gate prima di iniziare:** dopo PRF-7, PRF-9 e PRF-12, un titolo di riferimento resta sotto 55 fps mediani sul PSP-1000 e la fase audio vale almeno 1,5 ms per frame; la licenza dei sorgenti di bootstrap del ME risulta compatibile con GPL-2.0-or-later. Kill: un freeze nel soak di 8 ore o nei 100 sleep/wake.
+
+**Rischi:**
+- Licenza dei sorgenti di bootstrap del ME sconosciuta: senza una licenza compatibile verificata l'epic non parte.
+- PPSSPP non esegue il ME: tutto si verifica solo su hardware.
+- Un PRX del ME può bloccare il PSP Go dopo ore di gioco: il soak di 8 ore lo deve escludere.
+- Su Vita/Adrenaline il ME non c'è.
+
+#### PRF-13.1 — Licenza e spike di avvio del Media Engine · L, 4 gg · dipende da: PRF-1.5, SAV-7.5, F-137 · PSP: sì
+- **Cosa:** Si scelgono i sorgenti di bootstrap del ME (DaedalusX64/melib, mcidclan) con una licenza compatibile con GPL-2.0-or-later (oggi sconosciuta). Il PRX kernel si costruisce dal sorgente nel repository, come `source/prx/exceptionHandler/`, e si carica con lo stesso codice di `source/src/exception.c:99-115`. Il ME esegue un contatore in memoria non cache. Vita e Adrenaline (senza ME) vengono rilevate e il ME resta spento. Teardown e reinizializzazione avvengono nel `main_power_service`, mai nel callback.
+- **File:** `source/prx/mediaEngine/` (nuovo sorgente), `source/src/media_engine.c` (nuovo, parte PSP), `source/src/media_engine.h` (nuovo), `source/Makefile`, `source/src/main.c`, `scripts/check-lifecycle.sh`, `scripts/package-release.sh`, `docs/MEDIA-ENGINE.md` (nuovo)
+- **Test:** hardware: avvio su PSP-1000, uno slim e Go, 20 sleep/wake; `check-lifecycle.sh`: nessuna chiamata ME nel callback.
+- **Accettazione:** il contatore avanza dopo ogni risveglio; su Vita/Adrenaline il ME resta spento senza errori; il pacchetto contiene il PRX costruito, il repository nessun binario.
+- **Licenza:** Sorgenti ME di terzi solo con licenza compatibile con GPL-2.0-or-later verificata (oggi sconosciuta); il resto codice nuovo GPL-2.0-or-later.
+
+#### PRF-13.2 — Modulo puro apu_cmd: coda di comandi audio e sintesi condivisa · M, 3 gg · dipende da: PRF-13.1 · PSP: no
+- **Cosa:** Comandi APU con timestamp (scritture ai registri suono, campioni FIFO) e un solo codice di sintesi, usato sia dalla CPU sia dal ME. Il test host verifica che la sintesi da coda produca campioni identici al percorso diretto su sessioni registrate.
+- **File:** `source/src/apu_cmd.c` (nuovo), `source/src/apu_cmd.h` (nuovo), `source/src/sound.c`, `tests/test_apu_cmd.c` (nuovo), `Makefile`, `source/Makefile`
+- **Test:** `test_queue_replay_matches_direct_hash`; `test_queue_overflow_falls_back`; `make test-sanitize`.
+- **Accettazione:** il percorso CPU tramite coda dà lo stesso hash audio di oggi.
+
+#### PRF-13.3 — Mix audio sul ME con ritorno automatico alla CPU · L, 5 gg · dipende da: PRF-13.2 · PSP: sì
+- **Cosa:** Il main thread pubblica la coda di ogni frame in una mailbox in RAM non cache e il ME sintetizza nel ring. Se il ME non risponde entro un frame (watchdog nel main loop, nessun thread nuovo) si torna alla CPU per il resto della sessione e il runtime log lo registra. Spento durante il link finché non è provato.
+- **File:** `source/src/media_engine.c`, `source/src/sound.c`, `source/src/apu_cmd.c`, `source/src/main.c`, `source/src/runtime_log.h` (evento), `tools/decode_runtime_log.py`, `tests/test_runtime_log.c`, `tests/test_decode_runtime_log.py`
+- **Test:** `test_runtime_log.c`: evento di ritorno alla CPU; `test_decode_runtime_log.py`: decodifica dell'evento; hardware: hash audio ME uguale a CPU su 3 titoli.
+- **Accettazione:** hash identici; il ritorno alla CPU si sente al massimo come un frame di silenzio.
+
+#### PRF-13.4 — Soak dell'audio sul ME · M, 2 gg · dipende da: PRF-13.3 · PSP: sì
+- **Cosa:** 8 ore e 100 sleep/wake su PSP Go e PSP-1000; hash audio CPU e ME uguali su 3 titoli; nessun blocco. Un solo freeze ferma l'epic.
+- **File:** `docs/MEDIA-ENGINE.md`
+- **Test:** hardware: 16 ore totali, 200 cicli.
+- **Accettazione:** zero freeze, hash identici, guadagno di throughput significativo sul titolo del gate.
+
+### PRF-14 — Media Engine: renderer video opzionale
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| sconsigliato (dietro gate) | dopo gate | 16,5 gg | PRF-2.2, PRF-13.4, F-126, PRF-11.5 (solo PRF-14.4) |
+
+**Copre:** F-037 Media Engine (renderer ME).
+
+**Obiettivo:** Se il gate passa e il verdetto viene rivisto: latenza del percorso CPU (≤ 33,0 ms dal campione al latch, PRF-11.5) su almeno il 99% dei frame di ogni scena a velocità piena, comprese Heart & Soul in una scena pesante e Unbound in battaglia doppia, grazie al ritorno alla CPU per singolo frame; risparmio netto di almeno 1 ms per frame; nessuna divergenza nei golden F-126, oppure ognuna catalogata con il ritorno alla CPU; zero freeze in 8 ore e 100 sleep/wake su Go e PSP-1000.
+
+**Da noi oggi:** Renderer per scanline sulla CPU (`video_cc.cc` e `video.c` tramite `video_cc_wrap.o` e `video_old_wrap.o`, `source/Makefile:41`), scelto una volta per frame (`scripts/check-video.sh`). Il frame va in scena nello stesso refresh tramite la display list del GE (`source/src/psp_video.c:411-471`, `blit_gu` :523-547). Non c'è codice ME.
+
+**Come ci arriviamo:**
+- Opzione esplicita, con la CPU come default.
+- Consegna alla riga 160 fin dall'inizio, più il rilevamento delle scritture a VRAM, palette e OAM durante le righe visibili, con ritorno alla CPU per quel frame.
+- Presentazione nello stesso refresh solo se il risparmio netto resta positivo dopo il suo costo; altrimenti il testo d'aiuto indica il frame di latenza in più.
+- Hash per frame contro i golden F-126 e catalogo delle divergenze prima di ogni release.
+
+**Gate prima di iniziare:** titoli pesanti sotto 55 fps mediani sul PSP-1000 dopo il lavoro di throughput, update_scanline almeno a circa 5 ms per frame (PRF-2.2), PRF-13 superato (8 ore e 100 sleep/wake su Go e PSP-1000). Kill: mediana del rendering ME oltre circa 11 ms, risparmio netto sotto 1 ms per frame dopo il costo della presentazione, o qualsiasi freeze.
+
+**Rischi:**
+- Divergenze dal renderer CPU con gli effetti a metà frame.
+- Il costo della presentazione nello stesso refresh può annullare il guadagno.
+- Complessità XL e rischio di stabilità attraverso sleep e risveglio.
+
+#### PRF-14.1 — Prototipo misurato del renderer sul ME · XL, 8 gg · dipende da: PRF-13.4, PRF-2.2 · PSP: sì
+- **Cosa:** `video_cc.cc` compilato per il ME, consegnato alla riga 160 con snapshot dei registri video per riga e pagine sporche di VRAM, palette e OAM. Si misura il tempo per frame sul ME su 5 titoli. Kill se la mediana supera circa 11 ms o appare un freeze.
+- **File:** `source/prx/mediaEngine/`, `source/src/media_engine.c`, `source/src/video_dispatch.c`, `source/src/video_cc.cc` (riuso), `docs/MEDIA-ENGINE.md`
+- **Test:** hardware: 5 titoli, PSP-1000 e Go.
+- **Accettazione:** mediana per titolo documentata e decisione di kill o go.
+- **Licenza:** codice nuovo GPL-2.0-or-later; bootstrap del ME con la licenza verificata in PRF-13.1.
+
+#### PRF-14.2 — Presentazione nello stesso refresh e ritorno alla CPU per frame · L, 5 gg · dipende da: PRF-14.1, F-126 · PSP: sì
+- **Cosa:** Se il ME finisce entro la scadenza, il frame va in scena nello stesso refresh come oggi; altrimenti quel frame lo rende la CPU, con la scelta fatta una volta per frame in `video_dispatch_frame_begin`. Anche i frame con scritture a VRAM, palette o OAM durante le righe visibili vanno alla CPU. Gli hash per frame si confrontano con il renderer CPU (golden F-126) e le divergenze vengono catalogate. La scadenza del ME usa una stima misurata per console: media e dispersione del tempo di blit, più un margine scelto dalla misura.
+- **File:** `source/src/video_dispatch.c`, `source/src/video_dispatch_state.c`, `source/src/psp_video.c`, `source/src/media_engine.c`, `tests/test_video_dispatch_state.c`
+- **Test:** `test_video_dispatch_state.c`: scelta per frame e ritorno su scrittura a metà frame; golden F-126; `scripts/check-video.sh`.
+- **Accettazione:** nessuna divergenza nei golden, oppure ognuna catalogata con il ritorno alla CPU per quella scena; con la presentazione nello stesso refresh il lavoro per frame scende di almeno 1 ms rispetto alla CPU, altrimenti si passa alla presentazione a inizio loop con il frame di latenza in più indicato nel testo d'aiuto.
+
+#### PRF-14.3 — Opzione del renderer ME · S, 1 gg · dipende da: PRF-14.2 · PSP: no
+- **Cosa:** Terzo valore dell'opzione renderer, con la CPU come default, nascosto su Vita e Adrenaline. Migrazione del config, stringhe e testo d'aiuto nelle 5 lingue (con il frame di latenza in più indicato se la presentazione è a inizio loop), voce nel CHANGELOG.
+- **File:** `source/src/config_model.c`, `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `tests/test_config_model.c`, `CHANGELOG.md`
+- **Test:** `test_config_model.c`: migrazione; `scripts/check-messages.sh`; `scripts/check-menu-layout.sh`.
+- **Accettazione:** i config esistenti restano sulla CPU.
+
+#### PRF-14.4 — Soak, latenza e divergenze su hardware · M, 2,5 gg · dipende da: PRF-14.3, PRF-11.5 · PSP: sì
+- **Cosa:** 8 ore su Go e PSP-1000 e 100 sleep/wake. Con la telemetria di PRF-11.5 almeno il 99% dei frame di ogni scena a velocità piena ha la latenza del percorso CPU, grazie al ritorno alla CPU per singolo frame. Nessuna divergenza nei golden.
+- **File:** `docs/MEDIA-ENGINE.md`
+- **Test:** hardware: 16 ore, 200 cicli, 20 campioni di latenza per percorso.
+- **Accettazione:** zero freeze, almeno il 99% dei frame con la latenza del percorso CPU, guadagno significativo sul titolo del gate, altrimenti kill.
+
+## 4. Interfaccia e UX
+
+Il gruppo copre primo avvio e pacchetto, notifiche, scorciatoie e input, screenshot, opzioni video, disegno e testo dell'interfaccia, menu in sovrimpressione, libreria, arte, caricamento e cambio gioco. Priorità: UI-1.1, UI-1.2 e UI-1.5 escono nella 1.4.4. Nella 1.5 vanno UI-1, UI-2, UI-3, UI-5 e UI-6, più UI-4.1, UI-4.2, UI-4.4, UI-9.1, UI-9.4, UI-9.6, UI-10.5 e UI-12.1. Nella 1.6 vanno UI-4 e UI-14, più UI-7.1 e UI-12.2-12.4. Nella 2.0 vanno il rifacimento GE (UI-8, UI-9 e UI-10), UI-7, UI-11, UI-12 e UI-16. UI-9.5, UI-16.3, UI-13, UI-15 e UI-17 partono solo a gate superato. Regola per le voci di menu nuove in `gui.c`: una callback che legge variabili di `menu()` sta a livello di file, come le opzioni di avanti veloce (`gui.c:3220-3290`); `-Werror=trampolines` lo impone dalla 1.4.3 (ENG-2).
+
+### UI-1 — Primo avvio senza configurazione e colori del tema persistenti
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 (UI-1.1, UI-1.2 e UI-1.5 in 1.4.4) | 2,75 gg | UI-2.2, UI-4.4, CMP-1.1 |
+
+**Copre:** F-044, F-049 (primo avvio senza configurazione; temi e colori)
+
+**Obiettivo:** Un'installazione pulita (solo `EBOOT.PBP` ed `exception.prx`, senza `gba_bios.bin` né `dir.ini`) arriva al browser senza dialoghi su PSP-1000 e su un secondo modello, dopo CMP-1.1. Lo zip si installa estraendolo alla radice di `ms0:` o di `ef0:`, nella cartella di sempre (`PSP/GAME/GBARushPSP`): 0 file da spostare per chi aggiorna. `check-package.sh` rifiuta uno zip con un altro layout o con una ROM o un BIOS (`*.gba`, `*.agb`, `*.gbz`, `*.bin`), e uno con `dir.ini`, `*.cfg`, `*.sav` o `*.svs`, così estrarre sopra un'installazione non sovrascrive mai un file dell'utente. I colori del tema sopravvivono al riavvio con e senza `dir.ini`; libreria vuota e suggerimento del primo avvio nelle 5 lingue, CJK compreso; i 9 temi e il selettore di colore restano.
+
+**Da noi oggi:** Senza dir.ini, load_setting_cfg mostra un dialogo modale (source/src/main.c:1543-1553) e load_dir_cfg mette tutte le cartelle nella cartella dell'EBOOT (source/src/gui.c:6642-6650). Il pacchetto spedisce EBOOT.PBP ed exception.prx (scripts/package-release.sh:66-69) e i documenti (:23-26, :70-74), ma nessun dir.ini, quindi il dialogo compare a ogni prima installazione. I due file stanno in `GBA-Rush-PSP-<v>/GBARushPSP/` (`scripts/package-release.sh:36-38`, `:68-69`): chi installa copia a mano la cartella in `PSP/GAME`. Senza gba_bios.bin il programma esce (main.c:1557-1569); il BIOS integrato (F-012 [CMP]) è implementato ma non ancora unito, sul branch features/builtin-open-bios. gba_bios.bin compare tra i giochi perché il browser accetta .bin (gui.c:3954). Non c'è una scheda per la libreria vuota. Colori personalizzati: load_config_file (main.c:1646) arriva ad apply_theme tramite apply_global_config (gui.c:6285), e apply_theme cancella tempgba_theme.cfg (gui.c:120-125) prima che load_theme_config lo legga (main.c:1648). Senza dir.ini anche load_dir_cfg chiama apply_theme (gui.c:6651, eseguita da main.c:1654) e sovrascrive i colori una seconda volta.
+
+**Come ci arriviamo:**
+- Difetti che ogni nuova installazione incontra, corretti con modifiche piccole, a basso rischio e testate su host.
+- Testi del primo avvio e della libreria vuota nelle 5 lingue, CJK compreso.
+- Nessuna migrazione forzata: roms/ se esiste, altrimenti la cartella dell'EBOOT. Salvataggi e stati restano dove sono, quindi nessun utente perde file all'aggiornamento.
+- Il pacchetto si estrae alla radice e installa nella cartella di sempre; `check-package.sh` tiene fuori dallo zip i file dell'utente, le ROM e i BIOS (UI-1.5).
+- Il BIOS ufficiale resta preferito e validato, quello integrato fa da riserva (F-012); gba_bios.bin non compare più come gioco.
+- Restano i 9 temi e il selettore di colore, e i colori scelti sopravvivono finalmente al riavvio.
+
+**Gate prima di iniziare:** Nessuno per iniziare. Il criterio 'si avvia senza alcun file' si chiude nella sessione hardware della 1.5, con UI-1.4, dopo CMP-1.1 (merge del BIOS integrato).
+
+**Rischi:**
+- Chi ha le ROM in roms/ e i salvataggi nella cartella dell'EBOOT deve continuare a trovarli: cambia solo il default della cartella ROM, le altre restano main_path.
+- tests/test_startup.py estrae funzioni dal sorgente: rinominare load_setting_cfg o user_main rompe il test.
+- Togliere la cancellazione da apply_theme non deve riattivare colori vecchi quando l'utente sceglie un preset: la cancellazione resta nelle azioni esplicite del menu (gui.c:5039-5048; la funzione passiva gira solo dopo un cambio di valore, gui.c:1281).
+- UI-1.5 ed ENG-1.3 cambiano entrambe `package-release.sh` e `check-package.sh` nella 1.4.4: chi arriva per secondo adatta il percorso dell'EBOOT estratto.
+
+#### UI-1.1 — dir.ini facoltativo, senza dialogo · S, 0,5 gg · dipende da: — · PSP: sì
+- **Cosa:** Quando dir.ini manca non c'è nessun error_msg. La cartella ROM diventa <main_path>roms/ se esiste, altrimenti main_path; tutte le altre cartelle restano main_path come oggi. Si toglie la chiamata apply_theme dal ramo 'file assente' di load_dir_cfg (gui.c:6651): non serve e sovrascrive i colori. L'avviso resta solo per un dir.ini presente con cartelle non valide (gui.c:6630-6637). Il README mostra l'albero di installazione con roms/ facoltativa; voce CHANGELOG 'Fixed'.
+- **File:** `source/src/main.c` (load_setting_cfg, main.c:1543-1553), `source/src/gui.c` (load_dir_cfg, gui.c:6518-6653), `tests/test_startup.py`, `README.md`, `CHANGELOG.md`
+- **Test:** tests/test_startup.py: nuovo scenario 'dir.ini assente' con zero chiamate a error_msg e dir_roms = roms/ quando la cartella esiste; tests/test_startup.py: scenario 'roms/ assente' con dir_roms = main_path; make check; Hardware: senza dir.ini e con gba_bios.bin presente, su PSP-1000 e un 2000+, il browser si apre senza dialoghi
+- **Accettazione:** Nessun dialogo al primo avvio senza dir.ini; Con roms/ presente il browser vi si apre; senza, nella cartella dell'EBOOT; Salvataggi e stati di un'installazione 1.4.2 senza dir.ini vengono ancora trovati agli stessi percorsi; Un dir.ini con una cartella inesistente mostra ancora l'avviso esistente; Voce CHANGELOG scritta come comportamento visibile
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### UI-1.2 — I colori personalizzati sopravvivono al riavvio · S, 0,5 gg · dipende da: UI-1.1 · PSP: sì
+- **Cosa:** apply_theme smette di cancellare tempgba_theme.cfg (gui.c:120-125). La cancellazione passa alle sole azioni dell'utente che scelgono un preset: menu_passive_theme e menu_theme_default (gui.c:5039-5048). Ordine di avvio invariato: preset da tempgba.cfg (main.c:1646), poi colori personalizzati (main.c:1648), poi dir.ini, che dopo UI-1.1 non chiama più apply_theme.
+- **File:** `source/src/gui.c` (apply_theme gui.c:104-126; menu_passive_theme e menu_theme_default gui.c:5039-5048), `tests/test_theme_boot.py` (nuovo, stesso metodo di estrazione di tests/test_startup.py), `CHANGELOG.md`
+- **Test:** tests/test_theme_boot.py: estrae apply_theme, save_theme_config e load_theme_config con stub sceIo* su un file in memoria; la sequenza load_config_file → load_theme_config → load_dir_cfg (file assente) conserva gli 11 colori; Stesso test: scegliere un preset dal menu cancella il file e applica il preset; Controllo sorgente (grep in make check): apply_theme non contiene sceIoRemove; Hardware, nella sessione di UI-1.1: i colori scelti con il selettore sono ancora attivi dopo un riavvio, con e senza dir.ini
+- **Accettazione:** Dopo un riavvio i colori scelti con il selettore sono ancora attivi, con e senza dir.ini; Cambiare preset dal menu Interfaccia scarta i colori personalizzati come oggi; make check e make test-sanitize verdi
+
+#### UI-1.3 — Libreria vuota spiegata e gba_bios.bin nascosto · S, 1 gg · dipende da: — · PSP: sì
+- **Cosa:** In load_file (gui.c:1830), gba_bios.bin non entra più nell'elenco dei giochi. Se la cartella non contiene giochi né sottocartelle (la voce della cartella superiore non conta), al posto della lista compare una scheda: 'Nessun gioco trovato', poi 'Copia file .gba o .zip in:' e il percorso tagliato con print_string_clipped, nelle 5 lingue. Nuove voci MSG_BROWSER_EMPTY_TITLE e MSG_BROWSER_EMPTY_HINT in message.h e nei 5 message_*.h, nello stesso ordine.
+- **File:** `source/src/gui.c` (load_file: elenco circa gui.c:1960-2050, disegno gui.c:2349-2404), `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `tests/test_browser_text.py`, `CHANGELOG.md`
+- **Test:** tests/test_browser_text.py: estrae il nuovo filtro is_listed_rom e verifica che gba_bios.bin sia escluso con qualsiasi combinazione di maiuscole, mentre gli altri .bin restano; scripts/check-messages.sh; Hardware: una cartella vuota mostra la scheda in giapponese, cinese e italiano senza glifi mancanti
+- **Accettazione:** gba_bios.bin non compare mai nella lista; Una cartella senza giochi mostra una scheda leggibile nelle 5 lingue, con il percorso; Le cartelle con giochi si comportano come prima, in lista e nel carosello
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### UI-1.4 — Suggerimento al primo avvio sui tasti del menu · S, 0,5 gg · dipende da: UI-2.2, UI-4.4, CMP-1.1 · PSP: sì
+- **Cosa:** Se all'avvio tempgba.cfg non esisteva (load_config_file restituisce -1, gui.c:6508-6511 e :6323-6337), all'avvio del primo gioco della sessione compare per 6 s un toast 'HOME: menu, oppure tieni START+SELECT'. tempgba.cfg viene scritto solo all'uscita regolare (quit, main.c:1789): il suggerimento ricompare a ogni avvio finché non c'è stata un'uscita regolare, poi mai più. Nessun campo nuovo nella config.
+- **File:** `source/src/main.c` (setup_main, main.c:1646, chiamata da user_main a main.c:1689), `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `tests/test_startup.py`, `CHANGELOG.md`
+- **Test:** tests/test_startup.py: con load_config_file = -1 viene accodato un toast; con la config presente no; scripts/check-messages.sh; Hardware, dopo CMP-1.1: installazione pulita (solo EBOOT.PBP ed exception.prx) su PSP-1000 e un 2000+, il browser si apre senza dialoghi e il suggerimento compare al primo gioco; dopo un'uscita dal menu Esci non compare più
+- **Accettazione:** Un'installazione con solo EBOOT.PBP ed exception.prx arriva al browser senza dialoghi; Il suggerimento compare su un'installazione nuova e non compare più dopo la prima uscita regolare; Nomina entrambi i modi di aprire il menu, nelle 5 lingue
+
+#### UI-1.5 — Pacchetto da estrarre alla radice del Memory Stick · S, 0,25 gg · dipende da: — · PSP: sì
+- **Cosa:** `scripts/package-release.sh` mette `EBOOT.PBP` ed `exception.prx` in `PSP/GAME/GBARushPSP/` alla radice dello zip e i documenti in `PSP/GAME/GBARushPSP/docs/`: estrarre lo zip alla radice di `ms0:` o di `ef0:` installa o aggiorna nella cartella di sempre. `scripts/check-package.sh` verifica il layout e rifiuta nello zip `dir.ini`, `*.cfg`, `*.sav`, `*.svs` e ogni ROM o BIOS (`*.gba`, `*.agb`, `*.gbz`, `*.bin`). Il README spiega l'installazione in un passo.
+- **File:** `scripts/package-release.sh`, `scripts/check-package.sh`, `README.md`, `CHANGELOG.md`
+- **Test:** `scripts/check-package.sh` su pacchetti di prova: layout giusto accettato, uno zip con `dir.ini`, con un `.sav` o con un `.gba` rifiutato; hardware nella sessione della 1.4.4: installazione pulita estraendo alla radice su PSP-1000 e Go, e aggiornamento sopra un'installazione 1.4.3 con salvataggi, stati e config.
+- **Accettazione:** l'XMB mostra l'app dopo l'estrazione su PSP-1000 e Go; dopo l'aggiornamento salvataggi, stati e config sono intatti; voce CHANGELOG (Changed) con il percorso d'installazione.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### UI-2 — Notifiche non modali: un anello di toast localizzati
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 | 2,5 gg | — |
+
+**Copre:** F-045 (notifiche toast)
+
+**Obiettivo:** Riscontri non modali nelle 5 lingue, CJK compreso, presi dalle tabelle MSG; durata in tempo reale, uguale con frameskip e avanti veloce; un toast ripetuto riavvia il timer invece di occupare la coda; nessun costo nei frame senza toast (compare-benchmarks 3+3 senza regressioni); modulo puro con test normali e ASan/UBSan.
+
+**Da noi oggi:** I riscontri sono modali e fermano il gioco: error_msg (main.c:2301-2335) e yesno_dialog (main.c:2337-2368). Il rifiuto degli stati durante il link è un error_msg (memory.c:3773-3777, :3870-3874). In gioco esiste già un punto di disegno per frame: synchronize() stampa FPS (main.c:1343-1362), stato dell'avanti veloce (main.c:1365-1385), icona HOLD e sospensione GBA. print_string e print_string_gbk scrivono nel back buffer con un colore di sfondo, dopo aver atteso la fine della lista GE del frame (video_sync_present, psp_video.c:1116-1137, :290-300). Nessuna coda di notifiche.
+
+**Come ci arriviamo:**
+- Il toast serve a F-046, F-047, F-052 e F-100 ed esce prima del rifacimento GE, sul percorso di stampa esistente.
+- Testi presi dalle tabelle MSG, nelle 5 lingue con CJK.
+- Durata in tempo reale (µs): con frameskip o avanti veloce un toast dura sempre lo stesso tempo.
+- Una notifica ripetuta riavvia il timer invece di riempire la coda.
+- Nessun disegno GE in più: il testo usa lo sfondo del font, come l'FPS. L'attesa GE di print_string (psp_video.c:1118) c'è solo nei frame con un toast visibile ed è la stessa che oggi fa l'FPS.
+- Modulo puro con test normali e con ASan/UBSan.
+
+**Gate prima di iniziare:** Nessuno.
+
+**Rischi:**
+- Costo per frame: print_string aspetta la fine della lista GE del frame (psp_video.c:1118, :298) e scrive in VRAM non in cache; misurarlo con compare-benchmarks prima di usarlo per eventi frequenti.
+- Toast, FPS e stato FF condividono la parte alta dello schermo: il toast ha una riga fissa sotto quelle di FPS e stato FF (y 24).
+- In giapponese i testi senza byte GBK usano Shift-JIS (message.h:31-34): seguire lo stesso criterio delle funzioni di stampa esistenti.
+
+**Storie tolte in revisione:** UI-2.3, fusa in LNK-3.2.
+
+#### UI-2.1 — Modulo puro dei toast · S, 1 gg · dipende da: — · PSP: no
+- **Cosa:** source/src/toast.c/.h, senza SDK PSP: anello di 8 voci {testo[64], inizio_us, durata_us}. toast_push(testo, durata, sjis) copia e tronca senza spezzare un carattere a due byte, con lo stesso criterio di print_string_clipped (Shift-JIS per il giapponese, GBK per le altre lingue). toast_current(now_us) restituisce la voce visibile o NULL e scarta quelle scadute. Una voce identica già in coda viene deduplicata; toast_clear() si chiama al cambio gioco. L'aritmetica u32 regge il giro di sceKernelGetSystemTimeLow (circa 71 minuti).
+- **File:** `source/src/toast.c` (nuovo), `source/src/toast.h` (nuovo), `tests/test_toast.c` (nuovo), Makefile (HOST_TEST_TOAST, HOST_TESTS, HOST_SANITIZE_TESTS), `scripts/check-performance.sh` (toast.c senza FILE_, sceIo né malloc)
+- **Test:** tests/test_toast.c: la coda piena scarta la voce più vecchia; il duplicato riavvia il timer; scadenza esatta; giro dei microsecondi a 2^32; troncamento che non spezza un carattere a due byte GBK né Shift-JIS, katakana a mezza larghezza compresi; make test-sanitize con test_toast
+- **Accettazione:** Test verdi in make check e make test-sanitize; Nessuna allocazione né I/O nel modulo (controllo sorgente); Intestazione GPL-2.0-or-later (GBA Rush PSP, 2026 Piero Carrieri) sui file nuovi
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### UI-2.2 — Disegno dei toast in gioco · M, 1,5 gg · dipende da: UI-2.1 · PSP: sì
+- **Cosa:** In synchronize() (main.c:1329-1363), solo sui frame presentati, si disegna toast_current() su una riga fissa centrata a y = 24, sotto le righe di FPS e stato FF (y 0 e 12, main.c:1361, :1370-1383). Si usa print_swap_aware (GBK, con i glifi dei tasti che seguono lo scambio conferma/annulla) con sfondo nero preso dal parametro bg. Una funzione toast_show(id MSG, ...) in gui.c formatta il testo da MSG[]. toast_clear() viene chiamata in menu_load_file e al reset.
+- **File:** `source/src/main.c` (synchronize), `source/src/gui.c` (print_swap_aware gui.c:769-778; menu_load_file gui.c:3952), `source/src/main.h`
+- **Test:** Hardware PSP-1000: perf report con un toast sempre visibile contro nessun toast, 3 + 3 esecuzioni confrontate con scripts/compare-benchmarks.py, nessuna regressione oltre le soglie; Hardware: toast leggibile in giapponese, cinese semplificato, cinese tradizionale e italiano; make check
+- **Accettazione:** Un toast resta visibile 3 s anche con frameskip 9 o in avanti veloce; Nessuna regressione misurata del tempo di frame; Nessun toast disegnato nei frame saltati
+
+### UI-3 — Salvataggio e caricamento rapido senza prompt, annullabili
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 | 2,25 gg | LNK-3.2, SAV-4.5 |
+
+**Copre:** F-046 (salvataggio e caricamento rapido)
+
+**Obiettivo:** Salvataggio e caricamento rapido senza dialogo sullo slot corrente fra 10 più AUTO, su SELECT+L e SELECT+R di default (UI-4.2), con toast nelle 5 lingue. Ogni errore si annulla: il caricamento rapido salva prima l'AUTO (salvo entro 10 s dall'ultimo caricamento) e «Annulla ultimo salvataggio» ripristina lo slot sovrascritto. Uno stato non valido si rifiuta con un toast, mai con un dialogo in gioco. Su PSP-1000, in 20 salvataggi e 20 caricamenti rapidi di fila, ogni caricamento con il backup AUTO finisce entro 1 s e l'audio riprende senza crepitii.
+
+**Da noi oggi:** Le azioni SAVESTATE e LOADSTATE esistono (input.c:412-418) e usano lo slot corrente (gui.c:3002-3026), ma save_state e load_state chiedono sempre sì/no (memory.c:3784, :3881). Nessuna delle due è associata di default (input.c:65-83): i 12 tasti sono già tutti occupati, quindi serve un accordo (UI-4). Il caricamento dal menu salva prima l'AUTO (gui.c:5857-5868), quello da tasto no (gui.c:3003-3009). save_state_silent e load_state_silent esistono già (memory.c:3820, :3922), ma durante il link tornano 0 senza alcun messaggio (memory.c:3827-3828, :3930-3931). Ogni salvataggio alloca 512 KiB (memory.c:3890, :3937), e copy_screen aspetta una VBlank e alloca (psp_video.c:858-890).
+
+**Come ci arriviamo:**
+- La conferma sì/no su ogni tasto stato è l'interruzione più frequente durante il gioco: le varianti senza dialogo ci sono già, e resta da collegarle ai tasti, dare un riscontro e rendere annullabile un errore.
+- Usa lo slot corrente fra 10 + AUTO.
+- Il caricamento rapido salva prima l'AUTO, come il caricamento dal menu, e salta il backup entro 10 s dall'ultimo caricamento: due caricamenti di fila non sovrascrivono il progresso.
+- 'Annulla ultimo salvataggio' (SAV-4.5) ripristina lo slot sovrascritto dal <slot>.svs.bak dello store, e il toast del salvataggio rapido rimanda a quella voce.
+- La conferma resta come opzione per chi la vuole; le associazioni sono per gioco (UI-4).
+- Gli stati sono validati prima del caricamento (F-007): un file corrotto viene rifiutato invece di caricare dati sbagliati.
+
+**Gate prima di iniziare:** Nessuno per UI-3.1. UI-3.2 aspetta SAV-4.5.
+
+**Rischi:**
+- Un caricamento rapido accidentale senza conferma: mitigato dal backup AUTO automatico e dalla finestra di 10 s.
+- Il backup AUTO prima del caricamento aggiunge una scrittura di circa 0,5 MiB: misurare il tempo totale sul Memory Stick di una PSP-1000.
+- Breve pausa del gioco durante la scrittura (VBlank più I/O): l'audio va in pausa con sound_pause come oggi.
+- Con F-012 unito, uno stato dell'altro BIOS viene rifiutato: il percorso rapido deve ricevere un esito da mostrare come toast, non un dialogo.
+
+#### UI-3.1 — Tasti stato senza dialogo, con toast · M, 2 gg · dipende da: LNK-3.2 · PSP: sì
+- **Cosa:** action_savestate e action_loadstate (gui.c:3002-3026) usano save_state_silent e load_state_silent. Prima di caricare si fa il backup AUTO se lo slot esiste, con la stessa logica di gui.c:5857-5868, ma lo si salta se l'ultimo caricamento risale a meno di 10 s prima: così un secondo caricamento non mette nell'AUTO lo stato appena caricato. memory.c restituisce esiti distinti (fatto, slot vuoto, errore di I/O e, con F-012 unito, stato dell'altro BIOS) senza dialoghi. Toast: 'Stato salvato: slot N', 'Stato caricato: slot N', 'Slot N vuoto', 'Salvataggio non riuscito'; per l'altro BIOS le stringhe già scritte da F-012 (MSG_ERR_STATE_NEEDS_BIOS_FILE, MSG_ERR_STATE_NEEDS_BUILTIN_BIOS). Nuova opzione 'Conferma tasti stato' (No di default) nel menu Salva/Carica; i salvataggi dal menu restano confermati. L'I/O avviene solo all'evento del tasto, mai per frame.
+- **File:** `source/src/gui.c` (action_savestate e action_loadstate; savestate_options gui.c:5202-5219), `source/src/memory.c` (save_state_silent e load_state_silent: esiti distinti, nessun dialogo), `source/src/main.c e source/src/main.h` (option_confirm_hotkey_states), `source/src/config_model.c e source/src/config_model.h` (nuovo campo, nel bump di ConfigModel della release), `tests/test_config_model.c`, `tests/test_state_hotkeys.py` (da LNK-3.2), `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `README.md` (sezione controlli), `CHANGELOG.md`
+- **Test:** tests/test_state_hotkeys.py: backup AUTO fatto prima di un caricamento e saltato entro 10 s dal precedente; slot vuoto dà il toast e nessun caricamento; tests/test_config_model.c: un file della versione precedente migra con la conferma su No; i file v1 e quelli senza intestazione si leggono ancora; scripts/check-messages.sh; Hardware PSP-1000: 20 salvataggi e 20 caricamenti rapidi in un gioco; caricamento con backup AUTO in al massimo 1 s; nessun crepitio audio alla ripresa
+- **Accettazione:** Con l'opzione su No i tasti stato non aprono dialoghi; Ogni azione mostra un toast nelle 5 lingue; Dopo un caricamento rapido AUTO contiene lo stato precedente; dopo due caricamenti entro 10 s contiene ancora quello di prima del primo; Con l'opzione su Sì il comportamento è quello di 1.4.2; Voce CHANGELOG che dice che i tasti stato non chiedono più conferma e come riattivarla
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### UI-3.2 — Il toast del salvataggio rapido rimanda ad 'Annulla ultimo salvataggio' · S, 0,25 gg · dipende da: UI-3.1, SAV-4.5 · PSP: sì
+- **Cosa:** Se lo slot esisteva già (savestate_file_exists, gui.c:2990-2999), dopo il salvataggio rapido la generazione precedente sta in <slot>.svs.bak, che SAV-4.5 tiene tramite lo store. In quel caso il toast di UI-3.1 diventa 'Stato salvato: slot N · Annulla dal menu Salva/Carica' e rimanda alla voce 'Annulla ultimo salvataggio' di SAV-4.5 (savestate_undo_last). Nessuna voce di menu e nessun file nuovi: serve solo questa stringa, nelle 5 lingue.
+- **File:** `source/src/gui.c` (action_savestate), `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `tests/test_state_hotkeys.py`, `CHANGELOG.md`
+- **Test:** tests/test_state_hotkeys.py: con lo slot già presente il toast è quello con il rimando, con lo slot vuoto resta quello di UI-3.1; scripts/check-messages.sh; Hardware PSP-1000, nella sessione di UI-3.1: sovrascrittura di uno slot da tasto, toast con il rimando e ripristino dalla voce di SAV-4.5
+- **Accettazione:** Dopo un salvataggio rapido che sovrascrive uno slot il toast dice dove annullarlo; Con lo slot prima vuoto il toast è quello di UI-3.1; La stringa è nelle 5 lingue
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### UI-4 — Accordi per gioco, pagina delle scorciatoie e menu senza HOME
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 (UI-4.1, UI-4.2 e UI-4.4 in 1.5) | 8 gg | UI-2.2, UI-12.4 |
+
+**Copre:** F-050, F-051, F-052 (accordi e rimappatura, scorciatoie, apertura del menu senza HOME, ciclo video)
+
+**Obiettivo:** Scorciatoie per gioco con accordi da 1 a 4 dei 16 ingressi, stick compreso: ognuna si imposta, si svuota e si ripristina, e si cattura da ogni punto in cui si apre la pagina (in gioco e prima del primo gioco, con un test host sulle 4 direzioni dello stick). Un conflitto si rifiuta alla cattura dicendo quale azione usa già l'accordo; il tasto che fa scattare un accordo non arriva al gioco; nessuna latenza aggiunta (test esaustivo sui 2^16 stati). Il menu si apre con HOME o con START+SELECT tenuti 0,5 s, e nessuna tenuta chiude mai il gioco: matrice HOME e tenuta su PSP-1000, Go con ARK-4, PSP-3000 con PRO-C e con LME. Il ciclo video cambia modalità al frame successivo, con un toast nelle 5 lingue, e ricorda la scelta solo per il gioco corrente.
+
+**Da noi oggi:** Un'azione per tasto PSP, su 12 tasti più 4 direzioni dello stick (gamepad_config_map, input.c:65-104), salvata per gioco (gui.c:6357-6377). Azioni disponibili: tasti GBA, MENU, FF, carica e salva stato, 4 turbo, FPS (input.h:44-68). Nessun accordo, e nella mappa di default i 12 tasti sono tutti occupati (input.c:65-83): non resta un tasto libero per salvataggio rapido, screenshot, pausa o ciclo video. HOME apre il menu (input.c:400-401) e il popup di sistema è nascosto (main.c:1651-1652); HOME viene letto con sceCtrlPeekBufferPositive in modalità utente (input.c:490), mentre init_input_kernel non è mai chiamata (input.c:494-497). MENU non è associato di default: gui.c:6281-6283 lo mette su Triangolo solo se enable_home_menu è 0, ma main.c:1644 lo imposta sempre a 1; se HOME non arriva all'app non c'è modo di aprire il menu. Nessuna azione di ciclo video.
+
+**Come ci arriviamo:**
+- Accordi per gioco e una tenuta di riserva per il menu, in un modulo puro testato, senza latenza aggiunta.
+- Scorciatoie salvate per gioco.
+- Un conflitto viene rifiutato alla cattura e indica quale azione usa già l'accordo: nessuna azione resta scoperta senza avviso.
+- Il tasto che fa scattare l'accordo non arriva al gioco finché resta premuto.
+- La tenuta di riserva apre il menu e non termina mai il gioco; non conta mentre A o B sono premuti, così la combinazione di reset A+B+START+SELECT resta al gioco.
+- HOME resta il tasto del menu senza PRX aggiuntivo; nessuna latenza, perché la decisione avviene nella stessa lettura del pad.
+
+**Gate prima di iniziare:** Nessuno per UI-4.1-4.3. UI-4.4 si chiude con la matrice hardware di HOME (Go con ARK-4, 3000 con PRO-C e con LME).
+
+**Rischi:**
+- Sequenze parziali: premendo SELECT, poi L, poi R, il salvataggio scatta prima che arrivi R. Non c'è soluzione senza latenza; va scritto nella pagina.
+- Tenendo START+SELECT il gioco riceve START e può aprire la propria pausa: accettato e documentato.
+- Un ritorno a 1.4.x non legge il nuovo formato della config (config_model.c:252-259 accetta solo v1 e v2): tutte le impostazioni tornano ai default e quit() le riscrive (main.c:1789). Vale per ogni bump della config; va scritto nel CHANGELOG.
+- HOME potrebbe non arrivare in modalità utente su un Go con ARK-4 o su PRO/LME: non verificato.
+
+#### UI-4.1 — Modulo puro degli accordi · M, 2 gg · dipende da: — · PSP: no
+- **Cosa:** source/src/input_chord.c/.h: tabella di scorciatoie {azione, maschera di 1-4 dei 16 ingressi, tipo pressione o tenuta di N ms}. input_chord_eval(stato, pad, pad_precedente, now_us) restituisce le azioni scattate e la maschera dei tasti da nascondere al gioco. Il tempo arriva dal chiamante perché update_input gira anche più volte per frame nelle attese del link (main.c:664-671): una tenuta contata in chiamate durerebbe meno. Regole: SELECT e START fanno da modificatori e l'accordo scatta alla pressione dell'altro tasto; un'azione cede se è tenuto per intero un accordo più lungo che la contiene; la tenuta del menu non conta con A o B premuti; validazione (da 1 a 4 tasti, nessun accordo uguale a un altro). Le azioni nuove (screenshot, ciclo video, pausa) esistono solo qui, quindi i valori BUTTON_ID_* salvati non cambiano.
+- **File:** `source/src/input_chord.c` (nuovo), `source/src/input_chord.h` (nuovo), `tests/test_input_chord.c` (nuovo), Makefile (test normale e ASan/UBSan)
+- **Test:** tests/test_input_chord.c: esaustivo su tutti i 2^16 stati dei 16 ingressi, con un insieme di stati precedenti: nessuna azione senza l'accordo completo; ogni pressione scatta una sola volta; i tasti nascosti sono solo inneschi di accordi scattati; regola dell'accordo più lungo; Tenuta del menu: scatta dopo 500 ms di tempo passato, qualunque sia il numero di chiamate; mai con A o B premuti; si riarma dopo il rilascio; Validazione: 5 tasti rifiutati, duplicato rifiutato
+- **Accettazione:** make check e make test-sanitize verdi; Nessuna dipendenza dall'SDK PSP; Valutazione lineare nel numero di scorciatoie; unico stato temporale l'istante d'inizio della tenuta
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### UI-4.2 — Accordi nel ciclo di input e nella config per gioco · M, 2 gg · dipende da: UI-4.1 · PSP: sì
+- **Cosa:** update_input (input.c:343-471) valuta gli accordi prima del ciclo per tasto, toglie dai tasti del gioco quelli da nascondere ed esegue le azioni (MENU, FF, salva e carica stato, FPS e le azioni nuove delle altre epiche, con id d'azione assegnati in ordine di merge). Le associazioni a tasto singolo di gamepad_config_map continuano a funzionare. ConfigModel con 8 maschere di scorciatoia, globali e per gioco, nel bump di ConfigModel della release; migrazione dalle versioni precedenti con questi default: SELECT+L salva, SELECT+R carica, START+SELECT tenuto 0,5 s apre il menu, il resto vuoto.
+- **File:** `source/src/input.c`, `source/src/input.h`, `source/src/config_model.c`, `source/src/config_model.h`, `source/src/gui.c` (capture e apply_global_config; capture e apply_game_config gui.c:6357-6419), `tests/test_config_model.c`, `README.md` (sezione controlli), `CHANGELOG.md`
+- **Test:** tests/test_config_model.c: la versione precedente migra con i default delle scorciatoie; la nuova si rilegge identica; valori fuori intervallo tornano al default; Hardware: SELECT+L e SELECT+R in 3 giochi, uno dei quali usa SELECT in gioco; nessun tasto perso o ritardato rispetto a 1.4.2 (controllato con la traccia input diagnostica)
+- **Accettazione:** Salvataggio e caricamento rapido funzionano con i default su una config 1.4.2 migrata; Il gioco non riceve L quando SELECT+L ha salvato; Le associazioni personalizzate restano per gioco; Voce CHANGELOG con i default delle scorciatoie e l'avviso sul ritorno a 1.4.x
+
+#### UI-4.3 — Pagina Scorciatoie con cattura e conflitti · M, 2 gg · dipende da: UI-4.2, UI-12.4 · PSP: sì
+- **Cosa:** Nuovo sottomenu Controlli > Scorciatoie, con una riga per azione e l'accordo attuale. ○ avvia la cattura (si tengono i tasti e si rilasciano per confermare; annullo dopo 5 s senza input), △ svuota (usa la mappatura di TRIANGOLO in get_gui_input fatta da UI-12.4), □ ripristina il default. Un accordo già usato viene rifiutato con 'Già usato da: <azione>'. HOME non è mai catturabile. L'ordine delle categorie principali non cambia. La cattura legge i 16 ingressi con la stessa funzione che costruisce la parola dei tasti in `update_input` (`input.c:357-392`), mai con letture proprie.
+- **File:** `source/src/gui.c` (controls_options gui.c:5300-5305, nuova tabella), `source/src/menu_layout.c` (solo se serve una riga a due colonne), `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `README.md` (sezione controlli), `CHANGELOG.md`
+- **Test:** scripts/check-messages.sh; scripts/check-menu-layout.sh (categorie principali invariate); tests/test_input_chord.c: casi di cattura, e la cattura riceve le 4 direzioni dello stick con la levetta attiva e nessuna con la levetta spenta; Hardware: cattura, annullo e conflitto in italiano e in giapponese, e cattura di una direzione dello stick aprendo la pagina in gioco e prima del primo gioco
+- **Accettazione:** Ogni scorciatoia si può impostare, svuotare e ripristinare, per gioco; Un conflitto non lascia mai un'azione scoperta senza avviso; Testi nelle 5 lingue, nessuna riga tagliata male
+
+#### UI-4.4 — Menu senza HOME: una tenuta di riserva che non esce mai · S, 1 gg · dipende da: UI-4.2 · PSP: sì
+- **Cosa:** Di default, START+SELECT tenuto 0,5 s apre il menu (impostato da UI-4.2) e non termina mai il gioco; la tenuta non conta con A o B premuti. Sessione hardware: verificare se HOME arriva all'app su PSP Go con ARK-4 e su PSP-3000 con PRO-C e con LME, e se la tenuta funziona su ciascuno. Risultati nelle note hardware del rilascio e nella sezione controlli del README.
+- **File:** `source/src/input.c`, `README.md` (sezione controlli), `CHANGELOG.md`
+- **Test:** tests/test_input_chord.c: la tenuta non scatta con A+B+START+SELECT; Hardware: matrice HOME e tenuta su Go+ARK-4, 3000+PRO-C, 3000+LME e PSP-1000
+- **Accettazione:** Il menu si apre con la tenuta su ogni console della matrice; Nessuna combinazione tenuta chiude il gioco; La matrice è registrata con modello, CFW e sha256 di EBOOT.PBP
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### UI-4.5 — Azione 'Ciclo video' con toast · S, 1 gg · dipende da: UI-4.2, UI-2.2 · PSP: sì
+- **Cosa:** Nuova azione scorciatoia, vuota di default: passa da 16:9 Auto a 100%, 150% GU, 2x intero (se UI-7.1 è unita), 16:9 Sharp e di nuovo 16:9 Auto. Applica subito la presentazione (il renderer resta scelto una volta per frame), mostra un toast con il nome della modalità e salva solo nel profilo del gioco corrente.
+- **File:** `source/src/input_chord.h` (azione), `source/src/input.c`, `source/src/gui.c` (scale_options, save_game_config_file), `source/src/psp_video.c` (riapplicazione della modalità, psp_video.c:753-792), `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** scripts/check-video.sh (renderer scelto a inizio frame); Hardware: ciclo completo in gioco senza artefatti né frame neri; il profilo del gioco ricorda l'ultima scelta
+- **Accettazione:** Ogni pressione cambia modalità al frame successivo, con il toast; La modalità scelta vale solo per quel gioco
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### UI-5 — Input affidabile: turbo per tasto e isteresi dello stick
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 | 3,25 gg | UI-2.2 |
+
+**Copre:** F-047, F-071 (turbo e stick analogico)
+
+**Obiettivo:** Turbo su A, B, L e R con velocità (30, 15 o 10 al secondo) e modalità (Tieni o Interruttore) per tasto e per gioco, con un toast nelle 5 lingue in modalità Interruttore; due turbo tenuti insieme pulsano entrambi (test host) e il turbo resta disponibile in sessione link alla stessa velocità; per chi non usa il turbo nessun costo per frame (compare-benchmarks 3+3 senza regressioni). Isteresi dello stick ricavata dalla sensibilità scelta: nessuna oscillazione con ±6 di rumore a ogni sensibilità da 0 a 9; tilt invariato.
+
+**Da noi oggi:** Turbo per A, B, L e R, solo in tenuta, una velocità; il flag è condiviso: con due tasti turbo premuti uno resta sempre premuto e l'altro mai, perché rapidfire_flag si inverte una volta per tasto a ogni lettura (input.c:160-162, :439-451). Il turbo non è bloccato durante il link, e update_input viene chiamata anche nelle attese del link (main.c:664-671). Stick: abilitazione, sensibilità a 10 livelli (soglia 20 + s × 10, input.c:351-352), 4 direzioni associabili e tilt GBA dallo stick (input.c:363-377), ma una sola soglia per direzione, senza isteresi (input.c:380-390).
+
+**Come ci arriviamo:**
+- Un piccolo modulo puro, testato su host, corregge entrambi i difetti.
+- Turbo su A, B, L e R, con velocità e modalità per tasto e per gioco.
+- Regressione dei due tasti coperta da un test host.
+- Isteresi ricavata dalla sensibilità che l'utente ha già scelto; il tilt resta com'è.
+
+**Gate prima di iniziare:** Nessuno.
+
+**Rischi:**
+- Il contatore deve avanzare una volta per frame emulato: update_input è chiamata anche nelle attese del link, dove il contatore non avanza (UI-5.2).
+- Con sensibilità 9 la soglia è 110: il punto di rilascio va limitato sotto il centro (128) per non restare agganciati.
+- Nuovi campi nella config (nel bump di ConfigModel della release).
+
+#### UI-5.1 — Modulo puro input_model: turbo e isteresi · M, 1,5 gg · dipende da: — · PSP: no
+- **Cosa:** source/src/input_model.c/.h, senza SDK. Per ciascuno dei 16 ingressi PSP un treno turbo {frame di inizio, attivo}; mezzo periodo di 1, 2 o 3 frame (30, 15 o 10 pressioni al secondo). Hold: attivo finché il tasto è premuto, con il primo frame sempre acceso. Toggle: una pressione avvia, la successiva ferma. Restituisce una maschera di tasti GBA da sommare in OR; stop() per menu, caricamento di stato e sospensione. Isteresi dello stick: aggancio alla soglia attuale, rilascio a soglia + 16, limitato a 127 e 129.
+- **File:** `source/src/input_model.c` (nuovo), `source/src/input_model.h` (nuovo), `tests/test_input_model.c` (nuovo), Makefile
+- **Test:** tests/test_input_model.c: due tasti turbo tenuti pulsano entrambi (regressione di input.c:439-451); un tocco produce almeno una pressione; Toggle si inverte a ogni pressione; stop; turbo più tasto normale sullo stesso tasto GBA danno un tasto tenuto; Isteresi: campioni con rumore di ±6 attorno alla soglia non oscillano, a ogni sensibilità da 0 a 9; make test-sanitize
+- **Accettazione:** Test verdi, normali e con sanitizer; Funzioni pure di (stato, pad, frame): stesso input, stessi tasti
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### UI-5.2 — input.c passa a input_model · S, 0,75 gg · dipende da: UI-5.1 · PSP: sì
+- **Cosa:** input_model sostituisce rapidfire_flag (input.c:160-162, :439-451). Un contatore di frame emulati avanza una volta per update_input nel percorso di frame (main.c:1096), non nelle attese del link. Il turbo si ferma all'apertura del menu, ai caricamenti di stato e in psp_sleep_loop; in sessione di link resta disponibile (LNK-3). Le direzioni dello stick passano dall'isteresi (input.c:380-390); il tilt non cambia.
+- **File:** `source/src/input.c`, `source/src/main.c` (psp_sleep_loop), `source/src/gui.c` (apertura del menu, caricamenti), `CHANGELOG.md`
+- **Test:** Hardware: turbo A e B insieme in uno sparatutto a 30, 15 e 10 pressioni al secondo; durante un collegamento il turbo pulsa alla stessa velocità che fuori sessione; uno stick consumato o tenuto al bordo della zona morta non vibra; compare-benchmarks 3+3 senza turbo associato, senza regressioni; make check
+- **Accettazione:** Due tasti turbo funzionano insieme; Le attese del link non accelerano il turbo; Nessun cambiamento per chi non usa il turbo
+
+#### UI-5.3 — Velocità e modalità del turbo per gioco · S, 1 gg · dipende da: UI-5.2, UI-2.2 · PSP: sì
+- **Cosa:** Pagina Turbo in Controlli: per A, B, L e R, velocità 30, 15 o 10 e modalità Tieni o Interruttore, salvate per gioco (8 valori nel bump di ConfigModel della release). Il default resta 30 pressioni al secondo, cioè il comportamento attuale (un frame acceso, uno spento). In modalità Interruttore un toast annuncia 'Turbo A: attivo' o 'spento'.
+- **File:** `source/src/gui.c`, `source/src/config_model.c`, `source/src/config_model.h`, `tests/test_config_model.c`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** tests/test_config_model.c: dopo la migrazione il default è 30 e Tieni; scripts/check-messages.sh; Hardware: modalità Interruttore con toast
+- **Accettazione:** Le impostazioni del turbo restano per gioco; Chi aggiorna senza toccare nulla ottiene la stessa velocità di oggi
+
+### UI-6 — Screenshot PNG funzionanti
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 | 4,25 gg | UI-2.2, UI-4.2, SAV-7.1 |
+
+**Copre:** F-048 (screenshot)
+
+**Obiettivo:** PNG 240x160 con mediana ≤ 4 KB su 10 frame GBA di riferimento e decodifica esatta al pixel su 20 frame (i 10 GBA di riferimento più 10 sintetici, tra cui frame da 256 e da 257 colori), con zlib e con un secondo decoder. Evento completo (cattura, codifica, scrittura) ≤ 60 ms al p95 su PSP-1000 a 333 MHz in 20 scatti. 0 KiB riservati in permanenza e al massimo 96 KiB solo durante l'evento, con le righe lette dalla texture e l'IDAT scritto a blocchi; un'allocazione fallita dà un toast d'errore, nessun file e nessun crash. File in `PICTURE/GBARushPSP/` con nome `<gioco>_<AAAAMMGG>_<hhmmss>_<mmm>.png`, aperti dalla colonna Foto dell'XMB su PSP-1000 e Go. 240x160 nativo e, se UI-6.3 tiene l'opzione senza una copia in più a ogni frame, 480x272 come mostrato; toast con il nome del file nelle 5 lingue.
+
+**Da noi oggi:** Il menu offre il formato PNG o BMP (gui.c:283-284, :5092), ma è un'opzione morta: save_png (240x160 in PNG a 24 bit, compresso con lo zlib incluso in source/src/zlib, png.c:213-242) esiste ma non ha chiamanti (png.c:306-328) e apre il file senza PSP_O_TRUNC (png.c:311). L'opzione di formato è salvata nella config (main.c:65; gui.c:6221, :6261) e non fa nulla. png.c dice 'copy from njemu' e 'based on M.A.M.E.' e non indica una licenza (png.c:1-9). dir.ini ha già snapshot_directory (gui.c:6528; dir_snap, gui.c:1616). Tra le azioni associabili non c'è lo screenshot (input.h:44-68).
+
+**Come ci arriviamo:**
+- PNG standard e compresso, indicizzato a 8 bit quando il frame ha al massimo 256 colori (UI-6.1).
+- Salvati come `<gioco>_<AAAAMMGG>_<hhmmss>_<mmm>.png` (con i millisecondi) nella cartella `PICTURE/GBARushPSP/` del dispositivo d'avvio, o in quella di snapshot_directory se dir.ini la imposta, con un toast che dice il nome.
+- Formato nativo 240x160 esatto al pixel, oppure come mostrato se UI-6.3 tiene l'opzione.
+- Writer nuovo con test host che decodifica il file e confronta i pixel; png.c, che non indica una licenza, esce dal progetto.
+
+**Gate prima di iniziare:** Nessuno.
+
+**Rischi:**
+- Lo screenshot ferma il gioco per codifica e scrittura, al massimo 60 ms al p95.
+- Un default che usa SELECT con L o R si sovrapporrebbe a SELECT+L e SELECT+R: l'azione resta vuota di default.
+
+#### UI-6.1 — Writer PNG nuovo e testato · M, 2 gg · dipende da: — · PSP: no
+- **Cosa:** source/src/png_write.c/.h, puro: da un'immagine 240x160 RGBA5551 scrive un PNG indicizzato a 8 bit quando il frame ha al massimo 256 colori, altrimenti RGB con filtro adattivo per riga; la compressione usa il deflate dello zlib di `source/src/zlib` con finestra e memLevel ridotti, al massimo 96 KiB per evento. Firma, IHDR, PLTE per i PNG indicizzati, IDAT e IEND con i CRC vanno in un buffer del chiamante. Rimuove png.c e png.h, la cui origine (njemu, M.A.M.E.) non indica una licenza, insieme all'include in common.h:160 e a png.o e png.h in source/Makefile:33, :41.
+- **File:** `source/src/png_write.c` (nuovo), `source/src/png_write.h` (nuovo), `source/src/png.c` (rimosso), `source/src/png.h` (rimosso), `source/src/common.h` (include di png.h, common.h:160), `source/Makefile` (OBJS e header, source/Makefile:33, :41), `tests/test_png_write.c` (nuovo), Makefile (test host compilato con i sorgenti di source/src/zlib, normale e ASan/UBSan)
+- **Test:** tests/test_png_write.c: decomprime l'IDAT con zlib e confronta ogni pixel con l'ingresso; CRC dei chunk; un buffer troppo piccolo restituisce errore senza scrivere oltre; make test-sanitize; Controllo sorgente: png_write.c non usa sceIo né FILE_; 20 frame di riferimento (i 10 GBA più 10 sintetici, tra cui 256 e 257 colori) decodificati al pixel con zlib e con un secondo decoder; mediana ≤ 4 KB sui 10 frame GBA; allocazioni di zlib contate con zalloc e zfree del test: picco ≤ 96 KiB per immagine
+- **Accettazione:** Un PNG prodotto dal test si apre con un decoder esterno (verifica manuale una volta); png.c non è più nel tree; Test verdi, normali e con sanitizer
+- **Licenza:** codice nuovo GPL-2.0-or-later; rimuove png.c, che non indica una licenza; zlib è già nel repository con la sua licenza.
+
+#### UI-6.2 — Azione Screenshot · S, 1,25 gg · dipende da: UI-6.1, UI-2.2, UI-4.2, SAV-7.1 · PSP: sì
+- **Cosa:** Nuova azione scorciatoia, vuota di default. Legge le righe del frame con l'accessor della texture di SAV-7.1, invece di `copy_screen`, e scrive l'IDAT a blocchi da 8 KiB. La cartella predefinita è `PICTURE/GBARushPSP/` sul dispositivo da cui parte l'EBOOT (`ms0:` o `ef0:`), e `snapshot_directory` di `dir.ini` la sostituisce. Nome `<gioco>_<AAAAMMGG>_<hhmmss>_<mmm>.png` dall'ora locale con i millisecondi (sceRtc), ridotto a caratteri sicuri per FAT: un evento dura più di un millisecondo, quindi due scatti non hanno mai lo stesso nome e la cartella non si scandisce; se il nome esiste già (orologio spostato indietro), lo scatto si rifiuta con un toast e nessun file viene sovrascritto. La scrittura avviene sotto `scePowerLock`; la durata dell'evento va nel runtime log con un evento in coda all'enum (R1). Un'allocazione fallita dà un toast d'errore e nessun file; un file parziale si cancella.
+- **File:** `source/src/input_chord.h` (azione, id d'azione assegnato in ordine di merge), `source/src/input.c`, `source/src/gui.c`, `source/src/runtime_log.h, runtime_log.c, runtime_log_psp.c` (nuovo evento in coda all'enum, senza cambio di versione: regola R1, principio 6 della panoramica), `tools/decode_runtime_log.py`, `tests/test_decode_runtime_log.py`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `README.md` (sezione controlli), `CHANGELOG.md`
+- **Test:** `tests/test_input_chord.c`: l'azione esiste e si associa; `tests/test_decode_runtime_log.py`: decodifica del nuovo evento; hardware: 20 scatti su PSP-1000 e Go con la durata dal runtime log (p95 ≤ 60 ms) e i file aperti dalla colonna Foto dell'XMB; con il Memory Stick quasi pieno il toast d'errore e nessun crash; in una build diagnostica un'allocazione forzata a fallire dà il toast d'errore e nessun file.
+- **Accettazione:** PNG 240x160 corretto e nome mostrato nel toast nelle 5 lingue; evento completo ≤ 60 ms al p95 in 20 scatti su PSP-1000 a 333 MHz, dal runtime log; file aperti dalla colonna Foto dell'XMB su PSP-1000 e Go; con il Memory Stick pieno nessun file troncato; nessuna memoria riservata fuori dall'evento e al massimo 96 KiB durante l'evento; un'allocazione fallita dà il toast d'errore, nessun file e nessun crash.
+
+#### UI-6.3 — Opzione screenshot: nativo o come mostrato · S, 1 gg · dipende da: UI-6.2 · PSP: sì
+- **Cosa:** La riga PNG/BMP (gui.c:283-284, :5092) diventa 'Screenshot: 240x160 / Come mostrato'. 'Come mostrato' legge il framebuffer 480x272 presentato prima che toast e FPS vengano disegnati; il valore salvato 1 (BMP, mai funzionante) diventa 'come mostrato'. Se catturare prima delle sovrimpressioni richiede una copia in più a ogni frame, la riga si elimina e resta solo il nativo.
+- **File:** `source/src/gui.c`, `source/src/psp_video.c`, `source/src/main.c` (option_screen_capture_format), `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** Hardware: PNG 480x272 senza FPS né toast sovrapposti, in 16:9 Sharp e al 150%; scripts/check-messages.sh; scripts/check-performance.sh invariato (nessun costo per frame)
+- **Accettazione:** Nel menu non resta nessuna opzione morta; Nessun costo per frame quando non si cattura
+
+### UI-7 — Opzioni video: 2x intero, sharp bilinear a ogni scala e filtri LCD
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | 2.0 (UI-7.1 in 1.6) | 6 gg | F-127 o, se lo spike PPSSPP fallisce, ENG-6.6; UI-10.1 (solo UI-7.3) |
+
+**Copre:** F-058, F-059, F-170 (2x intero, sharp bilinear, filtri LCD)
+
+**Obiettivo:** 2x intero con blocchi 2x2 esatti e righe 12-147 centrate con qualsiasi impostazione del filtro; sharp bilinear a 150% e in USER, identico al nearest a scala intera, accanto ai 16:9 adattivi; filtri LCD (griglia, punti, scanline) in una riga propria, combinabili con ogni filtro di campionamento e con ogni presentazione, allineati al pixel del gioco a ogni scala (velatura uguale entro ±5% nel test host) e senza maschera al 100%, anche sullo sfondo del menu e sulle schede di pausa e risveglio. Tutto per gioco; ogni secondo passaggio o maschera ha il costo misurato con compare-benchmarks 3+3 al 150% e in 16:9 Sharp, pubblicato con il tempo GE per frame; nessun valore non valido arriva a sceGuTexFilter.
+
+**Da noi oggi:** Nessuna modalità 2x con nome (message_eng.h:487-506). USER GU arriva al 200% (gui.c:5105-5112) e centra 480x320 con dy = -24 salvato in campi vertice u16 (psp_video.c:67-71, :419-423): con il bilinear spento potrebbe già essere un 2x ritagliato (psp_video.c:771-775), ma nessuno l'ha verificato su hardware. Lo sharp (2x in 480x320, poi bilinear) c'è solo in 16:9 Sharp e Auto (psp_video.c:589-660; video_adaptive.h:28-35). 150% e USER hanno solo bilinear sì/no (main.c:57), e option_screen_filter va direttamente a sceGuTexFilter (psp_video.c:638). Nessun filtro LCD.
+
+**Come ci arriviamo:**
+- 2x, sharp e filtro LCD si scelgono per gioco (profili per gioco), accanto ai 16:9 adattivi Sharp/Crisp.
+- L'ingrandimento libero da 0 a 200% resta.
+- Il piano di scala (fattore di prescala, rettangolo, filtro, maschera LCD) è una funzione pura con test.
+- Il filtro LCD sta in una riga propria, indipendente dal filtro di campionamento; la stessa maschera si disegna sullo sfondo del menu di UI-10.1, quindi anche sulle schede di pausa e di risveglio (UI-7.3).
+
+**Gate prima di iniziare:** Prima di UI-7.1: foto o cattura su PSP-1000 e PSP-2000 del 200% USER con filtro spento, che mostri blocchi 2x2 esatti e le righe 12-147. Prima di unire UI-7.2: F-127 [ENG] (pattern di colore GE) verde o, se lo spike PPSSPP fallisce, ENG-6.6 (modalità testpat avviata dall'autorun di ENG-6.2, una foto per modalità su PSP-1000); e confronto del costo del secondo passaggio al 150% con scripts/compare-benchmarks.py (3 + 3 esecuzioni). Prima di unire UI-7.3: lo stesso gate di colore di UI-7.2 e il costo della maschera misurato.
+
+**Rischi:**
+- Coordinate negative in campi u16 funzionano solo se il GE le legge come s16 in modalità through: va reso esplicito o sostituito con lo scissor.
+- Il secondo passaggio sharp costa tempo GE a ogni frame al 150%: va misurato.
+- Un terzo valore di filtro passato a sceGuTexFilter senza conversione sarebbe un valore GU non valido.
+- La maschera in alpha costa tempo GE a ogni frame: si misura e si pubblica.
+- Il lavoro è piccolo ma tocca la presentazione di ogni gioco: per questo il verdetto resta condizionato alla foto su hardware e al gate di colore F-127, o al suo ripiego su PSP-1000 (ENG-6.6) se lo spike PPSSPP fallisce.
+
+#### UI-7.1 — Preset '2x intero (ritaglio)' · S, 1 gg · dipende da: — · PSP: sì
+- **Cosa:** Superato il gate, nuova voce di scala SCALED_INT2: generate_display_list(2, 2) con filtro nearest forzato, qualunque sia option_screen_filter. Coordinate s16 esplicite, o scissor, invece di affidarsi al giro dei u16. Il limite di screen_scale sale in config_model; una build vecchia legge il valore fuori intervallo come default.
+- **File:** `source/src/psp_video.c` (psp_video.c:411-428, :753-792), `source/src/psp_video.h`, `source/src/gui.c` (scale_options), `source/src/config_model.c`, `tests/test_config_model.c`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** tests/test_config_model.c: il nuovo valore di scala è accettato, uno oltre il limite torna al default; Hardware PSP-1000 e PSP-2000: una ROM di prova a griglia mostra blocchi 2x2 esatti e il ritaglio centrato
+- **Accettazione:** Pixel 2x2 esatti con qualsiasi impostazione del filtro; Righe 12-147 visibili e centrate
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### UI-7.2 — Sharp bilinear come terzo filtro a 150% e USER · M, 2,5 gg · dipende da: UI-7.1, F-127 o, se lo spike PPSSPP fallisce, ENG-6.6 · PSP: sì
+- **Cosa:** Funzione pura video_sharp_plan(modalità, ingrandimento) che restituisce {prescala 1 o 2, rettangolo di destinazione, filtro}: a scala intera (100%, 200%) nearest diretto; altrimenti prescala 2x nel target sharp esistente e bilinear fino al rettangolo finale. blit_sharp (psp_video.c:589-660) viene generalizzato a un rettangolo di destinazione. Il filtro salvato (0, 1 o 2) si converte in GU_NEAREST o GU_LINEAR invece di passare il valore a sceGuTexFilter (psp_video.c:638). Il renderer resta scelto una volta, nello switch di psp_video.c:755-791.
+- **File:** `source/src/video_scale.c` (nuovo, puro), `source/src/video_scale.h` (nuovo), `tests/test_video_scale.c` (nuovo), `source/src/psp_video.c`, `source/src/gui.c` (opzione filtro a 3 valori), `source/src/config_model.c`, `tests/test_config_model.c`, Makefile (test normale e ASan/UBSan), `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** tests/test_video_scale.c: 100% e 200% danno nearest senza prescala; 150% dà prescala 2 e un rettangolo 360x240 centrato; ingrandimenti da 1 a 200 coperti; nessun rettangolo fuori dallo schermo; make test-sanitize con test_video_scale; scripts/check-video.sh; F-127 [ENG], o le foto su PSP-1000 di ENG-6.6: gate di colore; Hardware: confronto visivo tra bilinear e sharp al 150%; compare-benchmarks (3 + 3) sul tempo di frame
+- **Accettazione:** Sharp disponibile al 150% e in USER, identico al nearest a scala intera; Costo misurato; il CHANGELOG lo cita solo se compare-benchmarks lo conferma; Nessun valore non valido passato a sceGuTexFilter
+- **Licenza:** codice nuovo GPL-2.0-or-later; la prescala intera seguita dal filtro lineare è una tecnica nota.
+
+#### UI-7.3 — Filtro LCD a griglia, a punti e a scanline · M, 2,5 gg · dipende da: UI-7.2, UI-10.1, F-127 o, se lo spike PPSSPP fallisce, ENG-6.6 · PSP: sì
+- **Cosa:** Nuova riga «Filtro LCD» per gioco (Nessuno, Griglia, Punti, Scanline; default Nessuno), campo nuovo del ConfigModel nel bump della release; un valore fuori intervallo torna a Nessuno. Il filtro LCD è indipendente dal filtro di campionamento: si combina con nearest, bilinear e lo sharp di UI-7.2, e con ogni presentazione (1x, 1,5x GU e SW, USER 1-200%, 16:9 normale, Sharp e Auto). `video_scale.c` restituisce anche il piano della maschera per asse, ricavato dal rapporto tra pixel dello schermo e pixel del gioco, così che ogni pixel del gioco riceva la stessa velatura a ogni scala (entro ±5% nel test host); al 100% nessuna maschera. La maschera si costruisce in VRAM al cambio di modalità e si disegna con un solo passaggio in alpha sul rettangolo del gioco; la disegna anche lo sfondo del menu di UI-10.1, quindi anche le schede di pausa e di risveglio. Il renderer resta scelto una volta per frame.
+- **File:** `source/src/video_scale.c`, `source/src/video_scale.h`, `tests/test_video_scale.c`, `source/src/psp_video.c`, `source/src/gui.c`, `source/src/config_model.c`, `tests/test_config_model.c`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** `tests/test_video_scale.c`: ogni combinazione filtro LCD × filtro di campionamento × scala (100%, 150%, USER 1-200 e le 16:9): nessuna maschera al 100%, velatura per pixel del gioco uguale entro ±5%; `tests/test_config_model.c`: valori nuovi e fuori intervallo; `scripts/check-video.sh`; foto per filtro e scala su PSP-1000 (ENG-6.6); compare-benchmarks 3+3 al 150% e in 16:9 Sharp su 5 titoli pesanti, con il tempo GE per frame del filtro nel memo.
+- **Accettazione:** allineamento esatto a ogni scala; costo pubblicato, e il CHANGELOG lo cita solo dopo compare-benchmarks; nessun valore non valido passato a sceGuTexFilter.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### UI-8 — Strato di disegno GE a lista unica sotto l'API di gui.c
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 | 11,5 gg | F-027, F-127 o, se lo spike PPSSPP fallisce, ENG-6.6 |
+
+**Copre:** F-053 (interfaccia disegnata dal GE)
+
+**Obiettivo:** Tutta l'interfaccia passa da una lista GE per frame sotto l'API di `gui.c`, che non cambia, con una sola sincronizzazione GE per schermata del menu; golden per ogni lingua e tema in `make check`, da un rasterizzatore di riferimento sull'host; su PSP-1000 il tempo di frame del menu non è peggiore del riferimento registrato prima di UI-8 (media e p95, 3 run); testo come sprite da una cache di glifi nelle 5 lingue, con l'ordine giusto tra testo e rettangoli; animazioni a passi fissi, che 'Riduci movimento' azzera.
+
+**Da noi oggi:** draw_box_line, draw_box_fill e draw_box_alpha avviano ciascuna una lista GU_DIRECT e ne aspettano la fine (psp_video.c:914-1030); draw_popup_frame ne usa 5 per ogni popup (psp_video.c:160-183). Il testo è scritto dalla CPU nel back buffer dopo un'attesa GE (psp_video.c:1113-1137); clear_screen è un ciclo CPU su 512x272 pixel di VRAM non in cache (psp_video.c:818-835). Il video deve restare su libGU (scripts/check-video.sh:10-14). gui.c usa questa API in circa 6.650 righe.
+
+**Come ci arriviamo:**
+- Lo strato GE è la base di font anti-aliasing, animazioni, arte sfumata e sovrimpressioni curate (F-054, F-055, F-060, F-131).
+- L'API di gui.c non cambia: nessuna riscrittura dei menu.
+- Golden su host per ogni lingua e tema in make check, con un rasterizzatore di riferimento dei nostri comandi.
+- Il testo diventa sprite presi da una cache di glifi: 5 lingue CJK comprese, ordine corretto tra testo e rettangoli.
+- Resta a 16 bit con dithering; si passa a 8888 solo se le velature mostrano bande visibili, per non consumare VRAM.
+
+**Gate prima di iniziare:** Prima di iniziare: riferimento registrato su PSP-1000 del tempo di frame del menu attuale (media e p95 su browser, carosello e menu con anteprima, 3 esecuzioni ciascuno) e misura dell'heap di F-027 [PRF] (heap libero e blocco massimo con una ROM da 16 MiB caricata) per dimensionare la cache dei glifi.
+
+**Rischi:**
+- Scritture CPU in VRAM e una lista differita fuori ordine fanno sfarfallare il testo: per questo UI-8.2 svuota il batch prima di ogni testo e UI-8.5 trasforma il testo in sprite.
+- Cache dei glifi CJK: pagine LRU e budget di memoria su PSP-1000.
+- check-video.sh vieta sceGeListEnQueue: tutto deve passare da sceGu*.
+- Lavoro grande: è spezzato in passi che lasciano ciascuno il menu funzionante (UI-8.1, UI-8.4, UI-8.2, UI-8.5).
+
+#### UI-8.1 — Modulo puro ui_batch e rasterizzatore di riferimento · M, 3 gg · dipende da: — · PSP: no
+- **Cosa:** source/src/ui_batch.c/.h registra per frame una serie di comandi in un array fisso, con clip: rettangolo pieno (5551, oppure 8888 con alfa), linea, quad testurizzato da una texture registrata, sprite di un glifo da una pagina della cache. L'ordine è preservato; quando il buffer è pieno si svuota, senza mai scartare comandi. tests/ui_raster.c (solo host) rasterizza la lista in un'immagine per i golden e gli hash.
+- **File:** `source/src/ui_batch.c` (nuovo), `source/src/ui_batch.h` (nuovo), `tests/ui_raster.c` (nuovo, helper host), `tests/test_ui_batch.c` (nuovo), Makefile
+- **Test:** tests/test_ui_batch.c: ordine, clip ai bordi, svuotamento a buffer pieno, alfa; Hash di riferimento di una schermata composta con ui_raster; make test-sanitize
+- **Accettazione:** Nessuna dipendenza dall'SDK; Golden stabili tra un'esecuzione e l'altra
+
+#### UI-8.2 — Backend PSP del batch per rettangoli, immagini e pulizia · M, 2,5 gg · dipende da: UI-8.1, UI-8.4, F-127 o, se lo spike PPSSPP fallisce, ENG-6.6 · PSP: sì
+- **Cosa:** draw_box_*, draw_popup_frame, blit_to_screen e clear_screen accodano a ui_batch; flip_screen() traduce la lista in una sola sequenza sceGu e sincronizza una volta; la pulizia passa a sceGuClear; il dithering GE è acceso per i 16 bit. Il testo resta scritto dalla CPU come oggi, ma print_string* svuota prima il batch, così l'ordine fra rettangoli e testo non cambia. Già così un popup passa da 5 attese GE a una (psp_video.c:160-183).
+- **File:** `source/src/psp_video.c`, `source/src/psp_video.h`, `source/src/ui_batch.c`
+- **Test:** scripts/check-video.sh (solo libGU); Golden di UI-8.4 identici prima e dopo per le schermate principali; F-127 [ENG], o le foto su PSP-1000 di ENG-6.6: gate di colore dopo l'accensione del dithering; Hardware PSP-1000: tempo di frame del menu non superiore al riferimento del gate in nessuna schermata; testo senza sfarfallio
+- **Accettazione:** gui.c compila senza modifiche all'API; Menu non più lento del riferimento su PSP-1000; Schermate identiche a 1.x nei golden
+
+#### UI-8.3 — Interpolazioni a passi fissi e 'Riduci movimento' · S, 1 gg · dipende da: UI-8.2 · PSP: no
+- **Cosa:** Un helper smoothstep a passi di frame fissi in menu_layout.c, per scorrimento, apertura e cambio pagina. Opzione Interfaccia 'Riduci movimento', che azzera le animazioni.
+- **File:** `source/src/menu_layout.c`, `source/src/menu_layout.h`, `tests/test_menu_layout.c`, `source/src/gui.c`, `source/src/config_model.c`, `tests/test_config_model.c`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** tests/test_menu_layout.c: estremi esatti, monotonia, zero passi con Riduci movimento; tests/test_config_model.c: default dopo la migrazione; scripts/check-messages.sh
+- **Accettazione:** Animazioni deterministiche e disattivabili
+
+#### UI-8.4 — Golden per lingua e tema in make check · M, 2 gg · dipende da: UI-8.1 · PSP: no
+- **Cosa:** Primitivi e schermate composte con le funzioni di disegno estratte da gui.c (metodo di tests/test_startup.py) vengono resi su host tramite ui_batch e ui_raster, per le 5 lingue e i 9 temi. make check confronta gli hash; le immagini si rigenerano su richiesta e non entrano mai nel repository (solo hash testuali). Si fa prima di UI-8.2, così il cambio di backend si confronta con i golden; i golden delle schermate complete arrivano con F-131 [ENG].
+- **File:** `tests/test_ui_golden.c` (nuovo), `tests/ui_golden_hashes.txt` (nuovo, testo), Makefile
+- **Test:** make check confronta 45 hash per ogni schermata (5 lingue × 9 temi); make test-sanitize
+- **Accettazione:** Un cambiamento grafico involontario fa fallire make check; Nessun file immagine nel repository
+
+#### UI-8.5 — Testo come sprite dalla cache dei glifi · M, 3 gg · dipende da: UI-8.2 · PSP: sì
+- **Cosa:** print_string* non scrive più in VRAM: i glifi dei bitmap di mh_print e ch_print riempiono su richiesta una pagina T4 (LRU, dimensionata con la misura del gate) e il testo diventa sprite nello stesso batch, nell'ordine di disegno. Sparisce lo svuotamento prima di ogni testo introdotto da UI-8.2: una sola sincronizzazione per schermata. L'aspetto resta identico a 1.x.
+- **File:** `source/src/psp_video.c`, `source/src/mh_print.c`, `source/src/ch_print.c`, `source/src/ui_batch.c`, `tests/test_ui_batch.c`
+- **Test:** tests/test_ui_batch.c: sostituzione LRU nella pagina dei glifi; ordine fra testo e rettangoli; Golden di UI-8.4 identici prima e dopo; make test-sanitize; Hardware PSP-1000: testo senza sfarfallio; pagine CJK in giapponese e cinese; tempo di frame del menu non superiore al riferimento; RAM della pagina entro il budget del gate
+- **Accettazione:** Una sola sincronizzazione GE per schermata del menu; Testo identico a 1.x nei golden; Cache dei glifi entro il budget misurato con F-027
+- **Licenza:** codice nuovo GPL-2.0-or-later; i bitmap Shinonome e GBK sono quelli già inclusi.
+
+### UI-9 — Testo: accenti, nomi non ASCII, stringhe nelle tabelle e font anti-aliasing nelle 5 lingue
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 (UI-9.1, UI-9.4 e UI-9.6 in 1.5; UI-9.5 dopo gate) | 15 gg | UI-8.5, F-027, ENG-1.6 |
+
+**Copre:** F-054, F-171 (font dell'interfaccia; ROM con nomi non ASCII trovate, aperte e mostrate)
+
+**Obiettivo:** Italiano con gli accenti, giapponese e cinese anti-aliasing (atlanti generati al build da font OFL, al massimo 1 MiB residente su PSP-1000), con ripiego bitmap per ogni glifo mancante e nessuna stringa visibile fuori dalle tabelle MSG. ROM con nomi non ASCII: cartella di prova da 30 nomi (10 latini accentati, 10 giapponesi, 10 cinesi) su PSP-1000 e un secondo modello, con firmware ufficiale, ARK-4 e PRO-C o LME: 30/30 elencati e aperti; accenti latini con il glifo accentato dove il font lo ha, mai '?'; i 20 nomi giapponesi e cinesi si mostrano con i propri glifi dopo UI-9.5 e fino ad allora con l'alias 8.3, mai con un '?'; `.sav` e stati legati a un nome che non dipende dal firmware: 0 salvataggi orfani dopo la copia della cartella su un'altra Memory Stick, aprendo la stessa cartella con firmware ufficiale e con un CFW, e dopo l'aggiornamento dalla 1.4.3.
+
+**Da noi oggi:** Testo bitmap 6x12 a 1 bit (psp_video.c:1113-1137) con font Shinonome e GBK e 5 lingue (message.h:24-39). Le tabelle sono scritte in UTF-8 e compilate in GBK (source/Makefile:92). L'italiano scrive 'piu' ed 'e`' (message_ita.h:671, :692). Alcuni messaggi del caricamento trucchi sono scritti nel codice solo in inglese e in italiano (gui.c:4379-4440), quindi chi usa giapponese o cinese li vede in inglese. `load_file` (`gui.c:1990-2047`) elenca e apre solo per `SceIoDirent.d_name`, filtra l'estensione su `d_name` (`gui.c:2009-2019`) e azzera `d_private` (`gui.c:1954`): non chiede né l'alias 8.3 né il nome lungo. L'EBOOT non dichiara la versione dell'SDK (`main.c:45-49`), che sceglie il layout più vecchio del record privato FAT. I nomi di `.sav` e stati seguono il nome della ROM. Cosa restituisca il firmware su hardware non è misurato.
+
+**Come ci arriviamo:**
+- Gli accenti arrivano subito tramite GBK (UI-9.1); l'anti-aliasing aspetta UI-8.
+- Accenti italiani, giapponese e cinese anti-aliasing.
+- Per qualsiasi glifo mancante, nomi file compresi, resta il font bitmap.
+- Atlanti generati al build da font OFL e spediti come file dati separati con la licenza: nessun binario in git.
+- Ogni stringa visibile sta nelle tabelle MSG; nessun testo inglese scritto nel codice.
+- Una ROM con un nome non ASCII si apre per nome lungo o per alias 8.3 dal record privato FAT, e il nome base di `.sav` e stati non dipende dal firmware (UI-9.6).
+
+**Gate prima di iniziare:** Nessuno per UI-9.1. Per UI-9.2 e UI-9.3: UI-8.5 unito e budget degli atlanti (al massimo 1 MiB residente) verificato con F-027 [PRF] su PSP-1000. UI-9.5 parte solo se UI-9.4 trova nomi che GBK e Shift-JIS non possono disegnare, se i nickname dei partner mostrati da LNK-5.4 (UTF-8 sulla PSP, spesso in kana) non sono disegnabili, o se si aggiunge una sesta lingua. UI-9.6 parte con UI-9.4 registrata (layout del record e apertura per nome lungo e alias).
+
+**Rischi:**
+- Non è verificato che gbkfont.c contenga i glifi della riga A8 di GB2312 (vocali accentate minuscole); la È maiuscola non è in GB2312 e romperebbe la compilazione con -fexec-charset=GBK.
+- RAM degli atlanti CJK su PSP-1000 e dimensione del pacchetto.
+- Codifica dei nomi file restituita da sceIoDread sui vari CFW: sconosciuta.
+- OFL: nomi riservati da rispettare e testo della licenza nel pacchetto.
+- font_atlas_gen.py aggiunge alla pipeline del pacchetto una dipendenza Python per la rasterizzazione e un download con sha256 fisso.
+- Un nome di salvataggio che dipende dal firmware orfana i salvataggi: il nome base non ne dipende e i salvataggi di oggi migrano.
+
+#### UI-9.1 — Accenti italiani tramite GBK e stringhe fuori tabella · S, 1 gg · dipende da: — · PSP: sì
+- **Cosa:** Un test host verifica che gbkfont.c contenga glifi non vuoti per à, è, é, ì, ò, ù (GB2312 A8A1-A8BA). Se è così, message_ita.h usa gli accenti (sorgente UTF-8 compilato in GBK), con E' dove servirebbe la È maiuscola. I messaggi fissi del caricamento trucchi (gui.c:4379-4440) diventano voci MSG nelle 5 tabelle.
+- **File:** `source/src/text/message_ita.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/message.h`, `source/src/gui.c` (gui.c:4373-4440), `tests/test_gbk_glyphs.c` (nuovo), Makefile (test normale e ASan/UBSan), `CHANGELOG.md`
+- **Test:** tests/test_gbk_glyphs.c: i glifi delle vocali accentate esistono e non sono vuoti (indice calcolato con la stessa formula di ch_print.c); make test-sanitize con test_gbk_glyphs; scripts/check-messages.sh; Hardware: menu in italiano con gli accenti leggibili; messaggi dei trucchi in giapponese
+- **Accettazione:** Italiano con gli accenti corretti in tutto il menu; Nessuna stringa visibile fuori dalle tabelle MSG nel caricamento trucchi
+- **Licenza:** codice nuovo GPL-2.0-or-later; il font GBK è quello già incluso.
+
+#### UI-9.2 — Atlante anti-aliasing latino generato al build · M, 3 gg · dipende da: UI-8.5, F-027 · PSP: sì
+- **Cosa:** tools/font_atlas_gen.py scarica un font OFL (Noto Sans) da un URL e uno sha256 fissati, senza committarlo, e cuoce un atlante di copertura T8 per ASCII, Latin-1 e le icone dei tasti in un file dati (fonts/ui_latin.fnt), incluso nel pacchetto con OFL.txt. source/src/font_atlas.c (puro) legge il file e associa i codici GBK e ASCII ai glifi; il backend li disegna come sprite tramite ui_batch (percorso di UI-8.5). Se il file manca resta il font bitmap.
+- **File:** `tools/font_atlas_gen.py` (nuovo), `source/src/font_atlas.c` (nuovo), `source/src/font_atlas.h` (nuovo), `tests/test_font_atlas.c` (nuovo), `tests/test_font_atlas_gen.py` (nuovo), `source/src/psp_video.c`, `scripts/package-release.sh`, `scripts/check-package.sh`, NOTICE, Makefile (test normale e ASan/UBSan), `CHANGELOG.md`
+- **Test:** tests/test_font_atlas.c: file troncato o con magic sbagliato rifiutato; ricerca dei glifi; ripiego sul bitmap; make test-sanitize con test_font_atlas; tests/test_font_atlas_gen.py: atlante riproducibile byte per byte dallo stesso font; Hardware PSP-1000: RAM usata dall'atlante e tempo di frame del menu
+- **Accettazione:** Testo latino anti-aliasing, accenti compresi; Senza il file l'interfaccia resta identica a 1.x; Il pacchetto contiene OFL.txt e il copyright del font
+- **Licenza:** codice nuovo GPL-2.0-or-later; font OFL-1.1 come file dati separato, con il testo OFL nel pacchetto e i nomi riservati rispettati.
+
+#### UI-9.3 — CJK anti-aliasing con ripiego bitmap · M, 3 gg · dipende da: UI-9.2 · PSP: sì
+- **Cosa:** font_atlas_gen.py estrae dalle 5 tabelle MSG i code point CJK usati e cuoce un sottoinsieme di Noto Sans CJK (OFL) in pagine caricate su richiesta. Qualsiasi altro glifo, per esempio nei nomi file, usa Shinonome o GBK come oggi.
+- **File:** `tools/font_atlas_gen.py`, `source/src/font_atlas.c`, `tests/test_font_atlas.c`, `scripts/package-release.sh`, `CHANGELOG.md`
+- **Test:** tests/test_font_atlas.c: un carattere fuori dall'atlante ripiega sul bitmap; Hardware PSP-1000: menu in giapponese e cinese, RAM entro il budget del gate
+- **Accettazione:** Testi del menu CJK anti-aliasing; Nomi file con caratteri non coperti ancora leggibili
+- **Licenza:** codice nuovo GPL-2.0-or-later; Noto Sans CJK (OFL-1.1) come file dati separati, con la licenza nel pacchetto.
+
+#### UI-9.4 — Sonda della codifica dei nomi file · S, 1 gg · dipende da: ENG-1.6 · PSP: sì
+- **Cosa:** Una voce di Diagnostica scrive nel runtime log i byte grezzi restituiti da sceIoDread per una cartella di prova con nomi giapponesi, cinesi e accentati. Registra anche il record privato FAT nei due layout (alias 8.3 a 0 e nome lungo a 13, oppure parola di dimensione, alias a 4 e nome lungo a 20) e se `sceIoOpen` riesce con il nome lungo e con l'alias. Si esegue su firmware ufficiale, ARK-4, PRO-C e LME.
+- **File:** `source/src/gui.c` (Diagnostica), `source/src/runtime_log.h, runtime_log.c, runtime_log_psp.c` (nuovo evento in coda all'enum, senza cambio di versione: regola R1, principio 6 della panoramica), `tools/decode_runtime_log.py`, `tests/test_decode_runtime_log.py`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle)
+- **Test:** tests/test_decode_runtime_log.py: decodifica del nuovo evento e lettura dei log v5 e v6; scripts/check-messages.sh; Hardware: matrice firmware e CFW
+- **Accettazione:** Una tabella firmware → codifica dei nomi è registrata nelle note hardware
+
+#### UI-9.5 — UTF-8 a runtime (solo se UI-9.4 o LNK-5.4 lo richiedono) · L, 4 gg · dipende da: UI-9.4, UI-9.3 · PSP: sì
+- **Cosa:** Si fa solo se UI-9.4 mostra nomi UTF-8 che GBK e Shift-JIS non possono disegnare, se i nickname dei partner di LNK-5.4 (UTF-8 sulla PSP, spesso in kana) non sono disegnabili con i font di oggi, o se si aggiunge una sesta lingua latina. I messaggi restano UTF-8 a runtime senza -fexec-charset=GBK (source/Makefile:92), con una tabella di conversione verso GBK e Shift-JIS per il ripiego bitmap.
+- **File:** `source/Makefile`, `source/src/message.c`, `source/src/font_atlas.c`, `source/src/mh_print.c`, `source/src/ch_print.c`, `tests/test_font_atlas.c`
+- **Test:** tests/test_font_atlas.c: conversione UTF-8 → GBK di tutte le stringhe delle 5 tabelle senza perdite; scripts/check-messages.sh; Hardware: le 5 lingue complete; un partner con nickname in kana
+- **Accettazione:** Nessuna stringa delle 5 tabelle cambia aspetto; Nomi file e nickname dei partner UTF-8 leggibili
+
+#### UI-9.6 — ROM con nomi non ASCII: trovate, aperte e mostrate, con salvataggi dal nome stabile · M, 3 gg · dipende da: UI-9.4, UI-9.1 · PSP: sì
+- **Cosa:** Modulo puro `source/src/fat_name.c/.h`. Sceglie il layout del record privato FAT il cui nome lungo coincide con `d_name`; decide il nome da aprire (il nome lungo se si apre, altrimenti l'alias 8.3) e su quale nome filtrare l'estensione. Il nome mostrato passa da `browser_name.c`, nuovo, che UI-12.2 estende poi: lettere accentate con il glifo GBK verificato da UI-9.1, altrimenti la lettera base; un nome giapponese o cinese con i propri glifi quando c'è UI-9.5, altrimenti con l'alias 8.3 del record privato FAT, in cui ogni byte non ASCII diventa «_»: mai un '?'. Il nome base di `.sav` e stati non dipende dal firmware: per un nome lungo ASCII è il nome lungo, per uno non ASCII sempre la sua riduzione deterministica a caratteri sicuri per FAT più 8 cifre esadecimali del CRC32 del nome lungo. Migrazione: se esiste già un `.sav` o uno stato con il nome di oggi (i byte di `d_name`), lo si usa e lo si rinomina al nome nuovo dopo la prima scrittura riuscita. `load_file` passa un `d_private` statico.
+- **File:** `source/src/fat_name.c` (nuovo), `source/src/fat_name.h` (nuovo), `tests/test_fat_name.c` (nuovo), `source/src/browser_name.c` e `source/src/browser_name.h` (nuovi), `tests/test_browser_name.c` (nuovo), `Makefile` (i due test nuovi, normale e ASan/UBSan), `source/src/gui.c` (load_file), `source/src/memory.c` (nomi di `.sav` e stati), `CHANGELOG.md`
+- **Test:** `tests/test_fat_name.c`: i due layout, record troncati, byte non stampabili, nessun carattere a due byte spezzato, nome base identico aprendo con il nome lungo o con l'alias, migrazione dal nome di oggi; `tests/test_browser_name.c`, normale e ASan/UBSan: lettera accentata col glifo GBK, lettera base senza glifo, nessun carattere a due byte spezzato, nome giapponese e nome cinese mostrati con l'alias 8.3, senza '?'; `make test-sanitize`; hardware: la cartella di prova da 30 nomi su PSP-1000 e un secondo modello con firmware ufficiale, ARK-4 e PRO-C o LME, con i 20 nomi giapponesi e cinesi mostrati senza '?', poi riavvio e copia della cartella su un'altra Memory Stick in ordine diverso.
+- **Accettazione:** 30/30 nomi elencati e aperti; nessun '?' nei 30 nomi: lettere accentate col glifo dove il font lo ha, nomi giapponesi e cinesi con l'alias 8.3 fino a UI-9.5; 0 salvataggi orfani dopo la copia, tra firmware ufficiale e CFW e dopo l'aggiornamento dalla 1.4.3; voce CHANGELOG (Fixed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### UI-10 — Menu di gioco sopra il frame in pausa, con anteprima live, miniature e reset annullabile
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 (UI-10.5 in 1.5) | 6,75 gg | UI-8.3, UI-12.4, SAV-2.3 (solo UI-10.5) |
+
+**Copre:** F-055, F-172 (menu in sovrimpressione; reset del gioco sicuro e annullabile)
+
+**Obiettivo:** Il menu si apre sopra il frame in pausa a schermo intero, leggibile con i 9 temi e nelle 5 lingue, con l'anteprima live di ogni scala e filtro (16:9 adattive comprese) e 11 miniature degli slot (10 più AUTO) ricavate dagli `.svs`, entro 1 s su PSP-1000; apertura animata in 6 frame (100 ms) e banda di selezione animata con il p99 del tempo di frame del menu ≤ 16,7 ms su PSP-1000 (3 run), azzerate da 'Riduci movimento'; lo stato video all'uscita è identico all'ingresso. Reset del gioco annullabile: rifiutato con il motivo in sessione link, nelle 5 lingue; batteria scritta prima tramite lo store (se la scrittura fallisce il reset non parte); stato AUTO scritto prima e ricaricabile con una sola azione. Dalla 1.6, dopo un reset al frame 900, 1800 frame hanno hash di stato identici a quelli dall'accensione su 5 tracce del corpus di ENG-3.5: 0 frame diversi.
+
+**Da noi oggi:** Menu a schermo intero con il gioco in una finestra 240x160 a (228,44) (gui.c:638-639); menu() parte da gui.c:3810. 11 categorie principali (gui.c:5360-5373), in un ordine fissato da scripts/check-menu-layout.sh; Reset ROM sta nel menu Gioco e Sospensione nel menu Esci (gui.c:5281-5288, :5351-5356). Il menu Salva/Carica ha 10 slot più AUTO e mostra l'anteprima del solo slot selezionato, letta dall'inizio dell'.svs (gui.c:2910-2951). Nessuna sovrimpressione, nessuna anteprima live. «Reset ROM» (`gui.c:5286`, `menu_reset` a `gui.c:4001-4011`, annidata in `menu()`) non chiede conferma e non scrive né la batteria né lo stato AUTO; `reset_gba` (`main.c:1814-1846`) chiude un link in corso con MAIN_LINK_END_ROM_CHANGE (`:1823`) invece di rifiutare. Una scrittura della batteria in sospeso resta in RAM, perché `init_memory` non tocca `gamepak_backup`, e si scrive dopo.
+
+**Come ci arriviamo:**
+- Il nucleo (frame a schermo intero, velatura, anteprima) si fa sul percorso di disegno attuale; le animazioni aspettano UI-8.
+- Restano le 11 categorie, Reset e Sospensione, i 10 slot più AUTO.
+- Anteprima live anche delle modalità 16:9 adattive Sharp/Crisp.
+- Miniature ricavate dalle anteprime già contenute negli .svs: nessun file compagno da scrivere o da perdere.
+- Tenendo premuto un tasto il menu sparisce e si vede il frame pulito.
+- Reset sicuro: rifiutato durante il link, con batteria e stato AUTO scritti prima, e con la decisione in una funzione di primo livello testata su host (UI-10.5).
+
+**Gate prima di iniziare:** Nessuno per UI-10.1-10.3 e UI-10.5; UI-10.4 dopo UI-8.3.
+
+**Rischi:**
+- Con il frame a schermo intero dietro, il testo deve restare leggibile: velatura scura e prove con i temi chiari.
+- Riapplicare la presentazione a ogni cambio video nel menu deve lasciare lo stato video identico all'uscita.
+- Leggere 11 anteprime da 76,8 KB costa circa 0,85 MB di I/O: lettura una per frame, solo a pagina aperta.
+
+#### UI-10.1 — Sfondo del menu: frame in pausa a schermo intero con velatura · M, 2 gg · dipende da: — · PSP: sì
+- **Cosa:** All'apertura, il menu presenta il frame in pausa con la modalità di scala attiva (update_screen) e una velatura draw_box_alpha, poi disegna le righe sopra. Lo sfondo sta in una sola funzione, che riusa anche la scheda di pausa di UI-11.2. Il pannello di destra (anteprime degli stati, tema) resta dov'è.
+- **File:** `source/src/gui.c` (menu, gui.c:3810, e disegno delle schermate), `source/src/psp_video.c` (presentazione nel back buffer per il menu), `CHANGELOG.md`
+- **Test:** scripts/check-menu-layout.sh; Hardware: leggibilità con i 9 temi e le 5 lingue; uscita dal menu senza artefatti
+- **Accettazione:** Il gioco è visibile a schermo intero dietro il menu; Lo stato video all'uscita è identico a quello all'ingresso
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### UI-10.2 — Anteprima live delle opzioni video · S, 1 gg · dipende da: UI-10.1, UI-12.4 · PSP: sì
+- **Cosa:** Nel menu Video, cambiare scala, ingrandimento o filtro riapplica subito la presentazione allo sfondo. Tenendo △ (con la mappatura di TRIANGOLO in get_gui_input fatta da UI-12.4) il menu sparisce finché il tasto resta premuto; la riga di aiuto lo dice.
+- **File:** `source/src/gui.c` (graphics_options gui.c:5109-5122), `source/src/psp_video.c`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** scripts/check-messages.sh; Hardware: ogni modalità e ogni filtro si vedono dal menu; uscire senza cambiare nulla ripristina lo stato
+- **Accettazione:** Ogni cambio video è visibile prima di tornare al gioco
+
+#### UI-10.3 — Miniature degli slot · M, 2 gg · dipende da: — · PSP: sì
+- **Cosa:** Il menu Salva/Carica mostra una striscia di 11 miniature 60x40, ottenute riducendo l'anteprima 240x160 di ogni .svs. Si leggono una per frame mentre la pagina è aperta e restano in un buffer statico (11 × 4,8 KB).
+- **File:** `source/src/gui.c` (menu degli stati; get_savestate_info gui.c:2910-2951), `source/src/art_filter.c` (nuovo, puro: riduzione a box, condivisa con UI-13), `source/src/art_filter.h` (nuovo), `tests/test_art_filter.c` (nuovo), Makefile, `CHANGELOG.md`
+- **Test:** tests/test_art_filter.c: riduzione 240x160 → 60x40 corretta su pattern noti, nessuna lettura fuori dal buffer; make test-sanitize; Hardware: apertura della pagina senza blocchi percepibili su PSP-1000
+- **Accettazione:** Le 11 miniature compaiono entro 1 s su PSP-1000 senza bloccare la navigazione
+
+#### UI-10.4 — Animazione di apertura e banda di selezione · S, 1 gg · dipende da: UI-8.3 · PSP: sì
+- **Cosa:** La velatura sale e le righe entrano in 6 frame (100 ms); la banda di selezione è animata. 'Riduci movimento' azzera tutto.
+- **File:** `source/src/gui.c`, `source/src/menu_layout.c`, `CHANGELOG.md`
+- **Test:** tests/test_menu_layout.c (helper di UI-8.3); Hardware: p99 del tempo di frame del menu ≤ 16,7 ms su PSP-1000 durante apertura e scorrimento, 3 run
+- **Accettazione:** Apertura in 6 frame e p99 del tempo di frame del menu ≤ 16,7 ms su PSP-1000; con 'Riduci movimento' nessuna animazione
+
+#### UI-10.5 — Reset del gioco sicuro e annullabile · S, 0,75 gg · dipende da: SAV-2.3 · PSP: sì
+- **Cosa:** La decisione del reset passa in una funzione statica di primo livello in `gui.c` (oggi `menu_reset` è annidata in `menu()`, `gui.c:3870`, e scrive locali di `menu()`: la regola delle callback del menu e `-Werror=trampolines` lo impongono). Con `main_link_active()` vero il reset si rifiuta con «Reset non disponibile durante il collegamento: prima Disconnetti». Altrimenti `yesno_dialog` chiede conferma e dice che lo stato AUTO conserva il punto di prima; con il sì si scrive la batteria con `update_backup_immediately()` (esito dallo store di SAV-2.3: se fallisce il reset non parte e il messaggio lo dice), poi lo stato AUTO con `action_savestate_slot(AUTO_SAVESTATE_SLOT)`, poi `reset_gba()`.
+- **File:** `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `tests/test_menu_reset.py` (nuovo, estrazione come `tests/test_startup.py`), `CHANGELOG.md`
+- **Test:** `tests/test_menu_reset.py`: con il link attivo nessun reset e il messaggio; con il sì l'ordine batteria, AUTO, reset; con la batteria non scritta nessun reset; con il no nessuna scrittura; `scripts/check-messages.sh`; hardware PSP-1000: reset in FireRed subito dopo un salvataggio in gioco, `.sav` aggiornato e AUTO che riporta al punto di prima.
+- **Accettazione:** nessun reset durante il link, con il motivo nelle 5 lingue; un reset per errore si annulla caricando l'AUTO; il `.sav` è sempre scritto prima del reset; la prova di determinismo è di ENG-3.5 (1.6); voce CHANGELOG (Changed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### UI-11 — Stato nelle righe del menu, pausa e risveglio sul frame congelato
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 | 3 gg | UI-4.2, UI-10.1, SAV-7.5, SAV-7.6, ENG-8.1 |
+
+**Copre:** F-056, F-057 (stato sulle righe del menu; pausa e scheda al risveglio)
+
+**Obiettivo:** Righe principali con lo stato degli 11 slot, dei trucchi attivi e del partner del link, nelle 5 lingue. Pausa e scheda di risveglio sul frame congelato: 20 cicli per ciascuna di 4 situazioni (gioco, menu, scheda di pausa, scheda di risveglio) su PSP-1000, PSP-3000 e Go, con 0 schermi neri, 0 tasti della risposta passati al gioco e 0 standby saltati; la pausa al risveglio è un'opzione, Sì di default.
+
+**Da noi oggi:** Le righe principali mostrano solo l'etichetta della categoria (gui.c:5360-5373); slot e orari sono nei sottomenu. menu_model ha già il tipo di riga MENU_ROW_STATUS (menu_model.h:17). Dopo il risveglio, main_power_service riapre la ROM e torna al gioco (main.c:1924-1962); all'avvio successivo viene offerto l'auto-stato (message_eng.h:862-863). Il menu si ridisegna a ogni passo (gui.c:5477-5489, flip a gui.c:5688) e tiene chiusa la ROM mentre è aperto (gui.c:5459-5465): un risveglio nel menu non dovrebbe dare uno schermo nero, ma su hardware non è provato. Nessuna azione di pausa (input.h:44-68).
+
+**Come ci arriviamo:**
+- Lavoro piccolo sul percorso attuale: lo stato sulle righe evita di entrare nei sottomenu per sapere cosa contengono, e pausa e risveglio evitano di ritrovarsi in piena azione dopo giorni di standby.
+- Sulle righe: stato degli 11 slot (10 più AUTO), trucchi attivi e codice del partner del link.
+- Pausa e risveglio nelle 5 lingue; la pausa al risveglio è un'opzione.
+- L'auto-stato scritto alla sospensione resta la rete di sicurezza contro la batteria scarica.
+
+**Gate prima di iniziare:** Nessuno; UI-11.3 si verifica con SAV-7.5, SAV-7.6 ed ENG-8.1.
+
+**Rischi:**
+- La scheda di risveglio non deve fare I/O né rientrare in main_power_service in modo ricorsivo.
+- Un nuovo standby mentre la scheda è aperta deve riportare la scheda, non il gioco.
+- Le 11 stat all'apertura del menu costano poco, ma vanno fatte una volta sola.
+
+#### UI-11.1 — Stato live sulle righe principali · S, 1 gg · dipende da: — · PSP: sì
+- **Cosa:** Calcolato una volta all'apertura del menu: Salva/Carica mostra 'N/10 + AUTO' (savestate_file_exists, gui.c:2990-2999); Gioco mostra 'N trucchi attivi' (cheats[].cheat_active, cheats.h:39-46); Collegamento mostra 'collegato: <codice>' o 'in attesa' (stessa logica di gui.c:5029-5036). Il testo sta a destra ed è tagliato con gli helper limitati.
+- **File:** `source/src/gui.c` (main_options gui.c:5360-5373), `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** scripts/check-messages.sh; scripts/check-menu-layout.sh (ordine invariato); Hardware: righe nelle 5 lingue senza sovrapposizioni
+- **Accettazione:** Le tre righe mostrano lo stato corretto; L'ordine delle categorie non cambia
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### UI-11.2 — Azione Pausa con scheda sul frame congelato · S, 0,5 gg · dipende da: UI-4.2, UI-10.1 · PSP: sì
+- **Cosa:** Nuova azione scorciatoia Pausa, vuota di default. La scheda riusa senza modifiche lo sfondo di UI-10.1 (frame in pausa con la velatura draw_box_alpha) e vi disegna sopra solo 'In pausa' e '○ riprendi · HOME menu'. Audio in pausa, turbo fermato, nessun I/O; il ciclo della scheda chiama main_power_service per gestire standby e uscita.
+- **File:** `source/src/input_chord.h` (azione, id d'azione assegnato in ordine di merge), `source/src/input.c`, `source/src/gui.c` (nuova funzione pause_card, sopra lo sfondo di UI-10.1), `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** scripts/check-messages.sh; Hardware: pausa e ripresa senza perdite audio; HOME dalla pausa apre il menu
+- **Accettazione:** La pausa ferma gioco e audio, e la ripresa riparte esattamente da dove si era
+
+#### UI-11.3 — Scheda al risveglio · M, 1,5 gg · dipende da: UI-11.2, SAV-7.5, SAV-7.6, ENG-8.1 · PSP: sì
+- **Cosa:** Alla ripresa (power_lifecycle_take_resume, main.c:1945) si arma un flag nel modulo puro power_lifecycle; al primo update_input in gioco compare la scheda di pausa con 'Ripreso dallo standby'. Non compare se la ripresa avviene dentro il menu. Opzione 'Pausa al risveglio' (Sì di default, nel bump di ConfigModel della release). Se la console torna in standby con la scheda aperta, al risveglio la scheda ricompare. Casi in più: standby preso nel menu e sulla scheda di pausa (UI-11.2). Il tasto che risponde «Riprendi» passa dalla maschera di SAV-7.6.
+- **File:** `source/src/power_lifecycle.c`, `source/src/power_lifecycle.h`, `source/src/main.c` (main_power_service), `source/src/gui.c`, `source/src/config_model.c`, `tests/test_config_model.c`, `tests/test_power_lifecycle.c`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** tests/test_power_lifecycle.c: la ripresa arma la scheda una sola volta; tests/test_config_model.c: default Sì dopo la migrazione; Hardware: 20 cicli per ciascuna delle 4 situazioni (gioco, menu, scheda di pausa, scheda di risveglio) su PSP-1000, PSP-3000 e Go
+- **Accettazione:** Dopo lo standby il gioco resta fermo finché il giocatore non sceglie; Nelle 4 situazioni 0 schermi neri, 0 tasti della risposta passati al gioco e 0 standby saltati; Con l'opzione su No il comportamento è quello di 1.4.2
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### UI-12 — Libreria: ultimo gioco, nomi puliti, badge, preferiti e vista unificata
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 (UI-12.1 in 1.5; UI-12.2-12.4 in 1.6) | 9,5 gg | F-027, EXT-4.1, UI-9.6 (solo UI-12.2) |
+
+**Copre:** F-061, F-065, F-066, F-067, F-068 (ultimo gioco, nomi puliti, badge del salvataggio, preferiti, vista unificata)
+
+**Obiettivo:** Dopo un riavvio ○ riprende l'ultimo gioco; nomi puliti senza rinominare file né spezzare caratteri a due byte; badge del salvataggio, dimensione e numero di giochi con una stat solo per le righe visibili (scorrimento a 60 frame al secondo in una cartella di 300 ROM su PSP-1000); almeno 300 preferiti per percorso più codice e dimensione, ritrovati anche se il file si sposta e scritti in modo atomico; vista unificata facoltativa, zip compresi e senza limite fisso: con 2.000 ROM su 3 livelli al massimo 256 KiB e almeno 1 MiB di heap libero su PSP-1000.
+
+**Da noi oggi:** Un blocco con gli ultimi 5 giochi sopra la lista (gui.c:449-459, :1931-1935); il cursore parte però nella lista dei file (in_recent_section = 0, gui.c:1864) e da lì SU porta all'ultima voce dei recenti, cioè la più vecchia (gui.c:2605-2609), mentre la lista torna a 0 a ogni cartella (gui.c:1942-1952). Nomi file grezzi (load_file, gui.c:1824-1830; disegno gui.c:2349-2404). L'intestazione mostra solo 'ROM Cache %2dMB' (message_eng.h:8-9). Navigazione per cartelle senza limiti, zip e gbz caricati direttamente (gui.c:3954; zip.c:144-169), ordinamento con qsort (gui.c:2049-2050). Nessun preferito, nessuna vista unificata.
+
+**Come ci arriviamo:**
+- Comodità quotidiane piccole e testabili: ogni logica nuova va in un modulo puro fuori da gui.c (circa 6.650 righe).
+- Cartelle e zip senza limite di numero.
+- Preferiti per percorso più codice gioco e dimensione, ritrovati se il file si sposta, salvati in modo atomico con config_store.
+- Nomi puliti solo in visualizzazione, senza rinominare file, sicuri con i caratteri a due byte.
+- Badge calcolati solo per le righe visibili; l'ultimo gioco è già sotto il cursore nel blocco dei recenti, con gli altri quattro a portata di mano.
+
+**Gate prima di iniziare:** Nessuno per UI-12.1-12.4. UI-12.5 parte con F-027 [PRF] disponibile e si accetta solo se, con 2.000 ROM su 3 livelli, la lista usa al massimo 256 KiB e lascia almeno 1 MiB di heap libero su PSP-1000.
+
+**Rischi:**
+- Nel browser □ è già 'cartella su' e SELECT cambia vista (message_eng.h:11-15): il menu di opzioni su △ (proposta di UI-12.4, da confermare) non deve rompere le abitudini.
+- Le stat su Memory Stick sono lente: solo righe visibili, una volta per pagina.
+- Vista unificata su collezioni enormi: memoria per i nomi su PSP-1000.
+
+#### UI-12.1 — Ultimo gioco preselezionato · S, 0,5 gg · dipende da: — · PSP: sì
+- **Cosa:** Alla prima apertura del browser nella sessione, se i recenti non sono vuoti, il cursore parte nel blocco dei recenti su recent_roms[0], l'ultimo gioco giocato, invece che nella lista dei file (in_recent_section e recent_selection, gui.c:1864, :2605-2609). Basta ○ per riprenderlo. Le aperture successive non cambiano e la cartella mostrata resta quella di oggi.
+- **File:** `source/src/gui.c` (load_file: in_recent_section e recent_selection, gui.c:1864, :2605-2609), `CHANGELOG.md`
+- **Test:** Hardware: riavvio dopo aver giocato a un titolo in una sottocartella; ○ al primo frame del browser lo carica; Hardware: con il file dell'ultimo gioco rimosso, validate_recent_roms lo toglie (gui.c:539-562) e il cursore va sul nuovo primo recente, o nella lista se non ne restano
+- **Accettazione:** Dopo un riavvio ○ carica subito l'ultimo gioco giocato; Senza recenti il browser si comporta come oggi
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### UI-12.2 — Nomi puliti · S, 1 gg · dipende da: UI-9.6 · PSP: no
+- **Cosa:** Estende `browser_name.c` di UI-9.6 (modulo puro): il nome mostrato è senza estensione, con ', The' finale spostato davanti, mantiene i tag di regione e non spezza mai un carattere a due byte GBK o Shift-JIS. Opzione 'Nomi puliti' (Sì di default) nell'Interfaccia; il nome reale resta per caricamento, salvataggi e box art.
+- **File:** `source/src/browser_name.c`, `source/src/browser_name.h` (di UI-9.6), `tests/test_browser_name.c` (esteso), `source/src/gui.c`, `source/src/config_model.c`, `tests/test_config_model.c`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** tests/test_browser_name.c: 'Legend of Zelda, The (USA).gba' diventa 'The Legend of Zelda (USA)'; nomi brevi; solo estensione; byte GBK al limite; make test-sanitize; tests/test_config_model.c: default Sì dopo la migrazione; scripts/check-messages.sh
+- **Accettazione:** Il browser mostra nomi puliti senza modificare alcun file
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### UI-12.3 — Badge del salvataggio, dimensione e numero di giochi · M, 1,5 gg · dipende da: — · PSP: sì
+- **Cosa:** Per le sole righe visibili, una stat del .sav in dir_save (stesso nome che usa load_backup), fatta una volta per pagina, disegna un marcatore. Il pannello del gioco selezionato mostra 'Salvataggio presente' o 'assente' e la dimensione della ROM; l'intestazione mostra 'N giochi' per la cartella.
+- **File:** `source/src/gui.c` (load_file), `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** scripts/check-messages.sh; Hardware: scorrimento in una cartella di 300 ROM su PSP-1000 a 60 frame al secondo, senza rallentamenti
+- **Accettazione:** Badge corretti per i .sav presenti; Nessuna stat per le righe non visibili
+
+#### UI-12.4 — Preferiti e menu di opzioni per ROM su TRIANGOLO · M, 3,5 gg · dipende da: — · PSP: sì
+- **Cosa:** source/src/favourites.c/.h, puro: pool statico di 32 KB, che tiene almeno 300 voci con percorsi relativi fino a 96 byte, con voci {percorso relativo a dir_roms, codice gioco di 4 caratteri, dimensione}, ricerca per hash del percorso; se il percorso non esiste più, ricerca per codice e dimensione nella cartella corrente. Questa storia decide il tasto del browser (proposta, da confermare): TRIANGOLO è l'unico tasto libero, perché START apre, SELECT alterna lista e carosello (gui.c:2441-2458) e QUADRATO sale di cartella (gui.c:2793-2801). TRIANGOLO su una ROM apre un menu di opzioni per gioco, come nell'XMB, con 'Aggiungi ai preferiti' o 'Togli dai preferiti'; GIO-5.3 aggiungerà poi 'Trucchi…' allo stesso menu. get_gui_input oggi non mappa TRIANGOLO (input.c:265-289): questa storia lo mappa su un cursore nuovo. In cima alla lista compare un blocco '★ Preferiti', come quello dei recenti. Salvataggio con config_store (file temporaneo più rename).
+- **File:** `source/src/favourites.c` (nuovo), `source/src/favourites.h` (nuovo), `tests/test_favourites.c` (nuovo), Makefile, `source/src/input.c` (get_gui_input: TRIANGOLO), `source/src/input.h` (cursore nuovo), `source/src/gui.c` (load_file: menu di opzioni per ROM e riga d'aiuto), `source/src/config_store.c` (riuso), `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** tests/test_favourites.c: aggiunta e rimozione; pool pieno rifiutato senza corruzione; un pool con 300 voci da 96 byte si carica e si riscrive identico; file troncato o malformato letto fino all'ultima voce valida; file spostato ritrovato per codice e dimensione; make test-sanitize; Hardware: 300 preferiti, riavvio, un file spostato di cartella; Hardware: TRIANGOLO apre il menu di opzioni su una ROM e su uno zip, in lista e nel carosello, mentre START, SELECT e QUADRATO fanno ciò che fanno oggi
+- **Accettazione:** Almeno 300 preferiti con percorsi relativi fino a 96 byte; I preferiti sopravvivono a riavvii e spostamenti di file; Un file dei preferiti danneggiato non blocca il browser; TRIANGOLO apre il menu di opzioni e compare nella riga d'aiuto del browser
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### UI-12.5 — Vista unificata facoltativa · M, 3 gg · dipende da: F-027, EXT-4.1 · PSP: sì
+- **Cosa:** Una vista unificata del browser, con un proprio valore di browser_view (EXT-4.1; il limite del campo sale nel bump di ConfigModel della release), elenca in ordine alfabetico tutte le ROM e gli zip di dir_roms e delle sottocartelle fino a 3 livelli, senza limite fisso: lista dinamica; se la memoria non basta, un messaggio e ritorno alla vista per cartelle. La logica di fusione e ordinamento sta in un modulo puro.
+- **File:** `source/src/library_list.c` (nuovo), `source/src/library_list.h` (nuovo), `tests/test_library_list.c` (nuovo), Makefile, `source/src/gui.c` (load_file), `source/src/config_model.c` (limite di browser_view), `tests/test_config_model.c`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** tests/test_library_list.c: fusione e ordinamento stabili; nomi uguali in cartelle diverse restano distinti; esaurimento di memoria simulato gestito; make test-sanitize; tests/test_config_model.c: il nuovo valore di browser_view si rilegge identico; scripts/check-messages.sh; Hardware PSP-1000: 2.000 ROM su 3 livelli, tempo di scansione, memoria della lista e heap libero (F-027)
+- **Accettazione:** Vista unificata con gli zip compresi e nessun limite fisso al numero di ROM; Con 2.000 ROM la lista usa al massimo 256 KiB e lascia almeno 1 MiB di heap libero su PSP-1000; Con memoria insufficiente: un messaggio e la vista per cartelle
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### UI-13 — Arte dei giochi: sfondi 480x272, layout artistico e barre laterali
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 8,5 gg | UI-8.2, UI-14.1, F-027, EXT-4.1 |
+
+**Copre:** F-062, F-049, F-060 (sfondi per gioco, layout del browser, barre laterali sfocate), F-064 (arte dietro il caricamento, UI-13.4)
+
+**Obiettivo:** Se il gate scatta: sfondo per gioco a 480x272 con la versione sfocata calcolata una volta in cache e mai per frame, mostrata anche dietro il caricamento senza ritardo prima della prima lettura, con ripiego sulla box art; layout artistico accanto ai 9 temi e ai colori personalizzati; barre laterali come due quad GE con costo ≤ 0,2 ms per frame (compare-benchmarks 3+3) e spente di default; almeno 2 MiB di heap libero su PSP-1000 dopo la ROM e i buffer dell'arte; nessuna arte distribuita da noi.
+
+**Da noi oggi:** Box art PNG ridotta a 141x141 nearest, con cache .raw validata da dimensione e mtime (boxart.c:1-27; boxart.h:19-20); lista e carosello alternati con SELECT (gui.c:1824-1830); 9 temi più colori personalizzati (gui.c:69-79). Nessuno sfondo per gioco, niente BMP, schermata di caricamento solo testo (memory.c:3633-3637); fuori dall'immagine il GE pulisce a nero (psp_video.c:427-428). Su PSP-1000 init_gamepak_buffer prende quasi tutto l'heap (memory.c:2878-2904), e boxart.c ha già rinunciato a una cache LRU perché si bloccava su hardware (boxart.c:23-25). Il default è 16:9 Auto (main.c:55), dove le barre laterali non servono: contano solo a 100%, 150% e USER.
+
+**Come ci arriviamo:**
+- Riusa la cache .raw già collaudata (dimensione più mtime) invece di un formato nuovo.
+- La sfocatura si calcola una volta in cache, mai per frame; tutto è spento di default.
+- I 9 temi e i colori personalizzati restano accanto al layout artistico.
+- L'emulatore non distribuisce nessuna arte.
+
+**Gate prima di iniziare:** Misura dell'heap di F-027 [PRF] su PSP-1000: almeno 2 MiB liberi dopo il caricamento della ROM più i buffer dell'arte (2 × 255 KB). Per UI-13.2 e UI-13.3: UI-8.2 unito. Per UI-13.3: costo di al massimo 0,2 ms per frame, misurato con compare-benchmarks (3 + 3).
+
+**Rischi:**
+- Solo estetica, e sensibile alla memoria su PSP-1000 con una ROM da 16 MiB.
+- La prima decodifica di un PNG 480x272 è lenta: la cache va costruita a fette, tra un frame e l'altro.
+- Le barre laterali toccano la presentazione a ogni frame: solo come due quad GE, mai con la CPU.
+
+#### UI-13.1 — Sfondo per gioco a 480x272 con cache e versione sfocata · M, 3 gg · dipende da: F-027 · PSP: sì
+- **Cosa:** background/<rom>.png (chiave dir.ini background_directory, default <dir_boxart>background/) viene decodificata con il decoder di boxart.c, adattata a 480x272 con filtro a box e salvata come .raw con la stessa intestazione (dimensione più mtime), più una variante sfocata calcolata una volta. Un solo buffer alla volta, liberato prima dell'avvio del gioco. art_filter.c lo crea UI-10.3, o questa storia se arriva prima.
+- **File:** `source/src/boxart.c`, `source/src/boxart.h`, `source/src/art_filter.c` (ridimensionamento a box e sfocatura), `source/src/art_filter.h`, `tests/test_art_filter.c`, `source/src/gui.c` (load_dir_cfg: background_directory), `README.md` (cartella background/), `CHANGELOG.md`
+- **Test:** tests/test_art_filter.c: adattamento con bande corrette per immagini 1:1, 16:9 e 3:2; sfocatura su pattern noti; nessuna lettura fuori dal buffer; make test-sanitize; Hardware PSP-1000: heap libero prima e dopo (F-027), tempo della prima decodifica e del caricamento da cache
+- **Accettazione:** Con l'immagine presente, lo sfondo del browser la mostra; senza, non cambia nulla; Heap libero entro il gate
+- **Licenza:** codice nuovo GPL-2.0-or-later; l'arte la mette l'utente, noi non ne distribuiamo.
+
+#### UI-13.2 — Layout artistico del browser · M, 3 gg · dipende da: UI-13.1, UI-8.2, EXT-4.1 · PSP: sì
+- **Cosa:** Vista 'Arte' del browser, accanto a lista e carosello, in cui lo sfondo del gioco riempie lo schermo e la lista è una colonna sovrapposta, con dissolvenza GE e velatura; rispetta tema e lingua. La vista si salva in browser_view di EXT-4.1 con il nuovo valore 'Arte'; il limite del campo sale nel bump di ConfigModel della release.
+- **File:** `source/src/gui.c` (load_file, vista), `source/src/ui_batch.c`, `source/src/config_model.c`, `source/src/config_model.h`, `tests/test_config_model.c`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** Golden di UI-8.4 per la nuova vista; tests/test_config_model.c: la versione precedente migra con browser_view invariato; il valore 'Arte' si rilegge identico; scripts/check-messages.sh; Hardware: scorrimento a 60 frame al secondo su PSP-1000 con la cache pronta
+- **Accettazione:** La vista si può scegliere ed è ricordata dopo un riavvio; Ripiego sulla box art quando manca lo sfondo
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### UI-13.3 — Barre laterali sfocate, spente di default · M, 2 gg · dipende da: UI-13.1, UI-8.2 · PSP: sì
+- **Cosa:** Per 100%, 150% e USER, opzione Barre laterali con tre valori: spente; immagine sfocata dallo sfondo o dalla box art; la stessa immagine o, se manca, un frame del gioco sfocato. La texture sfocata si prepara una volta al caricamento della ROM dallo sfondo o dalla box art; con il terzo valore, se l'immagine manca, si cattura un frame del gioco dopo circa 5 s e lo si sfoca a fette di righe tra un frame e l'altro, dentro il budget del gate. Le barre si disegnano come due quad GE al posto della pulizia di generate_display_list (psp_video.c:427-428).
+- **File:** `source/src/psp_video.c`, `source/src/art_filter.c`, `source/src/gui.c`, `source/src/config_model.c`, `tests/test_config_model.c`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** scripts/check-video.sh; tests/test_config_model.c: default spento dopo la migrazione; Hardware: compare-benchmarks 3 + 3 con barre spente e accese, costo non oltre 0,2 ms per frame anche durante la sfocatura a fette
+- **Accettazione:** Nessun costo con l'opzione spenta; Nessun calcolo di sfocatura oltre il budget per frame
+
+#### UI-13.4 — Arte dietro il caricamento (ex UI-14.3) · S, 0,5 gg · dipende da: UI-14.1, UI-13.1 · PSP: sì
+- **Cosa:** Se esiste lo sfondo (o la box art), il popup di caricamento compare sopra la sua versione sfocata; altrimenti resta quello di UI-14.1.
+- **File:** `source/src/memory.c` (popup, memory.c:3633-3637), `source/src/gui.c`, `source/src/boxart.c`, `CHANGELOG.md`
+- **Test:** Hardware: nessun ritardo aggiunto prima della prima lettura
+- **Accettazione:** L'arte è visibile durante il caricamento senza rallentarlo
+
+### UI-14 — Schermata di caricamento con avanzamento reale e tempi delle fasi
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 | 2 gg | ENG-1.6 |
+
+**Copre:** F-064 (schermata di caricamento)
+
+**Obiettivo:** Barra di avanzamento reale in byte per ROM sciolte e zip, ridisegnata almeno 20 volte al secondo su PSP-1000 durante tutta la lettura, con il caricamento di una ROM da 16 MiB al massimo il 5% più lento (3 esecuzioni per build); tempi delle fasi nel runtime log anche nelle build di release; la selezione di una ROM fa una sola scrittura atomica della config.
+
+**Da noi oggi:** Popup con 'Now Loading...' e 'Searching BACKUP ID' (memory.c:3633-3653; message_eng.h:544, :547): una ROM da 32 MiB su Memory Stick impiega secondi in cui si vede solo questo. load_gamepak_raw legge la ROM con una sola FILE_READ se entra nel buffer, altrimenti solo l'intestazione (memory.c:3580-3600); lo zip legge a blocchi da 128 KiB e dopo ogni chiamata a inflate disegna una barra di 200 pixel, senza byte né fase (zip.c:29, :144-169; draw_progress, zip.c:164-165, :185-190). Alla selezione scriviamo una sola config per gioco (gui.c:3956). L'evento ROM_OPEN esiste già nel runtime log v5 (runtime_log.h:25, :53).
+
+**Come ci arriviamo:**
+- Una barra reale e i tempi nel log costano poco e aiutano anche le segnalazioni di lentezza.
+- La barra degli zip diventa la stessa barra in byte delle ROM sciolte, con letture a blocchi da 64 KiB: almeno 20 ridisegni al secondo su PSP-1000.
+- Tempi delle fasi nel runtime log anche nelle build di release.
+- La selezione fa già una sola scrittura atomica della config.
+
+**Gate prima di iniziare:** Nessuno.
+
+**Rischi:**
+- Leggere a blocchi può cambiare il throughput: confrontare il tempo di caricamento di una ROM da 16 MiB, 3 esecuzioni per build.
+- Il nuovo evento va in coda all'enum del runtime log e non cambia RUNTIME_LOG_VERSION (regola R1, principio 6 della panoramica).
+
+**Storie spostate:** UI-14.3 è ora UI-13.4.
+
+#### UI-14.1 — Barra di avanzamento reale · S, 1 gg · dipende da: — · PSP: sì
+- **Cosa:** load_gamepak_raw legge a blocchi da 64 KiB (memory.c:3594) e il ciclo zip legge a blocchi da 64 KiB (zip.c:29) e riporta i byte letti (zip.c:144-169) a una callback impostata da gui.c, che ridisegna nome, fase e 'x / y KiB' nel popup ogni 50 ms. memory.c non disegna nulla di nuovo.
+- **File:** `source/src/memory.c` (load_gamepak, load_gamepak_raw), `source/src/zip.c`, `source/src/zip.h`, `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** scripts/check-messages.sh; Hardware PSP-1000: tempo di caricamento di una ROM da 16 MiB e di uno zip, 3 esecuzioni prima e dopo, al massimo il 5% più lento; frequenza di ridisegno misurata su PSP-1000 per una ROM da 16 MiB e per uno zip
+- **Accettazione:** La barra avanza per tutta la lettura, zip compresi; Caricamento di una ROM da 16 MiB e di uno zip al massimo il 5% più lento della build di prima (mediana di 3 esecuzioni per build); Barra ridisegnata almeno 20 volte al secondo, ROM sciolte e zip
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### UI-14.2 — Tempi delle fasi nel runtime log · S, 1 gg · dipende da: ENG-1.6 · PSP: no
+- **Cosa:** Nuovo evento ROM_LOAD_STAGES (apertura, lettura, ricerca dell'ID di salvataggio, .sav, config per gioco, in ms) scritto alla fine di load_gamepak. L'evento va in coda all'enum e non cambia RUNTIME_LOG_VERSION (regola R1, principio 6 della panoramica); decodificatore e test si aggiornano insieme.
+- **File:** `source/src/runtime_log.h`, `source/src/runtime_log.c`, `source/src/runtime_log_psp.c`, `source/src/memory.c`, `tools/decode_runtime_log.py`, `tests/test_runtime_log.c`, `tests/test_decode_runtime_log.py`
+- **Test:** tests/test_runtime_log.c: codifica dell'evento; tests/test_decode_runtime_log.py: decodifica del nuovo evento e lettura dei log v5 e v6; make test-sanitize
+- **Accettazione:** tools/decode_runtime_log.py mostra i tempi di ogni caricamento; I log v5 e v6 restano decodificabili
+
+### UI-15 — Strumento desktop: recupero e rinomina della box art
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 4,5 gg | — |
+
+**Copre:** F-063 (strumento per la box art)
+
+**Obiettivo:** Se i termini lo permettono: lo stesso builder desktop delle bolle recupera la box art delle sole ROM dell'utente, rinomina pacchetti di arte già posseduti e compone gli sfondi, con lo stesso normalizzatore di nomi dell'emulatore e test in comune; su 20 ROM di prova ogni immagine scaricata o rinominata ha il nome che l'emulatore cerca, e nessun file esistente viene sovrascritto senza conferma; nessuna arte ospitata o distribuita da noi; i termini di libretro-thumbnails sono scritti in `tool/README` e THIRD_PARTY prima del primo download.
+
+**Da noi oggi:** Lo strumento in source/single-game_launcher/tool (Python, customtkinter, requests; GPL-3.0-or-later) costruisce solo bolle XMB (tool/README.md). Nessun recupero né rinomina di arte.
+
+**Come ci arriviamo:**
+- Pensato per chi ha molte ROM, ma prima si verifica che cosa si può scaricare per conto dell'utente (UI-15.1).
+- Un solo programma desktop multipiattaforma, già distribuito, con l'anteprima XMB che esiste già.
+- Nessuna arte ospitata o distribuita da noi; solo per le ROM dell'utente.
+- Lo stesso normalizzatore di nomi che l'emulatore usa per trovare l'arte, con test in comune.
+
+**Gate prima di iniziare:** Termini di libretro-thumbnails letti e documentati in tool/README e THIRD_PARTY. Se non permettono il download automatico, l'epica si ferma a UI-15.3 (solo rinomina di arte già posseduta).
+
+**Rischi:**
+- Termini delle immagini sconosciuti; marchi e copyright degli editori.
+- Nomi No-Intro diversi dai nomi dei file dell'utente: abbinamenti sbagliati.
+- Limiti di frequenza di GitHub sui download.
+
+#### UI-15.1 — Verifica dei termini e decisione · S, 0,5 gg · dipende da: — · PSP: no
+- **Cosa:** Leggere licenza e termini di libretro-thumbnails e del suo hosting; decidere se il download automatico è ammesso; scrivere la decisione, con fonte e data, in tool/README.md e THIRD_PARTY.
+- **File:** `source/single-game_launcher/tool/README.md`, `source/single-game_launcher/tool/THIRD_PARTY`
+- **Test:** Revisione manuale del testo
+- **Accettazione:** Decisione scritta, con fonte e data
+- **Licenza:** nessun codice; i termini di libretro-thumbnails restano sconosciuti finché questa storia non li legge.
+
+#### UI-15.2 — Modalità 'Recupera box art' · M, 2 gg · dipende da: UI-15.1 · PSP: no
+- **Cosa:** Nel tool: si sceglie la cartella delle ROM; i nomi vengono normalizzati con le regole di libretro-thumbnails (i caratteri & * / : ` < > ? | e la barra rovesciata diventano _); si scaricano con requests le Named_Boxarts di 'Nintendo - Game Boy Advance' e si salvano come boxart/<rom>.png. Prova a vuoto e resoconto delle immagini mancanti.
+- **File:** `source/single-game_launcher/tool/art_fetch.py` (nuovo), `source/single-game_launcher/tool/gui_art.py` (nuovo), `source/single-game_launcher/tool/gui.py`, `source/single-game_launcher/tool/tests/test_art_names.py` (nuovo), `source/single-game_launcher/tool/README.md`
+- **Test:** tests/test_art_names.py (unittest): normalizzazione di nomi con caratteri speciali, regioni e articoli; Prova manuale su 20 ROM
+- **Accettazione:** Le immagini finiscono con il nome che l'emulatore cerca; Nessun download senza la conferma dell'utente
+- **Licenza:** codice nuovo GPL-3.0-or-later, come il resto del tool; immagini mai ridistribuite.
+
+#### UI-15.3 — Rinomina di pacchetti di arte e composizione degli sfondi · M, 2 gg · dipende da: UI-15.1 · PSP: no
+- **Cosa:** Abbina i file di un pacchetto di arte dell'utente alle sue ROM con lo stesso normalizzatore e li copia con il nome giusto. Un'opzione compone con Pillow uno sfondo 480x272 dalla box art (sfondo sfocato e copertina centrata). Quando esce, aggiunge nella sezione box art del README una frase che rimanda a questo strumento di composizione locale (spostata qui da EXT-7.1).
+- **File:** `source/single-game_launcher/tool/art_fetch.py`, `source/single-game_launcher/tool/art_compose.py` (nuovo), `source/single-game_launcher/tool/tests/test_art_names.py`, `source/single-game_launcher/tool/README.md`, `README.md` (sezione box art)
+- **Test:** unittest dell'abbinamento; Controllo visivo degli sfondi composti
+- **Accettazione:** I pacchetti vengono rinominati senza sovrascrivere file esistenti senza conferma
+- **Licenza:** codice nuovo GPL-3.0-or-later, come il resto del tool; nessuna arte di terzi o generata da IA inclusa.
+
+### UI-16 — Cambio gioco nel processo, verificato con la misura dell'heap
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | 2.0 (UI-16.3 dopo gate) | 5,5 gg | UI-2.2, F-027, ENG-1.6, ENG-6.2 (solo UI-16.2) |
+
+**Copre:** F-069 (ritorno alla lista nel processo)
+
+**Obiettivo:** 600 cambi in tutto su PSP-1000, PSP-2000/3000 e Go (200 per modello), guidati dall'autorun diagnostico, senza rilancio dell'EBOOT. Con una sequenza fissa di 4 ROM, zip compreso, heap libero, blocco massimo e numero di blocchi identici al byte a ogni ripetizione. Tempo dal comando alla lista ≤ 0,8 s al p95 su PSP-1000 (AUTO escluso), registrato nel runtime log.
+
+**Da noi oggi:** 'Carica gioco' cambia ROM nel processo: chiude il link, scrive il .sav e l'AUTO, carica la nuova ROM e resetta (gui.c:3952-3999). Il buffer della ROM si alloca una volta all'avvio (memory.c:2878-2904; main.c:1657) e viene riusato. Nessuna verifica di perdite tra cambi ripetuti; tempi non misurati.
+
+**Come ci arriviamo:**
+- Prima si misura: il cambio gioco nel processo esiste già, manca la prova che cambi ripetuti non perdano memoria.
+- Il cambio è già senza schermo nero né rilancio: si aggiunge una verifica misurata su hardware.
+- La deriva viene registrata nel runtime log delle release, utile nelle segnalazioni.
+- Il ripiego con riavvio si costruisce solo se il soak trova una deriva che non si riesce a correggere, e senza dipendere da chiamate kernel del CFW.
+
+**Gate prima di iniziare:** F-027 [PRF] fornisce l'API di misura dell'heap. UI-16.3 parte solo se, dopo le correzioni, il soak di UI-16.2 mostra ancora un calo di oltre 32 KiB dell'heap libero o del blocco massimo tra il cambio 10 e il cambio 200.
+
+**Rischi:**
+- Perdite piccole (liste del browser, box art, trucchi) visibili solo dopo molti cambi.
+- Frammentazione: stesso heap libero ma blocco massimo più piccolo.
+- Rilanciare l'EBOOT richiede chiamate systemctrl del CFW.
+
+#### UI-16.1 — Misura dell'heap attorno al cambio gioco · M, 1,5 gg · dipende da: F-027, ENG-1.6 · PSP: no
+- **Cosa:** Misura di F-027 prima del primo caricamento e dopo ogni menu_load_file; un confronto puro (heap libero, blocco massimo) con la tolleranza del gate, che registra anche il numero di blocchi e il tempo dal comando alla lista; la deriva va nel runtime log (nuovo evento in coda all'enum, senza cambio di versione: regola R1, principio 6 della panoramica) ed è visibile in Diagnostica.
+- **File:** `source/src/gui.c` (menu_load_file; Diagnostica), modulo di misura di F-027 (non perf_monitor.c: scripts/check-performance.sh:9-14 vi vieta malloc e I/O), `source/src/runtime_log.h, runtime_log.c, runtime_log_psp.c` (nuovo evento), `tools/decode_runtime_log.py`, `tests/test_runtime_log.c`, `tests/test_decode_runtime_log.py`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle)
+- **Test:** Test host del confronto: deriva sì o no, con tolleranza; tests/test_runtime_log.c e tests/test_decode_runtime_log.py: codifica e decodifica del nuovo evento, log v5 e v6 ancora leggibili; make test-sanitize; scripts/check-messages.sh
+- **Accettazione:** Ogni cambio registra heap libero, blocco massimo, numero di blocchi e tempo dal comando alla lista; La deriva è leggibile in Diagnostica e nel log decodificato
+
+#### UI-16.2 — Soak di 200 cambi per modello su hardware · M, 3 gg · dipende da: UI-16.1, ENG-6.2 · PSP: sì
+- **Cosa:** L'autorun diagnostico (ENG-6.2) guida 200 cambi per modello su PSP-1000, PSP-2000/3000 e Go con una sequenza fissa di 4 ROM, zip compreso, con caricamenti di stato e trucchi; si correggono le perdite trovate e si ripete.
+- **File:** `docs/` (righe dei risultati hardware)
+- **Test:** Hardware: soak con runtime log decodificato
+- **Accettazione:** Valori della misura dell'heap identici al byte a ogni ripetizione della sequenza e p95 del tempo dal comando alla lista ≤ 0,8 s su PSP-1000 (AUTO escluso).
+
+#### UI-16.3 — Ripiego se la deriva resta (condizionato) · S, 1 gg · dipende da: UI-16.2, UI-2.2 · PSP: sì
+- **Cosa:** Se dopo un cambio l'heap scende sotto la soglia necessaria, un toast propone di uscire e riavviare. Il rilancio automatico dell'EBOOT si aggiunge solo se le chiamate del CFW sono disponibili e testate.
+- **File:** `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
+- **Test:** Hardware: soglia forzata in una build diagnostica
+- **Accettazione:** Nessun crash per memoria esaurita dopo cambi ripetuti
+
+### UI-17 — Icona XMB animata e splash all'avvio
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| sconsigliato (dietro gate) | dopo gate | 4,5 gg | — |
+
+**Copre:** F-070 (icona XMB animata e logo)
+
+**Obiettivo:** Se il gate scatta: ICON1.PMF generato al momento del pacchetto da fotogrammi nostri e mai committato, riprodotto dall'XMB su PSP-1000 e Go, con al massimo 150 KB in più nel pacchetto; splash durante il lavoro d'avvio che esiste già, con 0 ms aggiunti all'avvio, misurati.
+
+**Da noi oggi:** L'EBOOT ha solo ICON0 e PIC1 (source/Makefile:24-25); nessuno splash. scripts/check-tree.sh non rifiuta i *.pmf (check-tree.sh:50), ma la regola del progetto vieta binari generati in git.
+
+**Come ci arriviamo:**
+- Fotogrammi sorgente nostri (generati da script); il PMF si genera al momento del pacchetto e non si committa mai.
+- Lo splash compare solo durante il lavoro di avvio che già esiste: 0 ms aggiunti.
+
+**Gate prima di iniziare:** Spike UI-17.1 verde: un PMF prodotto dal nostro script viene riprodotto dall'XMB su PSP-1000 e Go, aggiunge al massimo 150 KB al pacchetto, e i fotogrammi sono nostri.
+
+**Rischi:**
+- Puramente estetico: richiede un PSMF e un H.264 con i vincoli della PSP e aggiunge un binario generato al pacchetto; uno splash che aspettasse allungherebbe l'avvio senza dare nulla.
+- Alcuni firmware potrebbero non riprodurre il PMF: l'XMB lascia ICON0 (nessun danno, ma lavoro sprecato).
+- Dipendenza da ffmpeg con libx264 nella pipeline del pacchetto.
+- Tempo di avvio.
+
+#### UI-17.1 — Spike: PMF generato dal nostro script · M, 3 gg · dipende da: — · PSP: sì
+- **Cosa:** Uno script nostro genera i fotogrammi 144x80, con numero e durata scelti per restare entro 150 KB nel pacchetto, e li incapsula in PSMF tramite ffmpeg e libx264, con i parametri scritti nello script; poi si prova nell'XMB.
+- **File:** `tools/icon1_pmf.py` (nuovo), `source/res/icon1/` (script dei fotogrammi)
+- **Test:** Hardware: riproduzione nell'XMB su PSP-1000 e Go
+- **Accettazione:** Il PMF si riproduce, oppure si documenta perché no
+- **Licenza:** codice nuovo GPL-2.0-or-later; x264 (GPL-2.0-or-later) è uno strumento di build esterno e non entra nell'EBOOT.
+
+#### UI-17.2 — ICON1.PMF nel pacchetto · S, 1 gg · dipende da: UI-17.1 · PSP: sì
+- **Cosa:** Il build di release genera ICON1.PMF e lo include nell'EBOOT (PSP_EBOOT_ICON1); scripts/check-package.sh ne controlla presenza e dimensione; scripts/check-tree.sh rifiuta i *.pmf in git.
+- **File:** `source/Makefile` (PSP_EBOOT_ICON1), `scripts/package-release.sh`, `scripts/check-package.sh`, `scripts/check-tree.sh`, `CHANGELOG.md`
+- **Test:** scripts/check-package.sh; scripts/check-tree.sh
+- **Accettazione:** ICON1 animata nell'XMB, al massimo 150 KB
+- **Licenza:** codice nuovo GPL-2.0-or-later; x264 (GPL-2.0-or-later) è uno strumento di build esterno e non entra nell'EBOOT; fotogrammi nostri.
+
+#### UI-17.3 — Splash all'avvio senza attese · S, 0,5 gg · dipende da: — · PSP: sì
+- **Cosa:** Il logo si disegna durante il caricamento della config e del BIOS che già avviene in setup_main (main.c:1646-1657), chiamata da user_main (main.c:1689), senza alcuna attesa aggiunta.
+- **File:** `source/src/main.c` (setup_main), `source/src/psp_video.c`, `CHANGELOG.md`
+- **Test:** tests/test_startup.py: nessun ritardo aggiunto; Hardware: tempo di avvio invariato
+- **Accettazione:** Il tempo dall'avvio al browser è invariato entro il rumore
+- **Licenza:** codice nuovo GPL-2.0-or-later; logo nostro.
+
+## 5. Funzioni di gioco
+
+Il gruppo copre le funzioni che si usano durante la partita: riavvolgimento, trucchi (motore, liste per gioco, pagina, pack), launcher single-game e un eventuale modulo Game Boy. Nella 1.6 si mettono in sicurezza i trucchi e arrivano trucchi per gioco e pack (GIO-3, GIO-4, GIO-6); nella 2.0 il riavvolgimento passo 1, la pagina dal browser e il launcher (GIO-1, GIO-5, GIO-7). GIO-1.6, il passo 2 e il modulo GB partono solo a gate superato.
+
+### GIO-1 — Riavvolgimento, passo 1: anello di snapshot in ogni release
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 (GIO-1.6 dopo gate) | 25 gg | F-007, F-027, CMP-1.1, F-025, F-045, LNK-3.2, F-024, SAV-7.5, F-029 solo se l'anello sta nella partizione volatile, ENG-3.1, ENG-3.3, ENG-1.6 (GIO-1.6 anche F-120, F-124) |
+
+**Copre:** F-083 riavvolgimento (passo 1)
+
+**Obiettivo:** Riavvolgimento acceso e spento a caldo, senza riavviare il gioco. Per accenderlo di default su un modello, nei 5 giochi del gate (Emerald, Minish Cap, Golden Sun, MKSC, Driver 2), 10 minuti ciascuno: cattura ammortizzata ≤ 1 ms per frame e nessuna oltre 3 ms, oppure 0 frame persi; almeno 45 s di Emerald con 2 MiB; hash dello stato guest uguale prima della cattura e dopo il ripristino. Con l'anello in heap la cronologia sopravvive allo sleep; un record rotto ferma il riavvolgimento sull'ultimo record buono, senza reset. Con l'anello in heap, 0 reset del gioco in 20 standby a metà riavvolgimento su PSP-3000 e in 10 uscite durante la pressione, anche senza SAV-8.2; con l'anello nella partizione volatile del PSP-1000, 0 reset con SAV-8.2 attivo, e senza SAV-8.2 il reset con messaggio resta l'unico ripiego, contato nel runtime log e pubblicato nei risultati hardware.
+
+**Da noi oggi:** Non c'è. Pezzi riusabili: SAVESTATE_BLOCK (source/src/memory.c:3724-3730) con MEMORY_SAVESTATE_BODY, che copia stato del chip di salvataggio, RTC, DMA e le sei aree IWRAM, EWRAM, VRAM, OAM, palette e I/O, circa 387 KiB contigui (memory.c:3971-4008). Gli stati si leggono solo da file (load_state, memory.c:3765-3815). Il salvataggio di batteria (gamepak_backup, memory.c:185) non fa parte dello stato e lo scrivono solo write_eeprom (memory.c:1873) e write_backup (memory.c:2085), anche dagli stub (source/src/mips_stub.S:1016). A fine frame update_gba esegue già update_backup e process_cheats (source/src/main.c:1135-1150). Le azioni dei tasti sono in source/src/input.h:46-68 (BUTTON_ID_NONE = 19) e il ConfigModel accetta solo i valori 0-19 (source/src/config_model.c:200).
+
+**Come ci arriviamo:**
+
+- Il passo 1 non chiede determinismo provato: a ogni passo ripristina uno snapshot ed esegue un solo frame per mostrarlo, con il serializzatore degli stati che abbiamo già.
+- Si accende e si spegne a caldo dal menu, senza riavviare il gioco: finché la misura non chiede la mappa delle pagine (GIO-1.6) non c'è codice emesso da rigenerare, e anche dopo basta svuotare la cache di traduzione.
+- Con l'anello in heap (PSP-2000/3000/Go) la cronologia sopravvive allo sleep. Sul PSP-1000, se l'anello finisce nella partizione volatile (F-029), lo sleep la azzera e un toast lo dice.
+- La taglia la sceglie la misura dell'heap per modello (F-027: Auto, più tre taglie fisse).
+- Ogni record ha un checksum: un record rotto ferma il riavvolgimento sull'ultimo record buono e il gioco riprende da lì o dal record ammesso più vicino, senza reset.
+- Con rewind acceso nessuna istruzione in più sugli store del gioco finché la misura non la chiede: le sei aree si confrontano sul posto. Il prezzo è una lettura di circa 774 KiB per snapshot; GIO-1.6 se non basta.
+- Il salvataggio di batteria non torna mai indietro con il riavvolgimento, ed è anche la regola più semplice: per il passo 1 bastano la protezione in scrittura nei frame mostrati e una regola di atterraggio sui record, senza registro delle letture, perché il passo 1 non riprende mai da un frame rieseguito.
+
+**Gate prima di iniziare:** Per iniziare: F-007 (stato v2) e F-027 (misura dell'heap per modello) chiusi, e features/builtin-open-bios unito in develop (CMP-1.1), perché tocca memory.c, gui.c e main.c. La lettura dello stato da memoria non la promette nessuna storia di F-007: la aggiunge GIO-1.2. Per accenderlo di default su un modello: in 5 giochi (Emerald, Minish Cap, Golden Sun, Mario Kart Super Circuit, Driver 2), 10 minuti ciascuno su quel modello, (a) costo di cattura ammortizzato non oltre 1 ms per frame e nessuna cattura oltre 3 ms, oppure (b) 0 frame persi per colpa del rewind secondo i contatori del perf report (GIO-1.5). In più compare-benchmarks 3+3 senza regressioni con rewind spento e almeno 45 s di Emerald con 2 MiB. Un modello che non passa tiene il rewind spento di default. GIO-1.6 (6 gg) si fa solo se GIO-1.5 fallisce il gate.
+
+**Rischi:**
+
+- Costo per snapshot sul PSP-1000, l'incognita principale: senza mappa ogni snapshot legge circa 774 KiB (387 KiB vivi più il riferimento); per restare sotto il tetto di 3 ms la copia ha bisogno di almeno 258 KiB/ms (774 KiB in 3 ms). La banda reale della copia la misura GIO-1.5 sul PSP-1000: sotto quel valore, nei titoli pesanti serve GIO-1.6.
+- Memoria del PSP-1000: anello più riferimento da circa 0,4 MiB accanto a ROM fino a 32 MiB (paginate) e agli atlanti della UI 2.0.
+- Regola di atterraggio sbagliata: nei giochi che scrivono il salvataggio in più frame (Pokémon) riprendere a metà di una scrittura poi superata mescolerebbe settori vecchi e nuovi. La coprono test host e salvataggi fatti durante il riavvolgimento su hardware.
+- Ogni passo indietro svuota i metadati del codice in RAM (clear_metadata_area, come load_state): i frame durante il riavvolgimento sono lenti.
+- Conflitti di merge con il BIOS aperto e con F-007, che toccano gli stessi file.
+
+#### GIO-1.1 — Modulo puro rewind_ring: delta XOR all'indietro, RLE degli zeri, anello, regola di atterraggio · M, 3,5 gg · dipende da: — · PSP: no
+
+- **Cosa:** Modulo host senza SDK PSP. Riceve span (memoria viva, riferimento, numero di parole, mappa di pagine facoltativa) e scrive nel buffer fornito dal chiamante il delta XOR all'indietro con RLE delle parole a zero, aggiornando il riferimento sul posto; lo stato piccolo è un settimo span con il suo riferimento. Espelle i record più vecchi quando serve spazio. Un cursore scorre la cronologia senza consumarla: un passo indietro applica al riferimento il record sotto il cursore, un passo avanti lo riapplica (lo XOR si annulla da solo), e all'atterraggio i record sopra il cursore si scartano. Ogni record porta numero di frame, lunghezza, checksum, generazione del salvataggio e flag 'salvataggio in corso' alla cattura. La funzione pura rewind_land_ok ammette un record se alla cattura il salvataggio non era in corso oppure se la generazione non è cambiata da allora; rewind_land_pick cerca il record ammesso più vicino in entrambe le direzioni, e il punto d'inizio del riavvolgimento, raggiungibile riapplicando record già verificati, è sempre ammesso. Il modulo espone i conteggi per l'indicatore (record, frame coperti, byte usati) e non alloca nulla.
+- **File:** `source/src/rewind_ring.c` (nuovo), `source/src/rewind_ring.h` (nuovo), `tests/test_rewind_ring.c` (nuovo), `Makefile` (regola normale e ASan/UBSan, voci in test e test-sanitize), `source/Makefile` (MAINOBJS)
+- **Test:** tests/test_rewind_ring.c: 500 snapshot casuali, poi passi indietro fino al più vecchio e avanti fino al più recente, ridanno gli stati bit a bit; con un anello piccolo restano solo i record recenti e il cursore si ferma pulito sul più vecchio; un record più grande dell'anello viene rifiutato senza toccare il riferimento; un checksum corrotto ferma il cursore sull'ultimo record buono e i record già verificati riportano al punto d'inizio; span con mappa: le pagine non marcate non si leggono; regola di atterraggio: un record catturato a metà di una lettura o scrittura, con il salvataggio cambiato dopo, è rifiutato; lo stesso record senza cambi è ammesso; la ricerca va anche in avanti; senza record ammessi si torna al punto d'inizio; span di lunghezza 0, avvolgimento a fine buffer e 100.000 operazioni casuali sotto ASan/UBSan.
+- **Accettazione:** make check e make test-sanitize verdi; nessuna malloc, free o stdio nel modulo; throughput del codec sull'host annotato solo come informazione, nessuna affermazione di velocità sul PSP.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-1.2 — Snapshot e ripristino in memoria, salvataggio protetto · M, 3 gg · dipende da: GIO-1.1, F-007, ENG-3.1, ENG-3.3 · PSP: sì
+
+- **Cosa:** Nei corpi savestate lo stato piccolo (CPU, timer, DMA, suono, video, RTC, stato del chip flash/EEPROM, input, main: pochi KiB) si separa dalle sei aree grandi (memory.c:4002-4007). memory_rewind_capture serializza lo stato piccolo in un buffer statico di staging e passa a rewind_ring lo staging e le sei aree come span. Il salvataggio di batteria resta fuori dallo snapshot. Gli scrittori C del salvataggio, write_eeprom (memory.c:1873) e write_backup (memory.c:2085), che sono l'unico ingresso anche dagli stub (mips_stub.S:1016), fanno tre cose nuove: con rewind_backup_ro attivo non cambiano i byte di gamepak_backup; quando un byte cambia aumentano una generazione; segnano 'salvataggio in corso' se il chip non è a riposo o se c'è stato un accesso, in lettura o in scrittura, negli ultimi N frame (N da tarare in GIO-1.4 su Fire Emblem ed Emerald). memory_rewind_restore legge lo stato piccolo da memoria (variante read_mem dei corpi savestate, che crea questa storia: F-007 non la prevede), ricopia le aree ed esegue le pulizie di load_state: clear_metadata_area su EWRAM, IWRAM e VRAM, oam_update, gbc_sound_update e CHANGED_PC_STATUS (memory.c:3765-3815). Il formato dei file di stato è quello di F-007.
+- **File:** `source/src/memory.c` (MEMORY_SAVESTATE_BODY diviso, memory_rewind_capture e memory_rewind_restore, rewind_backup_ro, generazione e flag del salvataggio), `source/src/memory.h`, `source/src/common.h` (macro FILE_READ_MEM* nuove, compito di questa storia), `source/src/cpu.c`, `source/src/sound.c`, `source/src/video.c`, `source/src/input.c`, `source/src/main.c` (varianti read_mem dei corpi savestate), `tests/test_rewind_state.c` (nuovo, compila memory.c come tests/test_perf_dma_probe.c), `Makefile`
+- **Test:** tests/test_rewind_state.c: stato casuale, capture, mutazioni di RAM e I/O, restore: i byte di SAVESTATE_BLOCK(write_mem) tornano quelli di partenza; con rewind_backup_ro attivo una sequenza completa di scrittura flash ed EEPROM non cambia nessun byte del salvataggio; la generazione cresce solo quando un byte cambia; 'in corso' segue lo stato del chip; un file scritto da save_state è identico prima e dopo la modifica; lo stesso test sotto ASan/UBSan; hardware: nel profilo diagnostico, cattura, qualche secondo di gioco e ripristino, con gli hash per regione di ENG-3.1 presi con il metodo di ENG-3.3.
+- **Accettazione:** nessuna allocazione né I/O in capture e restore (staging statico); save_state e load_state producono gli stessi file di prima; il ripristino esegue le stesse pulizie di load_state; con rewind_backup_ro spento il salvataggio si comporta come oggi; su PSP l'hash dello stato guest prima della cattura è uguale a quello dopo il ripristino, salvataggio escluso perché resta fuori dallo snapshot.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-1.3 — Cattura a fine frame nel margine misurato · M, 3 gg · dipende da: GIO-1.2, F-025, F-027 · PSP: sì
+
+- **Cosa:** In update_gba, al passaggio vcount>227 e prima di synchronize (main.c:1135-1150), rewind_frame_end() cattura quando sono passati almeno N frame (default 6) e il tempo già speso nel frame più il costo stimato resta nel budget del frame; il costo stimato è la media mobile delle catture, misurata con i timer di F-025. Dopo max_span frame la cattura è forzata. Non cattura in link, nel menu o durante un riavvolgimento; con il fast-forward la cadenza si moltiplica per la velocità. La decisione è una funzione pura, rewind_capture_due in rewind_ring.c. L'anello si alloca fuori dal ciclo caldo, al caricamento della ROM o al cambio d'opzione, con la taglia data dalla misura di F-027 (Auto o una delle tre taglie fisse).
+- **File:** `source/src/main.c` (rewind_frame_end in update_gba; allocazione e rilascio dell'anello al caricamento ROM e al cambio opzione), `source/src/rewind_ring.c`, `source/src/rewind_ring.h`, `tests/test_rewind_ring.c`, `scripts/check-performance.sh`
+- **Test:** tests/test_rewind_ring.c: rewind_capture_due con link, menu, riavvolgimento in corso, FF 2x/3x/max, margine insufficiente e max_span raggiunto; scripts/check-performance.sh: nessuna malloc, free o I/O aggiunta in update_gba; hardware: 10 minuti per gioco con i contatori di snapshot presi, rimandati e forzati (perf report di GIO-1.5).
+- **Accettazione:** con rewind spento update_gba aggiunge solo un ramo non preso; compare-benchmarks 3+3 senza regressioni; con rewind acceso nessun frame perso per colpa del rewind nei giochi leggeri; dopo il caricamento restano almeno 2 MiB liberi.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-1.4 — Comando Riavvolgi, indicatore e opzioni in cinque lingue · L, 5 gg · dipende da: GIO-1.3, F-045, LNK-3.2 · PSP: sì
+
+- **Cosa:** Nuova azione BUTTON_ID_REWIND dopo BUTTON_ID_NONE (input.h:46-68), con l'id d'azione assegnato in ordine di merge: NONE resta 19 e nessuna mappa salvata cambia significato. Il limite delle azioni del ConfigModel (oggi 0-19, config_model.c:200) sale di uno nel bump di ConfigModel della release, con le versioni precedenti, v1 e v2 comprese, ancora leggibili e due opzioni nuove, Riavvolgimento (sì/no) e Durata (Auto o uno di tre valori fissi). La lista dei nomi delle azioni (gui.c:312-321) riceve la voce nuova. Tenuta premuta, l'azione ferma il fast-forward e accende rewind_backup_ro; a ogni tick fa un passo indietro, ripristina lo snapshot ed esegue un frame con l'audio muto per mostrarlo. Al rilascio ripristina il record ammesso più vicino a quello mostrato (rewind_land_pick), spegne la protezione e riprende; il .sav resta l'ultimo scritto dal gioco. Durante il riavvolgimento un indicatore di F-045 mostra di quanti secondi si è tornati indietro e quanta cronologia resta. In link il comando è rifiutato con il motivo di LNK-3.2.
+- **File:** `source/src/input.h`, `source/src/input.c` (update_input), `source/src/main.c` (rewind_step_back, rewind_resume), `source/src/config_model.c`, `source/src/config_model.h`, `tests/test_config_model.c`, `source/src/gui.c` (nome dell'azione e righe nel menu opzioni, nessuna categoria nuova), `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `CHANGELOG.md`
+- **Test:** tests/test_config_model.c: i file delle versioni precedenti, v1 e v2 comprese, migrano alla versione del bump, i valori fuori range tornano al default, una mappa con 19 resta NONE e una con l'id assegnato a REWIND resta REWIND; scripts/check-messages.sh e scripts/check-menu-layout.sh; hardware: 20 riavvolgimenti di fila in Emerald, Minish Cap e Mario Kart Super Circuit su PSP-1000 e PSP-3000; hardware: in Fire Emblem, che riscrive il salvataggio di continuo, 10 rilasci tra 5 e 20 s indietro: in almeno 9 il gioco riprende almeno 5 s prima del punto d'inizio; hardware: in Emerald salvare, riavvolgere oltre il salvataggio e riprendere; al riavvio il gioco carica il salvataggio più recente senza errori.
+- **Accettazione:** tenendo premuto si torna indietro di almeno un record ogni 2 vblank; al rilascio il gioco riparte da un record ammesso; durante la pressione nessun byte del salvataggio cambia; rifiuto in link con messaggio localizzato; il fast-forward si ferma e non riparte da solo.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-1.5 — Misure sul campo e soglia d'uscita · M, 2 gg · dipende da: GIO-1.4, F-024, ENG-3.1, ENG-3.3, ENG-1.6 · PSP: sì
+
+- **Cosa:** Il perf report riceve i campi del rewind: snapshot presi, rimandati e forzati; ms medio, p99 e massimo di cattura e ripristino; secondi di cronologia; byte medi per record. I campi entrano nel bump del perf report della 2.0, fatto dalla prima storia della 2.0 che cambia il formato (principio 6, regola R3), dopo la versione 7 che ENG-1.6 porta nella 1.5 (PERF_REPORT_VERSION, source/src/perf_report.h:26), e scripts/compare-benchmarks.py, che legge il report, si aggiorna insieme al suo test. Il banco del gate gira su PSP-1000 e PSP-2000/3000 e i numeri finiscono nel registro dei risultati hardware. Si scrive la decisione su GIO-1.6 e sull'attivazione di default per modello; README e CHANGELOG si aggiornano.
+- **File:** `source/src/perf_report.c`, `source/src/perf_report.h`, `source/src/perf_metrics.c`, `source/src/perf_metrics.h`, `tests/test_perf_report.c`, `scripts/compare-benchmarks.py`, `tests/test_compare_benchmarks.py`, `docs/HARDWARE-RESULTS.md` (righe nuove, colonne di ENG-1.1), `README.md`, `CHANGELOG.md`
+- **Test:** tests/test_perf_report.c: campi nuovi e versione del bump della 2.0; tests/test_compare_benchmarks.py: i campi nuovi si confrontano e un report della versione precedente, senza i campi del rewind, si confronta ancora sui campi comuni, come nel bump di ENG-1.6; hardware: per ogni gioco 3 run baseline e 3 candidate con scripts/compare-benchmarks.py; hardware: nei 5 giochi del gate, su ogni modello, hash dello stato guest prima della cattura e dopo il ripristino (ENG-3.1, presi con il metodo di ENG-3.3).
+- **Accettazione:** numeri del gate di GIO-1 pubblicati per modello; rewind acceso di default solo sui modelli che passano il gate; su ogni modello l'hash dello stato guest prima della cattura è uguale a quello dopo il ripristino, salvataggio escluso; prima uscita come prerelease finché le righe hardware non sono verdi (F-119).
+
+#### GIO-1.6 — Mappa delle pagine scritte di EWRAM e VRAM (condizionata: solo se GIO-1.5 fallisce il gate) · L, 6 gg · dipende da: GIO-1.5, F-120, F-124 · PSP: sì
+
+- **Cosa:** Parte solo se GIO-1.5 mostra che il confronto completo sfora il gate sul PSP-1000. Una mappa di pagine da 1 KiB per EWRAM e VRAM viene marcata da ogni scrittore (stub di store in mips_stub.S, eventuali percorsi diretti emessi da mips_emit.h, DMA, write_memory*, trucchi) e azzerata solo dal rewind. Il dynarec emette le marcature solo a rewind acceso; al cambio dell'opzione si svuota la cache di traduzione, come già fa load_cheats (cheats.c:580-583), così l'attivazione resta a caldo. Lo snapshot rilegge solo le pagine marcate; IWRAM, OAM, palette e I/O sempre per intero.
+- **File:** `source/src/mips_stub.S`, `source/src/mips_emit.h`, `source/src/cpu.c`, `source/src/memory.c` (DMA e write_memory*), `source/src/cheats.c`, `source/src/rewind_ring.c`, `tests/test_rewind_ring.c`
+- **Test:** modalità verify in build diagnostica: dopo ogni snapshot un confronto completo trova 0 parole nascoste in 10 minuti per 5 giochi; mutanti (store byte che non marca, DMA che non marca) trovati da verify; oracolo F-120 invariato con rewind spento; test dell'emitter F-124: con rewind spento il codice emesso è identico; compare-benchmarks 3+3 con rewind spento e acceso.
+- **Accettazione:** con rewind spento nessuna istruzione in più negli stub; con rewind acceso il costo dello snapshot sta nel gate sul PSP-1000; nessuna regressione dell'oracolo.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-1.7 — Eventi di sessione: stato caricato, reset, link, sleep, uscita · M, 2,5 gg · dipende da: GIO-1.4, SAV-7.5, ENG-1.6, F-029 solo se l'anello sta nella partizione volatile · PSP: sì
+
+- **Cosa:** Caricare uno stato, fare reset, cambiare ROM o aprire una sessione link azzera l'anello. Lo sleep conserva la cronologia se l'anello è in heap; se è nella partizione volatile (F-029) la azzera prima di cedere la memoria e al risveglio compare un toast localizzato. Uscita o sleep durante una pressione: al primo punto sicuro il thread di emulazione ripristina il record ammesso più vicino al frame mostrato, spegne la protezione del salvataggio e solo dopo si ferma. Il callback di alimentazione segnala e ritorna senza aspettare il rewind. Se la memoria volatile viene ceduta senza che il ciclo si sia fermato, l'anello si scarta; se il record mostrato non era ammesso il gioco viene resettato con un messaggio. Ogni caso scrive un evento nuovo in fondo all'enum del runtime log: per la regola R1 (principio 6) RUNTIME_LOG_VERSION non cambia, e decoder e test si aggiornano insieme.
+- **File:** `source/src/main.c`, `source/src/power_lifecycle.c`, `source/src/power_lifecycle.h`, `tests/test_power_lifecycle.c`, `source/src/runtime_log.c`, `source/src/runtime_log.h`, `tools/decode_runtime_log.py`, `tests/test_runtime_log.c`, `tests/test_decode_runtime_log.py`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`
+- **Test:** tests/test_power_lifecycle.c: sequenze di eventi con anello conservato o azzerato secondo la tabella; test del nuovo evento nel runtime log e nel decoder, su log v5 e v6; scripts/check-messages.sh; hardware: 20 sleep a metà riavvolgimento su PSP-1000 (partizione volatile, se l'anello ci sta) e PSP-3000 (heap), più 10 uscite durante la pressione.
+- **Accettazione:** nessun crash né stato corrotto dopo uno sleep durante un riavvolgimento; su PSP-2000/3000 la cronologia c'è ancora dopo lo sleep; dopo un'uscita durante la pressione il .sav è quello scritto dal gioco e il gioco riprende da un record ammesso. Con l'anello in heap (PSP-3000): 0 reset del gioco in quei 20 sleep e 10 uscite, anche senza SAV-8.2. Con l'anello nella partizione volatile (PSP-1000): 0 reset con SAV-8.2 attivo; senza SAV-8.2 il reset con messaggio resta l'unico ripiego, contato nel runtime log e pubblicato nei risultati hardware. Un'anomalia di ripristino su un record ammesso non resetta mai il gioco.
+
+### GIO-2 — Riavvolgimento, passo 2: retromarcia fluida con audio invertito
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 16,5 gg | GIO-1, F-120, F-024, CMP-7.3, F-027, ENG-1.6 (solo GIO-2.5) |
+
+**Copre:** F-083 riavvolgimento (passo 2, retromarcia fluida)
+
+**Obiettivo:** Se il gate scatta: retromarcia a 60 immagini al secondo nei giochi leggeri su PSP-2000/3000, con audio invertito senza underrun; ogni riesecuzione mostrata confrontata con gli hash per frame (F-120): 0 divergenze non rilevate nel fuzz a tocchi, e a una divergenza ritorno ai passi di GIO-1, senza reset; al rilascio il gioco riparte dal frame mostrato con lo stesso hash della corsa originale; mai meno di 2 MiB liberi dopo il caricamento, con la politica per modello scritta nella riga d'aiuto nelle 5 lingue.
+
+**Da noi oggi:** In release non c'è un log di input: input_trace esiste solo con DIAGNOSTIC_INPUT_TRACE (source/Makefile:46-50, 75-77). update_gba mescola il passo dell'ospite e la presentazione (source/src/main.c:990-1150). L'oracolo con hash per frame (F-120) non esiste ancora.
+
+**Come ci arriviamo:**
+
+- Per mostrare ogni frame all'indietro si rieseguono tratti dal log di input, che devono dare esattamente gli stessi frame. Senza un oracolo che lo dimostri, ogni divergenza del dynarec dopo un ripristino (confini dei blocchi diversi dopo il flush, consegna degli IRQ) diventa un glitch visibile o uno stato sbagliato: per questo il passo 2 è legato all'oracolo F-120.
+- Ogni riesecuzione mostrata si confronta con gli hash per frame registrati (F-120): a una divergenza quel tratto torna ai passi di GIO-1, senza reset, e il runtime log riceve un evento.
+- La divisione di update_gba in passo dell'ospite più hook di frame serve anche al Media Engine (PRF-13, PRF-14) e al link a due core (LNK-12), non solo al rewind.
+- Politica di memoria per modello dalla misura di F-027: dove immagini e audio non stanno resta il passo 1 e la riga d'aiuto lo dice.
+- Nessuna build separata e testi in cinque lingue.
+
+**Gate prima di iniziare:** Oracolo F-120: su tracce da 2 minuti in 5 giochi, un riavvolgimento seguito da una rigiocata dà gli stessi hash per frame di una corsa diretta. Determinismo tra modelli: la stessa traccia dall'accensione dà gli stessi hash per 10 minuti su PSP-1000, 2000 e 3000, prima delle riesecuzioni fluide. GIO-1 in release da almeno un ciclo senza bug di stato aperti.
+
+**Rischi:**
+
+- Determinismo del dynarec dopo un ripristino: cache RAM svuotata, confini di blocco diversi, latenza IRQ.
+- Costo: nei titoli pesanti rieseguire 6 frame ogni 6 frame mostrati satura la CPU e l'immagine procede a scatti.
+- Memoria: le catture dei due tratti, 12 frame da 75 KiB più l'audio, circa 0,9 MiB oltre all'anello.
+- Il refactor di update_gba tocca il ciclo caldo: va misurato con compare-benchmarks.
+
+#### GIO-2.1 — Log per frame di input, contesto e letture del salvataggio · M, 2,5 gg · dipende da: GIO-1.4, ENG-3.2 · PSP: no
+
+- **Cosa:** Nessun formato nuovo: il log è il record per frame della traccia v2 di ENG-3.2 (input_trace, con lo stato iniziale compagno), che riceve i campi che servono al rewind. Accanto ai tasti GBA (u16) entrano i valori tilt quando il sensore è attivo, il secondo RTC fissato per quel frame (CMP-7.3) e la generazione della lista trucchi. Il formato riceve anche il registro dei byte del salvataggio letti dal gioco al primo passaggio, con la posizione salvata in ogni snapshot, così una riesecuzione legge gli stessi byte anche se il salvataggio è cambiato dopo. Le tracce scritte prima restano leggibili. Il rewind tiene questi record in un anello in memoria indicizzato per numero di frame. Si registra in update_input e nei lettori del salvataggio; le letture fuori finestra sono rifiutate.
+- **File:** `source/src/input_trace.c`, `source/src/input_trace.h` (campi nuovi del record per frame e registro delle letture), `tests/test_input_trace.c`, `source/src/input.c`, `source/src/memory.c` (registrazione delle letture del salvataggio, senza allocazioni), `source/Makefile` (il formato della traccia anche nelle build release)
+- **Test:** tests/test_input_trace.c: andata e ritorno dei campi nuovi, tracce scritte prima ancora lette; scrittura e lettura dell'anello su avvolgimento, frame fuori finestra rifiutati, un cambio di generazione dei trucchi rende il tratto non rieseguibile; registro delle letture: una riesecuzione dalla posizione dello snapshot ridà gli stessi byte; a registro pieno la cronologia si chiude invece di dare byte sbagliati; versione ASan/UBSan.
+- **Accettazione:** un solo formato per frame, quello della traccia di ENG-3.2, senza un terzo formato accanto a input_trace; pochi byte per frame, nessuna allocazione; test verdi.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-2.2 — update_gba diviso in passo dell'ospite e hook di frame · L, 4 gg · dipende da: F-120, F-024 · PSP: sì
+
+- **Cosa:** Separare in update_gba il lavoro dell'ospite dal lavoro di frontend a fine frame (presentazione, synchronize, audio, indicatori), così un frame si può rieseguire senza presentarlo, catturandone l'immagine e i campioni in buffer preallocati. In gioco normale nulla cambia.
+- **File:** `source/src/main.c`, `source/src/psp_video.c` (cattura dell'immagine in buffer preallocato), `source/src/sound.c` (cattura dei campioni in buffer preallocato)
+- **Test:** oracolo F-120: hash per frame identici prima e dopo il refactor su tutte le tracce; compare-benchmarks 3+3 per modello senza regressioni; scripts/check-performance.sh: nessuna allocazione né I/O nei file caldi.
+- **Accettazione:** hash identici; nessuna regressione misurata; il renderer si sceglie ancora una volta per frame.
+
+#### GIO-2.3 — Riesecuzione dei tratti e presentazione all'indietro · L, 5 gg · dipende da: GIO-2.1, GIO-2.2, CMP-7.3 · PSP: sì
+
+- **Cosa:** Mentre il tasto è tenuto si mostrano in ordine inverso, alla cadenza del display, i frame catturati del tratto corrente. In background si ripristina lo snapshot precedente e si riesegue il tratto con il log: RTC fissato via CMP-7.3, salvataggio protetto (rewind_backup_ro) con le letture servite dal registro di GIO-2.1, nessun file scritto. Ogni tick ha un budget. Al rilascio la macchina torna in avanti fino al frame mostrato, o al frame ammesso più vicino secondo la regola di GIO-1.1; se il tratto non è pronto l'immagine resta ferma.
+- **File:** `source/src/main.c`, `source/src/rewind_ring.c`, `source/src/rewind_ring.h` (API dei tratti), `source/src/input_trace.c`, `source/src/memory.c` (RTC fissato e letture del salvataggio dal registro durante la riesecuzione)
+- **Test:** test host della macchina a stati del tick come funzione pura: tenuto, rilasciato, premuto di nuovo, limite della cronologia; hardware: 5 giochi per 50 tocchi rapidi del tasto senza stati divergenti (hash F-120).
+- **Accettazione:** nei giochi leggeri la retromarcia scorre a 60 immagini al secondo su PSP-2000/3000; al rilascio il gioco riparte esattamente dal frame mostrato o da quello ammesso più vicino (stesso hash della corsa originale); nessuna scrittura del salvataggio durante le riesecuzioni.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-2.4 — Audio invertito · S, 1,5 gg · dipende da: GIO-2.3 · PSP: sì
+
+- **Cosa:** Durante la retromarcia i campioni catturati di ogni frame suonano all'indietro, con una breve dissolvenza ai bordi contro i click. Alla ripresa il buffer si svuota, come già in load_state.
+- **File:** `source/src/sound.c`, `source/src/sound_math.c`, `source/src/sound_math.h`, `tests/test_sound_math.c`
+- **Test:** tests/test_sound_math.c: inversione e dissolvenza su buffer noti; hardware: ascolto su PSP-1000 e 3000, nessun underrun nel perf report.
+- **Accettazione:** nessun underrun registrato; test host verdi.
+
+#### GIO-2.5 — Verifica delle riesecuzioni con gli hash per frame · M, 2,5 gg · dipende da: GIO-2.3, F-120, ENG-1.6 · PSP: sì
+
+- **Cosa:** Durante il gioco normale il log registra l'hash di stato di F-120, a ogni snapshot o a ogni frame se il costo lo permette, e ogni riesecuzione lo confronta. A una divergenza la retromarcia fluida si ferma per quel tratto, si torna ai passi di GIO-1 e si scrive un evento nuovo in fondo all'enum del runtime log: per la regola R1 (principio 6) RUNTIME_LOG_VERSION non cambia, e decoder e test si aggiornano insieme.
+- **File:** `source/src/input_trace.c`, `source/src/main.c`, `source/src/runtime_log.c`, `source/src/runtime_log.h`, `tools/decode_runtime_log.py`, `tests/test_runtime_log.c`, `tests/test_decode_runtime_log.py`
+- **Test:** mutante: un registro perturbato in riesecuzione (la perturbazione di F-120) viene rilevato; test del decoder per il nuovo evento, su log v5 e v6.
+- **Accettazione:** 0 divergenze non rilevate nel fuzz a tocchi; evento decodificato correttamente.
+
+#### GIO-2.6 — Politica di memoria per modello · S, 1 gg · dipende da: GIO-2.3, F-027 · PSP: sì
+
+- **Cosa:** La retromarcia fluida si accende solo se, dopo anello e ROM, la misura di F-027 trova un margine di 2 MiB più lo spazio per le catture. Altrimenti si resta al passo 1 e la riga d'aiuto dell'opzione lo dice.
+- **File:** `source/src/main.c`, `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`
+- **Test:** test host della funzione di decisione (memoria libera, modalità scelta); scripts/check-messages.sh; hardware: PSP-1000 con una ROM da 32 MiB.
+- **Accettazione:** mai meno di 2 MiB liberi dopo il caricamento; testo d'aiuto in cinque lingue.
+
+### GIO-3 — Motore dei trucchi a prova di input ostile
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 | 12 gg | CMP-1.1, LNK-3.2, ENG-1.6 (solo GIO-3.3) |
+
+**Copre:** F-086 motore dei trucchi limitato
+
+**Obiettivo:** Motore completo (CodeBreaker cifrato con hook, GS/PAR v1-v3, patch ROM, puntatori, I/O) senza accessi fuori limite: fuzz deterministico da 100.000 mutazioni in `make check` sotto ASan/UBSan senza errori; budget statico all'attivazione con il motivo mostrato, più una guardia a runtime contata nel runtime log; una lista al budget massimo costa al più 1 ms per frame su PSP-1000; patch ROM in una tabella limitata che si annulla spegnendo il trucco e vale anche con le ROM paginate; circa 600 KiB di `.bss` restituiti al PSP-1000; esiti nelle 5 lingue.
+
+**Da noi oggi:** Le scritture passano dalle write_memory8/16/32 complete (source/src/cheats.c:59-82, 600-647), che arrivano anche a backup, flash, EEPROM e RTC. Il tipo 3 GS1 legge address&0xFFFF coppie senza confronto con num_cheat_lines (cheats.c:620-638): oltre la voce legge memoria dell'host e usa quei valori come indirizzi. La patch ROM GS1 0x6 scrive in gamepak_rom all'offset (address*2)-0x08000000 senza confronto con gamepak_size, non si annulla spegnendo il trucco ed è ignorata con le ROM paginate (cheats.c:640-647). I riempimenti GS3 arrivano a 2^24 scritture (cheats.c:708-734) e gli slide CodeBreaker a 65535 (source/src/codebreaker.c:219-238): senza tetto possono bloccare il frame. Il parser sta dentro cheats.c e non si testa sull'host: solo codebreaker.c ha tests/test_codebreaker.c. 640 voci da 1064 byte fanno circa 665 KiB di .bss (source/src/cheats.h:23-26, 38-45). I messaggi d'esito sono in inglese e italiano scritti nel codice (source/src/gui.c:4379-4440) e i trucchi restano attivi in link (source/src/main.c:1143).
+
+**Come ci arriviamo:**
+
+- Teniamo tutto il motore (CodeBreaker cifrato con hook temporizzati, GS/PAR v1-v3, patch ROM, puntatori, I/O) e lo rendiamo sicuro: è poco lavoro e chiude i due difetti di memoria verificati.
+- Patch ROM in una tabella limitata che conserva i valori originali: spento il trucco la ROM torna com'era, e la patch vale anche con le ROM paginate, oggi ignorate (cheats.c:642).
+- Budget su due livelli: statico all'attivazione con il motivo mostrato, più una guardia a runtime con contatore nel runtime log come difesa in profondità.
+- Parser testabile sull'host con fuzz deterministico da 100.000 mutazioni in make check sotto ASan/UBSan, oltre ai vettori fissi sui limiti.
+- Pool condiviso per 640 voci: circa 600 KiB di .bss restituiti al PSP-1000, utili all'anello del rewind.
+- Esiti in cinque lingue al posto delle stringhe EN/IT scritte nel codice.
+
+**Gate prima di iniziare:** Per iniziare: features/builtin-open-bios unito in develop (CMP-1.1), perché tocca gui.c e i message_*.h, e LNK-3.2 chiusa: la pausa dei trucchi durante il link, prima in GIO-3.4, sta ora in LNK-3.1. Per chiudere: test host e ASan/UBSan verdi; fuzz da 100.000 mutazioni senza errori; gli esempi di README.md (sezione Cheats) e di docs/legacy/cheats format.txt caricano come prima; ogni rifiuto finisce nel runtime log; una lista al budget massimo costa al più 1 ms per frame sul PSP-1000.
+
+**Rischi:**
+
+- Limiti più stretti possono rifiutare codici su cui i giocatori contano: ogni rifiuto va registrato e i tetti vanno tarati su liste reali (il pack di GIO-6).
+- Il filtro per regione potrebbe rompere codici legittimi che scrivono I/O (GS3 C6/C7): restano permessi tramite write_memory; si escludono solo backup, GPIO/RTC e BIOS.
+- La tabella delle patch ROM tocca il caricamento delle pagine in memory.c: va misurato che i page miss non rallentino.
+- Le scritture dei trucchi passano da write_memory*, più lento di un accesso diretto alla RAM: il budget va misurato sul PSP-1000.
+
+**Storie tolte in revisione:** GIO-3.4, fusa in LNK-3.1.
+
+#### GIO-3.1 — Parser estratto nel modulo puro cheat_file · M, 3 gg · dipende da: — · PSP: no
+
+- **Cosa:** Il parsing (parse_cheats_file, parse_cheat_variant, decrypt_gsa_code, decifratura CodeBreaker tramite codebreaker.c) passa in source/src/cheat_file.c/.h, senza header dell'emulatore. L'API lavora a righe (feed_line), così il file non deve stare tutto in memoria, e produce una tabella di voci con variante, nome, coppie decodificate ed errore per voce. cheats.c resta la colla e l'esecutore e chiama il modulo nuovo. Per i file validi il comportamento non cambia.
+- **File:** `source/src/cheat_file.c` (nuovo), `source/src/cheat_file.h` (nuovo), `source/src/cheats.c`, `source/Makefile` (MAINOBJS), `tests/test_cheat_file.c` (nuovo), `Makefile` (regola normale e ASan/UBSan)
+- **Test:** tests/test_cheat_file.c: gli esempi di README.md e di docs/legacy/cheats format.txt danno le stesse coppie di oggi (vettori fissati prima del refactor); righe troncate, CRLF, intestazioni ignote, voci vuote e CodeBreaker con seme di tipo 9 danno gli stessi risultati e le stesse righe d'errore di oggi; versione ASan/UBSan.
+- **Accettazione:** make check verde e cheats.c senza più fgets o sscanf; stessi messaggi d'errore e numeri di riga di oggi.
+- **Licenza:** Codice esistente nostro e di gpSP Kai/takka (GPL-2.0-or-later), spostato con le sue intestazioni; il file nuovo porta l'intestazione GBA Rush PSP.
+
+#### GIO-3.2 — Limiti al parsing e budget statico per voce · M, 2 gg · dipende da: GIO-3.1 · PSP: sì
+
+- **Cosa:** Nel parser il conteggio del tipo 3 GS1 non può superare le righe rimanenti della voce; riempimenti GS3 0x0/0x2 e slide CodeBreaker hanno un tetto di scritture per voce, fissato dal costo per scrittura misurato sul PSP-1000 e poi tarato sulle liste del pack di GIO-6. Ogni voce ha un conteggio statico degli accessi nel caso peggiore. All'attivazione la somma delle voci accese si confronta con un budget per frame in accessi, ricavato dalla stessa misura, fatta nel test hardware di questa storia (GIO-3.2), perché una lista al budget costi al più 1 ms per frame sul PSP-1000 come chiede GIO-3; oltre il budget la voce riceve il motivo 'troppo lavoro per frame'. Una voce si rifiuta per intero, mai solo un prefisso.
+- **File:** `source/src/cheat_file.c`, `source/src/cheat_file.h`, `source/src/cheats.c` (somma del budget in rebuild_active_cheat_indexes), `tests/test_cheat_file.c`, `tests/test_codebreaker.c`, `CHANGELOG.md`
+- **Test:** tipo 3 con conteggio 0xFFFF su una voce corta: rifiutato con motivo; riempimento a 8 bit con 0xFFFFFF iterazioni: rifiutato; slide oltre il tetto rifiutato, slide al tetto accettato; molte voci valide una per una ma oltre il budget: l'ultima viene rifiutata all'attivazione; tests/test_codebreaker.c esteso con lo slide al tetto; hardware: lista sintetica al budget massimo, ms per frame dal perf report sul PSP-1000.
+- **Accettazione:** nessuna voce supera il tetto a runtime; nessun cambiamento per le voci entro i limiti; ogni rifiuto ha un codice d'errore; una lista al budget massimo costa al più 1 ms per frame sul PSP-1000 (misurato).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-3.3 — Accessori riservati ai trucchi e tabella delle patch ROM · M, 3 gg · dipende da: GIO-3.2, ENG-1.6 · PSP: sì
+
+- **Cosa:** In cheats.c, codebreaker_memory_* e le scritture GS passano da cheat_write8/16/32, che rifiutano backup (0x0D/0x0E), GPIO/RTC (0x080000C4-0x080000C9) e BIOS e lasciano EWRAM, IWRAM, VRAM, OAM, palette e I/O a write_memory*, che gestisce già lo SMC. Le patch ROM (GS1 0x6) entrano in una tabella limitata (per esempio 256 voci) solo con offset minore di gamepak_size. La tabella conserva il valore originale, applica la patch anche alle pagine caricate dopo (load_gamepak_page) e la annulla quando il trucco si spegne; quando l'insieme delle patch cambia si svuota la cache di traduzione ROM, come già fa load_cheats (cheats.c:580-583). La guardia a runtime sul budget tiene un contatore nel runtime log, scritto come evento nuovo in fondo all'enum: per la regola R1 (principio 6) RUNTIME_LOG_VERSION non cambia, e decoder e test si aggiornano insieme. Se il contatore servisse anche nel perf report, il campo entra nel bump del perf report della 1.6, fatto dalla prima storia della 1.6 che cambia il formato.
+- **File:** `source/src/cheats.c`, `source/src/cheat_file.c` (filtro di regione come funzione pura), `source/src/memory.c` (applicazione delle patch al caricamento delle pagine), `source/src/runtime_log.c`, `source/src/runtime_log.h`, `tools/decode_runtime_log.py`, `tests/test_runtime_log.c`, `tests/test_decode_runtime_log.py`, `CHANGELOG.md`
+- **Test:** tests/test_cheat_file.c: filtro di regione (indirizzo permesso o rifiutato); test che compila memory.c come tests/test_perf_dma_probe.c: patch fuori dal buffer rifiutata sotto ASan, patch annullata con ripristino dei byte originali; tests/test_decode_runtime_log.py: il nuovo evento si decodifica su log v5 e v6; hardware: patch ROM accesa e spenta su una ROM residente (PSP-3000) e su una paginata (PSP-1000).
+- **Accettazione:** nessuna scrittura host fuori da gamepak_rom; spegnere un trucco di patch ROM ripristina la ROM; un trucco che scrive in 0x0E000000 viene rifiutato con il codice di motivo 'tocca il salvataggio'.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-3.5 — Esiti dei trucchi localizzati · S, 1 gg · dipende da: GIO-3.2, GIO-3.3 · PSP: no
+
+- **Cosa:** Le stringhe inglesi e italiane scritte in menu_load_cheat_file (gui.c:4379-4440) diventano voci MSG nei cinque message_*.h, insieme a quelle nuove per i rifiuti per voce di GIO-3.2 e GIO-3.3.
+- **File:** `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`
+- **Test:** scripts/check-messages.sh; controllo grep (in scripts/check-tree.sh o in un test) che in gui.c non restino 'trucchi caricati' o 'cheats loaded'.
+- **Accettazione:** nessuna stringa per l'utente scritta nel codice del caricatore; cinque lingue nello stesso ordine.
+
+#### GIO-3.6 — Pool di codici condiviso · M, 2 gg · dipende da: GIO-3.1 · PSP: no
+
+- **Cosa:** In CHEAT_TYPE (cheats.h:38-45) cheat_codes[256] per voce lascia il posto a indice e lunghezza in un pool unico. Il pool si alloca al caricamento della lista, fuori dal ciclo caldo, con un tetto (per esempio 256 KiB); il tetto per voce e MAX_CHEATS restano invariati. Si misurano la .bss prima e dopo e, con F-027, l'heap libero.
+- **File:** `source/src/cheats.h`, `source/src/cheats.c`, `source/src/cheat_file.c`, `source/src/gui.c` (se legge cheat_codes)
+- **Test:** tests/test_cheat_file.c: un file oltre il pool viene rifiutato per voce con motivo di capacità; confronto della .bss (psp-size o mappa del linker) riportato nella PR.
+- **Accettazione:** .bss dei trucchi da circa 665 KiB a meno di 64 KiB; un'allocazione fallita del pool dà un errore leggibile e non blocca il gioco; nessuna regressione nei test.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-3.7 — Fuzz deterministico del parser in make check · S, 1 gg · dipende da: GIO-3.2 · PSP: no
+
+- **Cosa:** Un test genera 100.000 mutazioni deterministiche (seme fisso) da un corpus sintetico (formato nativo, e RetroArch dopo GIO-4.3) e le passa a cheat_file sotto ASan/UBSan, controllando gli invarianti: nessuna voce oltre i limiti e budget statico coerente.
+- **File:** `tests/test_cheat_file_fuzz.c` (nuovo), `tests/cheat_corpus/` (file .txt sintetici, non .cht), `Makefile`
+- **Test:** la regola test-sanitize esegue il fuzz; un mutante senza il controllo del tipo 3 fa fallire il test.
+- **Accettazione:** fuzz verde in meno di 30 s sull'host; nessun file .cht nel repository (scripts/check-tree.sh:50).
+- **Licenza:** codice nuovo GPL-2.0-or-later; il corpus è sintetico e nessuna lista di terzi entra nel repository.
+
+### GIO-4 — Trucchi per gioco: caricamento automatico, scelte ricordate, import RetroArch
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 | 8 gg | GIO-3.1, GIO-3.2, F-003 |
+
+**Copre:** F-084 trucchi per gioco caricati da soli con scelte ricordate, F-085 import dei file RetroArch .cht
+
+**Obiettivo:** La lista del gioco si carica da sola per nome del file o per identità del gioco (codice e CRC, indice di GIO-6); le scelte sopravvivono a riavvio e cambio di gioco con una lista di 200 voci su PSP-1000 e PSP-3000, scritte con lo store transazionale; import dei `.cht` di RetroArch con i codici GS/AR e CodeBreaker cifrati accesi (solo i casi ambigui chiedono una riga `#type`); fino a 640 voci per file, errori per voce e «N di M» oltre il limite invece del rifiuto del file.
+
+**Da noi oggi:** La lista si sceglie a mano dal browser dei file (source/src/gui.c:4351-4370) e si svuota a ogni caricamento della ROM (source/src/memory.c:3689-3690); le scelte non vengono ricordate. Esiste solo il nostro formato con intestazione (source/src/cheats.c:340-528; README.md, sezione Cheats). Un solo errore fa fallire l'intero file (cheats.c:363-367, 397-402, 513-518) e oltre 640 voci il file viene rifiutato per intero (cheats.c:397-402).
+
+**Come ci arriviamo:**
+
+- Tutto si costruisce sopra il parser puro di GIO-3 (GIO-3.1 e GIO-3.2), con poco lavoro.
+- I codici RetroArch GS/AR e CodeBreaker cifrati si accendono e girano: gli 8+4 cifre diventano CodeBreaker, anche cifrato, che il nostro motore decodifica; per gli 8+8 si provano le chiavi GS v1 e v3 e le varianti dirette con un controllo di plausibilità, e solo i casi ambigui chiedono una riga `#type` davanti ai codici della voce.
+- Caricamento anche per identità del gioco (codice a 4 lettere più CRC, tramite l'indice del pack di GIO-6), oltre che per nome del file.
+- File letti a righe fino a 640 voci; oltre il limite 'N di M' invece di un rifiuto.
+- Errori per voce invece del rifiuto dell'intero file che fa oggi il nostro parser.
+- Scelte scritte con lo store transazionale di F-003, solo quando la pagina si chiude con modifiche, e con una riga di versione nel file .sel.
+- Al ripristino delle scelte si riapplica la regola 'un solo hook CodeBreaker attivo', esattamente come nel menu.
+
+**Gate prima di iniziare:** Per iniziare: GIO-3.1 e GIO-3.2 chiusi e l'helper di scrittura transazionale di F-003 disponibile. Per chiudere: test host verdi; su PSP-1000 e PSP-3000 una lista di 200 voci si carica da sola e le scelte sopravvivono al riavvio e al cambio di gioco.
+
+**Rischi:**
+
+- Classificazione GS v1/v3 sbagliata sui codici nudi: la mitigano la riga `#type`, il motivo 'ambiguo' e le statistiche del pack.
+- Nomi dei file ROM diversi dai nomi No-Intro: li copre l'indice per codice gioco (GIO-6).
+- Il caricamento automatico allunga l'avvio: va misurato il parse di 200 voci sul PSP-1000.
+
+#### GIO-4.1 — Caricamento automatico della lista del gioco · S, 1,5 gg · dipende da: GIO-3.1 · PSP: sì
+
+- **Cosa:** A fine load_gamepak, clear_cheats() (memory.c:3689-3690) diventa cheats_rom_loaded() in cheats.c. La funzione svuota la lista e cerca <dir_cheat>/<nome della ROM senza estensione>.cht, poi .txt, infine il file indicato dall'indice per codice gioco più CRC, se esiste (GIO-6). Carica con tutte le voci spente e, se non trova un file, non mostra messaggi. Il caricamento manuale dal menu resta.
+- **File:** `source/src/memory.c` (una riga e il commento), `source/src/cheats.c` (cheats_rom_loaded e ricerca dei file), `source/src/cheat_file.c` (nome atteso a partire dalla ROM, funzione pura), `tests/test_cheat_file.c`, `CHANGELOG.md`
+- **Test:** tests/test_cheat_file.c: nome atteso per .zip, .gba e .gbz, percorsi con sottocartelle, nomi con più punti; hardware: ROM con e senza lista, ROM in zip, ROM in sottocartella.
+- **Accettazione:** la lista si carica a ogni avvio del gioco senza passare dal menu; nessun I/O in più nel ciclo caldo, solo al caricamento della ROM; tempo di caricamento di 200 voci sul PSP-1000 misurato e riportato.
+
+#### GIO-4.2 — Scelte ricordate per hash del codice · M, 2 gg · dipende da: GIO-4.1, F-003 · PSP: sì
+
+- **Cosa:** Il modulo puro cheat_toggles legge e scrive <dir_cheat>/<nome ROM>.sel: una riga di versione, poi una riga per voce accesa con l'identità in esadecimale e il nome. L'identità è un FNV-1a a 64 bit della variante e delle sole cifre esadecimali del codice, senza il nome: rinominare una voce non perde la scelta, e il nome nel file serve solo a chi lo legge. All'apertura accende le voci con la stessa identità (le voci gemelle insieme) e ignora le righe ignote o malformate; poi cheats.c chiama rebuild_active_cheat_indexes (regola dell'hook unico). La scrittura è atomica, con l'helper di F-003, quando la pagina dei trucchi si chiude con modifiche.
+- **File:** `source/src/cheat_toggles.c` (nuovo), `source/src/cheat_toggles.h` (nuovo), `tests/test_cheat_toggles.c` (nuovo), `source/src/cheats.c`, `source/src/gui.c` (salvataggio all'uscita dalla pagina), `Makefile`, `source/Makefile`, `CHANGELOG.md`
+- **Test:** tests/test_cheat_toggles.c: riordinare, riformattare e rinominare mantiene la scelta, cambiare una cifra la perde; voci gemelle; .sel troncato, con righe lunghe, CRLF o versione ignota; ripristinare due master CodeBreaker con hook diversi dà lo stesso esito del menu; versione ASan/UBSan; hardware: spegnimento forzato durante la scrittura lascia il file vecchio o quello nuovo, mai vuoto.
+- **Accettazione:** scelte presenti dopo il riavvio e il cambio di gioco; file scritto solo se cambiato; nessuna voce accesa da un file scaricato, solo dal .sel scritto dal menu.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-4.3 — Import dei file RetroArch .cht · M, 3 gg · dipende da: GIO-3.2 · PSP: no
+
+- **Cosa:** cheat_file riconosce il formato chiave=valore: 'cheats = N' non è affidabile; cheatN_desc e cheatN_code si leggono in ordine di numero; cheatN_enable e le altre chiavi RetroArch si ignorano; i valori possono stare tra virgolette e '+' unisce le righe. Ogni codice si classifica così: prima la direttiva della voce, una riga `#type: gameshark_v1`, `#type: gameshark_v3`, `#type: direct_v1`, `#type: direct_v3` o `#type: codebreaker` subito prima dei suoi codici (nei file RetroArch prima di `cheatN_code`; sono le stesse parole che parse_cheat_variant di cheats.c accetta nell'intestazione), che serve solo dove il riconoscimento è ambiguo e, se c'è, vale per tutti i codici della voce; poi 8+4 cifre è CodeBreaker, cifrato se c'è un seme di tipo 9; per 8+8 si provano le interpretazioni GS v1 e v3, cifrate e dirette, e si tiene l'unica plausibile secondo regioni e opcode validi di GBATEK. Se nessuna o più di una lo sono, la voce riceve l'errore 'ambiguo' con il suggerimento della riga `#type` da aggiungere.
+- **File:** `source/src/cheat_file.c`, `source/src/cheat_file.h`, `tests/test_cheat_file.c`, `tests/cheat_corpus/retroarch_*.txt` (sintetici), `CHANGELOG.md`
+- **Test:** file RetroArch sintetico con tre voci (CodeBreaker in chiaro, CodeBreaker cifrato, GS v3) che dà varianti e coppie attese; cheatN_enable = true non accende nulla; indici non contigui, 'cheats = 999' falso, valori senza virgolette, righe lunghe; un codice ambiguo dà errore solo per la sua voce e le altre caricano; la stessa voce con `#type: gameshark_v1` davanti carica come GS v1 e con `#type: direct_v3` come GS v3 in chiaro; un `#type` con un valore ignoto dà errore solo per la sua voce; il fuzz di GIO-3.7 esteso al formato.
+- **Accettazione:** i codici CodeBreaker cifrati e i GS/AR riconosciuti si accendono e girano; un codice ambiguo carica con la riga `#type` della sua voce e senza la riga resta una voce con il motivo 'ambiguo'; statistica accettati/ambigui/rifiutati disponibile per il pack (GIO-6).
+- **Licenza:** codice nuovo GPL-2.0-or-later; la classificazione segue GBATEK, la decifratura resta il nostro decrypt_gsa_code (cheats.c:260-290) e l'autodetect di mGBA (MPL-2.0) non si usa.
+
+#### GIO-4.4 — Errori per voce e liste lunghe · S, 1,5 gg · dipende da: GIO-3.1 · PSP: no
+
+- **Cosa:** Il parser smette di fallire sull'intero file: una voce malformata diventa una voce con motivo, non accendibile, e il caricamento prosegue. Oltre MAX_CHEATS si caricano le prime 640 voci e si mostra 'N di M'. L'errore globale resta solo per un file illeggibile o vuoto.
+- **File:** `source/src/cheat_file.c`, `source/src/cheat_file.h`, `source/src/cheats.c`, `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `CHANGELOG.md`
+- **Test:** tests/test_cheat_file.c: in un file con una voce rotta in mezzo le altre caricano e motivo e riga vengono registrati; un file con 700 voci ne carica 640 e conta 700; scripts/check-messages.sh.
+- **Accettazione:** nessun file con almeno una voce valida viene rifiutato per intero; motivi in cinque lingue.
+
+### GIO-5 — Pagina trucchi: apertura dal browser e comodità
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 | 5,5 gg | GIO-4, F-045, decisione sul tasto presa in UI-12.4 |
+
+**Copre:** F-087 pagina trucchi dal browser, F-088 comodità della pagina trucchi
+
+**Obiettivo:** La pagina trucchi si apre dal menu opzioni della ROM nel browser senza caricare la ROM né toccare la lista del gioco in corso; conteggi, motivi per voce, nome atteso del file (zip e sottocartelle compresi) e toast all'avvio nelle 5 lingue; dopo 10 cicli di apertura, modifica e avvio su PSP-1000 e PSP-3000 la pagina del browser e quella in gioco restano coerenti.
+
+**Da noi oggi:** I trucchi si raggiungono solo in gioco, da 'Cheats options' (source/src/gui.c:5178-5197). L'intestazione mostra 'file (N)' senza le voci attive (gui.c:4499-4511) e 'No cheat file loaded' non dice quale nome aspettarsi (gui.c:3175-3177). Nel browser DESTRA passa alla colonna delle cartelle o scorre il carosello (gui.c:2682-2700), SELECT alterna lista e carosello (gui.c:2441-2470) e QUADRATO risale di cartella (source/src/input.c:288); TRIANGOLO non è mappato in get_gui_input (input.c:247-288). Il browser disegna già l'arte box (gui.c:2434).
+
+**Come ci arriviamo:**
+
+- Completa i trucchi per gioco di GIO-4. La pagina si apre dalla voce 'Trucchi…' del menu opzioni della ROM di UI-12.4 (proposta da confermare: il menu si apre con TRIANGOLO, come nell'XMB), perché nel browser DESTRA e SELECT sono già occupati: DESTRA resta alla navigazione tra le colonne e SELECT al carosello.
+- Aperta dal browser la pagina non carica la ROM e non tocca la lista viva del gioco in corso: legge il file in una tabella di anteprima e scrive solo il .sel.
+- Il nome atteso del file tiene conto di zip e sottocartelle e compare quando il file manca.
+- Motivi, conteggi e suggerimenti in cinque lingue.
+- Le voci nuove in gui.c seguono la regola sui callback del gruppo Interfaccia e UX: una callback che legge variabili di menu() sta a livello di file, come le opzioni di avanti veloce (gui.c:3220-3290).
+
+**Gate prima di iniziare:** Per iniziare: GIO-4 chiuso, toast di F-045 disponibile e decisione sul tasto presa in UI-12.4, con il menu opzioni della ROM consegnato. Per chiudere: su PSP-1000 e PSP-3000 la pagina aperta dal browser e quella in gioco restano coerenti dopo 10 cicli di apertura, modifica e avvio.
+
+**Rischi:**
+
+- Il tasto del menu opzioni della ROM è una proposta di UI-12.4 da confermare: se cambia, la voce 'Trucchi…' resta nello stesso menu.
+- Memoria della tabella di anteprima sul PSP-1000: nomi e identità, decine di KiB.
+- La UI 2.0 (F-053) ridisegnerà le pagine: costruire sopra l'API esistente di gui.c per non rifare il lavoro.
+
+#### GIO-5.1 — Intestazione con conteggi, suggerimenti e 'Disattiva tutti' · M, 2 gg · dipende da: GIO-4.4 · PSP: sì
+
+- **Cosa:** In submenu_cheats_misc compare una seconda riga 'x di y attivi', più 'N di M caricati' se la lista è tagliata. Senza file, una riga mostra il nome esatto atteso nella cartella dei trucchi. Si aggiunge l'azione 'Disattiva tutti' con yesno_dialog. Per una voce inutilizzabile la riga d'aiuto mostra il motivo e l'interruttore è disabilitato.
+- **File:** `source/src/gui.c` (submenu_cheats_misc, reload_cheats_page, CHEAT_OPTION), `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `CHANGELOG.md`
+- **Test:** scripts/check-messages.sh e scripts/check-menu-layout.sh; test host del formato delle righe, con la funzione estratta come già in tests/test_browser_text.py; hardware: liste con 0, 5 e 700 voci.
+- **Accettazione:** conteggi corretti dopo ogni cambio; nessuna voce con errore si può accendere; cinque lingue.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-5.2 — Toast 'N trucchi attivi' all'avvio del gioco · S, 0,5 gg · dipende da: GIO-4.2, F-045 · PSP: sì
+
+- **Cosa:** Dopo cheats_rom_loaded e il ripristino delle scelte, se almeno un trucco è acceso compare il toast localizzato di F-045. Senza trucchi accesi niente toast.
+- **File:** `source/src/cheats.c`, `source/src/main.c`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `CHANGELOG.md`
+- **Test:** scripts/check-messages.sh; hardware: avvio con 0 e con 3 trucchi accesi.
+- **Accettazione:** il toast compare una sola volta per avvio; nessun ritardo misurabile all'avvio.
+
+#### GIO-5.3 — Pagina trucchi dal menu opzioni della ROM nel browser · M, 3 gg · dipende da: GIO-4.2, GIO-5.1, UI-12.4 · PSP: sì
+
+- **Cosa:** Nel browser (load_file) il menu opzioni per ROM di UI-12.4 riceve la voce 'Trucchi…', che apre la pagina dei trucchi di quel gioco sopra la sua arte box. Il tasto che apre il menu e la sua mappatura in input.c restano di UI-12.4 (proposta da confermare: TRIANGOLO). Il file si legge in una tabella di anteprima (nomi, identità, motivi) e gli interruttori aggiornano solo il .sel, con lo store transazionale. La ROM non viene caricata e, se un gioco è in esecuzione, la sua lista viva non cambia. All'avvio del gioco le scelte le applica GIO-4.2.
+- **File:** `source/src/gui.c` (load_file, voce nel menu opzioni della ROM e nuova pagina di anteprima), `source/src/cheat_file.c` (parse in una tabella di anteprima), `source/src/cheat_toggles.c`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `CHANGELOG.md`
+- **Test:** test host: l'anteprima e il .sel scritto hanno le stesse identità della pagina in gioco; hardware: 'Trucchi…' dal menu opzioni di una ROM con e senza lista e di una ROM in zip, in modalità lista e carosello, poi ritorno al browser con la stessa selezione.
+- **Accettazione:** la pagina dal browser e quella in gioco mostrano le stesse scelte; nessun flush della cache di traduzione né modifica a cheats[] del gioco in corso; SELECT continua ad alternare lista e carosello; la voce compare nel menu opzioni della ROM accanto a quella dei preferiti.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### GIO-6 — Pack di trucchi pronto e LEGGIMI dei trucchi
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 | 6 gg | GIO-4.3, GIO-4.4, F-139 |
+
+**Copre:** F-089 pack di trucchi pronto
+
+**Obiettivo:** Pack riproducibile (due build danno lo stesso zip) con ogni lista GBA di libretro-database al commit fissato che il parser accetta, almeno 50 liste e 1.700 voci accettate, fino a 640 voci per gioco, validata dal parser host; manifest con le statistiche per gioco (accettate, ambigue, rifiutate) e indice per codice e CRC; solo fonti con licenza chiara e crediti CC BY-SA completi; LEGGIMI nelle 5 lingue.
+
+**Da noi oggi:** Nessun pack: scripts/package-release.sh:23-26 impacchetta solo EBOOT, exception.prx e i documenti, e scripts/check-tree.sh:50 rifiuta i *.cht nel repository. Il formato è descritto solo in README.md (sezione Cheats) e in docs/legacy/cheats format.txt.
+
+**Come ci arriviamo:**
+
+- Il pack si costruisce solo da libretro-database a commit fissato: costa poco, aiuta subito chi non sa dove trovare i codici e fa da banco di prova reale per i limiti del parser.
+- Le liste restano in formato RetroArch e le legge il nostro import (GIO-4.3), quindi girano tutti i codici classificati, compresi i GS/AR e i CodeBreaker cifrati.
+- Un indice per codice gioco più CRC, generato dal dat No-Intro di libretro-database, fa funzionare il pack anche quando il file della ROM ha un altro nome.
+- Il manifest contiene le statistiche per gioco (accettate, ambigue, rifiutate), così il LEGGIMI riporta numeri veri.
+- Solo fonti con licenza chiara: niente GameHacking.org finché la licenza resta ignota.
+- LEGGIMI in cinque lingue.
+
+**Gate prima di iniziare:** Per iniziare: GIO-4.3 (import RetroArch) chiuso e licenza di libretro-database verificata al commit fissato. Per chiudere: pack riproducibile (due build danno lo stesso zip), ogni file validato dal parser host, crediti CC BY-SA completi.
+
+**Rischi:**
+
+- Licenza: CC BY-SA 4.0 chiede attribuzione, link alla licenza e indicazione delle modifiche. Il pack resta un asset separato e non entra mai nell'EBOOT.
+- Codici sbagliati per revisioni regionali diverse: l'indice per CRC riduce gli abbinamenti errati.
+- Le traduzioni del LEGGIMI in giapponese e cinese vanno riviste da madrelingua.
+
+#### GIO-6.1 — Strumento host cheat_lint · S, 1 gg · dipende da: GIO-4.3 · PSP: no
+
+- **Cosa:** Un piccolo programma host costruito da cheat_file.c legge un file di trucchi, nativo o RetroArch, stampa per ogni voce variante, esito, motivo e budget statico, ed esce con codice diverso da zero se il file ha errori. Lo usa lo script del pack ed è utile anche ai giocatori sul desktop.
+- **File:** `tools/cheat_lint.c` (nuovo), `Makefile` (target per gli strumenti host, normale e ASan/UBSan), `tests/test_cheat_lint.py` (nuovo)
+- **Test:** test-tools: cheat_lint sul corpus sintetico produce l'output atteso.
+- **Accettazione:** compila con -Werror e con i sanitizer; output stabile e leggibile da script.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-6.2 — Script scripts/build-cheat-pack.py · M, 2,5 gg · dipende da: GIO-6.1 · PSP: no
+
+- **Cosa:** Script Python, da eseguire con -I, che riceve il percorso di un checkout locale di libretro-database e il commit atteso, verificato con git rev-parse. Seleziona i .cht GBA, li valida con cheat_lint e applica un tetto di 640 voci per gioco (MAX_CHEATS). Genera cheats/index.txt (codice gioco più CRC32 verso il file) dal dat No-Intro dello stesso commit, CREDITS e LICENSE CC BY-SA 4.0, e un manifest con SHA-256 e statistiche. Produce uno zip riproducibile, con timestamp fissi come scripts/package-release.sh. Lo script non scarica nulla.
+- **File:** `scripts/build-cheat-pack.py` (nuovo), `tests/test_build_cheat_pack.py` (nuovo; crea nel test un mini-checkout finto), `Makefile` (target cheat-pack, test-tools)
+- **Test:** tests/test_build_cheat_pack.py: commit diverso dà errore; un file non valido è escluso e contato; indice corretto da un dat finto; due esecuzioni danno zip identici.
+- **Accettazione:** manifest con almeno 50 liste e 1.700 voci accettate; zip riproducibile; crediti con titolo, autori ('libretro-database contributors'), URL, licenza e nota delle modifiche; nessun file .cht entra nel repository.
+- **Licenza:** codice nuovo GPL-2.0-or-later per lo script; i dati sono CC BY-SA 4.0 (da verificare nel LICENSE di libretro-database al commit fissato) e si distribuiscono come asset separato; esclusa GameHacking.org (licenza ignota).
+
+#### GIO-6.3 — Asset di release e controlli del pacchetto · S, 1 gg · dipende da: GIO-6.2, F-139 · PSP: no
+
+- **Cosa:** make package produce anche GBA-Rush-PSP-<ver>-cheats.zip con la sua .sha256. scripts/check-package.sh verifica manifest, crediti e checksum; il manifest di release (F-139) elenca l'asset, e GIO-4.1 usa l'indice.
+- **File:** `scripts/package-release.sh`, `scripts/check-package.sh`, `Makefile`, `CHANGELOG.md`
+- **Test:** check-package su un pack finto: se manca CREDITS o il checksum è sbagliato, errore.
+- **Accettazione:** asset separato pubblicato accanto allo zip principale; lo zip principale non cambia contenuto, salvo i LEGGIMI di GIO-6.4.
+
+#### GIO-6.4 — LEGGIMI dei trucchi in cinque lingue · S, 1,5 gg · dipende da: GIO-4.4 · PSP: no
+
+- **Cosa:** I testi docs/cheats/README.{eng,ita,jpn,chs,cht}.txt finiscono in cheats/ dentro lo zip principale. Spiegano dove mettere i file, il nome atteso (anche tramite indice), il formato nativo e quello RetroArch, la riga `#type` per i codici ambigui, i limiti (640 voci, budget), la sicurezza (nessun trucco tocca il salvataggio) e la sospensione durante il link. README.md rimanda a questi file.
+- **File:** `docs/cheats/README.eng.txt`, `docs/cheats/README.ita.txt`, `docs/cheats/README.jpn.txt`, `docs/cheats/README.chs.txt`, `docs/cheats/README.cht.txt`, `scripts/package-release.sh`, `scripts/check-package.sh`, `README.md`
+- **Test:** check-package: i cinque file esistono e non sono vuoti in cheats/.
+- **Accettazione:** contenuti allineati ai limiti reali del codice (valori presi da cheat_file.h); revisione madrelingua di jpn, chs e cht prima della release stabile.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### GIO-7 — Launcher single-game: salvataggi per bolla e bolla autonoma
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 | 7 gg | F-003, F-139, F-140 |
+
+**Copre:** F-090 launcher single-game: salvataggi per bolla e bolla autonoma
+
+**Obiettivo:** Bolle create dal builder grafico senza toolchain, con l'EBOOT ufficiale verificato per SHA-256; salvataggi per bolla facoltativi (copia iniziale una volta, mai sovrascritta) e bolla autonoma con percorsi relativi: su PSP-1000 e PSP Go (`ef0:`) una bolla con salvataggi separati e una autonoma partono 10 volte senza perdere salvataggi.
+
+**Da noi oggi:** Lo stub legge rom_path.txt ed emulator_path.txt e avvia l'emulatore installato passandogli la ROM come argv[1] (source/single-game_launcher/main.c:430-466), con apitype PSP_INIT_APITYPE_MS2 sul CFW (sctrlKernelLoadExecVSHWithApitype, main.c:446-458) e con sceKernelLoadExec senza CFW (:459-467): da ef0: sul PSP Go non è verificato. Il percorso della ROM arriva tale e quale e l'emulatore ha un'altra cartella di lavoro, quindi in pratica serve un percorso assoluto. L'emulatore carica argv[1] senza aggiornare i recenti (source/src/main.c:1695-1704). Il builder desktop, GPL-3.0-or-later (source/single-game_launcher/tool/builder.py:1-2), scrive i due file di testo e sostituisce nello stub titolo, ICON0, PIC0, PIC1 e SND0 (builder.py:9-10), senza toolchain. Salvataggi e stati sono condivisi con l'installazione principale (dir_save e dir_state da dir.ini, source/src/gui.c:6589-6649). Nessun collegamento automatico dalla bolla.
+
+**Come ci arriviamo:**
+
+- Nessuna toolchain: tutto dal builder grafico, che riusa l'EBOOT ufficiale della release (verificabile con SHA-256) senza ricompilare. Un'EBOOT ricompilata con la ROM dentro resta fuori: sarebbe una seconda build dell'emulatore da mantenere.
+- Salvataggi per bolla facoltativi e spenti di default, perché il salvataggio condiviso serve a chi gioca anche dal browser; al primo avvio la bolla copia una volta il .sav condiviso e non sovrascrive mai.
+- Bolla autonoma: la ROM e, a scelta, una copia verificata dell'emulatore stanno nella cartella della bolla, con percorsi relativi.
+- Il collegamento automatico dalla bolla sta ora in LNK-16.5, sul collegamento via cavo tra versioni diverse (F-113).
+
+**Gate prima di iniziare:** Per iniziare: niente; il collegamento automatico dalla bolla, ora LNK-16.5, segue il gate di LNK-16. Per chiudere: su PSP-1000 e PSP Go (ef0:) una bolla con salvataggi separati e una bolla autonoma partono 10 volte senza perdere salvataggi.
+
+**Rischi:**
+
+- Le copie dell'emulatore nelle bolle autonome restano alla propria versione (nessun aggiornamento automatico): il builder lo deve dire.
+- Due salvataggi diversi dello stesso gioco (bolla e browser) possono confondere: per questo l'opzione è spenta di default e spiegata.
+- I CFW passano argv in modo diverso nel chain-load (sctrlKernelLoadExecVSHWithApitype contro sceKernelLoadExec), e l'apitype per ef0: è da verificare.
+
+**Storie spostate:** GIO-7.5 è ora LNK-16.5.
+
+#### GIO-7.1 — Modulo puro launch_args · S, 1 gg · dipende da: — · PSP: no
+
+- **Cosa:** source/src/launch_args.c/.h interpreta argv[2..]: --save-dir= e --state-dir=; l'argomento del link automatico lo aggiunge LNK-16.2 a questo modulo. Valida i valori: prefisso ms0:/ o ef0:/, lunghezza minore di MAX_PATH, niente '..', barra finale normalizzata. Le opzioni ignote si ignorano e si contano; nessuna allocazione.
+- **File:** `source/src/launch_args.c` (nuovo), `source/src/launch_args.h` (nuovo), `tests/test_launch_args.c` (nuovo), `Makefile`, `source/Makefile`
+- **Test:** tests/test_launch_args.c: valori validi, percorsi troppo lunghi, '..', prefissi errati, opzioni duplicate (vince l'ultima), argv vuoto; versione ASan/UBSan.
+- **Accettazione:** test verdi; intestazione GPL-2.0-or-later.
+
+#### GIO-7.2 — Cartelle per bolla nell'emulatore e copia iniziale del salvataggio · M, 2 gg · dipende da: GIO-7.1, F-003 · PSP: sì
+
+- **Cosa:** In user_main, dopo setup_main e la lettura di dir.ini, --save-dir e --state-dir sostituiscono dir_save e dir_state per la sessione, creando le cartelle se servono. Se il .sav della bolla manca e quello condiviso esiste, viene copiato una volta con lo store transazionale di F-003; un .sav esistente non si sovrascrive mai.
+- **File:** `source/src/main.c` (user_main), `source/src/gui.c` (setter delle cartelle), `tests/test_startup.py` (estensione che compila le funzioni estratte)
+- **Test:** tests/test_startup.py: argv con e senza opzioni dà le cartelle attese; la copia avviene solo se il file manca; hardware: bolla con salvataggi separati su PSP-1000 e PSP Go (ef0:), 10 avvii.
+- **Accettazione:** senza opzioni il comportamento è identico a oggi; nessuna sovrascrittura di un .sav esistente (test); lo slot AUTO e gli slot degli stati vanno nella cartella della bolla.
+
+#### GIO-7.3 — Stub e builder: file di opzioni, percorsi relativi, ef0: · M, 2,5 gg · dipende da: GIO-7.2 · PSP: sì
+
+- **Cosa:** Lo stub legge un launch_options.txt facoltativo e lo inoltra come argv[2..]; rom_path.txt ed emulator_path.txt accettano percorsi relativi alla cartella della bolla, risolti con find_my_dir e passati all'emulatore come assoluti. Se l'EBOOT dell'emulatore sta su ef0:, lo stub usa l'apitype della memoria interna invece di PSP_INIT_APITYPE_MS2 (main.c:455-458), dopo averlo verificato su PSP Go. Il builder aggiunge la casella 'Salvataggi separati', che scrive le opzioni con una cartella SAVE/ dentro la bolla.
+- **File:** `source/single-game_launcher/main.c`, `source/single-game_launcher/tool/builder.py`, `source/single-game_launcher/tool/gui_build.py`, `source/single-game_launcher/tool/README.md`, `tests/test_launcher_builder.py` (nuovo; importa builder.py senza GUI), `Makefile` (test-tools), `CHANGELOG.md`
+- **Test:** tests/test_launcher_builder.py: file scritti per ogni combinazione di opzioni, percorsi relativi; hardware: bolla vecchia e bolla nuova avviate su PSP-1000 e PSP-3000; hardware: bolla ed emulatore su ef0: di un PSP Go.
+- **Accettazione:** le bolle esistenti continuano a funzionare senza modifiche; con la casella spenta il builder produce gli stessi file di oggi; avvio da ef0: riuscito su PSP Go, oppure limite documentato nel README del builder.
+- **Licenza:** codice nuovo GPL-2.0-or-later nello stub, che resta nel ramo dell'emulatore; il builder resta GPL-3.0-or-later.
+
+#### GIO-7.4 — Bolla autonoma (facoltativa) · S, 1,5 gg · dipende da: GIO-7.3, F-139, F-140 · PSP: sì
+
+- **Cosa:** Casella 'Bolla autonoma' nel builder: copia la ROM nella bolla e, se l'utente lo chiede, anche EBOOT.PBP ed exception.prx di una release da lui scelta. I file copiati si verificano con lo SHA-256 del manifest di release (F-139) e viaggiano con LICENSE, NOTICE e il riferimento al sorgente corrispondente (F-140). emulator_path.txt punta alla copia con un percorso relativo, e il builder avvisa che la copia non si aggiorna da sola.
+- **File:** `source/single-game_launcher/tool/builder.py`, `source/single-game_launcher/tool/gui_build.py`, `source/single-game_launcher/tool/README.md`, `tests/test_launcher_builder.py`, `CHANGELOG.md`
+- **Test:** tests/test_launcher_builder.py: uno SHA-256 errato fa rifiutare la copia; se mancano LICENSE o NOTICE, errore; hardware: bolla autonoma copiata su un'altra Memory Stick senza l'emulatore installato, avvio riuscito su PSP-1000 e 3000.
+- **Accettazione:** una bolla autonoma parte senza l'emulatore installato; avviso di versione visibile nel builder.
+- **Licenza:** L'EBOOT copiato è GPL-2.0-or-later e forma un aggregato con la bolla: vanno copiati LICENSE, NOTICE e il riferimento al bundle del sorgente corrispondente. Il builder resta GPL-3.0-or-later e non incorpora codice dell'emulatore.
+
+### GIO-8 — Modulo Game Boy / Game Boy Color
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| sconsigliato (dietro gate) | dopo gate | 37,5 gg | F-027, F-024, F-007, F-003, F-006, CMP-7.3, F-140, GIO-4.3 |
+
+**Copre:** F-091, F-092, F-093, F-094, F-095 modulo Game Boy / Game Boy Color e funzioni collegate
+
+**Obiettivo:** Se il gate scatta: le 12 scene GB/GBC del gate su PSP-1000 e uno slim a velocità nativa (59,73 fps ±0,1%), con p99 ≤ 17 ms e 0 underrun in 10 minuti per scena; Shantae senza difetti grafici. Ogni ottimizzazione del core si accetta solo con hash di stato e immagine per frame identici su 12 tracce, una per scena, calcolati dal runner host di GIO-8.12. Batteria scritta dopo 1 s di RAM ferma o al massimo 10 s dopo l'ultima scrittura del gioco, in modo transazionale e fuori dal thread di emulazione. Il core è un PRX caricato solo per `.gb`/`.gbc`: l'EBOOT GBA non cresce di oltre 16 KiB in dimensione e heap all'avvio; GameShark sulla WRAM a banchi del GBC e Game Genie accettati; suite blargg, dmg-acid2, cgb-acid2 e Mooneye in `make check-gb`.
+
+**Da noi oggi:** Nessun core GB: le estensioni accettate sono solo .zip, .gba, .bin, .agb e .gbz (source/src/main.c:1685). Riusabili: browser con zip e arte box; profili per gioco; stati con slot e AUTO; tilt dalla levetta (source/src/input.c:164-167, 365-375); buffer ROM grande già allocato (source/src/memory.c:2880-2893); caricamento di un PRX accanto all'EBOOT già usato per exception.prx (source/src/exception.c:95-109, modulo kernel).
+
+**Come ci arriviamo:**
+
+- L'epic resta nel piano perché è stata chiesta, con un gate misurabile da superare prima di iniziare.
+- Il core è un modulo PRX caricato solo per .gb/.gbc e scaricato all'uscita, e la ROM GB va nel buffer gamepak_rom già allocato: il GBA non paga né memoria né codice.
+- Suite di accuratezza complete in make check-gb (blargg, dmg-acid2, cgb-acid2, Mooneye), scaricate a versioni fissate con SHA-256.
+- Interfaccia in cinque lingue, profili per gioco, ROM in zip e bolle del launcher anche per il GB, in una sola libreria con badge invece di liste separate.
+- Game Genie supportato come patch della ROM al caricamento (nessun costo per lettura) e codici GameShark sulla WRAM a banchi del GBC.
+- Tilt MBC7 (Kirby Tilt 'n' Tumble) guidato dalla stessa levetta del tilt GBA che abbiamo già.
+- Correzione colore GBC calcolata alla scrittura della palette (64 colori), senza tabella.
+
+**Gate prima di iniziare:** Servono tutte e tre le condizioni. (1) Domanda sostenuta dopo la 2.x: almeno 15 richieste distinte (issue, thread, messaggi) nei 90 giorni dopo la 2.0; soglia proposta. (2) Milestone GBA fino alla 2.0 chiuse. (3) Spike di 2 giorni: il PRX del core si carica e si scarica lasciando l'heap del GBA identico alla misura di F-027, e sul PSP-1000 12 scene (Pokémon Crystal, Link's Awakening DX nella casa iniziale, Shantae, Super Mario Land 2 e Tetris DX, più 7 scritte in docs/decisions/gb-core-gate.md) vanno a velocità nativa (59,73 fps ±0,1%) con p99 ≤ 17 ms e 0 underrun.
+
+**Rischi:**
+
+- Secondo emulatore: bug, issue e test da mantenere per sempre. Sulla PSP esistono già emulatori GB dedicati, e il lavoro toglierebbe tempo al GBA.
+- Memoria del PSP-1000: ROM GBC fino a 8 MiB più il core.
+- Prestazioni: la casa iniziale di Link's Awakening DX è una scena pesante del gate; la sua velocità sul PSP-1000 la misura lo spike di GIO-8.1.
+- Licenze: TGB Dual si prende solo da MasterBoy a commit fissato, e la licenza va verificata sui file di MasterBoy. Gambatte ha intestazioni GPL-2.0 senza 'or later' (da verificare) e fisserebbe l'EBOOT a GPL-2.0-only.
+- ROM di test senza licenza chiara (blargg): si scaricano solo al momento del test e non si ridistribuiscono.
+
+#### GIO-8.1 — Spike di gate: domanda, PRX e velocità · S, 2 gg · dipende da: F-027, F-024 · PSP: sì
+
+- **Cosa:** Le richieste (issue GitHub, thread) si contano con l'etichetta 'gb-request'. Un prototipo usa e getta carica il core MasterBoy come PRX utente da un EBOOT di prova e lo scarica; si confronta l'heap con F-027 e si misurano le 12 scene del gate sul PSP-1000. La decisione va/non va si scrive in docs/decisions/.
+- **File:** `docs/decisions/gb-core-gate.md` (nuovo), prototipo in un ramo che non entra in master
+- **Test:** hardware: heap identico prima e dopo carico e scarico; fps mediani, p99 dei tempi di frame e underrun dai log.
+- **Accettazione:** decisione scritta con i numeri; nessun codice dello spike entra in master.
+- **Licenza:** TGB Dual da MasterBoy a commit fissato 320bb5e, GPL-2.0-or-later da verificare sui file originali; nessun codice dello spike entra in master.
+
+#### GIO-8.2 — Import intatto di TGB Dual da MasterBoy e build host · M, 4 gg · dipende da: GIO-8.1 · PSP: no
+
+- **Cosa:** Un commit importa intatti i file del core TGB Dual di PSP-Archive/MasterBoy 320bb5e in source/gb/tgbdual/. Poi un nostro GBA-RUSH-CHANGES.md registra ogni modifica: rimozione del frontend MasterBoy; port sull'host (tipi a 32 bit, fallback C per l'asm Allegrex); correzione indipendente dei bug dell'upstream (indici negativi, array 2D scorsi come piatti, maschere di banco prese dall'header), trovati con -Warray-bounds e UBSan. Il core compila sull'host con -Werror e ASan/UBSan.
+- **File:** `source/gb/tgbdual/` (file importati), `source/gb/tgbdual/GBA-RUSH-CHANGES.md` (nuovo), `source/gb/tgbdual/LICENSE`, `Makefile` (regole host del core)
+- **Test:** build host del core sotto ASan/UBSan e smoke sulle ROM di test pubbliche (GIO-8.12); il diff del commit intatto contro l'upstream è vuoto, a parte i fine riga.
+- **Accettazione:** il core compila sull'host senza warning; ogni patch è in GBA-RUSH-CHANGES.md con il suo motivo.
+- **Licenza:** TGB Dual (Hii), MasterBoy (Brunni e altri), sgb.c derivato da GEST e VBA: GPL-2.0-or-later, da verificare sui file di MasterBoy a 320bb5e; si tengono intestazioni e LICENSE; le patch sono nostre e registrate in GBA-RUSH-CHANGES.md.
+
+#### GIO-8.3 — Modulo puro gb_cart: header, mapper, dimensione del salvataggio · S, 1,5 gg · dipende da: GIO-8.2 · PSP: no
+
+- **Cosa:** source/src/gb_cart.c/.h legge l'header: titolo, flag CGB e SGB, tipo di cartuccia (MBC, batteria, RTC, rumble, sensore), codici di ROM e RAM limitati, checksum. Calcola la dimensione nativa del .sav e i nomi dei file.
+- **File:** `source/src/gb_cart.c` (nuovo), `source/src/gb_cart.h` (nuovo), `tests/test_gb_cart.c` (nuovo), `Makefile`
+- **Test:** tests/test_gb_cart.c: header sintetici per MBC1, MBC2, MBC3, MBC5 e MBC7; un codice di RAM fuori tabella diventa 0; checksum errato segnalato; ROM più grande di quanto dice l'header; versione ASan/UBSan.
+- **Accettazione:** nessun accesso fuori dall'header, anche con file da 0 a 0x14F byte.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-8.4 — Core come PRX caricato solo per .gb/.gbc · L, 5 gg · dipende da: GIO-8.2, F-027 · PSP: sì
+
+- **Cosa:** Il core diventa gbmodule.prx (BUILD_PRX), con una tabella di funzioni passata a module_start: carica la ROM da un buffer, esegue un frame, espone framebuffer, campioni audio e input, salva e carica lo stato in memoria. gb_module.c (colla PSP) lo carica dalla cartella dell'EBOOT quando si sceglie un file GB, passandogli come buffer della ROM gamepak_rom (memory.c:2880-2893), e lo scarica al ritorno al GBA.
+- **File:** `source/gb/Makefile` (nuovo, PRX), `source/gb/gb_api.h` (nuovo), `source/src/gb_module.c` (nuovo, colla PSP), `source/src/gb_module.h` (nuovo), `source/src/main.c`, `scripts/package-release.sh`, `scripts/check-package.sh`
+- **Test:** hardware: 20 cicli GBA, GB, GBA con la misura dell'heap identica (F-027); EBOOT GBA: dimensione e heap all'avvio invariati entro 16 KiB (solo il caricatore); compare-benchmarks 3+3 sul GBA senza regressioni.
+- **Accettazione:** nessun simbolo del core GB nell'EBOOT; GBA invariato nelle misure; errore localizzato se gbmodule.prx manca.
+- **Licenza:** Il PRX contiene codice GPL-2.0-or-later e si distribuisce insieme all'EBOOT con il sorgente corrispondente (F-140).
+
+#### GIO-8.5 — Video, audio, input e menu per il GB · L, 5,25 gg · dipende da: GIO-8.4 · PSP: sì
+
+- **Cosa:** Il frame 160x144 del core passa dal percorso GU di psp_video: 1x, 1,5x, adatta all'altezza, filtro nitido o bilineare. L'audio del core arriva al nostro output con il volume per gioco. Valgono la mappa dei tasti per gioco, il fast-forward con la stessa politica e Reset, Sleep ed Esci dal menu in gioco. Le opzioni GB vanno nei profili per gioco del ConfigModel, nel bump di ConfigModel della release (condiviso con GIO-8.10 se escono insieme).
+- **File:** `source/src/gb_module.c`, `source/src/psp_video.c` (blit di un frame esterno, renderer scelto una volta per frame), `source/src/sound.c` (ingresso di campioni esterni, senza allocazioni), `source/src/gui.c`, `source/src/config_model.c`, `source/src/config_model.h`, `tests/test_config_model.c`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`
+- **Test:** hardware: le 12 scene del gate su PSP-1000 e uno slim a velocità nativa (59,73 fps ±0,1%), p99 ≤ 17 ms e 0 underrun in 10 minuti per scena; Shantae senza difetti grafici; scripts/check-messages.sh e scripts/check-menu-layout.sh; tests/test_config_model.c: migrazione delle nuove opzioni.
+- **Accettazione:** nessuna allocazione né I/O nei file caldi; stesse opzioni di scala e filtro dei profili GBA dove hanno senso.
+
+#### GIO-8.6 — Browser e launcher per .gb/.gbc · M, 2 gg · dipende da: GIO-8.5 · PSP: sì
+
+- **Cosa:** Le estensioni .gb e .gbc, anche dentro uno zip, entrano nella lista con un badge di console. Valgono profili per gioco e recenti, e il launcher single-game accetta le ROM GB.
+- **File:** `source/src/gui.c` (load_file), `source/src/main.c` (file_ext in user_main), `source/src/zip.c`, `source/single-game_launcher/tool/builder.py`, `tests/test_browser_text.py`
+- **Test:** tests/test_browser_text.py esteso ai nuovi nomi; hardware: uno zip con un .gbc e una cartella mista.
+- **Accettazione:** una sola libreria con badge invece di liste separate; nessun cambiamento per le ROM GBA.
+
+#### GIO-8.7 — Stati di salvataggio GB validati · M, 3 gg · dipende da: GIO-8.5, F-007 · PSP: sì
+
+- **Cosa:** Lo stato GB ha un'intestazione (magia, versione, id del core, hash dell'header della ROM, lunghezza, CRC) che si valida prima di toccare la macchina. La scrittura è atomica con l'helper di F-007; ci sono 10 slot più AUTO, con anteprima.
+- **File:** `source/src/gb_state.c` (nuovo, puro: intestazione e validazione), `source/src/gb_state.h` (nuovo), `tests/test_gb_state.c` (nuovo), `source/src/gb_module.c`, `source/src/gui.c`
+- **Test:** tests/test_gb_state.c: CRC sbagliato, ROM diversa, versione futura o file troncato vengono rifiutati senza modifiche; hardware: 50 salvataggi e caricamenti in Pokémon Crystal.
+- **Accettazione:** uno stato non valido non cambia nulla; stati GBA invariati.
+
+#### GIO-8.8 — Salvataggi di batteria GB a RAM ferma · M, 2,5 gg · dipende da: GIO-8.5, F-003, F-006 · PSP: sì
+
+- **Cosa:** La politica pura gb_save_policy scrive la RAM della cartuccia quando, dopo essere cambiata, resta ferma per un controllo (1 s), e comunque, anche con cambi continui, al massimo 10 s dopo una scrittura del gioco; uscita, sleep e cambio gioco scrivono subito. La copia si fa sul thread di emulazione; la scrittura la fa il writer di F-006 con lo store transazionale di F-003. Il .sav ha dimensione nativa più il trailer RTC. Se F-006 non arriva, la scrittura resta sincrona a RAM ferma e se ne misura lo scatto.
+- **File:** `source/src/gb_save_policy.c` (nuovo), `source/src/gb_save_policy.h` (nuovo), `tests/test_gb_save_policy.c` (nuovo), `source/src/gb_module.c`
+- **Test:** tests/test_gb_save_policy.c: con cambi continui nessuna scrittura del gioco resta fuori dal .sav oltre 10 s; con RAM ferma dopo un controllo; all'uscita subito; hardware: Pokémon Crystal per 30 minuti senza scatti periodici (perf report); hardware: spegnimento forzato durante una scrittura lascia il .sav vecchio o nuovo, mai rotto.
+- **Accettazione:** la batteria è nel .sav al massimo 10 s dopo l'ultima scrittura del gioco, anche con cambi continui (test host); con F-006 disponibile, nessuna scrittura sul thread di emulazione; nessuno scatto periodico nei giochi che usano la RAM della cartuccia come memoria di lavoro.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-8.9 — RTC MBC3 con trailer VBA-M/BGB · M, 2 gg · dipende da: GIO-8.8, CMP-7.3 · PSP: sì
+
+- **Cosa:** Registri MBC3 con bit di halt e riporto dei giorni. In coda al .sav si legge e scrive il trailer da 48 byte compatibile con VBA-M e BGB (si accetta anche quello da 44 byte). Il tempo è in UTC, tramite le sorgenti dell'orologio di CMP-7.3 (gba_rtc) per fuso e cambi d'ora.
+- **File:** `source/src/gb_rtc.c` (nuovo, puro), `source/src/gb_rtc.h` (nuovo), `tests/test_gb_rtc.c` (nuovo), `source/src/gb_module.c`
+- **Test:** tests/test_gb_rtc.c: vettori esadecimali documentati dei due trailer, halt, riporto oltre 511 giorni, cambio di fuso; hardware: in Pokémon Crystal l'orologio resta coerente dopo uno sleep e dopo un cambio di fuso della PSP.
+- **Accettazione:** il trailer si scambia con VBA-M e BGB (vettori nel test, nessun .sav nel repository); nessuna dipendenza dall'ora locale della PSP.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-8.10 — Colori: palette DMG, palette SGB, correzione LCD del GBC · M, 3 gg · dipende da: GIO-8.5 · PSP: sì
+
+- **Cosa:** Nel profilo si sceglie la palette: Auto (quella SGB se il gioco la invia, altrimenti grigio), Grigio, Verde DMG o Pocket. La correzione colore del GBC si calcola alla scrittura della palette con una formula documentata, scritta da noi, e si può spegnere. Le opzioni entrano nel ConfigModel nel bump di ConfigModel della release (condiviso con GIO-8.5 se escono insieme).
+- **File:** `source/src/gb_color.c` (nuovo, puro), `source/src/gb_color.h` (nuovo), `tests/test_gb_color.c` (nuovo), `source/src/gb_module.c`, `source/src/config_model.c`, `source/src/config_model.h`, `tests/test_config_model.c`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`
+- **Test:** tests/test_gb_color.c: bianco e nero invariati, monotonicità per canale, valori di riferimento della formula; tests/test_config_model.c: migrazione delle opzioni di palette; hardware: confronto visivo su PSP-1000 e PSP-3000 (schermi diversi).
+- **Accettazione:** nessuna tabella da 64 KiB; opzioni in cinque lingue.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-8.11 — Trucchi GB: GameShark e Game Genie · M, 2 gg · dipende da: GIO-8.5, GIO-4.3 · PSP: sì
+
+- **Cosa:** cheat_file accetta i GameShark 01VVLLHH (WRAM C000-DFFF, HRAM FF80-FFFE) e i 9x per la WRAM a banchi del GBC, applicati a inizio frame. I Game Genie diventano una patch della ROM al caricamento, solo dove il valore di confronto coincide, con ripristino allo spegnimento. La RAM della cartuccia (A000-BFFF) è il salvataggio e resta rifiutata. Valgono le stesse pagine, il .sel e il pack. Il cheat.c di TGB Dual resta fuori, per non pagare una mappa su ogni scrittura.
+- **File:** `source/src/cheat_file.c`, `source/src/cheat_file.h`, `source/src/gb_module.c`, `tests/test_cheat_file.c`
+- **Test:** tests/test_cheat_file.c: codici GB validi e rifiutati, Game Genie con e senza confronto; hardware: un trucco GameShark e uno Game Genie in Pokémon Crystal.
+- **Accettazione:** nessun costo per lettura o scrittura emulata; nessun trucco tocca A000-BFFF.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### GIO-8.12 — Suite di accuratezza in make check-gb · M, 3,25 gg · dipende da: GIO-8.2 · PSP: no
+
+- **Cosa:** Un runner host scarica, in una cache locale fuori dal repository, blargg cpu_instrs, instr_timing e mem_timing, dmg-acid2, cgb-acid2 e Mooneye, a versioni fissate con SHA-256. Li esegue sul core host e confronta seriale e framebuffer con i riferimenti. Il target make check-gb è separato da make check, così si lavora anche senza rete. Il runner calcola anche un hash dello stato GB e dell'immagine per frame: una modifica di velocità del core si accetta solo con hash identici prima e dopo su 12 tracce, una per scena del gate.
+- **File:** `tests/gb_suite/run_gb_suite.py` (nuovo), `tests/gb_suite/expected.json` (hash attesi), `Makefile` (check-gb), `scripts/check-tree.sh` (rifiuta anche *.gb e *.gbc)
+- **Test:** la suite stessa; un mutante del core (flag H sbagliato) fa fallire cpu_instrs.
+- **Accettazione:** risultati pubblicati per test; nessuna ROM nel repository.
+- **Licenza:** dmg-acid2, cgb-acid2 e Mooneye Test Suite sono sotto licenza MIT; i test di blargg non hanno una licenza chiara: si scaricano solo per il test e non si ridistribuiscono.
+
+#### GIO-8.13 — Tilt MBC7 con la levetta · S, 1 gg · dipende da: GIO-8.5 · PSP: sì
+
+- **Cosa:** I registri dell'accelerometro del mapper MBC7 del core prendono i valori tilt_sensorX/Y che la levetta già calcola (source/src/input.c:365-375), con la stessa sensibilità.
+- **File:** `source/src/gb_module.c`, `source/src/input.c`
+- **Test:** test host della conversione dalla levetta ai valori MBC7; hardware: Kirby Tilt 'n' Tumble giocabile su PSP-1000 e PSP-3000.
+- **Accettazione:** il tilt GBA non cambia.
+
+#### GIO-8.14 — Documenti, crediti e sorgente · S, 1 gg · dipende da: GIO-8.4, F-140 · PSP: no
+
+- **Cosa:** NOTICE e source/copyright citano TGB Dual, MasterBoy, GEST e VBA; la LICENSE del core entra nel pacchetto; il bundle del sorgente corrispondente si aggiorna (F-140). README e CHANGELOG si aggiornano, con sezioni Keep-a-Changelog scritte come comportamento visibile, compresa la sezione «Cosa non fa ancora» del README.
+- **File:** `NOTICE`, `source/copyright`, `README.md`, `CHANGELOG.md`, `scripts/package-release.sh`, `scripts/check-package.sh`
+- **Test:** check-package: LICENSE del core e NOTICE presenti nello zip.
+- **Accettazione:** crediti completi; nessuna affermazione di velocità senza compare-benchmarks; prima uscita come prerelease (F-119).
+- **Licenza:** Obblighi GPL-2.0-or-later del core importato: intestazioni, LICENSE, offerta del sorgente.
+
+## 6. Link e multiplayer
+
+Il gruppo copre la verifica su hardware del cavo tra versioni diverse e le altre funzioni del link: motivi dei fallimenti, indicatore di stato, stanze, nickname, audio in sessione, invio di save e stati, e le tecniche pesanti (relay Advance Wars, link a due core, Wireless Adapter, Mystery Gift, link Game Boy). Prima viene LNK-1.1 sulla 1.4.3 pubblicata, nella 1.4.4, perché i suoi numeri decidono quasi tutti i gate; poi il resto di LNK-1, LNK-2 e LNK-3 per la 1.5 (LNK-3.5 dopo gate), LNK-4 per la 1.6, LNK-5, 6 e 7 per la 2.0 (LNK-6.3 dopo gate). Il resto parte solo a gate superato. Nei gate che leggono LNK-1.1 e LNK-1.3, «fps» sono frame eseguiti al secondo di gioco (gruppo 8 di LINK_COUNTERS), mai frame disegnati, perché in lockstep la 1.4.3 salta fino a un frame su due; le misure del link usano i gruppi 1, 5, 7 e 8.
+
+### LNK-1 — Verifica del link su hardware: sessioni accoppiate e contatori che decidono i gate
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 (LNK-1.1 in 1.4.4) | 5,25 gg | ENG-1.6 e CMP-1.4 (solo LNK-1.2), CMP-1.1 (solo LNK-1.3) |
+
+**Copre:** F-115 link Pokémon Gen-3 tra versioni diverse, verificato su hardware.
+**Obiettivo:** Ogni build pubblicata ha righe in `docs/HARDWARE-RESULTS.md` legate allo sha256 di `EBOOT.PBP` e ricavate dai log decodificati di entrambe le PSP. Sulla 1.4.3 pubblicata gli esiti di 2 coppie Pokémon × 2 ruoli (3 scambi e 1 lotta ciascuna), delle gare di MKSC e della coppia mista 1.4.2 + 1.4.3 nei due ruoli sono misurati e pubblicati; una soglia mancata (scambio fermo su «Attendere», errore di comunicazione, ritrasmissioni dall'1% dei datagrammi in su, gruppo 7 diverso da 119/119/0) fa partire prima del resto del gruppo la storia che la corregge (LNK-2.3, LNK-3). Istogrammi di RTT e attese e fps per secondo di gioco decidono con una formula scritta i gate di LNK-6.3, LNK-9, LNK-10, LNK-11 e LNK-12.
+**Da noi oggi:** Il log di runtime v5 gira anche in release, con i contatori link a fine sessione (`source/src/main.c:557-588`: RTT, datagrammi, attese, errori dello stack, cessioni) e un record per ogni pausa di almeno 100 ms (`main.c:683-687`), decodificati da `tools/decode_runtime_log.py:65-91`. Dalla 1.4.3 il gruppo 8 di LINK_COUNTERS dà frame eseguiti e disegnati e l'attesa vblank dell'intera sessione, e il gruppo 7 priorità chiesta, vista ed esito (`main.c:579-585`). Mancano la distribuzione delle attese brevi, quella dell'RTT (solo media smussata, minimo e massimo: `link_net.c:109-124`) e gli fps per secondo. Durante la 1.4.3 due gare di MKSC tra PSP-2000 e PSP-1000 hanno dato 40 fps sulla build prima delle modifiche al lockstep e 45,5 fps sulla prima build con le modifiche (`docs/link-cable.md:251-253`), con un frame su venti oltre 40 ms (`:175-178`): cifre senza log né report salvati, misurate prima della correzione dei contatori a 64 bit. Nessuna sessione è registrata sull'EBOOT finale della 1.4.3, né legata a uno sha256. L'unica sessione accoppiata precedente (1.4.0, FR+FR, commit bf75de4) si è fermata per circa 40 s in 2,5 minuti, e la correzione del ritardo nella Cable Club della 1.4.1 non è mai stata provata.
+**Come ci arriviamo:**
+- Righe ricavate dai log decodificati di entrambe le PSP e legate allo sha256 di EBOOT.PBP, ripetibili da chiunque abbia i log.
+- La prima misura usa la 1.4.3 pubblicata: un fallimento indica il codice già spedito.
+- Gli istogrammi di RTT e attese dimensionano il cuscinetto audio (LNK-6.3) e decidono con una formula scritta i gate di LNK-9, LNK-10, LNK-11 e LNK-12.
+- Il log dice con quale BIOS girava ogni PSP, così il BIOS aperto (F-012) non confonde i risultati.
+- La sessione accoppiata si ripete in entrambi i ruoli dopo ogni cambio del protocollo del cavo, anche compatibile come nella 1.4.3, con una coppia mista.
+
+**Gate prima di iniziare:** nessuno per la 1.1, che si fa nella 1.4.4. La 1.2 entra nella 1.5, dopo ENG-1.6 e CMP-1.4; la 1.3 segue la 1.2 e CMP-1.1.
+**Rischi:**
+- Una sola sessione hardware a settimana: sono le misure a dettare il ritmo.
+- Se gli scambi falliscono, sistemare il link diventa la priorità parallela e il README non mette il cavo in prima pagina finché una ripetizione non passa.
+- PPSSPP non modella né la latenza radio né la fame dello stack Wi-Fi, quindi non vale come prova.
+
+#### LNK-1.1 — Sessione accoppiata sulla 1.4.3 pubblicata e coppia mista · M, 2,25 gg · dipende da: — · PSP: sì
+- **Cosa:** Su una PSP-1000 e una PSP-2000 con l'EBOOT 1.4.3 pubblicato: FireRed+LeafGreen e Ruby+FireRed, ciascuna coppia in entrambi i ruoli, con 3 scambi e 1 lotta per sessione (il save di FireRed ha già riparato la Macchina della Rete di Isola Uno); poi una gara di MKSC per ruolo; poi una coppia mista 1.4.2 + 1.4.3, con una sessione di 3 scambi e una gara di MKSC per ruolo, compreso il ruolo 1.4.3 host + 1.4.2 joiner. Si decodificano i `logs/` di entrambe le PSP e si scrive una riga per sessione con i campi di oggi (sha256 di EBOOT.PBP, modello, CFW, data, coppia, ruolo, scambi riusciti su totali, lotta sì/no, pause di almeno 1 s, attese, RTT smussato, massimo e minimo, ritrasmissioni, datagrammi rifiutati, errori dello stack, backlog a fine pausa) e in più: fps medi, cioè frame eseguiti del gruppo 8 diviso il tempo di gioco (la somma degli intervalli tra i record menu-presence 1 e 0, `main.c:819-830`, tra link-command, `main.c:713`, e LINK_COUNTERS); frame disegnati sul totale; priorità vista ed esito (gruppo 7); datagrammi inviati per frame (gruppo 1 diviso i frame); risposte anticipate e annunci sbagliati (gruppo 5). Sulla 1.4.2, che non ha il gruppo 8, gli fps vengono dal percentile 50 del tempo di frame del report Diagnostica, un campo a 32 bit valido anche prima della 1.4.3. La build resta quella pubblicata.
+- **File:** `docs/HARDWARE-RESULTS.md` (sezione Link, colonne di ENG-1.1; nuovo se manca), `tools/decode_runtime_log.py` (solo uso)
+- **Test:** hardware: 2 coppie × 2 ruoli con 3 scambi e 1 lotta; 2 gare di MKSC; coppia mista con 1 sessione di scambi e 2 gare; decodifica dei `logs/` di entrambe le PSP; `make tree-check` (nessun log, `.sav` o binario in Git).
+- **Accettazione:** Una riga per coppia, ruolo e build, legata allo sha256 di EBOOT.PBP. Sulla 1.4.3 ogni riga riporta, su entrambi i modelli, lotte riuscite, scambi fermi su «Attendere» sui 12, errori di comunicazione nelle gare di MKSC, frame disegnati sul totale in lockstep, ritrasmissioni (gruppo 0) sui datagrammi inviati (gruppo 1), gruppo 7 (0x77 chiesta e vista, esito 0) e il backlog dei record link-pause-end a ogni pausa. Una gara 1.4.3 sotto i 53 fps del caso mksc-psp-lossy di `scripts/check-rom-link.sh` apre una issue per ritarare il profilo PSP del banco, con i log. Nella coppia mista con la 1.4.3 come host si registrano annunci usati e sbagliati (gruppo 5) ed errori di comunicazione del gioco; se MKSC si rompe, le note della 1.4.4 dicono che i giochi lockstep chiedono la stessa versione dalla 1.4.3 in poi. Le righe miste dicono che cosa perde la coppia e alimentano «Si collega con» di ENG-1.2. Una soglia mancata (uno scambio fermo su «Attendere», un errore di comunicazione, ritrasmissioni dall'1% dei datagrammi in su, gruppo 7 diverso da 119/119/0, un backlog che cresce da una pausa all'altra) o pause di almeno 1 s in più di una sessione su quattro aprono una issue con i log e fanno passare LNK-2.3 e LNK-3 davanti al resto del gruppo; finché una ripetizione non passa, il README non presenta il cavo come punto di forza.
+- **Licenza:** nessun codice.
+
+#### LNK-1.2 — Istogrammi del link e fps nel log di runtime v6 · S, 1,5 gg · dipende da: ENG-1.6, CMP-1.4 · PSP: no
+- **Cosa:** LinkNet riceve 8 bucket RTT incrementati in link_net_sample_rtt, con soglie da un helper inline in link_net.h condiviso con main.c: <5, <10, <20, <40, <67, <100, <150, ≥150 ms. I bordi 67, 100 e 150 servono al gate di LNK-6.3; le attese lunghe hanno già un record ciascuna. main_link_service mette ogni attesa negli stessi bucket, anche quelle sotto 100 ms che oggi finiscono solo nei totali. Frame eseguiti e disegnati e attesa vblank sono già nel gruppo 8 di LINK_COUNTERS dalla 1.4.3 (`main.c:582-585`): il decoder ne ricava gli fps medi con il tempo di gioco, cioè gli intervalli tra i record menu-presence 1 e 0 (`main.c:819-830`); il glue aggiunge solo il minimo per finestra di 1 s e i secondi sotto 45 fps. Si contano i probe inviati e ricevuti (`link_net.c:190`, `:283`): quante volte chi dà il clock ha aspettato oltre 10 ms una risposta, per una perdita o per un ritardo dell'altra console. Il tipo di BIOS non entra nel record link-command: il decoder lo legge dal value2 di ROM_OPEN, scritto da CMP-1.4. A fine sessione tutto va in nuovi record LINK_COUNTERS con bucket u16 saturati. Nessun bump: i gruppi nuovi di LINK_COUNTERS sono valori del decoder, aggiunti così dalla 1.4.1; la dipendenza da ENG-1.6 resta per i campioni v5 e v6 dei test (R4).
+- **File:** `source/src/link_net.h`, `source/src/link_net.c` (link_net_sample_rtt :109-124), `source/src/main.c` (main_link_close :542-597, main_link_service :636-688), `source/src/runtime_log.h`, `tools/decode_runtime_log.py` (LINK_COUNTERS :81-91), `tests/test_link_net.c`, `tests/test_runtime_log.c`, `tests/test_decode_runtime_log.py`, `docs/link-cable.md` (sezione dei log), `proofs/cbmc/prove_link_net.c` (solo riesecuzione), `CHANGELOG.md`
+- **Test:** test_link_net: test_rtt_histogram_buckets (bordi esatti, campioni scartati da link_net_sample_rtt non contati, saturazione) e test_probe_counted (un'intestazione con ANSWER_NOW conta un probe e forza la risposta); test_decode_runtime_log.py: i nuovi record di un log v6 si decodificano, il BIOS viene da ROM_OPEN e gli fps medi dal gruppo 8 e dal tempo di gioco; `make check-cbmc`; `make test-sanitize`; `scripts/check-lifecycle.sh` e `scripts/check-performance.sh` verdi.
+- **Accettazione:** Il decoder stampa per sessione gli istogrammi di RTT e attese, fps medi e minimi, secondi sotto 45 e il BIOS di ciascuna PSP (da ROM_OPEN). Nessuna allocazione o I/O nuovi nel percorso di attesa né in update_gba. La prova CBMC passa. Il contenuto nuovo del log entra nella voce del CHANGELOG del bump di ENG-1.6.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-1.3 — Misura dei giochi in lockstep su due PSP · S, 1,5 gg · dipende da: LNK-1.2, CMP-1.1 · PSP: sì
+- **Cosa:** Con la build di LNK-1.2: Advance Wars 2, Mario Kart: Super Circuit, Sonic Battle e tests/link-rom (normal8, normal32, multiplayer, sul BIOS aperto), su PSP-1000 e PSP-2000 in entrambi i ruoli. Per sessione: fps medi e minimi, quota di secondi sotto 45, RTT p50/p95 dagli istogrammi, datagrammi al secondo, cessioni in percentuale della durata (contatore 6), attese per bucket ed errori di comunicazione visti nel gioco. Gli fps di ogni riga sono frame eseguiti al secondo di gioco (gruppo 8), con i frame disegnati a parte, perché in lockstep la 1.4.3 forza il frameskip; ogni riga riporta anche probe al secondo e datagrammi per frame. Nella stessa sessione hardware si fa lo scambio FireRed/Emerald con una PSP per BIOS della passata di compatibilità di F-012, che resta una riga di F-012. Le righe decidono, con la formula scritta nei rispettivi gate, LNK-6.3, LNK-9, LNK-10, LNK-11 e il gate 1 di LNK-12.
+- **File:** `docs/HARDWARE-RESULTS.md`, `tests/link-rom/` (solo build con devkitARM, nessun binario in Git)
+- **Test:** hardware: ogni gioco in entrambi i ruoli su entrambi i modelli; decodifica dei log v6.
+- **Accettazione:** Una riga per gioco, modello e ruolo. Ogni gate è scritto come sì/no con i numeri che lo decidono.
+- **Licenza:** nessun codice; le ROM commerciali restano dell'utente e fuori da Git.
+
+### LNK-2 — Il link spiega i suoi fallimenti: versione, ricerca, canale
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 | 7 gg | LNK-1.1, LNK-1.2 |
+
+**Copre:** F-099 motivi dei fallimenti del link (versione, stanza, gioco), F-101 canale ad hoc e tabella di troubleshooting.
+**Obiettivo:** Ogni fine sessione dice il motivo nelle 5 lingue, CJK compreso, e quale PSP aggiornare quando le versioni differiscono: un partner 1.4.0 compare con «1.4.0», un partner 1.4.1-1.4.4 si collega e il menu mostra «1.4.x». Due istanze con formati di rete diversi chiudono con VERSION entro 1 s simulato; la ricerca del joiner si ferma dopo 20 s con il motivo; il log ha il canale reale e quello configurato di entrambe le PSP; ogni riga della tabella di troubleshooting corrisponde a un MSG esistente, e il consiglio sul canale entra solo se le righe misurate lo confermano. Un test host prova che il formato precedente resta accettato e che il prefisso dei messaggi di oggi non cambia.
+**Da noi oggi:** I motivi di fine sessione sono già in 5 lingue per timeout, rete, incompatibilità, uscita del partner, sospensione e cambio ROM (`source/src/message.h:426-431`, `gui.c:4991-5018`). Un HELLO con protocollo diverso (1.4.0 contro 1.4.1 e successive) finisce in INCOMPATIBLE con il generico 'Incompatible protocol' (`link_cable.c:288-292`), senza dire quale PSP aggiornare. La ricerca del joiner non ha limite (`psp_adhoc.c:473-481`). Il canale non viene registrato, benché lo scan lo restituisca già (`psp_adhoc.c:419`), e `docs/link-cable.md:194` dice solo 'WLAN on'. Con un formato di rete diverso l'attesa non finirebbe mai: link_net_receive scarta il datagramma prima di leggerlo (`link_net.c:138-141`) e il timeout di silenzio richiede peer_seen (`link_cable.c:1271-1274`). Oggi nessuna coppia di release lo incontra, perché LINK_NET_VERSION è 1 dalla 1.4.0. `README.md:111-112` e `docs/link-cable.md:4` chiedono la stessa versione sulle due PSP, ma nulla lo controlla: una 1.4.1 o una 1.4.2 si collega a una 1.4.3 senza avviso. La 1.4.3 ha esteso START (byte 14 di flag), POKEMON_PAIR (byte 32-35, ciclo dell'host) e il byte 36 dell'intestazione di link_net (ANSWER_NOW) senza cambiare `LINK_CABLE_PROTOCOL` (2u) né `LINK_NET_VERSION` (1u). In una coppia mista la correzione dello scambio della 1.4.3 non vale, perché servono il ciclo dell'host nel frame (`link_cable.c:903-914`) e la spaziatura del joiner (`:812-821`): lo scambio può ancora fermarsi su «Attendere» come nella 1.4.2.
+**Come ci arriviamo:**
+- La versione del partner arriva in un HELLO esteso che le 1.4.x accettano, perché controllano solo size ≥ 6 (`link_cable.c:288`): il messaggio dice quale PSP aggiornare, e un HELLO di 6 byte con protocollo 1 si riconosce come 1.4.0.
+- Un byte di capacità nello stesso HELLO: ogni funzione nuova di questo gruppo si attiva solo se entrambe le PSP la annunciano, quindi LINK_CABLE_PROTOCOL non sale a ogni release e una 1.4.1-1.4.4 resta collegabile per gli scambi.
+- Il rilevamento del formato di rete legge il prefisso 'G','R',versione che ogni build scrive già (`link_net.c:272-274`), invece di indovinare dal silenzio.
+- Il consiglio sul canale entra nella documentazione solo dopo la misura (LNK-2.5).
+- Motivi nelle 5 lingue con CJK.
+
+**Gate prima di iniziare:** nessuno. La 2.3 e la 2.5 richiedono una sessione hardware.
+**Rischi:**
+- Il rilevamento del formato non si può aggiungere a posteriori alle 1.4.x: se un giorno LINK_NET_VERSION cambia, le 1.4.x restano appese. Nessuna storia di questo gruppo lo cambia (LNK-14.3 frammenta i frame invece di allargare i messaggi).
+- Un limite di ricerca troppo corto fa fallire un host lento a creare il gruppo: 20 s, verificati su hardware.
+- Il repo non contiene `pspnet_adhocctl.h` né `psputility_sysparam.h`: il campo channel di SceNetAdhocctlParams e la costante del canale ad hoc dell'XMB vanno confermati sull'header del toolchain.
+- In un gioco lockstep con la 1.4.3 come host e una 1.4.2 come joiner (la 1.4.1 non manda annunci), chi dà il clock usa anche gli annunci arrivati dopo lo START (`link_cable.c:1209-1225`), mentre la 1.4.2 annuncia dopo 4096 cicli di quiete anche nelle raffiche di trasferimenti, che la 1.4.3 non annuncia più perché spesso sbagliati. Una parola sbagliata usata non si annulla (`:440-441`), quindi MKSC può dare errore di comunicazione all'avvio della gara. È dedotto dal codice: lo misura la coppia mista di LNK-1.1.
+
+#### LNK-2.1 — Prefisso congelato e rilevamento del formato di rete · S, 1,5 gg · dipende da: LNK-2.2 · PSP: no
+- **Cosa:** In link_net_receive un datagramma che inizia con 'G','R' ma ha un'altra versione resta rifiutato e contato, e in più registra peer_wire_version. Dopo 3 datagrammi stranieri consecutivi, finché nessun datagramma valido è arrivato, link_cable_service chiude con lo stato VERSION introdotto da LNK-2.2. Un commento in link_net.h congela i byte 0-2 per ogni versione futura. LINK_NET_VERSION non cambia. È un'assicurazione: deve uscire almeno una release prima di qualunque cambio del formato di rete.
+- **File:** `source/src/link_net.c` (:138-141), `source/src/link_net.h`, `source/src/link_cable.c` (link_cable_service :1263-1284), `tests/test_link_net.c`, `tests/test_link_cable.c`, `proofs/cbmc/prove_link_net.c` (riesecuzione)
+- **Test:** test_link_net: test_reports_foreign_wire_version (nessuna consegna, peer_id invariato, rejected incrementato, versione registrata); test_link_cable: due cavi con versione di rete diversa finiscono in VERSION; `make check-cbmc`; `make test-sanitize`.
+- **Accettazione:** Due istanze simulate con versioni di rete diverse chiudono con VERSION entro 1 s di tempo simulato. Un datagramma straniero arrivato dopo un peer valido non chiude nulla. La prova CBMC passa.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-2.2 — HELLO esteso: versione del partner e capacità · S, 2 gg · dipende da: LNK-1.1, LNK-1.2 · PSP: no
+- **Cosa:** L'HELLO accoda la versione di GBA Rush (major, minor, patch) e un byte di capacità, oggi 0. link_cable_hello separa i casi: un protocollo diverso diventa il nuovo stato LINK_CABLE_VERSION (MAIN_LINK_END_VERSION), con la versione del partner, oppure '1.4.0' se l'HELLO ha 6 byte e protocollo 1; un ruolo duplicato o un HELLO malformato resta INCOMPATIBLE. Il messaggio nuovo è MSG_LINK_REASON_VERSION ('Versione di GBA Rush diversa: questa PSP %s, partner %s. Aggiorna la PSP con la versione più vecchia'); link_cable_hello confronta major, minor e patch delle due versioni. Le capacità si combinano con un AND: le funzioni nuove di LNK-3.4, 7, 8, 9, 11, 12, 13 e 14 si attivano solo se entrambi i bit ci sono. LINK_CABLE_PROTOCOL sale solo quando cambia la posizione o il significato di un campo esistente (R2); il commento di `link_cable.h:55-57`, che oggi chiede un bump a ogni messaggio cambiato, si riscrive con la stessa regola. Un HELLO di 6 byte con protocollo 2 si mostra come «1.4.x»: la riga del partner nel menu Link dice «versione 1.4.x: aggiorna la PSP del partner», con una stringa nuova nelle 5 lingue.
+- **File:** `source/src/link_cable.c` (link_cable_start :250-270, link_cable_hello :282-307), `source/src/link_cable.h` (LinkCableStatus :60-68, campi peer_version e peer_caps, commento :55-57), `source/src/main.h` (GBA_RUSH_VERSION :28 con costanti numeriche accanto, MainLinkEnd :127-137), `source/src/main.c`, `source/src/gui.c` (submenu_link :4991-5018), `source/src/message.h` + `source/src/text/message_{jpn,eng,chs,cht,ita}.h`, `tools/decode_runtime_log.py` (LINK_STATUS, LINK_ENDS :66-71), `tests/test_link_cable.c`, `tests/test_decode_runtime_log.py`, `docs/link-cable.md`, `CHANGELOG.md`
+- **Test:** test_link_cable: test_hello_reports_peer_version (HELLO di 6 byte con protocollo 1 → '1.4.0' e la PSP del partner da aggiornare; HELLO di 10 byte più vecchio e più nuovo → versione mostrata e PSP da aggiornare giusta; capacità combinate con AND); test_link_cable: test_mode_selection_and_roles invariato e verde; test_link_cable: test_previous_wire_format_accepted (START da 14 byte, POKEMON_PAIR da 32 byte e byte 36 a zero: il trasferimento si chiude, la REPLY parte subito, il joiner non aspetta) e test_wire_prefix_frozen (i primi 14 byte di START e i primi 32 di POKEMON_PAIR di oggi hanno il layout della 1.4.2); test_decode_runtime_log.py: stato e motivo 'version'; `scripts/check-messages.sh`.
+- **Accettazione:** Contro un HELLO in stile 1.4.0 il motivo è VERSION con '1.4.0'. Contro un HELLO in stile 1.4.1-1.4.4 (protocollo 2, 6 byte) la sessione si collega e il menu mostra «1.4.x». Il ruolo duplicato resta INCOMPATIBLE. Stringhe nelle 5 lingue nello stesso ordine. Voce nel CHANGELOG (Changed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-2.3 — Limite alla ricerca del joiner, con motivo · S, 1 gg · dipende da: LNK-1.2 · PSP: sì
+- **Cosa:** psp_adhoc_join smette di cercare dopo PSP_ADHOC_SCAN_BUDGET_US (20 s) senza trovare il gruppo: il ciclo di `psp_adhoc.c:473-481` oggi non ha limite. Fallisce in fase SCAN con un codice dedicato, che main.c traduce nel nuovo MAIN_LINK_END_NOT_FOUND con il messaggio 'Nessuna sessione trovata: Player 1 ha creato la sessione? Stesso canale ad hoc?'. L'host continua ad aspettare senza limite, come oggi.
+- **File:** `source/src/psp_adhoc.c` (psp_adhoc_join :467-502), `source/src/psp_adhoc.h`, `source/src/main.c`, `source/src/main.h` (MainLinkEnd), `source/src/gui.c`, `source/src/message.h` + 5 tabelle, `tools/decode_runtime_log.py` (LINK_ENDS), `tests/test_decode_runtime_log.py`, `scripts/check-lifecycle.sh`, `CHANGELOG.md`
+- **Test:** `scripts/check-lifecycle.sh`: nuova regola che richiede PSP_ADHOC_SCAN_BUDGET_US nel ciclo di scan; test_decode_runtime_log.py: motivo 'not-found'; `scripts/check-messages.sh`; hardware: Join senza host mostra il messaggio entro 25 s, un host creato 3 s dopo viene trovato.
+- **Accettazione:** Nessun ciclo di scan senza limite. Messaggio nelle 5 lingue. Solo il worker chiama sceNet* (la regola esistente resta verde). Voce nel CHANGELOG (Fixed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-2.4 — Canale ad hoc nel log · S, 1 gg · dipende da: LNK-1.2 · PSP: no
+- **Cosa:** Il joiner ha già il canale del gruppo in selected.channel (SceNetAdhocctlScanInfo, copiato in `psp_adhoc.c:419`); l'host lo legge con sceNetAdhocctlGetParameter dopo psp_adhoc_wait_group. Entrambi leggono il canale configurato nell'XMB con sceUtilityGetSystemParamInt (0 = Automatico). Solo il worker fa queste chiamate e pubblica i due valori con una barriera; main.c li scrive in un record LINK_COUNTERS del log v6 a fine sessione e nei fallimenti, e il decoder li mostra.
+- **File:** `source/src/psp_adhoc.c` (psp_adhoc_host :351-368, psp_adhoc_scan :371-425), `source/src/psp_adhoc.h`, `source/src/main.c` (main_link_close :542-597), `tools/decode_runtime_log.py`, `tests/test_decode_runtime_log.py`
+- **Test:** test_decode_runtime_log.py: record decodificato come 'channel=6 xmb=auto'; `scripts/check-lifecycle.sh` verde (nessuna chiamata di rete fuori dal worker).
+- **Accettazione:** Il decoder mostra canale reale e configurato per entrambe le PSP di una sessione. Nessuna chiamata bloccante nel thread dell'emulatore.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-2.5 — Verifica del consiglio sul canale e tabella di troubleshooting · S, 1,5 gg · dipende da: LNK-1.1, LNK-2.2, LNK-2.3, LNK-2.4 · PSP: sì
+- **Cosa:** Su hardware: entrambe le PSP in Automatico, entrambe su 1, 6 o 11, canali fissi diversi, poi vicino a un router acceso. Con i dati si scrive in docs/link-cable.md una tabella 'La PSP dice → cosa fare' con i messaggi esatti e i rispettivi ID MSG. Il consiglio sul canale entra solo se le righe lo confermano. Il README rimanda a questa tabella tramite F-145.
+- **File:** `docs/link-cable.md` (sezione 'Using it' :192-208 più la tabella), `docs/HARDWARE-RESULTS.md`
+- **Test:** hardware: 4 configurazioni di canale, 2 tentativi ciascuna, con il canale letto dal log di LNK-2.4; `make tree-check` (link della documentazione).
+- **Accettazione:** Ogni riga della tabella corrisponde a un MSG esistente. Il consiglio sul canale cita le righe misurate oppure viene omesso. Il canale dei tentativi falliti compare nei log.
+- **Licenza:** nessun codice.
+
+### LNK-3 — Integrità della sessione: cheat in pausa, blocchi con motivo, impronta del relay
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 (LNK-3.5 dopo gate) | 6 gg | LNK-1.1, LNK-1.2, LNK-2.2, F-005, F-045 |
+
+**Copre:** F-098 blocchi in sessione con motivo (stati, cheat, rewind, fast-forward; il turbo resta disponibile), F-102 controllo di desincronizzazione.
+**Obiettivo:** In sessione i trucchi sono in pausa, hook CodeBreaker compresi, e tornano a fine sessione con le scelte intatte; ogni blocco si spiega con un toast nelle 5 lingue, mai con un dialogo modale in gioco; il turbo resta disponibile. L'impronta delle coppie del relay funziona anche tra ROM diverse (FR+LG): 0 falsi positivi nell'intera matrice simulata e una corruzione iniettata rilevata entro 128 coppie; la chiusura su discordanza parte solo dopo 10 sessioni di scambio su hardware con 0 discordanze in sola registrazione.
+**Da noi oggi:** I savestate sono bloccati (`source/src/memory.c:3773`, `:3827`, `:3870`, `:3930`) con un dialogo modale (`gui.c:4062-4065`); il fast-forward viene fermato in silenzio (`main.c:902-906`). I cheat restano attivi: process_cheats gira a ogni frame (`main.c:1143`) e il hook CodeBreaker parte dal codice tradotto (`cheats.c:846-856`). Il relay scrive la checksum locale in ogni slot del frame (`link_cable.c:866-869`), quindi il gioco non può più accorgersi di parole consegnate male, e nessun controllo la sostituisce. Disconnect non avvisa se il gioco è ancora nella Cable Club (`gui.c:3565-3569`).
+**Come ci arriviamo:**
+- Turbo disponibile in sessione: attraverso il link passano solo parole seriali, quindi bloccarlo non protegge nulla.
+- Cheat in pausa, compresi quelli con hook, e ripresi a fine sessione con le scelte intatte.
+- L'impronta ripristina il controllo che il relay toglie al gioco e funziona anche tra ROM diverse (FR+LG), perché si calcola sulle parole consegnate al gioco.
+- Finestre indicizzate dalla sequenza delle coppie dell'host (pairs_seen esiste già: `link_cable.c:835-836`, `:1236-1237`): una finestra con coppie scartate non si confronta, quindi niente falsi positivi all'apertura e alla chiusura del livello link.
+- Prima una release in sola registrazione, poi la chiusura del link solo con zero falsi positivi su hardware; un avviso prima di staccare il link a metà scambio.
+
+**Gate prima di iniziare:** 3.1-3.4 nessuno. 3.5 solo dopo una release con la 3.4 in sola registrazione e almeno 10 sessioni di scambio su hardware con zero discordanze.
+**Rischi:**
+- Mettere in pausa i cheat non ripristina i valori già scritti in RAM.
+- L'impronta non vede la divergenza causata da un cheat, perché entrambe le console vedono le stesse parole: la copre solo la 3.1.
+- Il joiner scarta coppie quando il suo livello link è chiuso (`link_cable.c:1085-1086`), anche prima di aprirlo mentre l'host è già aperto: per questo le finestre seguono la sequenza dell'host e non l'apertura locale.
+- L'impronta vale solo tra build con il bit di capacità di LNK-2.2.
+
+#### LNK-3.1 — Cheat in pausa durante la sessione · S, 1 gg · dipende da: — · PSP: sì
+- **Cosa:** cheats.c riceve un flag controllato all'inizio di process_cheats e di process_cheats_at_hook (chiamata dal codice tradotto, `mips_stub.S:3309`), così si fermano anche i CodeBreaker con hook. main_link_start lo alza e main_link_close lo abbassa; le scelte del giocatore restano salvate. La pagina dei cheat mostra una riga passiva 'Cheat in pausa durante il link'. GIO-3.4 è fusa qui: trucchi inerti in sessione, hook CodeBreaker e regola in check-lifecycle stanno tutti in questa storia.
+- **File:** `source/src/cheats.c` (process_cheats_at_hook :846-856, process_cheats :861-893), `source/src/cheats.h`, `source/src/main.c` (main_link_start :693-751, main_link_close :542-597), `source/src/gui.c` (pagina cheat :3116-3170), `source/src/message.h` + 5 tabelle, `scripts/check-lifecycle.sh`, `CHANGELOG.md`
+- **Test:** `scripts/check-lifecycle.sh`: nuova regola che richiede il controllo del flag in entrambe le funzioni; `tests/test_codebreaker.c` invariato e verde; `scripts/check-messages.sh`; hardware: FireRed con un codice GS sul denaro, che in sessione non si riapplica e dopo Disconnect sì.
+- **Accettazione:** Con main_link_active() nessun cheat viene applicato, hook CodeBreaker compreso. Le scelte attive tornano dopo la sessione. Stringa nelle 5 lingue. Voce nel CHANGELOG (Changed) che descrive il comportamento.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-3.2 — Motivi dei blocchi come toast, non come dialoghi · S, 1,5 gg · dipende da: LNK-3.1, F-045 · PSP: sì
+- **Cosa:** In sessione, premere fast-forward mostra 'Fast-forward disattivato durante il link'. Salvare o caricare uno stato con i tasti stato in gioco mostra un toast al posto del dialogo modale: action_savestate e action_loadstate controllano main_link_active() prima di chiamare memory.c. Dal menu, dove il gioco è già fermo, il dialogo resta com'è, perché i toast si disegnano solo in synchronize() sui frame presentati (`main.c:1329-1363`). Alla connessione un toast avvisa che i cheat sono in pausa. Il turbo non viene bloccato. Rewind (F-083) e salvataggio rapido (F-046) usano lo stesso main_link_active() e gli stessi messaggi. UI-2.3 è fusa qui, con il suo test.
+- **File:** `source/src/main.c` (main_fast_forward_input :897-906), `source/src/gui.c` (action_loadstate e action_savestate :3003-3026), `tests/test_state_hotkeys.py` (nuovo, stesso metodo di estrazione di tests/test_startup.py), `source/src/message.h` + 5 tabelle, API toast di F-045, `CHANGELOG.md`
+- **Test:** tests/test_state_hotkeys.py: con main_link_active() = 1, action_savestate e action_loadstate accodano il toast e non chiamano save_state né load_state; `scripts/check-messages.sh`; hardware: i tre blocchi provati in sessione, senza dialoghi modali durante il gioco e senza timeout del partner.
+- **Accettazione:** Nessun dialogo modale per un blocco link mentre si gioca. Dal menu il dialogo resta quello della 1.4.2. Ogni blocco spiega il motivo nelle 5 lingue. Voce nel CHANGELOG (Changed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-3.3 — Conferma prima di staccare mentre il gioco usa il link · S, 0,5 gg · dipende da: — · PSP: sì
+- **Cosa:** Se il livello link Pokémon è aperto su uno dei due lati, o se un trasferimento lockstep è avvenuto nell'ultimo secondo, Disconnect chiede 'Il gioco è ancora collegato: esci prima dalla stanza nel gioco. Disconnettere comunque?' con yesno_dialog. Per farlo link_cable_in_use (`link_cable.c:1254-1261`) diventa pubblica e riceve il ciclo corrente.
+- **File:** `source/src/gui.c` (menu_link_disconnect_action :3565-3569), `source/src/link_cable.c`, `source/src/link_cable.h`, `source/src/main.c`, `source/src/message.h` + 5 tabelle, `tests/test_link_cable.c`, `CHANGELOG.md`
+- **Test:** test_link_cable: test_in_use_reports_open_link_layer; `scripts/check-messages.sh`; hardware: conferma nella Cable Club, nessuna conferma fuori.
+- **Accettazione:** La conferma compare solo quando il gioco ha il link aperto. Fuori da quel caso Disconnect non cambia. Voce nel CHANGELOG (Added).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-3.4 — Impronta delle coppie del relay, in sola registrazione · M, 2 gg · dipende da: LNK-1.1, LNK-1.2, LNK-2.2 · PSP: no
+- **Cosa:** Un FNV-1a a 32 bit sulle coppie non vuote come arrivano al gioco, in finestre di 64 coppie indicizzate dalla sequenza dell'host. L'host aggiorna quando accoda LINK_MSG_POKEMON_PAIR (pokemon_frame_word :900-915); il joiner usa le parole che consegna davvero al gioco (:888-889) e conta la sequenza con pairs_seen (:835-836, :1236-1237). Dalla 1.4.3 POKEMON_PAIR porta anche il ciclo dell'host (36 byte su 40, `:903-914`), quindi LINK_MSG_DIGEST resta un messaggio a parte. Una finestra in cui il joiner ha scartato anche una sola coppia non si confronta. A fine finestra il joiner manda LINK_MSG_DIGEST (sequenza di inizio, impronta), un tipo appeso all'enum che i peer vecchi scartano (`link_cable.h:55-57`, default di link_cable_drain in `link_cable.c:1240-1241`), e lo manda solo se entrambi hanno il bit di capacità. L'host confronta con un anello di 8 finestre; una discordanza incrementa un contatore e scrive un record nel log v6, dove entrano già anche i valori 'desync' di stato e motivo per la 3.5 e la 12.6. Per il lockstep non si aggiunge nulla: il contatore mispredicted (`main.c:572-574`) è già il segnale di divergenza.
+- **File:** `source/src/link_cable.c` (enum :18-36, pokemon_take_pair :797-840, pokemon_frame_word :858-929, link_cable_drain :1172-1249), `source/src/link_cable.h` (LinkPokemon :85-112), `source/src/main.c`, `source/src/runtime_log.h`, `tools/decode_runtime_log.py`, `tests/test_link_cable.c`, `tests/test_decode_runtime_log.py`
+- **Test:** test_link_cable: test_pokemon_trades su tutte le combinazioni di gioco, velocità e congelamento e su tutti i profili di rete, con zero discordanze; test_digest_detects_corrupted_pair (una parola alterata sul joiner rilevata entro 2 finestre); test_digest_skips_windows_with_drops (joiner che apre il livello link dopo l'host); test_digest_ignored_by_old_peer; `make test-sanitize` (test_link_cable --quick).
+- **Accettazione:** Zero falsi positivi nell'intera matrice simulata. Una corruzione iniettata viene rilevata entro 128 coppie. Il decoder mostra finestre confrontate, saltate e discordanti. Nessun bump di LINK_CABLE_PROTOCOL.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-3.5 — Chiudere il link su un'impronta discordante · S, 1 gg · dipende da: LNK-3.4, F-005, F-045 · PSP: sì
+- **Cosa:** Condizionata, non prima della 1.6: il gate chiede prima una release con la 3.4 in sola registrazione e almeno 10 sessioni di scambio senza discordanze. Superato il gate, una discordanza chiama link_cable_end(LINK_CABLE_DESYNC), come un cavo staccato, e main.c registra MAIN_LINK_END_DESYNC con i valori già riservati nel log v6 dalla 3.4. Il messaggio è 'I due giochi non sono più allineati: link chiuso. Il save di prima del link è recuperabile' e rimanda al ripristino di F-005. LNK-12.6 riusa lo stesso motivo e la stessa stringa.
+- **File:** `source/src/link_cable.c`, `source/src/link_cable.h`, `source/src/main.c`, `source/src/main.h`, `source/src/gui.c`, `source/src/message.h` + 5 tabelle, `tests/test_link_cable.c`, `CHANGELOG.md`
+- **Test:** test_link_cable: test_desync_closes_link; `scripts/check-messages.sh`; hardware: 10 sessioni di scambio senza chiusure spurie.
+- **Accettazione:** Il link si chiude entro circa 1 s dalla discordanza. Toast e motivo nel menu nelle 5 lingue. Zero chiusure spurie su hardware. Voce nel CHANGELOG (Added).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### LNK-4 — Stato del link durante il gioco
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 | 3,25 gg | F-045 |
+
+**Copre:** F-100 indicatore della sessione link durante il gioco.
+**Obiettivo:** Indicatore a eventi senza impostazioni: compare a ogni cambio di stato e durante un'attesa del partner oltre 1 s, nelle 5 lingue, e con la sessione ferma non si disegna nulla (fps invariati); la mappatura da stato a messaggio è un modulo puro con test su tutte le combinazioni; nessun letterale inglese nel menu Link; i tooltip del frameskip dicono che in lockstep si salta al massimo un frame di fila.
+**Da noi oggi:** Stato e motivi esistono in 5 lingue solo nel menu Link (`source/src/message.h:403-431`, `gui.c:4943-5039`). La riga della tecnica è un letterale inglese ('Pokemon frame link' / 'Lockstep link', `gui.c:4959-4962`). La mappatura da stato a messaggio è scritta dentro submenu_link e non ha test. Chi gioca non sa se la sua console sta aspettando il partner.
+**Come ci arriviamo:**
+- Indicatore a eventi senza impostazione: appare a ogni cambio di stato e durante un'attesa del partner oltre 1 s, poi sparisce.
+- Testi nelle 5 lingue.
+- La mappatura da stato a messaggio diventa un modulo puro con test, condiviso da menu, indicatore e link automatico (LNK-16.3).
+- Il toast di connessione nomina il gioco del partner, e il nickname quando arriva LNK-5.4.
+
+**Gate prima di iniziare:** F-045 disponibile (solo per la 4.3).
+**Rischi:**
+- Si disegna sopra l'immagine: va usato il percorso print_string esistente (`main.c:1365-1385`) tramite F-045, senza toccare psp_video.c.
+- Spazio stretto a 480x272 con il testo CJK.
+- In lockstep chi ha frameskip manuale 0 vede comunque fino a un frame su due saltato: lo dicono i tooltip di LNK-4.1.
+
+#### LNK-4.1 — Letterale della tecnica nelle tabelle MSG · S, 0,75 gg · dipende da: — · PSP: no
+- **Cosa:** Le due stringhe hard-coded di `gui.c:4959-4962` diventano MSG_LINK_TECHNIQUE_POKEMON e MSG_LINK_TECHNIQUE_LOCKSTEP, tradotte nelle 5 lingue. I tooltip delle righe Frameskip (MSG_TOOLTIP_FRAMESKIP_TYPE e MSG_TOOLTIP_FRAMESKIP_VALUE, `gui.c:5147-5148`) dicono nelle 5 lingue che durante un link lockstep si salta al massimo un frame di fila, qualunque sia l'impostazione, che torna valida alla chiusura del link (`main.c:229-234`, `:1310-1316`).
+- **File:** `source/src/gui.c` (:4959-4962), `source/src/message.h` + 5 tabelle (`source/src/text/message_{jpn,eng,chs,cht,ita}.h`)
+- **Test:** `scripts/check-messages.sh` e `scripts/check-menu-layout.sh` verdi, più il controllo di larghezza di ENG-9.1.
+- **Accettazione:** Nessun letterale inglese rimasto nel menu Link. Ordine identico nelle 5 tabelle. Nessuna voce di menu nuova.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-4.2 — Modulo puro dello stato link · S, 1 gg · dipende da: LNK-4.1 · PSP: no
+- **Cosa:** link_status.c/.h riceve sessione aperta, stato del cavo, modo, ruolo, stato ad hoc e motivo di fine, e restituisce l'ID del messaggio di stato, quello del motivo e il testo breve dell'indicatore. submenu_link lo usa al posto della logica interna.
+- **File:** `source/src/link_status.c` (nuovo), `source/src/link_status.h` (nuovo), `source/src/gui.c` (submenu_link :4943-5039), `Makefile` (regole normale e sanitize), `source/Makefile`, `tests/test_link_status.c` (nuovo)
+- **Test:** test_link_status: tutte le combinazioni degli enum producono ID validi e quelle oggi visibili nel menu restano identiche; `make test-sanitize`.
+- **Accettazione:** Il menu Link mostra le stesse righe di prima. Il modulo usa tipi stdint e non dipende dal PSP SDK.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-4.3 — Indicatore e toast di sessione · S, 1,5 gg · dipende da: LNK-4.2, F-045 · PSP: sì
+- **Cosa:** main_link_log_state (`main.c:527-538`), che vede già ogni cambio di stato e di modo, passa l'evento al livello di F-045. L'indicatore resta visibile durante hosting e ricerca, e durante un'attesa del partner oltre 1 s. I toast coprono connessione (con il codice o il titolo del gioco del partner), partner uscito, link perso e versione diversa. Nessuna impostazione nuova.
+- **File:** `source/src/main.c` (main_link_log_state :527-538, main_link_service :636-688), `source/src/link_status.c`, `source/src/link_status.h`, `source/src/message.h` + 5 tabelle (solo MSG_LINK_STATUS_WAITING_PARTNER), API degli indicatori e dei toast di F-045, `CHANGELOG.md`
+- **Test:** test_link_status: testi dell'indicatore per ogni stato; `scripts/check-messages.sh`; hardware: indicatore visibile e nascosto nei momenti giusti, fps invariati con la sessione CONNECTED e ferma.
+- **Accettazione:** Con la sessione CONNECTED e ferma non si disegna nulla. Testi nelle 5 lingue. Nessuna allocazione o I/O nel percorso di frame. Voce nel CHANGELOG (Added).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### LNK-5 — Stanze 0-99 con elenco, motivi di accesso e nome del partner
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 | 9,5 gg | LNK-2.2, LNK-2.3 |
+
+**Copre:** F-104 stanze numerate con elenco, F-105 nickname del giocatore.
+**Obiettivo:** Stanze 1-99 più la stanza 0 delle 1.4.x, con la versione del protocollo nel nome: una stanza incompatibile si vede attenuata prima del join, con il motivo nelle 5 lingue; FireRed entra in una stanza LeafGreen; una stanza piena si rifiuta prima dell'HELLO; il nickname dell'XMB compare entro 1 s se disegnabile, senza impostazioni in più; prova a tre console con 5 scenari passati 2 volte ciascuno.
+**Da noi oggi:** Gruppo 'GBARUSH' e prodotto 'GBARUSH01' fissi (`source/src/psp_adhoc.c:66-67`, `:241`). Lo scan entra nel primo gruppo con quel nome (`psp_adhoc.c:414-423`), quindi due coppie vicine si confondono. Il menu mostra solo il codice del gioco del partner (`gui.c:3572-3582`). Nessun nickname.
+**Come ci arriviamo:**
+- Nome 'GRnnVccc' (stanza, versione del protocollo del cavo, prefisso del gioco): una versione incompatibile è attenuata prima del join.
+- Stanza 0 = 'GBARUSH', il nome delle 1.4.x: una 1.4.1-1.4.4 e una build nuova si trovano in entrambe le direzioni.
+- Coppie Pokémon con ROM diverse segnate compatibili: FireRed entra in una stanza LeafGreen.
+- Nickname dell'XMB preso dalla lista peer che il joiner legge già (`psp_adhoc.c:446`), senza un'impostazione in più.
+- La stanza piena si riconosce dalla lista peer prima di scambiare traffico.
+
+**Gate prima di iniziare:** nessuno. Il test a tre console serve per la promozione a stabile.
+**Rischi:**
+- Il nome di gruppo ha al massimo 8 caratteri alfanumerici.
+- Non è verificato se lo scan filtri per codice prodotto: il prodotto resta GBARUSH01.
+- Due coppie vicine nella stanza 0 si confondono come oggi: l'elenco lo mostra e il menu propone un'altra stanza.
+- Il nickname è UTF-8, spesso in kana, e non sappiamo disegnarlo finché UI-9.5 non arriva: i font sono GBK compilati in build (`source/src/message.h:26-28`). Fino ad allora un nickname non disegnabile lascia l'etichetta di oggi.
+- Il test delle stanze parallele richiede tre console; senza, la release resta prerelease.
+
+#### LNK-5.1 — Modulo puro per il nome della stanza · S, 1,5 gg · dipende da: LNK-2.2 · PSP: no
+- **Cosa:** link_room.c/.h codifica e decodifica 'GR', 2 cifre di stanza (1-99), un carattere di versione (LINK_CABLE_PROTOCOL in base 36) e 3 caratteri del codice gioco, con i non alfanumerici mappati a '0'. La stanza 0 è 'GBARUSH', che vale protocollo 2: entrabile finché il nostro LINK_CABLE_PROTOCOL è 2, altrimenti 'aggiorna'. I nomi sconosciuti si mostrano così come sono. Il giudizio di accesso: versione diversa → 'aggiorna'; entrambi Gen-3 → ok; stesso prefisso → ok; altrimenti 'apri <gioco>', con una tabella minima di titoli (Gen-3 più i giochi misurati in LNK-1.3).
+- **File:** `source/src/link_room.c` (nuovo), `source/src/link_room.h` (nuovo), `tests/test_link_room.c` (nuovo), `Makefile` (regole normale e sanitize), `source/Makefile`
+- **Test:** test_link_room: andata e ritorno per le stanze 1-99; mappatura dei byte non alfanumerici; 'GBARUSH' riconosciuto come stanza 0 e protocollo 2; nomi estranei mostrati così come sono; giudizi su versione e gioco (FR in stanza LG ok, MKSC in stanza FR attenuata); `make test-sanitize`.
+- **Accettazione:** Ogni nome generato ha 8 byte alfanumerici. Nessuna dipendenza dal PSP SDK.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-5.2 — Il worker crea e cerca per nome di stanza · M, 3 gg · dipende da: LNK-5.1, LNK-2.3 · PSP: sì
+- **Cosa:** psp_adhoc_start(host, group) sostituisce la costante del gruppo. Lo scan pubblica al thread dell'emulatore fino a 16 gruppi (nome e canale) con una coda a produttore e consumatore singoli protetta da __sync_synchronize, poi aspetta la scelta. Dopo il join, se la lista peer contiene più di un altro membro, il worker fallisce con il codice 'stanza piena' ed esce dal gruppo (psp_adhoc_find_host :428-463). Il limite di ricerca di LNK-2.3 resta valido. Il motivo 'room-full' è un valore appeso in fondo all'enum dei motivi: RUNTIME_LOG_VERSION non cambia (regola R1).
+- **File:** `source/src/psp_adhoc.c` (psp_adhoc_group :66-67, psp_adhoc_host :351-368, psp_adhoc_scan :371-425, psp_adhoc_find_host :428-463, psp_adhoc_join :467-502), `source/src/psp_adhoc.h`, `source/src/main.c` (main_link_start :693-751), `tools/decode_runtime_log.py` (motivo 'room-full'), `tests/test_decode_runtime_log.py`, `scripts/check-lifecycle.sh`
+- **Test:** `scripts/check-lifecycle.sh`: sceNet* solo nel worker e barriere di pubblicazione sulla nuova coda; test_decode_runtime_log.py; hardware: scan con 2 host vicini, join di quello scelto, terzo joiner rifiutato come 'stanza piena'.
+- **Accettazione:** Il joiner entra nella stanza scelta, non nella prima trovata. Una stanza piena viene rifiutata prima dell'HELLO, con un motivo. Il thread dell'emulatore non si blocca mai sulla rete.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-5.3 — Elenco delle stanze e numero di stanza nel menu · M, 2,5 gg · dipende da: LNK-5.2 · PSP: no
+- **Cosa:** Il sottomenu Link ottiene 'Stanza: N' (0-99, predefinita 0), impostazione globale in config_model con migrazione. Poi 'Crea' e 'Cerca stanze', con righe attenuate che dicono perché non sono accessibili, e la proposta di un'altra stanza quando la propria è occupata. Il Join per numero non si fa: l'elenco basta.
+- **File:** `source/src/gui.c` (link_options :5262-5279 e nuovo sottomenu, conversione globale :6201 e seguenti), `source/src/config_model.c`, `source/src/config_model.h` (CONFIG_MODEL_VALUE_COUNT :10), `source/src/message.h` + 5 tabelle, `tests/test_config_model.c`, `tests/test_menu_layout.c` (se copre il sottomenu Link), `docs/link-cable.md` ('Using it' :192-208), `CHANGELOG.md`
+- **Test:** test_config_model: un cfg senza stanza migra senza perdere gli altri campi; `scripts/check-messages.sh`; `scripts/check-menu-layout.sh` (categorie principali invariate).
+- **Accettazione:** La stanza scelta sopravvive al riavvio. Ogni riga attenuata dice perché. Testi nelle 5 lingue. docs/link-cable.md descrive le stanze. Voce nel CHANGELOG (Added).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-5.4 — Nickname del partner dalla lista peer · S, 1,5 gg · dipende da: LNK-5.2 · PSP: sì
+- **Cosa:** Il joiner prende il nickname del peer scelto dalla lista che psp_adhoc_find_host legge già (`psp_adhoc.c:446`); l'host legge la lista peer una volta, dopo il primo datagramma da cui oggi impara l'indirizzo del joiner (`psp_adhoc.c:366`), e cerca il suo MAC. Il campo è nickname di SceNetAdhocctlPeerInfo (pspsdk, da confermare sull'header del toolchain). adhoc_peer.c ottiene una funzione pura di pulizia: al massimo 24 colonne, 'PSP' se vuoto. Sulla PSP il nickname è UTF-8, spesso in kana: finché UI-9.5 (UTF-8 a runtime) non esce, si mostra solo se tutti i suoi caratteri sono disegnabili con i font di oggi, cioè ASCII stampabile; altrimenti resta l'etichetta del peer di oggi (il codice del gioco, `gui.c:3572-3582`). I nickname non disegnabili sono anche una delle condizioni che fanno partire UI-9.5. Il menu mostra 'Partner: <nick> (BPRE)' e il toast di connessione usa il nome.
+- **File:** `source/src/psp_adhoc.c`, `source/src/psp_adhoc.h`, `source/src/adhoc_peer.c`, `source/src/adhoc_peer.h`, `tests/test_adhoc_peer.c`, `source/src/gui.c` (menu_link_peer_code :3572-3582), `source/src/main.c`, `source/src/message.h` + 5 tabelle (riga 'Partner'), `CHANGELOG.md`
+- **Test:** test_adhoc_peer: test_nickname_sanitize (UTF-8 multibyte e caratteri di controllo danno l'etichetta di oggi, troncamento, vuoto); `make test-sanitize`; `scripts/check-messages.sh`; hardware: nickname ASCII visibile su entrambe le PSP, nickname in kana sostituito dall'etichetta di oggi.
+- **Accettazione:** Un nickname disegnabile compare entro 1 s dalla connessione; uno non disegnabile lascia l'etichetta di oggi. Nessun byte non stampabile arriva al font. Nessun campo nuovo nel protocollo. Voce nel CHANGELOG (Added).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-5.5 — Prova con tre console · S, 1 gg · dipende da: LNK-5.3, LNK-5.4 · PSP: sì
+- **Cosa:** Su hardware: due stanze parallele; il terzo joiner le vede entrambe ed entra in una; una stanza piena viene rifiutata; la stanza di una build di prova con protocollo diverso appare attenuata; una 1.4.2 entra nella stanza 0 di una build nuova e viceversa.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** hardware: 3 PSP, 5 scenari, 2 ripetizioni ciascuno.
+- **Accettazione:** Tutti e 5 gli scenari passano. Senza tre console la release resta prerelease, con 'non validato' scritto.
+
+### LNK-6 — Cuscinetto audio durante il link
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 (LNK-6.3 dopo gate) | 4,5 gg | LNK-1.1, LNK-1.2, ENG-1.6, LNK-1.3 (solo 6.3) |
+
+**Copre:** F-103 audio morbido durante il link.
+**Obiettivo:** Nel link GBA, relay e lockstep, le attese più corte della coda non producono silenzio e i silenzi lunghi iniziano e finiscono con una sfumatura, senza latenza in più; in Cable Club di FireRed e in una gara di MKSC, sulle stesse coppie, le interruzioni dell'audio al minuto (sfumature in uscita contate da LNK-6.2) sono meno delle attese al minuto della riga 1.4.3 di LNK-1.1 (gruppo 3 di LINK_COUNTERS: sulla 1.4.3 ogni attesa butta la coda), e nessun clic udibile; se il gate scatta, i blocchi muti al minuto scendono almeno del 50% sulle stesse coppie, con la latenza aggiunta dichiarata.
+**Da noi oggi:** Ogni attesa del link butta la coda audio già pronta: sound_link_wait_begin riporta sound_buffer_base all'indice di scrittura (`source/src/sound.c:1012`), la fine lo rifà (`:1025`), e il thread audio dorme a coda vuota (`:1342-1360`). Anche un'attesa di pochi ms produce un salto fino a circa 67 ms (4 blocchi da 800 campioni a 48 kHz: `sound.c:1059`, `sound.h:26-27`) e un clic. link_audio_wait.c/.h decide solo lo stato di pausa (`link_audio_wait.h:23-34`) ed è già testato da tests/test_link_audio_wait.c.
+**Come ci arriviamo:**
+- Prima si smette di buttare il cuscinetto che esiste già: zero latenza in più.
+- Il cuscinetto più grande è dimensionato dall'istogramma hardware delle attese, non da una costante.
+- La logica sta nel modulo puro già testato sull'host.
+- Vale per relay e lockstep.
+
+**Gate prima di iniziare:** 6.1 e 6.2 nessuno. 6.3 solo se LNK-1.3 mostra almeno il 20% delle attese nei bucket 67-100 e 100-150 ms.
+**Rischi:**
+- La sfumatura dell'ultimo blocco richiede un riempimento parziale di fill_sound_buffer (`sound.c:1366-1367`): da verificare.
+- Il cuscinetto di 6.3 aggiunge 50-100 ms di latenza audio, solo in sessione.
+- Il fast-forward resta spento in sessione, quindi il fattore è sempre 1.
+
+#### LNK-6.1 — Rampe di sfumatura nel modulo puro · S, 1 gg · dipende da: — · PSP: no
+- **Cosa:** link_audio_wait.c/.h riceve due cose. Una rampa Q15 su un blocco int16, da un guadagno a un altro in N campioni. E la politica 'suona / sfuma fuori / silenzio / sfuma dentro', decisa da campioni in coda, campioni richiesti e attesa in corso.
+- **File:** `source/src/link_audio_wait.c`, `source/src/link_audio_wait.h`, `tests/test_link_audio_wait.c`
+- **Test:** test_link_audio_wait: estremi esatti della rampa, monotonia, nessun overflow a ±32768; sequenza di stati per un'attesa breve e per una lunga; `make test-sanitize`.
+- **Accettazione:** Funzioni pure con tipi stdint. Nessuna dipendenza da sound.c.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-6.2 — Niente coda buttata nelle attese: l'audio scorre e sfuma · M, 2 gg · dipende da: LNK-6.1, LNK-1.1, LNK-1.2, ENG-1.6 · PSP: sì
+- **Cosa:** In sessione link sound_link_wait_begin non riporta più sound_buffer_base (`sound.c:1012`) e non mette in pausa; sound_link_wait_end tiene il ribasamento di gbc_sound_last_cpu_ticks (`:1024`) e il risveglio (`:1027`) ma non svuota la coda. Il thread audio (`:1342-1369`) applica la politica di 6.1: con abbastanza campioni suona; con la coda più corta di un blocco durante un'attesa sfuma il resto a zero e poi resta muto; alla ripresa sfuma il primo blocco verso l'alto. A fine sessione i contatori di sfumature e blocchi muti vanno in un evento nuovo, appeso in fondo all'enum degli eventi del log di runtime: RUNTIME_LOG_VERSION non cambia (regola R1 del principio 6) e il decoder mostra l'evento.
+- **File:** `source/src/sound.c` (sound_link_wait_begin/end :1004-1028, thread audio :1342-1369), `source/src/link_audio_wait.c`, `source/src/link_audio_wait.h`, `source/src/main.c` (log a fine sessione), `source/src/runtime_log.h`, `tools/decode_runtime_log.py`, `tests/test_decode_runtime_log.py`, `CHANGELOG.md`
+- **Test:** test_link_audio_wait; `scripts/check-performance.sh` (nessuna allocazione né I/O in sound.c); test_decode_runtime_log.py: l'evento nuovo si decodifica in un log v6 e un log v5 si legge ancora; hardware: Cable Club di FireRed e una gara di MKSC sulle stesse coppie della riga 1.4.3 di LNK-1.1, con sfumature in uscita al minuto (contatori nuovi) meno delle attese al minuto del gruppo 3 di quella riga e nessun clic udibile.
+- **Accettazione:** Le attese più corte della coda non producono silenzio. I silenzi lunghi iniziano e finiscono con una sfumatura. Su hardware le sfumature in uscita al minuto sono meno delle attese al minuto della riga 1.4.3 di LNK-1.1. Il gioco singolo non cambia. Voce nel CHANGELOG (Fixed).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-6.3 — Cuscinetto più grande, dimensionato dai dati · S, 1,5 gg · dipende da: LNK-6.2, LNK-1.3 · PSP: sì
+- **Cosa:** Solo con il gate superato. In sessione il limite di synchronize_sound (`sound.c:1058-1062`) sale di K blocchi, con K uguale al p90 delle attese misurate arrotondato a blocchi da 16,7 ms (da 3 a 6 blocchi) e fissato in build dalla misura. Se la coda supera il bersaglio di 2 blocchi, l'eccesso viene rifilato gradualmente.
+- **File:** `source/src/sound.c` (synchronize_sound :1058-1062), `source/src/link_audio_wait.c`, `source/src/link_audio_wait.h`, `tests/test_link_audio_wait.c`, `CHANGELOG.md`
+- **Test:** test_link_audio_wait: rifilatura e bersaglio; hardware A/B: blocchi muti al minuto prima e dopo, su 3+3 sessioni.
+- **Accettazione:** I blocchi muti al minuto scendono almeno del 50% sulle stesse coppie. La latenza aggiunta è dichiarata nel CHANGELOG.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### LNK-7 — Inviare un save o uno stato dentro una sessione aperta
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 | 11 gg (8 senza la 7.5) | F-003, F-007, F-045, LNK-2.2, LNK-5.3 (solo 7.5) |
+
+**Copre:** F-109 condivisione di save e stati.
+**Obiettivo:** Save e stati si inviano dalla sessione aperta verso un peer con la stessa ROM, riconosciuta dal CRC32 dell'intera ROM in cache; il file del ricevente cambia solo dopo un CRC valido e la copia precedente resta: 0 file corrotti o troncati con il WLAN spento a metà trasferimento, su un save da 128 KiB, su uno stato tra due build con lo stesso formato di payload e con il Memory Stick quasi pieno; nessun cambio del formato di link_net e nessuna ROM inviata.
+**Da noi oggi:** psp_adhoc.c e link_net.c servono solo il cavo (`source/src/link_net.h:12-27`). I messaggi sono da 40 byte (`link_net.h:38`) in datagrammi da 1024 (`:36`), cioè 23 messaggi pieni per datagramma; ogni datagramma riparte dal messaggio più vecchio non confermato (`link_net.c:277`, `:286-297`), quindi la portata è di circa un datagramma di dati per giro di andata e ritorno. Nel menu il link viene servito una volta per frame (main_link_pump, `main.c:811-815`).
+**Come ci arriviamo:**
+- Si invia dalla sessione in corso, senza tornare al browser.
+- Save a dimensione nativa, scritti con la transazione di F-003 che tiene una copia.
+- Stati portabili tra release con lo stesso formato di payload grazie all'intestazione v2 di F-007.
+- Identità sul CRC32 dell'intera ROM, calcolato una volta da F-007 e tenuto in cache: due dump che differiscono anche in un solo byte non passano, e la ROM si legge dal Memory Stick una volta sola.
+- Nessun cambio del formato di link_net e nessun bump del protocollo: l'offerta parte solo verso un peer con il bit di capacità di LNK-2.2, e i peer vecchi scartano i tipi nuovi (`link_cable.h:55-57`).
+- Un trasferimento interrotto non scrive niente.
+
+**Gate prima di iniziare:** F-003 e F-007 consegnati.
+**Rischi:**
+- Il save del gioco in esecuzione verrebbe sovrascritto dal flush successivo: il ricevente applica il save ricaricando il gioco, il che chiude la sessione (reset_gba chiama main_link_disconnect, `main.c:1814-1823`).
+- Uno START lockstep differito o un frame Pokémon in testa alla coda bloccano i messaggi successivi (`link_cable.c:1196-1201`, `:1232-1235`): l'invio si offre solo quando il gioco non usa il link.
+- Portata stimata, non misurata: circa 920 B per giro, quindi un save da 128 KiB in 3-6 s e uno stato da 512 KiB (SAVESTATE_SIZE, `memory.c:303`) in 10-25 s con RTT tra 15 e 40 ms. Per questo la schermata di trasferimento pompa il link in un ciclo stretto e mostra l'avanzamento.
+- La transazione richiede spazio libero per una seconda copia.
+
+#### LNK-7.1 — Modulo puro di trasferimento · M, 2,5 gg · dipende da: — · PSP: no
+- **Cosa:** link_transfer.c/.h gestisce l'offerta (tipo save o stato, dimensione, CRC32 dell'oggetto, CRC32 e dimensione della ROM, codice gioco, versione del formato), blocchi da 40 byte senza numero di sequenza (link_net consegna in ordine e una volta sola, il CRC32 finale copre tutto) e la chiusura. Il ricevente controlla limiti (save fino a 128 KiB, stato della dimensione attesa da F-007), lunghezza e CRC totale; annulla su BYE, CANCEL o timeout. Lavora solo su buffer forniti dal chiamante e non consegna mai un oggetto parziale.
+- **File:** `source/src/link_transfer.c` (nuovo), `source/src/link_transfer.h` (nuovo), `tests/test_link_transfer.c` (nuovo), `Makefile` (regole normale e sanitize, -lz come per runtime_log), `source/Makefile`
+- **Test:** test_link_transfer: andata e ritorno; oggetto troppo grande, CRC errato, ROM diversa, troncamento, annullamento a metà; con i profili di rete con perdite della simulazione di test_link_cable; `make test-sanitize`.
+- **Accettazione:** Nessuno scenario d'errore consegna un oggetto parziale. Nessuna dipendenza dal PSP SDK.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-7.2 — Messaggi di trasferimento nel cavo · M, 2 gg · dipende da: LNK-7.1, LNK-2.2 · PSP: no
+- **Cosa:** All'enum (`link_cable.c:18-36`) si appendono OFFER, ACCEPT, CHUNK, DONE e CANCEL. LINK_CABLE_PROTOCOL non cambia: l'offerta parte solo se entrambi hanno il bit di capacità 'transfer'. I blocchi passano solo con entrambe le console nel menu e con il link non usato dal gioco (link_cable_in_use falso), così il traffico di gioco non compete e non blocca la coda. Durante il trasferimento la schermata pompa il link in un ciclo stretto con psp_adhoc_wait, come main_link_service (`main.c:664-675`), invece di una volta per frame di menu.
+- **File:** `source/src/link_cable.c` (enum :18-36, link_cable_drain :1172-1249), `source/src/link_cable.h`, `source/src/main.c`, `tests/test_link_cable.c`, `docs/link-cable.md`
+- **Test:** test_link_cable: test_transfer_over_lossy_profiles; test_transfer_refused_while_link_in_use; test_transfer_not_offered_to_old_peer; `make test-sanitize`.
+- **Accettazione:** Un save da 128 KiB arriva intero su tutti i profili simulati. Durante un uso del link da parte del gioco il trasferimento viene rifiutato con un motivo. link_net.c non cambia.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-7.3 — Menu: invia e ricevi · M, 2,5 gg · dipende da: LNK-7.2, F-003, F-007, F-045 · PSP: sì
+- **Cosa:** Il menu Link offre 'Invia il mio save' e 'Invia lo stato N', solo se i due giochi coincidono per codice e CRC della ROM. Il ricevente vede 'Ricevi save da <nick o codice> (32 KiB)', conferma, segue l'avanzamento, poi la scrittura con la transazione di F-003 che tiene la copia. Un save ricevuto si applica ricaricando il gioco, e la sessione finisce con il motivo 'Gioco riavviato con il save ricevuto'. Uno stato ricevuto va nello slot scelto tramite lo scrittore validato di F-007. Il caricamento degli stati resta bloccato in sessione. Nessun nuovo I/O in memory.c: la scrittura passa dallo scrittore di F-003. Il motivo 'save-received' è un valore appeso in fondo all'enum dei motivi: RUNTIME_LOG_VERSION non cambia (regola R1).
+- **File:** `source/src/gui.c` (link_options :5262-5279), `source/src/main.c`, `source/src/memory.c` (solo riuso del percorso di caricamento), `source/src/message.h` + 5 tabelle, API toast di F-045, `tools/decode_runtime_log.py` (motivo 'save-received'), `tests/test_decode_runtime_log.py`, `docs/link-cable.md`, `CHANGELOG.md`
+- **Test:** `scripts/check-messages.sh`; `scripts/check-performance.sh`; test_decode_runtime_log.py; hardware: invio di save e stato in entrambe le direzioni.
+- **Accettazione:** Il file del ricevente cambia solo dopo un CRC valido. La copia precedente resta disponibile. Testi nelle 5 lingue. Voce nel CHANGELOG (Added).
+- **Licenza:** codice nuovo GPL-2.0-or-later; le ROM non vengono mai inviate.
+
+#### LNK-7.4 — Prova hardware con interruzioni · S, 1 gg · dipende da: LNK-7.3 · PSP: sì
+- **Cosa:** Spegnere il WLAN a metà trasferimento deve lasciare intatto il file del ricevente. Si provano anche un save da 128 KiB, uno stato tra due build diverse con lo stesso formato di payload e un Memory Stick quasi pieno.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** hardware: 4 scenari, 2 ripetizioni ciascuno; se F-129 è disponibile, guasti di rete iniettati sul dispositivo.
+- **Accettazione:** Nessun file corrotto o troncato. I tempi misurati sono registrati, senza promesse di velocità prima della misura. Se uno stato da 512 KiB supera 30 s si apre una storia per mandare più datagrammi per giro in link_net (stesso formato, nuova prova CBMC).
+
+#### LNK-7.5 — Opzionale: condivisione dal browser senza caricare il gioco · M, 3 gg · dipende da: LNK-7.4, LNK-5.3 · PSP: sì
+- **Cosa:** Si fa solo su richiesta esplicita degli utenti. Una 'stanza dati' (tipo nuovo in link_room) permette di sfogliare save e stati dell'altra PSP dal browser, riusando link_transfer. La 7.3 copre lo spostamento dei save.
+- **File:** `source/src/link_room.c`, `source/src/link_room.h`, `source/src/gui.c` (browser), `source/src/link_transfer.c`, `source/src/message.h` + 5 tabelle, `CHANGELOG.md`
+- **Test:** test_link_room: tipo stanza dati; test_link_transfer: elenco di più oggetti; `scripts/check-messages.sh`; hardware.
+- **Accettazione:** Si sfoglia e si scarica senza caricare il gioco. Le regole di 7.1 e 7.3 restano tutte valide.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### LNK-8 — Tecnica scelta per gioco, con override
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 3 gg | LNK-2.2 |
+
+**Copre:** F-106 modalità di link per gioco con override.
+**Obiettivo:** Override per gioco nel profilo versionato, deciso dall'host e applicato da entrambe le console solo con il bit di capacità; con Auto il comportamento resta identico (test a tabella completo); una tecnica impossibile per la coppia chiude la sessione con il motivo nelle 5 lingue; funziona anche tra ROM diverse.
+**Da noi oggi:** La tecnica si sceglie dal codice gioco: relay per qualunque coppia Gen-3, lockstep per tutto il resto (`source/src/link_cable.c:186-204`, `:296-298`; `docs/link-cable.md:15-20`). Nessun override.
+**Come ci arriviamo:**
+- L'override sta nel profilo per gioco già versionato e migrato.
+- Decide l'host, il joiner vede il motivo, e se la tecnica non è possibile per la coppia lo dice.
+- La scelta diventa una funzione pura con test a tabella, che riceve anche le capacità di LNK-2.2: con una build vecchia resta Auto, senza bump di protocollo.
+- Funziona anche tra ROM diverse.
+
+**Gate prima di iniziare:** (a) una segnalazione riproducibile di scelta errata, con log che mostrano link-state mode e un errore di comunicazione del gioco; oppure (b) una terza tecnica pronta (LNK-11, LNK-12 o LNK-14). Il gate vale per la 8.2 e la 8.3. La 8.1 (funzione pura, 0,5 gg) ne resta fuori e si consegna con la prima tecnica che la usa, perché LNK-11.2, LNK-12.5 e LNK-14.2 dipendono da lei.
+**Rischi:**
+- Più combinazioni da testare.
+- Un override sbagliato rompe il link: il default resta Auto.
+- La richiesta dell'host vale solo verso build con il bit di capacità; verso una 1.4.x resta Auto.
+
+#### LNK-8.1 — Funzione pura di scelta della tecnica · S, 0,5 gg · dipende da: — · PSP: no
+- **Cosa:** link_cable_choose_mode(codice locale, codice del partner, capacità comuni, richiesta dell'host) viene estratta da link_cable_hello (`:296-298`) senza cambiare il comportamento. Serve anche a LNK-11.2, LNK-12.5 e LNK-14.2. Non aspetta il gate di LNK-8: si consegna con la prima tecnica che la usa.
+- **File:** `source/src/link_cable.c`, `source/src/link_cable.h`, `tests/test_link_cable.c` (test_mode_selection_and_roles :1869)
+- **Test:** test_link_cable: tabella di coppie (Gen-3 con Gen-3, Gen-3 con altro, stesso gioco, giochi diversi, capacità assenti).
+- **Accettazione:** Comportamento identico a oggi. Tabella completa nel test.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-8.2 — Override nel profilo per gioco, deciso dall'host · M, 2 gg · dipende da: LNK-8.1, LNK-2.2 · PSP: no
+- **Cosa:** config_model ottiene un valore per gioco (Auto / Relay Pokémon / Lockstep, più AW e Due core quando esisteranno) con migrazione. L'HELLO porta la richiesta dell'host dopo i byte di LNK-2.2; entrambe le console la applicano solo se entrambe hanno il bit 'override', quindi scelgono la stessa tecnica senza bump di LINK_CABLE_PROTOCOL. Se la tecnica non è possibile per la coppia, la sessione chiude con 'tecnica non disponibile per questa coppia'.
+- **File:** `source/src/config_model.c`, `source/src/config_model.h`, `source/src/gui.c` (file per gioco :6354-6439), `source/src/link_cable.c`, `source/src/link_cable.h`, `source/src/main.c`, `source/src/message.h` + 5 tabelle, `tests/test_config_model.c`, `tests/test_link_cable.c`, `docs/link-cable.md`, `CHANGELOG.md`
+- **Test:** test_config_model: migrazione di un cfg per gioco senza il campo; test_link_cable: test_host_override_followed; test_override_impossible_reports_reason; test_override_ignored_by_old_peer; `scripts/check-messages.sh`.
+- **Accettazione:** Con Auto il comportamento è identico. Un override forzato viene rispettato da entrambe le console. Testi nelle 5 lingue. Voce nel CHANGELOG (Added).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-8.3 — Prova hardware dell'override · S, 0,5 gg · dipende da: LNK-8.2 · PSP: sì
+- **Cosa:** Su hardware: FireRed+FireRed forzato in lockstep, poi ritorno ad Auto; un override impossibile mostra il suo motivo.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** hardware: 3 scenari.
+- **Accettazione:** Gli scenari passano in entrambi i ruoli.
+
+### LNK-9 — Ritmo fisso della sessione
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 4 gg | LNK-1.3, LNK-2.2 |
+
+**Copre:** F-107 ritmo fisso della sessione.
+**Obiettivo:** Ritmo deciso dall'host solo per le coppie che ne hanno bisogno, mai per il relay Pokémon via cavo, e scelto dai dati di LNK-1.3: in 3+3 sessioni lockstep gli errori di comunicazione spariscono senza che la mediana scenda sotto il bersaglio scelto, e a 29,97 fps nessun frame si salta per il ritmo (frame disegnati uguali ai frame eseguiti); l'audio segue la frequenza.
+**Da noi oggi:** In lockstep una console può stare al massimo 4 frame avanti al clock dell'altra (`source/src/link_cable.c:77-81`, `:1447-1477`). Il relay non regola i clock: le stanze aspettano i frame dell'altro (`link_cable.c:1030-1074`; `docs/link-cable.md:185-188`). Dalla 1.4.3 la console che riceve corre da sola fino a 7/8 della spaziatura degli START imparata su serie di 300 (`link_cable.c:566-589`, `:1353-1368`), e in lockstep il frameskip è AUTO con al massimo un frame saltato di fila, qualunque sia l'impostazione (`main.c:229-234`, `:1310-1316`).
+**Come ci arriviamo:**
+- La frequenza la decide l'host solo per le coppie che ne hanno bisogno, mai per il relay Pokémon via cavo.
+- La scelta viene dai dati di LNK-1.2 (secondi sotto 45 fps), non da una costante globale.
+- L'audio segue la frequenza tramite un modulo puro.
+
+**Gate prima di iniziare:** LNK-1.3 mostra, in almeno una sessione lockstep con fps medi ≥ 50, almeno il 10% dei secondi sotto 45 fps, oppure errori di comunicazione del gioco scritti nella riga. In alternativa: LNK-14 avviato e scambi RFU falliti a piena velocità in almeno 2 tentativi su 8.
+**Rischi:**
+- Il gioco rallenta per scelta.
+- Il pitch dell'audio scende.
+- Il ritmo fisso rallenta il gioco apposta: synchronize() confronta i frame con il tempo reale (`main.c:1425-1440`), quindi senza contare i vblank del ritmo vedrebbe un ritardo e il limite della 1.4.3 salterebbe un frame su due.
+
+#### LNK-9.1 — Modulo puro di pacing · S, 1 gg · dipende da: LNK-1.3 · PSP: no
+- **Cosa:** link_pace.c/.h aggancia la frequenza richiesta a 59,94/N, applica una rampa di 4 fps al secondo e calcola la frequenza effettiva.
+- **File:** `source/src/link_pace.c` (nuovo), `source/src/link_pace.h` (nuovo), `tests/test_link_pace.c` (nuovo), `Makefile`, `source/Makefile`
+- **Test:** test_link_pace: aggancio, rampa, limiti; `make test-sanitize`.
+- **Accettazione:** Funzioni pure. Mai sopra 59,7275 fps.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-9.2 — Glue: vblank in più e audio che segue · M, 2 gg · dipende da: LNK-9.1, LNK-2.2 · PSP: no
+- **Cosa:** main.c inserisce vblank in più con lo stesso meccanismo di main_link_wait_vblank (`:790-808`). sound.c rende il passo di campionamento proporzionale alla frequenza tramite sound_math. L'host annuncia la frequenza nell'HELLO, dopo i byte di LNK-2.2, e la si applica solo se entrambi hanno il bit 'pace': nessun bump. I vblank aggiunti dal ritmo entrano nel conto del tempo reale di synchronize().
+- **File:** `source/src/main.c`, `source/src/sound.c`, `source/src/sound_math.c`, `source/src/sound_math.h`, `source/src/link_cable.c`, `source/src/link_cable.h`, `tests/test_sound_math.c`, `tests/test_link_cable.c`, `CHANGELOG.md`
+- **Test:** test_sound_math: passo scalato; test_link_cable: frequenza annunciata e applicata da entrambi, ignorata da un peer senza il bit; `scripts/check-performance.sh`.
+- **Accettazione:** Entrambe le console tengono la stessa frequenza agganciata. A 29,97 fps nessun frame saltato per il ritmo: frame disegnati uguali ai frame eseguiti nel gruppo 8 di LINK_COUNTERS. Nessuna allocazione in sound.c. Voce nel CHANGELOG (Added) con il rallentamento dichiarato.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-9.3 — A/B su hardware · S, 1 gg · dipende da: LNK-9.2 · PSP: sì
+- **Cosa:** Tre sessioni lockstep senza ritmo fisso e tre con, sullo stesso gioco e la stessa coppia di console. Si confrontano secondi sotto 45 fps, errori di comunicazione e fps mediani.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** hardware: 3+3 sessioni; i gruppi 5 e 8 di LINK_COUNTERS e i contatori di LNK-1.2: il report Diagnostica si può catturare in sessione, ma registra il frameskip del menu (`main.c:2106-2107`) e non quello forzato dal link.
+- **Accettazione:** Gli errori di comunicazione spariscono senza che la mediana scenda sotto il bersaglio scelto.
+
+### LNK-10 — Meno datagrammi nelle stanze Pokémon
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 3,75 gg | LNK-1.3, PRF-1.1 (solo LNK-10.3) |
+
+**Copre:** F-108 meno datagrammi per frame.
+**Obiettivo:** Nelle stanze Pokémon la finestra di raggruppamento è automatica, senza opzioni né cambio di protocollo: datagrammi simulati al secondo almeno il 60% in meno, con ritardo medio peggiorato al massimo di 1 frame su tutti i profili; su hardware, nella stanza di FireRed, fps mediani più alti con il test esatto di PRF-1.1 su 3+3 sessioni e nessun errore nuovo. In lockstep LNK-1.1 e LNK-1.3 registrano i datagrammi per frame per verso (circa uno sulla 1.4.3) e il costo dello stack per frame (datagrammi per frame per il costo per datagramma dei profili tarati di `scripts/check-rom-link.sh`); se un gioco lockstep resta sotto 58 fps per lo stack, il gate apre la stessa finestra anche in lockstep, con gli stessi limiti.
+**Da noi oggi:** In lockstep la 1.4.3 fa già la metà del lavoro: la risposta che serve solo da controllo viaggia con il datagramma successivo (`link_cable.c:666-681`), gli ack aspettano fino a 20 ms un datagramma su cui viaggiare (`:70`, `:1312`), chi dà il clock lo riporta ogni 8 ms e ogni 16 ms quando si fida degli annunci, chi riceve ogni 32 ms (`:64-65`, `:1308-1311`). Secondo le note del link una gara di MKSC su due PSP usa circa un datagramma per frame per verso (`docs/link-cable.md:124-126`), senza un log salvato sull'EBOOT pubblicato: lo verifica LNK-1.1. Dopo ogni passata che costruisce un datagramma l'emulatore dorme 1 ms, 1,12 ms misurati (`main.c:214-221`, `:649-658`; a un datagramma per frame circa il 7% del frame); chi aspetta una risposta manda un probe ogni 10 ms (`link_cable.c:75`); il riposo di 2 ms dei frame in ritardo si salta solo in lockstep, quando l'emulatore ha già dormito (`main.c:1425-1431`). I profili tarati su hardware danno 0,3 ms di stack per datagramma in MKSC e 0,9 ms in FireRed (`scripts/check-rom-link.sh:90-112`); le perdite di START e annunci pesano più del lavoro per frame (`docs/link-cable.md:170-178`), e il probe di 10 ms che le ripara è provato solo nel banco (mksc-psp-lossy, almeno 53 fps). Nelle stanze Pokémon nulla è cambiato: ack dopo 2 ms e invio immediato (`link_cable.c:1318-1323`). link_net accetta già più messaggi per datagramma (`link_net.c:286-297`).
+**Come ci arriviamo:**
+- La finestra di raggruppamento è automatica e dipende dal modo: nessuna opzione da capire.
+- Nessun cambio di protocollo né di formato: è una politica locale di invio.
+- L'effetto si misura su 3+3 sessioni prima di qualunque annuncio.
+
+**Gate prima di iniziare:** LNK-1.1 o LNK-1.3 mostrano, in una sessione Pokémon su PSP-1000 con il livello link aperto per la maggior parte della durata (scambi e lotta), fps medi sotto 58 (frame eseguiti del gruppo 8 per tempo di gioco) con più di 100 datagrammi al secondo tra inviati e ricevuti (gruppo 1). Per il lockstep: LNK-1.1 o LNK-1.3 mostrano un gioco lockstep sotto 58 fps medi su PSP-1000 (frame eseguiti del gruppo 8 per tempo di gioco) con il costo dello stack di almeno il 5% del frame; allora LNK-10.2 accende la finestra anche in lockstep.
+**Rischi:**
+- Nelle stanze Pokémon cresce il ritardo fisso, al massimo 1 frame in media.
+- In lockstep la finestra ritarda ogni scambio: si accende solo dal gate e con lo stesso limite di 1 frame.
+
+#### LNK-10.1 — Finestra di raggruppamento in link_net_build · S, 1,5 gg · dipende da: LNK-1.3 · PSP: no
+- **Cosa:** `link_net_set_coalesce(us)` resta generico in link_net: con send_now attivo il datagramma parte allo scadere della finestra oppure quando il chiamante lo forza; ack e heartbeat non cambiano; con finestra 0 i datagrammi restano identici byte per byte. Solo LNK-10.2 lo accende, nel ramo Pokémon di `link_cable_service` (`link_cable.c:1318-1323`).
+- **File:** `source/src/link_net.c` (link_net_build :231-307), `source/src/link_net.h`, `tests/test_link_net.c`, `proofs/cbmc/prove_link_net.c` (riesecuzione)
+- **Test:** test_link_net: test_coalesces_within_window; test_coalesce_zero_is_today; test_lossy_network_in_order_once invariato e verde; `make check-cbmc`.
+- **Accettazione:** Con finestra 0 i datagrammi sono identici byte per byte a oggi. La prova CBMC passa.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-10.2 — Politica di raggruppamento nelle stanze Pokémon · S, 1,5 gg · dipende da: LNK-10.1 · PSP: no
+- **Cosa:** Per l'host del relay, nelle stanze Pokémon, la finestra è automatica e raggruppa fino a 3 frame di input per datagramma quando l'RTT copre già almeno 3 frame; si imposta nel ramo Pokémon di `link_cable_service` (`link_cable.c:1318-1323`), dove la 1.4.3 imposta anche ritardo degli ack e probe per modo. Il lockstep non cambia, salvo che il gate l'abbia aperto: allora la stessa finestra vale nel ramo lockstep di `link_cable_service`.
+- **File:** `source/src/link_cable.c` (link_cable_service :1296-1323), `tests/test_link_cable.c`
+- **Test:** test_link_cable: su tutti i profili, datagrammi al secondo nella stanza almeno il 60% in meno e ritardo medio peggiorato al massimo di 1 frame; test_lockstep_multiplayer invariato e verde.
+- **Accettazione:** I datagrammi simulati al secondo nella stanza scendono almeno del 60%, con il ritardo medio peggiorato al massimo di 1 frame su tutti i profili. Il lockstep resta identico byte per byte, salvo che il gate l'abbia aperto: allora i datagrammi del gioco che l'ha aperto scendono almeno del 60% con lo stesso limite di ritardo, e test_lockstep_multiplayer resta verde.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-10.3 — A/B su hardware nella stanza di FireRed · S, 0,75 gg · dipende da: LNK-10.2, PRF-1.1 · PSP: sì
+- **Cosa:** Solo la stanza di FireRed, 3 sessioni senza raggruppamento e 3 con; fps dal gruppo 8 (frame eseguiti per tempo di gioco) e datagrammi dal gruppo 1 del log. Se il gate ha aperto il lockstep, lo stesso A/B sul gioco lockstep che l'ha aperto.
+- **File:** `docs/HARDWARE-RESULTS.md`, `CHANGELOG.md` (solo dopo il confronto)
+- **Test:** hardware: 3+3 sessioni con i gruppi 1, 5, 7 e 8 di LINK_COUNTERS e i contatori di LNK-1.2.
+- **Accettazione:** Nessun annuncio di velocità senza il confronto. Fps mediani più alti con il test esatto di PRF-1.1 su 3+3 sessioni e nessun errore di comunicazione nuovo, nella stanza di FireRed e, se c'è, nel gioco lockstep del gate.
+
+### LNK-11 — Relay Advance Wars
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 11,5 gg | LNK-1.3, LNK-2.2, LNK-8.1 |
+
+**Copre:** F-110 link GBA con la stessa ROM per ogni gioco (parte Advance Wars).
+**Obiettivo:** Battaglie di Advance Wars 1 e 2 con un solo core, PSP-1000 compresa e senza memoria tolta al gioco singolo: sulla coppia PSP-1000 + PSP-3000 ≥ 59,7 fps mediani con p99 ≤ 17 ms in entrambi i ruoli e nessun errore di comunicazione; l'overflow di upstream è corretto (conteggi fino a 511 senza parole oltre il buffer, sotto ASan e UBSan).
+**Da noi oggi:** Lockstep per ogni coppia non Pokémon (`source/src/link_cable.c:296-298`). Nessuna misura di AW su hardware.
+**Come ci arriviamo:**
+- Battaglie AW con un solo core, PSP-1000 compresa, senza togliere memoria al gioco singolo.
+- Overflow di upstream corretto. In libretro/gpsp a commit fissato 5819380 (`serial_proto.c:418-426`, `:547-552`), con un primo byte di pacchetto ≥ 254 il conteggio arriva a 257-258 parole, pack16 scrive 129 parole a 32 bit in pkt[2+128] (una oltre il buffer sullo stack) e il conteggio a 8 bit nei flag si tronca da 256 in su. Da noi il conteggio viene dalla lunghezza del datagramma.
+- Frammentazione su messaggi da 40 byte con un modulo puro (link_frag) che riusa anche l'Adapter (LNK-14.3), senza cambiare link_net.
+
+**Gate prima di iniziare:** LNK-1.3 mostra AW1 o AW2 in lockstep con fps medi < 45 in almeno 2 sessioni, oppure lobby o sincronizzazione fallite in almeno 1 tentativo su 3; e LNK-11.1 conferma nel banco mGBA che il relay accorcia la sincronizzazione.
+**Rischi:**
+- Nel banco la lobby di AW2 può bloccarsi con RTT alti o con perdite: LNK-11.1 lo misura sui suoi 4 profili, anche con il profilo PSP tarato.
+- Upstream gestisce 4 giocatori con broadcast netpacket: qui solo 2, o la stella di LNK-13.
+- Non c'è un port riga per riga del driver seriale di AW per i test host.
+
+#### LNK-11.1 — AW2 nel banco rom_link prima del port · S, 2 gg · dipende da: LNK-1.3 · PSP: no
+- **Cosa:** Lo script tests/rom_link/aw2_battle.txt per link_e2e.c, con la ROM dell'utente fuori da Git, porta in lobby e gioca un turno in lockstep a 40 e 80 ms di RTT, con e senza 3% di perdita. Si misurano tempo di sincronizzazione e fps.
+- **File:** `tests/rom_link/aw2_battle.txt` (nuovo), `tests/rom_link/link_e2e.c` (solo se servono comandi nuovi)
+- **Test:** `make check-rom-link MGBA_DIR=... ROM=aw2.gba` con 4 profili di rete; i 4 profili girano anche con il profilo PSP tarato di check-rom-link (psp 14, stack 1120/300), così il go/no-go non nasce su una console senza costi di stack.
+- **Accettazione:** Numeri registrati per 4 profili. Decisione go/no-go scritta.
+- **Licenza:** codice nuovo GPL-2.0-or-later; nessuna ROM o save commerciale in Git.
+
+#### LNK-11.2 — Port del relay AW da libretro a commit fisso, con link_frag · L, 5 gg · dipende da: LNK-11.1, LNK-8.1, LNK-2.2 · PSP: no
+- **Cosa:** La parte AW di serial_proto.c va in third_party/gpsp-upstream/ con intestazioni intatte e un README che cita libretro/gpsp a commit fissato 5819380. Diventa il LinkCableMode ADVANCE_WARS, scelto all'HELLO per i codici AWR* e AW2* dalla funzione di LNK-8.1 quando entrambi hanno il bit 'aw'. link_frag.c/.h (nuovo, puro) spezza i frame fino a 516 byte su messaggi da 40 byte con la lunghezza nel primo; i limiti di upstream vengono corretti. Il menu ottiene MSG_LINK_TECHNIQUE_AW e il decoder il modo 'advance-wars', un valore appeso in fondo all'enum dei modi: RUNTIME_LOG_VERSION non cambia (regola R1).
+- **File:** `third_party/gpsp-upstream/serial_aw.c` (nuovo, da `serial_proto.c` di libretro/gpsp a commit fissato 5819380), `third_party/gpsp-upstream/README.md`, `source/src/link_frag.c` (nuovo), `source/src/link_frag.h` (nuovo), `tests/test_link_frag.c` (nuovo), `source/src/link_cable.c`, `source/src/link_cable.h`, `source/src/message.h` + 5 tabelle, `tools/decode_runtime_log.py` (LINK_MODES :67), `tests/test_decode_runtime_log.py`, `NOTICE`, `README.md` (crediti), `docs/link-cable.md`, `Makefile`, `source/Makefile`
+- **Test:** test_link_frag: frame fino a 1 KiB, lunghezze incoerenti rifiutate; build host di test_link_cable con il nuovo modo; `make check-cbmc` (link_net invariato); `make test-sanitize`; `scripts/check-messages.sh`.
+- **Accettazione:** Nessuna parola oltre il buffer con conteggi fino a 511. Le coppie non AW non cambiano comportamento. Nel gioco singolo nessun buffer del relay: quelli di serial_aw e link_frag si allocano all'HELLO di una sessione AW e si liberano alla fine (.bss uguale a quella della build senza relay, letta con psp-size o dalla mappa del linker).
+- **Licenza:** da libretro/gpsp a commit fissato 5819380 (serial_proto.c, GPL-2.0-or-later, intestazione di David Guillen Fandos conservata); link_frag è codice nuovo GPL-2.0-or-later.
+
+#### LNK-11.3 — Test host del relay AW · M, 3 gg · dipende da: LNK-11.2 · PSP: no
+- **Cosa:** tests/test_link_aw.c verifica frammentazione e riassemblaggio con perdite e limiti (conteggi oltre 255 gestiti, lunghezze incoerenti rifiutate) su una sequenza simulata SYNC, INTERSYNC e PACKETXG. Poi si ripete il banco rom_link di AW2 sull'implementazione nuova.
+- **File:** `tests/test_link_aw.c` (nuovo), `Makefile` (regole normale e sanitize)
+- **Test:** test_link_aw; `make test-sanitize`; `make check-rom-link` con AW2.
+- **Accettazione:** Nessun accesso fuori limite con ASan e UBSan. Nel banco AW2 la sincronizzazione è più veloce del lockstep di 11.1.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-11.4 — Battaglia AW completa su hardware · S, 1,5 gg · dipende da: LNK-11.3 · PSP: sì
+- **Cosa:** Lobby e battaglia completa di AW2 (e AW1) sulla coppia PSP-1000 + PSP-3000 e su PSP-1000 + PSP-2000, in entrambi i ruoli.
+- **File:** `docs/HARDWARE-RESULTS.md`, `CHANGELOG.md` (solo dopo questa riga)
+- **Test:** hardware: per AW2 e AW1 una battaglia completa per ruolo su ciascuna delle due coppie (4 per gioco), con il report Diagnostica catturato in sessione su entrambe le PSP (frame-time-p50-us e frame-time-p99-us).
+- **Accettazione:** AW2 e AW1 ≥ 59,7 fps mediani con p99 ≤ 17 ms in entrambi i ruoli sulla coppia PSP-1000 + PSP-3000. Nessun errore di comunicazione su entrambe le coppie. Voce nel CHANGELOG (Added) solo dopo questa riga.
+
+### LNK-12 — Link a due core per la stessa ROM
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| sconsigliato (dietro gate) | dopo gate | 36 gg | F-007, F-025, F-027, F-120, F-122, LNK-1.3, LNK-2.2, LNK-7.1, LNK-8.1 |
+
+**Copre:** F-110 link GBA con la stessa ROM per ogni gioco (due core).
+**Obiettivo:** Con la tecnica che sceglie LNK-8.1 (lockstep, relay o link a due core), su una PSP-1000 collegata a una PSP-2000: i giochi di LNK-1.3 e ogni gioco richiesto fissato al gate vanno a velocità piena, cioè ≥ 59,7 fps mediani con p99 ≤ 17 ms in entrambi i ruoli, oppure hanno la causa misurata e una storia aperta. Se la PSP-1000 rifiuta il link a due core, la tabella lo dice e riporta le cifre della tecnica usata. Gioco singolo senza costo: heap all'avvio della PSP-1000 identico al byte a quello della build senza il secondo core. 20 sessioni di fila con heap identico al byte; 0 discordanze.
+**Da noi oggi:** Lockstep su un solo core con al massimo 4 frame di anticipo (`docs/link-cable.md:182-190`), due giocatori (`:291`). Cache di traduzione statiche da 4+2 MiB (`source/src/cpu.c:72-73`). La frase 'serve il doppio della CPU, che la PSP non ha' (`docs/link-cable.md:292-294`) non è misurata. Esiste un precedente di doppia compilazione con rinomina via macro, ma solo per il renderer in C (`source/src/video_cc_wrap.cc`, `video_old_wrap.c`).
+**Come ci arriviamo:**
+- Tecnica scelta all'HELLO solo per ROM identiche (CRC32 dell'intera ROM in cache, F-007) e console che annunciano la capacità di memoria; il relay tra versioni diverse resta.
+- Il gioco singolo non paga nulla: l'istanza B si alloca solo in sessione e solo sui modelli da 64 MB.
+- Ritardo calcolato dall'RTT misurato.
+- Stato iniziale trasferito con il modulo di LNK-7; RTC sul tempo ospite; motivo 'desync' condiviso con LNK-3.5 e hash di stato condiviso con F-120.
+
+**Gate prima di iniziare:** tutti e tre: (1) dopo LNK-11, almeno un gioco richiesto resta sotto 45 fps medi in lockstep su hardware, con una build dalla 1.4.3 in poi; (2) 2 × p95 del solo core + render e cattura + 1,5 ms ≤ 15,5 ms su PSP-2000 per i giochi di LNK-1.3 e i giochi richiesti del punto 1 (timer di F-025); (3) lo stesso script di input dall'accensione dà hash per frame identici per 10 minuti su PSP-1000, 2000 e 3000 (F-120).
+**Rischi:**
+- Lavoro XL che tocca il percorso caldo; stima a bassa confidenza, da rivedere dopo LNK-12.8.
+- Determinismo tra modelli: RTC, eliminazione dell'idle loop, SIO.
+- Memoria: anche su PSP-2000 una ROM da 32 MiB residente più due set di cache (12 MiB) potrebbe non stare, e l'istanza B dovrebbe restituire blocchi della cache ROM; su PSP-1000 potrebbe servire anche il renderer su ME (F-037).
+- L'istanza B deve emulare i tempi del PPU (VCOUNT, IRQ, DMA) senza disegnare: da verificare.
+
+#### LNK-12.1 — Misura del budget a due core (gate 2) · S, 2 gg · dipende da: F-025, F-027, LNK-1.3 · PSP: sì
+- **Cosa:** Su hardware: p95 del solo core misurato con il timer di F-025 sui giochi di LNK-1.3 e sui giochi richiesti del punto 1 del gate, più l'heap libero con cache ridotte (`cpu.c:72-73`), su PSP-1000 e PSP-2000.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** hardware: 3 corse per gioco e modello, report Diagnostica.
+- **Accettazione:** Gate 2 scritto come sì/no con i numeri.
+
+#### LNK-12.2 — Spike di determinismo tra modelli (gate 3) · M, 3 gg · dipende da: F-120, F-122 · PSP: sì
+- **Cosa:** Replay con hash per frame di F-120 per 10 minuti sullo stesso script, su tre modelli.
+- **File:** `docs/HARDWARE-RESULTS.md`, strumenti di F-120
+- **Test:** hardware: 3 modelli × 2 giochi.
+- **Accettazione:** Hash identici, oppure la prima divergenza documentata con la causa.
+
+#### LNK-12.8 — Cache e stato del core dietro puntatori, senza seconda istanza · M, 4 gg · dipende da: LNK-12.1, LNK-12.2 · PSP: sì
+- **Cosa:** Primo passo verificabile da solo. Le cache statiche (`cpu.c:72-73`) e lo stato del core passano in una struttura allocata una volta all'avvio da main.c; il codice generato e mips_stub.S prendono gli indirizzi dalla struttura. Nessuna seconda istanza e nessuna allocazione nei moduli caldi.
+- **File:** `source/src/cpu.c`, `source/src/cpu.h`, `source/src/memory.c`, `source/src/mips_stub.S`, `source/src/main.c`, `scripts/check-performance.sh`
+- **Test:** `scripts/check-performance.sh`; scripts/compare-benchmarks.py 3+3 su hardware nel gioco singolo; test host del core di F-122 se disponibile.
+- **Accettazione:** Nessuna differenza misurabile nel gioco singolo (compare-benchmarks con campi corrispondenti). Heap libero invariato su PSP-1000.
+- **Licenza:** codice nuovo GPL-2.0-or-later; codice gpSP già nel repository (GPL-2.0-or-later).
+
+#### LNK-12.3 — Istanza B del core · XL, 14 gg · dipende da: LNK-12.8 · PSP: sì
+- **Cosa:** Seconda compilazione del core (C e mips_stub.S) con rinomina via macro sullo schema di video_cc_wrap.cc. L'istanza B si alloca solo in sessione e solo sui modelli da 64 MB, restituendo blocchi della cache ROM se serve; gira senza disegnare ma con i tempi del PPU. Il gioco singolo resta identico.
+- **File:** `source/src/cpu.c`, `source/src/memory.c`, `source/src/mips_stub.S`, `source/src/main.c`, `source/src/core_b_wrap.c` (nuovo), `source/Makefile`, `scripts/check-performance.sh`
+- **Test:** `scripts/check-performance.sh`; scripts/compare-benchmarks.py 3+3 nel gioco singolo prima e dopo; test host del core di F-122 su entrambe le istanze.
+- **Accettazione:** Nessuna differenza misurabile nel gioco singolo. L'istanza B esiste solo in sessione. Heap all'avvio della PSP-1000 identico al byte a quello della build senza il secondo core (misura di F-027).
+- **Licenza:** codice nuovo GPL-2.0-or-later; codice gpSP già nel repository (GPL-2.0-or-later).
+
+#### LNK-12.4 — Scambio degli input e ritardo calcolato dall'RTT · M, 4 gg · dipende da: LNK-12.1, LNK-12.2 · PSP: no
+- **Cosa:** Modulo puro link_dualcore.c/.h: input per frame ripetuti in ogni datagramma (il modello di link_net), ritardo uguale a ceil(RTT/frame) più un margine, fine concordata tra le due console.
+- **File:** `source/src/link_dualcore.c` (nuovo), `source/src/link_dualcore.h` (nuovo), `tests/test_link_dualcore.c` (nuovo), `Makefile`, `source/Makefile`
+- **Test:** test_link_dualcore: con i profili di rete di test_link_cable, stessi input per frame su entrambi i lati; `make test-sanitize`.
+- **Accettazione:** Nessun frame eseguito senza gli input di entrambi. Il ritardo segue l'RTT.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-12.5 — Avvio della sessione a due core · M, 4 gg · dipende da: LNK-12.3, LNK-12.4, LNK-7.1, LNK-8.1, LNK-2.2, F-007 · PSP: no
+- **Cosa:** L'HELLO porta CRC32 e dimensione dell'intera ROM (identità di F-007, già in cache) e il bit 'dualcore', annunciato solo da console con memoria sufficiente. La funzione di LNK-8.1 sceglie il link a due core solo con ROM identica, entrambi i bit e gioco non Gen-3. Ogni PSP manda lo stato del proprio gioco con link_transfer e lo carica nell'istanza B dell'altra, con una barra di avanzamento. L'RTC gira sul tempo ospite. Il blocco dei savestate dell'utente resta, perché riguarda solo l'istanza A. Menu e decoder ottengono il modo 'dualcore', un valore appeso in fondo all'enum dei modi: RUNTIME_LOG_VERSION non cambia (regola R1).
+- **File:** `source/src/link_cable.c`, `source/src/link_cable.h`, `source/src/main.c`, `source/src/link_transfer.c`, `source/src/gui.c`, `source/src/message.h` + 5 tabelle, `tools/decode_runtime_log.py` (LINK_MODES), `tests/test_decode_runtime_log.py`
+- **Test:** test_link_cable: scelta del link a due core e rifiuto con motivo; test_link_transfer: stato iniziale; `scripts/check-messages.sh`.
+- **Accettazione:** Con ROM diverse la tecnica resta relay o lockstep. Su PSP-1000 il link a due core viene rifiutato con un motivo se la memoria non basta.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-12.6 — Impronta di stato e fine pulita · M, 3 gg · dipende da: LNK-12.5, F-120 · PSP: no
+- **Cosa:** Ogni N frame si calcola l'hash di entrambe le istanze (F-120) e lo si confronta. Una discordanza chiude la sessione con il motivo 'desync' e la stringa di LNK-3.5, creati qui se la 3.5 non esiste ancora. Ogni PSP scrive solo il save del proprio giocatore. A fine sessione ogni blocco dell'istanza B torna libero.
+- **File:** `source/src/link_dualcore.c`, `source/src/main.c`, `source/src/message.h` + 5 tabelle (solo se LNK-3.5 non c'è)
+- **Test:** test_link_dualcore: un hash alterato provoca la chiusura; un test host ripete 20 inizi e fini di sessione con heap identico al byte.
+- **Accettazione:** Nessun save scritto per l'istanza B. Nessuna stringa duplicata rispetto a LNK-3.5.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-12.7 — Accettazione su hardware · S, 2 gg · dipende da: LNK-12.6 · PSP: sì
+- **Cosa:** I giochi di LNK-1.3 e i giochi richiesti fissati al gate dell'epic, con la tecnica scelta da LNK-8.1, su una PSP-1000 collegata a una PSP-2000 e su coppie PSP-2000/3000.
+- **File:** `docs/HARDWARE-RESULTS.md`, `CHANGELOG.md` (solo dopo questa riga)
+- **Test:** hardware: 2 sessioni per gioco e coppia, una per ruolo, con il report Diagnostica catturato in sessione su entrambe le PSP (frame-time-p50-us e frame-time-p99-us); 20 sessioni di fila con la misura dell'heap.
+- **Accettazione:** ogni gioco va a velocità piena (≥ 59,7 fps mediani con p99 ≤ 17 ms in entrambi i ruoli), oppure ha la causa misurata e una storia aperta. Se la PSP-1000 rifiuta il link a due core, la tabella lo dice e riporta le cifre della tecnica usata. 20 sessioni di fila con heap identico al byte. Zero discordanze.
+
+### LNK-13 — Relay Pokémon a 3-4 giocatori via cavo
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 13 gg | LNK-1.1, LNK-2.2 |
+
+**Copre:** nessuna capacità del catalogo; relay a 3-4 giocatori via cavo (perimetro LNK).
+**Obiettivo:** Lotta multipla a 4 PSP, Berry Blender a 3-4 giocatori e Record Corner via cavo completati, con ogni PSP che salva il proprio `.sav`; frame identici nello stesso ordine su tutti i joiner anche sui profili con perdite (test host a 3 e 4 console); il caso a due resta identico byte per byte; funziona tra versioni diverse.
+**Da noi oggi:** Relay a due giocatori (pair[2][8], `source/src/link_cable.h:98`), gba_sio_set_connection(…, 2) (`link_cable.c:302`), LinkNet a due parti (`link_net.h:54-91`), PSP_ADHOC_PEER_CAPACITY a 4 (`psp_adhoc.c:32`), stati P1/P2 soltanto (`message.h:420-421`) e 'Two players only' (`docs/link-cable.md:291`).
+**Come ci arriviamo:**
+- Lotte multiple, Berry Blender e Record Corner via cavo.
+- L'host autorevole ordina i frame di tutti i giocatori, con la stessa regola del relay a due di oggi.
+- Topologia a stella senza cambiare link_net: un LinkNet per joiner (circa 11 KB ciascuno).
+- Ogni PSP tiene i propri save; funziona anche tra versioni diverse.
+
+**Gate prima di iniziare:** righe di LNK-1.1 senza soglie mancate (scambi riusciti in entrambi i ruoli) e almeno 3 richieste distinte (issue o messaggi) per lotte multiple, Berry Blender o Record Corner via cavo.
+**Rischi:**
+- Servono 4 console per i test.
+- La stanza a quattro va alla velocità del più lento e le attese si sommano.
+
+#### LNK-13.1 — Stella di peer nel worker ad hoc · M, 3 gg · dipende da: LNK-1.1 · PSP: no
+- **Cosa:** psp_adhoc gestisce fino a 3 joiner, ciascuno con il proprio MAC, la propria porta e le proprie code; l'host impara ogni indirizzo dal primo datagramma come oggi (`psp_adhoc.c:366`). Solo il worker chiama sceNet*.
+- **File:** `source/src/psp_adhoc.c` (PSP_ADHOC_PEER_CAPACITY :32, contesto :69-111), `source/src/psp_adhoc.h`, `source/src/adhoc_peer.c`, `tests/test_adhoc_peer.c`, `scripts/check-lifecycle.sh`
+- **Test:** test_adhoc_peer: tabella dei peer; `scripts/check-lifecycle.sh`: barriere sulle code per peer.
+- **Accettazione:** Due giocatori funzionano come oggi. Tre joiner vengono indirizzati senza mescolare il traffico.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-13.2 — Relay a N giocatori · L, 5,5 gg · dipende da: LNK-13.1, LNK-2.2 · PSP: no
+- **Cosa:** L'host tiene un LinkNet per joiner e frame a 4 slot (pair[4][8]); gba_sio_set_connection(player_id, n). L'HELLO porta il numero di giocatori e il bit 'multi': un joiner senza il bit resta in una sessione a due, un terzo senza il bit viene rifiutato come 'stanza piena'; nessun bump. Il menu ottiene P3 e P4 nelle 5 lingue. Dalla 1.4.3 un frame del relay a due occupa 36 dei 40 byte del messaggio: il frame a N giocatori viaggia in due messaggi (giocatori 0-1 con il ciclo dell'host, poi 2-3), oppure con link_frag di LNK-11.2 se c'è già. Il ciclo dell'host resta nel frame, perché ogni joiner mantiene la spaziatura dei frame dell'host come nel relay a due.
+- **File:** `source/src/link_cable.c`, `source/src/link_cable.h`, `source/src/gba_sio.c`, `source/src/gba_sio.h`, `source/src/main.c`, `source/src/gui.c`, `source/src/message.h` + 5 tabelle (MSG_LINK_STATUS_CONNECTED_P3/P4), `docs/link-cable.md` (:291), `CHANGELOG.md`
+- **Test:** test_link_cable: test_relay_frame_split (frame a 3 e a 4 giocatori ricomposti identici su ogni joiner, anche sui profili con perdite) e il caso a due invariato byte per byte; test_gba_sio: connessione a 3 e a 4; `scripts/check-messages.sh`.
+- **Accettazione:** Tutti i giocatori vedono frame identici nello stesso ordine. Voce nel CHANGELOG solo dopo la 13.4.
+- **Licenza:** codice nuovo GPL-2.0-or-later; protocollo dei giochi da pret (fatti, non codice).
+
+#### LNK-13.3 — Test a 3-4 console · M, 3 gg · dipende da: LNK-13.2 · PSP: no
+- **Cosa:** Il port del driver pret in test_link_cable si estende a 3-4 console: blocchi giocatore, chiavi della stanza, profili di rete.
+- **File:** `tests/test_link_cable.c`
+- **Test:** test_link_cable: test_pokemon_multiplayer_three e test_pokemon_multiplayer_four; `make test-sanitize`.
+- **Accettazione:** Nessun errore di link e blocchi intatti in tutti i profili.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-13.4 — Prova a 3-4 PSP · S, 1,5 gg · dipende da: LNK-13.3 · PSP: sì
+- **Cosa:** Una lotta multipla a 4 PSP, il Berry Blender (Ruby, Sapphire, Emerald con 3-4 giocatori) e il Record Corner.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** hardware: 3 attività.
+- **Accettazione:** Le attività si completano e ogni PSP salva. Senza 4 console la release resta prerelease.
+
+### LNK-14 — Wireless Adapter (AGB-015): Union Room, Trade Center, 3-4 PSP
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| sconsigliato (dietro gate) | dopo gate | 18 gg | LNK-1.1, LNK-2.2, LNK-5.1, LNK-8.1, LNK-13.1, LNK-11.2 (facoltativo, per link_frag) |
+
+**Copre:** F-111 Wireless Adapter (Union Room, Trade Center).
+**Obiettivo:** Union Room, Trade Center e lotte: 20 scambi su 20 tra PSP-1000 e PSP-3000 a un ritmo di almeno 59,0 fps, con obiettivo 59,73 senza ritmo ridotto. Dopo una sessione via cavo l'Adapter funziona nella stessa partita 10 volte su 10. Un host che esce, dorme o si spegne è rilevato dal client entro 2 s; una stanza chiusa sparisce dalla lista entro 1 s; 0 giocatori fantasma in 50 connessioni con ACK tardivi simulati. Mario Golf e Mario Tennis: nel test host la coda di ricezione non supera mai 4 pacchetti e la risposta media resta ≤ 20 ms per 10 minuti; su hardware una partita completa senza disconnessioni. Union Room a 3 e a 4 PSP con la stella di LNK-13.1, su hardware: ogni PSP vede le altre entro 2 s e completa uno scambio, e l'uscita di una PSP non ferma le altre in 5 uscite su 5.
+**Da noi oggi:** Adapter non supportato (`README.md:133`, `docs/link-cable.md:204-206`, `:291`). Le sonde dell'Adapter in Normal mode trovano 'niente collegato' (`source/src/link_cable.c:1122-1125`). Gli scambi tra FireRed, LeafGreen, Emerald, Ruby e Sapphire passano già dal nostro cavo.
+**Come ci arriviamo:**
+- rfu.c viene da libretro/gpsp a commit fissato 5819380 (GPL-2.0-or-later).
+- Frame RFU frammentati su messaggi da 40 byte invece di un nuovo formato di rete: nessuna build esistente resta appesa e la prova CBMC non cambia.
+- N peer con la stella di LNK-13: la Union Room arriva a 3-4 PSP.
+- I messaggi non confermati si ripetono in ogni datagramma invece di aspettare ritrasmissioni separate.
+- Il ritmo si decide dai dati (LNK-9), solo se gli scambi a piena velocità falliscono.
+
+**Gate prima di iniziare:** righe di LNK-1.1 senza soglie mancate e 3 sessioni ripetute senza pause oltre 1 s; almeno 5 richieste distinte per Union Room o Wireless Club; LNK-13.1 pronta se si punta a 3-4 PSP.
+**Rischi:**
+- Lavoro XL.
+- Code e ritmo di rfu.c vanno messi a punto sul nostro scheduler, diverso da quello dei frontend libretro per cui upstream li ha scritti.
+- I timeout dell'Adapter si contano in frame emulati: la latenza di un frame frammentato va misurata contro di essi.
+- Non è verificato se mGBA 0.10 emuli l'Adapter, quindi il banco host è limitato.
+
+#### LNK-14.1 — rfu.c da libretro a commit fisso · S, 1 gg · dipende da: LNK-1.1 · PSP: no
+- **Cosa:** third_party/gpsp-upstream/rfu.c (950 righe a 5819380) con intestazioni e un README che cita libretro/gpsp a commit fissato 5819380. NOTICE e crediti: David Guillen Fandos per il codice; afska (gba-link-connection) e kuiper per la documentazione del protocollo, citati in `rfu.c:50-52` a 5819380.
+- **File:** `third_party/gpsp-upstream/rfu.c` (nuovo), `third_party/gpsp-upstream/README.md`, `NOTICE`, `README.md` (crediti)
+- **Test:** `make tree-check`; build host di prova.
+- **Accettazione:** Il file è identico a upstream, salvo le patch elencate. Le intestazioni restano intatte.
+- **Licenza:** da libretro/gpsp a commit fissato 5819380 (rfu.c, GPL-2.0-or-later, David Guillen Fandos).
+
+#### LNK-14.2 — Adapter come dispositivo gba_sio · L, 5 gg · dipende da: LNK-14.1, LNK-2.2, LNK-8.1 · PSP: no
+- **Cosa:** link_rfu.c/.h collega rfu_transfer e rfu_update (libretro/gpsp a commit fissato 5819380, `serial.h:42-48`) a gba_sio in Normal-32, porta i netpacket di upstream su link_net e aggiunge il LinkCableMode RFU, scelto dalla funzione di LNK-8.1 in base al tipo di stanza e al bit 'rfu'. Il decoder ottiene il modo 'rfu', un valore appeso in fondo all'enum dei modi: RUNTIME_LOG_VERSION non cambia (regola R1).
+- **File:** `source/src/link_rfu.c` (nuovo), `source/src/link_rfu.h` (nuovo), `source/src/link_cable.c`, `source/src/gba_sio.c`, `tests/test_link_rfu.c` (nuovo), `tools/decode_runtime_log.py`, `tests/test_decode_runtime_log.py`, `Makefile`, `source/Makefile`
+- **Test:** test_link_rfu: login, broadcast, connessione, invio e ricezione con perdite; `make test-sanitize`.
+- **Accettazione:** Il login dell'Adapter di FR/LG/E passa nel test con comandi registrati. Il cavo non cambia comportamento.
+- **Licenza:** codice nuovo GPL-2.0-or-later (glue sopra rfu.c di LNK-14.1).
+
+#### LNK-14.3 — Frame RFU frammentati su messaggi da 40 byte · M, 2 gg · dipende da: LNK-14.2 · PSP: no
+- **Cosa:** I frame RFU passano in messaggi da 40 byte con link_frag, creato da LNK-11.2 oppure qui se LNK-11 non è partito. LINK_NET_VERSION e LINK_NET_MAX_MESSAGE non cambiano, la prova CBMC resta quella di oggi e nessuna build dalla 1.4.0 in poi resta appesa.
+- **File:** `source/src/link_frag.c`, `source/src/link_frag.h`, `source/src/link_rfu.c`, `tests/test_link_frag.c`, `tests/test_link_rfu.c`, `Makefile`
+- **Test:** test_link_frag: frame RFU di dimensione massima, perdite simulate; test_link_rfu con frammentazione; `make check-cbmc` (invariato); `make test-sanitize`.
+- **Accettazione:** link_net.c e link_net.h non cambiano. La prova CBMC passa senza modifiche.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-14.4 — Stanza Adapter e ritmo · M, 2 gg · dipende da: LNK-5.1, LNK-14.3 · PSP: no
+- **Cosa:** link_room (LNK-5.1) ottiene il tipo di stanza RFU. Se gli scambi falliscono a piena velocità, il ritmo della sessione arriva da LNK-9.
+- **File:** `source/src/link_room.c`, `source/src/link_room.h`, `source/src/gui.c`, `source/src/message.h` + 5 tabelle
+- **Test:** test_link_room: tipo RFU e giudizi di accesso; `scripts/check-messages.sh`.
+- **Accettazione:** Una stanza Adapter si distingue da una stanza cavo prima del join, con il motivo.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-14.5 — Union Room a 3-4 PSP · L, 4 gg · dipende da: LNK-13.1, LNK-14.4 · PSP: no
+- **Cosa:** Sopra la stella di LNK-13.1: rfu.c gestisce più client (client_id di upstream), uno per joiner.
+- **File:** `source/src/link_rfu.c`, `source/src/psp_adhoc.c`, `tests/test_link_rfu.c`
+- **Test:** test_link_rfu: 3 client.
+- **Accettazione:** Tre o quattro console si vedono nella Union Room nel test.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-14.6 — Prova su hardware · M, 2 gg · dipende da: LNK-14.5, LNK-14.7 · PSP: sì
+- **Cosa:** Union Room FireRed↔LeafGreen ed Emerald↔FireRed con scambio, lotta singola e doppia e Trade Center; poi 3-4 PSP nella Union Room. Poi i casi dell'accettazione: 20 scambi tra PSP-1000 e PSP-3000, l'Adapter dopo una sessione via cavo nella stessa partita, un host che esce, dorme o si spegne, una stanza chiusa e una partita completa di Mario Golf e una di Mario Tennis.
+- **File:** `docs/HARDWARE-RESULTS.md`, `docs/link-cable.md`, `CHANGELOG.md` (solo dopo questa riga)
+- **Test:** hardware: 6 scenari, poi 20 scambi, 10 passaggi dal cavo all'Adapter, i tre modi di perdere l'host, una stanza chiusa, una partita di Mario Golf e una di Mario Tennis, e 5 uscite di una PSP con 3 e con 4 PSP nella Union Room.
+- **Accettazione:** 20 scambi su 20 tra PSP-1000 e PSP-3000 a un ritmo di almeno 59,0 fps; dopo una sessione via cavo l'Adapter funziona nella stessa partita 10 volte su 10; un host che esce, dorme o si spegne è rilevato dal client entro 2 s e una stanza chiusa sparisce dalla lista entro 1 s; una partita completa di Mario Golf e una di Mario Tennis senza disconnessioni; a 3 e a 4 PSP nella Union Room ogni PSP vede le altre entro 2 s e completa uno scambio, e l'uscita di una PSP non ferma le altre in 5 uscite su 5.
+
+#### LNK-14.7 — Ciclo di vita dell'Adapter e coda a buffer singolo · M, 2 gg · dipende da: LNK-14.2 · PSP: no
+- **Cosa:** `link_rfu.c` gestisce cinque casi. Fine sessione e perdita del peer: il client torna libero e il gioco riceve la disconnessione. Chiusura della stanza: fine dell'annuncio e rifiuto dei nuovi. ACK di connessione non più utilizzabili: lo slot torna libero. Timeout e conteggi a zero valgono «nessun limite». A fine sessione via cavo si rimette il dispositivo seriale che il gioco aveva. La coda di ricezione modella il buffer singolo per direzione dell'adapter reale: un pacchetto non letto si sostituisce solo quando l'adapter l'avrebbe sovrascritto, mai dentro una raffica dello stesso frame del mittente.
+- **File:** `source/src/link_rfu.c`, `source/src/link_rfu.h`, `source/src/gba_sio.c`, `tests/test_link_rfu.c`
+- **Test:** `tests/test_link_rfu.c`: un caso per regola, ciascuno con un mutante; una disconnessione con ID dispositivo 0 resta accettata; raffiche Gen-3 con perdita del 5% e 30 ms di jitter senza pacchetti persi; mittente più veloce del ricevente con la coda che non supera 4 pacchetti; 50 connessioni con ACK tardivi senza giocatori fantasma; una sessione simulata di 10 minuti con il traffico registrato di Mario Golf e una con quello di Mario Tennis.
+- **Accettazione:** Ogni regola ha il suo test e il suo mutante; un host che esce si rileva entro 2 s simulati e una stanza chiusa sparisce dalla lista entro 1 s; nelle sessioni simulate di 10 minuti di Mario Golf e di Mario Tennis la coda di ricezione non supera mai 4 pacchetti e la risposta media resta ≤ 20 ms.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### LNK-15 — Mystery Gift Gen-3 da file, tutto sulla PSP
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| sconsigliato (dietro gate) | dopo gate | 9,5 gg | LNK-14.2, F-003 |
+
+**Copre:** F-112 Mystery Gift Gen-3.
+**Obiettivo:** Se il gate scatta: FireRed, LeafGreen ed Emerald ricevono una carta da un file dell'utente, tutto sulla PSP, con il WLAN spento e senza toccare le impostazioni di rete; ogni file carta si valida prima dell'uso (fuzz da 20.000 mutazioni senza accessi fuori limite, ogni rifiuto con il motivo); il save lo scrive il gioco con la transazione di F-003 e resta integro.
+**Da noi oggi:** Nessun percorso Mystery Gift: non c'è RFU.
+**Come ci arriviamo:**
+- Tutto sulla PSP: nessun dispositivo esterno e nessuna impostazione di rete modificata; funziona anche con il WLAN spento.
+- Un distributore in processo, collegato a rfu.c.
+- Le carte sono file forniti dall'utente sul Memory Stick, validati prima dell'uso.
+- Il save lo scrive il gioco stesso, con la transazione di F-003.
+
+**Gate prima di iniziare:** LNK-14.2 funzionante su hardware (login e connessione RFU) e almeno 5 richieste distinte.
+**Rischi:**
+- Il formato dei file carta va scelto tra quelli documentati dalla comunità (non verificato).
+- I payload sono contenuti Nintendo: mai inclusi né scaricati da noi.
+- Il protocollo del distributore si scrive dalla sola documentazione pret (fatti, non codice).
+
+#### LNK-15.1 — Parser puro dei file carta · M, 2 gg · dipende da: — · PSP: no
+- **Cosa:** link_gift.c/.h con limiti stretti su dimensione, CRC e campi, più un fuzz in make check.
+- **File:** `source/src/link_gift.c` (nuovo), `source/src/link_gift.h` (nuovo), `tests/test_link_gift.c` (nuovo), `Makefile`
+- **Test:** test_link_gift: file validi, troncati, con CRC errato e con campi fuori limite; fuzz a 20.000 mutazioni con lo stesso schema di test_link_net; `make test-sanitize`.
+- **Accettazione:** Nessun accesso fuori limite con ASan. Ogni file rifiutato ha un motivo.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-15.2 — Distributore locale su rfu.c · L, 5 gg · dipende da: LNK-14.2, LNK-15.1 · PSP: no
+- **Cosa:** Un peer in processo annuncia il seriale del distributore e serve i blocchi con i comandi documentati in pret link_rfu. Non usa nessuna radio.
+- **File:** `source/src/link_gift.c`, `source/src/link_rfu.c`, `tests/test_link_rfu.c`
+- **Test:** test_link_rfu: sequenza del distributore fino alla consegna.
+- **Accettazione:** Il gioco nel test vede il distributore e riceve un blocco valido.
+- **Licenza:** codice nuovo GPL-2.0-or-later; protocollo dalla decompilazione pret (fatti, non codice).
+
+#### LNK-15.3 — Menu 'Mystery Gift da file' · S, 1,5 gg · dipende da: LNK-15.2 · PSP: no
+- **Cosa:** Elenco dei file in una cartella gift/, esclusione reciproca con la sessione link, motivi nelle 5 lingue.
+- **File:** `source/src/gui.c`, `source/src/main.c`, `source/src/message.h` + 5 tabelle, `CHANGELOG.md`
+- **Test:** `scripts/check-messages.sh`.
+- **Accettazione:** Non si avvia durante una sessione link e lo dice. Voce nel CHANGELOG solo dopo la 15.4.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-15.4 — Prova su hardware · S, 1 gg · dipende da: LNK-15.3, F-003 · PSP: sì
+- **Cosa:** FireRed, LeafGreen ed Emerald ricevono una carta da un file fornito dall'utente.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** hardware: 3 giochi.
+- **Accettazione:** La carta viene salvata e il save resta integro, con la copia di F-003.
+- **Licenza:** nessun codice; i file carta restano dell'utente e fuori da Git.
+
+### LNK-16 — Link automatico senza menu
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 6,5 gg | LNK-4.2, LNK-5.3, GIO-7.3 |
+
+**Copre:** F-113 link automatico senza menu, per gioco o per bolla.
+**Obiettivo:** Collegamento automatico solo come opzione esplicita, per gioco o per bolla, innescato da un uso reale del SIO (le sonde non innescano: test host): due bolle FireRed e LeafGreen si collegano nella Cable Club senza menu entro 15 s, 10 volte su 10, anche con Emerald + FireRed; due coppie vicine in stanze diverse senza collisioni; con il WLAN spento un solo avviso e nessun tentativo; avvio della rete a metà partita senza frame oltre 50 ms su PSP-1000.
+**Da noi oggi:** Si entra in sessione solo con Crea o Entra dal menu (`source/src/text/message_eng.h:880-914`). Il cavo si collega a gioco già avviato, e l'avvio fissa la CPU a 333 MHz (`main.c:717-719`).
+**Come ci arriviamo:**
+- Innesco su un evento SIO reale del gioco (multiplayer con IRQ, evento MODE_CHANGE di gba_sio), senza bisogno dell'Adapter.
+- Stanza ricavata dalla bolla o dal profilo per gioco, così due coppie vicine non si scontrano.
+- Opzione esplicita per gioco o per bolla (GIO-7, LNK-16.5).
+- Con il WLAN spento compare un solo avviso.
+
+**Gate prima di iniziare:** LNK-5 e GIO-7.1-7.3 consegnati; avvio della rete a metà partita senza frame oltre 50 ms su PSP-1000 (misura di 16.1); solo come opzione esplicita.
+**Rischi:**
+- Falsi positivi: giochi che sondano il SIO all'avvio, come il controllo dell'Adapter (`link_cable.c:1122-1125`).
+- Consumo di batteria e CPU fissata a 333 MHz.
+- Collisioni di stanza.
+
+#### LNK-16.1 — Misura dello scatto all'avvio della rete · S, 1 gg · dipende da: LNK-5.3 · PSP: sì
+- **Cosa:** Su hardware: psp_adhoc_start a metà partita su PSP-1000, misurando il frame più lungo.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** hardware: 5 avvii.
+- **Accettazione:** Frame massimo registrato e gate deciso.
+
+#### LNK-16.2 — Impostazione 'Link automatico' per gioco e per bolla · S, 1,5 gg · dipende da: LNK-16.1, GIO-7.3 · PSP: no
+- **Cosa:** config_model ottiene un valore per gioco (spento / host / join / automatico) con migrazione. L'argomento della bolla si definisce qui, una volta sola: --link-role (host, guest o auto) e --link-room (0-99, le stanze di LNK-5), che questa storia aggiunge al modulo launch_args di GIO-7.1 (GIO-7.1 interpreta solo --save-dir= e --state-dir=) e che lo stub di GIO-7.3 passa. Quando c'è, vale per quella sessione al posto del valore per gioco.
+- **File:** `source/src/config_model.c`, `source/src/config_model.h`, `source/src/gui.c` (file per gioco :6354-6439), `source/src/launch_args.c`, `source/src/message.h` + 5 tabelle, `tests/test_config_model.c`, `tests/test_launch_args.c`
+- **Test:** test_config_model: migrazione; tests/test_launch_args.c: ruoli e stanze validi e non validi (il test di GIO-7.5, ripreso da LNK-16.5 e scritto qui, dove nasce l'argomento); `scripts/check-messages.sh`.
+- **Accettazione:** Spento per default. Il valore sopravvive al riavvio.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-16.3 — Innesco e scelta del ruolo · M, 2,5 gg · dipende da: LNK-16.2, LNK-4.2 · PSP: no
+- **Cosa:** Una funzione pura in link_status.c avvia il link quando il gioco resta in multiplayer con IRQ per almeno N frame, così le sonde vengono filtrate. Prima si prova il join, poi si passa a host dopo 2-6 s casuali. Con il WLAN spento compare un solo avviso e nessun nuovo tentativo.
+- **File:** `source/src/link_status.c`, `source/src/link_status.h`, `source/src/main.c`, `tests/test_link_status.c`, `CHANGELOG.md`
+- **Test:** test_link_status: test_auto_link_trigger (le sonde non innescano, una sessione reale sì) e test_auto_link_wlan_off (con il WLAN spento un solo avviso e nessun nuovo tentativo).
+- **Accettazione:** Nessun avvio della rete per i giochi che sondano soltanto; con il WLAN spento un solo avviso e nessun tentativo. Voce nel CHANGELOG solo dopo la 16.4.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-16.5 — Collegamento automatico impostato dalla bolla (ex GIO-7.5) · S, 0,5 gg · dipende da: LNK-16.3, GIO-7.3 · PSP: no
+- **Cosa:** Il builder offre 'Collegamento automatico' (host, ospite o auto, più la stanza) e lo scrive nel launch_options.txt di GIO-7.3 con l'argomento definito in LNK-16.2. All'avvio main.c passa ruolo e stanza all'innesco di LNK-16.3, che apre la sessione in quel ruolo senza menu; i messaggi d'errore sono quelli localizzati di LNK-16. Argomento e validazione stanno in LNK-16.2, la prova su hardware in LNK-16.4. Il test di GIO-7.5 'ruoli e stanze validi e non validi' passa a questa storia e resta in tests/test_launch_args.c, scritto con l'argomento in LNK-16.2.
+- **File:** `source/single-game_launcher/tool/builder.py`, `source/single-game_launcher/tool/gui_build.py`, `source/src/main.c`, `tests/test_launcher_builder.py`, `CHANGELOG.md`
+- **Test:** tests/test_launcher_builder.py: con 'Collegamento automatico' le opzioni scritte contengono ruolo e stanza; senza, il builder scrive gli stessi file di oggi.
+- **Accettazione:** Senza l'opzione nessun comportamento link nuovo. Voce nel CHANGELOG solo dopo la 16.4.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-16.4 — Prova su hardware · S, 1 gg · dipende da: LNK-16.3, LNK-16.5 · PSP: sì
+- **Cosa:** Due bolle FireRed e LeafGreen si collegano nella Cable Club senza menu; due coppie vicine in stanze diverse.
+- **File:** `docs/HARDWARE-RESULTS.md`
+- **Test:** hardware: 2 scenari; percorso della bolla ripetuto 10 volte, anche con una coppia Emerald + FireRed.
+- **Accettazione:** Collegamento entro 15 s. Nessuna collisione tra le coppie. Percorso della bolla riuscito 10 volte su 10 su due PSP, anche con una coppia Emerald + FireRed.
+
+### LNK-17 — Link Game Boy (GB/GBC)
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| sconsigliato (dietro gate) | dopo gate | 14 gg | F-091, LNK-7.1 (solo 17.4), LNK-12.4 (facoltativo) |
+
+**Copre:** F-114 link Game Boy.
+**Obiettivo:** Scambi Gen 1 e Gen 2 e una lotta tra PSP-1000 e PSP-3000, 3 corse ciascuno: mediana ≥ 59,5 fps, minimo ≥ 57 fps, meno del 10% dei frame con tempo di lavoro oltre 16 ms, nessun picco periodico oltre 20 ms e 0 desincronizzazioni; poi 25 sessioni di fila senza desincronizzazioni né errori di link; ritardo calcolato dall'RTT; identità con l'hash dell'intera ROM su entrambe le console; motivi nelle 5 lingue.
+**Da noi oggi:** Nessun core GB.
+**Come ci arriviamo:**
+- Nessuna ROM in rete per default: identità con l'hash dell'intera ROM su entrambe le console, messo in cache.
+- Ritardo calcolato dall'RTT misurato.
+- Stessa sessione link_net e stessi motivi nelle 5 lingue.
+- Impronta di stato condivisa con il link a due core (LNK-12.6).
+
+**Gate prima di iniziare:** F-091 consegnato e stabile come modulo caricato solo per .gb e .gbc, e almeno 5 richieste distinte per il link GB.
+**Rischi:**
+- Un secondo emulatore da mantenere.
+- Memoria.
+- Il prestito della cartuccia richiede prima una revisione legale: inviare una ROM è una questione di copyright, non solo di licenza.
+
+#### LNK-17.1 — Seriale GB agganciata al livello sessione · M, 3 gg · dipende da: F-091 · PSP: no
+- **Cosa:** SB/SC del modulo GB passano dal livello sessione di link_net.
+- **File:** modulo GB di F-091 (percorso da definire), `source/src/link_cable.c`, `source/src/link_cable.h`
+- **Test:** test host del seriale GB con la simulazione di rete.
+- **Accettazione:** I byte scambiati arrivano in ordine e una sola volta.
+- **Licenza:** da TGB Dual tramite F-091 (GPL-2.0-or-later); il glue è codice nuovo GPL-2.0-or-later.
+
+#### LNK-17.2 — Doppio Game Boy in lockstep di input · L, 6 gg · dipende da: LNK-17.1 · PSP: no
+- **Cosa:** Due istanze del core di F-091 per PSP, con gli input su link_net e il ritardo calcolato dall'RTT. Si riusa link_dualcore.c di LNK-12.4 se esiste, altrimenti un modulo puro proprio. Le due istanze avanzano a blocchi di righe ogni volta che la porta seriale del lato che guida è ferma, anche se l'altra porta aspetta il clock, e tornano riga per riga al primo evento seriale. L'impronta di stato condivisa (LNK-12.6) si calcola a pezzi su più frame.
+- **File:** `source/src/link_dualcore.c`, modulo GB di F-091, `tests/test_link_dualcore.c`
+- **Test:** test_link_dualcore: istanze GB con gli stessi input; hash per frame identici a quelli del passo riga per riga su 3 tracce (Gen 1, Gen 2, lotta); con i profili di rete di test_link_cable il ritardo segue l'RTT.
+- **Accettazione:** Stato identico su entrambe le PSP nel test; il ritardo segue l'RTT su tutti i profili di rete.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-17.3 — Identità della cartuccia e motivi · S, 1 gg · dipende da: LNK-17.2 · PSP: no
+- **Cosa:** Hash dell'intera ROM su entrambe le console; con cartucce diverse la sessione si rifiuta con un motivo nelle 5 lingue.
+- **File:** `source/src/link_cable.c`, `source/src/message.h` + 5 tabelle
+- **Test:** test_link_cable: cartucce diverse rifiutate con motivo; `scripts/check-messages.sh`.
+- **Accettazione:** Nessuna sessione con ROM diverse.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### LNK-17.4 — Opzionale: prestito della cartuccia in RAM · M, 3 gg · dipende da: LNK-17.3, LNK-7.1 · PSP: no
+- **Cosa:** Solo dopo una revisione legale scritta: la ROM resta in RAM e non viene mai scritta sul Memory Stick; si riusa link_transfer.
+- **File:** `source/src/link_transfer.c`, `source/src/main.c`
+- **Test:** test_link_transfer: oggetto ROM in sola RAM.
+- **Accettazione:** Nessuna scrittura su storage. Revisione legale allegata alla PR.
+- **Licenza:** codice nuovo GPL-2.0-or-later; il prestito di una ROM è una questione di copyright, decisa dalla revisione legale prima del codice.
+
+#### LNK-17.5 — Prova su hardware · S, 1 gg · dipende da: LNK-17.3 · PSP: sì
+- **Cosa:** Scambi Gen 1 (Pokémon Rosso/Blu) e Gen 2 (Pokémon Oro/Argento) e una lotta tra PSP-1000 e PSP-3000; poi le stesse sessioni ripetute 25 volte di fila.
+- **File:** `docs/HARDWARE-RESULTS.md`, `CHANGELOG.md` (solo dopo questa riga)
+- **Test:** hardware: scambi Gen 1 e Gen 2 e una lotta, 3 corse ciascuno, tra PSP-1000 e PSP-3000; poi 25 sessioni di fila.
+- **Accettazione:** Scambi Gen 1 e Gen 2 e una lotta tra PSP-1000 e PSP-3000, 3 corse ciascuno: mediana di almeno 59,5 fps, minimo di almeno 57 fps, meno del 10% dei frame con tempo di lavoro oltre 16 ms, nessun picco periodico oltre 20 ms e 0 desincronizzazioni. 25 sessioni di fila senza desincronizzazioni né errori di link.
+
+## 7. Ingegneria, verifica e presentazione
+
+Il gruppo copre tre cose: come rilasciamo (gate, prerelease, manifest, sorgente), come verifichiamo l'emulatore (replay con hash, test del core, PPSSPP, link, sospensione, fixture, rig, build qemu e desktop) e come ci presentiamo (README, documentazione, segnalazioni, upstream). Nella 1.4.4 entrano solo script e documenti che non cambiano l'EBOOT (ENG-1.1-1.5, ENG-2.6, ENG-10.1, ENG-18). La 1.5 porta build id e bump dei formati (ENG-1.6), lint degli script (ENG-2.1), test di proprietà della macchina power (ENG-8.3), controllo della larghezza dei messaggi (ENG-9.1), watchdog (ENG-15; ENG-15.5 solo su richiesta) ed ENG-10.4, che fissa le suite di terzi prima che CMP-11.1 e CMP-12.1 ne registrino gli esiti sulla 1.4.3. La 1.6 porta profili di build e CI (ENG-2), replay (ENG-3), test host del core (ENG-5), spike PPSSPP, autorun e testpat su PSP (ENG-6; ENG-6.3-6.5 dopo gate), il resto delle fixture (ENG-10), prima parte del README (ENG-16.1-16.3), documentazione di ingegneria (ENG-17), upstream (ENG-19) e guardia del JIT (ENG-14.1). La 2.0 porta link sull'EBOOT reale (ENG-7), simulatori di sospensione (ENG-8; ENG-8.2 dopo gate), navigatore dei menu (ENG-9.2) e chiude il README (ENG-16). Script di input, rig, build qemu e desktop, con il controllo del codice stantio e l'interprete di riferimento, e il resto degli strumenti della I-cache (ENG-4, ENG-11, ENG-12, ENG-13, ENG-14.2-14.3) partono solo dopo gate misurati. Nessuna epica del gruppo è in corso: il BIOS aperto (CMP-1) è implementato ma non ancora unito, sul branch `features/builtin-open-bios`, e qui compare solo come dipendenza.
+
+### ENG-1 — Rilascio onesto: gate meccanico, canale prerelease, manifest e sorgente corrispondente
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.4.4 (ENG-1.6 in 1.5) | 7,5 gg | F-001, F-002, F-003 (solo ENG-1.5) |
+
+**Copre:** F-118 note di rilascio con validato e non validato, F-119 beta pubbliche prima dello stabile, F-139 manifest di build e checksum, F-140 sorgente corrispondente nelle release
+**Obiettivo:** Nessuno stabile senza righe hardware pass legate allo sha256 dell'EBOOT candidato su ogni classe di modello richiesta, dopo almeno 7 giorni di prerelease (72 h per una correzione di perdita dati) contati dal tag rc: lo decide `make release-gate`, non il giudizio del manutentore. Lo stabile ripubblica gli stessi file dell'rc senza ricompilare (sha256 uguali al manifest dell'rc). Ogni release, prerelease comprese, porta manifest, SHA256SUMS e sorgente corrispondente; le note «Validato su / Non validato / Limiti noti / Si collega con» si generano dai dati; un cambio del codice link senza dichiarazione (wire-invariato, wire-esteso con «cosa perde una coppia mista», oppure bump) fa fallire il gate.
+**Da noi oggi:** `CONTRIBUTING.md:103-105` chiede l'accettazione hardware per lo stabile, ma 1.4.0 e 1.4.1 sono uscite stabili con la checklist di `docs/ROADMAP-1.4.0.md:21-33` non spuntata, e il commit `7198741` ha tolto da CHANGELOG e ROADMAP la nota sul primo run accoppiato. Anche la 1.4.3 è uscita stabile il giorno dei suoi ultimi commit, senza prerelease né righe hardware della build finale, e ha cambiato `link_cable.c`, `link_net.c` e due messaggi senza bump e senza dire nulla delle coppie miste. Non esiste un tag prerelease (`git tag`: da 1.0.0 a 1.4.3). `CHANGELOG.md:98` dichiara incompatibile il protocollo link di 1.4.1, ma `source/src/link_net.h:35` vale `1u` fino alla 1.4.3: la rottura tra 1.4.0 e 1.4.1 viene da `LINK_CABLE_PROTOCOL`, passato da 1 a 2 (`source/src/link_cable.h:58`); tra 1.4.0 e 1.4.1 sono cambiati `link_cable.c` e `psp_adhoc.c`, non `link_net.*`. Il pacchetto ha solo il `.sha256` dello zip (`scripts/package-release.sh:79-83`, verificato da `scripts/check-package.sh:78-82`). La versione (`source/src/main.h:28`) finisce solo nel perf report (`source/src/main.c:2191`): non compare né nel titolo XMB (`source/Makefile:26`) né nell'interfaccia.
+**Come ci arriviamo:**
+- Gate meccanico: `make release-gate` rifiuta uno stabile senza righe hardware 'pass' legate allo sha256 dell'EBOOT candidato.
+- Le righe 'Validato su / Non validato' si generano da `docs/HARDWARE-RESULTS.md`, quindi nessuno le cancella a mano come è successo in `7198741`. Il CHANGELOG resta comportamento visibile, senza risultati di test.
+- Promozione a binario identico, verificata: lo stabile ripubblica zip, manifest e SHA256SUMS dell'rc senza ricompilare, e il gate confronta gli sha256 e vieta differenze in `source/` dal tag rc.
+- 'Si collega con' viene da `LINK_NET_VERSION` e `LINK_CABLE_PROTOCOL` confrontate tra i tag, più le note di `docs/releases/link-compat.txt`. Il gate blocca una modifica al codice link senza bump e senza dichiarazione esplicita, cioè il caso 1.4.3.
+- Manifest, SHA256SUMS e sorgente accompagnano ogni release, prerelease comprese. Il soak si conta dalla data del tag rc, non da una data scritta a mano.
+
+**Gate prima di iniziare:** nessuno, si parte con la 1.4.4. ENG-1.6 va in 1.5: dopo la 1.4.3, uscita per il link, la linea 1.4.x riceve solo correzioni (sicurezza dei dati e difetti del link già spediti); la regola è da confermare (vedi «Decisioni aperte»).
+**Rischi:**
+- Rilasci più lenti, legati a una sessione hardware a settimana.
+- Il gate è uno script che il manutentore può saltare: la CI sui tag (ENG-2.5) lo ricalcola in pubblico.
+- Le righe hardware si scrivono a mano: ogni riga cita il log decodificato, che dopo ENG-1.6 porta il build id.
+- LNK-1.1 scrive nello stesso file: colonne e chiave (sha256 dell'EBOOT) si fissano una volta sola, qui.
+- Le prerelease attirano meno tester: gli annunci sono in ENG-18.2.
+
+#### ENG-1.1 — Catalogo dei test hardware, docs/HARDWARE-RESULTS.md e scheda di sessione · S, 1 gg · dipende da: — · PSP: no
+- **Cosa:** Creare `docs/hardware-tests.md` con id stabili dei test (per esempio save-sram-roundtrip, save-powerloss-10x, link-frlg-both-roles, link-ruby-fr, sleep-auto-20x, boot-open-bios-10, perf-baseline-5); per ognuno, modelli richiesti, passi, criterio di pass e tempo stimato. Creare `docs/HARDWARE-RESULTS.md` come tabella con data, versione, sha256 di EBOOT.PBP (12 cifre hex; quello completo sta nel manifest), modello, firmware/CFW, supporto, id test, esito, minuti spesi e prova (nome del log decodificato o del report). La chiave è lo sha256 di EBOOT.PBP e non quello dell'ELF, perché tra i binari lo zip di release contiene solo EBOOT.PBP ed exception.prx, e l'ELF di una build pubblicata non si può verificare. LNK-1.1 usa le stesse colonne: chi arriva prima crea il file. La nota del primo run accoppiato tolta da `7198741` va qui, non nel CHANGELOG. `scripts/hardware-session.py` genera dai test richiesti di una release la scheda da seguire alla console.
+- **File:** `docs/hardware-tests.md` (nuovo), `docs/HARDWARE-RESULTS.md` (nuovo), `scripts/hardware-session.py` (nuovo), `scripts/check-tree.sh` (elenco dei documenti mantenuti), `docs/ROADMAP-1.4.0.md` (rimanda ai nuovi file), `Makefile` (test-tools)
+- **Test:** `tests/test_hardware_session.py` in test-tools: parsing di catalogo e tabella, id sconosciuto rifiutato, riga malformata segnalata col numero di riga; check-tree: i due documenti esistono e non sono vuoti.
+- **Accettazione:** Ogni riga di HARDWARE-RESULTS usa un id del catalogo, altrimenti `make check` fallisce. La scheda di sessione della 1.4.4 elenca test, modelli e tempo stimato. Il run del 2026-10-31 (FireRed+FireRed, PSP-2000 host e PSP-1000, due minuti e mezzo nel Cable Club, circa 40 s di stallo in tutto) è una riga storica con sha256 'sconosciuto'. Sono righe storiche con sha256 «sconosciuto» anche le due gare di MKSC della 1.4.3 (40 e 45,5 fps, `docs/link-cable.md:251-253`) e il crash della pagina Prestazioni su entrambe le PSP. Il catalogo ha anche gli id link-mksc-race, link-mixed-pair, core-rom e suite-terzi; per core-rom e suite-terzi il pass vuol dire che nessun caso o test verde sulla release precedente è rosso sul candidato, su PSP-1000 e sul secondo modello.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-1.2 — make release-gate e note di rilascio generate · M, 1,75 gg · dipende da: ENG-1.1, ENG-1.3 · PSP: no
+- **Cosa:** `scripts/release_gate.py` (solo libreria standard) e il target `make release-gate VERSION=x CHANNEL=stable|prerelease`. Lo script legge il manifest del candidato (ENG-1.3), HARDWARE-RESULTS, il catalogo e `docs/releases/<versione>.txt` (test richiesti, flag hotfix-dati, limiti noti, stato del protocollo link). Per lo stabile servono tre condizioni. Ogni test richiesto ha una riga pass per lo sha256 dell'EBOOT su ogni classe di modello richiesta. Il soak dura almeno 7 giorni, o 72 h con hotfix-dati, contati dalla data del tag `<v>-rc.N` (`git for-each-ref`). `source/` non cambia tra il tag rc e il commit dello stabile. Lato link: se `link_net.*`, `link_cable.*`, `gba_sio.*`, `adhoc_peer.*` o `psp_adhoc.c` sono cambiati dall'ultimo tag, `docs/releases/<v>.txt` dichiara uno di tre stati del protocollo: wire-invariato, wire-esteso (campi accodati o bit riservati, con il testo obbligatorio «cosa perde una coppia mista») oppure bump; se `LINK_NET_VERSION` o `LINK_CABLE_PROTOCOL` è cambiata serve una riga pass di ppsspp-link-pair (ENG-7.3) o di un test link hardware. Lo script scrive `dist/RELEASE-NOTES-<v>.md` con 'Validato su', 'Non validato', 'Limiti noti' e 'Si collega con'; quando la release richiede perf-baseline-5 aggiunge anche il verdetto di compare-benchmarks citato nella riga. 'Si collega con' viene da `LINK_NET_VERSION` e `LINK_CABLE_PROTOCOL` di ogni tag (`git show <tag>:source/src/link_net.h` e `link_cable.h`) più `docs/releases/link-compat.txt`, dove stanno l'eccezione nota (1.4.0 ha la versione 1 ma non si collega con 1.4.1 e successive) e la riga «1.4.3 con 1.4.1-1.4.2: si collega; la correzione dello scambio della 1.4.3 vale solo se entrambe le PSP hanno la 1.4.3 o successive», che le note della 1.4.4 riportano. Il prerelease passa sempre, con l'elenco di ciò che non è validato. Quando arriva, il controllo di prestazioni di PRF-1.6 è un passo che `release_gate.py` chiama, non un secondo gate.
+- **File:** `scripts/release_gate.py` (nuovo), `Makefile` (target release-gate), `docs/releases/1.4.4.txt` (nuovo), `docs/releases/link-compat.txt` (nuovo), `CONTRIBUTING.md` (sezione rilascio)
+- **Test:** `tests/test_release_gate.py` in test-tools, con tabelle sintetiche: stabile accettato, riga mancante, sha diverso, soak corto contato dal tag rc, hotfix a 72 h, codice link cambiato senza bump (rifiutato), 'wire-invariato' accettato, differenza in `source/` dopo l'rc (rifiutata); un repo git temporaneo per i casi con tag. Il caso 1.4.2→1.4.3 ricostruito (`link_cable.c` e `link_net.c` cambiati, versioni invariate) fallisce senza dichiarazione e passa con wire-esteso e il testo; il caso 1.4.0→1.4.1 si riconosce da `LINK_CABLE_PROTOCOL`.
+- **Accettazione:** Senza righe, `CHANNEL=stable` sulla 1.4.4 esce con errore e nomina i test mancanti; `CHANNEL=prerelease` scrive le note con tutti i test in 'Non validato'. Il caso 1.4.0->1.4.1 ricostruito nel test (`link_cable.c` e `psp_adhoc.c` cambiati, `LINK_NET_VERSION` invariata a `1u`) fa fallire il gate. Le note della 1.4.4 non dicono che 1.4.0 si collega con 1.4.1 o successive e riportano la riga della coppia mista. Lo script non tocca il CHANGELOG.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-1.3 — Manifest di build e SHA256SUMS nel pacchetto · S, 1 gg · dipende da: — · PSP: no
+- **Cosa:** `package-release.sh` scrive `dist/GBA-Rush-PSP-<v>.manifest.json` con versione, canale, commit, build id (quando c'è ENG-1.6), albero pulito sì/no, SOURCE_DATE_EPOCH, prima riga di `psp-gcc --version`, digest dell'immagine pspdev se `PSPDEV_IMAGE` è impostata, CFLAGS (nuovo target `make -C source print-flags`), sha256 di EBOOT.PBP, exception.prx e TempGBA.elf, e dimensione dell'immagine caricata dell'ELF (segmenti PT_LOAD). Poi scrive `dist/SHA256SUMS` su zip, manifest e zip sorgente (ENG-1.4). `check-package.sh` verifica che il manifest corrisponda all'EBOOT estratto e che SHA256SUMS torni. Il vecchio `.sha256` resta ancora per un rilascio, per compatibilità. Il branch del BIOS aperto cambia una sola riga di `package-release.sh` e una di `check-package.sh` (aggiunge `source/bios/README.md` ai documenti) e si ribasa una volta dopo il tag 1.4.4, quindi sopra questa storia. UI-1.5 cambia gli stessi script nella 1.4.4: chi entra per secondo adatta il percorso dell'EBOOT estratto.
+- **File:** `scripts/package-release.sh`, `scripts/check-package.sh`, `source/Makefile` (target print-flags), `scripts/elf_info.py` (nuovo, lettura dei PT_LOAD condivisa con ENG-2.4)
+- **Test:** `tests/test_elf_info.py` in test-tools: ELF32 sintetico costruito nel test con due PT_LOAD (immagine = fine massima meno inizio minimo), file non ELF rifiutato; `make artifact-smoke` su un pacchetto di prova.
+- **Accettazione:** `make package VERSION=x` produce zip, manifest e SHA256SUMS; `make artifact-smoke` fallisce se l'EBOOT nello zip non ha lo sha256 del manifest. Nel manifest non ci sono percorsi assoluti della macchina di build.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-1.4 — Sorgente corrispondente come asset di ogni release · S, 0,5 gg · dipende da: ENG-1.3 · PSP: no
+- **Cosa:** `package-release.sh` crea `dist/GBA-Rush-PSP-<v>-source.zip` con `git archive --format=zip --prefix=GBA-Rush-PSP-<v>-source/ <tag>`, e si ferma se il tag non esiste o se `source/` ha modifiche non committate. Dopo l'unione di F-012 il sorgente del BIOS in `source/bios/` (ReGBA 313ddd0, che produce la stessa immagine di libretro/gpsp a commit fissato 5819380) entra da solo perché sta nell'albero; non ci sono submodule. NOTICE guadagna un paragrafo 'Codice sorgente corrispondente' che rimanda all'asset e al tag, e il CHANGELOG dice che ogni release porta manifest, SHA256SUMS e sorgente.
+- **File:** `scripts/package-release.sh`, `scripts/check-package.sh`, `NOTICE`, `CHANGELOG.md`
+- **Test:** `check-package.sh`: lo zip sorgente contiene LICENSE, NOTICE e `source/Makefile`, e dopo F-012 anche `source/bios/Makefile` e `source/bios/README.md`; `tests/test_release_gate.py`: caso con tag mancante.
+- **Accettazione:** Lo zip sorgente della 1.4.4 contiene esattamente i file di `git ls-tree -r <tag>`. Il pacchetto si rifiuta di partire con modifiche non committate in `source/`.
+- **Licenza:** codice nuovo GPL-2.0-or-later; lo zip sorgente adempie alla sezione 3 della GPL-2.0. Il sorgente del BIOS (GPL-2.0-or-later: Normmatt, VBA, VBA-M) arriva con F-012.
+
+#### ENG-1.5 — Canale prerelease e promozione a binario identico, primo uso sulla 1.4.4 · S, 1 gg · dipende da: ENG-1.2, ENG-1.3, ENG-1.4, F-001, F-002, F-003 · PSP: sì
+- **Cosa:** `scripts/publish-release.sh`, eseguito dal manutentore con gh autenticato, pubblica `<v>-rc.N` come prerelease GitHub con le note generate e tutti gli asset. La promozione avviene dopo `make release-gate CHANNEL=stable` e pubblica il tag `<v>` ripubblicando zip, manifest e SHA256SUMS dell'rc, senza ricompilare. Per questo l'rc si compila già con la versione finale in `main.h`, e il commit dello stabile può aggiungere solo file fuori da `source/` (data del CHANGELOG, righe hardware). Le regole vanno in CONTRIBUTING: ogni build per console non testata esce come prerelease da develop; soak di 7 giorni, 72 h per una correzione di perdita dati; LINK_NET_VERSION cambia solo nelle minor; un rc che resta 21 giorni senza righe si testa o si rifà. Primo uso: 1.4.4-rc.1, dopo l'unione del branch dei salvataggi, con le righe della sessione hardware della 1.4.4 (compresa la matrice di SAV-1.8).
+- **File:** `scripts/publish-release.sh` (nuovo), `CONTRIBUTING.md`, `docs/releases/1.4.4.txt`, `docs/HARDWARE-RESULTS.md`
+- **Test:** `sh -n scripts/publish-release.sh`, eseguito da questa storia (il lint di tutti gli script arriva con ENG-2.1, nella 1.5); `--dry-run` che stampa i comandi gh senza pubblicare; sessione hardware 1.4.4 su PSP-1000 e PSP-2000 che riempie le righe.
+- **Accettazione:** 1.4.4-rc.1 è un prerelease GitHub con zip, manifest, SHA256SUMS, zip sorgente e note 'Validato su / Non validato'. La 1.4.4 stabile pubblica lo stesso EBOOT dell'rc (sha256 uguale a quello del manifest dell'rc) e il gate stabile è verde.
+- **Licenza:** codice nuovo GPL-2.0-or-later; gh è uno strumento esterno.
+
+#### ENG-1.6 — Build id nel binario, nell'interfaccia e nei formati · M, 2,25 gg · dipende da: ENG-1.3 · PSP: sì
+- **Cosa:** `source/Makefile` passa `-DGBA_RUSH_BUILD_ID="<hash>[-dirty]"`, dove l'hash è `git rev-parse --short=12 HEAD:source`, cioè l'albero di `source/` e non il commit; per le build da tarball arriva da una variabile. Un commit di soli documenti non cambia quindi il build id, e la promozione di ENG-1.5 resta a binario identico. La pagina Diagnostica lo mostra come 'versione (build)', con una voce nuova in enum MESSAGE_ITEM e nei cinque `message_*.h` nello stesso ordine; il menu principale non guadagna categorie. build-id entra nel perf report (non è un campo di confronto in compare-benchmarks) e nell'header del runtime log. ENG-1.6 è l'unica proprietaria del bump dei formati della 1.5: `RUNTIME_LOG_VERSION` da 5 a 6 (`runtime_log.h:25`) e `PERF_REPORT_VERSION` da 6 a 7 (`perf_report.h:26`), con i decoder (`tools/decode_runtime_log.py`, `scripts/compare-benchmarks.py`) che leggono la versione vecchia e la nuova, i test e la riga del CHANGELOG. compare-benchmarks rifiuta un report con version minore di 1.4.3, con il motivo «contatori a 64 bit non validi prima della 1.4.3»; un report senza la chiave version, come i fixture sintetici di `tests/test_compare_benchmarks.py`, resta accettato. Le build di sviluppo della 1.4.3 precedenti alla correzione scrivono già version=1.4.3: come base valgono solo report di EBOOT pubblicati, legati allo sha256 (principio 1). CMP-1.4, LNK-1.2, PRF-2.1, PRF-4.1 ed ENG-15.2-15.3 aggiungono i propri campi dentro questo bump, senza un bump proprio, e dipendono da ENG-1.6; nessuna storia di una release successiva entra in questo bump. Dalla 1.6 il bump di un formato lo fa la prima storia della release che lo cambia, e un valore aggiunto in fondo a un'enum del runtime log non cambia la versione (principio 6, R1-R3). Voce nel CHANGELOG (Added) per il build id e i formati 6 e 7.
+- **File:** `source/Makefile`, `source/src/main.h`, `source/src/main.c`, `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `source/src/perf_report.c`, `source/src/perf_report.h`, `source/src/runtime_log.c`, `source/src/runtime_log.h`, `source/src/runtime_log_psp.c`, `scripts/compare-benchmarks.py`, `tools/decode_runtime_log.py`, `CHANGELOG.md`
+- **Test:** `tests/test_perf_report.c`: campo build-id dentro PERF_REPORT_CAPACITY; `tests/test_runtime_log.c`: header v6, v5 ancora leggibile; `tests/test_decode_runtime_log.py` (log v5 e v6) e `tests/test_compare_benchmarks.py` (report v6 e v7, build diversi accettati; report 1.4.2 rifiutato, report 1.4.3 e report senza version accettati); `scripts/check-messages.sh` e `scripts/check-menu-layout.sh`; hardware: la pagina Diagnostica mostra il build id, e report e log decodificati lo riportano.
+- **Accettazione:** Report e log scritti su PSP riportano lo stesso build id del manifest. Due build dallo stesso albero `source/` con documenti diversi hanno lo stesso build id. compare-benchmarks confronta ancora report v6 e v7, e il decoder legge ancora i log v5. Decoder e test cambiano nello stesso commit del bump, l'unico della 1.5.
+
+### ENG-2 — Profili di build, gate di build, lint degli script e CI
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 (ENG-2.6 in 1.4.4; ENG-2.1 in 1.5) | 7 gg | ENG-1.2, ENG-1.3 |
+
+**Copre:** F-137 profili di build, F-138 gate di build (warning, stringhe, heap), F-141 lint degli script, F-158 integrazione continua, F-162 igiene del repository (pattern dei binari, nomi vietati)
+**Obiettivo:** Due profili, release e diagnostic, con controlli a compile time; l'EBOOT diagnostico ha titolo, icone e cartella propri e non tocca mai config, salvataggi e log del giocatore. `-Werror` sul codice del progetto senza allow-list; audit dell'ELF release e soglia di heap all'avvio; lint di ogni script in `make check`, con i pattern dei binari senza distinzione di maiuscole; nessun nome vietato nel tree, nei nomi dei file o nei messaggi di commit della release; CI su ogni PR e su ogni tag in un container fissato per digest, con la riproducibilità dell'EBOOT misurata e documentata.
+**Da noi oggi:** Una sola build più la variabile `DIAGNOSTIC_INPUT_TRACE` (`source/Makefile:46-50`, `:75-77`). L'EBOOT diagnostico ha lo stesso titolo e le stesse icone (`source/Makefile:24-26`) e si installa nella stessa cartella. La build PSP usa `-Wall` (`source/Makefile:62-68`, con `-flto`); dalla 1.4.3 solo `-Werror=trampolines` è un errore, su tutti gli oggetti (`source/Makefile:70-73`), dopo che due callback annidate della pagina Prestazioni hanno mandato in crash entrambe le PSP con «Reserved instruction» (`source/src/gui.c:3220-3226`). I test host usano `-Werror` (`Makefile:165`) e hanno gemelli ASan/UBSan. Non c'è audit dell'ELF né soglia di heap. check-tree verifica la sintassi del solo `scripts/check-cbmc.sh` (`scripts/check-tree.sh:29`), e i pattern dei binari distinguono le maiuscole (`scripts/check-tree.sh:47-55`: un `ROM.GBA` o un `EBOOT.pbp` passerebbero). Nessun controllo cerca nomi vietati nel tree, nei nomi dei file o nei messaggi di commit. Non esiste `.github`.
+**Come ci arriviamo:**
+- Due soli profili, release e diagnostic: le funzioni restano opzioni a runtime, senza interruttori del core a compile time.
+- L'EBOOT diagnostico ha titolo, icone e cartella di installazione propri, quindi non sovrascrive mai quello del giocatore.
+- `-Werror` sul nostro C senza allow-list finché non serve; l'audit dell'ELF vieta in release le stringhe di autorun e dei file di controllo.
+- CI GitHub Actions in un container pspdev fissato per digest, con misura della riproducibilità dell'EBOOT.
+
+**Gate prima di iniziare:** nessuno.
+**Rischi:**
+- Il numero di warning della build PSP è sconosciuto (qui non c'è toolchain): `-Werror` può richiedere più di un giorno.
+- La CI ha bisogno degli header dell'SDK PSP anche per i test host, perché `memory.c` e `psp_video.c` si compilano sull'host con `PSP_SDK_INCLUDE` preso da `psp-config` (`Makefile:21`, `:247-295`).
+- Correggere warning in `cpu.c` o `memory.c` cambia il codice generato: serve uno smoke su hardware.
+
+#### ENG-2.1 — Lint degli script in make check e pattern binari senza distinzione di maiuscole · S, 0,5 gg · dipende da: — · PSP: no
+- **Cosa:** `scripts/check-scripts.sh` esegue `sh -n` su `scripts/*.sh` e `python3 -m py_compile` su `scripts/*.py`, `tools/*.py`, `tests/**/*.py` e `source/single-game_launcher/tool/*.py`, compilando in una directory temporanea per non lasciare `__pycache__` nel repo. check-tree.sh lo chiama e confronta le estensioni vietate già elencate senza distinguere le maiuscole. Quando esistono, valida anche la sintassi dei file YAML di `.github`. Va unita prima del merge del ramo `features/builtin-open-bios`: CMP-1.1 dipende da questa storia, così quando arriva il BIOS aperto check-tree rifiuta già un `GBA_BIOS.BIN` o un `GAME.GBA` tracciato.
+- **File:** `scripts/check-scripts.sh` (nuovo), `scripts/check-tree.sh`
+- **Test:** lo script dentro `make check`; `tests/test_check_scripts.py`: un file temporaneo con un errore di sintassi viene rilevato.
+- **Accettazione:** Un errore di sintassi in `scripts/package-release.sh` fa fallire `make check`. Un `EBOOT.pbp` o un `ROM.GBA` tracciato fa fallire tree-check.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-2.2 — Profili release e diagnostic con controlli a compile time · M, 1,5 gg · dipende da: — · PSP: sì
+- **Cosa:** `make psp-build PROFILE=release|diagnostic`, con release come default; `DIAGNOSTIC_INPUT_TRACE=1` resta un alias di `PROFILE=diagnostic` per un rilascio. Il nuovo `source/src/build_profile.h` definisce `GBA_RUSH_PROFILE_NAME` e dà `#error` se manca il profilo, se ne sono definiti due, o se in release è definita una funzione diagnostica (traccia, autorun, iniezione di rete o di eventi power, passaggio via USB). Il profilo diagnostic ha `PSP_EBOOT_TITLE` 'GBA Rush PSP [DIAG]', ICON0 e PIC1 dedicati, e il suo pacchetto si installa in `PSP/GAME/GBARushPSP-DIAG`. La cartella base viene da argv[0] (`source/src/main.c:1572-1596`), quindi il diagnostico ha config, salvataggi e log propri; CONTRIBUTING spiega come copiarci quelli dell'utente per riprodurre un bug.
+- **File:** `source/Makefile`, `source/src/build_profile.h` (nuovo), `source/src/common.h`, `source/res/ICON0-diag.png` e `source/res/PIC1-diag.png` (nuovi, derivati dai nostri asset), `scripts/package-release.sh` (nome e cartella del pacchetto diagnostico), `CONTRIBUTING.md`
+- **Test:** `scripts/check-profiles.sh` (rg): nessun `ENABLE_DIAGNOSTIC_*` fuori da `build_profile.h` e dai file previsti; build PSP dei due profili in CI (ENG-2.5); hardware: i due EBOOT si avviano, il diagnostico mostra il suo titolo e non tocca la cartella release.
+- **Accettazione:** `ENABLE_DIAGNOSTIC_INPUT_TRACE` con `PROFILE=release` ferma la compilazione con un messaggio chiaro. L'EBOOT release si comporta come oggi: stesso menu, nessuna voce diagnostica. Installare il diagnostico non tocca config, salvataggi e log della cartella release.
+- **Licenza:** codice nuovo GPL-2.0-or-later; le icone derivano dai nostri asset.
+
+#### ENG-2.3 — -Werror sul codice del progetto nella build PSP · M, 1,5 gg · dipende da: — · PSP: sì
+- **Cosa:** Compilare una volta con la toolchain, poi correggere o motivare ogni warning. Aggiungere `-Werror` ai `C_ONLY_OBJS` (`source/Makefile:85-86`), esclusi i file vendorizzati (zlib in `OBJZ`/`OBJG`, `gbkfont.c`, `shinonomefont.c`); `video_cc.cc` e `mips_stub.S` restano come oggi. Con `-flto` (`source/Makefile:68`) parte dei warning ricompare al link: se lo fa nei file vendorizzati, quei file escono da LTO oppure il link resta senza `-Werror`, e la scelta va in `docs/DESIGN-DECISIONS.md`. Niente allow-list finché un warning non risulta impossibile da correggere; in quel caso un `-Wno-error=<nome>` sul singolo file, con un commento che spiega perché. `-Werror=trampolines` resta su tutti gli oggetti, vendorizzati compresi, anche dove un file esce da `-Werror`; il commento della regola cita il crash della 1.4.3. Per le voci di menu vale la regola dell'introduzione di «Interfaccia e UX»: una callback che legge variabili di `menu()` sta a livello di file.
+- **File:** `source/Makefile`; i file `.c` con warning (sconosciuti finché non si compila)
+- **Test:** `make psp-build` con `-Werror` in CI; hardware: smoke di avvio e un gioco per renderer, se cambiano `cpu.c`, `memory.c` o i renderer.
+- **Accettazione:** `make psp-build` fallisce su un warning nuovo in un file del progetto. Nessun cambio di comportamento: smoke su PSP-1000 superato se sono stati toccati file del core.
+- **Licenza:** codice nuovo GPL-2.0-or-later; nei file ereditati restano gli header originali.
+
+#### ENG-2.4 — Audit dell'ELF e soglia di heap all'avvio nel pacchetto · S, 1 gg · dipende da: ENG-1.3, ENG-2.2 · PSP: no
+- **Cosa:** `scripts/check-elf.py`, lanciato da `make package` sul profilo release, controlla: (a) le stringhe vietate nell'ELF release (diag-autorun, nomi dei file di controllo, '[DIAG]', e 'GBIT' finché la traccia resta solo diagnostica); (b) le stringhe richieste (versione e, dopo ENG-1.6, build id); (c) l'immagine caricata (PT_LOAD, tramite `scripts/elf_info.py`) confrontata con l'heap del PSP-1000 misurato da PRF-4.2 (F-027): fallisce se l'heap stimato all'avvio scende sotto la soglia. Finché quei numeri non ci sono, la soglia viene solo riportata. Se esiste `scripts/check-layout.py` (PRF-10.4), lo esegue: avviso normale, fallimento con `--strict`.
+- **File:** `scripts/check-elf.py` (nuovo), `scripts/elf_info.py`, `Makefile` (target package), `docs/RAM-BUDGET.md` (solo lettura, lo scrive PRF-4.2)
+- **Test:** `tests/test_check_elf.py` con ELF sintetici: stringa vietata trovata, stringa richiesta mancante, immagine oltre la soglia.
+- **Accettazione:** Un EBOOT release che contiene la stringa dell'autorun non viene impacchettato e, quando esistono i numeri di PRF-4.2, nemmeno uno la cui immagine porta l'heap stimato all'avvio sul PSP-1000 sotto quella soglia. Il manifest (ENG-1.3) riporta la dimensione dell'immagine e l'heap stimato.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-2.5 — CI GitHub Actions in un container fissato · M, 2 gg · dipende da: ENG-1.2, ENG-1.3, ENG-2.2 · PSP: no
+- **Cosa:** Il workflow `.github/workflows/check.yml` gira a ogni push e PR in un'immagine derivata minima (pspdev più cc, python3, rg, zip, unzip, cbmc) fissata per digest. Esegue `make check`, `make test-sanitize`, `make check-cbmc`, `make psp-build` per release e diagnostic, e `make package VERSION=ci-<sha>`, caricando EBOOT e manifest come artifact. Sui tag esegue anche `make artifact-smoke` e, se il tag non ha suffisso, `make release-gate CHANNEL=stable`, verificando inoltre che una ricompilazione al tag dia lo stesso build id del manifest. Le azioni di terze parti sono fissate per SHA. Due build consecutive confrontano lo sha256 dell'EBOOT: se differiscono, la causa va in `docs/DESIGN-DECISIONS.md`.
+- **File:** `.github/workflows/check.yml` (nuovo), `tools/ci/Dockerfile` (nuovo, immagine derivata), `CONTRIBUTING.md` (sezione CI)
+- **Test:** la pipeline stessa: una PR con un test rotto diventa rossa.
+- **Accettazione:** Ogni PR mostra lo stato di `make check`, test-sanitize e delle due build PSP. Un tag stabile senza righe hardware fa fallire in pubblico il job di rilascio. La riproducibilità dell'EBOOT è misurata e documentata.
+- **Licenza:** nessun codice; immagini Docker e azioni sono strumenti esterni.
+
+#### ENG-2.6 — Controllo dei nomi vietati nel tree, nei nomi dei file e nei messaggi di commit · S, 0,5 gg · dipende da: ENG-1.2 · PSP: no
+- **Cosa:** `scripts/check-names.py` (solo libreria standard) divide il testo in parole, le porta in minuscolo e confronta lo SHA-256 di ogni parola con gli hash di `scripts/forbidden-words.sha256`, che non contiene nessun nome in chiaro. Controlla il contenuto dei file di testo tracciati, i nomi dei file tracciati e i nomi dei file non tracciati sotto `docs/`; con `--commits <da>..<a>` controlla i messaggi di commit. `scripts/check-tree.sh` lo chiama in `make check`, quindi anche nella CI di ENG-2.5, e `scripts/release_gate.py` lo chiama sui commit dal tag precedente. Hash di commit e percorsi di file di altri progetti non sono parole: ogni testo nuovo si rilegge a mano per questi prima del merge.
+- **File:** `scripts/check-names.py` (nuovo), `scripts/forbidden-words.sha256` (nuovo), `scripts/check-tree.sh`, `scripts/release_gate.py`, `tests/test_check_names.py` (nuovo), `Makefile` (test-tools)
+- **Test:** `tests/test_check_names.py`, con un elenco temporaneo che contiene l'hash di una parola di prova: la parola in un file tracciato, nel nome di un file tracciato, nel nome di un file non tracciato sotto `docs/` e in un messaggio di commit di un repo git temporaneo fa fallire il controllo; le maiuscole non contano; i file binari si saltano.
+- **Accettazione:** Una parola vietata in un file tracciato, nel nome di un file o in un messaggio di commit della release fa fallire `make check` o `make release-gate`; l'elenco nel repository contiene solo hash; 0 occorrenze sul tree della 1.4.4.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### ENG-3 — Replay deterministico con hash dello stato ospite
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 | 8,75 gg | ENG-2.2, ENG-10.3, F-027 (solo ENG-3.6), CMP-7.3 (solo ENG-3.7), SAV-2.6, CMP-1.1, CMP-3.1, CMP-11.1, CMP-12.1 e UI-10.5 (solo ENG-3.5) |
+
+**Copre:** F-120 replay con hash dello stato per frame
+**Obiettivo:** Due replay dello stesso `.gbit` v2 danno `.gbsh` identici su PSP-1000 e PSP-2000; il corpus pubblico (ROM GPL nostre, core-rom, ROM dei salvataggi e suite di terzi, con il BIOS integrato, senza ROM commerciali né BIOS ufficiale) passa identico sui due modelli e chiunque può rieseguirlo; la traccia riparte dal suo stato compagno senza caricare stati a mano e rifiuta uno stato sbagliato; l'hash di ogni frame copre nove regioni, compresi i campioni audio che il core genera nel frame, e il confronto indica frame e regione della prima differenza; nessun I/O su file in update_gba; registrazione e replay anche nelle build release, se la misura dell'heap di PRF-4 lascia margine sul PSP-1000.
+**Da noi oggi:** La traccia di input 'GBIT' v1 esiste solo nelle build diagnostiche (`source/src/input_trace.h:25`; `source/Makefile:46-50`), con 16384 eventi statici da 8 byte (`source/src/input.c:28-34`). Registrazione e replay partono dal frame corrente (`source/src/input.c:529-535`, `:456-459`) senza salvare lo stato: il replay si ripete solo se l'utente ricarica a mano lo stesso stato. La traccia si annulla quando cambia la ROM e quando la console va in sospensione (`source/src/main.c:1820-1822`, `:1899-1901`). `save_state` costruisce già lo stato in un buffer da 512 KiB prima di scriverlo (`source/src/memory.c:3890-3909`) ed è bloccato durante il link (`:3871-3873`). Nessun hash di stato o di frame.
+**Come ci arriviamo:**
+- La traccia v2 nomina il suo stato iniziale (CRC-32 e dimensione del `.svs` compagno, che `save_state` scrive all'avvio della registrazione): il replay parte senza caricare stati a mano e rifiuta uno stato sbagliato.
+- Hash per regione con nome (registri, IWRAM, EWRAM, VRAM, OAM, palette, I/O, backup, audio del frame): il confronto indica frame e regione.
+- Golden su ROM GPL nostre col BIOS aperto, che chiunque può rieseguire, e compatti (un record ogni 60 frame più lo sha256 del file completo).
+- Nessun I/O su file in update_gba: gli hash vanno in un buffer preallocato e si esportano alla fine.
+- Sui titoli con RTC il replay usa l'orologio guest di CMP-7.3: una sola sorgente del tempo, nessun secondo gancio in `memory.c`.
+
+**Gate prima di iniziare:** nessuno. ENG-3.6 aspetta la misura dell'heap di F-027 (PRF-4); ENG-3.7 aspetta l'orologio guest di CMP-7.3.
+**Rischi:**
+- Un savestate incompleto fa divergere il replay: l'autoverifica serve proprio a scoprirlo, ma l'indagine può costare.
+- Il costo dell'hash su Allegrex è sconosciuto (circa 521 KiB a frame); rallenta solo il replay e non cambia lo stato ospite.
+- I campioni audio si leggono dall'anello che il thread audio svuota in parallelo: il punto di lettura a fine frame si verifica con l'autoverifica prima di registrare il corpus.
+- PPSSPP non modella la I-cache: i bug di codice stantio vanno rigiocati su hardware.
+- Il `.svs` compagno può andare perso: senza di esso il replay si rifiuta di partire.
+
+#### ENG-3.1 — Modulo puro state_hash · S, 1 gg · dipende da: — · PSP: no
+- **Cosa:** `source/src/state_hash.c/.h`, solo stdint e niente SDK. Calcola un FNV-1a a parole su un elenco di regioni nominate passato dal chiamante. Ogni record di frame contiene l'indice del frame e 9 hash a 32 bit, in un array a capacità fissa fornito dal chiamante. Esporta il testo 'GBSH v1' con una riga d'identità (build id, game code, revisione, frame iniziale) e una riga finale opzionale di contatori diagnostici (la usa ENG-14.2). `first_divergence(a, b)` restituisce frame e regione della prima differenza.
+- **File:** `source/src/state_hash.c` (nuovo), `source/src/state_hash.h` (nuovo), `Makefile` (regole normale e sanitize), `source/Makefile` (COMMON_FILE e MAINOBJS)
+- **Test:** `tests/test_state_hash.c`, normale e ASan/UBSan: determinismo, un bit cambiato in una regione cambia solo quel campo, capacità piena segnalata, round trip del testo, first_divergence su casi costruiti; `scripts/check-performance.sh`: rg vieta allocazioni e I/O in `state_hash.c`.
+- **Accettazione:** Il modulo non alloca e non fa I/O. Il formato del testo è documentato nell'header.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-3.2 — Traccia v2 con stato iniziale compagno · M, 1,5 gg · dipende da: ENG-3.1 · PSP: sì
+- **Cosa:** `INPUT_TRACE_VERSION 2`: l'header aggiunge CRC-32 e dimensione del `.svs` compagno e la base dell'RTC in secondi; i file v1 restano leggibili. All'avvio della registrazione `gui.c` scrive `traces/<nome>.svs` con il `save_state` esistente; durante una sessione link `save_state` è bloccato, quindi la registrazione non parte. Il replay verifica CRC e dimensione, carica lo stato con il `load_state` esistente (con la validazione di SAV-4 quando arriva) e applica gli eventi dal frame 0. Qui non si tocca l'RTC: sui titoli con RTC il replay avvisa che gli hash possono divergere, finché non arriva ENG-3.7. Per gli errori si riusa un messaggio esistente se ce n'è uno adatto, altrimenti una voce nuova in enum MESSAGE_ITEM e nei cinque `message_*.h` nello stesso ordine. Nota: GIO-2.1 (riavvolgimento, passo 2) estende questo formato invece di crearne uno suo, quindi l'header porta la versione e il record per frame deve poter crescere. I campi che servono a GIO-2.1 li aggiunge GIO-2.1: qui nessun lavoro in più.
+- **File:** `source/src/input_trace.c`, `source/src/input_trace.h`, `source/src/input.c`, `source/src/gui.c` (menu traccia), `source/src/message.h` e i cinque `source/src/text/message_*.h` (solo se serve una voce nuova)
+- **Test:** `tests/test_input_trace.c` (normale e ASan/UBSan): encode e decode v2, v1 ancora accettato, CRC sbagliato o dimensione fuori limite rifiutati; `scripts/check-messages.sh`; hardware: registrare 60 s su PSP-1000, riavviare la console, rigiocare e ritrovare la stessa posizione finale.
+- **Accettazione:** Un `.gbit` v2 col suo `.svs` riproduce il run anche dopo un riavvio della console, senza caricare stati a mano. Un `.svs` diverso o mancante viene rifiutato. Il replay rifiuta una ROM con game code o revisione diversi, come oggi.
+
+#### ENG-3.3 — Cattura degli hash su PSP durante il replay · M, 1,5 gg · dipende da: ENG-3.1, ENG-3.2, ENG-2.2 · PSP: sì
+- **Cosa:** Nel profilo diagnostico, alla fine di ogni frame emulato (accanto a input_trace_apply in update_input), state_hash elabora le regioni: registri, iwram ed ewram (`source/src/memory.h:198-199`), VRAM, OAM, palette, io_registers, gamepak_backup e i campioni audio generati nel frame (l'anello s32 `sound_buffer`, `source/src/sound.c:121`), circa 521 KiB a frame. I record (40 byte a frame, circa 144 KB al minuto) vanno in un array che `gui.c` alloca all'avvio del replay in base alla durata della traccia; se l'allocazione fallisce, il replay parte senza hash e lo dice. A fine replay `gui.c` scrive `traces/<nome>.gbsh`. Con l'opzione di perturbazione un flag diagnostico inverte un bit di IWRAM al frame N. Il costo per frame si misura col perf report.
+- **File:** `source/src/input.c`, `source/src/gui.c`, `source/src/main.c`, `source/src/sound.c` (intervallo dei campioni del frame, solo profilo diagnostico), `scripts/check-performance.sh` (nessun `FILE_` o `sceIo` in `state_hash.c`, nessuna esportazione da update_gba)
+- **Test:** `scripts/check-performance.sh`; hardware: due replay dello stesso `.gbit` su PSP-1000 danno `.gbsh` identici; con una perturbazione il diff indica il frame N e la regione iwram.
+- **Accettazione:** Due replay consecutivi producono file identici. Il costo per frame è misurato e annotato in `docs/DESIGN-DECISIONS.md`.
+
+#### ENG-3.4 — Strumento di confronto e procedure di autoverifica e perturbazione · S, 1 gg · dipende da: ENG-3.1 · PSP: no
+- **Cosa:** `tools/state_hash_diff.py` confronta due `.gbsh`, stampa il primo frame divergente con la regione, controlla le righe d'identità (build, ROM) e rifiuta confronti tra ROM diverse. Accetta anche i golden compatti di ENG-3.5: in quel caso indica la finestra di 60 frame in cui inizia la divergenza. CONTRIBUTING documenta tre procedure: autoverifica (stesso build due volte), differenziale (baseline contro candidato) e perturbazione (deve fallire).
+- **File:** `tools/state_hash_diff.py` (nuovo), `CONTRIBUTING.md`
+- **Test:** `tests/test_state_hash_diff.py` in test-tools: file sintetici uguali, divergenza al frame 120 in vram e una in audio, identità diverse, golden compatto.
+- **Accettazione:** Exit 0 solo se tutti i frame coincidono; exit 1 con frame e regione (o finestra) alla prima divergenza.
+
+#### ENG-3.5 — Corpus pubblico di replay e golden compatti · M, 2,25 gg · dipende da: ENG-3.3, ENG-3.4, ENG-10.3, SAV-2.6, CMP-1.1, CMP-3.1, CMP-11.1, CMP-12.1, UI-10.5 · PSP: sì
+- **Cosa:** Da 6 a 10 tracce v2 su ROM ridistribuibili (`tests/link-rom` nelle tre modalità, la ROM raster di ENG-10.3, la ROM dei salvataggi di SAV-2.6, le suite di terzi di ENG-10.4) col BIOS aperto. I golden in `tests/goldens/` sono testo compatto: lo sha256 del `.gbsh` completo più un record ogni 60 frame, pochi KB a traccia invece di centinaia; il file completo si rigenera dal build di riferimento. Un file di provenienza registra build id, modello e data. Si eseguono su PSP-1000 e PSP-2000, a mano finché non c'è ENG-11, e in PPSSPP tramite ENG-6. Il corpus comprende la core-rom di CMP-3.1, con i casi di CMP-11.1 e CMP-12.1. In più il caso «reset al frame 900»: dopo un reset dal menu (UI-10.5) al frame 900, 1800 frame confrontati con quelli dall'accensione.
+- **File:** `tests/goldens/` (nuovo, solo testo), `tests/goldens/PROVENANCE.md` (nuovo), `scripts/replay-corpus.sh` (nuovo)
+- **Test:** replay su PSP-1000 e PSP-2000 confrontato con i golden; autoverifica su ogni traccia.
+- **Accettazione:** Ogni golden ha la sua provenienza; nel repo non entra nessun binario. Lo stesso build passa il corpus sui due modelli: il determinismo tra modelli serve anche a F-110. Nel caso del reset, 0 frame diversi su 5 tracce del corpus, su PSP-1000 e PSP-2000.
+- **Licenza:** codice nuovo GPL-2.0-or-later (`scripts/replay-corpus.sh`); tracce e golden sono dati nostri; le ROM si compilano da sorgenti GPL o si scaricano a hash fisso, mai committate.
+
+#### ENG-3.6 — Registrazione e replay anche nelle build release · S, 1 gg · dipende da: ENG-3.2, F-027 · PSP: sì
+- **Cosa:** Portare le voci della traccia nella pagina Diagnostica delle build release, con allocazione su richiesta al posto dei 128 KiB statici di oggi (`source/src/input.c:28-34`), così una segnalazione può allegare traccia e stato. Se le voci MSG della traccia oggi esistono solo per il profilo diagnostico, entrano in tutte e cinque le tabelle nello stesso ordine. Si fa solo se la misura dell'heap di F-027 lascia margine sul PSP-1000. Voce nel CHANGELOG (Added).
+- **File:** `source/src/input.c`, `source/src/gui.c`, `source/Makefile`, `source/src/build_profile.h`, `scripts/check-elf.py` (GBIT ammesso in release), `source/src/message.h` e i cinque `message_*.h` (se servono), `CHANGELOG.md`
+- **Test:** `tests/test_input_trace.c` invariato; `scripts/check-messages.sh` e `scripts/check-menu-layout.sh`; hardware: registrare e rigiocare su PSP-1000 con una ROM da 32 MiB senza esaurire la memoria.
+- **Accettazione:** Nel profilo release la traccia non ha buffer statici e la memoria si libera alla fine. L'audit dell'ELF (ENG-2.4) è aggiornato.
+
+#### ENG-3.7 — Replay deterministico sui titoli con RTC · S, 0,5 gg · dipende da: ENG-3.2, CMP-7.3 · PSP: sì
+- **Cosa:** Durante il replay l'RTC passa all'orologio guest di CMP-7.3 (una base più i frame emulati), con la base presa dall'header della traccia v2; a fine replay torna l'orologio a muro. Nessun gancio RTC nuovo in `memory.c`: è la stessa sorgente del tempo che CMP-7.3 prevede per F-120 e F-110.
+- **File:** `source/src/input.c`, `source/src/gui.c` (scelta della sorgente dell'orologio di CMP-7.3), `source/src/input_trace.c`
+- **Test:** `tests/test_input_trace.c`: base RTC nell'header; hardware: due replay di un titolo con RTC (il Pokémon Smeraldo dell'utente) su PSP-1000.
+- **Accettazione:** Due replay di un titolo con RTC danno `.gbsh` identici. Durante il replay l'orologio di sistema non viene letto.
+
+### ENG-4 — Script di input con condizioni sulla RAM
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 5 gg | ENG-3.3, ENG-3.4, ENG-6.2 |
+
+**Copre:** F-121 script di input con condizioni sulla RAM
+**Obiettivo:** Se il gate scatta: motore puro con il parser sotto fuzz e ASan e ogni comando con un test positivo e uno negativo; script solo nel profilo diagnostico e legati al build id, così un file dimenticato non pilota un altro build; a una condizione fallita si salvano stato e hash per riprodurre il caso; ogni indirizzo delle tabelle (ROM di test dai map file, FR, LG, E, R e S dai simboli pubblici) ha fonte e verifica su PSP.
+**Da noi oggi:** Traccia di input per frame emulato, senza condizioni sulla RAM e solo nelle build diagnostiche (`source/src/input_trace.c`; `source/src/input_trace.h:25`).
+**Come ci arriviamo:**
+- Il motore è un modulo puro testato sull'host con una memoria finta, e il parser passa sotto fuzz con ASan.
+- Indirizzi esatti dai map file delle nostre ROM GPL; le tabelle Gen-3 per le ROM dell'utente vengono dai simboli pubblici di pret, con fonte e verifica per ogni indirizzo.
+- Gli script girano solo nel profilo diagnostico e sono legati al build id: un file dimenticato non pilota un build diverso.
+- Quando una condizione fallisce si salvano stato e hash (ENG-3) per riprodurre il caso.
+
+**Gate prima di iniziare:** dopo ENG-3 deve valere una di due misure. (a) Per due modifiche di timing consecutive del core (F-014, F-015, F-016 o F-033), almeno una traccia cieca del corpus ENG-3.5 non raggiunge più sul candidato il suo stato finale atteso (un valore RAM controllato a fine run) e va riregistrata a mano. Che gli hash divergano è atteso e non basta. (b) Il gate del rig hardware (ENG-11) è superato.
+**Rischi:**
+- Un linguaggio di script tende a crescere.
+- Le tabelle di indirizzi cambiano con la revisione del gioco.
+- Le condizioni su puntatori possono rompersi tra revisioni.
+- Un file di controllo dimenticato può pilotare un build: per questo gli script sono legati al build id.
+
+#### ENG-4.1 — Modulo puro input_script · M, 2 gg · dipende da: ENG-3.4 · PSP: no
+- **Cosa:** `source/src/input_script.c/.h`: un parser di righe (attesa a frame, pressione e tenuta dei tasti, attesa, pressione ripetuta e tenuta finché un valore della RAM è o non è quello atteso, scrittura di un valore della RAM nel log, evento, blocco ripetuto e timeout; i nomi dei comandi li fissa `input_script.h`) e un interprete che a ogni frame restituisce i tasti e lo stato (in corso, fatto, fallito alla riga N). La RAM si legge tramite una callback del chiamante. Limiti fissi su righe, profondità e lunghezza.
+- **File:** `source/src/input_script.c` (nuovo), `source/src/input_script.h` (nuovo), `Makefile`
+- **Test:** `tests/test_input_script.c`, normale e ASan/UBSan, con memoria finta; input ostili: righe lunghe, numeri fuori intervallo, blocco ripetuto annidato rifiutato, timeout; un fuzz seminato del parser in `make test-sanitize`.
+- **Accettazione:** Nessuna allocazione; ogni errore riporta il numero di riga. Ogni comando ha almeno un test positivo e uno negativo. Il parser regge un fuzz seminato di almeno 1.000.000 di righe casuali sotto ASan/UBSan senza errori.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-4.2 — Integrazione su PSP nel profilo diagnostico · M, 1,5 gg · dipende da: ENG-4.1, ENG-3.3, ENG-6.2 · PSP: sì
+- **Cosa:** La RAM ospite (EWRAM e IWRAM) si legge con un accessore in sola lettura sulla mappa GBA, chiamato una volta per frame da update_input. Lo script si carica dall'autorun (ENG-6.2) o dal menu Diagnostica e, come il file dell'autorun, nomina il build id a cui è destinato: con un altro build id non parte e il motivo va nel runtime log. I valori finiscono nell'anello main del runtime log o in un file scritto a fine run. Al fallimento si salvano hash e savestate (ENG-3).
+- **File:** `source/src/input.c`, `source/src/memory.c` (accessore in sola lettura), `source/src/gui.c`, `source/src/main.c`
+- **Test:** hardware: su una ROM di test, uno script aspetta un valore noto in EWRAM e preme A; PPSSPP tramite ENG-6.
+- **Accettazione:** Lo script finisce con 'fatto' alla condizione attesa e con 'fallito alla riga N' al timeout, e al fallimento restano savestate e `.gbsh` di quel frame. Uno script che non nomina il build id in corso non parte, e il motivo va nel runtime log. Nessun I/O in update_gba.
+
+#### ENG-4.3 — Tabelle di indirizzi verificate · M, 1,5 gg · dipende da: ENG-4.2 · PSP: sì
+- **Cosa:** `docs/RAM-ADDRESSES.md` raccoglie gli indirizzi esatti delle nostre ROM di test (dai map file del linker) e quelli di FR, LG, E, R e S per le ROM dell'utente, presi dai simboli pubblici di pret e verificati su PSP con il comando di ENG-4.1 che scrive i valori della RAM nel log. Ogni riga riporta revisione, fonte e stato della verifica.
+- **File:** `docs/RAM-ADDRESSES.md` (nuovo), `tests/gba-rom.mk` (esportazione del map file del linker di ogni ROM di test: `tests/save-rom`, `tests/core-rom`, `tests/test-roms/raster`)
+- **Test:** uno script rilegge i valori su PSP e li confronta con la tabella.
+- **Accettazione:** Ogni indirizzo ha fonte e verifica.
+- **Licenza:** nessun codice; fatti tecnici dai simboli pubblici di pret.
+
+### ENG-5 — Test host del core, prova di regressione e test dell'emettitore MIPS
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 | 5 gg | F-004 (solo ENG-5.3) |
+
+**Copre:** F-122 test host dello stato del core, F-123 prova di regressione sul tag precedente, F-124 test dell'emettitore MIPS
+**Obiettivo:** Ogni correzione del core ha una prova FAIL-AS-EXPECTED sul tag di riferimento con `make prove-regression`, che distingue tre esiti; il round trip host del savestate confronta ogni regione ospite e i registri sul vero `memory.c`, normale e con ASan/UBSan, e fallisce se si toglie un campo dal writer; tutte le 61 macro grezze dell'encoder MIPS sono coperte contro parole generate da psp-as, e una codifica alterata fa fallire `make check`; ogni modulo puro ha le due regole di test, controllato in `make check`; le unità di test compilano con `-Werror`.
+**Da noi oggi:** `make check` esegue 25 suite C e 4 Python (`Makefile:52-66`, `:129-132`). Il core è coperto quasi solo da `tests/test_perf_dma_probe.c` (`memory.c` compilato sull'host, `Makefile:247-265`); `tests/test_dynarec_worklist.c` copre solo un contenitore. Gli stub host non sanno simulare file (`tests/host_dma_stubs.c:70-125`: psp_fopen restituisce NULL, sceIoWrite -1). `CONTRIBUTING.md:63-64` chiede un test per ogni bug, ma nessuno prova che fallisca prima della correzione. Le 61 macro grezze di `source/src/mips_emit.h:192-394` non hanno test, e `mips_emit.h` non si include da solo in un test, perché definisce anche funzioni con corpo che usano i globali della CPU (`execute_spsr_restore_body` a `:1073`, `execute_store_cpsr_body` a `:1778`, `force_user_mode_body` a `:1917`).
+**Come ci arriviamo:**
+- prove-regression funziona per qualsiasi test, con un worktree del tag di riferimento, e distingue tre esiti: fallisce come atteso, passa anche sul riferimento, non applicabile.
+- Gli encoder grezzi passano in un header puro, e il test degli encoder gira in `make check` senza toolchain, contro parole golden generate da psp-as, l'assembler Allegrex vero (anche per madd/maddu, che su Allegrex hanno una codifica propria).
+- Un controllo meccanico verifica che ogni modulo puro abbia le due regole, normale e ASan/UBSan.
+- Le unità di test si compilano con `-Werror`; solo `memory.c` resta con `-w`, come oggi.
+
+**Gate prima di iniziare:** nessuno. ENG-5.3 aspetta lo stub di file in memoria di F-004 (SAV-1.2).
+**Rischi:**
+- Se le regole del Makefile cambiano tra i tag, prove-regression risulta non applicabile.
+- La tabella golden va rigenerata a ogni modifica dell'emettitore.
+- Lo spostamento in `mips_encode.h` deve lasciare identico il codice generato: si confronta psp-objdump di `cpu.o`.
+
+#### ENG-5.1 — make prove-regression REF=<tag> TEST=<nome> · M, 1,5 gg · dipende da: — · PSP: no
+- **Cosa:** `scripts/prove-regression.sh` crea un worktree di REF in `build/prove/REF`, ci copia `tests/` e il Makefile di HEAD lasciando il `source/` di REF, poi costruisce ed esegue il test. Gli esiti sono tre: FAIL-AS-EXPECTED (exit diverso da zero a runtime o report del sanitizer), PASSES-ON-REF (errore: il test non coglie il bug) e NOT-APPLICABLE (non compila su REF). Il template di PR (ENG-18.1) chiede di incollare l'output.
+- **File:** `scripts/prove-regression.sh` (nuovo), `Makefile` (target prove-regression), `CONTRIBUTING.md`
+- **Test:** `tests/test_prove_regression.py`: repo git temporaneo con un modulo giocattolo, un bug al tag v1, la correzione su HEAD e un test; verifica dei tre esiti.
+- **Accettazione:** Su un bug reale, per esempio il test di F-002 contro 1.4.2, l'esito è FAIL-AS-EXPECTED. Il worktree viene rimosso anche quando qualcosa fallisce.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-5.2 — Encoder MIPS in un header puro e test delle codifiche · M, 1,5 gg · dipende da: — · PSP: no
+- **Cosa:** Spostare le enum degli opcode (che finiscono a `mips_emit.h:188`) e le 61 macro grezze (`:192-394`) in `source/src/mips_encode.h`, incluso da `mips_emit.h`, senza cambiare una riga di logica. Poi `tests/test_mips_emit.c` include solo `mips_encode.h`, emette in un buffer ogni macro con varie combinazioni di registri e immediati e confronta il risultato con `tests/mips_emit_expected.h`. Quella tabella la genera `scripts/gen-mips-emit-expected.sh`, assemblando `tests/mips_emit_ref.S` con psp-as e psp-objcopy. Sono coperte anche madd e maddu nella codifica Allegrex (SPECIAL con funzione 0x1C/0x1D, `mips_emit.h:130-131`), che la build qemu di ENG-12 sostituisce. `make check-mips-emit` rigenera la tabella quando c'è la toolchain e fallisce se cambia; `make check` usa solo la tabella committata.
+- **File:** `source/src/mips_encode.h` (nuovo), `source/src/mips_emit.h`, `tests/test_mips_emit.c` (nuovo), `tests/mips_emit_ref.S` (nuovo), `tests/mips_emit_expected.h` (nuovo, generato), `scripts/gen-mips-emit-expected.sh` (nuovo), `Makefile`
+- **Test:** test_mips_emit, normale e ASan/UBSan; `check-mips-emit` facoltativo con la toolchain PSP; psp-objdump di `cpu.o` prima e dopo lo spostamento (in CI con ENG-2.5).
+- **Accettazione:** Tutte le 61 macro grezze sono coperte, e il test ne verifica il conteggio. Una codifica alterata a mano fa fallire `make check`. Il codice generato di `cpu.o` è identico prima e dopo lo spostamento.
+- **Licenza:** codice nuovo GPL-2.0-or-later; `mips_encode.h` conserva l'header di Exophase e takka di `mips_emit.h`.
+
+#### ENG-5.3 — Harness host per lo stato del core · M, 1,5 gg · dipende da: F-004 · PSP: no
+- **Cosa:** Generalizzare la build host di `memory.c` (lo schema di test_perf_dma_probe) in `tests/host_core/`, usando lo stub di file in memoria di F-004 (SAV-1.2). Due suite: test_core_savestate_roundtrip (save_state su un file in memoria, load_state, confronto di tutte le regioni ospite e dei registri: è l'oracolo su cui poggia lo stato compagno di ENG-3.2) e test_dma_ranges (intervalli di sorgente e destinazione spezzati per regione, ROM da 0x08 a 0x0D). I tipi di backup non si ripetono qui: li coprono la matrice di SAV-1.1 e `tests/test_memory_backup.c` di SAV-1.4.
+- **File:** `tests/host_core/` (nuovo), `tests/host_dma_stubs.c`, `Makefile`
+- **Test:** le due suite, normale e ASan/UBSan.
+- **Accettazione:** Se si toglie un campo dal writer del savestate, il round trip fallisce. Le unità di test usano `-Werror`; solo `memory.c` resta con `-w` come oggi.
+
+#### ENG-5.4 — Controllo che ogni modulo puro abbia i suoi test · S, 0,5 gg · dipende da: — · PSP: no
+- **Cosa:** `scripts/check-module-tests.sh`: ogni `source/src/*.c` che non include `common.h` né header PSP deve avere `tests/test_<modulo>.c`, con voci in HOST_TESTS, HOST_SANITIZE_TESTS e nelle due ricette. Le eccezioni vendorizzate stanno in un elenco motivato. HOST_TESTS, HOST_SANITIZE_TESTS e le ricette si leggono dal `Makefile` con un solo parser, `scripts/makefile_tests.py` (solo libreria standard), che ENG-17.1 riusa.
+- **File:** `scripts/check-module-tests.sh` (nuovo), `scripts/makefile_tests.py` (nuovo, condiviso con ENG-17.1), `scripts/check-tree.sh`
+- **Test:** lo script dentro `make check`; in `tests/test_check_scripts.py` un caso negativo e il parser su un Makefile sintetico con righe continuate.
+- **Accettazione:** Un modulo puro aggiunto senza test fa fallire `make check`, col nome del modulo.
+
+### ENG-6 — Rete di regressione PPSSPP: e2e dell'EBOOT, golden video e colori GE
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | 1.6 (ENG-6.3-6.5 dopo gate) | 9 gg | ENG-1.6, ENG-2.2, ENG-2.4, ENG-3.5, SAV-2.6, F-002, CMP-1.1 |
+
+**Copre:** F-125 e2e PPSSPP dell'EBOOT, F-126 golden video del framebuffer, F-127 colori GE e matrice dei blit
+**Obiettivo:** Fixture tutte ridistribuibili (ROM GPL nostre e BIOS aperto); suite e2e (avvio, salvataggi alla dimensione nativa di ogni tipo, soak di 60 minuti emulati) verde due volte di fila; golden del framebuffer per entrambi i renderer su tutte le tracce del corpus di ENG-3.5, con autoverifica e perturbazione, che fallisce al primo frame alterato; pattern di colori GE per ogni scala e filtro, con le foto su PSP-1000 di ENG-6.6 che escono anche se lo spike fallisce; PPSSPP resta rete di regressione, mai accettazione.
+**Da noi oggi:** `make check` è solo host (`Makefile:96-100`); artifact-smoke controlla solo il pacchetto (`Makefile:590-593`); `scripts/check-video.sh:10-45` sono guardie sul sorgente (percorso libGU, renderer scelto una volta per frame), non sui pixel. Il codice contiene note di compatibilità con PPSSPP (`source/src/main.c:1643`), ma non si sa se l'EBOOT intero ci giri in modo deterministico.
+**Come ci arriviamo:**
+- Fixture ridistribuibili: ROM GPL nostre e BIOS aperto, nessuna ROM commerciale.
+- Il test di salvataggio verifica la dimensione nativa di ogni tipo (collegato a F-002).
+- Golden per entrambi i renderer, con provenienza, autoverifica e perturbazione.
+- PPSSPP headless fissato per commit, usato come rete di regressione e mai come accettazione.
+
+**Gate prima di iniziare:** spike ENG-6.1, al massimo 2 giorni: l'EBOOT diagnostico, in PPSSPP fissato a un commit, carica una ROM di test col BIOS aperto, esegue 3.600 frame ed esce, e due esecuzioni danno lo stesso screenshot finale (o lo stesso `.gbsh`, se ENG-3.3 è pronto). Se fallisce, ENG-6.3-6.5 si fermano e la decisione va in `docs/DESIGN-DECISIONS.md`. ENG-6.2 (autorun) non dipende dallo spike, perché serve anche su PSP (ENG-7.2, ENG-8.1, ENG-11.1). Anche ENG-6.6 (testpat su PSP con foto) esce se lo spike fallisce: è il ripiego di F-127 usato da UI-7.2, UI-7.3 e UI-8.2.
+**Rischi:**
+- PPSSPP diverge dall'hardware: cache, timing, scePowerLock non implementato.
+- La versione fissata di PPSSPP va mantenuta.
+- Le esecuzioni in CI sono lunghe.
+
+#### ENG-6.1 — Spike: EBOOT in PPSSPP headless fissato · S, 1,5 gg · dipende da: ENG-2.2, CMP-1.1 · PSP: no
+- **Cosa:** Uno script locale scarica e compila PPSSPP a un commit fissato: PPSSPPHeadless della cartella `headless/`, quella usata da pspautotests, oppure in alternativa PPSSPPSDL sotto Xvfb. Prepara una memory stick sandbox con EBOOT, BIOS aperto e link-multiplayer.gba, e avvia con un timeout. Per avviare la ROM senza input usa un autorun provvisorio su un ramo di spike che non viene unito. L'esito go/no-go va in `docs/DESIGN-DECISIONS.md` con i problemi trovati.
+- **File:** `scripts/e2e/build-ppsspp.sh` (nuovo), `docs/DESIGN-DECISIONS.md`
+- **Test:** esecuzione manuale due volte e confronto dei risultati.
+- **Accettazione:** La decisione è registrata con commit di PPSSPP, comandi ed esito. In caso di go, 3.600 frame danno lo stesso risultato in due esecuzioni.
+- **Licenza:** codice nuovo GPL-2.0-or-later; PPSSPP (GPL-2.0-or-later) è solo uno strumento esterno a commit fisso: nulla entra nel repository o nell'EBOOT.
+
+#### ENG-6.2 — Autorun diagnostico · M, 1,5 gg · dipende da: ENG-2.2, ENG-2.4, ENG-1.6 · PSP: sì
+- **Cosa:** Il modulo puro `source/src/autorun_config.c/.h` legge `diag-autorun.txt` (prima riga `version=1`) con limiti fissi: ROM, traccia, numero di frame, file di hash, uscita a fine run, profilo di rete, eventi power. Il glue in `main.c` esiste solo nel profilo diagnostic. Il file deve indicare il build id a cui è destinato (ENG-1.6), altrimenti viene ignorato: il motivo va nel runtime log e in `diag-autorun.result`, senza stringhe nuove nell'interfaccia. Così un file dimenticato non pilota un altro build. L'audit dell'ELF vieta 'diag-autorun' in release.
+- **File:** `source/src/autorun_config.c` (nuovo), `source/src/autorun_config.h` (nuovo), `source/src/main.c`, `source/src/build_profile.h`, `scripts/check-elf.py`, `Makefile`
+- **Test:** `tests/test_autorun_config.c`, normale e ASan/UBSan: input ostili, chiavi sconosciute, versione mancante, build id diverso; hardware: smoke del profilo diagnostico su PSP con un autorun.
+- **Accettazione:** In release il file viene ignorato perché il codice non esiste (lo conferma l'audit dell'ELF). Con un build id diverso non parte nulla, e il motivo è nel runtime log e in `diag-autorun.result`.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-6.3 — Suite e2e: avvio, salvataggi, soak · M, 2,5 gg · dipende da: ENG-6.1, ENG-6.2, SAV-2.6, F-002 · PSP: no
+- **Cosa:** `scripts/e2e/run-ppsspp.sh` e il target facoltativo `make check-ppsspp`, fuori da `make check` come check-rom-link. Tre casi. Avvio: ROM link col BIOS aperto, N frame, file di hash presente, uscita pulita. Salvataggi: con i target della ROM dei salvataggi di SAV-2.6 per SRAM, FLASH64, FLASH128, EEPROM da 512 B e da 8 KiB, dopo l'uscita il `.sav` ha la dimensione nativa e il contenuto atteso; il caso 'tag SRAM con `.sav` da 64 KiB' dimostra la correzione di SAV-1 (F-002). Soak: 60 minuti emulati in avanti veloce, log scaricato, nessun crash. Le asserzioni si fanno sul runtime log decodificato.
+- **File:** `scripts/e2e/run-ppsspp.sh` (nuovo), `scripts/e2e/cases/*.txt` (nuovi), `Makefile`
+- **Test:** la suite stessa; ogni caso eseguito due volte (autoverifica).
+- **Accettazione:** Tutti i casi passano due volte di fila sullo stesso build. Il caso 'tag SRAM con `.sav` da 64 KiB' fallisce su 1.4.2 e passa dopo F-002 (prova di regressione).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-6.4 — Golden video del framebuffer del core · M, 2 gg · dipende da: ENG-6.3, ENG-3.5 · PSP: no
+- **Cosa:** Nel profilo diagnostico, durante il replay, si calcola a ogni frame l'hash del buffer 240x160 prodotto dal renderer, prima del blit GU, e lo si salva come regione in più del `.gbsh`. Golden separati per il renderer Old e il New sul corpus di ENG-3.5. Un'autoverifica esegue due run; un run di perturbazione attiva un flag diagnostico che altera un pixel per frame nell'uscita del renderer, e il confronto deve fallire. Ogni golden ha il suo file di provenienza.
+- **File:** `source/src/video_dispatch.c` (lettura del buffer a fine frame, nessuna scelta di renderer per scanline), `source/src/input.c`, `tests/goldens/`, `scripts/e2e/run-ppsspp.sh`
+- **Test:** `scripts/check-video.sh` esteso: la cattura non entra nel percorso per scanline; suite PPSSPP con autoverifica e perturbazione.
+- **Accettazione:** La perturbazione fa fallire il confronto al primo frame e l'autoverifica passa, su ogni traccia del corpus di ENG-3.5 e per entrambi i renderer. I due renderer hanno golden separati, con provenienza. Nel profilo release `video_dispatch.o` è identico a prima (confronto di psp-objdump).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-6.5 — Pattern di colori GE per ogni scala e filtro · S, 1 gg · dipende da: ENG-6.1, ENG-6.6 · PSP: no
+- **Cosa:** In PPSSPP si riusa la modalità 'testpat' di ENG-6.6, lanciata dallo stesso autorun, per ogni scala e filtro. Il renderer software di PPSSPP fa lo screenshot; `scripts/e2e/ge_color_check.py` controlla il colore al centro di ogni barra, e la matrice legge da `diag-autorun.result` la modalità davvero usata. La mappatura su hardware la confermano le foto di ENG-6.6.
+- **File:** `scripts/e2e/ge_color_check.py` (nuovo), `scripts/e2e/run-ppsspp.sh`
+- **Test:** `tests/test_ge_color_check.py`: immagini sintetiche, canali scambiati rilevati; suite PPSSPP.
+- **Accettazione:** Scambiare R e B nel blit fa fallire il test in ogni modalità. Il test verifica la modalità usata, scritta da ENG-6.6 nel file d'esito.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-6.6 — Modalità testpat su PSP con autorun e foto · S, 0,5 gg · dipende da: ENG-6.2 · PSP: sì
+- **Cosa:** Nel profilo diagnostic una modalità 'testpat', senza ROM, disegna barre RGB565 note attraverso il percorso di presentazione di produzione (`psp_video.c`), per ogni scala e filtro, comprese le modalità di F-058, F-059 e F-170 quando arrivano. La lancia l'autorun di ENG-6.2 con una chiave nuova (`testpat=`, una modalità o tutte), e ogni passo scrive in `diag-autorun.result` la modalità davvero usata. Su PSP-1000 si scatta una foto per modalità e la si confronta con i colori attesi: non serve PPSSPP. Se lo spike ENG-6.1 fallisce, questa storia esce lo stesso ed è il ripiego di F-127 per UI-7.2, UI-7.3 e UI-8.2.
+- **File:** `source/src/psp_video.c`, `source/src/main.c`, `source/src/autorun_config.c`, `source/src/autorun_config.h`, `docs/hardware-tests.md` (id ge-testpat-photo)
+- **Test:** `tests/test_autorun_config.c`: chiave testpat valida, modalità sconosciuta rifiutata; hardware: una foto su PSP-1000 per ogni modalità.
+- **Accettazione:** Con `testpat=all` il diagnostico disegna le barre in ogni scala e filtro su PSP-1000 ed esce; `diag-autorun.result` elenca le modalità usate. Ogni modalità ha una foto con riga pass in `docs/HARDWARE-RESULTS.md`. In release il codice non esiste (audit dell'ELF).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### ENG-7 — Link sull'EBOOT reale: modello di guasti di rete condiviso e coppia PPSSPP
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 | 5,25 gg | ENG-6.1, ENG-6.2, ENG-1.2, CMP-1.1 (solo ENG-7.3) |
+
+**Copre:** F-128 test link a due istanze PPSSPP, F-129 manopole di guasto sulla rete reale
+**Obiettivo:** Un solo modello di guasti di rete (latenza, jitter, perdita, duplicati, blackout a finestra o periodico, tempo in aria per byte) con sei profili nominati, usato da test_link_cable, da link_e2e e dal worker ad-hoc diagnostico, con profilo e seme nel runtime log; i casi psp-stalls e le gare mksc-psp (≥ 57 fps) e mksc-psp-lossy (≥ 53 fps) di check-rom-link restano verdi; il gate a due istanze PPSSPP usa le ROM di test GPL e il BIOS aperto, ed è preteso dal gate di rilascio prima di ogni bump di `LINK_NET_VERSION` o di `LINK_CABLE_PROTOCOL`.
+**Da noi oggi:** Lo stesso modello di rete esiste in due copie nei test: NetProfile e network_send in `tests/test_link_cable.c:223-276`, con cinque profili (lan, adhoc, noisy, outage, terrible) più dropouts, interruzioni di 250 ms ogni 1,3 s usate nei casi Pokémon (`tests/test_link_cable.c:1504-1511`, `:1531-1542`); la seconda copia sta in `tests/rom_link/link_e2e.c:186-231`, che modella anche la console: 1,9 µs in aria per byte (`tests/rom_link/link_e2e.c:94`), uno stack che lavora solo mentre l'emulatore dorme, con un costo per datagramma, una coda di 32 e il rifiuto oltre 4 invii in sospeso (`:98-99`), frame emulati a raffica; i profili sono tarati su due gare di MKSC e sulle condizioni di FireRed tra PSP-2000 e PSP-1000 (`scripts/check-rom-link.sh:90-112`). `psp_adhoc.c` non ha manopole di guasto (receive_all a `:506-560`, send_all a `:562-590`). check-rom-link usa mGBA con i file dell'utente (`scripts/check-rom-link.sh:1-25`) e non esegue mai il nostro EBOOT né `psp_adhoc.c`.
+**Come ci arriviamo:**
+- Un solo modulo di guasti, usato da test_link_cable, da link_e2e e dal worker ad-hoc diagnostico, con gli stessi nomi di profilo, che finiscono nel runtime log.
+- Il gate a due istanze usa le ROM di test link col BIOS aperto, e il gate di rilascio lo pretende quando cambia LINK_NET_VERSION o LINK_CABLE_PROTOCOL.
+- Solo il worker chiama sceNet*: il guasto si inserisce nel worker, mai nel thread dell'emulatore.
+
+**Gate prima di iniziare:** nessuno per ENG-7.1 e ENG-7.2; ENG-7.3 parte dopo lo spike ENG-6.1.
+**Rischi:**
+- PPSSPP non modella né la latenza radio né la saturazione della WLAN.
+- Il gruppo ad-hoc tra due istanze potrebbe non formarsi con le nostre chiamate (da verificare).
+- Cambiare l'ordine delle chiamate al generatore casuale altera i run simulati esistenti.
+
+#### ENG-7.1 — Modulo puro net_fault con i sei profili · S, 1,25 gg · dipende da: — · PSP: no
+- **Cosa:** `source/src/net_fault.c/.h`: una coda di datagrammi a capacità fissa con latenza, jitter (che riordina), perdita, duplicati, blackout a finestra o periodico e tempo in aria per byte, con seme deterministico e i sei profili nominati; il modello della console (costo dello stack, sonno, coda d'invio) resta in `link_e2e.c`, perché descrive la PSP e non la rete. `test_link_cable.c` e `link_e2e.c` lo usano al posto delle proprie copie, mantenendo lo stesso generatore.
+- **File:** `source/src/net_fault.c` (nuovo), `source/src/net_fault.h` (nuovo), `tests/test_link_cable.c`, `tests/rom_link/link_e2e.c`, `Makefile`
+- **Test:** `tests/test_net_fault.c`, normale e ASan/UBSan: statistiche entro tolleranza, determinismo col seme, coda piena senza overflow, blackout, tempo in aria proporzionale alla dimensione; test_link_cable e check-rom-link con le asserzioni invariate: i casi psp-stalls con i semi 4, 9 e 21 e le gare mksc-psp e mksc-psp-lossy di check-rom-link restano verdi.
+- **Accettazione:** Nessuna allocazione e nessun header PSP. test_link_cable passa con gli stessi casi e gli stessi profili, e check-rom-link resta verde: psp-stalls con i semi 4, 9 e 21, mksc-psp ad almeno 57 fps e mksc-psp-lossy ad almeno 53 fps.
+- **Licenza:** codice nuovo GPL-2.0-or-later, estratto dai nostri test.
+
+#### ENG-7.2 — Manopole di guasto nel worker ad-hoc (profilo diagnostico) · M, 1,5 gg · dipende da: ENG-7.1, ENG-6.2 · PSP: sì
+- **Cosa:** In `psp_adhoc.c`, solo nel profilo diagnostic, i datagrammi in uscita passano da un'istanza di net_fault prima di sceNetAdhocPdpSend, e quelli in entrata da una seconda istanza prima di ring_push. Il sonno del worker si accorcia fino alla prossima consegna dovuta. Il profilo si sceglie da `diag-autorun.txt` (net_profile=noisy), quindi non servono stringhe nuove nell'interfaccia; profilo e seme finiscono nell'anello network del runtime log.
+- **File:** `source/src/psp_adhoc.c`, `source/src/autorun_config.c`, `source/src/build_profile.h`, `scripts/check-elf.py`
+- **Test:** `tests/test_net_fault.c`; guardia rg: nessuna chiamata sceNet* fuori da `psp_adhoc.c`; hardware: due PSP col profilo noisy completano lo scambio FR+LG, con i log decodificati.
+- **Accettazione:** In release il codice non esiste (audit dell'ELF). I log riportano profilo, seme e datagrammi persi o ritardati.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-7.3 — Gate a due istanze PPSSPP prima di ogni bump di LINK_NET_VERSION o di LINK_CABLE_PROTOCOL · M, 2,5 gg · dipende da: ENG-6.1, ENG-6.2, ENG-1.2, CMP-1.1 · PSP: no
+- **Cosa:** `scripts/e2e/run-ppsspp-link.sh` e `make check-ppsspp-link`: due istanze col server ad-hoc integrato di PPSSPP, l'EBOOT diagnostico su entrambe, Create e Join dall'autorun, le ROM link-multiplayer e link-normal32 col BIOS aperto, e asserzioni sui log decodificati (connesso, N trasferimenti, nessun LINK_ERROR, chiusura pulita). Il primo passo è verificare che il gruppo si formi; se non si forma, si registra la decisione e si ripiega sulla coppia hardware. Il gate di rilascio (ENG-1.2) pretende una riga pass di ppsspp-link-pair, o di un test link hardware, quando cambia LINK_NET_VERSION o LINK_CABLE_PROTOCOL.
+- **File:** `scripts/e2e/run-ppsspp-link.sh` (nuovo), `Makefile`, `docs/hardware-tests.md` (id ppsspp-link-pair), `scripts/release_gate.py`
+- **Test:** la suite stessa, nelle due modalità; `tests/test_release_gate.py`: bump senza riga rifiutato.
+- **Accettazione:** Due run consecutivi passano. Dopo F-099, un EBOOT con LINK_NET_VERSION diversa su un lato produce nei log il rifiuto atteso.
+- **Licenza:** codice nuovo GPL-2.0-or-later; PPSSPP è uno strumento esterno.
+
+### ENG-8 — Simulatori di sospensione e HOME
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 (ENG-8.3 in 1.5; ENG-8.2 dopo gate) | 3 gg | ENG-2.2, ENG-6.2, ENG-6.3 (solo ENG-8.2), ENG-7.3 (solo ENG-8.2), SAV-7.6 (solo ENG-8.3) |
+
+**Copre:** F-130 simulatori di sospensione e HOME
+**Obiettivo:** L'iniettore diagnostico passa dagli stessi callback e dalla chiusura reale dell'handle della ROM e rispetta il power lock come il firmware: 20 sospensioni simulate su PSP-1000 senza perdita di stato né dell'handle, marcate «simulato» nel log; test di proprietà sulla macchina a stati power con 10.000 sequenze per seme, comprese tutte le combinazioni di bit di SAV-7.6, senza violazioni; nessun evento simulato sostituisce la matrice hardware.
+**Da noi oggi:** Ci sono i test della macchina a stati sull'host (`tests/test_power_lifecycle.c`) e le guardie sul sorgente (`scripts/check-lifecycle.sh`). Nel percorso reale `power_callback` rilascia o riprende il canale audio e registra l'evento per main_power_service, senza I/O (`source/src/main.c:1990-2015`); main_power_service e psp_sleep_loop agiscono sul thread dell'emulatore (`main.c:1893-1962`) e chiudono l'handle della ROM (`:1908-1913`); exit_callback aspetta fino a 2 s e poi forza l'uscita (`main.c:1968-1988`). La scrittura della batteria avviene sotto scePowerLock (`source/src/memory.c:3236-3266`).
+**Come ci arriviamo:**
+- L'iniettore passa dagli stessi callback e dalla chiusura reale dell'handle della ROM, e può scattare nella finestra di scrittura della batteria rispettando il power lock come il firmware.
+- Test di proprietà sull'host per gli interleaving della macchina a stati.
+- Ogni evento iniettato è marcato 'simulato' nel runtime log e non sostituisce mai la matrice hardware di F-009.
+
+**Gate prima di iniziare:** nessuno; ENG-8.2 si fa solo se lo spike ENG-6.1 dà go.
+**Rischi:**
+- Una sospensione simulata non invalida i file e non spegne la Memory Stick: letta come prova hardware darebbe una falsa sicurezza.
+
+#### ENG-8.1 — Iniettore diagnostico di eventi power e HOME · M, 1,5 gg · dipende da: ENG-6.2, ENG-2.2 · PSP: sì
+- **Cosa:** In `main.c`, nel profilo diagnostic, un thread a priorità 0x11 (la stessa del thread dei callback) legge la specifica da `diag-autorun.txt`: sospensione a un frame, per una durata e un numero di ripetizioni; sospensione nella finestra di scrittura della batteria; HOME a un frame; stallo HOME a un frame per una durata. Chiama power_callback e la logica di exit_callback come farebbe il sistema. Nella finestra della batteria aspetta il rilascio del power lock, segnalato da un flag che `memory.c` alza e abbassa intorno a scePowerLock, come il firmware; una variante lo ignora per il confronto A/B. Lo stallo HOME fa girare il thread dell'emulatore senza battito, per verificare l'uscita forzata dopo 2 s. Ogni evento va nel runtime log col flag 'simulato'. Il flag usa il byte `flags` che RuntimeLogRecord ha già (`source/src/runtime_log.h:98`), ma un significato nuovo di un byte esistente è un cambio di formato: va nel bump del runtime log della 2.0, fatto dalla prima storia della 2.0 che cambia il formato (principio 6, R3), con decoder e test, mai in un bump proprio.
+- **File:** `source/src/main.c`, `source/src/memory.c` (flag di finestra intorno a scePowerLock, nessun I/O nuovo), `source/src/autorun_config.c`, `source/src/runtime_log.h`, `tools/decode_runtime_log.py`
+- **Test:** `tests/test_autorun_config.c`: specifiche power; `tests/test_runtime_log.c` e `tests/test_decode_runtime_log.py`: flag 'simulato', versione precedente ancora leggibile; hardware: 20 sospensioni simulate su PSP-1000 durante il gioco e una durante la scrittura della batteria, con log decodificati.
+- **Accettazione:** 20 cicli simulati senza perdita di stato né dell'handle della ROM; il log li marca come simulati. Lo stallo HOME chiude l'EBOOT entro 2,5 s.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-8.2 — Scenari di sospensione in PPSSPP · S, 1 gg · dipende da: ENG-8.1, ENG-6.3, ENG-7.3 · PSP: no
+- **Cosa:** Casi e2e: 100 sospensioni simulate in gioco, durante la scrittura dello stato automatico, nel menu e durante una sessione link a due istanze, dove il link deve chiudersi come prevede MAIN_LINK_END_SUSPEND. Le asserzioni si fanno sui log decodificati.
+- **File:** `scripts/e2e/cases/power-*.txt` (nuovi)
+- **Test:** suite PPSSPP.
+- **Accettazione:** Tutti i casi passano due volte. Nessun salvataggio corrotto (validato con gen3_sav_check dove serve).
+
+#### ENG-8.3 — Test di proprietà sulla macchina a stati power · S, 0,5 gg · dipende da: SAV-7.6 · PSP: no
+- **Cosa:** Estendere `tests/test_power_lifecycle.c` con sequenze pseudocasuali seminate di suspend, resume, take_save e take_resume, verificando gli invarianti: nessun resume perso, al massimo un salvataggio per sospensione, solo stati validi. Le sequenze di bit di SAV-7.6 (POWER_SWITCH da solo, SUSPENDING da solo, entrambi, ripresa senza sospensione, POWER_SWITCH con RESUMING o RESUME_COMPLETE, timeout di 2 s) entrano nelle sequenze casuali.
+- **File:** `tests/test_power_lifecycle.c`
+- **Test:** normale e ASan/UBSan.
+- **Accettazione:** 10.000 sequenze per seme senza violazioni; in caso di errore il seme viene stampato.
+
+### ENG-9 — Larghezza dei testi in cinque lingue e automazione dei menu
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 (ENG-9.1 in 1.5) | 3,5 gg | F-053, F-048, ENG-6.2 (solo ENG-9.2) |
+
+**Copre:** F-131 walker dei menu e confronto dei frame
+**Obiettivo:** Ogni stringa delle 5 tabelle si misura con la funzione di taglio di produzione sui byte GBK reali: una stringa nuova che verrebbe tagliata fa fallire `make check`, salvo una voce motivata nell'allow-list; dopo UI-8 cinque lingue per due temi producono frame identici tra due run, con le differenze rilevate e mostrate.
+**Da noi oggi:** Ci sono test di modello e layout dei menu (`tests/test_menu_model.c`; `tests/test_menu_layout.c:59`, test_text_bounds), e `scripts/check-messages.sh` controlla solo l'ordine delle voci nelle cinque tabelle. `menu_text_clip_length` taglia il testo GBK per colonne senza spezzare i caratteri doppi (`source/src/menu_layout.h:31-36`), ma nessuno misura le stringhe tradotte rispetto allo spazio della riga.
+**Come ci arriviamo:**
+- Il controllo usa la stessa funzione di taglio di produzione (`menu_layout.c`) sui byte GBK reali, per tutte e cinque le lingue.
+- Parte come report con un'allow-list motivata e diventa bloccante per le stringhe nuove.
+- Walker e dump arrivano solo dopo F-053, con golden a hash.
+
+**Gate prima di iniziare:** nessuno per ENG-9.1; ENG-9.2 aspetta F-053 e F-048.
+**Rischi:**
+- I limiti in colonne per categoria di riga vanno ricavati da `gui.c` e possono cambiare con F-053 e F-054.
+- Il codec GBK di Python e iconv di GCC possono differire su pochi caratteri.
+
+#### ENG-9.1 — Controllo host della larghezza dei messaggi · M, 1,5 gg · dipende da: — · PSP: no
+- **Cosa:** `tests/test_message_widths.py` estrae le stringhe dai cinque `message_*.h` nell'ordine dell'enum, le codifica in GBK con la stessa conversione della build (`-fexec-charset=GBK`) e le passa a un piccolo eseguibile host compilato con `menu_layout.c`, come già fanno test_startup e test_browser_text con funzioni di produzione (`Makefile:127-132`). L'eseguibile restituisce larghezza e punto di taglio. I limiti per categoria (etichetta, valore, titolo, aiuto) vengono da `gui.c`. I tagli che esistono oggi stanno in un'allow-list motivata. Una stringa che Python non sa codificare in GBK si segnala, non si salta.
+- **File:** `tests/test_message_widths.py` (nuovo), `tests/message_width_helper.c` (nuovo), `tests/message_widths_allow.txt` (nuovo), `Makefile` (test-tools)
+- **Test:** il test stesso, più un caso sintetico con una stringa troppo lunga.
+- **Accettazione:** Una stringa nuova, italiana o cinese, che verrebbe tagliata fa fallire `make check`, salvo una voce motivata nell'allow-list. Il report elenca lingua, id MSG, larghezza e limite.
+
+#### ENG-9.2 — Navigatore diagnostico dei menu con dump dei frame · M, 2 gg · dipende da: F-053, F-048, ENG-6.2 · PSP: sì
+- **Cosa:** Dopo F-053: uno script di tasti GUI (riuso di input_script o una lista semplice) visita ogni pagina in ogni lingua e tema e salva i frame, con lo scrittore PNG di F-048 o con lo screenshot di PPSSPP. Ne escono un foglio di contatto e golden a hash per la regressione; i frame alimentano anche la striscia di screenshot del README (ENG-16.4).
+- **File:** `source/src/gui.c`, `source/src/main.c`, `scripts/e2e/menu-walk.txt` (nuovo), `tests/goldens/menu/` (hash)
+- **Test:** suite PPSSPP; hardware: una passata su PSP-1000 per ogni lingua.
+- **Accettazione:** Cinque lingue per due temi producono frame identici tra due run, e le differenze vengono rilevate e mostrate.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### ENG-10 — Fixture ridistribuibili: ROM di test GPL e strumenti per salvataggi Gen-3
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 (ENG-10.1 in 1.4.4; ENG-10.4 in 1.5) | 4,5 gg | SAV-2.6 (solo ENG-10.3) |
+
+**Copre:** F-132 fixture e strumenti per salvataggi Gen-3
+**Obiettivo:** Validatore Gen-3 per i cinque giochi, usato come oracolo del nostro writer di salvataggi; nessun `.sav` nel repository; ROM raster GPL che chiunque compila, con lo stesso frame in due run in mGBA; suite di terzi a commit e sha256 fissi, con le licenze annotate prima del primo uso, pronte prima della sessione hardware della 1.5 in cui CMP-11.1 e CMP-12.1 ne registrano gli esiti sulla 1.4.3.
+**Da noi oggi:** `tests/rom_link/firered_save.py:1-107` gestisce solo FR/LG (dimensioni delle sezioni a `:19-20`, squadra a 0x34/0x38) con place, place-heal, party e check-trade, e `make check` non lo testa (`Makefile:129-132`). Le ROM link di `tests/link-rom`, sorgenti GPL compilati con devkitARM, sono la nostra unica fixture: non c'è una ROM per i tipi di salvataggio né per gli effetti raster.
+**Come ci arriviamo:**
+- Validatore per tutti e cinque i giochi Gen-3, usato come oracolo del nostro writer di salvataggi.
+- Fixture ricavate dai salvataggi dell'utente e mai committate.
+- ROM di test GPL per gli effetti raster, che chiunque può compilare, con l'include Makefile e il protocollo d'esito di SAV-2.6, che ha anche la ROM dei tipi di salvataggio.
+
+**Gate prima di iniziare:** nessuno.
+**Rischi:**
+- Il layout Gen-3 cambia per gioco e revisione.
+- Le licenze delle suite di terzi vanno verificate.
+
+#### ENG-10.1 — tools/gen3_sav_check.py: validatore di salvataggi Gen-3 · S, 1 gg · dipende da: — · PSP: no
+- **Cosa:** Valida i due slot da 14 settori con le regole di pret (id da 0 a 13, firma 0x08012025, checksum per sezione, contatore) e riporta per ogni slot EMPTY, VALID o CORRUPT, più lo slot che il gioco caricherebbe, per R, S, E, FR e LG con le dimensioni di sezione di ogni gioco. Si usa nella sessione hardware di 1.4.4 dopo gli spegnimenti forzati.
+- **File:** `tools/gen3_sav_check.py` (nuovo), `docs/hardware-tests.md` (passo di verifica)
+- **Test:** `tests/test_gen3_sav_check.py` in test-tools: salvataggi sintetici costruiti nel test (validi, un settore corrotto, firma mancante, slot vuoto).
+- **Accettazione:** Exit 0 solo se lo slot più recente si caricherebbe pulito. Nessun salvataggio nel repo.
+- **Licenza:** codice nuovo GPL-2.0-or-later; regole del formato da pret (fatti tecnici).
+
+#### ENG-10.2 — Strumento Gen-3 per cinque giochi, con clonazione d'identità · M, 1,5 gg · dipende da: ENG-10.1 · PSP: no
+- **Cosa:** `tests/rom_link/gen3_fixture.py` estende `firered_save.py` a R, S, E, FR e LG (offset di squadra e di warp per ogni gioco) e aggiunge clone-identity: nuovo nome, TID e SID, checksum ricalcolato, verifica prima e dopo la scrittura. Serve a scambiare tra due copie dello stesso salvataggio dell'utente. `firered_save.py` resta come involucro per check-rom-link.
+- **File:** `tests/rom_link/gen3_fixture.py` (nuovo), `tests/rom_link/firered_save.py`, `scripts/check-rom-link.sh`
+- **Test:** `tests/test_gen3_fixture.py`: salvataggi sintetici per i cinque layout; party, check-trade e clone-identity riconvalidati con gen3_sav_check.
+- **Accettazione:** check-rom-link passa invariato. clone-identity si rifiuta di scrivere se un checksum di partenza non torna.
+- **Licenza:** codice nuovo GPL-2.0-or-later; offset da pret (fatti tecnici).
+
+#### ENG-10.3 — ROM di test GPL per gli effetti raster · M, 1,5 gg · dipende da: SAV-2.6 · PSP: no
+- **Cosa:** `tests/test-roms/raster/` produce cambi di palette, affine e DMA in HBlank a metà frame, con un'immagine deterministica. Usa l'include Makefile condiviso e il protocollo d'esito di SAV-2.6 (esito sullo schermo più firma in SRAM), senza regole di build o un formato d'esito propri. La ROM dei tipi di salvataggio è quella di SAV-2.6: qui non se ne fa un'altra. Le ROM prodotte non si committano mai e si validano in mGBA come riferimento.
+- **File:** `tests/test-roms/raster/` (nuovo, sorgenti e Makefile che usa l'include di SAV-2.6), `CONTRIBUTING.md`
+- **Test:** build con devkitARM in CI, con immagine fissata; esecuzione in mGBA con l'esito sullo schermo e la firma in SRAM; check-tree rifiuta i `.gba` prodotti se finiscono per errore nel repo.
+- **Accettazione:** La ROM raster produce lo stesso frame in due run in mGBA e chiude con l'esito nel protocollo di SAV-2.6.
+- **Licenza:** codice nuovo GPL-2.0-or-later, con l'header in ogni sorgente; nessun codice o asset di giochi.
+
+#### ENG-10.4 — Suite di test di terzi a hash fissi · S, 0,5 gg · dipende da: — · PSP: no
+- **Cosa:** `scripts/fetch-test-roms.sh` scarica in `build/test-roms/`, ignorata da git, le suite jsmolka/gba-tests (`arm.gba`, `thumb.gba`, `memory.gba`) e la suite di test di mGBA (sezioni timer e timing), ciascuna a commit e sha256 fissi. `tests/test-roms/THIRD-PARTY.md` registra fonte, commit, licenza verificata e uso. Una suite non entra se la sua licenza non permette di ridistribuire i golden derivati. Le suite si scaricano prima della sessione hardware della core-rom della 1.5, così gli esiti sulla 1.4.3 si registrano prima delle correzioni del core (CMP-11.1, CMP-12.1).
+- **File:** `scripts/fetch-test-roms.sh` (nuovo), `tests/test-roms/THIRD-PARTY.md` (nuovo), `.gitignore`
+- **Test:** lo script verifica gli sha256; in CI si scarica e si costruisce il corpus.
+- **Accettazione:** Un download fallito o un hash diverso interrompe lo script. Le licenze sono annotate prima del primo uso.
+- **Licenza:** codice nuovo GPL-2.0-or-later per lo script; le suite sono dati di terzi scaricati e mai committati, e la licenza di ciascuna resta sconosciuta finché non è letta e annotata in `THIRD-PARTY.md`.
+
+### ENG-11 — Rig hardware non presidiato a due PSP
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 9 gg | ENG-2.2, ENG-3.3, ENG-6.2, ENG-10.2, ENG-10.3, ENG-15.2, PRF-11.5 (solo ENG-11.4) |
+
+**Copre:** F-133 rig hardware non presidiato
+**Obiettivo:** Se il gate scatta: almeno 500 run consecutivi su due PSP senza intervento, ognuno classificato (pass, fail, flaky, hang, crash) con log e prove; oracolo esatto degli scambi (check-trade su entrambi i salvataggi) più gli hash di stato; ogni input, ROM comprese, verificato col CRC32 dell'intero file; 100 cicli comandati dal relè di ENG-11.3 per modello (standby su PSP-1000, spegnimento forzato su PSP Go) senza salvataggi corrotti; latenza dall'input alla foto pubblicata con metodo e incertezza, entro un vblank dal valore previsto dalla telemetria di PRF-11.5.
+**Da noi oggi:** Solo una checklist manuale (`docs/ROADMAP-1.4.0.md:21-33`). I pezzi disponibili sono i report Diagnostica, la traccia di input delle build diagnostiche (`source/Makefile:46-50`, `:75-77`) e i runtime log decodificati da `tools/decode_runtime_log.py`. In `source/src` non c'è nessun sceUsb*; gli header `pspusbdevice.h` e `systemctrl.h` (con sctrlKernelLoadExecVSHMs2, `source/SDK/include/systemctrl.h:71`) sono già in `source/SDK`.
+**Come ci arriviamo:**
+- Oracolo esatto degli scambi (check-trade su entrambi i salvataggi, prima e dopo) più gli hash di stato di ENG-3.
+- Copertura di sleep e wake con un relè sull'interruttore POWER.
+- Fixture ricavate dai salvataggi dell'utente, mai golden committati. Il passaggio via USB esiste solo nel profilo diagnostico, mai per i giocatori.
+- Bracci A/B alternati, valutati con compare-benchmarks.
+
+**Gate prima di iniziare:** le righe hardware manuali richiedono più di un giorno-persona per rilascio per due rilasci consecutivi (colonna minuti di `docs/HARDWARE-RESULTS.md`, ENG-1.1), ed ENG-3 ed ENG-10.2 sono chiusi.
+**Rischi:**
+- Chiamate kernel CFW e USB su un FAT con cache: servono Memory Stick di test dedicate.
+- Il relè richiede di aprire una console di test.
+- La PSP Go ha uno storage interno: il loop USB si rifiuta su `ef0:`.
+
+#### ENG-11.1 — Passaggio via USB solo diagnostico · L, 3,25 gg · dipende da: ENG-2.2, ENG-6.2, ENG-3.3 · PSP: sì
+- **Cosa:** `source/src/psp_usb_rig.c/.h` nel profilo diagnostic. A fine run scarica log e salvataggi, scrive RIGOUT.TXT (prima riga `version=1`, poi esito, build id, frame, hash finale), attiva lo USB mass storage per una finestra di tempo, aspetta RIGCMD.TXT dopo l'espulsione dal PC e si rilancia con sctrlKernelLoadExecVSHMs2 tramite gli stub in `source/SDK`. Si rifiuta di partire sullo storage interno della PSP Go. La logica degli stati sta in un modulo puro testato. RIGOUT.TXT ha un campo esito con cinque classi (pass, fail, flaky, hang, crash): hang viene dal watchdog di ENG-15, crash dalla schermata di eccezione al riavvio successivo. Nel profilo diagnostico un indicatore di vita compare nell'angolo dello schermo.
+- **File:** `source/src/usb_rig_model.c` e `.h` (nuovi, puri), `source/src/psp_usb_rig.c` (nuovo, glue), `source/Makefile` (librerie USB solo nel profilo diagnostic), `scripts/check-elf.py`
+- **Test:** `tests/test_usb_rig_model.c`, normale e ASan/UBSan; hardware: 20 cicli su una Memory Stick di test.
+- **Accettazione:** 20 cicli senza intervento. Nessun simbolo USB nella build release (audit dell'ELF).
+- **Licenza:** codice nuovo GPL-2.0-or-later; gli stub di systemctrl sono già in `source/SDK`.
+
+#### ENG-11.2 — Loop sul PC con oracolo esatto e A/B · M, 2,25 gg · dipende da: ENG-11.1, ENG-10.2 · PSP: sì
+- **Cosa:** `tools/rig_loop.py` sorveglia RIGOUT.TXT su due volumi, raccoglie log e salvataggi, ripristina le fixture ricavate dai salvataggi dell'utente (ENG-10.2), prepara EBOOT e autorun del run successivo ed espelle i volumi (Windows e Linux), con gestione dei timeout. Usa l'oracolo check-trade e il confronto degli hash, e alterna i bracci A/B valutandoli con compare-benchmarks. Un run fallito si ripete una volta, e un successo al secondo tentativo vale «flaky». Il PC verifica ROM, salvataggi e tracce con il CRC32 dell'intero file prima di espellere i volumi.
+- **File:** `tools/rig_loop.py` (nuovo), `docs/HARDWARE-LAB.md` (nuovo)
+- **Test:** `tests/test_rig_loop.py` con volumi finti in directory temporanee.
+- **Accettazione:** 500 run consecutivi senza intervento, con esito e prove per ogni run. Un run bloccato viene segnalato allo scadere del timeout. Una ROM, un salvataggio o una traccia con un CRC32 diverso da quello atteso fermano il run prima che i volumi vengano espulsi.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-11.3 — Sleep e wake con un relè sull'interruttore POWER · M, 2 gg · dipende da: ENG-11.2 · PSP: sì
+- **Cosa:** Una scheda relè USB, comandata dal PC su una console di test modificata, produce N sospensioni durante il gioco, la scrittura della batteria e una sessione link. Gli oracoli sono gen3_sav_check, gli hash e il runtime log.
+- **File:** `tools/rig_loop.py` (scenari power), `docs/HARDWARE-LAB.md`
+- **Test:** 100 cicli su PSP-1000 e su PSP Go (per la Go si usa lo spegnimento forzato).
+- **Accettazione:** 100 cicli senza salvataggi corrotti, con i risultati in HARDWARE-RESULTS.
+
+#### ENG-11.4 — Latenza dall'input alla foto e raster su hardware · M, 1,5 gg · dipende da: ENG-10.3, PRF-11.5 · PSP: sì
+- **Cosa:** Una ROM di latenza, variante di ENG-10.3 che cambia lo schermo alla pressione di un tasto, viene filmata a 240 fps con un LED sul tasto: se ne ricavano i millisecondi dall'input alla foto per renderer e modello. La ROM raster produce un hash per frame su PSP, confrontato col golden. La mediana misurata con la fotocamera si confronta con il valore previsto dalla telemetria di PRF-11.5, sulle stesse scene: la differenza resta entro un vblank.
+- **File:** `tests/test-roms/latency/` (nuovo), `docs/HARDWARE-LAB.md`
+- **Test:** 3 serie da 30 pressioni per ogni modello e renderer.
+- **Accettazione:** Numeri pubblicati con metodo e incertezza, da 3 serie di 30 pressioni per modello e renderer; la mediana misurata con la fotocamera differisce di al massimo un vblank (16,7 ms) dal valore previsto dalla telemetria di PRF-11.5 sulle stesse scene; nessuna affermazione senza misura.
+
+### ENG-12 — Build qemu-mipsel del dynarec con oracolo su corpus, controllo del codice stantio e interprete di riferimento
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate | 17 gg | ENG-2.5, ENG-3.3, ENG-3.5, ENG-5.2, ENG-7.1, CMP-1.1, CMP-12.4 (solo ENG-12.4), CMP-11.1-11.6 ed ENG-10.4 (solo ENG-12.5), ENG-3.2 e PRF-8.6 (solo ENG-12.6) |
+
+**Copre:** F-134 build qemu-mipsel del dynarec con oracolo su corpus
+**Obiettivo:** Se il gate passa: la build qemu esegue il nostro dynarec vero sul corpus pubblico in CI e su un corpus locale di almeno 40 titoli × 7200 frame, comprese le 20 scene con codice automodificante o in VRAM della suite di PRF-8.6, con il run di controllo doppio verde e ogni mutante rosso; una modifica di sola velocità coincide su ogni frame di ogni ROM; zero esecuzioni di codice stantio sullo stesso corpus locale, con ogni mutante del controllo catturato entro 600 frame; se parte ENG-12.5, l'interprete di riferimento dà 0 differenze sul corpus pubblico e segnala ogni mutante CPU nel primo blocco che lo esegue; EBOOT PSP invariato.
+**Da noi oggi:** Nessun test esegue `cpu.c`, `mips_emit.h` o `mips_stub.S`. `mips_stub.S` usa un frame da 4 byte attorno a `jal update_gba` (`source/src/mips_stub.S:279-291`) e tiene r12 e r13 ARM in $25 e $28 (`:105`, `:108`); le istruzioni cache sono a `:454-493` e `:3761-3786`, più `cpu.c:3413-3418`. madd e maddu esistono solo nella codifica Allegrex, SPECIAL con funzione 0x1C/0x1D (`source/src/mips_emit.h:130-131`, `:303-307`, usate per SMLAL e UMLAL a `:576-580`): su un 74Kf quella codifica è riservata e qemu la ferma con SIGILL. In libretro/gpsp a commit fissato 5819380 (`mips/mips_codegen.h:282-294`) un `#ifdef PSP` tiene la codifica Allegrex sulla PSP e usa la codifica MIPS32 SPECIAL2 sugli altri MIPS. Il core non ha un interprete (`cpu.c:21`): non esiste un motore di riferimento indipendente dal dynarec.
+**Come ci arriviamo:**
+- Corpus pubblico (ROM GPL, core-rom, BIOS integrato, tracce di ENG-3.5) in CI; il corpus locale, registrato su PSP da ENG-12.6, resta fuori dal repository.
+- Stesso formato di hash del replay su PSP (ENG-3.1): la build qemu e la console si confrontano direttamente.
+- Run di controllo e mutanti mirati al nostro modello: SMC per parola, controllo dei cicli del BX dual, flag di MSR, arrotondamento del BX.
+- Controllo del codice stantio a ogni istruzione eseguita, lo stesso della build diagnostica (CMP-12.4).
+- Un interprete di riferimento scritto dalla specifica, che non condivide codice con il dynarec, indica l'istruzione della prima differenza (ENG-12.5).
+
+**Gate prima di iniziare:** spike di 2 giorni. `cpu.c`, `memory.c` e `mips_stub.S` compilano come binario statico mipsel-linux sotto QEMU_HOST (area argomenti o32 di 16 byte, `-fno-pic`, istruzioni cache sostituite da stub, madd/maddu in codifica SPECIAL2), e `tests/link-rom` esegue 600 frame sotto `qemu-mipsel -cpu 74Kf` con hash per frame uguali a quelli di un replay su PSP (ENG-3.3). ENG-12.5 parte solo se ENG-12.1 ha dato go, ENG-12.2 è verde, i casi CPU di CMP-11.1 sono verdi sul dynarec e un difetto del dynarec arrivato in una release non si riproduce con la core-rom, con le suite di ENG-10.4 né con il replay di ENG-3.
+**Rischi:**
+- qemu non modella né le cache né il timing dell'Allegrex.
+- Sotto QEMU_HOST madd e maddu hanno un'altra codifica: quella PSP resta coperta solo da ENG-5.2. Altre differenze tra Allegrex e 74Kf restano sconosciute finché lo spike non gira.
+- Il define QEMU_HOST va mantenuto nel codice caldo.
+
+#### ENG-12.1 — Spike: build mipsel-linux · M, 2 gg · dipende da: ENG-3.3, ENG-5.2, CMP-1.1 · PSP: no
+- **Cosa:** Compilare `cpu.c`, `memory.c` e `mips_stub.S` sotto QEMU_HOST: frame di almeno 16 byte attorno alle chiamate C dello stub; `-fno-pic` per via di $25 e $28; istruzioni cache e sceKernelDcacheWritebackAll (`mips_emit.h:714-715`) sostituite da stub; madd e maddu in `mips_encode.h` (ENG-5.2) nella codifica SPECIAL2 solo sotto QEMU_HOST, scelta a compile time con un `#ifdef`. Un host minimo carica la ROM e il BIOS aperto e applica una traccia v2. Si confrontano gli hash di 600 frame con quelli di ENG-3.3 e si registra go o no-go in `docs/DESIGN-DECISIONS.md`.
+- **File:** `source/src/mips_stub.S` (QEMU_HOST: frame da 16+ byte), `source/src/cpu.c` (stub delle cache sotto QEMU_HOST), `source/src/mips_encode.h` (madd/maddu sotto QEMU_HOST), `tools/qemu/` (nuovo: Dockerfile fissato, Makefile, host minimo), `docs/DESIGN-DECISIONS.md`
+- **Test:** 600 frame di link-multiplayer.gba, hash confrontati con ENG-3.3.
+- **Accettazione:** La decisione go/no-go è registrata; in caso di go, gli hash di 600 frame coincidono. Il codice QEMU_HOST non cambia l'EBOOT PSP (sha256 invariato, o psp-objdump identico se la build non è riproducibile).
+- **Licenza:** qemu-user (GPL-2.0) e la toolchain mipsel sono strumenti esterni nell'immagine Docker; il resto codice nuovo GPL-2.0-or-later.
+
+#### ENG-12.2 — Oracolo su corpus con controllo e mutanti · L, 3 gg · dipende da: ENG-12.1, ENG-12.6, ENG-3.5, ENG-2.5 · PSP: no
+- **Cosa:** `tools/qemu/run_corpus.py` esegue il corpus pubblico (in CI) e il corpus locale, scrive i `.gbsh` e confronta baseline e candidato, dopo un run di controllo doppio. I mutanti in `tools/qemu/mutants/*.patch` (un'invalidazione SMC saltata, un flag non aggiornato, il controllo dei cicli del BX-dual tolto) devono fallire. I mutanti comprendono anche «MSR senza collapse dei flag» e «BX dual arrotondato in su», che i casi CPU della core-rom (CMP-11.1, nel corpus di ENG-3.5) devono far fallire, e, dopo CMP-11.6, «LR dell'IRQ preso dopo un MSR = indirizzo dell'MSR + 4». Un job CI esegue il corpus pubblico.
+- **File:** `tools/qemu/run_corpus.py` (nuovo), `tools/qemu/mutants/` (nuovo), `.github/workflows/qemu.yml` (nuovo)
+- **Test:** `tests/test_qemu_report.py`: parsing e verdetto; CI.
+- **Accettazione:** Il controllo è verde e ogni mutante è rosso, sul corpus pubblico e sul corpus locale di ENG-12.6 (almeno 40 titoli × 7200 frame). Una modifica di sola velocità coincide su ogni frame di ogni ROM.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-12.3 — (facoltativa) La build qemu al posto di mGBA in check-rom-link · M, 3 gg · dipende da: ENG-12.2, ENG-7.1 · PSP: no
+- **Cosa:** Compilare link_e2e con due core compilati per mipsel ed eseguire lo scambio FireRed sotto qemu, così il test del link gira sul nostro core invece che su mGBA.
+- **File:** `tests/rom_link/`, `tools/qemu/`
+- **Test:** check-rom-link in modalità qemu, con l'oracolo esatto.
+- **Accettazione:** Stesso esito della modalità mGBA su tutti i casi di rete di check-rom-link.
+
+#### ENG-12.4 — Controllo del codice stantio a ogni istruzione eseguita, sul corpus della build qemu · S, 1 gg · dipende da: ENG-12.2, CMP-12.4 · PSP: no
+- **Cosa:** La build qemu compila il controllo per istruzione della build diagnostica di CMP-12.4: per ogni istruzione tradotta da EWRAM, IWRAM o VRAM, un confronto tra la parola guest attuale e l'opcode tradotto. Alla prima differenza la build qemu si ferma e scrive pc, opcode tradotto, opcode attuale e frame. Il controllo agli ingressi dei blocchi non basta: un ciclo dentro un blocco può girare dopo che il suo codice è cambiato. `tools/qemu/run_corpus.py` lo esegue sul corpus pubblico in CI e sul corpus locale.
+- **File:** `tools/qemu/run_corpus.py`, `tools/qemu/mutants/`
+- **Test:** quattro mutanti nuovi devono fermare la build qemu: pulizia parziale che si ferma una parola prima (`cpu.c:3905-3940`); tag Thumb mancante sull'ultima parola di un blocco che finisce a metà parola (`cpu.c:3149-3164`); scrittura DMA in VRAM senza controllo SMC (`memory.c:621`); controllo solo sull'ultima parola dello store multiplo.
+- **Accettazione:** zero colpi sul corpus locale di ENG-12.6 (almeno 40 titoli × 7200 frame, comprese le 20 scene con codice automodificante o in VRAM della suite di PRF-8.6); ogni mutante catturato entro 600 frame; l'EBOOT PSP non cambia (sha256 identico, o psp-objdump identico se la build non è riproducibile).
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-12.5 — (condizionata) Interprete di riferimento in lockstep per blocco nella build qemu · L, 6 gg · dipende da: ENG-12.2, CMP-11.1-11.6, ENG-10.4 · PSP: no
+- **Cosa:** `tools/qemu/arm_ref.c` è un interprete ARM7TDMI (ARM e Thumb) solo host, scritto da ARM ARM, datasheet ARM7TDMI e GBATEK, con banchi, eccezioni e flag propri: non include `cpu.c`, `mips_emit.h` né `set_cpu_mode`. In modalità lockstep la build qemu, per ogni blocco tradotto, copia lo stato, esegue il blocco nel dynarec registrando le letture di memoria, esegue lo stesso tratto nell'interprete rigiocando quelle letture (l'I/O non si legge due volte) e confronta registri, CPSR e scritture, in ordine. Alla prima differenza `tools/qemu/run_corpus.py` scrive PC, opcode, registro e i due valori.
+- **File:** `tools/qemu/arm_ref.c` (nuovo), `tools/qemu/arm_ref.h` (nuovo), `tools/qemu/run_corpus.py`, `tests/test_arm_ref.c` (nuovo)
+- **Test:** `tests/test_arm_ref.c` (normale e ASan/UBSan): la core-rom e le suite di ENG-10.4 eseguite sull'interprete; lockstep sul corpus pubblico; i mutanti CPU di ENG-12.2.
+- **Accettazione:** l'interprete passa la core-rom e le suite al 100%; con CMP-11 il lockstep dà 0 differenze sul corpus pubblico; ogni mutante CPU è segnalato nel primo blocco che lo esegue.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-12.6 — Corpus locale della build qemu registrato su PSP · M, 2 gg · dipende da: ENG-12.1, ENG-3.2, ENG-3.3, PRF-8.6 · PSP: sì
+- **Cosa:** Su PSP-1000, con la build di riferimento, si registrano tracce v2 (ENG-3.2) da 120 s, cioè 7200 frame, ognuna con il suo stato iniziale compagno, su almeno 40 titoli dell'utente: le 20 scene con codice automodificante o in VRAM della suite di PRF-8.6 e almeno 20 titoli scelti per coprire i tipi di salvataggio e i titoli difficili di CMP-9. Per ogni traccia si cattura su PSP il `.gbsh` (ENG-3.3), che la build qemu deve riprodurre. Un file di provenienza registra build id, modello, data, titolo e sha256 della ROM. Tracce, stati e `.gbsh` restano fuori dal repository; in Git entra solo l'elenco dei titoli con gli sha256.
+- **File:** `tools/qemu/LOCAL-CORPUS.md` (nuovo: elenco, sha256 e procedura), `scripts/replay-corpus.sh` (opzione per un corpus locale)
+- **Test:** due replay di ogni traccia su PSP-1000 danno `.gbsh` identici; `tools/qemu/run_corpus.py` legge il corpus locale e il file di provenienza.
+- **Accettazione:** almeno 40 titoli × 7200 frame, comprese le 20 scene di PRF-8.6, ognuno con traccia, stato, `.gbsh` e una riga di provenienza; nessun binario nel repository.
+- **Licenza:** codice nuovo GPL-2.0-or-later (`scripts/replay-corpus.sh`); tracce e hash sono dati nostri, tenuti fuori dal repository; ROM e stati restano dell'utente.
+
+### ENG-13 — Build desktop dell'emulatore completo
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| sconsigliato (dietro gate) | dopo gate | 5 gg | ENG-12.2, ENG-7.1 |
+
+**Copre:** F-135 build desktop dell'emulatore completo.
+**Obiettivo:** Se il gate passa e il verdetto viene rivisto: la build desktop esegue il nostro dynarec vero, senza un secondo core; una ROM di test gira ad almeno 20 fps misurati dal visualizzatore su 60 s e la traccia registrata dal desktop, rigiocata su PSP-1000, dà un `.gbsh` identico a quello della build qemu su ogni frame; due build desktop collegate via UDP con net_fault danno lo stesso esito di check-rom-link su tutti i profili di rete.
+**Da noi oggi:** I test host compilano moduli singoli più `memory.c` con gli shim (`Makefile:52-66`, `:247-265`); il core è solo MIPS, senza interprete (`CONTRIBUTING.md:47`); check-rom-link usa mGBA, non il nostro core.
+**Come ci arriviamo:**
+- Nessun secondo core: la build desktop è la build qemu con una finestra, quindi esegue il nostro dynarec vero.
+- Trasporto UDP tra due build desktop con lo stesso modulo net_fault del simulatore e del worker ad-hoc.
+
+**Gate prima di iniziare:** spike di ENG-12 superato, più un bisogno documentato in `docs/DESIGN-DECISIONS.md` che PPSSPP e la build qemu senza finestra non coprono, per esempio il debug interattivo di una desincronizzazione del link già riprodotta.
+**Rischi:**
+- qemu-user con un'interfaccia grafica è lento.
+- Si rischia di mantenere un terzo frontend.
+
+#### ENG-13.1 — Visualizzatore interattivo per la build qemu · L, 3 gg · dipende da: ENG-12.2 · PSP: no
+- **Cosa:** La build qemu senza finestra espone framebuffer e tasti su una pipe; un visualizzatore x86 (Python con una libreria grafica già disponibile, oppure SDL) mostra i frame, ne misura la frequenza, rimanda i tasti e registra tracce v2 dal desktop.
+- **File:** `tools/qemu/viewer.py` (nuovo), `tools/qemu/` (canale su pipe)
+- **Test:** `tests/test_qemu_pipe.py`: protocollo della pipe.
+- **Accettazione:** Una ROM di test gira ad almeno 20 fps misurati dal visualizzatore su 60 s, e la traccia salvata, rigiocata su PSP-1000, dà un `.gbsh` identico a quello della build qemu.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-13.2 — Due build desktop collegate via UDP con guasti iniettati · M, 2 gg · dipende da: ENG-13.1, ENG-7.1 · PSP: no
+- **Cosa:** Il link tra le due build desktop passa da socket UDP locali attraverso net_fault; le due build eseguono uno scambio FR/LG verificato con l'oracolo esatto.
+- **File:** `tools/qemu/`, `source/src/net_fault.c`
+- **Test:** scambio su tutti i casi di rete di check-rom-link, con i profili di net_fault (ENG-7.1).
+- **Accettazione:** Stesso esito di check-rom-link.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### ENG-14 — Strumenti di coerenza della I-cache e del JIT
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| condizionato | dopo gate (ENG-14.1 in 1.6) | 6,5 gg | ENG-2.2, ENG-3.5, ENG-12.2, PRF-10.1 |
+
+**Copre:** F-136 sonde dell'I-cache, verifica di coerenza del JIT, simulazione della cache; F-039 disciplina dell'I-cache del JIT.
+**Obiettivo:** Zero chiamate kernel per intervallo nei percorsi JIT, verificato in `make check` (ENG-14.1, nella 1.6); se il gate passa, zero differenze tra vista cached e uncached del codice emesso sul corpus di ENG-3.5 su PSP-1000, con il mutante senza writeback rilevato, e un modello delle cache sulla build qemu che trova ogni sincronizzazione tolta di proposito e tace quando la si rimette; linea, vie e capacità dell'I-cache e della D-cache misurate su PSP-1000 e su uno slim e confrontate con i 64 byte e i 16 KiB che il codice presume (ENG-14.4).
+**Da noi oggi:** Invalidazione riga per riga con le istruzioni cache dell'Allegrex (`source/src/cpu.c:3413-3418`; `source/src/mips_stub.S:454-493`, `:3761-3786`) e writeback completo della D-cache (sceKernelDcacheWritebackAll in `source/src/mips_emit.h:714-715` e in `source/src/psp_video.c:217`). Nessuna sonda, nessuna scansione, nessun simulatore. Il budget del nucleo caldo rispetto ai 16 KiB della I-cache lo controlla già PRF-10.4.
+**Come ci arriviamo:**
+- Una guardia vieta le chiamate per intervallo del kernel nei percorsi JIT, col perché documentato.
+- Un controllo su console del lato dati confronta la vista cached e quella uncached del codice appena emesso.
+- Il modello delle cache gira solo sulla build qemu, con lo stesso formato di hash.
+- Una sonda su console misura la geometria delle cache e la confronta con quella che il codice presume (ENG-14.4).
+
+**Gate prima di iniziare:** per ENG-14.2-14.3, spike di ENG-12 superato e l'esperimento di padding di PRF-10.1 (F-034) che mostra una variazione oltre il 2% tra build in compare-benchmarks, oppure un bug di codice stantio riprodotto su hardware e invisibile in PPSSPP. ENG-14.1 può partire subito. ENG-14.4 ha lo stesso gate senza lo spike di ENG-12: la variazione oltre il 2% dell'esperimento di padding, oppure un bug di codice stantio riprodotto su hardware e invisibile in PPSSPP.
+**Rischi:**
+- Il modello delle cache può divergere dal firmware reale.
+- I plugin qemu vanno mantenuti.
+
+#### ENG-14.1 — Guardia sulle invalidazioni del JIT · S, 0,5 gg · dipende da: — · PSP: no
+- **Cosa:** `check-performance.sh` vieta sceKernelIcacheInvalidateRange, sceKernelDcacheWritebackInvalidateRange e chiamate simili in `cpu.c`, `mips_emit.h` e `mips_stub.S`. `docs/INTERNALS.md` descrive il protocollo di sincronizzazione: riga per riga, con writeback completo; le chiamate del kernel per intervallo restano fuori perché il comportamento di queste chiamate sul firmware non è verificato da noi.
+- **File:** `scripts/check-performance.sh`, `docs/INTERNALS.md` (nuovo se manca)
+- **Test:** `make check`; caso negativo in `tests/test_check_scripts.py`.
+- **Accettazione:** Una chiamata per intervallo aggiunta in `cpu.c` fa fallire `make check`.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-14.2 — Scansione diagnostica del lato dati · M, 1,5 gg · dipende da: ENG-2.2, ENG-3.5 · PSP: sì
+- **Cosa:** Nel profilo diagnostic, dopo ogni traduzione e writeback, si confrontano le parole emesse lette dal puntatore cached e dall'alias uncached (indirizzo | 0x40000000), contando le differenze, che devono essere zero. Il contatore finisce nella riga finale del `.gbsh` (campo previsto da ENG-3.1), così nessun formato versionato cambia. Nessuna allocazione né I/O in `cpu.c`.
+- **File:** `source/src/cpu.c` (solo profilo diagnostic), `source/src/gui.c` (contatore nella riga finale del `.gbsh`)
+- **Test:** `check-performance.sh`; hardware: corpus di ENG-3.5 su PSP-1000 con contatore a zero; un mutante che salta il writeback porta il contatore sopra zero.
+- **Accettazione:** Zero differenze sul corpus, e il mutante viene rilevato.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-14.3 — Plugin qemu col modello delle cache Allegrex · L, 3,5 gg · dipende da: ENG-12.2 · PSP: no
+- **Cosa:** Un plugin TCG modella una D-cache write-back e una I-cache senza snooping, e segnala ogni parola eseguita che differisce dall'ultima scrittura dell'emettitore, indicando chi l'ha scritta e quale invalidazione mancava. Si valida togliendo apposta un punto di sincronizzazione.
+- **File:** `tools/qemu/cachemodel/` (nuovo)
+- **Test:** corpus della build qemu: zero segnalazioni; mutante senza sincronizzazione segnalato.
+- **Accettazione:** Il plugin trova ogni sincronizzazione tolta di proposito e tace quando la si rimette.
+- **Licenza:** codice nuovo GPL-2.0-or-later; l'API dei plugin di qemu è GPL-2.0-or-later.
+
+#### ENG-14.4 — Sonda della geometria delle cache su PSP · S, 1 gg · dipende da: ENG-2.2 · PSP: sì
+- **Cosa:** Nel profilo diagnostic una sonda misura con il contatore di cicli la dimensione della linea, il numero di vie e la capacità dell'I-cache e della D-cache: esegue salti e letture a passi crescenti e cerca dove i tempi cambiano. Il risultato si scrive in un file di testo accanto all'EBOOT e va in `docs/HARDWARE-RESULTS.md`, per PSP-1000 e per uno slim, e per PSP Go se disponibile. Si confronta con quello che il codice presume: la linea di 64 byte di `CACHE_LINE_SIZE` (`source/src/cpu.c:51`) e dei passi delle istruzioni cache (`source/src/mips_stub.S:3761-3786`, `cpu.c:3413-3418`), e i 16 KiB dell'I-cache del budget di PRF-10.4.
+- **File:** `source/src/cache_measure.c` (nuovo, solo profilo diagnostic), `source/src/cache_measure.h` (nuovo), `source/Makefile`, `docs/HARDWARE-RESULTS.md`, `docs/INTERNALS.md` (nuovo se manca)
+- **Test:** `scripts/check-performance.sh` e l'audit dell'ELF di ENG-2.4: la sonda non entra nel profilo release; hardware: 3 esecuzioni per modello con lo stesso risultato.
+- **Accettazione:** linea, vie e capacità delle due cache misurate e scritte per ogni modello provato; se un valore differisce da quello che il codice presume, si apre una storia che corregge i passi o il budget; nessun byte della sonda nel profilo release.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### ENG-15 — Sicurezza sul campo: watchdog di stallo, prove dei freeze e interruttori di emergenza
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 (ENG-15.5 su richiesta) | 7,5 gg | ENG-1.6, ENG-18.2 (solo ENG-15.5) |
+
+**Copre:** F-142 watchdog di stallo e prove dei freeze, F-143 interruttori di emergenza a runtime
+**Obiettivo:** Le prove dei freeze restano nelle build di release: uno stallo indotto lascia un log decodificabile con motivo STALL, e uno spegnimento forzato lascia al riavvio il record «sessione precedente non chiusa»; 0 falsi positivi in 30 minuti di gioco, menu e link, caricando una ROM da 32 MiB su PSP-1000 e dopo 20 sospensioni; il watchdog non tocca mai la batteria; ogni default rischioso ha un interruttore versionato e migrato, elencato in una tabella verificata da script.
+**Da noi oggi:** Le release scrivono il runtime log v5 (`source/src/runtime_log.h:25`) con gli anelli main, network e critical e il motivo del flush nell'header (`:79-88`; offset 20, `source/src/runtime_log.c:20-23`). L'anello critical però non ha produttori: runtime_log_psp_critical (`source/src/runtime_log_psp.c:249`) non viene mai chiamata. All'avvio i log si ruotano senza guardare come è finita la sessione precedente (`runtime_log_psp.c:201-210`), e RuntimeLogStoreIo non ha una read (`source/src/runtime_log_store.h:23-30`). I flush avvengono all'avvio, al menu, al cambio di ROM, alla sospensione, all'uscita e ai guasti del link (`source/src/main.c:590`, `:829`, `:1792`, `:1833`, `:1915`), mai al resume. Nessun watchdog. Priorità attuali: callback 0x11 (`main.c:2039-2044`), audio 0x08 (`source/src/sound.c:1486-1490`), stack ad-hoc 0x1C-0x1E (`source/src/psp_adhoc.c:52-54`), emulatore 32 (`main.c:41`), che scende a 0x77 durante il lockstep (`main.c:228`). La config è binaria e versionata, con salvataggio atomico e copia di recupero (`source/src/config_store.c`, `config_model.h:24-56`); alcuni interruttori di compatibilità sono già voci di menu: renderer, modalità dynarec RAM, stack optimize, VSync, OAM hijack (`source/src/text/message_eng.h:625-691`).
+**Come ci arriviamo:**
+- Le prove restano nelle build release: il watchdog usa l'anello critical, che il formato ha già, e lo store atomico esistente.
+- Il record 'sessione precedente non chiusa' si ricava dall'header dell'ultimo log, senza file in più; il nuovo motivo RESUME separa 'finita in sospensione' da 'bloccata dopo la ripresa'.
+- Il watchdog non tocca mai il salvataggio della batteria, se non è dimostrabile che il thread dell'emulatore sia fermo.
+- Gli interruttori sono campi versionati e migrati, elencati in una tabella verificata da script; un .ini testuale arriva solo se gli utenti lo chiedono.
+
+**Gate prima di iniziare:** nessuno; ENG-15.5 parte solo dopo almeno 3 richieste di utenti diversi (ENG-18).
+**Rischi:**
+- Falsi positivi durante le attese legittime: link, menu, sospensione, caricamento di una ROM da 32 MiB, scrittura di uno stato.
+- Flush in parallelo con il thread dell'emulatore.
+- I valori nuovi del runtime log (motivi STALL e RESUME, tipi di record critici) sono aggiunti in fondo alle enum e non cambiano la versione (principio 6, R1): in 1.5 escono nella v6 di ENG-1.6, e se ENG-15.2-15.3 scivolano oltre la 1.5 non serve un bump. Se il proprietario rifiuta R1, una storia scivolata entra nel bump della release in cui esce (R3).
+
+#### ENG-15.1 — Modulo puro stall_guard · S, 1 gg · dipende da: — · PSP: no
+- **Cosa:** `source/src/stall_guard.c/.h` riceve campioni (battito del loop e fase: gioco, menu, attesa link, caricamento, sospeso) e segnala lo stallo dopo N secondi senza progresso in una fase che deve avanzare, con isteresi e un solo evento per stallo. Un salto della base dei tempi dopo un resume azzera il conteggio. I tempi in microsecondi li passa il chiamante.
+- **File:** `source/src/stall_guard.c` (nuovo), `source/src/stall_guard.h` (nuovo), `Makefile`
+- **Test:** `tests/test_stall_guard.c`, normale e ASan/UBSan: attese legittime ignorate, stallo vero rilevato una volta, ripresa riconosciuta, salto dopo il resume ignorato.
+- **Accettazione:** Nessuna allocazione e nessun header PSP.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-15.2 — Thread watchdog con record critici e flush STALL · M, 2 gg · dipende da: ENG-15.1, ENG-1.6 · PSP: sì
+- **Cosa:** Un thread a priorità 0x18: numero più basso dell'emulatore (32, 0x77 in lockstep) e dei thread ad-hoc (0x1C-0x1E), quindi li interrompe e coglie anche un thread di rete che gira a vuoto; numero più alto di callback (0x11) e audio (0x08), che restano davanti. Dorme un secondo alla volta e legge un battito volatile che il loop incrementa a ogni frame, a ogni giro di menu e durante i caricamenti lunghi (ROM, stati). Fa I/O solo allo stallo. Allora scrive nell'anello critical, di cui è l'unico produttore, fase, PC ospite e stato del thread dell'emulatore (sceKernelReferThreadStatus), poi fa un flush con il nuovo motivo RUNTIME_LOG_FLUSH_STALL tramite lo store atomico; se un flush è già in corso (flag atomico) lo salta. Il motivo STALL e il tipo di record critico sono valori aggiunti in fondo alle rispettive enum: per R1 (principio 6) non cambiano la versione. In 1.5 escono nella v6, dentro il bump di ENG-1.6, con decoder e test, senza un bump proprio. Non tocca il backup della batteria. Voce nel CHANGELOG.
+- **File:** `source/src/main.c`, `source/src/runtime_log.h`, `source/src/runtime_log.c`, `source/src/runtime_log_psp.c`, `tools/decode_runtime_log.py`, `scripts/check-lifecycle.sh`, `CHANGELOG.md`
+- **Test:** `tests/test_runtime_log.c`: v6, v5 ancora leggibile; `tests/test_decode_runtime_log.py`; guardia rg: il watchdog non chiama save_backup né funzioni di `memory.c`; hardware: una build diagnostica di prova con `-DDIAG_INDUCE_STALL` (il thread dell'emulatore gira a vuoto 15 s dopo l'uscita dal menu) produce record e flush; dalla 2.0 lo stesso con lo stallo HOME di ENG-8.1.
+- **Accettazione:** Uno stallo indotto lascia un log decodificabile con motivo STALL. Nessun falso positivo in 30 minuti di gioco, menu e link, caricando una ROM da 32 MiB su PSP-1000 e dopo 20 sospensioni.
+
+#### ENG-15.3 — Record 'sessione precedente non chiusa' all'avvio · M, 1,5 gg · dipende da: ENG-15.2 · PSP: sì
+- **Cosa:** Prima della rotazione, `runtime_log_psp.c` legge i primi 64 byte di `session-1.gbrlog` e li passa a una nuova funzione pura di `runtime_log.c`, che valida magic e CRC dell'header (copre i byte 0-59) e restituisce versione, id di sessione e motivo dell'ultimo flush, anche da un header v5. Nuovo motivo RUNTIME_LOG_FLUSH_RESUME, scritto dopo la riapertura della ROM al resume: così 'ultimo motivo SUSPEND' vuol dire che la sessione è finita in sospensione. Se l'ultimo motivo non è né EXIT né SUSPEND, l'anello critical riceve PREVIOUS_RUN_UNCLEAN con id, motivo e ora del flush precedente. RESUME e PREVIOUS_RUN_UNCLEAN sono valori aggiunti in fondo alle enum, con la stessa regola di ENG-15.2 (R1). La rotazione conserva già quel file come session-2 (`runtime_log_psp.c:201-208`). Un header illeggibile non blocca l'avvio. Voce nel CHANGELOG.
+- **File:** `source/src/runtime_log_psp.c`, `source/src/runtime_log.c`, `source/src/runtime_log.h`, `source/src/main.c` (flush al resume), `tools/decode_runtime_log.py`, `CHANGELOG.md`
+- **Test:** `tests/test_runtime_log.c` (normale e ASan/UBSan): header valido, CRC sbagliato, header v5, motivi diversi; `tests/test_decode_runtime_log.py`; hardware: spegnimento forzato su PSP-1000 durante il gioco e riavvio: il record c'è; uscita normale, oppure sospensione e ripresa seguite da uscita normale: il record non c'è.
+- **Accettazione:** Dopo uno spegnimento forzato il log nuovo contiene il record col motivo precedente; dopo un'uscita normale no. Un header corrotto non blocca l'avvio.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-15.4 — Regola degli interruttori di emergenza · S, 1 gg · dipende da: — · PSP: no
+- **Cosa:** `docs/KILL-SWITCHES.md` ha una riga per ogni default rischioso: funzione, campo di config_model, voce di menu o chiave, effetto, versione di introduzione. `scripts/check-kill-switches.sh` verifica che ogni campo esista in `config_model.h` e abbia una migrazione testata. CONTRIBUTING stabilisce che ogni funzione rischiosa (F-028, F-030, F-035, F-037, F-083, F-108, F-113 e simili) arriva col suo interruttore. Si elencano quelli che esistono già (renderer, dynarec RAM, stack optimize, VSync, OAM hijack), e il README li cita nella sezione sui problemi.
+- **File:** `docs/KILL-SWITCHES.md` (nuovo), `scripts/check-kill-switches.sh` (nuovo), `scripts/check-tree.sh`, `CONTRIBUTING.md`
+- **Test:** lo script dentro `make check`; `tests/test_config_model.c` copre già le migrazioni.
+- **Accettazione:** Una riga che nomina un campo inesistente fa fallire `make check`.
+
+#### ENG-15.5 — Chiavi avanzate testuali (solo su richiesta) · M, 2 gg · dipende da: ENG-15.4, ENG-18.2 · PSP: sì
+- **Cosa:** `advanced.ini` si legge una volta all'avvio e si riscrive in modo atomico solo se cambia qualcosa, conservando chiavi sconosciute e commenti. Vale solo per gli interruttori senza voce di menu, e ogni chiave corrisponde a un campo versionato di config_model, senza campi nuovi qui. Il parser è puro e testato con input ostili. Un file corrotto si ignora: l'avviso va nel runtime log, senza stringhe nuove nell'interfaccia. Voce nel CHANGELOG.
+- **File:** `source/src/advanced_ini.c` (nuovo), `source/src/advanced_ini.h` (nuovo), `source/src/main.c`, `source/src/config_model.c`, `CHANGELOG.md`
+- **Test:** `tests/test_advanced_ini.c`, normale e ASan/UBSan; hardware: una chiave che disattiva una funzione.
+- **Accettazione:** File assente vuol dire default; file corrotto ignorato con l'avviso nel log; nessuna scrittura se niente è cambiato.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### ENG-16 — README: presentazione, guide pratiche e tabella di compatibilità generata
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 2.0 (ENG-16.1-16.3 in 1.6) | 6 gg | ENG-1.2, ENG-1.6, ENG-9.2, ENG-17.2, F-024 |
+
+**Copre:** F-144 presentazione del README, F-145 guide pratiche (file, controlli, impostazioni), F-146 tabella di compatibilità per gioco
+**Obiettivo:** README di 250-300 righe in cui ogni numero rimanda a un report committato e allo sha256 di `EBOOT.PBP`, con due tabelle generate dai report: «Compatibilità per gioco», con l'elenco di CMP-9.4 (almeno 40 titoli con gameplay, salvataggio e ricarica su due modelli), e la tabella per scena di PRF-1.7 (almeno 40 scene × 2 modelli × 3 run, con mediana, minimo e p99); media nel repository ≤ 3 MB in tutto e ≤ 200 KB per immagine, 0 video in Git, ogni immagine con la fonte; striscia di screenshot nelle 5 lingue; README e messaggio di LNK-2.2 dicono quale versione minima serve sulle due PSP per il link.
+**Da noi oggi:** README di 220 righe, con PIC1 come immagine principale (`README.md:2`) e le foto del link (`README.md:114`; `docs/images/`, 1,2 MB): installazione, avanti veloce, video, trucchi, link, build; le tre foto del link pesano da 386.930 a 414.124 byte ciascuna, oltre i 200 KB. Nessuno screenshot, nessun limite noto, nessuna tabella di controlli o impostazioni, nessuna mappa dei file. I perf report contengono già modello, clock, renderer, gioco, revisione e percentili dei tempi di frame (`source/src/perf_report.h:30-62`; `perf_report.c:253-264`).
+**Come ci arriviamo:**
+- 250-300 righe. Ogni numero rimanda a un report salvato, legato a un build: il default è 'non misurato', e 'velocità piena' compare solo con una mediana di almeno 59,5 fps.
+- Ogni immagine indica se è una foto della PSP, una cattura dalla PSP, una cattura PPSSPP o un render host. Nessun'altra fonte e niente arte generata; immagini fino a 200 KB, 3 MB in tutto; i video sono asset di release.
+- Una striscia di screenshot in cinque lingue.
+- Tabelle di controlli e impostazioni legate agli id MSG e verificate da script.
+
+**Gate prima di iniziare:** nessuno; ENG-16.3 aspetta le baseline di PRF-1.5. ENG-16.4 aspetta ENG-9.2, che a sua volta aspetta F-053 (UI-8, nella 2.0): l'epica si chiude quindi nella 2.0 (ENG-16.1-16.3 nella 1.6), con le immagini del README fatte sulla UI nuova.
+**Rischi:**
+- I numeri misurati possono deludere chi si aspetta la velocità piena ovunque.
+- I media da hardware richiedono tempo di sessione.
+
+#### ENG-16.1 — Ristrutturazione del README secondo il piano · M, 1,5 gg · dipende da: ENG-1.2 · PSP: no
+- **Cosa:** Ristrutturare il README in quest'ordine: immagine d'apertura (la foto reale del link solo dopo righe pass), novità, installazione in tre passi con l'albero dei file, 'Dove finiscono i file' (salvataggi, stati, log, tracce, config), link (rimando alle sezioni di F-101), 'Cosa non fa ancora' con i limiti noti (GB/GBC, Wireless Adapter, link della stessa ROM), come segnalare un bug, crediti completi della genealogia e del BIOS aperto. Il README dice quale versione minima serve su entrambe le PSP per collegarsi.
+- **File:** `README.md`, `docs/images/` (solo se serve)
+- **Test:** check-docs (ENG-17.2) per i link; revisione manuale.
+- **Accettazione:** Al massimo 300 righe; nessuna affermazione sulla velocità senza report. I limiti noti coincidono con quelli delle note di rilascio.
+- **Licenza:** nessun codice.
+
+#### ENG-16.2 — Tabelle di controlli e impostazioni, indice della documentazione · S, 1 gg · dipende da: ENG-17.2 · PSP: no
+- **Cosa:** Tabelle nel README o in `docs/USAGE.md`, ciascuna riga con un commento nascosto che nomina l'id MSG della voce. `scripts/check-docs.sh` verifica che ogni id esista in `message.h`, così una voce rimossa rompe la tabella. Aggiungere un indice dei documenti.
+- **File:** `README.md` oppure `docs/USAGE.md` (nuovo), `scripts/check-docs.sh`
+- **Test:** `make check` (check-docs).
+- **Accettazione:** Togliere una voce di menu senza aggiornare la tabella fa fallire `make check`.
+
+#### ENG-16.3 — Tabella di compatibilità per gioco generata dai report · M, 1,5 gg · dipende da: PRF-1.4, PRF-1.5, ENG-1.6 · PSP: no
+- **Cosa:** `scripts/compat-table.py` legge i report grezzi che PRF-1 salva in `benchmarks/` (testo) e le righe link di HARDWARE-RESULTS, e genera la tabella tra due marcatori nel README: gioco, revisione, modello, renderer, fps mediani, p99 in ms, underrun, build, data e link al report; dove manca un report scrive 'non misurato'. I numeri vengono dalle funzioni di raggruppamento di `scripts/perf-table.py` (PRF-1.4), senza un secondo calcolo, e solo da report della 1.4.3 o successivi (principio 5). CMP-9.4 vi aggiunge le colonne gameplay, salvataggio e ricarica. check-docs verifica che il blocco sia aggiornato.
+- **File:** `scripts/compat-table.py` (nuovo), `README.md`
+- **Test:** `tests/test_compat_table.py`: report sintetici v6 e v7, soglia di 59,5, cella 'non misurato'.
+- **Accettazione:** Ogni cella numerica ha un report. Rigenerare senza report nuovi non cambia il README.
+
+#### ENG-16.4 — Media reali e striscia di screenshot · S, 1,5 gg · dipende da: ENG-16.1, ENG-9.2 · PSP: sì
+- **Cosa:** Tre clip brevi da una PSP reale (scambio tra versioni diverse, titolo pesante con il contatore FPS, menu che cambia lingua) come asset di release; foto e catture con l'etichetta della fonte; striscia di cinque lingue per due temi presa da ENG-9.2, o da PPSSPP con l'etichetta 'cattura PPSSPP'. Le tre foto del link in `docs/images` si ricodificano sotto 200 KB ciascuna.
+- **File:** `docs/images/` (WebP o PNG, al massimo 200 KB ciascuno), `README.md`
+- **Test:** check-docs controlla le dimensioni e che il totale resti sotto 3 MB.
+- **Accettazione:** Nessun video in git; ogni immagine ha una didascalia con la fonte e pesa al massimo 200 KB, e `docs/images/` resta entro 3 MB in tutto (check-docs); la striscia copre tutte e cinque le lingue.
+- **Licenza:** nessun codice.
+
+#### ENG-16.5 — Tabella per scena: mediana, minimo e p99 per modello · S, 0,5 gg · dipende da: ENG-16.3, PRF-1.7 · PSP: no
+- **Cosa:** `scripts/compat-table.py` (ENG-16.3) porta nel README, tra i propri marcatori, la tabella per scena che `scripts/perf-table.py` genera con PRF-1.7, con le stesse funzioni e senza un secondo calcolo: una riga per scena e modello con mediana, minimo, p99 in ms e frame oltre 1,5 volte il budget al minuto, con il link al report e lo sha256 dell'EBOOT; dove manca un report scrive «non misurato».
+- **File:** `scripts/compat-table.py`, `README.md`, `tests/test_compat_table.py`
+- **Test:** `tests/test_compat_table.py`: gruppi per scena sintetici con 3 run per cella, cella «non misurato», rigenerazione senza report nuovi che non cambia il README.
+- **Accettazione:** ogni cella numerica rimanda a un report committato; la tabella copre almeno 40 scene su due modelli; rigenerare non cambia nulla.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### ENG-17 — Documentazione di ingegneria: mappa dei test, architettura, decisioni, debug
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 | 4,25 gg | ENG-5.4 |
+
+**Copre:** F-147 mappa della copertura dei test, F-148 documenti di architettura, F-149 registro delle decisioni, F-150 guida al debug per sintomi
+**Obiettivo:** Ogni documento ha il suo controllo in `make check`: una riga della mappa dei test (`docs/TEST-MAP.md`) per ogni target di test (un test senza riga fa fallire), id ADR unici, ogni esperimento scartato con l'output di compare-benchmarks e il build, riferimenti file:simbolo verificati, ogni sintomo di `docs/TROUBLESHOOTING.md` con un comando che esiste nel repository.
+**Da noi oggi:** Abbiamo la mappa del codice in `CONTRIBUTING.md:44-54`, `docs/link-cable.md`, `docs/ROADMAP-1.4.0.md` e il grafo del codice. Mancano un documento di architettura o di threading per core, renderer, audio e menu, un registro delle decisioni o degli esperimenti scartati, una mappa di cosa ogni test prova e non prova e una guida per sintomi. check-tree verifica solo che alcuni documenti esistano (`scripts/check-tree.sh:37-45`), non i link.
+**Come ci arriviamo:**
+- Una riga della mappa dei test per ogni target di `make check`, controllata contro il Makefile: non può restare indietro.
+- Id ADR unici e verificati; gli esperimenti scartati portano l'output di compare-benchmarks.
+- I documenti citano file:simbolo verificati da uno script, non numeri di riga che invecchiano.
+- `docs/TROUBLESHOOTING.md` si costruisce intorno ai decoder dei log che le nostre build release scrivono.
+
+**Gate prima di iniziare:** nessuno.
+**Rischi:**
+- La documentazione invecchia: per questo ogni documento ha il suo controllo.
+
+#### ENG-17.1 — docs/TEST-MAP.md verificato · S, 0,75 gg · dipende da: ENG-5.4 · PSP: no
+- **Cosa:** Una riga per ogni voce di HOST_TESTS e di test-tools, per ogni `check-*.sh` e per i target facoltativi (check-cbmc, check-rom-link, check-ppsspp): cosa prova, cosa non prova, quale domanda resta all'hardware. `scripts/check-test-map.sh` fallisce se una voce del Makefile non ha riga o se una riga non ha voce. Le voci del Makefile vengono dal parser di ENG-5.4 (`scripts/makefile_tests.py`): nessun secondo parser.
+- **File:** `docs/TEST-MAP.md` (nuovo), `scripts/check-test-map.sh` (nuovo), `scripts/makefile_tests.py` (riuso, da ENG-5.4), `scripts/check-tree.sh`
+- **Test:** `make check`, più un caso negativo.
+- **Accettazione:** Un test aggiunto senza riga fa fallire `make check`.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+#### ENG-17.2 — docs/INTERNALS.md e controllo dei documenti · M, 1,5 gg · dipende da: — · PSP: no
+- **Cosa:** Un documento breve. Thread e priorità: callback 0x11, audio 0x08, stack ad-hoc 0x1C, controllo ad-hoc 0x1D, worker 0x1E, emulatore 32 che scende a 0x77 mentre un link in lockstep è connesso (`main.c:MAIN_LINK_LOCKSTEP_PRIORITY`, `main_link_set_priority`), più il watchdog e il worker dei salvataggi quando arrivano (ENG-15.2, SAV-5). Chi può chiamare sceNet*: solo il worker. Regole del callback power: non blocca mai, rilascia o riprende il canale audio e registra l'evento. Poi il ciclo di frame e update_gba, le cache del dynarec e l'SMC, i due renderer e la scelta una volta per frame, audio, link, storage e formati versionati. `scripts/check-docs.sh` verifica che i link puntino a file esistenti, che i riferimenti file:simbolo esistano (grep del simbolo) e che l'elenco dei documenti mantenuti venga da un solo indice.
+- **File:** `docs/INTERNALS.md` (nuovo se manca), `scripts/check-docs.sh` (nuovo), `scripts/check-tree.sh`, `CONTRIBUTING.md` (rimando)
+- **Test:** `make check`; casi negativi con un link rotto e un simbolo inesistente.
+- **Accettazione:** Un link rotto o un simbolo rinominato fa fallire `make check`.
+
+#### ENG-17.3 — docs/DESIGN-DECISIONS.md con gli esperimenti scartati · S, 1 gg · dipende da: ENG-17.2 · PSP: no
+- **Cosa:** ADR brevi con id unici: contesto, decisione, alternative, misura. Una sezione raccoglie gli esperimenti di prestazioni scartati, con l'output di compare-benchmarks e il build. check-docs verifica che gli id siano unici e che ogni ADR basato su una misura citi un file di risultati.
+- **File:** `docs/DESIGN-DECISIONS.md` (nuovo), `scripts/check-docs.sh`
+- **Test:** `make check`.
+- **Accettazione:** Un id duplicato viene rifiutato. Le prime voci registrano le decisioni di questo backlog: base tenuta, niente rebase, regole di licenza.
+
+#### ENG-17.4 — docs/TROUBLESHOOTING.md per sintomi · S, 1 gg · dipende da: ENG-17.2 · PSP: no
+- **Cosa:** Sintomi in ordine di frequenza (freeze, schermo bianco, scatti, link che non parte o cade, salvataggio perso, memoria esaurita, orologio sbagliato, crash all'avvio con i plugin), ciascuno col primo controllo da fare, il comando del decoder da usare (`decode_runtime_log.py`, `compare-benchmarks.py`, `state_hash_diff.py`) e cosa allegare.
+- **File:** `docs/TROUBLESHOOTING.md` (nuovo)
+- **Test:** check-docs: i comandi e i file citati esistono.
+- **Accettazione:** Ogni sintomo ha il primo controllo e un comando che esiste nel repo.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### ENG-18 — Raccolta delle segnalazioni e presenza nella comunità
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.4.4 | 1,5 gg | ENG-1.5 (solo ENG-18.2) |
+
+**Copre:** F-151 modulo di segnalazione dei bug, F-152 presenza nella comunità e triage delle richieste
+**Obiettivo:** Moduli di issue (bug, gioco, link) con versione, modello e passi obbligatori, che chiedono lo zip della cartella `logs/` e vietano ROM, BIOS e salvataggi altrui; template di PR con l'output di prove-regression e le righe hardware; ogni issue riceve una prima risposta entro 48 ore e ha in `docs/TRIAGE.md` una riga con lo stato e la data di quella risposta; ogni bug chiuso rimanda alla versione che lo corregge e alla PR con la prova di regressione o la riga hardware, e nessun bug si chiude senza una delle due.
+**Da noi oggi:** Sulla 1.4.3 non c'è la directory `.github` (`git ls-tree`). Nessun issue da utenti, nessuna Discussion, nessun thread. Le release scrivono `logs/session-N.gbrlog` (`source/src/runtime_log_psp.c:111-153`), ma niente chiede di allegarli, e la versione non si vede nell'interfaccia (GBA_RUSH_VERSION compare solo in `main.c:2191`).
+**Come ci arriviamo:**
+- Moduli di issue (bug, gioco, link) con campi obbligatori che chiedono la cartella `logs/`: le nostre release la scrivono. Mai ROM o BIOS.
+- Template di PR con l'output di prove-regression e le righe hardware.
+- Un documento di triage con lo stato di ogni voce e la versione che la chiude.
+
+**Gate prima di iniziare:** nessuno.
+**Rischi:**
+- Il volume di segnalazioni va gestito da soli.
+- Dati personali nei log: va verificato col decoder che non contengano nomi utente.
+
+#### ENG-18.1 — Moduli di issue e template di PR · S, 1 gg · dipende da: — · PSP: no
+- **Cosa:** In `.github/ISSUE_TEMPLATE/` i moduli `bug_report.yml`, `game_report.yml` e `link_report.yml`, più `config.yml` che disattiva gli issue vuoti e rimanda alle Discussions. I moduli chiedono: versione (il nome dello zip finché non c'è ENG-1.6, poi versione e build id dalla pagina Diagnostica), modello, firmware o CFW, plugin, gioco, regione e revisione, impostazioni cambiate, passi, lo zip della cartella `logs/`, un savestate proprio facoltativo e la traccia; avvisano esplicitamente di non allegare ROM, BIOS o salvataggi altrui. `.github/pull_request_template.md` chiede l'output di prove-regression, le righe di HARDWARE-RESULTS e la voce del CHANGELOG scritta come comportamento visibile.
+- **File:** `.github/ISSUE_TEMPLATE/bug_report.yml` (nuovo), `.github/ISSUE_TEMPLATE/game_report.yml` (nuovo), `.github/ISSUE_TEMPLATE/link_report.yml` (nuovo), `.github/ISSUE_TEMPLATE/config.yml` (nuovo), `.github/pull_request_template.md` (nuovo)
+- **Test:** validazione YAML in check-scripts (ENG-2.1).
+- **Accettazione:** Aprendo un issue compaiono i tre moduli. Nel modulo bug versione, modello e passi sono obbligatori.
+- **Licenza:** nessun codice.
+
+#### ENG-18.2 — Triage, Discussions e annunci · S, 0,5 gg · dipende da: ENG-18.1, ENG-1.5 · PSP: no
+- **Cosa:** `docs/TRIAGE.md`: prima i bug, poi le richieste ordinate per facilità e rischio, con stato, data della prima risposta e versione che le chiude. Attivare le Discussions (lo fa il manutentore). Un modello di annuncio per ogni stabile e prerelease.
+- **File:** `docs/TRIAGE.md` (nuovo), `docs/releases/ANNOUNCE-TEMPLATE.md` (nuovo)
+- **Test:** check-docs.
+- **Accettazione:** Ogni issue ha in `docs/TRIAGE.md` una riga con lo stato e la data della prima risposta, al massimo 48 ore dopo l'apertura; ogni bug chiuso ha la versione che lo corregge e la PR con la prova di regressione o la riga hardware.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### ENG-19 — Rapporto vivo con upstream libretro/gpsp
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.6 | 3,25 gg | — |
+
+**Copre:** F-153 rapporto con upstream
+**Obiettivo:** Registro port/skip con commit fissati e un motivo per ogni elemento; revisione mensile da script dei commit upstream che toccano il core, con la data in `docs/UPSTREAM.md`, mai oltre 45 giorni; ogni proposta a libretro/gpsp allega la verifica (per una correzione del core, un caso della core-rom che fallisce prima e passa dopo) e il suo esito.
+**Da noi oggi:** Discendiamo da uno snapshot di TempGBA senza upstream vivo (`NOTICE:16-20`). Non esiste un registro port/skip rispetto a libretro/gpsp, e né CONTRIBUTING né `scripts/package-release.sh` hanno un passo upstream. Il BIOS aperto in corso prende l'immagine da libretro/gpsp a commit fissato 5819380, identica a ReGBA 313ddd0 il cui sorgente sta in `source/bios/` (`source/bios/README.md`, nel ramo `features/builtin-open-bios`).
+**Come ci arriviamo:**
+- Un registro con commit fissati di libretro/gpsp e una decisione motivata per ogni elemento: BIOS, gba_over.h, HALT, mirror della ROM, rfu, gbp, mipsgen, serial_proto per Advance Wars.
+- Una revisione mensile, da script, dei commit upstream che toccano il core.
+- Le nostre correzioni si propongono dopo una verifica: tilt, che upstream non ha, ed eventualmente il controllo dei cicli del BX-dual e le correzioni di CMP-11.2-11.4.
+
+**Gate prima di iniziare:** nessuno.
+**Rischi:**
+- Una correzione proposta prima della nostra release la rende pubblica prima del nostro binario: si propone solo dopo la release che la contiene.
+- Dipende dal tempo di altre persone.
+- Le idee pensate per il dynarec di upstream possono rendere meno sul nostro.
+
+#### ENG-19.1 — docs/UPSTREAM.md e script di revisione · S, 1 gg · dipende da: — · PSP: no
+- **Cosa:** Un registro con commit upstream, area, decisione (port, skip, già portato), motivo e nostro commit. Primi elementi, nei file di libretro/gpsp a commit fissato 5819380: bios/ (F-012; l'immagine coincide con ReGBA 313ddd0, e CMP-1.3 la modifica per IntrWait, quindi il registro annota lo sha256 locale), gba_over.h (F-013), HALT (F-014), maschera del PC (F-015), stack in EWRAM (F-016), mirror della ROM (F-017), gbp.c (F-021), rfu.c (F-111), tests/mipsgen.c (ENG-5.2), serial_proto.c per Advance Wars. `scripts/upstream-review.sh`, dato un clone locale e l'ultimo commit revisionato (scritto nell'header del registro), elenca i commit nuovi di libretro/gpsp che toccano cpu*, gba_memory.c, video.cc, sound.c, serial*.c, rfu.c, bios/, gba_over.h e tests/.
+- **File:** `docs/UPSTREAM.md` (nuovo), `scripts/upstream-review.sh` (nuovo)
+- **Test:** `tests/test_upstream_review.py` con un repo git temporaneo; check-docs.
+- **Accettazione:** Ogni porting futuro da libretro cita una riga del registro con il suo commit.
+- **Licenza:** codice nuovo GPL-2.0-or-later; il codice di origine libretro entra solo da libretro/gpsp a commit fissato 5819380.
+
+#### ENG-19.2 — Proposte upstream verificate · S, 1,75 gg · dipende da: ENG-19.1 · PSP: no
+- **Cosa:** Preparare patch o issue per libretro/gpsp. Tilt: libretro/gpsp a commit fissato 5819380 non ha il sensore di inclinazione (nessuna occorrenza fuori da `libretro.h`), noi sì (`source/src/input.c`, `memory.c`). BX-dual: il nostro stub controlla il budget di cicli (`source/src/mips_stub.S:404-405`), quello di upstream no (libretro/gpsp a commit fissato 5819380, `mips/mips_stub.S:311-317`); se upstream lo faccia altrove nel codice emesso è sconosciuto, quindi si verifica prima di proporre. Advance Wars: in libretro/gpsp a commit fissato 5819380 `pkt` è `u32[2 + 128]` (`serial_proto.c:420`), quindi l'overflow richiede `wcnt` oltre 256 parole da 16 bit: prima di segnalarlo, un test host deve mostrare che un chiamante ci arriva. Si aggiungono alle proposte possibili le correzioni di CMP-11.2 (NZCV in MSR CPSR_c e Rn=PC a PC+12), CMP-11.3 (BX verso ARM con il bit 1 a 1) e CMP-11.4 (banco FIQ), perché gli stessi difetti sono in libretro/gpsp a commit fissato 5819380 (`cpu_threaded.c:2744`, `cpu.cc:1403-1433`, `mips/mips_emit.h:1067-1068`, `mips/mips_stub.S:477-490`). Decide il manutentore, e solo dopo la release che contiene le correzioni; ogni proposta allega il caso della core-rom che fallisce prima e passa dopo. Le PR le apre il manutentore.
+- **File:** `docs/UPSTREAM.md` (stato delle proposte), `tests/` (test di verifica dell'overflow AW, se fatto sull'host)
+- **Test:** test host di verifica dell'overflow AW, oppure la decisione 'non riprodotto'.
+- **Accettazione:** Ogni proposta ha la verifica allegata, e l'esito è registrato.
+- **Licenza:** codice nuovo GPL-2.0-or-later, compatibile con upstream.
+
+#### ENG-19.3 — Revisione mensile di upstream · S, 0,5 gg · dipende da: ENG-19.1 · PSP: no
+- **Cosa:** CONTRIBUTING prevede un giorno al mese su upstream-review con l'aggiornamento del registro.
+- **File:** `CONTRIBUTING.md`, `docs/UPSTREAM.md`
+- **Test:** check-docs avvisa se l'ultima revisione registrata ha più di 45 giorni.
+- **Accettazione:** La data dell'ultima revisione nel registro non supera i 45 giorni.
+
+## 8. Altre capacità e difetti nostri
+
+Il gruppo raccoglie quello che le altre sezioni avevano lasciato fuori: tre difetti nostri che il piano del 2026-11-01 elencava senza una storia (EEPROM e zip), la verifica funzionale del BIOS aperto, la vista del browser ricordata, e tre capacità scartate senza registrarlo da nessuna parte (uscita con una tenuta, pacchetti di arte, USB per il giocatore). EXT-1 va nella 1.4.4 perché tocca i salvataggi; EXT-2, EXT-3, EXT-4 ed EXT-5 vanno nella 1.5, tranne EXT-3.3 ed EXT-5.3, che aspettano il proprio gate; di EXT-6, EXT-7 ed EXT-8 nella 1.6 si scrive solo l'ADR (EXT-6.1, EXT-7.1, EXT-8.1), perché `docs/DESIGN-DECISIONS.md` (ENG-17.3) arriva con ENG-17 nella 1.6, e il resto aspetta il proprio gate. I numeri di riga si riferiscono alla 1.4.3 (ee57fba), tranne `source/bios/` e `tests/test_open_bios.py`, che esistono solo nel branch `features/builtin-open-bios`.
+
+### EXT-1 — EEPROM da 8 KiB riconosciuta anche dalle scritture
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.4.4 | 1,5 gg | SAV-2.6 (solo EXT-1.2) |
+
+**Copre:** nessuna capacità del catalogo; difetto nostro (NC-1, EEPROM da 8 KiB riconosciuta anche dalle scritture).
+**Obiettivo:** La promozione a 8 KiB scatta con le due lunghezze esatte del protocollo, 17 e 81 unità, e nessun'altra; il test host sul vero `memory.c` fa l'andata e ritorno scrittura-lettura, e il caso «scrittura prima della lettura» fallisce sulla 1.4.2 e passa; `eeprom8k_wfirst` dà PASS su due modelli con un `.sav` di 8192 byte.
+**Da noi oggi:** `eeprom_size` parte da 512 B (`source/src/memory.c:275`, `:3071`). Passa a 8 KiB solo con un DMA3 di 17 unità verso 0x0D, cioè con una richiesta di lettura (`:1350-1351`, `:1376-1377`). La lunghezza dell'indirizzo segue `eeprom_size` (`:1890-1893`, `:1918-1921`). Prendiamo un gioco con chip da 8 KiB che, su un salvataggio nuovo, scrive prima di leggere. Il suo DMA da 81 unità (2 di comando, 14 di indirizzo, 64 di dati, 1 di stop) viene letto come se l'indirizzo fosse a 6 bit. Il blocco finisce all'indirizzo sbagliato, e le unità rimaste lasciano desincronizzata la macchina a stati di `write_eeprom` (`:1873-1966`) anche per le transazioni seguenti. SAV-1.1 tiene la regola com'è (DMA da 17 unità).
+**Come ci arriviamo:**
+- La promozione a 8 KiB scatta con le due lunghezze esatte del protocollo, 17 e 81, invece che con la regola `(length & 0x1F) == 17` di libretro/gpsp a commit fissato 5819380 (`gba_memory.c:987-989`), che accetta anche lunghezze che il protocollo non usa (49, 113, ...).
+- Un test host sul vero `memory.c` programma i registri del DMA3 come farebbe un gioco e fa l'andata e ritorno scrittura-lettura.
+- La ROM di test dei salvataggi ha un caso "scrittura prima della lettura", provato su PSP-1000 nella sessione di SAV-2.7.
+
+**Gate prima di iniziare:** nessuno. Il difetto si legge nel codice (`memory.c:1376`, `:1890-1893`) e il test host lo riproduce in modo deterministico. Non si sa quali giochi commerciali scrivano prima di leggere.
+**Rischi:**
+- Un `.sav` già rovinato dal difetto non si ripara.
+- Il rilevamento resta legato al DMA3: un gioco che pilotasse la EEPROM con la CPU non verrebbe mai promosso (non si sa se ne esistano).
+- Lo stato di `memory.c` non si azzera dal test: i casi del test host girano in un ordine fisso.
+
+#### EXT-1.1 — Rilevamento sui DMA da 17 o 81 unità, con test host del protocollo · S, 1 gg · dipende da: — · PSP: no
+- **Cosa:** In `TRIGGER_DMA3` la condizione diventa `length == 17 || length == 81` (`memory.c:1376`). Si aggiornano anche i commenti che parlano solo delle 17 unità (`memory.c:177-178`, `:1350-1351`, `:1866-1867`). Nuovo `tests/test_eeprom.c`, compilato con `memory.c` e `tests/host_dma_stubs.c` con la stessa ricetta di `test_perf_dma_probe` (`Makefile:249-265`, gemella sanitize `:439-457`). Il test scrive i bit in EWRAM, programma il DMA3 con `write_memory16` e `write_memory32` (sorgente, destinazione 0x0D000000, conteggio, avvio immediato) e rilegge con una richiesta da 9 o 17 unità seguita da un DMA da 68 unità. I casi girano in un solo processo e in quest'ordine:
+  - (a) chip da 512 B: scrittura da 73 unità e lettura da 9 del blocco 0x2A; i dati tornano e il chip non viene promosso;
+  - (b) chip da 8 KiB, scrittura da 81 unità del blocco 0x2AB prima di qualunque lettura, poi lettura: i 64 bit tornano uguali. Sul codice di 1.4.2 questo caso fallisce, e il commento del test lo dice;
+  - (c) lettura e poi scrittura da 8 KiB (funziona già, regressione);
+  - (d) con `eeprom_size` rimesso a 512 B dal test (è globale, `memory.c:275`), un DMA da 49 unità verso 0x0D non promuove il chip.
+- **File:** `source/src/memory.c`, `tests/test_eeprom.c` (nuovo), `Makefile` (i 4 punti di `Makefile:9-13`), `CHANGELOG.md`
+- **Test:** `tests/test_eeprom.c` nelle regole normale e ASan/UBSan; `make check`.
+- **Accettazione:**
+  - Il caso (b) fallisce su 1.4.2 e passa con la correzione.
+  - (a), (c) e (d) passano prima e dopo.
+  - I DMA da 9, 17 e 73 unità si comportano come oggi, e quello da 49 unità del caso (d) non promuove il chip.
+  - Nel CHANGELOG c'è una voce Fixed: i giochi con EEPROM da 8 KiB che salvano prima di aver letto non perdono più il salvataggio.
+- **Licenza:** codice nuovo GPL-2.0-or-later; la regola sulle scritture viene da libretro/gpsp a commit fissato 5819380 (`gba_memory.c:987-989`, GPL-2.0-or-later), la condizione esatta è nostra.
+
+#### EXT-1.2 — Caso "scrittura prima della lettura" nella ROM di test dei salvataggi · S, 0,5 gg · dipende da: SAV-2.6, EXT-1.1 · PSP: sì
+- **Cosa:** Nuovo target `eeprom8k_wfirst` nella ROM dei salvataggi di SAV-2.6 (`tests/save-rom`), costruito con il suo include `tests/gba-rom.mk`. Con il `.sav` assente scrive una generazione prima di qualunque lettura e la rilegge. L'esito segue il protocollo di SAV-2.6: PASS o FAIL su schermo e firma nel blocco riservato della EEPROM. Il codice del protocollo non legge la EEPROM prima di quella scrittura: la firma si scrive dopo. Ai riavvii successivi si comporta come `eeprom8k`. Si esegue nella sessione hardware di SAV-2.7.
+- **File:** `tests/save-rom/source/main.c`, `tests/save-rom/Makefile`, `docs/HARDWARE-RESULTS.md`
+- **Test:** PSP-1000 e il secondo modello di SAV-2.7, con la build 1.4.2 (FAIL atteso) e con il candidato 1.4.4 (PASS); controllo della dimensione del `.sav`; firma letta con `tools/decode_test_rom.py`.
+- **Accettazione:** PASS sul candidato con entrambi i modelli; `.sav` di 8192 byte; esito registrato con lo sha256 di EBOOT.PBP.
+- **Licenza:** codice nuovo GPL-2.0-or-later, senza libgba come `tests/link-rom`; il `.gba` non entra in Git.
+
+### EXT-2 — Zip: il caricamento si ferma sugli errori e verifica il CRC32
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 | 2 gg | — |
+
+**Copre:** F-081 avviso di avvio fallito con il motivo (con SAV-1); difetto nostro NC-3 (zip che si ferma sugli errori e controlla il CRC32).
+**Obiettivo:** Nessuno zip, corrotto, troncato o scritto in streaming, blocca il caricamento: ogni ritorno di zlib porta a un esito, con il messaggio nelle 5 lingue; il CRC32 si calcola durante la decompressione e si confronta; uno zip valido da 16 MiB si carica al massimo il 10% più lento (3+3 run su PSP-1000).
+**Da noi oggi:** `load_file_zip` legge solo la prima voce, memorizzata o deflate (`source/src/zip.c:22-24`, `:121-168`). Il ciclo di inflate (`zip.c:148-168`) gestisce solo `Z_BUF_ERROR`, e da qui vengono quattro difetti:
+- con dati corrotti `inflate` continua a restituire `Z_DATA_ERROR`: il ciclo non finisce mai e la barra resta ferma;
+- a ogni ricarica `avail_in` torna a `ZIP_BUFFER_SIZE` (`:156-162`) anche se `FILE_READ` ha letto meno, quindi su un file troncato si decomprimono byte vecchi del buffer;
+- il CRC32 dell'intestazione (`:33`) non viene mai confrontato, e la voce memorizzata si legge senza controllare quanti byte arrivano (`:123`);
+- con il bit 3 dei flag (`:97-100`) il descrittore viene letto subito dopo l'intestazione, ma nel formato ZIP sta dopo i dati compressi: le dimensioni diventano spazzatura e i primi 12 byte del flusso vanno persi.
+
+`load_gamepak` accetta qualunque valore positivo (`memory.c:3644`, `:3655`), e l'unico messaggio d'errore è `MSG_ERR_LOAD_GAMEPACK` (`gui.c:3968-3971`).
+**Come ci arriviamo:**
+- Ogni ritorno di zlib porta a un esito preciso: nessuno zip, per quanto rovinato, può bloccare il caricamento.
+- Il CRC32 si calcola a blocchi sull'uscita mentre si decomprime, senza una seconda passata sulla ROM, e si confronta con quello dell'archivio. Lo stesso vale per le voci memorizzate.
+- Gli zip scritti in streaming (bit 3) prendono dimensione e CRC dal descrittore che segue i dati, invece di rompersi.
+- Un messaggio dedicato nelle 5 lingue dice che lo zip è danneggiato o incompleto.
+- La logica sta in un modulo puro. Le fixture le costruisce il test con la zlib, quindi in Git non entra nessun archivio binario.
+
+**Gate prima di iniziare:** nessuno: i difetti si leggono nel codice. Uscita: test host verdi e prova su PSP-1000 con uno zip valido, uno corrotto, uno troncato e uno in streaming.
+**Rischi:**
+- Il CRC allunga il caricamento. Si misura, con un tetto del 10% su uno zip da 16 MiB.
+- Uno zip con una dimensione sbagliata nell'intestazione ma dati validi, che oggi forse si carica, verrebbe rifiutato (non si sa se ne esistano).
+- UI-14.1 tocca lo stesso ciclo nella 1.6: deve usare la callback di avanzamento del modulo.
+- Le ROM zippate restano limitate al buffer in RAM (`zip.c:103-106`), come oggi.
+
+#### EXT-2.1 — Modulo puro zip_rom: inflate a blocchi con esiti distinti e CRC32 · M, 1,5 gg · dipende da: — · PSP: no
+- **Cosa:** `source/src/zip_rom.c/.h`, con tipi `stdint` e la zlib del tree, senza SDK PSP. `zip_rom_load(io, out, out_cap, &size)` riceve una struttura con `read(ctx, buf, len)`, che restituisce i byte letti o un valore negativo, e `progress(ctx, fatti, totale)`. Regole:
+  - firma e lunghezze dell'intestazione si controllano come oggi (`zip.c:72-100`), e le estensioni ammesse restano `.gba`, `.agb` e `.bin`;
+  - il bit 0 (archivio cifrato) e i metodi diversi da 0 e 8 danno `UNSUPPORTED`;
+  - una dimensione oltre `out_cap` dà `TOO_BIG`, come il −2 di oggi;
+  - a ogni ricarica `avail_in` vale i byte letti davvero;
+  - una lettura vuota prima di `Z_STREAM_END` dà `TRUNCATED`;
+  - `Z_DATA_ERROR`, `Z_STREAM_ERROR`, `Z_MEM_ERROR` e `Z_NEED_DICT` danno `CORRUPT`;
+  - un'uscita piena prima della fine del flusso dà `TOO_BIG`;
+  - alla fine dimensione e CRC32 devono coincidere con quelli dell'intestazione, altrimenti l'esito è `CORRUPT`;
+  - con il bit 3, dimensione e CRC vengono dal descrittore subito dopo il flusso (con o senza la firma 0x08074b50), letto dall'input non ancora consumato.
+
+  Il buffer di input da 128 KiB lo alloca il chiamante, come oggi.
+- **File:** `source/src/zip_rom.c` (nuovo), `source/src/zip_rom.h` (nuovo), `tests/test_zip_rom.c` (nuovo), `Makefile` (4 punti, con `-lz` e `-DZLIB_CONST` come `test_runtime_log`, `Makefile:191-200`), `source/Makefile` (`zip_rom.o` in `MAINOBJS`, `:40-41`)
+- **Test:** `tests/test_zip_rom.c` costruisce gli archivi in memoria con `deflate` grezzo (finestra negativa), normale e ASan/UBSan. Casi:
+  - voce deflate valida, con blocchi di input piccoli per forzare molte ricariche;
+  - voce memorizzata valida;
+  - un byte invertito nel flusso;
+  - troncamento al 10, al 50 e al 99%;
+  - dimensione nell'intestazione minore e maggiore di quella vera;
+  - bit 3, con e senza firma del descrittore;
+  - bit 0; metodo 12; dimensione oltre `out_cap`;
+  - errore di I/O a metà.
+
+  Un contatore nella `read` finta fa fallire il test se le chiamate superano il numero dei blocchi più due.
+- **Accettazione:**
+  - Ogni caso termina con l'esito atteso e un numero limitato di letture.
+  - I casi validi restituiscono gli stessi byte e la stessa dimensione di oggi.
+  - Nessun accesso fuori dai buffer sotto ASan.
+  - Nessun include dell'SDK PSP.
+- **Licenza:** codice nuovo GPL-2.0-or-later; la zlib è già nel tree (licenza zlib) e il formato viene dalla specifica APPNOTE di PKWARE.
+
+#### EXT-2.2 — zip.c sopra zip_rom e messaggio per lo zip danneggiato · S, 0,5 gg · dipende da: EXT-2.1 · PSP: sì
+- **Cosa:** `load_file_zip` diventa un adattatore: `read` chiama `FILE_READ`, e `progress` chiama `draw_progress` e `flip_screen` come oggi (`zip.c:164-165`). Restituisce la dimensione se va tutto bene, −2 per `TOO_BIG` come oggi e −3 per ogni altro esito. Il browser (`gui.c:3968-3971`, `:4195`) mostra il nuovo `MSG_ERR_ZIP_CORRUPT` per −3 e `MSG_ERR_LOAD_GAMEPACK` negli altri casi. L'avvio da riga di comando (`main.c:1697`, `:1716`, `:1732`) resta con il messaggio generico.
+- **File:** `source/src/zip.c`, `source/src/zip.h`, `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_{jpn,eng,chs,cht,ita}.h`, `CHANGELOG.md`
+- **Test:** `scripts/check-messages.sh`; `make check`. Su PSP-1000:
+  - uno zip valido da 16 MiB, con il tempo di caricamento misurato in 3 run prima e 3 dopo;
+  - uno zip con un byte invertito;
+  - uno zip troncato a metà;
+  - uno zip scritto in streaming (bit 3) da uno script Python di prova.
+- **Accettazione:**
+  - Lo zip valido si gioca come prima, e il tempo di caricamento cresce al massimo del 10%.
+  - Lo zip corrotto e quello troncato mostrano il messaggio e tornano al browser senza blocchi.
+  - Lo zip in streaming si carica.
+  - Nel CHANGELOG c'è una voce Fixed.
+- **Licenza:** `zip.c` conserva intestazione e autori (Exophase, SiberianSTAR, takka; GPL-2.0-or-later).
+
+### EXT-3 — BIOS aperto: vettori di riferimento delle SWI, SoundBias e MultiBoot
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 (EXT-3.3 dopo gate) | 3 gg | CMP-1.1, CMP-1.2, CMP-3.1 (EXT-3.3 anche CMP-1.3) |
+
+**Copre:** F-012 (parte) verifica funzionale del BIOS aperto: vettori di riferimento per le SWI, comportamento di SoundBias e di MultiBoot.
+**Obiettivo:** Le uscite di CpuSet, CpuFastSet, LZ77, Huffman, RL, BitUnPack, Sqrt, ArcTan, ArcTan2, BgAffineSet e ObjAffineSet si confrontano con valori di riferimento confermati da una seconda esecuzione indipendente; con `gba_bios.bin` il 100% dei casi passa su PSP-1000; ogni differenza del BIOS integrato è scritta in `source/bios/README.md` con SWI, ingresso, valore atteso e ottenuto; un FAIL su LZ77, RL, Huffman, CpuSet o CpuFastSet blocca la release finché non è corretto o motivato.
+**Da noi oggi:** Nel branch, `tests/test_open_bios.py:201-206` controlla solo lunghezza e sha256 dell'immagine, poi i percorsi di `load_bios`. `source/bios/README.md:69-82` elenca le differenze note: Div/DivArm, IntrWait, funzioni audio, MultiBoot, HardReset. La tabella delle SWI manda 0x19 SoundBias e 0x25 MultiBoot a `swi_Invalid` (`source/bios/source/core.s:146`, `:159`), che esegue solo `bx lr` (`core.s:167-175`). r0 resta il puntatore ai parametri, quindi MultiBoot restituisce già un valore diverso da 0, che il gioco legge come errore. Il nostro audio ignora SOUNDBIAS: `memory.c:2955` lo inizializza a 0x200 e `sound.c` non lo legge mai. CMP-1.2 confronta solo Div/DivArm (16 coppie in `cases_bios.c`) e CMP-1.5 prova 8 titoli.
+**Come ci arriviamo:**
+- Le uscite di CpuSet, CpuFastSet, LZ77 (WRAM e VRAM), Huffman, RL (WRAM e VRAM), BitUnPack, Sqrt, ArcTan, ArcTan2, BgAffineSet e ObjAffineSet si confrontano con valori di riferimento, eseguendo il BIOS sul nostro core, su PSP.
+- Gli ingressi sono nostri e deterministici; per le decompressioni il risultato atteso è il testo d'origine.
+- I valori aritmetici si registrano una volta con il BIOS ufficiale. Entrano solo se una seconda esecuzione indipendente, in mGBA o su un GBA reale, dà lo stesso numero. In Git vanno solo numeri, mai byte del BIOS.
+- Con `gba_bios.bin` ogni caso deve passare. Così un vettore sbagliato, o un difetto del nostro core, emerge prima di dare la colpa al BIOS aperto.
+- Ogni differenza del BIOS integrato finisce in `source/bios/README.md`, con SWI, ingresso, valore atteso e valore ottenuto.
+
+**Gate prima di iniziare:** nessuno per EXT-3.1 ed EXT-3.2, perché CMP-1 è in corso. EXT-3.3 parte solo se c'è un titolo che fallisce con il BIOS integrato, gira con `gba_bios.bin` e contiene gli opcode di SoundBias o di MultiBoot (`0xDF19`/`0xDF25` in Thumb, `0xEF19xxxx`/`0xEF25xxxx` in ARM). Senza un titolo così, SoundBias cambierebbe solo un registro che il nostro audio non legge.
+**Rischi:**
+- Registrare sul nostro core lega i vettori al core: per questo serve la seconda esecuzione indipendente.
+- Serve un dump del BIOS ufficiale dell'utente, che resta fuori dal repository. Senza mGBA né un GBA reale i valori aritmetici non entrano.
+- GetBiosChecksum è escluso, perché differisce per costruzione.
+- Una differenza in un caso limite di BitUnPack o Huffman che nessun gioco usa si documenta e basta.
+- La firma SRAM della core-rom ha spazio limitato: le decompressioni si confrontano in ROM e si salva solo il bit dell'esito.
+
+#### EXT-3.1 — Generatore dei vettori e casi di decompressione e copia nella core-rom · M, 1 gg · dipende da: CMP-3.1, CMP-1.1 · PSP: no
+- **Cosa:** `tools/make_bios_vectors.py`, con seme fisso, produce gli ingressi:
+  - testi d'origine: casuale, ripetitivo, sequenze lunghe, un solo byte, lunghezze non multiple di 4;
+  - codificatori nostri nei formati di GBATEK: LZ77 tipo 0x10 con letterali e riferimenti (per la variante VRAM solo flussi che rispettano i vincoli di GBATEK), RL tipo 0x30, Huffman a 4 e a 8 bit con l'albero costruito dallo script;
+  - BitUnPack da 1 a 4, da 2 a 8 e da 4 a 8 bit, con offset e con e senza il flag dello zero;
+  - CpuSet e CpuFastSet in copia e riempimento a 16 e 32 bit, con conteggi 0, 1, dispari e non multipli di 8.
+
+  Il risultato è `tests/core-rom/source/bios_vectors.h`, con ingressi e uscite attese come testo C. `cases_bios.c` lo crea CMP-1.2 o CMP-1.3, oppure questa storia se arriva prima: chiama ogni SWI da ARM e da Thumb, confronta in ROM e mette nella firma SRAM un bit per caso.
+- **File:** `tools/make_bios_vectors.py` (nuovo), `tests/test_make_bios_vectors.py` (nuovo), `tests/core-rom/source/bios_vectors.h` (nuovo, generato), `tests/core-rom/source/cases_bios.c`, `tools/decode_test_rom.py` (nomi dei casi nuovi), `Makefile`
+- **Test:**
+  - `tests/test_make_bios_vectors.py`: ogni codificatore fa andata e ritorno con un decodificatore di riferimento scritto da GBATEK, e la rigenerazione dà un file identico a quello committato.
+  - Build della core-rom con `-Werror`.
+  - Una corsa in PPSSPP con `gba_bios.bin` durante lo sviluppo.
+- **Accettazione:** il generatore è deterministico; `bios_vectors.h` resta sotto i 64 KiB; con il BIOS ufficiale tutti i casi passano.
+- **Licenza:** codice nuovo GPL-2.0-or-later, con i formati presi da GBATEK; nessun byte del BIOS ufficiale e nessun compressore di terzi.
+
+#### EXT-3.2 — Valori aritmetici registrati col BIOS ufficiale ed esecuzione sul BIOS integrato · M, 1 gg · dipende da: EXT-3.1, CMP-1.2 · PSP: sì
+- **Cosa:** Nuovi casi:
+  - Sqrt: 0, 1, 2, 3, quadrati e numeri vicini, 2^32−1;
+  - ArcTan: da −0x4000 a 0x4000 a passi fissi;
+  - ArcTan2: assi, quattro quadranti, (0,0);
+  - BgAffineSet e ObjAffineSet: angoli 0, 0x4000, 0x8000, 0xC000 e intermedi, con scale diverse.
+
+  Le uscite si registrano con lo stesso metodo che CMP-1.2 usa per Div/DivArm: il BIOS ufficiale gira nel nostro emulatore e `tools/decode_test_rom.py` (SAV-2.6) legge la firma SRAM, con la nuova opzione `--emit-vectors`. Poi si ripete con lo stesso `.gba` in mGBA o su un GBA reale: in `bios_vectors.h` entrano solo i valori uguali nelle due esecuzioni. Per Div/DivArm restano i casi di CMP-1.2. Infine la core-rom gira con il BIOS integrato su PPSSPP e su PSP-1000, nella sessione di CMP-1.5.
+- **File:** `tests/core-rom/source/cases_bios.c`, `tests/core-rom/source/bios_vectors.h`, `tools/make_bios_vectors.py`, `tools/decode_test_rom.py`, `tests/test_decode_test_rom.py`, `source/bios/README.md`, `docs/HARDWARE-RESULTS.md`
+- **Test:** `tests/test_decode_test_rom.py` trasforma una firma sintetica con uscite registrate nell'header atteso. Su PSP-1000 la core-rom gira con `gba_bios.bin` (tutto PASS) e senza (elenco delle differenze).
+- **Accettazione:**
+  - Con il BIOS ufficiale il 100% dei casi passa su PSP-1000.
+  - Con il BIOS integrato ogni FAIL è descritto in `source/bios/README.md`.
+  - Un FAIL su LZ77, RL, Huffman, CpuSet o CpuFastSet blocca la 1.5 finché non viene corretto o motivato lì.
+- **Licenza:** codice nuovo GPL-2.0-or-later; i valori sono uscite numeriche di funzioni su ingressi nostri, non codice del BIOS, e mGBA si usa solo come strumento esterno.
+
+#### EXT-3.3 — (condizionato) SoundBias aggiorna SOUNDBIAS e MultiBoot restituisce 1 · S, 1 gg · dipende da: EXT-3.2, CMP-1.3 · PSP: sì
+- **Cosa:** Due routine nuove nel sorgente del BIOS:
+  - SoundBias porta i bit 0-9 di SOUNDBIAS (0x04000088) a 0 se r0=0 e a 0x200 altrimenti, lasciando gli altri bit. Lo fa subito, senza rampa, perché il nostro audio ignora il livello;
+  - MultiBoot restituisce r0=1.
+
+  L'immagine segue il metodo di CMP-1.3: si patchano parole in `open_bios.h`, cioè le voci 0x19 e 0x25 della tabella più le routine, in un'area libera se c'è. Se non c'è, si ricompila da sorgente con una versione fissa di devkitARM e un nuovo sha256. I file toccati portano un avviso di modifica datato. Due casi core-rom: SOUNDBIAS riletto dopo SoundBias(0) e SoundBias(1), e il valore restituito da MultiBoot.
+- **File:** `source/bios/source/softwareinterrupts.c`, `source/bios/source/core.s`, `source/src/open_bios.h`, `source/bios/README.md`, `tests/test_open_bios.py`, `tests/core-rom/source/cases_bios.c`, `NOTICE`, `CHANGELOG.md`
+- **Test:**
+  - `test_open_bios.py`: c'è il nuovo sha256; togliendo tutte le patch, compresa quella di CMP-1.3, si torna a `661a9afb…`; nessun altro byte cambia.
+  - core-rom: i due casi passano con entrambi i BIOS.
+  - Il titolo del gate su PSP-1000.
+- **Accettazione:** il titolo del gate va oltre il punto in cui si fermava, oppure il motivo residuo è scritto in `source/bios/README.md`; nessun titolo di CMP-1.5 regredisce.
+- **Licenza:** Modifica a codice GPL-2.0-or-later (VBA, VBA-M, Normmatt), con avviso datato nei file toccati (GPL-2.0 §2a). I crediti restano invariati.
+
+### EXT-4 — Vista del browser ricordata
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 | 0,5 gg | — (bump di ConfigModel con UI-4.2) |
+
+**Copre:** F-049 (parte) vista del browser (lista o carosello) ricordata al riavvio.
+**Obiettivo:** Dopo un riavvio, e riaprendo il browser nella stessa sessione, il browser delle ROM si apre nell'ultima vista usata; le altre impostazioni migrano intatte, con test host sui file della versione precedente, v1 e senza intestazione; cambiare vista non scrive sul Memory Stick (la vista si salva con la config in `quit()`); con 500 ROM su PSP-1000 l'apertura in carosello non è più lenta che sulla 1.4.3 (3 aperture per build; sulla 1.4.3 apertura e SELECT).
+**Da noi oggi:** `carousel_mode` è una variabile locale di `load_file` e a ogni apertura del browser riparte da 0, cioè dalla lista (`source/src/gui.c:1881`). SELECT la alterna (`gui.c:2441-2458`; il suggerimento è in `message_eng.h:12`, `:15`). `ConfigModel` v2 non ha un campo per la vista (`config_model.h:24-56`), e la config globale si salva solo in `quit()` (`main.c:1789`). L'unico rimedio previsto sta in UI-13.2, che è dopo gate e dipende dal batch GE (UI-8.2).
+**Come ci arriviamo:**
+- La vista resta anche fra un'apertura e l'altra nella stessa sessione, non solo dopo un riavvio.
+- Vale solo per il browser delle ROM (`gui.c:3966`). I browser di savestate e trucchi (`gui.c:4074`, `:4359`) restano in lista come oggi.
+- Basta un campo, che UI-13.2 estenderà con la vista Arte senza una seconda migrazione.
+- Nessuna scrittura in più sul Memory Stick: la vista si salva insieme alle altre impostazioni.
+
+**Gate prima di iniziare:** nessuno.
+**Rischi:**
+- Tornando a 1.4.x, la config della nuova versione non si legge. È il rischio comune a ogni bump, già annunciato da UI-4.2.
+- Se il carosello è lento con molte ROM su PSP-1000, ricordarlo rende la lentezza permanente: si misura il tempo di apertura con 500 ROM.
+
+#### EXT-4.1 — Campo browser_view nel ConfigModel e vista ripristinata · S, 0,5 gg · dipende da: — · PSP: sì
+- **Cosa:** Nuovo campo `browser_view` (0 lista, 1 carosello; limite 2, default 0), nel bump di ConfigModel della release, lo stesso di UI-4.2 nella 1.5, con la procedura di `config_model.c:12-24`. In `gui.c` un globale `option_browser_view` viene mappato in `capture_global_config` e `apply_global_config` (`gui.c:6203`, `:6242`). `load_file` parte da quel valore quando `default_dir_name` è `dir_roms` e lo aggiorna quando SELECT cambia vista; negli altri casi parte dalla lista. Nessuna stringa nuova.
+- **File:** `source/src/config_model.c`, `source/src/config_model.h`, `tests/test_config_model.c`, `source/src/gui.c`, `docs/HARDWARE-RESULTS.md`, `CHANGELOG.md`
+- **Test:**
+  - `tests/test_config_model.c`: un file della versione precedente migra con `browser_view = 0`; il valore 1 si rilegge identico; 7 torna a 0; i file v1 e quelli senza intestazione si leggono ancora.
+  - `make test` e `make test-sanitize`.
+  - PSP-1000: carosello, uscita dal menu e nuova apertura del browser, poi riavvio: il browser riparte in carosello in entrambi i casi; savestate e trucchi si aprono in lista.
+  - PSP-1000: con 500 ROM, 3 aperture in carosello sulla 1.4.3 (apertura e SELECT) e 3 sul candidato, con i tempi in `docs/HARDWARE-RESULTS.md`; cambiando vista nessun file viene scritto sul Memory Stick.
+- **Accettazione:** dopo un riavvio, e riaprendo il browser nella stessa sessione, il browser delle ROM si apre nell'ultima vista usata; le altre impostazioni migrano intatte; cambiare vista non scrive sul Memory Stick; con 500 ROM l'apertura in carosello non è più lenta che sulla 1.4.3; il CHANGELOG ha la sua voce.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### EXT-5 — EEPROM sulle cartucce oltre 16 MiB
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| consigliato | 1.5 (EXT-5.3 dopo gate) | 3 gg | EXT-1.1, SAV-2.6 |
+
+**Copre:** nessuna capacità del catalogo; difetto nostro (NC-2, EEPROM sulle cartucce oltre 16 MiB).
+**Obiettivo:** Su una ROM paginata da 32 MiB salvataggio e ROM restano entrambi leggibili: l'ultima pagina torna corretta dopo un comando EEPROM (test host che fallisce prima della correzione) e la variante da 32 MiB della ROM di test salva e rilegge su PSP-1000 e su un 2000/3000; con ROM fino a 16 MiB non cambia nulla.
+**Da noi oggi:** La premessa del piano, cioè che una cartuccia da 32 MiB con EEPROM non legga mai il salvataggio, non regge sul percorso DMA. `read16_eeprom` restituisce la ROM sotto `gamepak_size` (`memory.c:807-813`, con `READ_GAMEPAK` a `:768-783`). Però `write_eeprom` riduce `gamepak_size` a 0x1FFFF00 al primo comando (`:1873-1880`), e ogni transazione EEPROM comincia con un comando: da lì in poi i DMA da 0x0DFFFF00 (`dma_read16`, `:435`) arrivano alla EEPROM. I difetti veri sono due:
+- **pagina 0x3FF.** Ridurre `gamepak_size` rompe la paginazione. `load_gamepak_page` rifiuta la pagina 0x3FF, perché `0x3FF >= gamepak_size >> 15`, e restituisce lo slot 0 del buffer (`:2774-2775`). Se l'ultima pagina da 32 KiB non è residente, si legge con i dati di un'altra pagina. Succede quando la ROM non entra nel buffer: `init_gamepak_buffer` dimezza i 32 MiB finché l'allocazione riesce (`:2878-2893`), quindi su PSP-1000.
+- **LDRH su 0x0D.** Nel dynarec le letture a 16 bit da 0x0D vanno sempre a `read_eeprom` (`mips_stub.S:744-757`, tabelle `:1783`, `:1800`, `:2034`, `:2051`), mentre quelle a 8 e 32 bit vanno alla ROM (`:1410`, `:2513`). Oltre 16 MiB, una LDRH da 0x0D000000-0x0DFFFEFF restituisce bit di EEPROM invece della ROM.
+
+Non si sa quali titoli siano colpiti.
+**Come ci arriviamo:**
+- La finestra EEPROM, cioè gli ultimi 256 byte della regione 0x0D, si decide in `read16_eeprom` per i soli salvataggi EEPROM, senza toccare `gamepak_size`, così salvataggio e ROM restano entrambi leggibili.
+- Prima di toccare il codice c'è un test host sul vero `memory.c` con una ROM paginata da 32 MiB.
+- La variante da 32 MiB della ROM di test gira su PSP-1000, dove la ROM è paginata, e su un 2000/3000, dove non lo è.
+- Il percorso LDRH del dynarec si cambia solo se la ROM di test mostra la differenza.
+
+**Gate prima di iniziare:** nessuno per EXT-5.1: il difetto della pagina 0x3FF è deterministico e il test lo mostra prima della correzione. EXT-5.2 è una misura. EXT-5.3 parte solo se EXT-5.2 mostra su PSP che una LDRH da 0x0D000000 restituisce un valore diverso dalla stessa lettura da 0x09000000, e se si conosce un titolo oltre 16 MiB con EEPROM che legge la ROM da 0x0D.
+**Rischi:**
+- Non si sa quali giochi da 32 MiB usino la EEPROM, quindi il beneficio pratico potrebbe essere nullo.
+- Sull'hardware non si sa cosa restituiscano su queste cartucce le letture da 0x09FFFF00-0x09FFFFFF. Oggi danno la ROM prima del primo comando e open bus dopo; con la correzione daranno sempre la ROM.
+- PRF-5.4 riscrive `load_gamepak_page` e deve conservare i casi di EXT-5.1.
+- EXT-5.3 tocca `mips_stub.S`, che va trattato con la cura degli altri stub del dynarec.
+
+#### EXT-5.1 — Finestra EEPROM decisa in read16_eeprom, con test host su una ROM paginata da 32 MiB · S, 1 gg · dipende da: EXT-1.1 · PSP: no
+- **Cosa:** Si toglie la riduzione di `gamepak_size` da `write_eeprom` (`memory.c:1873-1880`). `read16_eeprom` va alla EEPROM se il salvataggio è EEPROM e `(address & 0x1FFFF00) == 0x1FFFF00`, altrimenti fa `READ_GAMEPAK` come oggi. Il commento sui 32 MiB meno 256 byte si sposta lì. Con ROM fino a 16 MiB non cambia nulla, perché tutta la regione 0x0D cade oltre `gamepak_size`. Nuovi casi in `tests/test_eeprom.c`, con `gamepak_size = gamepak_file_size = 0x2000000`, un buffer di 2 pagine e il pattern di `host_dma_stubs.c` (ogni byte vale (indice della pagina + 1) & 0xFF, `:105-115`, quindi la pagina 0x3FF vale 0x00), da eseguire in quest'ordine:
+  - (e) prima di qualunque comando, con salvataggio non EEPROM: 0x0DFFFF00 restituisce la ROM. Questo caso gira per primo nel processo, prima di quelli di EXT-1.1, perché `backup_type` non si azzera dal test;
+  - (f) dopo una richiesta da 17 unità, il DMA da 68 unità da 0x0DFFFF00 restituisce il blocco scritto;
+  - (g) dopo un comando EEPROM, con la pagina 0 caricata nello slot 0 del buffer e la pagina 0x3FF sfrattata, `read_memory8(0x09FF8010)` restituisce 0x00, il pattern della pagina 0x3FF, e non 0x01 dello slot 0. Su 1.4.2 questo caso fallisce;
+  - (h) con una ROM da 16 MiB tutta la regione 0x0D resta EEPROM.
+- **File:** `source/src/memory.c`, `tests/test_eeprom.c`, `CHANGELOG.md`
+- **Test:** `make test` e `make test-sanitize`. Prima della correzione il caso (g) si esegue sul codice di oggi per confermare il difetto.
+- **Accettazione:** (g) fallisce prima e passa dopo; (e), (f) e (h) passano prima e dopo; nessun cambiamento con ROM fino a 16 MiB; nessuna allocazione né I/O aggiunti in `memory.c`.
+- **Licenza:** codice nuovo GPL-2.0-or-later; la finestra degli ultimi 256 byte è documentata da GBATEK e già citata nel commento di `write_eeprom`.
+
+#### EXT-5.2 — Variante da 32 MiB della ROM di test dei salvataggi · S, 1 gg · dipende da: SAV-2.6, EXT-5.1 · PSP: sì
+- **Cosa:** Nella ROM dei salvataggi di SAV-2.6 (`tests/save-rom`) arrivano due target, costruiti con il suo include `tests/gba-rom.mk` e riempiti fino a 32 MiB con un pattern noto per pagina, che non entrano in Git: `eeprom8k_32m` (tag EEPROM_V, EEPROM a 0x0DFFFF00) e `sram_32m` (tag SRAM_V). Ogni controllo è un caso del protocollo d'esito di SAV-2.6, con PASS o FAIL su schermo e un bit nella firma. In `eeprom8k_32m` la firma si scrive solo dopo il primo controllo, che deve precedere qualunque comando EEPROM. Controlli:
+  - prima di qualunque comando, il bit di pronto letto da 0x0DFFFF00;
+  - salvataggio e rilettura di una generazione;
+  - l'ultima pagina della ROM letta da 0x09FF8000 dopo aver toccato più di 16 MiB di altre pagine, per forzare lo sfratto su PSP-1000;
+  - una LDRH della CPU da 0x0D000000 confrontata con la stessa lettura da 0x09000000;
+  - con `sram_32m`, 0x0DFFFF00 deve restituire la ROM.
+- **File:** `tests/save-rom/source/main.c`, `tests/save-rom/Makefile`, `docs/HARDWARE-RESULTS.md`
+- **Test:** PSP-1000 (ROM paginata) e PSP-2000 o 3000, con 1.4.2 e con il candidato; firme lette con `tools/decode_test_rom.py`.
+- **Accettazione:** sul candidato salvataggio, rilettura e ultima pagina sono corretti su entrambi i modelli. L'esito della LDRH è registrato con lo sha256 di EBOOT.PBP e decide il gate di EXT-5.3.
+- **Licenza:** codice nuovo GPL-2.0-or-later; il `.gba` e il riempimento si generano al build e non entrano in Git.
+
+#### EXT-5.3 — (condizionato) LDRH del dynarec da 0x0D sotto 0x0DFFFF00 legge la ROM · S, 1 gg · dipende da: EXT-5.2 · PSP: sì
+- **Cosa:** In `eeprom_load_core` (`mips_stub.S:744-757`) la chiamata a `read_eeprom` diventa una chiamata a `read16_eeprom` con l'indirizzo in `$4`. `read16_eeprom` diventa non statica, con il prototipo in `memory.h`. Così dynarec e DMA seguono la stessa regola: ROM sotto la finestra, EEPROM nella finestra, tutta EEPROM fino a 16 MiB. I cicli di attesa restano quelli di oggi (`addiu $17, $17, -9`). Le varianti non allineate (`mips_stub.S:1800`, `:2051`) mantengono la rotazione di oggi.
+- **File:** `source/src/mips_stub.S`, `source/src/memory.c`, `source/src/memory.h`, `CHANGELOG.md`
+- **Test:** il caso LDRH di EXT-5.2 su PSP-1000; due titoli EEPROM fino a 16 MiB salvano e ricaricano come prima; il titolo del gate.
+- **Accettazione:** LDRH da 0x0D000000 e da 0x09000000 coincidono sulla variante da 32 MiB; nessuna regressione sui salvataggi EEPROM fino a 16 MiB; nessuna affermazione di velocità.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### EXT-6 — Uscita dal gioco con una tenuta
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| sconsigliato (dietro gate) | dopo gate (EXT-6.1 in 1.6) | 1,25 gg | ENG-17.3, UI-4.3 |
+
+**Copre:** F-051 (parte) uscita dal gioco tenendo premuti START+SELECT.
+**Obiettivo:** Nessuna tenuta chiude il gioco per sbaglio: il rifiuto è un ADR con la condizione per riaprirlo; se il gate scatta, «Torna alla lista» è un'azione assegnabile senza accordo di default, con tenuta di 2 s, mai su START+SELECT da solo né su A+B+START+SELECT, e passa dal percorso del menu che scrive la batteria.
+**Da noi oggi:** Si esce dal menu (categoria Esci, `message.h:443`, testo in `message_eng.h:63`) oppure con HOME. UI-4.4 decide di proposito che la tenuta di riserva apre solo il menu e non chiude mai il gioco, e la tenuta che chiude è tra le scelte escluse dal piano del 2026-11-01. Nessuna voce di `docs/DESIGN-DECISIONS.md` (ENG-17.3) registra però il rifiuto.
+**Come ci arriviamo:**
+- Il rifiuto diventa un ADR, con contesto, alternative e la condizione per riaprirlo.
+- Se il gate scatta, si aggiunge un'azione "Torna alla lista" assegnabile nella pagina Scorciatoie:
+  - non ha nessun accordo di default e scatta con una tenuta di 2 s;
+  - non si può assegnare a START+SELECT da solo, che resta la tenuta del menu;
+  - passa sempre dal percorso del menu, che scrive la batteria prima di cambiare gioco.
+
+**Gate prima di iniziare:** nessuno per EXT-6.1. EXT-6.2 parte solo con almeno 3 richieste distinte di utenti (issue) dopo il rilascio della 1.6, che porta la pagina Scorciatoie (UI-4.3). Il verdetto è negativo perché la tenuta che chiude espone a uscite involontarie proprio sulla combinazione che apre il menu, mentre dal menu si esce con due pressioni.
+**Rischi:**
+- Un'uscita involontaria perde i progressi che il gioco non ha ancora salvato.
+- A+B+START+SELECT è il reset dei giochi e non deve mai diventare un'uscita.
+- Una maschera di scorciatoia in più cambia il ConfigModel.
+
+#### EXT-6.1 — ADR: nessuna tenuta chiude il gioco · S, 0,25 gg · dipende da: ENG-17.3 · PSP: no
+- **Cosa:** Voce in `docs/DESIGN-DECISIONS.md` con:
+  - il contesto: la capacità F-051, cioè l'uscita dal gioco con una tenuta lunga di START+SELECT;
+  - la decisione: la tenuta apre solo il menu (UI-4.4);
+  - le alternative: una tenuta che chiude di default, oppure un'azione opzionale;
+  - i motivi: uscite involontarie sulla combinazione del menu, progressi non salvati, uscita dal menu già a due pressioni;
+  - la condizione per riaprirla: il gate di EXT-6.2.
+
+  L'ADR cita file e simboli, non numeri di riga (regola di ENG-17.2). UI-4.4 esce nella 1.5, prima dell'ADR: la citazione si aggiunge nella 1.6 con questa storia, in un commento accanto alla tenuta del menu in `source/src/input.c`.
+- **File:** `docs/DESIGN-DECISIONS.md`, `source/src/input.c` (solo il commento)
+- **Test:** `make check`, con il controllo di unicità degli id di ENG-17.3.
+- **Accettazione:** l'ADR c'è, con un id unico, e UI-4.4 lo cita.
+
+#### EXT-6.2 — (condizionato) Azione "Torna alla lista" assegnabile, senza accordo di default · S, 1 gg · dipende da: EXT-6.1, UI-4.3 · PSP: sì
+- **Cosa:** Nuova azione nella tabella di `input_chord` (UI-4.1), di tipo tenuta da 2000 ms e senza accordo di default; la validazione rifiuta START+SELECT da solo. Quando scatta apre il browser delle ROM come la voce del menu che carica un altro gioco (`menu_load_file`, `gui.c:3952`), che scrive la batteria prima di cambiare ROM. Durante una sessione link l'azione è ignorata, come i savestate. Servono anche una riga nella pagina Scorciatoie (UI-4.3), il nome dell'azione nelle 5 lingue e una maschera in più nel ConfigModel, nel bump di ConfigModel della release.
+- **File:** `source/src/input_chord.c`, `source/src/input_chord.h`, `tests/test_input_chord.c`, `source/src/input.c`, `source/src/gui.c`, `source/src/config_model.c`, `source/src/config_model.h`, `tests/test_config_model.c`, `source/src/message.h`, `source/src/text/message_{jpn,eng,chs,cht,ita}.h`, `README.md`, `CHANGELOG.md`
+- **Test:**
+  - `tests/test_input_chord.c`: con la tabella di default l'azione non scatta; non scatta prima di 2000 ms; START+SELECT viene rifiutato; non scatta mai con A+B+START+SELECT; durante il link è ignorata.
+  - `tests/test_config_model.c`: la migrazione lascia vuota la nuova maschera.
+  - `scripts/check-messages.sh`.
+  - PSP-1000: azione assegnata a L+R+SELECT; la batteria viene scritta e si apre il browser.
+- **Accettazione:** con la config di default nessuna combinazione fa uscire dal gioco; con l'azione assegnata il `.sav` è aggiornato prima che compaia il browser; i testi ci sono nelle 5 lingue.
+- **Licenza:** codice nuovo GPL-2.0-or-later.
+
+### EXT-7 — Pacchetti di arte pronti
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| sconsigliato (dietro gate) | dopo gate (EXT-7.1 in 1.6) | 1,75 gg | ENG-17.3, UI-13.1 |
+
+**Copre:** F-063 (parte) pacchetti di arte pronti in un repository separato.
+**Obiettivo:** Nessuna opera derivata distribuita da noi: il rifiuto dei pacchetti è un ADR con il motivo di copyright, che indica come alternativa la composizione locale degli sfondi di UI-15.3; se il gate scatta, solo immagini originali, non legate a nessun gioco, con licenza CC-BY-4.0 o CC0 e provenienza verificata da uno script (0 file senza riga in `PROVENANCE.csv`), in un repository separato.
+**Da noi oggi:** Nessun pacchetto. UI-13.1 legge per ogni ROM uno sfondo 480x272 messo dall'utente, UI-15.3 compone gli sfondi sul PC partendo dalle copertine dell'utente, e UI-15 stabilisce che non ospitiamo né distribuiamo arte. Gli sfondi generati sono tra le scelte escluse dal piano del 2026-11-01, ma nessun ADR lo registra.
+**Come ci arriviamo:**
+- L'utente ottiene uno sfondo per ogni ROM che possiede con la composizione locale di UI-15.3, senza che noi distribuiamo opere derivate.
+- Il rifiuto diventa un ADR con il motivo di copyright.
+- Se il gate scatta, si pubblicano solo immagini originali, non legate a nessun gioco, con licenza chiara e provenienza verificata da uno script, in un repository separato. Niente box art, loghi, screenshot o immagini generate.
+
+**Gate prima di iniziare:** nessuno per EXT-7.1. EXT-7.2 parte solo quando ci sono almeno 20 immagini originali offerte con licenza CC-BY-4.0 o CC0, ognuna con l'origine scritta dall'autore, e UI-13.1 è stata rilasciata. Il verdetto è negativo perché un pacchetto per gioco deriva per forza da arte protetta, e uno generico vale poco accanto alla composizione locale.
+**Rischi:**
+- Anche un'immagine "originale" può ricalcare un'opera protetta: per questo ogni file ha la sua provenienza.
+- Un repository di immagini va mantenuto.
+- Un'immagine generica non dà l'effetto di uno sfondo per gioco.
+
+#### EXT-7.1 — ADR: niente pacchetti di arte derivata, composizione locale · S, 0,25 gg · dipende da: ENG-17.3 · PSP: no
+- **Cosa:** Voce in `docs/DESIGN-DECISIONS.md` con contesto (pacchetti di sfondi ricavati dalla box art), decisione, alternative, motivo di copyright e condizione per riaprirla. Fra le alternative c'è la composizione locale di UI-15.3, che è dopo gate: la frase nella sezione box art del README che rimanda a quello strumento la aggiunge UI-15.3 quando esce, non questa storia.
+- **File:** `docs/DESIGN-DECISIONS.md`
+- **Test:** `make check`.
+- **Accettazione:** l'ADR ha un id unico, scrive il motivo di copyright e cita la composizione locale di UI-15.3 come alternativa.
+
+#### EXT-7.2 — (condizionato) Repository di sfondi originali con licenza e provenienza · M, 1,5 gg · dipende da: EXT-7.1, UI-13.1 · PSP: sì
+- **Cosa:** Un repository separato, `GBA-Rush-art`, perché le immagini sono binari e restano fuori dal nostro Git. Contiene PNG 480x272, `LICENSE`, `PROVENANCE.csv` (file, autore, strumento, licenza, fonti) e `scripts/check_provenance.py`, che rifiuta i file senza riga o con una licenza diversa da CC-BY-4.0 o CC0. Nel nostro repository, quando manca lo sfondo della ROM il codice di UI-13.1 prova `_default.png` nella stessa cartella, così uno sfondo del pacchetto fa da ripiego.
+- **File:** nel repository dell'arte `README.md`, `LICENSE`, `PROVENANCE.csv`, `scripts/check_provenance.py`, `tests/test_check_provenance.py`; nel nostro `source/src/boxart.c`, `README.md`, `CHANGELOG.md`
+- **Test:** unittest dello script di provenienza; su PSP-1000 il ripiego compare quando manca lo sfondo del gioco, con l'heap entro il gate di UI-13.1.
+- **Accettazione:** ogni immagine ha licenza e provenienza verificate; nessuna immagine è legata a un gioco; quando lo sfondo del gioco esiste il ripiego non cambia nulla.
+- **Licenza:** codice nuovo GPL-2.0-or-later; immagini CC-BY-4.0 o CC0, con l'attribuzione nel README del repository dell'arte.
+
+### EXT-8 — Modalità USB per il giocatore
+
+| Verdetto | Milestone | Stima totale | Dipende da |
+|---|---|---|---|
+| sconsigliato (dietro gate) | dopo gate (EXT-8.1 in 1.6) | 3,75 gg | ENG-17.3 |
+
+**Copre:** nessuna capacità del catalogo; voce nostra NC-4 (modalità USB per il giocatore).
+**Obiettivo:** Il rifiuto è un ADR (l'XMB offre già la connessione USB e rimonta da sé il Memory Stick); se il gate scatta, la voce «Connessione USB» scrive la batteria, chiude ogni file, si rifiuta durante il link e riapre tutto come dopo una sospensione, dopo 20 cicli per modello senza errori di file system nello spike.
+**Da noi oggi:** In `source/src` non c'è nessuna chiamata sceUsb*. Il build collega già `-lpspkubridge` (`source/Makefile:101`) e l'SDK incluso ha `pspusbdevice.h`; il modulo gira in modalità utente (`main.c:45`). Il percorso di sospensione scrive lo stato AUTO e chiude l'handle della ROM (`psp_sleep_loop`, `main.c:1893-1922`), poi lo riapre con nuovi tentativi (`main_power_reopen_gamepak`, `:1866-1889`): è lo schema da riusare; la batteria in sospeso, che oggi una sospensione con il POWER non scrive (`memory.c:179-182`), la scrive SAV-7.2. ENG-11.1 prevede l'USB solo nel profilo diagnostico. La versione per il giocatore è tra le scelte escluse dal piano del 2026-11-01, perché uscire all'XMB è più sicuro che riprendere su una FAT in cache.
+**Come ci arriviamo:**
+- Il rifiuto diventa un ADR: l'XMB offre già la connessione USB e rimonta da sé il Memory Stick.
+- Se il gate scatta, si fa prima uno spike che dimostri il rimontaggio senza danni alla FAT. Poi una voce di menu che scrive la batteria, chiude ogni file, si rifiuta durante il link e riapre tutto come dopo una sospensione.
+
+**Gate prima di iniziare:** nessuno per EXT-8.1. EXT-8.2 parte solo con almeno 3 richieste distinte di utenti dopo la 1.6. EXT-8.3 parte solo se EXT-8.2 completa 20 cicli per modello senza errori di file system. Il verdetto è negativo perché il guadagno è evitare un riavvio dall'XMB, mentre il rischio è corrompere la FAT, cioè i salvataggi.
+**Rischi:**
+- La cache FAT della PSP può non essere coerente con le modifiche fatte dal PC; non si conosce un metodo di rimontaggio affidabile.
+- Dipende da kubridge della CFW; il comportamento su HEN e LME non si conosce.
+- La PSP Go ha lo storage interno ef0.
+- Una sospensione durante l'USB deve spegnerlo prima, senza bloccare il callback di alimentazione.
+
+#### EXT-8.1 — ADR: niente USB per il giocatore, si esce all'XMB · S, 0,25 gg · dipende da: ENG-17.3 · PSP: no
+- **Cosa:** Voce in `docs/DESIGN-DECISIONS.md` con contesto (l'USB solo nel profilo diagnostico di ENG-11.1), decisione, alternative, motivo (FAT in cache, kubridge, ef0) e condizione per riaprirla.
+- **File:** `docs/DESIGN-DECISIONS.md`
+- **Test:** `make check`.
+- **Accettazione:** l'ADR ha un id unico e ENG-11.1 lo cita.
+
+#### EXT-8.2 — (condizionato) Spike: USB e rimontaggio senza riavvio, solo build diagnostica · M, 1,5 gg · dipende da: EXT-8.1 · PSP: sì
+- **Cosa:** In una build diagnostica, un ciclo in quattro passi:
+  - la PSP scrive la batteria con `update_backup_immediately`, chiude l'handle della ROM con lo stesso codice di `psp_sleep_loop` (`main.c:1908-1913`) e attiva l'USB: moduli usbstor caricati con `kuKernelLoadModule`, poi `sceUsbStart` e `sceUsbActivate`;
+  - dal PC si copia una ROM e si modifica un `.sav`;
+  - la PSP chiama `sceUsbDeactivate` e `sceUsbStop` e riapre i file;
+  - si verifica che il file nuovo si veda, che il `.sav` modificato si legga com'è sul PC e che un salvataggio scritto dopo lasci la FAT pulita (chkdsk sul PC).
+
+  20 cicli su PSP-1000 e su PSP Go (ef0), con ARK-4 e con PRO-C o LME. Se la coerenza non regge e non si trova un rimontaggio affidabile, ci si ferma e l'ADR riporta il risultato. Il caricamento dei moduli sta in `psp_usb.c`, condiviso con ENG-11.1.
+- **File:** `source/src/psp_usb.c` (nuovo), `source/src/psp_usb.h` (nuovo), `source/Makefile` (librerie USB solo nel profilo diagnostic), `scripts/check-elf.py`, `docs/HARDWARE-RESULTS.md`, `docs/DESIGN-DECISIONS.md`
+- **Test:** 20 cicli per modello con chkdsk; audit dell'ELF release: nessun simbolo USB.
+- **Accettazione:** 0 errori di file system su 40 cicli e file nuovi visibili senza riavvio, oppure l'ADR aggiornato con il motivo dello stop.
+- **Licenza:** codice nuovo GPL-2.0-or-later; gli stub di kubridge sono già in `source/SDK`.
+
+#### EXT-8.3 — (condizionato) Voce di menu "Connessione USB" · M, 2 gg · dipende da: EXT-8.2 · PSP: sì
+- **Cosa:** Modulo puro `usb_mode_model.c/.h` con sei stati (inattivo, svuotamento, attivo, chiusura, riapertura, errore) e queste regole:
+  - la voce è rifiutata durante una sessione link, come savestate e avanzamento rapido, e anche se l'ultima scrittura della batteria è fallita;
+  - una sospensione mentre l'USB è attivo lo spegne prima; il callback di alimentazione si limita ad alzare un flag, come oggi;
+  - dopo la chiusura riapre la ROM con i tentativi di `main_power_reopen_gamepak` (`main.c:1866-1889`), riscandisce il browser e valida i recenti.
+
+  La colla sta in `main.c`, `gui.c` e `psp_usb.c`, con una schermata "USB connessa, ○ per terminare". La riga va in una categoria esistente, e l'ordine delle categorie non cambia.
+- **File:** `source/src/usb_mode_model.c` (nuovo), `source/src/usb_mode_model.h` (nuovo), `tests/test_usb_mode_model.c` (nuovo), `Makefile`, `source/src/psp_usb.c`, `source/src/main.c`, `source/src/gui.c`, `source/src/message.h`, `source/src/text/message_{jpn,eng,chs,cht,ita}.h`, `source/Makefile`, `README.md`, `CHANGELOG.md`
+- **Test:**
+  - `tests/test_usb_mode_model.c`, normale e ASan/UBSan: rifiuto durante il link e dopo una scrittura fallita, sospensione in stato attivo, riapertura della ROM fallita con messaggio.
+  - `scripts/check-messages.sh` e `scripts/check-menu-layout.sh`.
+  - PSP-1000 e PSP Go: 20 cicli e una sospensione con l'USB attivo.
+- **Accettazione:** nessun errore di file system; il gioco riprende con lo stesso salvataggio; durante il link la voce si rifiuta con il motivo; i testi, motivo compreso, ci sono nelle 5 lingue.
+- **Licenza:** codice nuovo GPL-2.0-or-later.

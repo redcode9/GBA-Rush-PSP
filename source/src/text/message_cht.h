@@ -553,8 +553,14 @@
   // MSG_ERR_LOAD_DIR_INI
   "無法載入 dir.ini 檔案.\n所有內容均設定在以下目錄中:\n%s",
 
-  // MSG_ERR_BIOS_NONE
-  "無法載入 BIOS 映像檔.",
+  // MSG_ERR_BIOS_INVALID
+  "gba_bios.bin 不是 16 KB 的 GBA BIOS 映像檔.\n將改用內建 BIOS.",
+
+  // MSG_ERR_STATE_NEEDS_BIOS_FILE
+  "此即時存檔是用 gba_bios.bin 儲存的.\n請將 gba_bios.bin 放回模擬器資料夾，\n重新啟動模擬器後再載入.",
+
+  // MSG_ERR_STATE_NEEDS_BUILTIN_BIOS
+  "此即時存檔是用內建 BIOS 儲存的.\n請先將 gba_bios.bin 移出模擬器資料夾，\n重新啟動模擬器後再載入.",
 
   // MSG_ERR_LOAD_GAMEPACK
   "無法載入遊戲檔案.",
