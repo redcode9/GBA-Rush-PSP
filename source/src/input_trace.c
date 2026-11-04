@@ -17,7 +17,9 @@
 /* Encoded trace, little-endian:
  *   0 "GBIT"  4 version  6 header size  8 event count  12 game code
  *   16 ROM revision  17-19 zero  20 duration in frames  24 checksum
- *   28 start frame; then 8-byte events: u32 frame offset, u16 keys, u16 0.
+ *   28 start frame; version 2 (header 44) adds 32 CRC-32 of the companion
+ *   .svs, 36 its size, 40 RTC base (Unix seconds, UTC). Version 1 ends the
+ *   header at 32. Then 8-byte events: u32 frame offset, u16 keys, u16 0.
  */
 #define INPUT_TRACE_CHECKSUM_OFFSET 24U
 
@@ -127,7 +129,21 @@ int input_trace_begin_record(InputTrace *trace, uint32_t start_frame,
   trace->events[0].frame_offset = 0;
   trace->events[0].keys = trace->last_recorded_keys;
   trace->event_count = 1;
+  trace->version = INPUT_TRACE_VERSION;
   trace->state = INPUT_TRACE_RECORDING;
+  return 1;
+}
+
+int input_trace_set_companion(InputTrace *trace, uint32_t state_crc32,
+ uint32_t state_size, uint32_t rtc_base_seconds)
+{
+  if(trace == NULL || trace->state != INPUT_TRACE_RECORDING ||
+     state_size == 0 || state_size > INPUT_TRACE_MAX_STATE_SIZE)
+    return input_trace_fail(trace, INPUT_TRACE_ERROR_ARGUMENT);
+
+  trace->state_crc32 = state_crc32;
+  trace->state_size = state_size;
+  trace->rtc_base_seconds = rtc_base_seconds;
   return 1;
 }
 
@@ -203,8 +219,9 @@ size_t input_trace_encoded_size(const InputTrace *trace)
    (size_t)trace->event_count * INPUT_TRACE_EVENT_SIZE;
 }
 
-/* Serializes a READY trace in the layout at the top of the file; fails
-   without writing when output is smaller than input_trace_encoded_size(). */
+/* Serializes a READY trace as version 2; fails without writing when the
+   trace has no companion or output is smaller than
+   input_trace_encoded_size(). */
 int input_trace_encode(const InputTrace *trace, uint8_t *output,
  size_t output_size, size_t *written)
 {
@@ -214,8 +231,8 @@ int input_trace_encode(const InputTrace *trace, uint8_t *output,
   if(written != NULL)
     *written = 0;
   required = input_trace_encoded_size(trace);
-  if(required == 0 || output == NULL || output_size < required ||
-     written == NULL)
+  if(required == 0 || trace->state_size == 0 || output == NULL ||
+     output_size < required || written == NULL)
     return 0;
 
   memset(output, 0, required);
@@ -227,6 +244,9 @@ int input_trace_encode(const InputTrace *trace, uint8_t *output,
   output[16] = trace->rom_revision;
   input_trace_write_u32(output + 20, trace->duration_frames);
   input_trace_write_u32(output + 28, trace->start_frame);
+  input_trace_write_u32(output + 32, trace->state_crc32);
+  input_trace_write_u32(output + 36, trace->state_size);
+  input_trace_write_u32(output + 40, trace->rtc_base_seconds);
 
   for(i = 0; i < trace->event_count; i++)
   {
@@ -244,7 +264,8 @@ int input_trace_encode(const InputTrace *trace, uint8_t *output,
 }
 
 /* Checks the whole file (format, checksum, game identity, capacity, event
-   order) before loading anything. Replay starts at start_frame. */
+   order) before loading anything. Replay starts at start_frame. Reads
+   version 1 and version 2 files. */
 int input_trace_begin_replay(InputTrace *trace, const uint8_t *encoded,
  size_t encoded_size,
  const uint8_t expected_game_code[INPUT_TRACE_GAME_CODE_SIZE],
@@ -253,6 +274,9 @@ int input_trace_begin_replay(InputTrace *trace, const uint8_t *encoded,
   uint32_t event_count;
   uint32_t duration_frames;
   uint32_t previous_frame = 0;
+  uint32_t state_size = 0;
+  uint16_t version;
+  size_t header_size;
   size_t required;
   uint32_t i;
 
@@ -261,23 +285,33 @@ int input_trace_begin_replay(InputTrace *trace, const uint8_t *encoded,
     return input_trace_fail(trace, INPUT_TRACE_ERROR_ARGUMENT);
 
   input_trace_cancel(trace);
-  if(encoded_size < INPUT_TRACE_HEADER_SIZE ||
+  if(encoded_size < INPUT_TRACE_V1_HEADER_SIZE ||
      memcmp(encoded, INPUT_TRACE_MAGIC, 4) != 0 ||
-     input_trace_read_u16(encoded + 4) != INPUT_TRACE_VERSION ||
-     input_trace_read_u16(encoded + 6) != INPUT_TRACE_HEADER_SIZE ||
      encoded[17] != 0 || encoded[18] != 0 || encoded[19] != 0)
     return input_trace_fail(trace, INPUT_TRACE_ERROR_FORMAT);
+
+  version = input_trace_read_u16(encoded + 4);
+  header_size = input_trace_read_u16(encoded + 6);
+  if(!((version == 1U && header_size == INPUT_TRACE_V1_HEADER_SIZE) ||
+       (version == INPUT_TRACE_VERSION &&
+        header_size == INPUT_TRACE_HEADER_SIZE)) ||
+     encoded_size < header_size)
+    return input_trace_fail(trace, INPUT_TRACE_ERROR_FORMAT);
+  if(version == INPUT_TRACE_VERSION)
+  {
+    state_size = input_trace_read_u32(encoded + 36);
+    if(state_size == 0 || state_size > INPUT_TRACE_MAX_STATE_SIZE)
+      return input_trace_fail(trace, INPUT_TRACE_ERROR_FORMAT);
+  }
 
   event_count = input_trace_read_u32(encoded + 8);
   if(event_count == 0)
     return input_trace_fail(trace, INPUT_TRACE_ERROR_FORMAT);
 #if SIZE_MAX < UINT32_MAX
-  if(event_count > (SIZE_MAX - INPUT_TRACE_HEADER_SIZE) /
-     INPUT_TRACE_EVENT_SIZE)
+  if(event_count > (SIZE_MAX - header_size) / INPUT_TRACE_EVENT_SIZE)
     return input_trace_fail(trace, INPUT_TRACE_ERROR_FORMAT);
 #endif
-  required = INPUT_TRACE_HEADER_SIZE +
-   (size_t)event_count * INPUT_TRACE_EVENT_SIZE;
+  required = header_size + (size_t)event_count * INPUT_TRACE_EVENT_SIZE;
   if(encoded_size != required)
     return input_trace_fail(trace, INPUT_TRACE_ERROR_FORMAT);
 
@@ -294,7 +328,7 @@ int input_trace_begin_replay(InputTrace *trace, const uint8_t *encoded,
   duration_frames = input_trace_read_u32(encoded + 20);
   for(i = 0; i < event_count; i++)
   {
-    const uint8_t *event = encoded + INPUT_TRACE_HEADER_SIZE +
+    const uint8_t *event = encoded + header_size +
      (size_t)i * INPUT_TRACE_EVENT_SIZE;
     uint32_t frame_offset = input_trace_read_u32(event);
     uint16_t keys = input_trace_read_u16(event + 4);
@@ -310,13 +344,20 @@ int input_trace_begin_replay(InputTrace *trace, const uint8_t *encoded,
 
   for(i = 0; i < event_count; i++)
   {
-    const uint8_t *event = encoded + INPUT_TRACE_HEADER_SIZE +
+    const uint8_t *event = encoded + header_size +
      (size_t)i * INPUT_TRACE_EVENT_SIZE;
 
     trace->events[i].frame_offset = input_trace_read_u32(event);
     trace->events[i].keys = input_trace_read_u16(event + 4);
   }
 
+  if(version == INPUT_TRACE_VERSION)
+  {
+    trace->state_crc32 = input_trace_read_u32(encoded + 32);
+    trace->state_size = state_size;
+    trace->rtc_base_seconds = input_trace_read_u32(encoded + 40);
+  }
+  trace->version = version;
   trace->event_count = event_count;
   trace->event_cursor = 0;
   trace->start_frame = start_frame;
@@ -326,6 +367,18 @@ int input_trace_begin_replay(InputTrace *trace, const uint8_t *encoded,
   trace->current_keys = 0;
   trace->state = INPUT_TRACE_REPLAYING;
   trace->error = INPUT_TRACE_ERROR_NONE;
+  return 1;
+}
+
+int input_trace_check_state(InputTrace *trace, uint32_t state_crc32,
+ uint32_t state_size)
+{
+  if(trace == NULL || trace->state != INPUT_TRACE_REPLAYING)
+    return input_trace_fail(trace, INPUT_TRACE_ERROR_ARGUMENT);
+  if(trace->version == 1U)
+    return 1;
+  if(trace->state_crc32 != state_crc32 || trace->state_size != state_size)
+    return input_trace_fail(trace, INPUT_TRACE_ERROR_STATE);
   return 1;
 }
 

@@ -22,8 +22,12 @@
 #include <stdint.h>
 
 #define INPUT_TRACE_MAGIC "GBIT"
-#define INPUT_TRACE_VERSION 1U
-#define INPUT_TRACE_HEADER_SIZE 32U
+#define INPUT_TRACE_VERSION 2U
+#define INPUT_TRACE_HEADER_SIZE 44U
+/* Version 1 files have no companion savestate and stay readable. */
+#define INPUT_TRACE_V1_HEADER_SIZE 32U
+/* Largest companion .svs a v2 trace may name: today's is 601096 bytes. */
+#define INPUT_TRACE_MAX_STATE_SIZE 0x200000U
 #define INPUT_TRACE_EVENT_SIZE 8U
 #define INPUT_TRACE_GAME_CODE_SIZE 4U
 /* Bytes of cartridge header needed to identify the ROM. */
@@ -49,7 +53,8 @@ typedef enum
   INPUT_TRACE_ERROR_IDENTITY,
   INPUT_TRACE_ERROR_FORMAT,
   INPUT_TRACE_ERROR_CHECKSUM,
-  INPUT_TRACE_ERROR_ORDER
+  INPUT_TRACE_ERROR_ORDER,
+  INPUT_TRACE_ERROR_STATE
 } InputTraceError;
 
 /* The keys held from frame_offset (relative to start_frame) onwards. */
@@ -71,6 +76,12 @@ typedef struct
   uint16_t last_recorded_keys;
   uint8_t game_code[INPUT_TRACE_GAME_CODE_SIZE];
   uint8_t rom_revision;
+  /* File version; a v2 trace names the .svs it starts from (CRC-32 and
+     size) and the wall clock at its start (Unix seconds, UTC). */
+  uint16_t version;
+  uint32_t state_crc32;
+  uint32_t state_size;
+  uint32_t rtc_base_seconds;
   InputTraceState state;
   InputTraceError error;
 } InputTrace;
@@ -81,6 +92,11 @@ void input_trace_cancel(InputTrace *trace);
 int input_trace_begin_record(InputTrace *trace, uint32_t start_frame,
  const uint8_t game_code[INPUT_TRACE_GAME_CODE_SIZE], uint8_t rom_revision,
  uint16_t initial_keys);
+/* Names the recording's companion .svs; only while RECORDING, and a size
+   of 0 or above INPUT_TRACE_MAX_STATE_SIZE fails with ARGUMENT. Encoding
+   needs it. */
+int input_trace_set_companion(InputTrace *trace, uint32_t state_crc32,
+ uint32_t state_size, uint32_t rtc_base_seconds);
 int input_trace_record(InputTrace *trace, uint32_t frame, uint16_t keys);
 int input_trace_finish_record(InputTrace *trace, uint32_t end_frame);
 size_t input_trace_encoded_size(const InputTrace *trace);
@@ -90,6 +106,11 @@ int input_trace_begin_replay(InputTrace *trace, const uint8_t *encoded,
  size_t encoded_size,
  const uint8_t expected_game_code[INPUT_TRACE_GAME_CODE_SIZE],
  uint8_t expected_rom_revision, uint32_t start_frame);
+/* After a replay begins: 1 when the .svs with this CRC-32 and size is the
+   one the trace names, or the trace is v1 (no companion); otherwise the
+   trace fails with INPUT_TRACE_ERROR_STATE. */
+int input_trace_check_state(InputTrace *trace, uint32_t state_crc32,
+ uint32_t state_size);
 int input_trace_begin_record_from_header(InputTrace *trace,
  uint32_t start_frame,
  const uint8_t header[INPUT_TRACE_IDENTITY_SIZE], uint32_t file_size,
