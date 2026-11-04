@@ -104,9 +104,9 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_ppu_log
 
 .PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
- check-core check-render check-core-quick check-render-quick tree-check \
- psp-sdk-headers media-engine-check psp-build launcher-stub package \
- artifact-smoke clean
+ check-core check-render check-core-quick check-render-quick check-eboot \
+ tree-check psp-sdk-headers media-engine-check psp-build launcher-stub \
+ package artifact-smoke clean
 
 all: check
 
@@ -644,6 +644,11 @@ check-core-quick:
 
 check-render-quick:
 	sh scripts/check-render.sh --quick
+
+# Runs the EBOOT in PPSSPP's headless runner on your own games; see the
+# script. Build it first with make psp-build.
+check-eboot:
+	sh scripts/check-eboot.sh
 
 tree-check:
 	sh scripts/check-tree.sh
