@@ -172,14 +172,17 @@ s32 rtc_bit_count;
 
 // Cartridge save memory in brief:
 //  - Type: load_backup_id() looks for the save library's ID string in the
-//    ROM, then load_backup() reads the .sav, whose size can override it. A
-//    type still unknown is settled by the game: its first region 0xE access
-//    means SRAM, 0xAA written to 0x5555 means Flash, and an EEPROM access
-//    means EEPROM (a 17-unit DMA to it selects the 8 KB size).
+//    ROM, then load_backup() reads the .sav: the ID string decides the type
+//    and the file's size only the size within it; without a string the
+//    size picks the type as before (save_format.h). A type still unknown
+//    is settled by the game: its first region 0xE access means SRAM, 0xAA
+//    written to 0x5555 means Flash, and an EEPROM access means EEPROM (a
+//    17-unit DMA to it selects the 8 KB size).
 //  - Saving: each game write arms backup_update; update_backup() writes the
 //    .sav WRITE_BACKUP_DELAY frames later when auto-save is on, and
 //    update_backup_immediately() on quit, ROM change or a suspend from the
-//    menu (a power-button suspend writes only a savestate).
+//    menu (a power-button suspend writes only a savestate). Nothing is
+//    written after a .sav that exists failed to read.
 
 // Up to 128kb, store SRAM, flash ROM, or EEPROM here.
 static u8 ALIGN_DATA gamepak_backup[1024 * 128];
@@ -192,12 +195,18 @@ static u8 ALIGN_DATA gamepak_backup[1024 * 128];
 // 0); WRITE_BACKUP_DELAY + 1 means nothing is pending.
 s32 backup_update = WRITE_BACKUP_DELAY + 1;
 
+// How the .sav is read and written; main.c sets it at startup.
+const SaveStoreIo *backup_io;
+
+// Set when the .sav exists but did not read: no write may replace it.
+static u32 backup_write_blocked = 0;
+
 typedef enum
 {
-  BACKUP_SRAM,
-  BACKUP_FLASH,
-  BACKUP_EEPROM,
-  BACKUP_NONE
+  BACKUP_SRAM   = SAVE_TYPE_SRAM,
+  BACKUP_FLASH  = SAVE_TYPE_FLASH,
+  BACKUP_EEPROM = SAVE_TYPE_EEPROM,
+  BACKUP_NONE   = SAVE_TYPE_NONE
 } BACKUP_TYPE_TYPE;
 
 typedef enum
@@ -262,14 +271,14 @@ typedef enum
 
 typedef enum
 {
-  EEPROM_BASE_MODE,
-  EEPROM_READ_MODE,
-  EEPROM_READ_HEADER_MODE,
-  EEPROM_ADDRESS_MODE,
-  EEPROM_WRITE_MODE,
-  EEPROM_WRITE_ADDRESS_MODE,
-  EEPROM_ADDRESS_FOOTER_MODE,
-  EEPROM_WRITE_FOOTER_MODE
+  EEPROM_BASE_MODE           = SAVE_EEPROM_BASE,
+  EEPROM_READ_MODE           = SAVE_EEPROM_READ,
+  EEPROM_READ_HEADER_MODE    = SAVE_EEPROM_READ_HEADER,
+  EEPROM_ADDRESS_MODE        = SAVE_EEPROM_ADDRESS,
+  EEPROM_WRITE_MODE          = SAVE_EEPROM_WRITE,
+  EEPROM_WRITE_ADDRESS_MODE  = SAVE_EEPROM_WRITE_ADDRESS,
+  EEPROM_ADDRESS_FOOTER_MODE = SAVE_EEPROM_ADDRESS_FOOTER,
+  EEPROM_WRITE_FOOTER_MODE   = SAVE_EEPROM_WRITE_FOOTER
 } EEPROM_MODE_TYPE;
 
 EEPROM_SIZE_TYPE eeprom_size = EEPROM_512_BYTE;
@@ -293,7 +302,7 @@ static s32 load_gamepak_raw(char *name);
 static u32 evict_gamepak_page(void);
 
 char backup_id[16];
-static void load_backup_id(void);
+static SaveTag load_backup_id(void);
 
 char backup_filename[MAX_FILE];
 static u32 save_backup(char *name);
@@ -3049,10 +3058,10 @@ void memory_term(void)
 }
 
 
-// Resets the backup state, then scans the ROM backwards for the save library
-// ID string (EEPROM_V, SRAM_V, SRAM_F_V, FLASH_V, FLASH512_V, FLASH1M_V)
-// that names the save type.
-static void load_backup_id(void)
+// Scans the ROM backwards for the save library ID string (EEPROM_V, SRAM_V,
+// SRAM_F_V, FLASH_V, FLASH512_V, FLASH1M_V) that names the save type, and
+// returns its tag (SAVE_TAG_NONE if there is none).
+static SaveTag load_backup_id(void)
 {
   u32 addr = 0x08000000 + gamepak_size - 4;
 
@@ -3063,12 +3072,6 @@ static void load_backup_id(void)
   u32 new_region = 0;
 
   init_memory_gamepak();
-
-  backup_type = BACKUP_NONE;
-
-  sram_size   = SRAM_SIZE_32KB;
-  flash_size  = FLASH_SIZE_64KB;
-  eeprom_size = EEPROM_512_BYTE;
 
   for ( ; addr > 0x08000000; addr -= 4)
   {
@@ -3091,10 +3094,7 @@ static void load_backup_id(void)
       {
         // EEPROM_Vxxx : EEPROM 512 bytes or 8 Kbytes (4Kbit or 64Kbit)
         if (memcmp(data, "EEPROM_V", 8) == 0)
-        {
-          backup_type = BACKUP_EEPROM;
-          return;
-        }
+          return SAVE_TAG_EEPROM;
       }
       break;
 
@@ -3102,19 +3102,11 @@ static void load_backup_id(void)
       {
         // SRAM_Vxxx : SRAM 32 Kbytes (256Kbit)
         if (memcmp(data, "SRAM_V", 6) == 0)
-        {
-          backup_type = BACKUP_SRAM;
-          sram_size   = SRAM_SIZE_32KB;
-          return;
-        }
+          return SAVE_TAG_SRAM;
 
         // SRAM_F_Vxxx : FRAM 32 Kbytes (256Kbit)
         if (memcmp(data, "SRAM_F", 6) == 0)
-        {
-          backup_type = BACKUP_SRAM;
-          sram_size   = SRAM_SIZE_32KB;
-          return;
-        }
+          return SAVE_TAG_SRAM;
       }
       break;
 
@@ -3122,149 +3114,75 @@ static void load_backup_id(void)
       {
         // FLASH_Vxxx : FLASH 64 Kbytes (512Kbit) (ID used in older files)
         if (memcmp(data, "FLASH_V", 7) == 0)
-        {
-          backup_type = BACKUP_FLASH;
-          flash_size  = FLASH_SIZE_64KB;
-          flash_device_id = FLASH_DEVICE_PANASONIC_64KB;
-          flash_manufacturer_id = FLASH_MANUFACTURER_PANASONIC;
-          return;
-        }
+          return SAVE_TAG_FLASH64;
 
         // FLASH512_Vxxx : FLASH 64 Kbytes (512Kbit) (ID used in newer files)
         if (memcmp(data, "FLASH512", 8) == 0)
-        {
-          backup_type = BACKUP_FLASH;
-          flash_size  = FLASH_SIZE_64KB;
-          flash_device_id = FLASH_DEVICE_PANASONIC_64KB;
-          flash_manufacturer_id = FLASH_MANUFACTURER_PANASONIC;
-          return;
-        }
+          return SAVE_TAG_FLASH64;
 
         // FLASH1M_Vxxx : FLASH 128 Kbytes (1Mbit)
         if (memcmp(data, "FLASH1M_", 8) == 0)
-        {
-          backup_type = BACKUP_FLASH;
-          flash_size  = FLASH_SIZE_128KB;
-          flash_device_id = FLASH_DEVICE_SANYO_128KB;
-          flash_manufacturer_id = FLASH_MANUFACTURER_SANYO;
-          return;
-        }
+          return SAVE_TAG_FLASH128;
       }
       break;
     }
   }
+
+  return SAVE_TAG_NONE;
 }
 
-// Loads the .sav file into gamepak_backup (0xFF fills the rest); a known
-// file size can override the save type found from the ROM's ID string.
-s32 load_backup(char *name)
+// Loads the .sav into gamepak_backup (0xFF fills the rest, and a file over
+// 128 KB loads its first 128 KB), then sets the save type and sizes from
+// the ROM's tag and the file's size. A file that exists but does not read
+// blocks every .sav write until the next load_backup(), so the blank image
+// can never replace it.
+SaveStoreResult load_backup(char *name, SaveTag tag)
 {
-  SceUID backup_file;
-  char backup_path[MAX_PATH];
+  SaveStoreResult result;
+  SaveLayout layout;
+  size_t file_size;
 
-  memset(gamepak_backup, 0xFF, 1024 * 128);
+  memset(gamepak_backup, 0xFF, sizeof(gamepak_backup));
 
-  sprintf(backup_path, "%s%s", dir_save, name);
+  result = save_store_load(backup_io, dir_save, name, gamepak_backup,
+   sizeof(gamepak_backup), &file_size);
+  backup_write_blocked = (result == SAVE_STORE_FAILED);
 
-  FILE_OPEN(backup_file, backup_path, READ);
+  layout = save_format_resolve(tag, (u32)file_size);
+  backup_type = (BACKUP_TYPE_TYPE)layout.type;
+  sram_size   = (SRAM_SIZE_TYPE)layout.sram_size;
+  flash_size  = (FLASH_SIZE_TYPE)layout.flash_size;
+  eeprom_size = (EEPROM_SIZE_TYPE)layout.eeprom_size;
 
-  if (FILE_CHECK_VALID(backup_file))
+  // The chip ID the game reads back must match the Flash size.
+  if (flash_size == FLASH_SIZE_128KB)
   {
-    u32 backup_size = file_length(backup_path);
-
-    FILE_READ(backup_file, gamepak_backup, backup_size);
-    FILE_CLOSE(backup_file);
-    {
-      // The size might give away what kind of backup it is.
-      switch (backup_size)
-      {
-        case 0x200:
-          backup_type = BACKUP_EEPROM;
-          eeprom_size = EEPROM_512_BYTE;
-          break;
-
-        case 0x2000:
-          backup_type = BACKUP_EEPROM;
-          eeprom_size = EEPROM_8_KBYTE;
-          break;
-
-        case 0x8000:
-          backup_type = BACKUP_SRAM;
-          sram_size   = SRAM_SIZE_32KB;
-          break;
-
-        // Could be Flash or SRAM. Meant to pick Flash, but this assigns
-        // sram_size (to 1), not backup_type, so the type is still settled at
-        // run time; a game that turns out to use SRAM and never writes above
-        // 0x8000 then has its 64 KB .sav saved back as a single byte.
-        case 0x10000:
-          sram_size  = BACKUP_FLASH;
-          flash_size = FLASH_SIZE_64KB;
-          flash_device_id = FLASH_DEVICE_PANASONIC_64KB;
-          flash_manufacturer_id = FLASH_MANUFACTURER_PANASONIC;
-          break;
-
-        case 0x20000:
-          backup_type = BACKUP_FLASH;
-          flash_size  = FLASH_SIZE_128KB;
-          flash_device_id = FLASH_DEVICE_SANYO_128KB;
-          flash_manufacturer_id = FLASH_MANUFACTURER_SANYO;
-          break;
-      }
-    }
-
-    return 0;
+    flash_device_id = FLASH_DEVICE_SANYO_128KB;
+    flash_manufacturer_id = FLASH_MANUFACTURER_SANYO;
+  }
+  else
+  {
+    flash_device_id = FLASH_DEVICE_PANASONIC_64KB;
+    flash_manufacturer_id = FLASH_MANUFACTURER_PANASONIC;
   }
 
-    return -1;
+  return result;
 }
 
-// Writes the backup at the detected save type's size, under a power lock so
-// a suspend can't cut the write. Nothing is written while the type is
-// unknown.
+// Writes the backup at the save type's size, under a power lock so a
+// suspend can't cut the write. Nothing is written while the type is
+// unknown, or after load_backup() found the file unreadable.
 static u32 save_backup(char *name)
 {
-  SceUID backup_file;
-  char backup_path[MAX_PATH];
+  u32 backup_size = save_format_write_size(backup_type, sram_size,
+   flash_size, eeprom_size);
 
-  u32 backup_size = 0;
+  if (backup_write_blocked || (backup_size == 0))
+    return 0;
 
-  if (backup_type != BACKUP_NONE)
-  {
-    sprintf(backup_path, "%s%s", dir_save, name);
-
-    scePowerLock(0);
-
-    FILE_OPEN(backup_file, backup_path, WRITE);
-
-    if (FILE_CHECK_VALID(backup_file))
-    {
-      switch (backup_type)
-      {
-        case BACKUP_SRAM:
-          backup_size = sram_size;
-          break;
-
-        case BACKUP_FLASH:
-          backup_size = flash_size;
-          break;
-
-        case BACKUP_EEPROM:
-          backup_size = eeprom_size;
-          break;
-
-        default:
-        case BACKUP_NONE:
-          backup_size = 0x8000;
-          break;
-      }
-
-      FILE_WRITE(backup_file, gamepak_backup, backup_size);
-      FILE_CLOSE(backup_file);
-    }
-
-    scePowerUnlock(0);
-  }
+  scePowerLock(0);
+  save_store_write(backup_io, dir_save, name, gamepak_backup, backup_size);
+  scePowerUnlock(0);
 
   return backup_size;
 }
@@ -3621,13 +3539,17 @@ static s32 load_gamepak_raw(char *name)
 }
 
 // Loads a .gba/.agb/.bin or .zip/.gbz ROM, then its game_config.txt entry,
-// per-game settings, save type and .sav. Returns the file size or a
-// negative value; the caller resets the GBA afterwards.
+// per-game settings, save type and .sav. A .sav that exists but does not
+// read can be read again, or the game played with saving blocked; refusing
+// both returns LOAD_GAMEPAK_CANCELLED. Returns the file size or a negative
+// value; the caller resets the GBA afterwards.
 s32 load_gamepak(char *name)
 {
   char *dot_position = strrchr(name, '.');
 
   s32 file_size = -1;
+  SaveTag tag = SAVE_TAG_NONE;
+  SaveStoreResult backup_result = SAVE_STORE_OK;
   gamepak_file_large = GAMEPAK_FILE_NONE;
 
   draw_popup_frame_auto(110, 50, 260, 170);
@@ -3682,9 +3604,9 @@ s32 load_gamepak(char *name)
     load_game_config_file();
     rebuild_fast_forward_button_mask();
 
-    load_backup_id();
+    tag = load_backup_id();
     change_ext(gamepak_filename, backup_filename, ".sav");
-    load_backup(backup_filename);
+    backup_result = load_backup(backup_filename, tag);
 
     /* Cheat lists are selected explicitly from the cheat menu. */
     clear_cheats();
@@ -3692,6 +3614,48 @@ s32 load_gamepak(char *name)
 
   set_cpu_clock(PSP_CLOCK_222);
   scePowerUnlock(0);
+
+  // Asked only now: a dialog under the power lock would hold off standby.
+  // Meanwhile no ROM counts as loaded, or a suspend at the prompt would
+  // write this ROM's AUTO savestate from a machine not yet reset for it.
+  if (backup_result == SAVE_STORE_FAILED)
+  {
+    char rom_name[MAX_FILE];
+
+    strcpy(rom_name, gamepak_filename);
+    gamepak_filename[0] = 0;
+
+    while (backup_result == SAVE_STORE_FAILED)
+    {
+      if (yesno_dialog(MSG[MSG_SAVE_READ_RETRY]) == 0)
+      {
+        scePowerLock(0);
+        backup_result = load_backup(backup_filename, tag);
+        scePowerUnlock(0);
+
+        // The file was there a moment ago: not finding it now means the
+        // Memory Stick is not back yet, not a blank cartridge.
+        if (backup_result == SAVE_STORE_NOT_FOUND)
+        {
+          backup_result = SAVE_STORE_FAILED;
+          backup_write_blocked = 1;
+        }
+      }
+      else if (yesno_dialog(MSG[MSG_SAVE_PLAY_UNSAVED]) == 0)
+        break;
+      else
+      {
+        // No ROM stays loaded, as after a failed load.
+        if (FILE_CHECK_VALID(gamepak_file_large))
+          FILE_CLOSE(gamepak_file_large);
+        gamepak_file_large = GAMEPAK_FILE_NONE;
+        gamepak_file_size = 0;
+        return LOAD_GAMEPAK_CANCELLED;
+      }
+    }
+
+    strcpy(gamepak_filename, rom_name);
+  }
 
   return file_size;
 
@@ -4007,9 +3971,44 @@ u32 save_state_silent(char *savestate_filename, u16 *screen_capture)
   FILE_##type(savestate_file, io_registers, 0x400);                           \
 }                                                                             \
 
+static void get_backup_state(SaveState *state)
+{
+  state->type = backup_type;
+  state->sram_size = sram_size;
+  state->flash_size = flash_size;
+  state->flash_bank = flash_bank;
+  state->eeprom_size = eeprom_size;
+  state->eeprom_mode = eeprom_mode;
+  state->eeprom_address_length = eeprom_address_length;
+  state->eeprom_address = eeprom_address;
+  state->eeprom_counter = eeprom_counter;
+}
+
+static void set_backup_state(const SaveState *state)
+{
+  backup_type = (BACKUP_TYPE_TYPE)state->type;
+  sram_size = (SRAM_SIZE_TYPE)state->sram_size;
+  flash_size = (FLASH_SIZE_TYPE)state->flash_size;
+  flash_bank = state->flash_bank;
+  eeprom_size = (EEPROM_SIZE_TYPE)state->eeprom_size;
+  eeprom_mode = (EEPROM_MODE_TYPE)state->eeprom_mode;
+  eeprom_address_length = state->eeprom_address_length;
+  eeprom_address = state->eeprom_address;
+  eeprom_counter = state->eeprom_counter;
+}
+
+// A damaged or foreign state must not make the save handlers index outside
+// gamepak_backup, so its save fields are brought back in range.
 static void memory_read_savestate(SceUID savestate_file)
 {
+  SaveState before;
+  SaveState state;
+
+  get_backup_state(&before);
   MEMORY_SAVESTATE_BODY(READ);
+  get_backup_state(&state);
+  save_format_sanitize(&state, &before);
+  set_backup_state(&state);
 }
 
 static void memory_write_mem_savestate(SceUID savestate_file)

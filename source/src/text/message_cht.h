@@ -1156,5 +1156,9 @@
   "Silent",
   // MSG_FF_AUDIO_ACCELERATED
   "Accelerated",
+  // MSG_SAVE_READ_RETRY
+  "無法讀取遊戲存檔. 重試?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "不儲存繼續遊戲? 存檔檔案保持不變.",
 
 },

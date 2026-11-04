@@ -1153,5 +1153,9 @@
   "Silenzioso",
   // MSG_FF_AUDIO_ACCELERATED
   "Accelerato",
+  // MSG_SAVE_READ_RETRY
+  "Il salvataggio non si legge. Riprovare?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "Giocare senza salvare? Il file resta com'e`.",
 
 },

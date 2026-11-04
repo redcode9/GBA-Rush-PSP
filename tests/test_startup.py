@@ -38,12 +38,14 @@ STUBS = r'''
 #include <stdio.h>
 #include <string.h>
 typedef uint32_t u32;
+typedef int32_t s32;
 #define MAX_FILE 512
 #define COLOR32_BLACK 0
 #define CONFIRMATION_QUIT 1
 #define CONFIRMATION_CONT 2
 #define EXECUTE_CYCLES 0
 #define MSG_ERR_LOAD_GAMEPACK 0
+#define LOAD_GAMEPAK_CANCELLED (-3)
 #define MSG_AUTO_SAVESTATE_LOAD_PROMPT 1
 const char *messages[] = {"load error", "restore state"};
 #define MSG messages
@@ -53,16 +55,17 @@ u32 gamepak_file_size, reg[1], option_clock_speed, sound_pause;
 u32 enable_home_menu;
 int regular_file, browser_result, load_result, menu_result;
 int reset_calls, prompt_calls, execute_calls, quit_calls, recent_calls;
+int error_calls;
 int popup_value, active_link, state_exists, dialog_result, restored_slot;
 jmp_buf stopped;
 void setup_main(const char *p) { (void)p; }
 int path_is_regular_file(const char *p) { (void)p; return regular_file; }
 int load_gamepak(char *p) {
-  if(load_result < 0) return -1;
+  if(load_result < 0) return load_result;
   strcpy(gamepak_filename, p); gamepak_file_size = 1024; return 0;
 }
 void clear_screen(int c) { (void)c; }
-void error_msg(const char *m, int c) { (void)m; (void)c; }
+void error_msg(const char *m, int c) { (void)m; (void)c; error_calls++; }
 void quit(void) { quit_calls++; longjmp(stopped, 1); }
 u32 menu(void) {
   if(menu_result) {
@@ -94,14 +97,17 @@ u32 action_loadstate_slot(u32 slot) { restored_slot = slot; return 1; }
 # Launch orders in user_main(): a ROM path argument (argc 2), else
 # roms/game.gba (regular_file), else the file browser, else the menu. A ROM
 # picked in the menu runs without reset_gba() or the auto-state prompt; any
-# other loaded ROM is reset and offers the auto state (slot 10). The last
-# lines check that the prompt is skipped with no ROM, during a link session
-# and without a saved state.
+# other loaded ROM is reset and offers the auto state (slot 10). A failed
+# load (-1, or -2 for a zip too big for the ROM buffer) shows the load
+# error; one the player cancelled at the unreadable-save prompt goes on the
+# same way without it. The last lines check that the prompt is skipped with
+# no ROM, during a link session and without a saved state.
 SCENARIOS = r'''
 static void clear_test(void) {
   regular_file = menu_result = active_link = 0;
   browser_result = -1; load_result = 0;
   reset_calls = prompt_calls = execute_calls = quit_calls = recent_calls = 0;
+  error_calls = 0;
   state_exists = 1; dialog_result = 0; restored_slot = -1; popup_value = -1;
   gamepak_filename[0] = 0; sound_pause = 1;
 }
@@ -114,9 +120,9 @@ int main(void) {
   assert(execute_calls == 1 && reset_calls == 0 && prompt_calls == 0);
   assert(sound_pause == 0 && quit_calls == 1);
   clear_test(); regular_file = 1; load_result = -1; menu_result = 1; start(1);
-  assert(execute_calls == 1 && reset_calls == 0);
+  assert(execute_calls == 1 && reset_calls == 0 && error_calls == 1);
   clear_test(); browser_result = 0; load_result = -1; menu_result = 1; start(1);
-  assert(execute_calls == 1 && reset_calls == 0);
+  assert(execute_calls == 1 && reset_calls == 0 && error_calls == 1);
   clear_test(); start(1);
   assert(execute_calls == 0 && reset_calls == 0 && quit_calls == 1);
   clear_test(); start(2);
@@ -129,7 +135,17 @@ int main(void) {
   assert(execute_calls == 1 && reset_calls == 1 && prompt_calls == 1);
   assert(recent_calls == 1);
   clear_test(); load_result = -1; start(2);
-  assert(execute_calls == 0 && quit_calls == 1);
+  assert(execute_calls == 0 && quit_calls == 1 && error_calls == 1);
+  clear_test(); load_result = -2; start(2);
+  assert(execute_calls == 0 && quit_calls == 1 && error_calls == 1);
+  clear_test(); load_result = LOAD_GAMEPAK_CANCELLED; start(2);
+  assert(execute_calls == 0 && quit_calls == 1 && error_calls == 0);
+  clear_test(); regular_file = 1; load_result = LOAD_GAMEPAK_CANCELLED;
+  menu_result = 1; start(1);
+  assert(execute_calls == 1 && reset_calls == 0 && error_calls == 0);
+  clear_test(); browser_result = 0; load_result = LOAD_GAMEPAK_CANCELLED;
+  menu_result = 1; start(1);
+  assert(execute_calls == 1 && reset_calls == 0 && error_calls == 0);
   clear_test(); maybe_load_auto_savestate(); assert(prompt_calls == 0);
   strcpy(gamepak_filename, "game.gba"); active_link = 1;
   maybe_load_auto_savestate(); assert(prompt_calls == 0);
