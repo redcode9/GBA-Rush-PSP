@@ -7,7 +7,7 @@ notices when changing inherited code.
 ## Build
 
 Install a PSPDev toolchain and put `psp-config` in `PATH`. Host tests require a C
-compiler, Python 3 and PSP SDK headers; source checks also require `rg`.
+compiler, Python 3 and PSP SDK headers.
 `PSP_SDK_INCLUDE` can override the SDK include directory for host tests.
 
 ```sh
