@@ -309,6 +309,44 @@ static void test_block_data_is_aligned(void)
   check(data_commands > 30);
 }
 
+/* Each finished frame goes into the reader's frame times by the working
+   time reported since the last one; frames finished in one go share it. */
+static void test_frame_times(void)
+{
+  uint32_t times[GBA_PPU_LOG_TIME_BUCKETS];
+  uint32_t step = 1u << GBA_PPU_LOG_TIME_SHIFT;
+  int i;
+
+  memset(times, 0, sizeof(times));
+  check(gba_ppu_log_time_within(times, 500) == 0);
+  start();
+  scene();
+  for(i = 0; i < 100; i++)
+  {
+    run_frame(1);
+    while(gba_ppu_log_read(&reader) > 0)
+      /* Frame 50 takes long: 30 steps and a half. */
+      gba_ppu_log_reader_busy(&reader, i == 50 ? 30 * step + step / 2 :
+       3 * step);
+  }
+  memcpy(times, (const uint32_t *)mailbox.reader.frame_time, sizeof(times));
+  check(times[3] == 99 && times[30] == 1);
+  check(gba_ppu_log_time_within(times, 500) == 4 * step);
+  check(gba_ppu_log_time_within(times, 990) == 4 * step);
+  check(gba_ppu_log_time_within(times, 1000) == 31 * step);
+  /* Two frames finished in one go, 20 steps in all. */
+  run_frame(1);
+  run_frame(1);
+  while(gba_ppu_log_read(&reader) > 0)
+    gba_ppu_log_reader_busy(&reader, 20 * step);
+  check(mailbox.reader.frame_time[10] == 2);
+  /* Longer than the last step: counted in it. */
+  run_frame(1);
+  while(gba_ppu_log_read(&reader) > 0)
+    gba_ppu_log_reader_busy(&reader, 0xFFFFFFFFu);
+  check(mailbox.reader.frame_time[GBA_PPU_LOG_TIME_BUCKETS - 1] == 1);
+}
+
 /* ---- The reader on its own thread, as on the Media Engine ----------- */
 
 static volatile int stop_reader;
@@ -362,6 +400,7 @@ int main(void)
   test_reader_start_over();
   test_unknown_word_is_refused();
   test_block_data_is_aligned();
+  test_frame_times();
   test_frames_match_on_two_threads();
   printf("gba_ppu_log tests passed\n");
   return 0;

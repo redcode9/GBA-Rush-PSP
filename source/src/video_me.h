@@ -19,6 +19,8 @@
 #ifndef VIDEO_ME_H
 #define VIDEO_ME_H
 
+#include "gba_ppu_log.h"
+
 /* Whether the Exact renderer draws on the Media Engine, and if not, why;
    the runtime log and the FPS display report it. Values are kept. */
 typedef enum
@@ -67,6 +69,8 @@ typedef struct
   u32 log_words;
   u32 resends;
   u32 frames;
+  /* Frames the Media Engine finished, by its working time on each. */
+  u32 frame_time[GBA_PPU_LOG_TIME_BUCKETS];
 } VideoMeCounters;
 
 /* At the start of each frame: whether the Media Engine draws it, starting
@@ -93,6 +97,11 @@ VideoMeState video_me_state(void);
 /* The switches in use, VIDEO_ME_*. */
 u32 video_me_switches(void);
 void video_me_counters(VideoMeCounters *counters);
+/* The Media Engine's working time on the frames it finished since since:
+   what half of them, 99% of them and all of them stayed within, in us
+   (0 while its clock rate is not known yet). */
+void video_me_frame_times(const VideoMeCounters *since, u32 *median_us,
+ u32 *p99_us, u32 *max_us);
 /* A processor exception on the Media Engine: cause and address, or 0. */
 void video_me_fault(u32 *cause, u32 *address);
 

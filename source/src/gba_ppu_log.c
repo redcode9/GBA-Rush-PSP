@@ -189,6 +189,8 @@ void gba_ppu_log_writer_init(GbaPpuLogWriter *writer,
   reader->busy = 0;
   for(i = 0; i < 3; i++)
     reader->fault[i] = 0;
+  for(i = 0; i < (int)GBA_PPU_LOG_TIME_BUCKETS; i++)
+    reader->frame_time[i] = 0;
   mailbox->writer.ring = ring;
   mailbox->writer.ring_words = RING_WORDS;
   mailbox->writer.frame = frame;
@@ -564,4 +566,43 @@ int gba_ppu_log_read(GbaPpuLogReader *reader)
   }
   store(&reader->mailbox->reader.read, reader->read);
   return result;
+}
+
+void gba_ppu_log_reader_busy(GbaPpuLogReader *reader, uint32_t ticks)
+{
+  volatile uint32_t *frame_time = reader->mailbox->reader.frame_time;
+  uint32_t frames = reader->frames_drawn - reader->frames_timed;
+  uint32_t step;
+
+  reader->busy += ticks;
+  if(!frames)
+    return;
+  /* Frames finished in one go share the time. */
+  step = reader->busy / frames >> GBA_PPU_LOG_TIME_SHIFT;
+  if(step >= GBA_PPU_LOG_TIME_BUCKETS)
+    step = GBA_PPU_LOG_TIME_BUCKETS - 1;
+  store(&frame_time[step], load(&frame_time[step]) + frames);
+  reader->frames_timed = reader->frames_drawn;
+  reader->busy = 0;
+}
+
+/* ---- Both ------------------------------------------------------------- */
+
+uint32_t gba_ppu_log_time_within(const uint32_t *frame_time,
+ uint32_t permille)
+{
+  uint64_t frames = 0, seen = 0;
+  uint32_t step;
+
+  for(step = 0; step < GBA_PPU_LOG_TIME_BUCKETS; step++)
+    frames += frame_time[step];
+  if(!frames)
+    return 0;
+  for(step = 0; step < GBA_PPU_LOG_TIME_BUCKETS - 1; step++)
+  {
+    seen += frame_time[step];
+    if(seen * 1000 >= frames * permille)
+      break;
+  }
+  return (step + 1) << GBA_PPU_LOG_TIME_SHIFT;
 }

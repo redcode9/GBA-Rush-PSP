@@ -152,6 +152,7 @@ static void __attribute__((noreturn)) run(GbaPpuLogMailbox *mailbox)
       uint32_t now = clock_now();
 
       busy += now - started;
+      gba_ppu_log_reader_busy(&reader, now - started);
       side->busy = busy;
       side->clock = now;
       spins = PAUSE_SHORTEST;

@@ -552,16 +552,17 @@ static void main_link_log_state(void)
 }
 
 /* The Exact renderer's counters since since, as LINK_COUNTERS records 9
-   to 11 (tools/decode_runtime_log.py names them): frames the Media Engine
-   drew, frames shown late and its busy time per frame; the main
+   to 11 and 13 (tools/decode_runtime_log.py names them): frames the Media
+   Engine drew, frames shown late and its busy time per frame; the main
    processor's time per frame in the log's hooks, log words per frame and
    full resends; whether it draws on the Media Engine (VideoMeState) and
-   the cause and address of an exception there. */
+   the cause and address of an exception there; the Media Engine's
+   working time on half, 99% and all of the frames it finished. */
 static void main_log_video_counters(const VideoMeCounters *since)
 {
   VideoMeCounters now;
   VideoMeState state = video_me_state();
-  u32 frames, sampled, cause, address;
+  u32 frames, sampled, cause, address, median_us, p99_us, max_us;
 
   video_me_counters(&now);
   video_me_fault(&cause, &address);
@@ -576,6 +577,9 @@ static void main_log_video_counters(const VideoMeCounters *since)
    now.resends - since->resends);
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 11,
    (u32)state, cause, address);
+  video_me_frame_times(since, &median_us, &p99_us, &max_us);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 13,
+   median_us, p99_us, max_us);
 }
 
 /* The CPU core running and, for the new one, its compiled blocks and code

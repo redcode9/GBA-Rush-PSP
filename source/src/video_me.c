@@ -81,6 +81,8 @@ static u32 busy_clock;
 static u32 busy_ticks;
 static u32 busy_time;
 static int busy_known;
+/* The Media Engine's clock ticks per ms of the main processor's. */
+static u32 ticks_per_ms;
 
 static VideoMeState load_module(void)
 {
@@ -194,8 +196,12 @@ static void convert_busy_time(void)
   u32 ticks = mailbox->reader.busy;
 
   if(busy_known && clock != busy_clock && now - busy_time < 5000000u)
+  {
     counters.me_busy_us += (u64)(ticks - busy_ticks) *
      (now - busy_time) / (clock - busy_clock);
+    ticks_per_ms = (u32)((u64)(clock - busy_clock) * 1000 /
+     (now - busy_time));
+  }
   busy_clock = clock;
   busy_ticks = ticks;
   busy_time = now;
@@ -339,11 +345,38 @@ u32 video_me_switches(void)
 
 void video_me_counters(VideoMeCounters *out)
 {
+  u32 i;
+
   *out = counters;
   if(mailbox)
+  {
     out->me_frames = mailbox->reader.frames_drawn;
+    for(i = 0; i < GBA_PPU_LOG_TIME_BUCKETS; i++)
+      out->frame_time[i] = mailbox->reader.frame_time[i];
+  }
   out->log_words = writer.write;
   out->resends = writer.resends;
+}
+
+void video_me_frame_times(const VideoMeCounters *since, u32 *median_us,
+ u32 *p99_us, u32 *max_us)
+{
+  VideoMeCounters now;
+  u32 frame_time[GBA_PPU_LOG_TIME_BUCKETS];
+  u32 i;
+
+  video_me_counters(&now);
+  for(i = 0; i < GBA_PPU_LOG_TIME_BUCKETS; i++)
+    frame_time[i] = now.frame_time[i] - since->frame_time[i];
+  *median_us = *p99_us = *max_us = 0;
+  if(!ticks_per_ms)
+    return;
+  *median_us = (u32)((u64)gba_ppu_log_time_within(frame_time, 500) * 1000 /
+   ticks_per_ms);
+  *p99_us = (u32)((u64)gba_ppu_log_time_within(frame_time, 990) * 1000 /
+   ticks_per_ms);
+  *max_us = (u32)((u64)gba_ppu_log_time_within(frame_time, 1000) * 1000 /
+   ticks_per_ms);
 }
 
 void video_me_fault(u32 *cause, u32 *address)

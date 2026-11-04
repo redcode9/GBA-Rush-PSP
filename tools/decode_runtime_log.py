@@ -90,6 +90,7 @@ LINK_COUNTERS = {
     8: "frames/frames-drawn/vblank-wait-us",
     9: "me-frames/frames-late/me-busy-us-per-frame",
     10: "log-us-per-frame/log-words-per-frame/full-resends",
+    13: "me-frame-us-median/p99/max",
 }
 # The CPU core a start or reset chose (CPU_CORE_* in source/src/main.h);
 # logs from before the option say classic.

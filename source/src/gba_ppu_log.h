@@ -73,6 +73,13 @@
    apart, so that every row starts on a 64-byte cache line. */
 #define GBA_PPU_LOG_FRAME_STRIDE   256u
 
+/* The reader's working time for each frame it finishes, counted in steps
+   of 2^GBA_PPU_LOG_TIME_SHIFT ticks of its clock (0.39 ms at 333 MHz on
+   the Media Engine, whose clock ticks at half the processor's rate); the
+   last step also takes every longer frame. */
+#define GBA_PPU_LOG_TIME_BUCKETS   64u
+#define GBA_PPU_LOG_TIME_SHIFT     16u
+
 /* Commands, in the low byte of a ring word. */
 enum
 {
@@ -113,6 +120,9 @@ typedef struct
   volatile uint32_t busy;
   /* A processor exception on the reader: cause, address, bad address. */
   volatile uint32_t fault[3];
+  /* Frames finished, by working time (GBA_PPU_LOG_TIME_SHIFT); kept
+     across the reader's starts. */
+  volatile uint32_t frame_time[GBA_PPU_LOG_TIME_BUCKETS];
 } __attribute__((aligned(64))) GbaPpuLogReaderSide;
 
 typedef struct
@@ -171,6 +181,10 @@ typedef struct
   uint32_t frame_number;
   uint32_t lines;
   uint32_t frames_drawn;
+  /* Working time since the last frame finished, and the frames counted
+     in frame_time so far. */
+  uint32_t busy;
+  uint32_t frames_timed;
 } GbaPpuLogReader;
 
 /* The writer side, on the main processor. The mailbox, ring (of
@@ -214,5 +228,15 @@ void gba_ppu_log_reader_start(GbaPpuLogReader *reader,
    nothing, 1 otherwise, or -1 on a word that is no command (the reader
    then skips to the end of what was published). */
 int gba_ppu_log_read(GbaPpuLogReader *reader);
+
+/* The ticks of its clock the last gba_ppu_log_read worked: they count
+   towards the frame it finishes next, which goes into frame_time. */
+void gba_ppu_log_reader_busy(GbaPpuLogReader *reader, uint32_t ticks);
+
+/* Of the frames counted in frame_time (or a difference of two copies of
+   it), the working time in ticks that permille of them stayed within, as
+   the end of its step; 0 with no frame. */
+uint32_t gba_ppu_log_time_within(const uint32_t *frame_time,
+ uint32_t permille);
 
 #endif
