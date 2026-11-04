@@ -18,8 +18,10 @@
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-  Changed by GBA Rush PSP on 2026-11-05: ArcTan2 calls Div, the C entry of
-  the new divide.s.
+  Changed by GBA Rush PSP on 2026-11-05: CheckInterrupts tells whether any
+  of the flags waited for was set, so IntrWait also ends on interrupts 8-13
+  (DMA, keypad, Game Pak), and ArcTan2 calls Div, the C entry of the new
+  divide.s.
 */
 
 #include <tonc.h>
@@ -221,7 +223,8 @@ bool CheckInterrupts(u32 waitFlags)
 	}
 	REG_IME = 1; //Enable interrupts
 	
-	return flags;
+	// libtonc's bool is 8 bits wide and would drop flags 8-13
+	return flags != 0;
 }
 
 /*-----------------------------------------------------------------

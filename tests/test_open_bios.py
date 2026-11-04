@@ -19,7 +19,7 @@ from tests.test_startup import function
 ROOT = Path(__file__).resolve().parents[1]
 MEMORY = "source/src/memory.c"
 # The built-in image: libretro's with the fixes of source/bios/README.md.
-OPEN_BIOS_SHA256 = "16c7932e2cf42d031a405d4ca6a886c78379e0dc6db69e20609761df8d63a3f2"
+OPEN_BIOS_SHA256 = "0fae74ee1aba3df7146ae9a4e7dccf87dbb1f2d08db5449fc7c96589637c24e1"
 
 # The script that builds the image has a dash in its name: load it by path.
 SCRIPT = ROOT / "scripts" / "build-open-bios.py"

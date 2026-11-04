@@ -11,7 +11,8 @@
   valid `gba_bios.bin` beside the EBOOT is still used first and remains the
   more compatible choice. Its Div and DivArm functions return what the
   official BIOS returns, including the signed remainder, and never hang on a
-  division by zero.
+  division by zero; its IntrWait also ends on DMA, keypad and Game Pak
+  interrupts.
 - Performance > Advanced settings > CPU core: Classic, the dynarec GBA Rush
   has always used, or New, a processor core written from scratch that runs
   each instruction and its cycles as mGBA does and compiles the game's code

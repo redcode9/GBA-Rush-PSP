@@ -10,9 +10,9 @@ UPSTREAM_SHA256, see source/bios/README.md) with GBA Rush PSP's changes:
   unused space after the original code. The unchanged core.s and reset.s
   give back the original bytes, which this script checks.
 - The C code of the BIOS cannot be rebuilt byte for byte (see the README),
-  so its bytes stay the original ones, with one word patched to do what
-  its source change does: the old Div entry that ArcTan2 calls branches to
-  the new Div (0x17A8).
+  so its bytes stay the original ones, with two words patched to do what
+  its source changes do: IntrWait tests every flag (0x4B4), and the old
+  Div entry that ArcTan2 calls branches to the new Div (0x17A8).
 
 Usage:
   python3 scripts/build-open-bios.py            rewrite source/src/open_bios.h
@@ -46,9 +46,11 @@ PLACES = (("core.s", ".init", 0x0000), ("reset.s", ".text", 0x1804),
 UPSTREAM_BYTES = (
     (0x00C8, struct.pack("<I", 0x17A8)),      # SWI table: Div
     (0x00CC, struct.pack("<I", 0x1798)),      # SWI table: DivArm
+    (0x04B4, struct.pack("<I", 0xE31100FF)),  # IntrWait: tst r1, #255
     (0x17A8, struct.pack("<I", 0xE210C102)),  # old Div, called by ArcTan2
     (FREE, bytes(SIZE - FREE)),
 )
+INTRWAIT_TEST = 0xE1110001                    # tst r1, r1
 PREFIX = os.environ.get("ARM_PREFIX", "arm-none-eabi-")
 
 COMMENT = """/*
@@ -72,7 +74,7 @@ COMMENT = """/*
  * 5819380c2ffb0900219d700a382ee68c464ebb99, identical to bios/gba_bios.bin
  * of Nebuleon/ReGBA 313ddd06932aae69daaf66d6102d77e0475de88a (sha256
  * 661a9afb93624f2c5e77d07dab137bd8d23cff79e8639c62fe621b49bb064749), with
- * GBA Rush PSP's changes to Div and DivArm. sha256 of this image:
+ * GBA Rush PSP's changes to Div, DivArm and IntrWait. sha256 of this image:
  * %s.
  */
 
@@ -159,6 +161,7 @@ def build(original):
         image[address:address + len(code)] = code
     if FREE + len(sections[-1][1]) > SIZE:
         sys.exit("divide.s does not fit in the free space")
+    image[0x4B4:0x4B8] = struct.pack("<I", INTRWAIT_TEST)
     # b Div, from the old entry
     offset = (symbols["Div"] - (0x17A8 + 8)) >> 2
     image[0x17A8:0x17AC] = struct.pack("<I", 0xEA000000 | (offset & 0xFFFFFF))

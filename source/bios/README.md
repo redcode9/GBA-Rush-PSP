@@ -24,8 +24,8 @@ identical to `bios/gba_bios.bin` of
 [Nebuleon/ReGBA](https://github.com/Nebuleon/ReGBA) at commit
 `313ddd06932aae69daaf66d6102d77e0475de88a` (2013-09-02), the commit that
 added the image together with the source it was built from. GBA Rush PSP
-changed Div and DivArm (see below); the embedded image has sha256
-`16c7932e2cf42d031a405d4ca6a886c78379e0dc6db69e20609761df8d63a3f2`.
+changed Div, DivArm and IntrWait (see below); the embedded image has sha256
+`0fae74ee1aba3df7146ae9a4e7dccf87dbb1f2d08db5449fc7c96589637c24e1`.
 `tests/test_open_bios.py` checks both: putting back the original bytes of
 the changes gives libretro's image exactly.
 
@@ -57,9 +57,9 @@ linker script (`specs/bios.ld`) that places the image at address 0.
   `helper.arm.c`) cannot be rebuilt byte for byte: they include libtonc's
   `tonc.h`, which is not part of this repository, and were compiled in 2013
   by the GCC of devkitARM, whose code generation GCC 15 does not reproduce.
-  So the image keeps their original bytes, with one word patched to do what
-  their source change does: at 0x17A8, the old Div that ArcTan2 calls, a
-  branch to the new `Div`.
+  So the image keeps their original bytes, with two words patched to do what
+  their source changes do: `tst r1, r1` at 0x4B4 in IntrWait, and at 0x17A8,
+  the old Div that ArcTan2 calls, a branch to the new `Div`.
 
 The script takes the original image from `open_bios.h` itself, by putting
 back the original bytes of its changes, or from a copy of libretro's file
@@ -99,12 +99,15 @@ the official BIOS and are ignored with this one.
   results in C, recorded from the official BIOS, and `tests/test_bios_hle.c`
   runs the image on the New core to check 2,000 pairs and the edge cases
   against it, from ARM and Thumb code.
+- `IntrWait` (SWI 0x04) ends when any of the interrupts it waits for has
+  happened. It used to check only interrupt flags 0-7 (`tst r1, #255` at
+  0x4B4, from libtonc's 8-bit `bool`), so a wait for DMA, keypad or Game Pak
+  interrupts alone never ended.
 
 ## Known differences from the official BIOS
 
-- `IntrWait` (SWI 0x04) checks only interrupt flags 0-7 before returning
-  (`tst r1, #255` at 0x4B4), so a wait for DMA, keypad or Game Pak interrupts
-  alone never ends.
+- `IntrWait` with r0 = 0 halts before it checks the flags, so a flag that is
+  already set is seen only after the next interrupt.
 - `SoundBiasChange` and the sound driver and music player functions do
   nothing, except `MidiKey2Freq`; `SoundGetJumpList` fills its list with
   pointers to a function that just returns.

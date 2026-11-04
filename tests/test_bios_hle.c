@@ -2,7 +2,8 @@
  * Host tests for bios_hle.c, the official BIOS's Div results, and for the
  * built-in BIOS image (open_bios.h) against them: its SWI 0x06 and 0x07
  * run from ARM and Thumb code on the ARM core's interpreter must return
- * the same r0, r1 and r3, and keep r2, r12 and the flags.
+ * the same r0, r1 and r3, and keep r2, r12 and the flags. The same core
+ * runs IntrWait, which must end on interrupt flags 8-13 too.
  */
 
 #include <stdint.h>
@@ -122,7 +123,7 @@ static uint32_t read32(void *context, uint32_t address)
   return read_any(address, 4);
 }
 
-/* Writes outside work RAM do nothing here. */
+/* I/O writes (IME, HALTCNT) do nothing here. */
 static void ignore(void *context, uint32_t address, uint32_t value)
 {
   (void)context;
@@ -241,6 +242,33 @@ static void test_image_div(void)
   }
 }
 
+/* IntrWait(0, 1 << 8) with interrupt 8 already flagged in the BIOS's copy
+   of IF (0x03007FF8, which the game's handler sets): it acknowledges the
+   flag and returns, where the original image looped forever. */
+static int intr_wait_returns(void)
+{
+  uint16_t flags = 0x0100;
+  int returned;
+
+  memcpy(iwram + 0x7FF8, &flags, sizeof(flags));
+  core.v[0] = 0;
+  core.v[1] = 0x0100;
+  returned = call_swi(4, 0, 0, 100000);
+  memcpy(&flags, iwram + 0x7FF8, sizeof(flags));
+  return returned && flags == 0;
+}
+
+static void test_image_intr_wait(void)
+{
+  static const uint8_t old_test[4] = { 0xFF, 0x00, 0x11, 0xE3 };
+
+  CHECK(intr_wait_returns());
+  /* The original "tst r1, #255" at 0x4B4 brings the hang back. */
+  memcpy(bios + 0x4B4, old_test, sizeof(old_test));
+  CHECK(!intr_wait_returns());
+  memcpy(bios, open_bios_rom, sizeof(bios));
+}
+
 int main(void)
 {
   test_reference();
@@ -248,6 +276,7 @@ int main(void)
   write_callers();
   arm_core_init(&core, &bus);
   test_image_div();
+  test_image_intr_wait();
   if(failures)
     return 1;
   printf("bios_hle tests passed\n");
