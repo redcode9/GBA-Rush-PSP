@@ -271,6 +271,10 @@ typedef struct
   unsigned section_z;
   uint8_t temp_reg[ARM_IR_SLOTS];   /* 0: kept in core.v */
   uint16_t last_use[ARM_IR_SLOTS];
+  /* The highest temporary the instruction uses: the per-temporary state
+     above it is clear (write_runtime clears all of it once), so the loops
+     over temporaries stop there. */
+  unsigned temp_high;
   unsigned temps_free;     /* free registers among a0-a3 */
   unsigned scratch_used;
   /* Values as the decoder knows them, and guesses from the registers. */
@@ -589,10 +593,18 @@ static void instruction_uses(Builder *b, unsigned i)
 
     while(n--)
       if(reads[n] >= ARM_IR_FIRST_TEMP)
+      {
         b->last_use[reads[n]] = (uint16_t)j;
-    if(b->ops[j].d >= ARM_IR_FIRST_TEMP && b->ops[j].d != ARM_IR_NONE &&
-       b->last_use[b->ops[j].d] < j)
-      b->last_use[b->ops[j].d] = (uint16_t)j;
+        if(reads[n] > b->temp_high)
+          b->temp_high = reads[n];
+      }
+    if(b->ops[j].d >= ARM_IR_FIRST_TEMP && b->ops[j].d != ARM_IR_NONE)
+    {
+      if(b->last_use[b->ops[j].d] < j)
+        b->last_use[b->ops[j].d] = (uint16_t)j;
+      if(b->ops[j].d > b->temp_high)
+        b->temp_high = b->ops[j].d;
+    }
   }
 }
 
@@ -765,7 +777,7 @@ static void bail(Builder *b, unsigned index, int spilled, int exact,
   unsigned slot;
 
   settle_copy(b);
-  for(slot = ARM_IR_FIRST_TEMP; slot < ARM_IR_SLOTS; slot++)
+  for(slot = ARM_IR_FIRST_TEMP; slot <= b->temp_high; slot++)
   {
     unsigned r = b->temp_reg[slot];
 
@@ -1980,13 +1992,14 @@ static void instruction(Builder *b, unsigned i)
   const ArmIrOp *op = &b->ops[i];
   unsigned slot;
 
-  for(slot = ARM_IR_FIRST_TEMP; slot < ARM_IR_SLOTS; slot++)
+  for(slot = ARM_IR_FIRST_TEMP; slot <= b->temp_high; slot++)
   {
     b->temp_reg[slot] = 0;
     b->last_use[slot] = 0;
     b->known[slot] = 0;
     b->guessed[slot] = 0;
   }
+  b->temp_high = 0;
   b->temps_free = 0xF0;
   instruction_uses(b, i);
   b->pending += op->a | op->d << 8;
