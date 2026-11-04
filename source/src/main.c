@@ -2404,12 +2404,13 @@ void change_ext(char *src, char *buffer, const char *extension)
 {
   char *dot_position;
 
-  strcpy(buffer, src);
+  snprintf(buffer, MAX_FILE, "%s", src);
   dot_position = strrchr(buffer, '.');
 
   if (dot_position)
   {
-    strcpy(dot_position, extension);
+    snprintf(dot_position, MAX_FILE - (dot_position - buffer), "%s",
+     extension);
   }
 }
 

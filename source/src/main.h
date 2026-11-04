@@ -182,7 +182,9 @@ void error_msg(const char *text, u8 confirm);
    option_swap_confirm_buttons) or START, 1 on the cancel button. */
 u32 yesno_dialog(const char *text);
 /* Copies src to buffer, replacing everything from its last '.' with
-   extension ("" strips it); a name without a '.' is copied unchanged. */
+   extension ("" strips it); a name without a '.' is copied unchanged.
+   buffer holds MAX_FILE bytes, as src does: a result that would not fit,
+   such as a long ROM name with "_auto-builtin.svs", is cut short. */
 void change_ext(char *src, char *buffer, const char *extension);
 
 u64 ticker(void);

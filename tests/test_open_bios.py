@@ -210,6 +210,50 @@ int main(void) {
 '''
 
 
+# change_ext fills a MAX_FILE buffer; the longest suffix, the built-in BIOS's
+# automatic savestate, must not run past it on a long ROM name.
+CHANGE_EXT = r'''
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#define MAX_FILE 256
+%s
+int main(void) {
+  struct { char name[MAX_FILE]; char after[32]; } out;
+  char rom[MAX_FILE];
+  memset(rom, 'r', sizeof(rom)); strcpy(rom + 240, ".gba");
+  memset(&out, 0x5A, sizeof(out));
+  change_ext(rom, out.name, "_auto-builtin.svs");
+  assert(strlen(out.name) == MAX_FILE - 1 && out.after[0] == 0x5A);
+  assert(!strcmp(out.name + 240, "_auto-builtin.s"));
+  change_ext("Game.gba", out.name, "_auto-builtin.svs");
+  assert(!strcmp(out.name, "Game_auto-builtin.svs"));
+  change_ext("Game.gba", out.name, "");
+  assert(!strcmp(out.name, "Game"));
+  change_ext("Game", out.name, ".sav");
+  assert(!strcmp(out.name, "Game"));
+  return 0;
+}
+'''
+
+
+def compile_and_run(source):
+    with tempfile.TemporaryDirectory(prefix="gbarush-bios-") as directory:
+        path = Path(directory)
+        (path / "test.c").write_text(source)
+        command = shlex.split(os.environ.get("HOST_CC", "cc"))
+        # The spliced functions call sprintf, which the macOS SDK marks
+        # deprecated.
+        result = subprocess.run(command + ["-std=c99", "-Wall", "-Wextra", "-Werror",
+                                           "-Wno-deprecated-declarations",
+                                           "-I", str(ROOT / "source/src"),
+                                           str(path / "test.c"), "-o", str(path / "test")],
+                                capture_output=True, text=True)
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+        subprocess.run([str(path / "test")], check=True)
+
+
 class OpenBiosTests(unittest.TestCase):
     def test_embedded_bios(self):
         data = open_bios_bytes()
@@ -231,6 +275,10 @@ class OpenBiosTests(unittest.TestCase):
         subprocess.run([sys.executable, str(SCRIPT), "--check"], check=True,
                        capture_output=True)
 
+    def test_change_ext_stays_in_its_buffer(self):
+        compile_and_run(CHANGE_EXT % function("source/src/main.c",
+            "void change_ext(char *src, char *buffer, const char *extension)"))
+
     def test_production_bios_paths(self):
         # Splice the real functions between the stubs and the scenarios.
         source = STUBS + savestate_layout()
@@ -245,20 +293,7 @@ class OpenBiosTests(unittest.TestCase):
                 "u32 load_state_silent(char *savestate_filename)"):
             source += function(MEMORY, signature) + "\n"
         source += function("source/src/main.c", "static void load_bios_file(void)") + "\n"
-        source += SCENARIOS
-        with tempfile.TemporaryDirectory(prefix="gbarush-bios-") as directory:
-            path = Path(directory)
-            (path / "bios.c").write_text(source)
-            command = shlex.split(os.environ.get("HOST_CC", "cc"))
-            # The spliced functions call sprintf, which the macOS SDK marks
-            # deprecated.
-            result = subprocess.run(command + ["-std=c99", "-Wall", "-Wextra", "-Werror",
-                                               "-Wno-deprecated-declarations",
-                                               "-I", str(ROOT / "source/src"),
-                                               str(path / "bios.c"), "-o", str(path / "bios")],
-                                    capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            subprocess.run([str(path / "bios")], check=True)
+        compile_and_run(source + SCENARIOS)
 
 
 if __name__ == "__main__":

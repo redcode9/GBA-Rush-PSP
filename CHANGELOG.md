@@ -43,6 +43,11 @@
 - The `bios_rom_hack_39` and `bios_rom_hack_2C` options of `game_config.txt`
   apply only to `gba_bios.bin`.
 
+### Fixed
+
+- A ROM file name of about 240 characters or more no longer overruns the
+  memory that holds its savestate name.
+
 ## 1.4.3 - 2026-11-02
 
 ### Fixed
