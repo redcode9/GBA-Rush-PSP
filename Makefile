@@ -51,6 +51,7 @@ HOST_TEST_DYNAREC_WORKLIST = $(HOST_BUILD_DIR)/test_dynarec_worklist
 HOST_TEST_SOUND_MATH = $(HOST_BUILD_DIR)/test_sound_math
 HOST_TEST_RUNTIME_LOG = $(HOST_BUILD_DIR)/test_runtime_log
 HOST_TEST_ARM_CORE = $(HOST_BUILD_DIR)/test_arm_core
+HOST_TEST_CORE_PROFILE = $(HOST_BUILD_DIR)/test_core_profile
 # arm_mips.c is only compiled here (its tests need Unicorn: make check-core).
 ARM_CORE_SOURCES = source/src/arm_decode.c source/src/arm_interp.c \
  source/src/arm_mips.c
@@ -72,8 +73,8 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE) $(HOST_TEST_FAST_FORWARD) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
- $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_GBA_PPU) \
- $(HOST_TEST_GBA_PPU_LOG)
+ $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_CORE_PROFILE) \
+ $(HOST_TEST_GBA_PPU) $(HOST_TEST_GBA_PPU_LOG)
 # The same C tests built with HOST_SANITIZE_FLAGS for make test-sanitize.
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_net \
@@ -100,6 +101,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_sound_math \
  $(HOST_SANITIZE_DIR)/test_runtime_log \
  $(HOST_SANITIZE_DIR)/test_arm_core \
+ $(HOST_SANITIZE_DIR)/test_core_profile \
  $(HOST_SANITIZE_DIR)/test_gba_ppu \
  $(HOST_SANITIZE_DIR)/test_gba_ppu_log
 
@@ -138,6 +140,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_SOUND_MATH)
 	$(HOST_TEST_RUNTIME_LOG)
 	$(HOST_TEST_ARM_CORE)
+	$(HOST_TEST_CORE_PROFILE)
 	$(HOST_TEST_GBA_PPU)
 	$(HOST_TEST_GBA_PPU_LOG)
 
@@ -177,6 +180,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_sound_math
 	$(HOST_SANITIZE_DIR)/test_runtime_log
 	$(HOST_SANITIZE_DIR)/test_arm_core
+	$(HOST_SANITIZE_DIR)/test_core_profile
 	$(HOST_SANITIZE_DIR)/test_gba_ppu
 	$(HOST_SANITIZE_DIR)/test_gba_ppu_log
 
@@ -384,6 +388,12 @@ $(HOST_TEST_ARM_CORE): tests/test_arm_core.c $(ARM_CORE_SOURCES) \
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_arm_core.c $(ARM_CORE_SOURCES) -o $@
+
+$(HOST_TEST_CORE_PROFILE): tests/test_core_profile.c \
+ source/src/core_profile.c source/src/core_profile.h $(ARM_CORE_HEADERS)
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_core_profile.c source/src/core_profile.c -o $@
 
 $(HOST_TEST_GBA_PPU): tests/test_gba_ppu.c source/src/gba_ppu.c \
  source/src/gba_ppu.h
@@ -605,6 +615,12 @@ $(HOST_SANITIZE_DIR)/test_arm_core: tests/test_arm_core.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_arm_core.c $(ARM_CORE_SOURCES) -o $@
+
+$(HOST_SANITIZE_DIR)/test_core_profile: tests/test_core_profile.c \
+ source/src/core_profile.c source/src/core_profile.h $(ARM_CORE_HEADERS)
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_core_profile.c source/src/core_profile.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_gba_ppu: tests/test_gba_ppu.c \
  source/src/gba_ppu.c source/src/gba_ppu.h
