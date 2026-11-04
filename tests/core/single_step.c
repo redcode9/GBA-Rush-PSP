@@ -656,6 +656,7 @@ int main(int argc, char **argv)
       bus_error = 0;
       load_state(&test.initial);
       cycles = arm_core_step(core);
+      (void)cycles;   /* read only by the backend check */
       save_state(&got);
 #ifdef SINGLE_STEP_JIT
       if(!backend_agrees(&test, &got, cycles) && verbose && shown_backend < 8)
