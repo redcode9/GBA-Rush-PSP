@@ -37,7 +37,7 @@ fi
 out=${OUT:-build/eboot}
 mkdir -p "$out"
 ${CC:-cc} -std=c99 -O2 -Wall -Wextra -Werror -Isource/src \
-  tests/eboot/game_config.c source/src/config_model.c -o "$out/game_config"
+  tests/eboot/global_config.c source/src/config_model.c -o "$out/global_config"
 party="python3 tests/rom_link/firered_save.py party"
 
 absolute()
@@ -82,7 +82,7 @@ run()
   if [ "$2" = new ]; then
     number=1
   fi
-  "$out/game_config" "$number" "$dir/cfg/game.cfg"
+  "$out/global_config" "$number" "$dir/tempgba.cfg"
 
   "$headless" --timeout="${RUN_SECONDS:-120}" "$dir/EBOOT.PBP" \
     > "$dir/ppsspp.log" 2>&1 || true

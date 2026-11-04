@@ -10,11 +10,12 @@
  */
 
 /*
- * Writes a game's settings file with the default settings and the given
- * CPU core (0 Classic, 1 New), so scripts/check-eboot.sh can start a game
- * on either core.
+ * Writes GBA Rush's global settings file (tempgba.cfg beside EBOOT.PBP)
+ * with the default settings and the given CPU core (0 Classic, 1 New), so
+ * scripts/check-eboot.sh can start a game on either core. The core comes
+ * only from this file: a game's own settings file does not set it.
  *
- * Usage: game_config CORE FILE
+ * Usage: global_config CORE FILE
  */
 
 #include <stdio.h>
@@ -31,7 +32,7 @@ int main(int argc, char **argv)
 
   if(argc != 3)
   {
-    fprintf(stderr, "usage: game_config CORE FILE\n");
+    fprintf(stderr, "usage: global_config CORE FILE\n");
     return 2;
   }
   config_model_defaults(&model);
