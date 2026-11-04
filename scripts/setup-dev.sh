@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+# GBA Rush PSP, Copyright (C) 2026 Piero Carrieri, GPL-2.0-or-later.
+
 # Prepares a machine (macOS arm64 or Linux x86_64) for every check: the PSP
 # toolchain, the references check-core and check-render compare against,
 # the test ROM suites and PPSSPP's headless runner, all in ext/ (ignored
