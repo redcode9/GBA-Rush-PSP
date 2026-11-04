@@ -193,6 +193,30 @@ class RuntimeLogDecoderTests(unittest.TestCase):
                               "values": [1, 8116, 2]}),
             "cpu-core=new blocks-compiled=8116 code-flushes=2")
 
+    def test_describes_cpu_clock_records(self):
+        main_c = (Path(__file__).parents[1] / "source" / "src" /
+                  "main.c").read_text(encoding="utf-8")
+        self.assertIn("RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 13",
+                      main_c)
+        cases = [
+            ([333, 333, 166], "requested=333MHz cpu=333MHz bus=166MHz"),
+            ([222, 222, 111], "requested=222MHz cpu=222MHz bus=111MHz"),
+            ([333, 222, 111],
+             "requested=333MHz cpu=222MHz bus=111MHz MISMATCH"),
+            ([333, 300, 166],
+             "requested=333MHz cpu=300MHz bus=166MHz MISMATCH"),
+            ([333, 333, 111],
+             "requested=333MHz cpu=333MHz bus=111MHz MISMATCH"),
+            ([333, 0x8002013A, 166],
+             "requested=333MHz cpu=-2147352262MHz bus=166MHz MISMATCH"),
+        ]
+        for values, expected in cases:
+            with self.subTest(values=values):
+                self.assertEqual(
+                    decoder.describe({"event": "link-counters", "flags": 13,
+                                      "values": values}),
+                    "cpu-clock " + expected)
+
     def test_exact_renderer_names_match_the_c_enum(self):
         header = (Path(__file__).parents[1] / "source" / "src" /
                   "video_me.h").read_text()

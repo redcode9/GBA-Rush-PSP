@@ -78,6 +78,8 @@ ADHOC_PHASES = [
     "control-init", "create-group", "scan", "join-group", "group-wait",
     "peer-list", "socket", "send", "receive", "group-lost",
 ]
+# Counter records by kind; describe() spells out 11 (Exact renderer),
+# 12 (CPU core) and 13 (requested and read-back CPU and bus clocks).
 LINK_COUNTERS = {
     0: "rtt-us/rtt-max-us/resends",
     1: "datagrams-sent/received/rejected",
@@ -241,6 +243,14 @@ def describe(record: dict[str, Any]) -> str:
         return (
             f"cpu-core={_name(CPU_CORES, value0)} blocks-compiled={value1} "
             f"code-flushes={value2}"
+        )
+    if event == "link-counters" and flags == 13:
+        cpu, bus = _signed(value1), _signed(value2)
+        # The firmware reports whole MHz (333 reads back 333, its bus 166).
+        mismatch = abs(cpu - value0) > 1 or abs(bus - value0 // 2) > 1
+        return (
+            f"cpu-clock requested={value0}MHz cpu={cpu}MHz bus={bus}MHz"
+            + (" MISMATCH" if mismatch else "")
         )
     if event == "link-counters":
         return f"{LINK_COUNTERS.get(flags, f'counters-{flags}')}={value0}/{value1}/{value2}"
