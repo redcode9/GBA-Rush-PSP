@@ -3,6 +3,7 @@
 import hashlib
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -62,9 +63,9 @@ class InstallTestBuildTest(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def run_script(self, *arguments):
+    def run_script(self, *arguments, script=SCRIPT):
         return subprocess.run(
-            ["sh", str(SCRIPT), "--dry-run", *arguments, str(self.zip)],
+            ["sh", str(script), "--dry-run", *arguments, str(self.zip)],
             env={**os.environ, "PSP_VOLUMES": str(self.volumes)},
             capture_output=True, text=True, check=False)
 
@@ -80,6 +81,26 @@ class InstallTestBuildTest(unittest.TestCase):
             if line.startswith("  would run: rm -f ")
         }
         self.assertEqual(removed, REMOVABLE | {"media_engine.prx"})
+
+    def test_a_worktree_archives_into_the_main_checkout(self):
+        # Removing a worktree deletes its ignored artifacts/ folder, which
+        # would hold the only copy of the logs taken off the card.
+        main = self.root / "main"
+        worktree = self.root / "worktree"
+        git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
+               "-c", "commit.gpgsign=false"]
+        subprocess.run(git + ["init", "-q", str(main)], check=True)
+        subprocess.run(git + ["-C", str(main), "commit", "-q", "--allow-empty",
+                              "-m", "Start"], check=True)
+        subprocess.run(git + ["-C", str(main), "worktree", "add", "-q",
+                              "--detach", str(worktree)], check=True)
+        script = worktree / "scripts" / SCRIPT.name
+        script.parent.mkdir()
+        shutil.copy(SCRIPT, script)
+        result = self.run_script(script=script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"would run: mkdir -p {main.resolve()}/artifacts/hardware/",
+                      result.stdout)
 
     def test_a_zip_that_does_not_match_its_checksum_stops(self):
         with zipfile.ZipFile(self.zip, "a") as archive:

@@ -6,7 +6,8 @@ set -eu
 # over USB: the PSP-2000 as PSP_2004 (PSP/GAME/CAT_Emulators/gpSP) and the
 # PSP-1000 as PSP_1004 (PSP/GAME/gpSP). For each card it first copies the
 # runtime logs, Diagnostics reports, input traces, crash log, saves and the
-# build it replaces into artifacts/hardware/<date>-<time>/<volume>/, then
+# build it replaces into artifacts/hardware/<date>-<time>/<volume>/ of the
+# main checkout (never of a linked worktree), then
 # copies EBOOT.PBP, exception.prx and media_engine.prx from the zip, reads
 # them back from the card to check their SHA-256, removes the logs and
 # reports it archived (so the next session starts clean) and ejects the
@@ -43,6 +44,15 @@ fi
 volumes=${PSP_VOLUMES:-/Volumes}
 min_free_kb=${PSP_MIN_FREE_KB:-2048}
 root=$(cd "$(dirname "$0")/.." && pwd)
+# Once the logs leave the card the archive is their only copy, so it goes
+# into the main checkout even when the script runs from a linked worktree:
+# `git worktree remove` deletes the ignored artifacts/ folder without a
+# warning.
+common=$(git -C "$root" rev-parse --path-format=absolute --git-common-dir \
+  2>/dev/null || :)
+if [ "${common##*/}" = .git ]; then
+  root=${common%/.git}
+fi
 artifacts="$root/artifacts/hardware/$(date +%Y%m%d-%H%M%S)"
 
 sha256()
