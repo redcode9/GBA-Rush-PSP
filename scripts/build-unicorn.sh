@@ -10,7 +10,8 @@ set -eu
 # encodes elsewhere: clz and clo as SPECIAL functions 0x16 and 0x17, max
 # and min as 0x2C and 0x2D (PPSSPP's MIPSTables.cpp lists them). Unicorn
 # treats those as reserved instructions and loses the pc, so this teaches
-# its decoder them.
+# its decoder them. Optional: on a stock Unicorn mips_unicorn.c runs them
+# from a hook, which is slower.
 
 dir=${1:?usage: build-unicorn.sh DIR}
 version=2.1.4
