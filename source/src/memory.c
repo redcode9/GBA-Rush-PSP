@@ -3770,8 +3770,8 @@ s32 load_gamepak(char *name)
 
 // Reads the 16 KB BIOS file into bios.rom and returns 0. Otherwise bios.rom
 // gets the built-in open BIOS, and the result is -1 if the file won't open
-// or is a copy of the built-in image, -2 if it is not a GBA BIOS (too short,
-// or another image).
+// or is a copy of the open BIOS, -2 if it is not a GBA BIOS (too short, or
+// another image).
 s32 load_bios(char *name)
 {
   SceUID bios_file;
@@ -3786,11 +3786,12 @@ s32 load_bios(char *name)
     FILE_CLOSE(bios_file);
 
     // Every GBA BIOS starts with the reset vector "b 0x68" (EA000018). The
-    // built-in image does not, but ReGBA ships it as gba_bios.bin.
+    // open BIOS starts with "b 0x38" instead; ReGBA ships it as
+    // gba_bios.bin, and a copy of it, even one without the built-in
+    // image's fixes, gets the built-in image.
     if ((bytes_read == 0x4000) && (memcmp(bios.rom, "\x18\x00\x00\xEA", 4) == 0))
       result = 0;
-    else if ((bytes_read != 0x4000) ||
-     (memcmp(bios.rom, open_bios_rom, sizeof(open_bios_rom)) != 0))
+    else if ((bytes_read != 0x4000) || (memcmp(bios.rom, open_bios_rom, 4) != 0))
       result = -2;
   }
 

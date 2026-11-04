@@ -108,8 +108,9 @@ static s32 stub_read(void *buffer, size_t size) {
 '''
 
 # A 16 KB (or longer) file that starts with the GBA reset vector is used as
-# is. A missing file and a copy of the built-in image (-1) load the built-in
-# BIOS silently; any other file (-2) loads it and load_bios_file reports it.
+# is. A missing file and a copy of the open BIOS, even an older one (-1),
+# load the built-in BIOS silently; any other file (-2) loads it and
+# load_bios_file reports it.
 # The game_config.txt BIOS patches touch gba_bios.bin only (0x2C is IRQ
 # handler code in the built-in BIOS). A savestate records the BIOS kind in
 # the word before the link snapshot, and load_state_silent refuses one made
@@ -139,6 +140,9 @@ int main(void) {
   assert(memcmp(bios.rom, open_bios_rom, sizeof(bios.rom)) == 0);
   memcpy(image, open_bios_rom, sizeof(open_bios_rom));
   assert(load_bios("gba_bios.bin") == -1 && bios_builtin == 1);
+  bios_file(0x4000, "\x0c\x00\x00\xea");
+  assert(load_bios("gba_bios.bin") == -1 && bios_builtin == 1);
+  assert(memcmp(bios.rom, open_bios_rom, sizeof(bios.rom)) == 0);
 
   shown = NULL; bios_file(-1, "\x18\x00\x00\xea"); load_bios_file();
   assert(shown == NULL);
