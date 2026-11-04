@@ -41,7 +41,8 @@ fi
 # shellcheck disable=SC2086
 ${CC:-cc} -O2 -std=gnu99 -I"$MGBA_DIR/include" -I"$MGBA_DIR/build/include" \
   -Isource/src tests/rom_link/link_e2e.c source/src/link_cable.c \
-  source/src/link_net.c source/src/gba_sio.c "$MGBA_DIR/build/libmgba.a" \
+  source/src/link_net.c source/src/gba_sio.c source/src/net_fault.c \
+  "$MGBA_DIR/build/libmgba.a" \
   -lm $frameworks -o "$out/link_e2e"
 
 rom0=$(absolute "$ROM")

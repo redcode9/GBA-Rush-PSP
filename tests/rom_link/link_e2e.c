@@ -65,6 +65,7 @@
 /* GBA Rush's gba_sio.h and mGBA's sio.h share an include guard. */
 #include "gba_sio.h"
 #include "link_cable.h"
+#include "net_fault.h"
 #undef GBA_SIO_H
 
 #include <mgba/core/core.h>
@@ -183,75 +184,25 @@ static struct mLogger silent_logger = { .log = silent_log };
 
 /* ---- Network ------------------------------------------------------------ */
 
-typedef struct
-{
-  uint8_t data[LINK_NET_MAX_DATAGRAM];
-  size_t size;
-  uint64_t arrival;
-  int to;
-} Flight;
-
-static Flight flights[4096];
-static unsigned flight_count;
-static uint32_t net_latency = 3000, net_jitter = 4000, net_loss = 3,
- net_dup = 1;
-static uint64_t outage_period_us, outage_us;
-static uint32_t rng_state = 12345;
+/* The scripted network (net, outage and seed lines): the outage window
+   counts from sim_now 0, and air time comes on top of the latency. */
+static NetFaultProfile net_profile =
+ { "script", 3000u, 4000u, 3u, 1u, 0u, 0u, 0u, AIRTIME_NS_PER_BYTE };
+static NetFaultFlight flights[4096];
+static NetFault network;
 static uint64_t sim_now;
 
-/* Linear congruential generator; the low bits are weak, so drop them. */
-static uint32_t rng(void)
+/* Hands a datagram whose arrival time has come to its console, or to its
+   stack, which passes it on once the console sleeps. */
+static void network_receive(void *context, const NetFaultFlight *flight)
 {
-  rng_state = rng_state * 1664525u + 1013904223u;
-  return rng_state >> 8;
-}
+  Side *side = &sides[flight->to];
 
-/* Puts a datagram in flight to console `to` with the scripted outage,
-   loss, duplication, latency and jitter (which also reorders). */
-static void network_send(int to, const uint8_t *data, size_t size)
-{
-  unsigned copies = 1;
-
-  if(outage_period_us != 0 &&
-     sim_now % outage_period_us >= outage_period_us - outage_us)
-    return;
-  if(rng() % 100u < net_loss)
-    return;
-  if(rng() % 100u < net_dup)
-    copies = 2;
-  while(copies-- && flight_count < 4096)
-  {
-    Flight *f = &flights[flight_count++];
-    memcpy(f->data, data, size);
-    f->size = size;
-    f->to = to;
-    f->arrival = sim_now + net_latency + size * AIRTIME_NS_PER_BYTE / 1000u +
-     (net_jitter ? rng() % net_jitter : 0);
-  }
-}
-
-/* Hands every datagram whose arrival time has come to its console, or to
-   its stack, which passes it on once the console sleeps. */
-static void network_deliver(void)
-{
-  unsigned i = 0;
-
-  while(i < flight_count)
-  {
-    if(flights[i].arrival <= sim_now)
-    {
-      Side *side = &sides[flights[i].to];
-
-      if(!side->stack)
-        link_cable_receive(&side->cable, flights[i].data, flights[i].size,
-         sim_now);
-      else if(!stack_push(side, flights[i].data, flights[i].size, 0))
-        side->receive_drops++;
-      flights[i] = flights[--flight_count];
-    }
-    else
-      i++;
-  }
+  (void)context;
+  if(!side->stack)
+    link_cable_receive(&side->cable, flight->data, flight->size, sim_now);
+  else if(!stack_push(side, flight->data, flight->size, 0))
+    side->receive_drops++;
 }
 
 /* ---- Serial driver bridging mGBA to gba_sio ------------------------------ */
@@ -573,8 +524,8 @@ static void side_stack_work(Side *side)
     side->stack_count--;
     side->stack_time -= side->stack_cost_us;
     if(side->stack_queue[slot].outgoing)
-      network_send(1 - side->index, side->stack_queue[slot].data,
-       side->stack_queue[slot].size);
+      net_fault_send(&network, 1 - side->index,
+       side->stack_queue[slot].data, side->stack_queue[slot].size, sim_now);
     else
       link_cable_receive(&side->cable, side->stack_queue[slot].data,
        side->stack_queue[slot].size, sim_now);
@@ -707,7 +658,7 @@ static void side_tick(Side *side)
       size = link_cable_build(&side->cable, datagram, sizeof(datagram),
        side_cycle(side), sim_now);
       if(size && !side->stack)
-        network_send(1 - side->index, datagram, size);
+        net_fault_send(&network, 1 - side->index, datagram, size, sim_now);
       else if(size)
       {
         if(!stack_push(side, datagram, size, 1))
@@ -731,7 +682,7 @@ static void run_tick(void)
   int s;
 
   sim_now += TICK_US;
-  network_deliver();
+  net_fault_deliver(&network, sim_now, network_receive, NULL);
   for(s = 0; s < 2; s++)
   {
     side_tick(&sides[s]);
@@ -873,6 +824,7 @@ int main(int argc, char **argv)
     return 1;
   }
   mLogSetDefaultLogger(&silent_logger);
+  net_fault_init(&network, &net_profile, flights, 4096u, 12345u);
   side_init(&sides[0], 0, argv[1], argv[5], argv[2]);
   side_init(&sides[1], 1, argv[3], argv[5], argv[4]);
   script = strcmp(argv[6], "-") == 0 ? stdin : fopen(argv[6], "r");
@@ -946,18 +898,26 @@ int main(int argc, char **argv)
     }
     else if(strcmp(cmd, "net") == 0)
     {
-      net_latency = (uint32_t)atoi(a);
-      net_jitter = (uint32_t)atoi(b);
-      net_loss = (uint32_t)atoi(c);
-      net_dup = (uint32_t)atoi(d);
+      net_profile.latency_us = (uint32_t)atoi(a);
+      net_profile.jitter_us = (uint32_t)atoi(b);
+      net_profile.loss_percent = (uint32_t)atoi(c);
+      net_profile.duplicate_percent = (uint32_t)atoi(d);
     }
     else if(strcmp(cmd, "outage") == 0)
     {
-      outage_period_us = (uint64_t)atoi(a) * 1000u;
-      outage_us = (uint64_t)atoi(b) * 1000u;
+      /* Lost during the last length_ms of each period (none if the
+         period is 0 or shorter than the length). */
+      uint64_t period_us = (uint64_t)atoi(a) * 1000u;
+
+      net_profile.outage_start_us = period_us - (uint64_t)atoi(b) * 1000u;
+      net_profile.outage_end_us = period_us;
+      net_profile.outage_period_us = period_us;
     }
     else if(strcmp(cmd, "seed") == 0)
-      rng_state = (uint32_t)strtoul(a, NULL, 0);
+    {
+      /* Reseeds only: datagrams already in flight stay there. */
+      network.rng_state = (uint32_t)strtoul(a, NULL, 0);
+    }
     else if(strcmp(cmd, "speed") == 0)
       sides[atoi(a)].speed = atof(b);
     else if(strcmp(cmd, "psp") == 0)
