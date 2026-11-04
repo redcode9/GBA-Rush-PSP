@@ -18,6 +18,10 @@ void video_term(void);
 
 void flip_screen(u32 vsync);
 void video_texture_from(const u16 *frame, int clean);
+void video_show_direct(const u16 *picture);
+int video_show_direct_again(void);
+int video_direct_free(const u16 *picture);
+void video_present_time(u32 *presents, u64 *us);
 void video_sync_present(void);
 u32 video_last_ge_wait_us(void);
 void video_power_suspend(void);

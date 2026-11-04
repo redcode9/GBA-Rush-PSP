@@ -60,7 +60,12 @@ typedef enum
    interrupts it after publishing more of the log, instead of polling the
    mailbox in main memory. */
 #define VIDEO_ME_SLEEP             0x08u
-#define VIDEO_ME_SWITCHES          0x0Fu
+/* At 1x scale, with Show FPS off, the Media Engine draws into whole
+   480x272 pictures in main memory that the display shows as they are,
+   without the GE; the HOLD and fast-forward marks are not drawn over
+   them. Takes 816 KiB for three pictures. */
+#define VIDEO_ME_DIRECT_1X         0x10u
+#define VIDEO_ME_SWITCHES          0x1Fu
 
 typedef struct
 {
@@ -82,6 +87,11 @@ typedef struct
      halt (VIDEO_ME_SLEEP). */
   u32 fallback_frames;
   u32 wakes;
+  /* Frames shown straight from main memory (VIDEO_ME_DIRECT_1X), and the
+     frame presents of the GE with its time on them. */
+  u32 direct_frames;
+  u32 ge_presents;
+  u64 ge_us;
   /* Frames the Media Engine finished, by its working time on each. */
   u32 frame_time[GBA_PPU_LOG_TIME_BUCKETS];
 } VideoMeCounters;

@@ -347,6 +347,51 @@ static void test_frame_times(void)
   check(mailbox.reader.frame_time[GBA_PPU_LOG_TIME_BUCKETS - 1] == 1);
 }
 
+/* Lines go to another picture, with its own row stride, from the frame the
+   writer says on; also after the reader starts over, which only learns of
+   the picture with everything else. */
+static uint16_t wide[512 * 272] __attribute__((aligned(64)));
+
+static int wide_matches(void)
+{
+  uint32_t y;
+
+  for(y = 0; y < HEIGHT; y++)
+    if(memcmp(wide + (56 + y) * 512 + 120, direct_frame + y * WIDTH,
+       WIDTH * 2))
+      return 0;
+  return 1;
+}
+
+static void test_lines_go_to_the_target(void)
+{
+  start();
+  scene();
+  check(caught_up(run_frame(1)));
+  check(caught_up(run_frame(1)));
+  mailbox.writer.targets[1] = wide + 56 * 512 + 120;
+  gba_ppu_log_target(&writer, 1, 512);
+  memset(frame, 0, sizeof(frame));
+  check(caught_up(run_frame(1)) == 0);
+  check(gba_ppu_log_frame_done(&writer, writer.frame - 1) && wide_matches());
+  check(!frames_match());
+  memset(&reader.memory, 0, sizeof(reader.memory));
+  gba_ppu_log_reader_start(&reader, &mailbox);
+  run_frame(1);
+  while(gba_ppu_log_read(&reader) > 0)
+    ;
+  run_frame(1);
+  while(gba_ppu_log_read(&reader) > 0)
+    ;
+  check(gba_ppu_log_frame_done(&writer, writer.frame - 1) && wide_matches());
+  gba_ppu_log_target(&writer, 0, STRIDE);
+  check(caught_up(run_frame(1)));
+  /* A picture that is not set is refused. */
+  gba_ppu_log_target(&writer, 2, 512);
+  gba_ppu_log_line(&writer, 0);
+  check(gba_ppu_log_read(&reader) == -1);
+}
+
 /* ---- The reader on its own thread, as on the Media Engine ----------- */
 
 static volatile int stop_reader;
@@ -401,6 +446,7 @@ int main(void)
   test_unknown_word_is_refused();
   test_block_data_is_aligned();
   test_frame_times();
+  test_lines_go_to_the_target();
   test_frames_match_on_two_threads();
   printf("gba_ppu_log tests passed\n");
   return 0;

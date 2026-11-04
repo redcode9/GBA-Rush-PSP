@@ -62,6 +62,23 @@ static const u16 *texture_source;
    also came from such a picture. */
 static int texture_source_clean;
 static int last_present_from_source;
+/* A whole picture in main memory (PSP_LINE_SIZE pixels a row) the next
+   flip shows instead of a framebuffer (video_show_direct); the one shown,
+   or about to be, and the one before it, which the display may still read
+   until two vblanks after switch_vcount. failed: the display refused one,
+   so none is shown again. */
+static const u16 *direct_next;
+static const u16 *direct_shown;
+static const u16 *direct_previous;
+static u32 direct_switch_vcount;
+static int direct_failed;
+/* The GE's time on each frame present, from queueing its list to the
+   finish callback for it. */
+#define PRESENT_LIST_ID 0x6E1
+static u32 present_queued_at;
+static volatile u32 present_done_at;
+static u32 ge_presents;
+static u64 ge_present_us;
 static u32 adaptive_last_frame_time;
 static int adaptive_has_last_frame_time;
 static VideoAdaptiveState adaptive_video;
@@ -270,6 +287,55 @@ void video_texture_from(const u16 *frame, int clean)
   texture_source_clean = clean;
 }
 
+/* The GE's finish callback (interrupt context): the time a frame present
+   ended. */
+static void present_finished(int id)
+{
+  if(id == PRESENT_LIST_ID)
+    present_done_at = sceKernelGetSystemTimeLow();
+}
+
+/* Queues the frame present built since sceGuStart, timed. */
+static void finish_present_list(void)
+{
+  present_done_at = 0;
+  present_queued_at = sceKernelGetSystemTimeLow();
+  sceGuFinishId(PRESENT_LIST_ID);
+}
+
+void video_present_time(u32 *presents, u64 *us)
+{
+  *presents = ge_presents;
+  *us = ge_present_us;
+}
+
+/* The next flip shows picture, a 480x272 image in main memory with rows
+   PSP_LINE_SIZE pixels apart, written back, straight from there. */
+void video_show_direct(const u16 *picture)
+{
+  direct_next = picture;
+}
+
+/* If the display shows a picture from video_show_direct, the next flip
+   shows it again (and returns 1). */
+int video_show_direct_again(void)
+{
+  if(!direct_shown)
+    return 0;
+  direct_next = direct_shown;
+  return 1;
+}
+
+/* Whether picture may be drawn into for video_show_direct: the display
+   does not read it now and will not before the next flip shows it. */
+int video_direct_free(const u16 *picture)
+{
+  if(direct_failed || picture == direct_next || picture == direct_shown)
+    return 0;
+  return picture != direct_previous ||
+   sceDisplayGetVcount() - direct_switch_vcount >= 2;
+}
+
 /* Center of the GE's 4096x4096 virtual screen; sceGuOffset and
  * sceGuViewport place the visible area around it. */
 #define GU_COORD_CENTER 2048
@@ -317,6 +383,7 @@ void init_video(int devkit_version)
 
   sceGuFinish();
   sceGuSync(0, GU_SYNC_FINISH);
+  sceGuSetCallback(GU_CALLBACK_FINISH, present_finished);
 
   sceDisplayWaitVblankStart();
   sceGuDisplay(GU_TRUE);
@@ -347,6 +414,12 @@ void video_sync_present(void)
   sceGuSync(0, GU_SYNC_FINISH);
   last_ge_wait_us = sceKernelGetSystemTimeLow() - wait_start;
   present_pending = 0;
+  if(present_done_at)
+  {
+    ge_present_us += present_done_at - present_queued_at;
+    ge_presents++;
+    present_done_at = 0;
+  }
 }
 
 u32 video_last_ge_wait_us(void)
@@ -420,9 +493,14 @@ void video_reset_frame_timing(void)
 }
 
 /* Shows the back buffer: waits for queued GE work and, when vsync is
- * nonzero, for vblank, then swaps the framebuffers. */
+ * nonzero, for vblank, then swaps the framebuffers; or shows the picture
+ * given to video_show_direct instead, leaving the framebuffers as they
+ * are. */
 void flip_screen(u32 vsync)
 {
+  const u16 *direct = direct_next;
+
+  direct_next = NULL;
   video_sync_present();
 
   if (vsync != 0)
@@ -438,6 +516,30 @@ void flip_screen(u32 vsync)
     if(measuring)
       perf_monitor_record_wait(PERF_METRICS_WAIT_PRESENT,
        sceKernelGetSystemTimeLow() - vblank_start);
+  }
+
+  if(direct)
+  {
+    /* Refused: the last picture stays, and no other is offered. */
+    if(sceDisplaySetFrameBuf((void *)direct, PSP_LINE_SIZE,
+       PSP_DISPLAY_PIXEL_FORMAT_5551, PSP_DISPLAY_SETBUF_NEXTFRAME) < 0)
+    {
+      direct_failed = 1;
+      return;
+    }
+    if(direct != direct_shown)
+    {
+      direct_previous = direct_shown;
+      direct_shown = direct;
+      direct_switch_vcount = sceDisplayGetVcount();
+    }
+    return;
+  }
+  if(direct_shown)
+  {
+    direct_previous = direct_shown;
+    direct_shown = NULL;
+    direct_switch_vcount = sceDisplayGetVcount();
   }
 
   disp_frame = draw_frame;
@@ -586,7 +688,7 @@ static void blit_gu(void)
   copy_texture_source();
   sceGuCallList(display_list_0);
 
-  sceGuFinish();
+  finish_present_list();
   present_pending = 1;
 
   if(selected_texture_filter() == GU_NEAREST)
@@ -695,7 +797,7 @@ static void blit_sharp(void)
   sceGuTexFilter(option_screen_filter, option_screen_filter);
   sceGuTexFunc(GU_TFX_REPLACE, GU_TCC_RGBA);
   sceGuTexFlush();
-  sceGuFinish();
+  finish_present_list();
 
   if(first_pass_ok && second_pass_ok)
   {

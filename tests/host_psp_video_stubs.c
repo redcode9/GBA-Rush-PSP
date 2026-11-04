@@ -65,6 +65,21 @@ int sceDisplayWaitVblankStart(void)
   return 0;
 }
 
+int sceDisplaySetFrameBuf(void *topaddr, int bufferwidth, int pixelformat,
+ int sync)
+{
+  (void)topaddr;
+  (void)bufferwidth;
+  (void)pixelformat;
+  (void)sync;
+  return 0;
+}
+
+unsigned int sceDisplayGetVcount(void)
+{
+  return 0;
+}
+
 /* ---- GE (no-op; not exercised by the frame-time path) ---- */
 
 int sceGuInit(void)
@@ -85,6 +100,19 @@ int sceGuSync(int mode, int what)
 
 int sceGuFinish(void)
 {
+  return 0;
+}
+
+int sceGuFinishId(unsigned int id)
+{
+  (void)id;
+  return 0;
+}
+
+void *sceGuSetCallback(int signal, void (*callback)(int))
+{
+  (void)signal;
+  (void)callback;
   return 0;
 }
 

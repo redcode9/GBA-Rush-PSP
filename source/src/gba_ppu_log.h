@@ -90,8 +90,14 @@ enum
   GBA_PPU_LOG_DATA,       /* bits 8-19 first block, 20-31 how many; then
                              0-3 unused words, so that the blocks start on
                              16 bytes, and 16 words per block */
-  GBA_PPU_LOG_RESET       /* bits 8-31: start over within this frame */
+  GBA_PPU_LOG_RESET,      /* bits 8-31: start over within this frame */
+  GBA_PPU_LOG_TARGET      /* bits 8-15 a picture of targets, 16-31 its row
+                             stride in pixels: the lines go there now on */
 };
+
+/* Pictures the reader may draw into: the first is the frame the writer
+   was set up with; the others, when set, are the writer's to choose. */
+#define GBA_PPU_LOG_TARGETS 4u
 
 typedef struct
 {
@@ -99,7 +105,7 @@ typedef struct
   volatile uint32_t magic;
   uint32_t *volatile ring;
   volatile uint32_t ring_words;
-  uint16_t *volatile frame;
+  uint16_t *volatile targets[GBA_PPU_LOG_TARGETS];
   /* Words published, counted from the start of the log. */
   volatile uint32_t write;
   /* GBA_PPU_LOG_WAIT_*: how the reader waits for words. */
@@ -156,6 +162,10 @@ typedef struct
   uint32_t frame;
   /* The reader's boots last seen. */
   uint32_t boots;
+  /* The picture the lines go to and its row stride (gba_ppu_log_target);
+     sent again with everything else. */
+  uint32_t target;
+  uint32_t target_stride;
   /* Set when the log lost a write: everything goes again at the next
      line, which also happens after a reset or a state load. */
   int lost;
@@ -185,7 +195,9 @@ typedef struct
   const uint32_t *ring;
   uint32_t mask;
   uint32_t read;
+  /* Where line 0 goes, and how far apart rows are, in pixels. */
   uint16_t *frame;
+  uint32_t stride;
   /* The frame being drawn and how many of its lines were drawn in order,
      or more than 160 once one was missed. */
   uint32_t frame_number;
@@ -218,6 +230,11 @@ void gba_ppu_log_line(GbaPpuLogWriter *writer, uint32_t y);
 
 /* V-Blank begins: the frame is over and the next one begins. */
 void gba_ppu_log_vblank(GbaPpuLogWriter *writer);
+
+/* The lines from now on go to picture target of the mailbox's targets (0:
+   the writer's frame), rows stride pixels apart. */
+void gba_ppu_log_target(GbaPpuLogWriter *writer, uint32_t target,
+ uint32_t stride);
 
 /* Send the whole state again at the next line: after a reset, a state
    load, or when the log was off for a while. */

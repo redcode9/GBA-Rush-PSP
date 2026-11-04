@@ -31,9 +31,10 @@
 #define IO_HALFWORDS (GBA_PPU_IO_BYTES / 2)
 /* A DATA command's header and the unused words after it at most. */
 #define DATA_HEADER_WORDS 4u
-/* A full resend: RESET, the registers, every block in runs of at most a
-   group with a header each, the line mark, and a ring end skipped once. */
-#define RESEND_WORDS (1 + IO_HALFWORDS + \
+/* A full resend: RESET, TARGET, the registers, every block in runs of at
+   most a group with a header each, the line mark, and a ring end skipped
+   once. */
+#define RESEND_WORDS (2 + IO_HALFWORDS + \
  DATA_HEADER_WORDS * (GBA_PPU_LOG_GROUPS + 1) + \
  GBA_PPU_LOG_BLOCKS * BLOCK_WORDS + 1 + \
  (DATA_HEADER_WORDS + GBA_PPU_LOG_GROUP_BLOCKS * BLOCK_WORDS))
@@ -171,6 +172,7 @@ void gba_ppu_log_writer_init(GbaPpuLogWriter *writer,
   writer->room = RING_WORDS;
   writer->frame = 1;
   writer->lost = 1;
+  writer->target_stride = GBA_PPU_LOG_FRAME_STRIDE;
   writer->palette = palette;
   writer->oam = oam;
   writer->vram = vram;
@@ -194,7 +196,9 @@ void gba_ppu_log_writer_init(GbaPpuLogWriter *writer,
     reader->frame_time[i] = 0;
   mailbox->writer.ring = ring;
   mailbox->writer.ring_words = RING_WORDS;
-  mailbox->writer.frame = frame;
+  mailbox->writer.targets[0] = frame;
+  for(i = 1; i < (int)GBA_PPU_LOG_TARGETS; i++)
+    mailbox->writer.targets[i] = NULL;
   mailbox->writer.write = 0;
   mailbox->writer.wait = GBA_PPU_LOG_WAIT_POLL;
   store(&mailbox->writer.magic, GBA_PPU_LOG_MAGIC);
@@ -341,6 +345,8 @@ static int send_all(GbaPpuLogWriter *writer)
   writer->lost = 0;
   writer->resends++;
   put(writer, GBA_PPU_LOG_RESET | writer->frame << 8);
+  put(writer, GBA_PPU_LOG_TARGET | writer->target << 8 |
+   writer->target_stride << 16);
   for(offset = 0; offset < GBA_PPU_IO_BYTES; offset += 2)
     put(writer, GBA_PPU_LOG_IO | offset << 8 |
      (uint32_t)writer->io[offset >> 1] << 16);
@@ -422,6 +428,15 @@ void gba_ppu_log_vblank(GbaPpuLogWriter *writer)
   publish(writer);
 }
 
+void gba_ppu_log_target(GbaPpuLogWriter *writer, uint32_t target,
+ uint32_t stride)
+{
+  writer->target = target;
+  writer->target_stride = stride;
+  if(reserve(writer, 1))
+    put(writer, GBA_PPU_LOG_TARGET | target << 8 | stride << 16);
+}
+
 void gba_ppu_log_resend(GbaPpuLogWriter *writer)
 {
   writer->lost = 1;
@@ -447,7 +462,8 @@ void gba_ppu_log_reader_start(GbaPpuLogReader *reader,
   reader->mailbox = mailbox;
   reader->ring = mailbox->writer.ring;
   reader->mask = mailbox->writer.ring_words - 1;
-  reader->frame = mailbox->writer.frame;
+  reader->frame = mailbox->writer.targets[0];
+  reader->stride = GBA_PPU_LOG_FRAME_STRIDE;
   reader->read = load(&mailbox->writer.write);
   reader->frame_number = 0;
   reader->lines = LINES_MISSED;
@@ -478,7 +494,7 @@ static void forget_ring(const GbaPpuLogReader *reader, uint32_t from,
 
 static void draw_line(GbaPpuLogReader *reader, uint32_t y)
 {
-  uint16_t *row = reader->frame + y * GBA_PPU_LOG_FRAME_STRIDE;
+  uint16_t *row = reader->frame + y * reader->stride;
 
   gba_ppu_draw_line(&reader->ppu, (int)y, row);
   hand_over(row, ROW_BYTES);
@@ -542,6 +558,22 @@ int gba_ppu_log_read(GbaPpuLogReader *reader)
           memcpy((uint8_t *)&reader->memory + first * 64,
            reader->ring + data, count * 64);
           reader->read += data - at - 1 + count * BLOCK_WORDS;
+        }
+        break;
+      }
+
+      case GBA_PPU_LOG_TARGET:
+      {
+        uint32_t target = (word >> 8) & 0xFF, stride = word >> 16;
+        uint16_t *frame = target < GBA_PPU_LOG_TARGETS ?
+         reader->mailbox->writer.targets[target] : NULL;
+
+        /* A picture not set, or rows that overlap, are no command. */
+        known = frame && stride >= GBA_PPU_WIDTH;
+        if(known)
+        {
+          reader->frame = frame;
+          reader->stride = stride;
         }
         break;
       }

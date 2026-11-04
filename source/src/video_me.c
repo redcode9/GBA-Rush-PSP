@@ -69,6 +69,18 @@ static int drawing;
 static u32 present_frame;
 static VideoMeCounters counters;
 
+/* VIDEO_ME_DIRECT_1X: three whole pictures, the GBA's in the middle of
+   each, as the 1x scaler places it. Targets 1-3 of the log are their
+   GBA areas; target 0 is memory->frame, which the GE copies. The target
+   of the frame being drawn, and of the one waiting to be presented. */
+#define DIRECT_PICTURES 3
+#define DIRECT_ORIGIN \
+ (((PSP_SCREEN_HEIGHT - GBA_SCREEN_HEIGHT) / 2) * PSP_LINE_SIZE + \
+ (PSP_SCREEN_WIDTH - GBA_SCREEN_WIDTH) / 2)
+static u16 *direct;
+static u32 frame_target;
+static u32 present_target;
+
 /* Watchdog. */
 static u32 last_read;
 static u32 stalled_frames;
@@ -318,10 +330,60 @@ void video_me_io(u32 offset)
   gba_ppu_log_io(&writer, offset, io_registers[offset >> 1]);
 }
 
+static const u16 *direct_picture(u32 target)
+{
+  return direct + (target - 1) * PSP_LINE_SIZE * PSP_SCREEN_HEIGHT;
+}
+
+/* The three pictures, black, written back; gives the switch up if there
+   is no memory for them. */
+static int allocate_direct(void)
+{
+  u32 bytes = DIRECT_PICTURES * PSP_LINE_SIZE * PSP_SCREEN_HEIGHT * 2;
+  u32 i;
+
+  direct = (u16 *)memalign(64, bytes);
+  if(!direct)
+  {
+    switches &= ~VIDEO_ME_DIRECT_1X;
+    return 0;
+  }
+  memset(direct, 0, bytes);
+  sceKernelDcacheWritebackInvalidateRange(direct, bytes);
+  for(i = 1; i <= DIRECT_PICTURES; i++)
+    mailbox->writer.targets[i] =
+     (u16 *)direct_picture(i) + DIRECT_ORIGIN;
+  return 1;
+}
+
+/* Where the frame that begins is drawn: a picture the display does not
+   read and that does not hold the frame still waiting to be presented,
+   or memory->frame for the GE. */
+static u32 choose_target(void)
+{
+  u32 target;
+
+  if(!(switches & VIDEO_ME_DIRECT_1X) || option_screen_scale != SCALED_NONE ||
+     psp_fps_debug || (!direct && !allocate_direct()))
+    return 0;
+  for(target = 1; target <= DIRECT_PICTURES; target++)
+    if(video_direct_free(direct_picture(target)) &&
+       !(present_frame && target == present_target))
+      return target;
+  return 0;
+}
+
 void video_me_vblank(void)
 {
+  u32 target;
+
   sample_begin();
   gba_ppu_log_vblank(&writer);
+  target = choose_target();
+  if(target != frame_target)
+    gba_ppu_log_target(&writer, target,
+     target ? PSP_LINE_SIZE : GBA_PPU_LOG_FRAME_STRIDE);
+  frame_target = target;
   wake_if_sleeping();
   sample_end();
 }
@@ -341,6 +403,7 @@ void video_me_resend(void)
 void video_me_present(void)
 {
   present_frame = gba_ppu_log_frame(&writer);
+  present_target = frame_target;
   video_me_present_poll();
 }
 
@@ -350,6 +413,12 @@ void video_me_present_poll(void)
     return;
   present_frame = 0;
   late_in_a_row = 0;
+  if(present_target)
+  {
+    video_show_direct(direct_picture(present_target));
+    counters.direct_frames++;
+    return;
+  }
   video_texture_from(memory->frame,
    (switches & VIDEO_ME_NO_CACHE_FLUSH) != 0);
   (*update_screen)();
@@ -362,7 +431,9 @@ void video_me_present_finish(void)
   present_frame = 0;
   counters.late_frames++;
   late_in_a_row++;
-  (*update_screen)();
+  /* The last picture again, from where it is shown. */
+  if(!video_show_direct_again())
+    (*update_screen)();
 }
 
 VideoMeState video_me_state(void)
@@ -388,6 +459,7 @@ void video_me_counters(VideoMeCounters *out)
   }
   out->log_words = writer.write;
   out->resends = writer.resends;
+  video_present_time(&out->ge_presents, &out->ge_us);
 }
 
 void video_me_frame_times(const VideoMeCounters *since, u32 *median_us,
