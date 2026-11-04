@@ -1965,6 +1965,26 @@ void reset_gba(void)
  * The power callback only records suspend and resume in psp_power_lifecycle.
  * The emulator thread acts on them here, from main_power_service. */
 
+/* power_lifecycle.c cannot include psppower.h, so it keeps copies of the
+   callback bits; they must match the PSP's. */
+typedef char MainPowerBitsCheck[
+ (PSP_POWER_CB_POWER_SWITCH == POWER_LIFECYCLE_BIT_POWER_SWITCH &&
+  PSP_POWER_CB_RESUME_COMPLETE == POWER_LIFECYCLE_BIT_RESUME_COMPLETE &&
+  PSP_POWER_CB_RESUMING == POWER_LIFECYCLE_BIT_RESUMING &&
+  PSP_POWER_CB_SUSPENDING == POWER_LIFECYCLE_BIT_SUSPENDING) ? 1 : -1];
+
+/* Logs the raw callback bits noted since the last call, if any. */
+static void main_power_log_bits(void)
+{
+  uint32_t callbacks;
+  uint32_t bits = power_lifecycle_take_bits(&psp_power_lifecycle,
+   &callbacks);
+
+  if(bits != 0 || callbacks != 0)
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_BITS, cpu_ticks, 0, bits,
+     callbacks, psp_power_lifecycle.suspended);
+}
+
 /* Writes the suspend auto-savestate once per suspend, if one was asked for. */
 static void main_power_save_if_pending(void)
 {
@@ -2004,9 +2024,12 @@ static void main_power_reopen_gamepak(void)
 }
 
 /* Suspend is under way: stop fast-forward, video and the link, auto-save,
-   close the ROM file and flush the logs, then park until the PSP resumes. */
+   close the ROM file and flush the logs, then park until the PSP resumes,
+   or until a switch-only entry times out. */
 static void psp_sleep_loop(void)
 {
+  u64 entered = sceKernelGetSystemTimeWide();
+
   runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_SUSPEND, cpu_ticks, 0,
    (u32)gba_link.status, main_adhoc_state_value(), sleep_flag);
   main_fast_forward_stop();
@@ -2029,11 +2052,17 @@ static void psp_sleep_loop(void)
 
   runtime_log_psp_flush(RUNTIME_LOG_FLUSH_SUSPEND);
 
+  /* The state test keeps parking if a SUSPENDING lands between the timeout
+     and the sleep_flag store below. */
   do
   {
     sceKernelDelayThread(100 * 1000);
+    if(power_lifecycle_expire_switch(&psp_power_lifecycle, entered,
+     sceKernelGetSystemTimeWide()))
+      sleep_flag = 0;
   }
-  while (sleep_flag != 0);
+  while (sleep_flag != 0 ||
+   power_lifecycle_state(&psp_power_lifecycle) == POWER_LIFECYCLE_SUSPENDED);
 }
 
 /* Polled by the emulator thread from update_gba, menus and link waits.
@@ -2047,9 +2076,13 @@ void main_power_service(void)
   if(exit_requested && !quit_started)
     quit();
 
+  main_power_log_bits();
   state = power_lifecycle_state(&psp_power_lifecycle);
   if(sleep_flag != 0 || state == POWER_LIFECYCLE_SUSPENDED)
+  {
     psp_sleep_loop();
+    main_power_log_bits();
+  }
 
   state = power_lifecycle_state(&psp_power_lifecycle);
   if(state != POWER_LIFECYCLE_RUNNING)
@@ -2069,6 +2102,13 @@ void main_power_service(void)
 
   main_power_reopen_gamepak();
   video_power_resume();
+  /* A switch-only entry timed out, so the callback reserved no audio. */
+  if(audio_result == POWER_LIFECYCLE_AUDIO_NOT_RESERVED)
+  {
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_BITS, cpu_ticks, 0, 0, 0,
+     POWER_LIFECYCLE_SWITCH_EXPIRED);
+    audio_result = sound_power_resume();
+  }
   sound_power_resume_finish(cpu_ticks, audio_result);
   sleep_auto_saved = 0;
   runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_RESUME, cpu_ticks,
@@ -2107,14 +2147,20 @@ static int exit_callback(int arg1, int arg2, void *common)
    main_power_service. */
 static int power_callback(int unknown, int powerInfo, void *arg)
 {
-  if ((powerInfo & PSP_POWER_CB_SUSPENDING) != 0)
+  /* Bit 31 is POWER_SWITCH, so work on the unsigned bits. */
+  u32 bits = (u32)powerInfo;
+  u32 action;
+
+  power_lifecycle_note_bits(&psp_power_lifecycle, bits);
+  action = power_lifecycle_classify(bits);
+  if ((action & POWER_LIFECYCLE_ENTRY_MASK) != 0)
   {
     sound_power_suspend();
     power_lifecycle_suspend(&psp_power_lifecycle,
-     gamepak_filename[0] != '\0');
+     action & POWER_LIFECYCLE_ENTRY_MASK, gamepak_filename[0] != '\0');
     sleep_flag = 1;
   }
-  if ((powerInfo & PSP_POWER_CB_RESUME_COMPLETE) != 0)
+  if ((action & POWER_LIFECYCLE_ACTION_RESUME) != 0)
   {
     if(power_lifecycle_state(&psp_power_lifecycle) ==
        POWER_LIFECYCLE_SUSPENDED)
