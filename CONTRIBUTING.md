@@ -81,6 +81,27 @@ Record the PSP model, firmware, storage, ROM hash and actual ROM-cache capacity.
 Test menu transitions, suspend, resume and exit when changing threads, audio,
 networking or file access.
 
+## Test ROMs
+
+`tests/core-rom` (CPU, interrupt, BIOS and bus cases) and `tests/save-rom`
+(one target per save chip) are GBA ROMs built from source with
+arm-none-eabi-gcc, from the Arm GNU Toolchain or from devkitARM through
+`DEVKITARM`; the ROMs never go into Git. `make test-roms` builds them into
+`build/test-roms`, runs each on `tests/core/rom_run.c` (the New core's
+interpreter with a small GBA around it, not an emulator) and checks the
+result; without an ARM compiler it is skipped. `BIOS=gba_bios.bin` runs the
+core ROM on your dump of the official BIOS, for the BIOS open bus cases.
+
+Each ROM reports every case on screen and in a signature at the start of
+its save chip (`tests/gba-rom/result.h`), which
+`python3 tools/decode_test_rom.py game.sav` prints from an emulator's save
+file. A case is an entry in the table of `cases_<area>.c`, with hand-written
+code in `cases_<area>_asm.s`; a new area is listed in the ROM's `Makefile`
+and `source/main.c`. Expected values come from GBATEK or the ARM7TDMI
+documentation, never from an emulator. The header logo is left blank, so
+boot the ROMs directly: "Boot from BIOS" off, or in mGBA no BIOS or "Skip
+BIOS intro".
+
 ## Link development
 
 See the [link cable notes](docs/link-cable.md). `tests/test_link_cable.c`

@@ -3,6 +3,8 @@
 #                         the Media Engine program's build where the PSP SDK is
 #   make test-sanitize    the C tests again under ASan and UBSan
 #   make psp-build        the EBOOT (needs the PSP SDK)
+#   make test-roms        the GBA test ROMs, built and run on the New core
+#                         (needs arm-none-eabi-gcc, skipped without it)
 #   make package VERSION=x.y.z   build, check and zip a release
 # Each test builds the module it covers straight from source/src, so most
 # need only a host C compiler.
@@ -56,6 +58,8 @@ ARM_CORE_SOURCES = source/src/arm_decode.c source/src/arm_interp.c \
  source/src/arm_mips.c
 ARM_CORE_HEADERS = source/src/arm_core.h source/src/arm_ir.h \
  source/src/arm_mips.h
+# Runs the GBA test ROMs for make test-roms.
+HOST_ROM_RUN = $(HOST_BUILD_DIR)/rom_run
 HOST_TEST_GBA_PPU = $(HOST_BUILD_DIR)/test_gba_ppu
 HOST_TEST_GBA_PPU_LOG = $(HOST_BUILD_DIR)/test_gba_ppu_log
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
@@ -103,8 +107,9 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_ppu \
  $(HOST_SANITIZE_DIR)/test_gba_ppu_log
 
-.PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
- check-core check-render tree-check media-engine-check psp-build \
+.PHONY: all check test test-tools test-sanitize test-roms check-cbmc \
+ check-rom-link check-core check-render tree-check media-engine-check \
+ psp-build \
  launcher-stub package artifact-smoke clean
 
 all: check
@@ -386,6 +391,13 @@ $(HOST_TEST_ARM_CORE): tests/test_arm_core.c $(ARM_CORE_SOURCES) \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_arm_core.c $(ARM_CORE_SOURCES) -o $@
 
+$(HOST_ROM_RUN): tests/core/rom_run.c source/src/arm_decode.c \
+ source/src/arm_interp.c $(ARM_CORE_HEADERS) source/src/open_bios.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -Isource/src \
+	 tests/core/rom_run.c source/src/arm_decode.c source/src/arm_interp.c \
+	 -o $@
+
 $(HOST_TEST_GBA_PPU): tests/test_gba_ppu.c source/src/gba_ppu.c \
  source/src/gba_ppu.h
 	mkdir -p $(HOST_BUILD_DIR)
@@ -633,6 +645,11 @@ check-rom-link:
 check-core:
 	sh scripts/check-core.sh
 
+# Builds the GBA test ROMs (tests/core-rom, tests/save-rom) and runs each on
+# rom_run, checking the signature it leaves; see scripts/check-test-roms.sh.
+test-roms: $(HOST_ROM_RUN)
+	RUN=$(HOST_ROM_RUN) sh scripts/check-test-roms.sh
+
 # Compares gba_ppu with mGBA's renderer on your own ROMs; see the script.
 check-render:
 	sh scripts/check-render.sh
@@ -676,5 +693,6 @@ clean:
 	$(MAKE) -C source/single-game_launcher clean
 	$(RM) source/single-game_launcher/tool/assets/EBOOT.PBP
 	$(RM) $(HOST_TESTS)
-	$(RM) $(HOST_SANITIZE_TESTS)
+	$(RM) $(HOST_SANITIZE_TESTS) $(HOST_ROM_RUN)
+	$(RM) -r build/test-roms
 	-rmdir $(HOST_BUILD_DIR) $(HOST_SANITIZE_DIR) build 2>/dev/null
