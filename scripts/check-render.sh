@@ -15,11 +15,15 @@ set -eu
 #             tests/rom_link/firered_trade.txt from the title screen
 #   LEAFGREEN Pokemon LeafGreen: opening and new game
 #   RENDER_ROMS  more ROM:SCRIPT pairs, such as test ROMs
+# MGBA_DIR defaults to what scripts/setup-dev.sh put in ext/.
 # The first frame that differs in each game is saved as
 # build/render/<game>.bmp, mGBA's picture on the left.
 
+if [ -z "${MGBA_DIR+set}" ] && [ -d ext/mgba-0.10.3 ]; then
+  MGBA_DIR=ext/mgba-0.10.3
+fi
 if [ -z "${MGBA_DIR:-}" ]; then
-  echo "Render check skipped: set MGBA_DIR to an mGBA 0.10 tree"
+  echo "Render check skipped: no mGBA (MGBA_DIR or sh scripts/setup-dev.sh mgba)"
   exit 0
 fi
 if [ -z "${MKSC:-}${FIRERED:-}${LEAFGREEN:-}${RENDER_ROMS:-}" ]; then
