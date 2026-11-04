@@ -101,6 +101,10 @@ and `source/main.c`. Expected values come from GBATEK or the ARM7TDMI
 documentation, never from an emulator. The header logo is left blank, so
 boot the ROMs directly: "Boot from BIOS" off, or in mGBA no BIOS or "Skip
 BIOS intro".
+The BIOS copy and decompression cases take their inputs and expected
+outputs from `tests/core-rom/source/bios_vectors.h`, which
+`python3 tools/make_bios_vectors.py` writes; run it again after changing
+the script (`make test` fails while the file is out of date).
 
 ## Link development
 
