@@ -14,10 +14,12 @@ set -eu
 #   MKSC      Mario Kart: Super Circuit (Europe), tests/core/mksc_race.txt
 #   ROM SAVE  FireRed or LeafGreen and a save whose last Pokemon Center
 #             visit was in a town, tests/rom_link/firered_trade.txt
-#   UNICORN_DIR  a Unicorn built by scripts/build-unicorn.sh, for the MIPS
-#             backend (arm_mips.c): its fuzzer against the interpreter, the
-#             suite with the backend checked against the interpreter on
-#             every test, and the lockstep runs again with the backend
+#   UNICORN_DIR  Unicorn 2.1, for the MIPS backend (arm_mips.c): its
+#             fuzzer against the interpreter, the suite with the backend
+#             checked against the interpreter on every test, and the
+#             lockstep runs again with the backend. Either an installed one
+#             (include/ and lib/, such as Homebrew's /opt/homebrew/opt/unicorn)
+#             or a tree built by scripts/build-unicorn.sh (include/, build/)
 # The runs stop at the first instruction where the core and mGBA disagree
 # and leave their logs in OUT (build/core).
 
@@ -26,14 +28,16 @@ mkdir -p "$out"
 core_sources="source/src/arm_decode.c source/src/arm_interp.c"
 backend=
 if [ -n "${UNICORN_DIR:-}" ]; then
+  lib=$UNICORN_DIR/build
+  [ -d "$lib" ] || lib=$UNICORN_DIR/lib
   backend="-DSINGLE_STEP_JIT -DLOCKSTEP_JIT -I$UNICORN_DIR/include
-    tests/core/mips_unicorn.c source/src/arm_mips.c -L$UNICORN_DIR/build
-    -lunicorn -Wl,-rpath,$UNICORN_DIR/build"
+    tests/core/mips_unicorn.c source/src/arm_mips.c -L$lib -lunicorn
+    -Wl,-rpath,$lib"
   # shellcheck disable=SC2086
   ${CC:-cc} -std=c99 -O2 -Wall -Wextra -Werror -Isource/src \
     -I"$UNICORN_DIR/include" tests/core/jit_fuzz.c tests/core/mips_unicorn.c \
-    source/src/arm_mips.c $core_sources -L"$UNICORN_DIR/build" -lunicorn \
-    -Wl,-rpath,"$UNICORN_DIR/build" -o "$out/jit_fuzz"
+    source/src/arm_mips.c $core_sources -L"$lib" -lunicorn \
+    -Wl,-rpath,"$lib" -o "$out/jit_fuzz"
   "$out/jit_fuzz" --cases "${FUZZ_CASES:-200}" | tail -1
 else
   echo "check-core: UNICORN_DIR not set, MIPS backend checks skipped"
