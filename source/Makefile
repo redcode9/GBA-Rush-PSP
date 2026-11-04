@@ -119,3 +119,10 @@ all: $(EXTRA_TARGETS)
 	@cp prx/exceptionHandler/prx/exception.prx .
 	@$(MAKE) -C prx/media_engine
 	@cp prx/media_engine/media_engine.prx .
+
+# The compiler flags with the SDK's additions, for the release manifest
+# (scripts/package-release.sh). $(info) prints them as make holds them, so
+# quoted defines reach the manifest unchanged.
+print-flags:
+	$(info $(CFLAGS))
+	@:
