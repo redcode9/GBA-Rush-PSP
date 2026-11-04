@@ -91,8 +91,10 @@ static void generate_display_list(float scale_x, float scale_y,
 static void blit_gu(void);
 static void blit_sharp(void);
 static void blit_sw(void);
-static int draw_scaled_slices(u32 source_width, u32 source_height,
- u32 destination_width, u32 destination_height, u32 slice_width);
+static void generate_int2_display_list(void);
+static int draw_scaled_slices(u32 source_top, u32 source_width,
+ u32 source_height, u32 destination_width, u32 destination_height,
+ u32 slice_width);
 static void apply_adaptive_quality(void);
 static VideoAdaptiveQuality selected_manual_quality(void);
 static u32 selected_texture_filter(void);
@@ -502,6 +504,18 @@ static void generate_display_list(float scale_x, float scale_y,
   sceGuFinish();
 }
 
+/* Records display_list_0 for the 2x integer scale: GBA rows 12-147, each
+ * pixel doubled, fill the 480x272 screen. Every vertex stays on screen
+ * (no negative y stored in a u16) and nothing is left to clear. */
+static void generate_int2_display_list(void)
+{
+  sceGuStart(GU_CALL, display_list_0);
+  draw_scaled_slices((GBA_SCREEN_HEIGHT - PSP_SCREEN_HEIGHT / 2) / 2,
+   GBA_SCREEN_WIDTH, PSP_SCREEN_HEIGHT / 2, PSP_SCREEN_WIDTH,
+   PSP_SCREEN_HEIGHT, SLICE);
+  sceGuFinish();
+}
+
 /* Quality that the fixed screen options amount to; the governor holds it
  * while 16:9 auto is off. */
 static VideoAdaptiveQuality selected_manual_quality(void)
@@ -509,16 +523,21 @@ static VideoAdaptiveQuality selected_manual_quality(void)
   if(option_screen_scale == SCALED_16X9_SHARP)
     return VIDEO_ADAPTIVE_QUALITY_SHARP;
 
-  if(option_screen_filter == FILTER_NEAREST)
+  if(option_screen_scale == SCALED_INT2 ||
+     option_screen_filter == FILTER_NEAREST)
     return VIDEO_ADAPTIVE_QUALITY_CRISP;
 
   return VIDEO_ADAPTIVE_QUALITY_SMOOTH;
 }
 
 /* The GU filter for the frame: FILTER_NEAREST/BILINEAR equal GU_NEAREST/
- * GU_LINEAR, and 16:9 auto forces nearest while at CRISP. */
+ * GU_LINEAR. 2x integer always uses nearest, and 16:9 auto does while at
+ * CRISP. */
 static u32 selected_texture_filter(void)
 {
+  if(option_screen_scale == SCALED_INT2)
+    return GU_NEAREST;
+
   if(option_screen_scale == SCALED_16X9_AUTO &&
      adaptive_video.quality == VIDEO_ADAPTIVE_QUALITY_CRISP)
     return GU_NEAREST;
@@ -583,10 +602,12 @@ static void blit_gu(void)
   }
 }
 
-/* Draws the bound texture's top-left source rectangle stretched to the
- * destination size at (0, 0). Returns 0 if the GU ran out of list memory. */
-static int draw_scaled_slices(u32 source_width, u32 source_height,
- u32 destination_width, u32 destination_height, u32 slice_width)
+/* Draws the bound texture's source rectangle starting at row source_top,
+ * column 0, stretched to the destination size at (0, 0). Returns 0 if the
+ * GU ran out of list memory. */
+static int draw_scaled_slices(u32 source_top, u32 source_width,
+ u32 source_height, u32 destination_width, u32 destination_height,
+ u32 slice_width)
 {
   u32 source_x;
   u32 vertex_count = 2 * ((source_width + slice_width - 1) / slice_width);
@@ -606,12 +627,12 @@ static int draw_scaled_slices(u32 source_width, u32 source_height,
       source_end = source_width;
 
     vertex[0].u = (u16)source_x;
-    vertex[0].v = 0;
+    vertex[0].v = (u16)source_top;
     vertex[0].x = (u16)((source_x * destination_width) / source_width);
     vertex[0].y = 0;
 
     vertex[1].u = (u16)source_end;
-    vertex[1].v = (u16)source_height;
+    vertex[1].v = (u16)(source_top + source_height);
     vertex[1].x = (u16)((source_end * destination_width) / source_width);
     vertex[1].y = (u16)destination_height;
     vertex += 2;
@@ -658,7 +679,7 @@ static void blit_sharp(void)
   sceGuTexFunc(GU_TFX_REPLACE, GU_TCC_RGB);
   sceGuTexFlush();
 
-  first_pass_ok = draw_scaled_slices(GBA_SCREEN_WIDTH, GBA_SCREEN_HEIGHT,
+  first_pass_ok = draw_scaled_slices(0, GBA_SCREEN_WIDTH, GBA_SCREEN_HEIGHT,
    SHARP_ACTIVE_WIDTH, SHARP_ACTIVE_HEIGHT, SLICE);
 
   sceGuTexFlush();
@@ -672,7 +693,7 @@ static void blit_sharp(void)
    SHARP_TEXTURE_WIDTH, sharp_texture);
   sceGuTexFilter(GU_LINEAR, GU_LINEAR);
 
-  second_pass_ok = draw_scaled_slices(SHARP_ACTIVE_WIDTH,
+  second_pass_ok = draw_scaled_slices(0, SHARP_ACTIVE_WIDTH,
    SHARP_ACTIVE_HEIGHT, PSP_SCREEN_WIDTH, PSP_SCREEN_HEIGHT, SLICE);
 
   sceGuTexImage(0, 256, 256, GBA_LINE_SIZE, screen_texture);
@@ -769,7 +790,7 @@ void video_resolution_large(void)
  * option and restarts the adaptive governor. */
 void video_resolution_small(void)
 {
-  u32 gameplay_filter = option_screen_filter;
+  u32 gameplay_filter;
 
   video_sync_present();
   adaptive_has_last_frame_time = 0;
@@ -778,10 +799,7 @@ void video_resolution_small(void)
    option_screen_scale == SCALED_16X9_AUTO,
    selected_manual_quality());
   set_gba_resolution();
-
-  if(option_screen_scale == SCALED_16X9_AUTO &&
-     adaptive_video.quality == VIDEO_ADAPTIVE_QUALITY_CRISP)
-    gameplay_filter = GU_NEAREST;
+  gameplay_filter = selected_texture_filter();
 
   sceGuStart(GU_DIRECT, display_list);
 
@@ -828,6 +846,11 @@ static void set_gba_resolution(void)
 
     case SCALED_16X9_SHARP:
       update_screen = blit_sharp;
+      break;
+
+    case SCALED_INT2:
+      generate_int2_display_list();
+      update_screen = blit_gu;
       break;
 
     case SCALED_16X9_AUTO:

@@ -176,7 +176,7 @@ static void values_to_model(const uint32_t *values, ConfigModel *model)
 {
   size_t i;
 
-  model->screen_scale = valid_or_default(values[0], 7, 6);
+  model->screen_scale = valid_or_default(values[0], 8, 6);
   model->screen_magnification = valid_or_default(values[1], 201, 170);
   model->screen_filter = valid_or_default(values[2], 2, 1);
   model->show_fps = valid_or_default(values[3], 2, 0);

@@ -210,6 +210,29 @@ static void test_fast_forward_fields_fall_back_independently(void)
   assert(decoded.fast_forward_audio == 1);
 }
 
+/* 7, the 2x integer (crop) scale, is the last valid screen scale; 8 falls
+   back to the default, 16:9 Auto. */
+static void test_integer_crop_screen_scale(void)
+{
+  ConfigModel model;
+  ConfigModel decoded;
+  uint8_t encoded[CONFIG_MODEL_ENCODED_SIZE];
+  size_t written;
+
+  config_model_defaults(&model);
+  model.screen_scale = 7;
+  assert(config_model_encode(&model, encoded, sizeof(encoded), &written));
+  assert(config_model_decode(encoded, written, &decoded) ==
+   CONFIG_MODEL_DECODE_VERSIONED);
+  assert(decoded.screen_scale == 7);
+
+  model.screen_scale = 8;
+  assert(config_model_encode(&model, encoded, sizeof(encoded), &written));
+  assert(config_model_decode(encoded, written, &decoded) ==
+   CONFIG_MODEL_DECODE_VERSIONED);
+  assert(decoded.screen_scale == 6);
+}
+
 /* Headerless 39-word file from the last release before the versioned
    format: valid words are taken in place (word 9, the old RAM dynarec
    setting, is translated), then out-of-range words fall back one by one. */
@@ -389,6 +412,7 @@ int main(void)
   test_previous_versioned_migration();
   test_version_2_migration();
   test_fast_forward_fields_fall_back_independently();
+  test_integer_crop_screen_scale();
   test_current_binary_migration_and_field_validation();
   test_older_binary_layouts();
   test_game_binary_layout();

@@ -217,6 +217,7 @@ static void init_choice_arrays(void)
     scale_options[4] = MSG[MSG_SCN_SCALED_16X9_GU];
     scale_options[5] = MSG[MSG_SCN_SCALED_16X9_SHARP];
     scale_options[6] = MSG[MSG_SCN_SCALED_16X9_AUTO];
+    scale_options[7] = MSG[MSG_SCN_SCALED_INT2];
 
     frameskip_options[0] = MSG[MSG_AUTO];
     frameskip_options[1] = MSG[MSG_MANUAL];

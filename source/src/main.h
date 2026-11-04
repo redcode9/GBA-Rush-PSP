@@ -35,7 +35,8 @@
 #define SCALED_16X9_GU 4
 #define SCALED_16X9_SHARP 5
 #define SCALED_16X9_AUTO  6
-#define SCREEN_SCALE_COUNT 7
+#define SCALED_INT2       7
+#define SCREEN_SCALE_COUNT 8
 
 // video filter type
 #define FILTER_NEAREST  0
