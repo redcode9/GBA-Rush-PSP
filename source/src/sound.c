@@ -177,6 +177,9 @@ static u32 sound_fast_forward_audio_started = 0;
 static u64 sound_fast_forward_starvation_since = 0;
 
 #define SOUND_OPERATION_TIMEOUT 500000u
+/* Power path: the audio thread holds sound_sema for one 800-sample output,
+   about 17 ms. */
+#define SOUND_POWER_TIMEOUT 50000u
 #define SOUND_RECOVERY_RETRY_US 250000u
 
 u32 sound_buffer_base = 0;
@@ -944,7 +947,7 @@ int sound_take_fast_forward_fallback(void)
 // audio thread and releases the output channel.
 void sound_power_suspend(void)
 {
-  SceUInt timeout = SOUND_OPERATION_TIMEOUT;
+  SceUInt timeout = SOUND_POWER_TIMEOUT;
 
   sound_fast_forward = 0;
   sound_fast_forward_factor = 1;
@@ -965,7 +968,7 @@ void sound_power_suspend(void)
 // The result (< 0 on failure) goes to sound_power_resume_finish().
 int sound_power_resume(void)
 {
-  SceUInt timeout = SOUND_OPERATION_TIMEOUT;
+  SceUInt timeout = SOUND_POWER_TIMEOUT;
   int result;
 
   if(sound_sema < 0 || sceKernelWaitSema(sound_sema, 1, &timeout) < 0)

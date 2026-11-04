@@ -158,10 +158,19 @@ fi
 audio_power_body=$(body \
   '/^void sound_power_suspend/,/^void sound_power_resume_finish/p' \
   source/src/sound.c)
-if ! printf '%s\n' "$audio_power_body" | rg -q 'SOUND_OPERATION_TIMEOUT' || \
-   ! printf '%s\n' "$audio_power_body" | rg -q 'sceKernelWaitSema'
+if ! printf '%s\n' "$audio_power_body" | rg -q 'SOUND_POWER_TIMEOUT' || \
+   ! printf '%s\n' "$audio_power_body" | rg -q 'sceKernelWaitSema' || \
+   printf '%s\n' "$audio_power_body" | rg -q 'SOUND_OPERATION_TIMEOUT'
 then
-  fail "Audio suspend and resume are not serialized with a deadline"
+  fail "Audio suspend and resume are not serialized with the power deadline"
+fi
+# The power callback waits for the audio thread at most 50 ms.
+sound_power_timeout=$(sed -n \
+  's/^#define SOUND_POWER_TIMEOUT[[:space:]]*\([0-9][0-9]*\).*/\1/p' \
+  source/src/sound.c | head -n 1)
+if [ -z "$sound_power_timeout" ] || [ "$sound_power_timeout" -gt 50000 ]
+then
+  fail "SOUND_POWER_TIMEOUT exceeds 50 ms"
 fi
 if ! body '/^void synchronize_sound/,/^void update_gbc_sound/p' \
   source/src/sound.c | rg -q 'SOUND_OPERATION_TIMEOUT'
