@@ -20,6 +20,7 @@
 
 extern const TestCase cases_irq[];
 extern const TestCase cases_stack[];
+extern const TestCase cases_pc[];
 
 static const TestCase *const areas[] =
 {
@@ -27,6 +28,9 @@ static const TestCase *const areas[] =
      boot. */
   cases_irq,
   cases_stack,
+  /* Last: on a core that stops at an unmappable jump the emulator ends
+     here, and the next boot marks the case hung and finishes. */
+  cases_pc,
   NULL
 };
 
