@@ -418,6 +418,27 @@
   // MSG_CHEAT_MENU_HELP_3
   FONT_CURSOR_LEFT_GBK FONT_CURSOR_RIGHT_GBK ":切換頁面   " FONT_BTN_CROSS_GBK ":退出",
 
+  // MSG_CHEAT_LOAD_DONE
+  "%s\n已載入 %lu 個作弊碼",
+
+  // MSG_CHEAT_LOAD_FAILED_AT_LINE
+  "作弊檔載入失敗，第 %lu 行:\n%s",
+
+  // MSG_CHEAT_LOAD_FAILED
+  "作弊檔載入失敗:\n%s",
+
+  // MSG_CHEAT_REASON_OPEN
+  "無法存取檔案",
+
+  // MSG_CHEAT_REASON_CAPACITY
+  "作弊碼數量超出支援上限",
+
+  // MSG_CHEAT_REASON_EMPTY
+  "檔案為空",
+
+  // MSG_CHEAT_REASON_FORMAT
+  "格式無效",
+
   // MSG_NON_LOAD_GAME
   "遊戲尚未載入",
 

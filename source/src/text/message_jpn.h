@@ -418,6 +418,27 @@
   // MSG_CHEAT_MENU_HELP_3
   FONT_CURSOR_LEFT_GBK FONT_CURSOR_RIGHT_GBK ":ページを変更   " FONT_BTN_CROSS_GBK ":終了",
 
+  // MSG_CHEAT_LOAD_DONE
+  "%s\n%lu 件のチートを読み込みました",
+
+  // MSG_CHEAT_LOAD_FAILED_AT_LINE
+  "チートの読み込みに失敗しました (%lu 行目):\n%s",
+
+  // MSG_CHEAT_LOAD_FAILED
+  "チートの読み込みに失敗しました:\n%s",
+
+  // MSG_CHEAT_REASON_OPEN
+  "ファイルにアクセスできません",
+
+  // MSG_CHEAT_REASON_CAPACITY
+  "チートの数が上限を超えています",
+
+  // MSG_CHEAT_REASON_EMPTY
+  "ファイルが空です",
+
+  // MSG_CHEAT_REASON_FORMAT
+  "形式が正しくありません",
+
   // MSG_NON_LOAD_GAME
   "ゲームが読み込まれていません",
 

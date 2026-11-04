@@ -418,6 +418,27 @@
   // MSG_CHEAT_MENU_HELP_3
   FONT_CURSOR_LEFT_GBK FONT_CURSOR_RIGHT_GBK ":Change page   " FONT_BTN_CROSS_GBK ":Exit",
 
+  // MSG_CHEAT_LOAD_DONE
+  "%s\n%lu cheats loaded",
+
+  // MSG_CHEAT_LOAD_FAILED_AT_LINE
+  "Cheat load failed at line %lu:\n%s",
+
+  // MSG_CHEAT_LOAD_FAILED
+  "Cheat load failed:\n%s",
+
+  // MSG_CHEAT_REASON_OPEN
+  "file is not accessible",
+
+  // MSG_CHEAT_REASON_CAPACITY
+  "list exceeds supported capacity",
+
+  // MSG_CHEAT_REASON_EMPTY
+  "file is empty",
+
+  // MSG_CHEAT_REASON_FORMAT
+  "invalid format",
+
   // MSG_NON_LOAD_GAME
   "Game is not loaded",
 

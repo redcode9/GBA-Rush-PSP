@@ -418,6 +418,27 @@
   // MSG_CHEAT_MENU_HELP_3
   FONT_CURSOR_LEFT_GBK FONT_CURSOR_RIGHT_GBK ":Cambia pagina   " FONT_BTN_CROSS_GBK ":Esci",
 
+  // MSG_CHEAT_LOAD_DONE
+  "%s\n%lu trucchi caricati",
+
+  // MSG_CHEAT_LOAD_FAILED_AT_LINE
+  "Caricamento trucchi fallito alla riga %lu:\n%s",
+
+  // MSG_CHEAT_LOAD_FAILED
+  "Caricamento trucchi fallito:\n%s",
+
+  // MSG_CHEAT_REASON_OPEN
+  "file non accessibile",
+
+  // MSG_CHEAT_REASON_CAPACITY
+  "lista oltre la capacità supportata",
+
+  // MSG_CHEAT_REASON_EMPTY
+  "file vuoto",
+
+  // MSG_CHEAT_REASON_FORMAT
+  "formato non valido",
+
   // MSG_NON_LOAD_GAME
   "Il gioco non è avviato",
 

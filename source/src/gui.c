@@ -4386,69 +4386,37 @@ u32 menu(void)
         refresh_cheat_format_strings();
         reload_cheats_page();
 
-        if(option_language == LANGUAGE_ITALIAN)
-          snprintf(status_message, sizeof(status_message), "%s\n%lu trucchi caricati",
-                   loaded_cheat_filename, (unsigned long)num_cheats);
-        else
-          snprintf(status_message, sizeof(status_message), "%s\n%lu cheats loaded",
-                   loaded_cheat_filename, (unsigned long)num_cheats);
+        snprintf(status_message, sizeof(status_message),
+                 MSG[MSG_CHEAT_LOAD_DONE],
+                 loaded_cheat_filename, (unsigned long)num_cheats);
       }
       else
       {
         const char *reason;
 
-        if(option_language == LANGUAGE_ITALIAN)
+        switch(load_result)
         {
-          switch(load_result)
-          {
-            case CHEAT_LOAD_ERROR_OPEN:
-              reason = "file non accessibile";
-              break;
-            case CHEAT_LOAD_ERROR_CAPACITY:
-              reason = "lista oltre la capacita supportata";
-              break;
-            case CHEAT_LOAD_ERROR_EMPTY:
-              reason = "file vuoto";
-              break;
-            default:
-              reason = "formato non valido";
-              break;
-          }
-
-          if(error_line)
-            snprintf(status_message, sizeof(status_message),
-                     "Caricamento trucchi fallito alla riga %lu:\n%s",
-                     (unsigned long)error_line, reason);
-          else
-            snprintf(status_message, sizeof(status_message),
-                     "Caricamento trucchi fallito:\n%s", reason);
+          case CHEAT_LOAD_ERROR_OPEN:
+            reason = MSG[MSG_CHEAT_REASON_OPEN];
+            break;
+          case CHEAT_LOAD_ERROR_CAPACITY:
+            reason = MSG[MSG_CHEAT_REASON_CAPACITY];
+            break;
+          case CHEAT_LOAD_ERROR_EMPTY:
+            reason = MSG[MSG_CHEAT_REASON_EMPTY];
+            break;
+          default:
+            reason = MSG[MSG_CHEAT_REASON_FORMAT];
+            break;
         }
+
+        if(error_line)
+          snprintf(status_message, sizeof(status_message),
+                   MSG[MSG_CHEAT_LOAD_FAILED_AT_LINE],
+                   (unsigned long)error_line, reason);
         else
-        {
-          switch(load_result)
-          {
-            case CHEAT_LOAD_ERROR_OPEN:
-              reason = "file is not accessible";
-              break;
-            case CHEAT_LOAD_ERROR_CAPACITY:
-              reason = "list exceeds supported capacity";
-              break;
-            case CHEAT_LOAD_ERROR_EMPTY:
-              reason = "file is empty";
-              break;
-            default:
-              reason = "invalid format";
-              break;
-          }
-
-          if(error_line)
-            snprintf(status_message, sizeof(status_message),
-                     "Cheat load failed at line %lu:\n%s",
-                     (unsigned long)error_line, reason);
-          else
-            snprintf(status_message, sizeof(status_message),
-                     "Cheat load failed:\n%s", reason);
-        }
+          snprintf(status_message, sizeof(status_message),
+                   MSG[MSG_CHEAT_LOAD_FAILED], reason);
 
         reload_cheats_page();
       }

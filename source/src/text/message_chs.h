@@ -418,6 +418,27 @@
   // MSG_CHEAT_MENU_HELP_3
   FONT_CURSOR_LEFT_GBK FONT_CURSOR_RIGHT_GBK ":切换页面   " FONT_BTN_CROSS_GBK ":退出",
 
+  // MSG_CHEAT_LOAD_DONE
+  "%s\n已加载 %lu 个作弊码",
+
+  // MSG_CHEAT_LOAD_FAILED_AT_LINE
+  "作弊文件加载失败，第 %lu 行:\n%s",
+
+  // MSG_CHEAT_LOAD_FAILED
+  "作弊文件加载失败:\n%s",
+
+  // MSG_CHEAT_REASON_OPEN
+  "无法访问文件",
+
+  // MSG_CHEAT_REASON_CAPACITY
+  "作弊码数量超出支持上限",
+
+  // MSG_CHEAT_REASON_EMPTY
+  "文件为空",
+
+  // MSG_CHEAT_REASON_FORMAT
+  "格式无效",
+
   // MSG_NON_LOAD_GAME
   "游戏未加载",
 
