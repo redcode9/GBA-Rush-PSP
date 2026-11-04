@@ -525,6 +525,8 @@
 
   // MSG_SCN_SCALED_16X9_AUTO
   "16:9 Auto",
+  // MSG_SCN_SCALED_INT2
+  "2x 整数倍 (トリミング)",
 
   // MSG_LANG_JAPANESE
   "日本語",

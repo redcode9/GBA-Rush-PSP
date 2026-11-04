@@ -525,6 +525,8 @@
 
   // MSG_SCN_SCALED_16X9_AUTO
   "16:9 Automatico",
+  // MSG_SCN_SCALED_INT2
+  "2x intero (ritaglio)",
 
   // MSG_LANG_JAPANESE
   "日本語",
