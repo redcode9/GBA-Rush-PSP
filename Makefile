@@ -61,6 +61,13 @@ ARM_CORE_HEADERS = source/src/arm_core.h source/src/arm_ir.h \
  source/src/arm_mips.h
 HOST_TEST_GBA_PPU = $(HOST_BUILD_DIR)/test_gba_ppu
 HOST_TEST_GBA_PPU_LOG = $(HOST_BUILD_DIR)/test_gba_ppu_log
+HOST_TEST_PNG_WRITE = $(HOST_BUILD_DIR)/test_png_write
+# The PNG writer's test links the bundled zlib, built apart with -w (zlib
+# 1.2.8 has old-style definitions). Z_SOLO leaves out zlib's file I/O and
+# default allocator: the test passes its own, which counts the peak.
+PNG_WRITE_ZLIB = adler32 crc32 deflate inffast inflate inftrees trees zutil
+PNG_WRITE_ZLIB_SOURCES = $(PNG_WRITE_ZLIB:%=source/src/zlib/%.c)
+PNG_WRITE_FLAGS = -DZ_SOLO -DZLIB_CONST
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_LINK_NET) $(HOST_TEST_LINK_CABLE) \
  $(HOST_TEST_ADHOC_PEER) \
@@ -77,7 +84,7 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
  $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_GBA_PPU) \
- $(HOST_TEST_GBA_PPU_LOG)
+ $(HOST_TEST_GBA_PPU_LOG) $(HOST_TEST_PNG_WRITE)
 # The same C tests built with HOST_SANITIZE_FLAGS for make test-sanitize.
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_net \
@@ -108,7 +115,8 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_runtime_log \
  $(HOST_SANITIZE_DIR)/test_arm_core \
  $(HOST_SANITIZE_DIR)/test_gba_ppu \
- $(HOST_SANITIZE_DIR)/test_gba_ppu_log
+ $(HOST_SANITIZE_DIR)/test_gba_ppu_log \
+ $(HOST_SANITIZE_DIR)/test_png_write
 
 .PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
  check-core check-render tree-check media-engine-check psp-build \
@@ -150,6 +158,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_ARM_CORE)
 	$(HOST_TEST_GBA_PPU)
 	$(HOST_TEST_GBA_PPU_LOG)
+	$(HOST_TEST_PNG_WRITE)
 
 # Python tests. test_startup, test_browser_text, test_open_bios,
 # test_theme_boot, test_toast_draw and test_input_shortcuts also compile
@@ -195,6 +204,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_arm_core
 	$(HOST_SANITIZE_DIR)/test_gba_ppu
 	$(HOST_SANITIZE_DIR)/test_gba_ppu_log
+	$(HOST_SANITIZE_DIR)/test_png_write
 
 $(HOST_TEST_CODEBREAKER): tests/test_codebreaker.c source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_BUILD_DIR)
@@ -435,6 +445,17 @@ $(HOST_TEST_GBA_PPU_LOG): $(GBA_PPU_LOG_SOURCES) $(GBA_PPU_LOG_HEADERS)
 	$(HOST_CC) -std=c99 -pthread -Wall -Wextra -Werror -Isource/src \
 	 $(GBA_PPU_LOG_SOURCES) -o $@
 
+$(HOST_TEST_PNG_WRITE): tests/test_png_write.c source/src/png_write.c \
+ source/src/png_write.h $(PNG_WRITE_ZLIB_SOURCES) source/src/zlib/zlib.h
+	mkdir -p $(HOST_BUILD_DIR)
+	for f in $(PNG_WRITE_ZLIB); do \
+	 $(HOST_CC) -std=c99 -w $(PNG_WRITE_FLAGS) -c source/src/zlib/$$f.c \
+	 -o $(HOST_BUILD_DIR)/png_zlib_$$f.o || exit 1; \
+	done
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(PNG_WRITE_FLAGS) -Isource/src \
+	 tests/test_png_write.c source/src/png_write.c \
+	 $(PNG_WRITE_ZLIB:%=$(HOST_BUILD_DIR)/png_zlib_%.o) -o $@
+
 $(HOST_SANITIZE_DIR)/test_codebreaker: tests/test_codebreaker.c \
  source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_SANITIZE_DIR)
@@ -670,6 +691,19 @@ $(HOST_SANITIZE_DIR)/test_gba_ppu_log: $(GBA_PPU_LOG_SOURCES) \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -pthread -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src $(GBA_PPU_LOG_SOURCES) -o $@
+
+$(HOST_SANITIZE_DIR)/test_png_write: tests/test_png_write.c \
+ source/src/png_write.c source/src/png_write.h $(PNG_WRITE_ZLIB_SOURCES) \
+ source/src/zlib/zlib.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	for f in $(PNG_WRITE_ZLIB); do \
+	 $(HOST_CC) -std=c99 -w $(PNG_WRITE_FLAGS) $(HOST_SANITIZE_FLAGS) \
+	 -c source/src/zlib/$$f.c -o $(HOST_SANITIZE_DIR)/png_zlib_$$f.o || exit 1; \
+	done
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(PNG_WRITE_FLAGS) \
+	 $(HOST_SANITIZE_FLAGS) -Isource/src tests/test_png_write.c \
+	 source/src/png_write.c \
+	 $(PNG_WRITE_ZLIB:%=$(HOST_SANITIZE_DIR)/png_zlib_%.o) -o $@
 
 # Optional gates outside make check: the CBMC proof needs CBMC, the ROM link
 # trade needs mGBA plus your own FireRed ROM, BIOS and save, and races Mario

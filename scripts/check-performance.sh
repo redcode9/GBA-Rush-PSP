@@ -31,6 +31,15 @@ then
   exit 1
 fi
 
+# The screenshot encoder fills the caller's buffer with memory from the
+# caller's allocator: it opens no file and allocates nothing itself.
+if rg -q 'FILE_|sceIo|\bmalloc\(|\bcalloc\(|\brealloc\(|\bfree\(' \
+  source/src/png_write.c
+then
+  echo "The PNG writer opens files or allocates memory itself" >&2
+  exit 1
+fi
+
 # Benchmarks compare medians of three runs per build with matching settings.
 if ! rg -q 'nargs=3' scripts/compare-benchmarks.py || \
    ! rg -q 'MATCH_FIELDS' scripts/compare-benchmarks.py
