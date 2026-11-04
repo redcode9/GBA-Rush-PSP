@@ -42,15 +42,20 @@ one, GBA Rush PSP uses the open-source BIOS built into the EBOOT.
 
 ## Install and upgrade
 
-Copy the release folder to `PSP/GAME/GBARushPSP/`. If you have a dump of your
-own GBA BIOS, add it as `gba_bios.bin`:
+Extract the release ZIP at the root of the Memory Stick (`ms0:`, or the
+internal storage `ef0:` of a PSP Go): it creates `PSP/GAME/GBARushPSP/` with
+the emulator and, in `docs/`, this documentation. Put your games in `roms/`
+or beside the EBOOT, and if you have a dump of your own GBA BIOS, add it as
+`gba_bios.bin`:
 
 ```text
 PSP/GAME/GBARushPSP/
 ├── EBOOT.PBP
 ├── exception.prx
-├── gba_bios.bin      (optional)
-└── roms/             (optional)
+├── media_engine.prx
+├── docs/
+├── roms/             (optional)
+└── gba_bios.bin      (optional)
 ```
 
 Without `gba_bios.bin` the emulator uses its built-in open-source BIOS; a
@@ -66,15 +71,17 @@ you have savestates made with it. Each BIOS keeps its own automatic savestate
 (`<rom>_auto.svs` with `gba_bios.bin`, `<rom>_auto-builtin.svs` with the
 built-in BIOS), so switching never overwrites the other one.
 
-Start GBA Rush PSP from the PSP Game menu and select a ROM. The ROM list opens
-in `roms/` when that folder exists, otherwise in the EBOOT folder; saves,
-savestates and the other files stay in the EBOOT folder. An optional `dir.ini`
-beside the EBOOT can point ROMs, saves, states, screenshots, cheats and box art
-to separate directories.
+Start GBA Rush PSP from the PSP Game menu and select a ROM. The ROM browser
+opens in `roms/` when that folder exists, otherwise in the EBOOT folder;
+saves, savestates and the other files stay in the EBOOT folder. An optional
+`dir.ini` beside the EBOOT can point ROMs, saves, states, screenshots, cheats
+and box art to separate directories.
 
-To upgrade, replace only `EBOOT.PBP` and `exception.prx`. Keep the BIOS, ROMs,
-saves, savestates, cheat lists and configuration files. Back up important save
-data before an update.
+To upgrade, extract the new release ZIP at the root in the same way and let it
+replace the existing files. The ZIP holds only the programs and the
+documentation, so the BIOS, ROMs, saves, savestates, cheat lists and
+configuration files stay as they are. Back up important save data before an
+update.
 
 ## Controls
 
@@ -232,10 +239,12 @@ make package VERSION=1.4.3
 ```
 
 The package command creates a reproducible ZIP and SHA-256 checksum under
-`dist/`, then verifies the archive manifest. The archive includes the license
-notices (with the built-in BIOS notes in `source/bios/README.md`), installation
-guide and current link test checklist. It never includes `gba_bios.bin`, ROMs,
-saves, settings or cheat databases.
+`dist/`, laid out to extract at the root of the Memory Stick, then verifies
+the archive manifest. The archive includes the license notices (with the
+built-in BIOS notes in `source/bios/README.md`), installation guide and
+current link test checklist. It never includes `gba_bios.bin`, ROMs, saves,
+savestates, settings, `dir.ini` or cheat databases: the check refuses an
+archive with a BIOS, ROM, save, savestate, settings file or `dir.ini`.
 
 ### Performance comparison
 
