@@ -45,6 +45,10 @@
 
 ### Fixed
 
+- A game that halted the processor with interrupts switched off froze for
+  good. An enabled interrupt request now ends the halt whatever the IME
+  register and the processor's interrupt flag say, as on the GBA, and the
+  game goes on without taking the interrupt.
 - A ROM file name of about 240 characters or more no longer overruns the
   memory that holds its savestate name.
 

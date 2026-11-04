@@ -30,6 +30,7 @@
 
 #include "common.h"
 #include "fast_forward_policy.h"
+#include "gba_irq.h"
 #include "perf_monitor.h"
 #include "perf_report.h"
 #include "power_lifecycle.h"
@@ -1294,22 +1295,20 @@ u32 update_gba(void)
       irq_raised = IRQ_NONE;
     }
 
-    if (main_cpu_core == CPU_CORE_NEW)
+    // An enabled request ends a halt whatever IME and the CPSR say, as on
+    // the GBA; only serial, keypad and game pak IRQs end STOP. The new
+    // core takes the interrupt itself (arm_gba.c).
+    if (gba_irq_halt_wakes(reg[CPU_HALT_STATE] == CPU_STOP,
+     pIO_REG(REG_IE), pIO_REG(REG_IF)))
     {
-      // The new core takes interrupts itself (arm_gba.c). An enabled
-      // request ends a halt whatever IME and the CPSR say, as on the GBA;
-      // only serial, keypad and game pak IRQs end STOP.
-      u16 irq_mask = (reg[CPU_HALT_STATE] == CPU_STOP) ? 0x3080 : 0x3FFF;
-
-      if ((pIO_REG(REG_IE) & pIO_REG(REG_IF) & irq_mask) != 0)
+      if ((main_cpu_core == CPU_CORE_NEW) ||
+       !gba_irq_enters(pIO_REG(REG_IE), pIO_REG(REG_IF), GBA_IME_STATE,
+       reg[REG_CPSR]))
+      {
+        // Running on after the halt instruction, without an interrupt
         reg[CPU_HALT_STATE] = CPU_ACTIVE;
-    }
-    else if ((pIO_REG(REG_IF) != 0) && GBA_IME_STATE && ARM_IRQ_STATE)
-    {
-      // Only serial, keypad and game pak IRQs wake the GBA from STOP
-      u16 irq_mask = (reg[CPU_HALT_STATE] == CPU_STOP) ? 0x3080 : 0x3FFF;
-
-      if ((pIO_REG(REG_IE) & pIO_REG(REG_IF) & irq_mask) != 0)
+      }
+      else
       {
         if (irq_delay_pending != 0)
         {
