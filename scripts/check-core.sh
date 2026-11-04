@@ -22,11 +22,24 @@ set -eu
 #             or a tree built by scripts/build-unicorn.sh (include/, build/)
 # SST_DIR, MGBA_DIR and UNICORN_DIR default, when unset, to what
 # scripts/setup-dev.sh put in ext/; set one empty to skip its part.
+# With --quick (make check-core-quick, for every pull request) the fuzzer
+# runs 5 cases, the suite the first 1000 tests of each file and lockstep
+# the first 60 frames of each game.
 # The runs stop at the first instruction where the core and mGBA disagree
 # and leave their logs in OUT (build/core).
 
 out=${OUT:-build/core}
 mkdir -p "$out"
+fuzz_cases=200
+sst_limit=
+frames=
+if [ "${1:-}" = --quick ]; then
+  # 60 frames is a first guess at a million instructions per game; tune it
+  # from the "instructions compared" lines of a quick run.
+  fuzz_cases=5
+  sst_limit="-n 1000"
+  frames="--frames 60"
+fi
 if [ -z "${SST_DIR+set}" ] && [ -d ext/ARM7TDMI/v1 ]; then
   SST_DIR=ext/ARM7TDMI/v1
 fi
@@ -49,7 +62,7 @@ if [ -n "${UNICORN_DIR:-}" ]; then
     -I"$UNICORN_DIR/include" tests/core/jit_fuzz.c tests/core/mips_unicorn.c \
     source/src/arm_mips.c $core_sources -L"$lib" -lunicorn \
     -Wl,-rpath,"$lib" -o "$out/jit_fuzz"
-  if ! "$out/jit_fuzz" --cases "${FUZZ_CASES:-200}" > "$out/jit_fuzz.log"
+  if ! "$out/jit_fuzz" --cases "${FUZZ_CASES:-$fuzz_cases}" > "$out/jit_fuzz.log"
   then
     echo "check-core: the backend differs, see $out/jit_fuzz.log" >&2
     exit 1
@@ -63,7 +76,9 @@ if [ -n "${SST_DIR:-}" ]; then
   # shellcheck disable=SC2086
   ${CC:-cc} -std=c99 -O2 -Wall -Wextra -Werror -Isource/src \
     tests/core/single_step.c $core_sources $backend -o "$out/single_step"
-  if ! "$out/single_step" "$SST_DIR"/*.json.bin > "$out/single_step.log"
+  # shellcheck disable=SC2086
+  if ! "$out/single_step" $sst_limit "$SST_DIR"/*.json.bin \
+    > "$out/single_step.log"
   then
     echo "check-core: SingleStepTests failed, see $out/single_step.log" >&2
     exit 1
@@ -90,6 +105,8 @@ lockstep()
 {
   name=$1
   shift
+  # shellcheck disable=SC2086
+  set -- $frames "$@"
   for mode in step block; do
     if ! "$out/lockstep" --mode "$mode" "$@" > "$out/$name-$mode.log"; then
       echo "check-core: $name ($mode) diverged, see $out/$name-$mode.log" >&2

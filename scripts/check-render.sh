@@ -15,7 +15,10 @@ set -eu
 #             tests/rom_link/firered_trade.txt from the title screen
 #   LEAFGREEN Pokemon LeafGreen: opening and new game
 #   RENDER_ROMS  more ROM:SCRIPT pairs, such as test ROMs
-# MGBA_DIR defaults to what scripts/setup-dev.sh put in ext/.
+# MGBA_DIR defaults to what scripts/setup-dev.sh put in ext/, and with no
+# game set RENDER_ROMS to the free test ROMs it fetched. With --quick (make
+# check-render-quick, for every pull request) each game runs its first 300
+# frames.
 # The first frame that differs in each game is saved as
 # build/render/<game>.bmp, mGBA's picture on the left.
 
@@ -25,6 +28,15 @@ fi
 if [ -z "${MGBA_DIR:-}" ]; then
   echo "Render check skipped: no mGBA (MGBA_DIR or sh scripts/setup-dev.sh mgba)"
   exit 0
+fi
+tests=ext/test-roms/gba-tests
+if [ -z "${MKSC:-}${FIRERED:-}${LEAFGREEN:-}${RENDER_ROMS:-}" ] &&
+  [ -d "$tests" ]; then
+  RENDER_ROMS=
+  for rom in arm/arm thumb/thumb memory/memory ppu/hello ppu/shades \
+    ppu/stripes; do
+    RENDER_ROMS="$RENDER_ROMS $tests/$rom.gba:tests/render/still.txt"
+  done
 fi
 if [ -z "${MKSC:-}${FIRERED:-}${LEAFGREEN:-}${RENDER_ROMS:-}" ]; then
   echo "Render check skipped: set MKSC, FIRERED, LEAFGREEN or RENDER_ROMS"
@@ -47,6 +59,10 @@ if [ ! -f "$build/libmgba.a" ]; then
 fi
 out=${OUT:-build/render}
 mkdir -p "$out"
+frames=
+if [ "${1:-}" = --quick ]; then
+  frames=300
+fi
 frameworks=
 if [ "$(uname)" = Darwin ]; then
   frameworks="-framework CoreFoundation"
@@ -63,6 +79,15 @@ check()
   name=$1
   rom=$(absolute "$2")
   script=$(absolute "$3")
+  if [ -n "$frames" ]; then
+    # Only the script's first frames.
+    awk -v left="$frames" '$1 == "run" && left > 0 {
+      if ($2 > left) $2 = left
+      left -= $2
+      print
+    }' "$3" > "$out/$name-quick.txt"
+    script=$(absolute "$out/$name-quick.txt")
+  fi
   shift 3
   rm -f "$out/mismatch.bmp"
   if ! (cd "$out" && ./render_check "$rom" "$script" "$@" > "$name.log"); then

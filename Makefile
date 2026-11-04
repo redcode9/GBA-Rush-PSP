@@ -104,8 +104,9 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_ppu_log
 
 .PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
- check-core check-render tree-check psp-sdk-headers media-engine-check \
- psp-build launcher-stub package artifact-smoke clean
+ check-core check-render check-core-quick check-render-quick tree-check \
+ psp-sdk-headers media-engine-check psp-build launcher-stub package \
+ artifact-smoke clean
 
 all: check
 
@@ -635,6 +636,14 @@ check-core:
 # Compares gba_ppu with mGBA's renderer on your own ROMs; see the script.
 check-render:
 	sh scripts/check-render.sh
+
+# Shorter runs of the two checks above, for every pull request; each part
+# is skipped when its inputs are missing.
+check-core-quick:
+	sh scripts/check-core.sh --quick
+
+check-render-quick:
+	sh scripts/check-render.sh --quick
 
 tree-check:
 	sh scripts/check-tree.sh
