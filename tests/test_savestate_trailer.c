@@ -43,7 +43,9 @@ static uint32_t rng(void)
 
 static uint32_t rng32(void)
 {
-  return (rng() << 8) ^ rng();
+  uint32_t high = rng();
+
+  return (high << 8) ^ rng();
 }
 
 /* struct.pack('<4sHHII4sB3xIIIII', b'GRST', 2, 48, 0x80000, 0x12345678,
@@ -352,7 +354,11 @@ static void test_fuzz(void)
 
       savestate_trailer_encode(&t, source);
       for(i = 0; i < changes; i++)
-        source[rng() % SAVESTATE_TRAILER_SIZE] = (uint8_t)rng();
+      {
+        unsigned int at = rng() % SAVESTATE_TRAILER_SIZE;
+
+        source[at] = (uint8_t)rng();
+      }
       if(rng() % 2 != 0)
         refresh_crc(source);
       tail_size = rng() % 4 != 0 ? SAVESTATE_TRAILER_SIZE :
