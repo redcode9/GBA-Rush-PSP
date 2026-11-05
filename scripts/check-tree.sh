@@ -51,6 +51,11 @@ do
       echo "Generated or private runtime file is tracked: $path" >&2
       exit 1
       ;;
+    benchmarks/*.txt|benchmarks/*.md) ;;
+    benchmarks/*)
+      echo "Only .txt reports and .md notes go in benchmarks/: $path" >&2
+      exit 1
+      ;;
   esac
 done
 
