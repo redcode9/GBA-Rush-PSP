@@ -546,6 +546,12 @@
   // MSG_SEARCHING_BACKUP_ID
   "搜索备份 ID",
 
+  // MSG_LOADING_STAGE_READ
+  "正在读取 ROM",
+
+  // MSG_LOADING_STAGE_UNZIP
+  "正在解压 ZIP",
+
   // main.c
   // MSG_GBA_SLEEP_MODE
   "SLEEP MODE",

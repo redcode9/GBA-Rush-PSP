@@ -3644,9 +3644,10 @@ resume_after_entry:
 }
 
 
-// Reads the whole ROM if it fits the buffer; otherwise reads only the
-// header and keeps the file open for load_gamepak_page(). Returns the file
-// size or -1.
+// Reads the whole ROM if it fits the buffer, in ROM_LOAD_CHUNK_SIZE reads
+// reported to rom_load_progress; otherwise reads only the header and keeps
+// the file open for load_gamepak_page(). Returns the file size, or -1 if
+// the file does not open or a read fails or ends early.
 static s32 load_gamepak_raw(char *name)
 {
   SceUID gamepak_file;
@@ -3661,7 +3662,28 @@ static s32 load_gamepak_raw(char *name)
     // probably want to load it later
     if (_gamepak_size <= gamepak_ram_buffer_size)
     {
-      FILE_READ(gamepak_file, gamepak_rom, _gamepak_size);
+      u32 done = 0;
+
+      while (done < _gamepak_size)
+      {
+        u32 chunk = _gamepak_size - done;
+        s32 bytes_read;
+
+        if (chunk > ROM_LOAD_CHUNK_SIZE)
+          chunk = ROM_LOAD_CHUNK_SIZE;
+
+        bytes_read = FILE_READ(gamepak_file, gamepak_rom + done, chunk);
+        if (bytes_read <= 0)
+        {
+          FILE_CLOSE(gamepak_file);
+          return -1;
+        }
+
+        done += (u32)bytes_read;
+        if (rom_load_progress != NULL)
+          rom_load_progress(name, MSG_LOADING_STAGE_READ, done, _gamepak_size);
+      }
+
       FILE_CLOSE(gamepak_file);
     }
     else
@@ -3718,7 +3740,8 @@ s32 load_gamepak(char *name)
   if (!strcasecmp(dot_position, ".gba") || !strcasecmp(dot_position, ".agb") || !strcasecmp(dot_position, ".bin"))
   {
     file_size = load_gamepak_raw(name);
-    print_string_gbk(MSG[MSG_SEARCHING_BACKUP_ID], X_POS_CENTER, 148, color_active_item, BG_NO_FILL);
+    // Below the progress bar that gui.c draws at y 136-169.
+    print_string_gbk(MSG[MSG_SEARCHING_BACKUP_ID], X_POS_CENTER, 194, color_active_item, BG_NO_FILL);
     flip_screen(1);
   }
 

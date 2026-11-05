@@ -216,6 +216,8 @@ void gbc_sound_wave_pattern_ram16(void) {}
 void input_read_savestate(void) {}
 void input_write_mem_savestate(void) {}
 void load_file_zip(void) {}
+/* zip.h's loading popup callback; NULL, as when gui.c is not linked. */
+void (*rom_load_progress)(void) = NULL;
 void main_read_savestate(void) {}
 void main_write_mem_savestate(void) {}
 void load_game_config_file(void) {}

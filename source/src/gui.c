@@ -28,6 +28,7 @@
 #include "common.h"
 #include "boxart.h"   // carousel / boxart support
 #include "config_store.h"
+#include "load_progress.h"
 #include "menu_layout.h"
 #include "menu_model.h"
 #include "psp_adhoc.h"
@@ -937,6 +938,61 @@ static void print_string_clipped(const char *str, u32 x, u32 y, u16 color, u16 b
     else
         print_string_gbk(buf, x, y, color, bg);
 }
+
+/* Name columns that fit the 260-pixel loading popup of load_gamepak(). */
+#define ROM_LOAD_NAME_MAX_CHARS 40
+
+/* The inside of the loading popup into the back buffer: title, file name,
+   bar, step and "x / y KiB". Only the inside is filled: drawing the whole
+   popup again would dim the screen around it once more on every frame. */
+static void draw_rom_load_popup(const char *name, u32 stage_msg, u32 done, u32 total)
+{
+    char kib[32];
+    u32 name_len = strlen(name);
+
+    if (name_len > ROM_LOAD_NAME_MAX_CHARS)
+        name_len = ROM_LOAD_NAME_MAX_CHARS;
+    load_progress_text(kib, sizeof(kib), done, total);
+
+    /* The popup's own background, as draw_popup_frame_auto() fills it. */
+    draw_box_fill(110, 96, 369, 190, color15_lighten(color_bg, 10));
+    print_string_gbk(MSG[MSG_LOADING_ROM], X_POS_CENTER, 100, color_active_item, BG_NO_FILL);
+    print_string_clipped(name, (PSP_SCREEN_WIDTH - name_len * FONTWIDTH) / 2, 118,
+        color_active_item, BG_NO_FILL, ROM_LOAD_NAME_MAX_CHARS);
+    draw_box_line(136, 136, 344, 169, COLOR15_WHITE);
+    draw_box_line(137, 137, 343, 168, COLOR15_WHITE);
+    draw_box_fill(140, 140, 140 + load_progress_bar(done, total, 200), 165, COLOR15_WHITE);
+    print_string_gbk(MSG[stage_msg], 136, 176, color_active_item, BG_NO_FILL);
+    print_string_gbk(kib, 345 - strlen(kib) * FONTWIDTH, 176, color_active_item, BG_NO_FILL);
+}
+
+/* rom_load_progress (zip.h): redraws the loading popup for each 64 KiB
+   read, at most every 50 ms (load_progress_due()). No vsync wait, so the
+   popup costs little of the load time. */
+static void draw_rom_load_progress(const char *name, u32 stage_msg, u32 done, u32 total)
+{
+    static LoadProgressState state;
+    const char *slash = strrchr(name, '/');
+
+    if (!load_progress_due(&state, sceKernelGetSystemTimeWide(), done, total))
+        return;
+
+    if (slash != NULL)
+        name = slash + 1;
+
+    draw_rom_load_popup(name, stage_msg, done, total);
+    flip_screen(0);
+
+    /* load_gamepak() prints its next line into the other buffer: give it
+       the full bar too, once that buffer has left the screen. */
+    if (done >= total)
+    {
+        sceDisplayWaitVblankStart();
+        draw_rom_load_popup(name, stage_msg, done, total);
+    }
+}
+
+RomLoadProgress rom_load_progress = draw_rom_load_progress;
 
 /* One frame of run_color_picker(): the saturation/value grid at hue h, the
    hue bar, old and new swatches and the theme preview. cx, cy and hue_seg

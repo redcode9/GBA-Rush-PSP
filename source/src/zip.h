@@ -22,6 +22,17 @@
 #define ZIP_H
 
 
+/* ROM files are read this much at a time, so the loading popup moves. */
+#define ROM_LOAD_CHUNK_SIZE (64u * 1024u)
+
+/* Called after every read of a ROM load when not NULL: name is the file,
+   stage_msg the MSG_ id of the step (MSG_LOADING_STAGE_READ for a .gba,
+   MSG_LOADING_STAGE_UNZIP for a .zip), done the bytes of the file read so
+   far out of total. gui.c points it at the loading popup. */
+typedef void (*RomLoadProgress)(const char *name, u32 stage_msg, u32 done,
+ u32 total);
+extern RomLoadProgress rom_load_progress;
+
 /* Loads the ROM in the first entry of a .zip into gamepak_rom. Returns its
    size (above 0), -1 if the file cannot be opened or memory runs out, -2 if
    the ROM does not fit in the ROM buffer, or -3 for any other failure: a

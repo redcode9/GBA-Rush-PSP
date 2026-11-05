@@ -546,6 +546,12 @@
   // MSG_SEARCHING_BACKUP_ID
   "BACKUP ID を検索中",
 
+  // MSG_LOADING_STAGE_READ
+  "ROM を読み込み中",
+
+  // MSG_LOADING_STAGE_UNZIP
+  "ZIP を展開中",
+
   // main.c
   // MSG_GBA_SLEEP_MODE
   "スリープモード",

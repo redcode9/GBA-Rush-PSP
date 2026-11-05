@@ -546,6 +546,12 @@
   // MSG_SEARCHING_BACKUP_ID
   "Ricerca ID BACKUP",
 
+  // MSG_LOADING_STAGE_READ
+  "Lettura ROM",
+
+  // MSG_LOADING_STAGE_UNZIP
+  "Estrazione ZIP",
+
   // main.c
   // MSG_GBA_SLEEP_MODE
   "MODALITA RIPOSO",
