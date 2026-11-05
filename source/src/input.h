@@ -85,6 +85,8 @@ typedef enum
 
 
 extern u32 gamepad_config_map[16];
+/* CONFIG_MODEL_SHORTCUT_COUNT chord masks; see input.c. */
+extern u32 option_shortcut[];
 
 extern u32 enable_tilt_sensor;
 extern u32 tilt_sensorX;
@@ -95,6 +97,7 @@ void init_input_kernel(void);
 
 u32 update_input(void);
 void rebuild_fast_forward_button_mask(void);
+void rebuild_shortcut_chords(void);
 
 u32 get_pad_input(u32 mask);
 

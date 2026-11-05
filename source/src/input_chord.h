@@ -25,7 +25,6 @@
 
 #define INPUT_CHORD_MAX 8
 #define INPUT_CHORD_MAX_KEYS 4
-#define INPUT_CHORD_DEFAULT_COUNT 3
 
 #define INPUT_CHORD_KEY_L (1u << 4)
 #define INPUT_CHORD_KEY_R (1u << 5)
@@ -44,6 +43,9 @@ enum
   INPUT_CHORD_MENU,
   INPUT_CHORD_ACTION_COUNT
 };
+
+/* One default per action, in action order. */
+#define INPUT_CHORD_DEFAULT_COUNT INPUT_CHORD_ACTION_COUNT
 
 /* mask 0 means no chord; hold_ms 0 means the chord fires on a press. */
 typedef struct
@@ -65,7 +67,8 @@ typedef struct
 } InputChordState;
 
 /* SELECT+L saves, SELECT+R loads, START+SELECT held 500 ms opens the
- * menu. */
+ * menu. Entry n is action n; its hold_ms is that action's fixed hold,
+ * also for a chord the user sets. */
 extern const InputChord input_chord_defaults[INPUT_CHORD_DEFAULT_COUNT];
 
 /* Non-zero when count fits, every action exists, every chord has 0

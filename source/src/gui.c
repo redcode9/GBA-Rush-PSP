@@ -6310,10 +6310,13 @@ static void capture_global_config(ConfigModel *model)
   model->browser_view = option_browser_view;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     model->gamepad[i] = gamepad_config_map[i];
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    model->shortcut[i] = option_shortcut[i];
 }
 
 /* Inverse of capture_global_config(), then the side effects: button mask,
-   preset theme (apply_theme()) and fast forward settings. */
+   shortcut chords, preset theme (apply_theme()) and fast forward
+   settings. */
 static void apply_global_config(const ConfigModel *model)
 {
   u32 i;
@@ -6359,6 +6362,9 @@ static void apply_global_config(const ConfigModel *model)
   if(!enable_home_menu && !has_menu_button)
     gamepad_config_map[0] = BUTTON_ID_MENU;
   rebuild_fast_forward_button_mask();
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    option_shortcut[i] = model->shortcut[i];
+  rebuild_shortcut_chords();
   apply_theme(option_theme);
   main_fast_forward_reset_game_settings();
 }
@@ -6429,8 +6435,9 @@ static int config_companion_paths(const char *primary, char *temporary,
 }
 
 /* Per-game files (<dir_cfg>/<rom>.cfg) use the same format but only carry
-   video, frameskip, clock, volume, fast forward and button settings; the
-   remaining fields are written as defaults and ignored on load. */
+   video, frameskip, clock, volume, fast forward, button and shortcut
+   settings; the remaining fields are written as defaults and ignored on
+   load. */
 static void capture_game_config(ConfigModel *model)
 {
   u32 i;
@@ -6451,6 +6458,8 @@ static void capture_game_config(ConfigModel *model)
   model->fast_forward_audio = option_game_fast_forward_audio;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     model->gamepad[i] = gamepad_config_map[i];
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    model->shortcut[i] = option_shortcut[i];
 }
 
 /* Per-game counterpart of apply_global_config(). */
@@ -6481,6 +6490,9 @@ static void apply_game_config(const ConfigModel *model)
   if(!enable_home_menu && !has_menu_button)
     gamepad_config_map[0] = BUTTON_ID_MENU;
   rebuild_fast_forward_button_mask();
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    option_shortcut[i] = model->shortcut[i];
+  rebuild_shortcut_chords();
   main_fast_forward_apply_settings();
 }
 

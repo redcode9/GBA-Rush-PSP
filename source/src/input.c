@@ -19,11 +19,13 @@
  */
 
 /* PSP controller input. update_input maps the pad to the GBA keys once per
-   frame, raises the keypad IRQ and handles hotkeys (menu, states, FPS,
-   fast-forward); get_gui_input turns the pad into menu actions with key
-   repeat. */
+   frame, raises the keypad IRQ and handles hotkeys and shortcut chords
+   (menu, states, FPS, fast-forward); get_gui_input turns the pad into menu
+   actions with key repeat. */
 
 #include "common.h"
+#include "config_model.h"
+#include "input_chord.h"
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 #include "input_trace.h"
@@ -105,18 +107,52 @@ const u32 ALIGN_DATA button_psp_mask_to_config[] =
 
 static u32 fast_forward_button_mask = PSP_CTRL_TRIANGLE;
 
-/* Collects the PSP buttons mapped to fast-forward; call after
-   gamepad_config_map changes. */
+/* Shortcut chords: slot n holds the input mask of chord action n
+   (input_chord.h), as stored in the settings. */
+u32 option_shortcut[CONFIG_MODEL_SHORTCUT_COUNT];
+static InputChordState shortcut_chords;
+/* The inputs mapped to GBA A or B: a hold chord does not count while one
+   of them is held, so A+B+START+SELECT still resets the game. */
+static u32 shortcut_block_inputs = 0;
+
+/* Collects the PSP buttons mapped to fast-forward and the inputs that
+   block held chords; call after gamepad_config_map changes. */
 void rebuild_fast_forward_button_mask(void)
 {
   u32 i;
 
   fast_forward_button_mask = 0;
+  shortcut_block_inputs = 0;
   for(i = 0; i < 16; i++)
   {
     if(gamepad_config_map[i] == BUTTON_ID_FASTFORWARD)
       fast_forward_button_mask |= button_psp_mask_to_config[i];
+    if((gamepad_config_map[i] == BUTTON_ID_A) ||
+       (gamepad_config_map[i] == BUTTON_ID_B) ||
+       (gamepad_config_map[i] == BUTTON_ID_RAPIDFIRE_A) ||
+       (gamepad_config_map[i] == BUTTON_ID_RAPIDFIRE_B))
+      shortcut_block_inputs |= 1u << i;
   }
+}
+
+/* Loads option_shortcut into the chord table; call after it changes. A
+   table with two equal chords falls back to the default chords. */
+void rebuild_shortcut_chords(void)
+{
+  InputChord table[INPUT_CHORD_ACTION_COUNT];
+  u32 i;
+
+  for(i = 0; i < INPUT_CHORD_ACTION_COUNT; i++)
+  {
+    table[i] = input_chord_defaults[i];
+    table[i].mask = option_shortcut[i];
+  }
+
+  if(input_chord_validate(table, INPUT_CHORD_ACTION_COUNT))
+    input_chord_init(&shortcut_chords, table, INPUT_CHORD_ACTION_COUNT);
+  else
+    input_chord_init(&shortcut_chords, input_chord_defaults,
+     INPUT_CHORD_DEFAULT_COUNT);
 }
 
 /* GBA key of each BUTTON_ID_*; IDs from BUTTON_ID_MENU on press no key. */
@@ -337,6 +373,22 @@ GUI_ACTION_TYPE get_gui_input_fs_hold(u32 button_id)
   return new_button;
 }
 
+/* The 16 inputs held in buttons, bit n for gamepad_config_map index n;
+   buttons carries the stick directions as PSP_CTRL_ANALOG_* bits. */
+static u32 buttons_to_inputs(u32 buttons)
+{
+  u32 inputs = 0;
+  u32 i;
+
+  for (i = 0; i < 16; i++)
+  {
+    if ((buttons & button_psp_mask_to_config[i]) != 0)
+      inputs |= 1u << i;
+  }
+
+  return inputs;
+}
+
 /* Called at every GBA V-blank and during link waits. Returns nonzero when
    the menu or a state load changed the machine and update_gba must not
    continue its pass. */
@@ -345,6 +397,8 @@ u32 update_input(void)
   SceCtrlData ctrl_data = { 0, };
   u32 buttons;
   u32 non_repeat_buttons;
+  u32 shortcut_actions;
+  uint32_t hidden_inputs;
   u32 button_id = 0;
   u32 i;
   u32 new_key = 0;
@@ -391,13 +445,42 @@ u32 update_input(void)
     }
   }
 
+  // Decided on this read, so a chord adds no latency; holds count real time
+  shortcut_actions = input_chord_eval(&shortcut_chords,
+   buttons_to_inputs(buttons), buttons_to_inputs(last_buttons),
+   sceKernelGetSystemTimeLow(), shortcut_block_inputs, &hidden_inputs);
+
   non_repeat_buttons = (last_buttons ^ buttons) & buttons;
   last_buttons = buttons;
+
+  // The keys of a fired chord reach neither the game nor single-key mappings
+  for (i = 0; i < 16; i++)
+  {
+    if ((hidden_inputs & (1u << i)) != 0)
+      buttons &= ~button_psp_mask_to_config[i];
+  }
+  non_repeat_buttons &= buttons;
 
   main_fast_forward_input(non_repeat_buttons & fast_forward_button_mask,
    buttons & fast_forward_button_mask);
 
   if ((enable_home_menu != 0) && ((non_repeat_buttons & PSP_CTRL_HOME) != 0))
+    return menu();
+
+  // Same effects as the BUTTON_ID_ mappings below
+  if ((shortcut_actions & (1u << INPUT_CHORD_SAVESTATE)) != 0)
+  {
+    action_savestate();
+    return 0;
+  }
+
+  if ((shortcut_actions & (1u << INPUT_CHORD_LOADSTATE)) != 0)
+  {
+    action_loadstate();
+    return 1;
+  }
+
+  if ((shortcut_actions & (1u << INPUT_CHORD_MENU)) != 0)
     return menu();
 
   for (i = 0; i < 16; i++)
