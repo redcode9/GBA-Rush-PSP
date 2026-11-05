@@ -154,12 +154,24 @@ static int on_event(int id, char *name, void *param, int *result)
   return 0;
 }
 
+/* A kernel address of main memory (32 MiB, or 64 on later models). An
+   emulator that lacks sceKernelReferSysEventHandler, as PPSSPP does,
+   leaves whatever was in the result register: the chain is followed only
+   through such addresses. */
+static int in_kernel_memory(const void *address, u32 alignment)
+{
+  u32 value = (u32)address;
+
+  return (value & 0x80000000u) && (value & 0x1FFFFFFFu) >= 0x08000000u &&
+   (value & 0x1FFFFFFFu) < 0x0C000000u && (value & (alignment - 1)) == 0;
+}
+
 static int is_driver(const char *name)
 {
   static const char wanted[] = "SceMeRpc";
   u32 i;
 
-  if(!name)
+  if(!in_kernel_memory(name, 1))
     return 0;
   for(i = 0; i < sizeof(wanted); i++)
     if(name[i] != wanted[i])
@@ -177,11 +189,11 @@ int module_start(SceSize args, void *argp)
 
   if(args < 4 || !argp || running)
     return -1;
-  for(handler = sceKernelReferSysEventHandler(), i = 0; handler && i < 256;
-   handler = handler->next, i++)
+  for(handler = sceKernelReferSysEventHandler(), i = 0;
+   in_kernel_memory(handler, 4) && i < 256; handler = handler->next, i++)
     if(is_driver(handler->name))
       break;
-  if(!handler || i == 256)
+  if(!in_kernel_memory(handler, 4) || i == 256)
     return -2;
   boot_bytes = (u32)(media_engine_boot_end - media_engine_boot) * 4;
   if(boot_bytes > sizeof(saved_boot))
