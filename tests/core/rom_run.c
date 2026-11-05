@@ -24,20 +24,23 @@
  * instruction it ran; work RAM, palette, VRAM and OAM as memory; the
  * ROM, mirrored to the next power of two; IE, IF, IME, HALT (woken by
  * IE & IF whatever IME and the CPSR say), VCOUNT, DISPSTAT and the VBlank
- * IRQ; DMA3 immediate transfers; the save chip the ROM's ID string names
- * (SRAM without one), with SRAM growing to 64 KiB on a write above 32 KiB
- * as GBA Rush does, and EEPROM to 8 KiB on any request with a 14-bit
- * address (GBA Rush only on a read request); Flash with
- * GBATEK's commands and the IDs GBA Rush reports (Panasonic 64 KiB,
- * Sanyo 128 KiB), writes only clearing bits. The .sav file gets the chip
- * as GBA Rush would have last saved it: as it stood once 10 frames had
- * passed without a write, so stopping in the middle of a write is a power
- * cut that keeps the previous state.
+ * IRQ, taken after an instruction that sets IE or IME; the four timers,
+ * read at the cycle of the load, with prescalers that divide the clock
+ * from cycle 0, count-up and overflow IRQs; DMA3 immediate transfers; the
+ * save chip the ROM's ID string names (SRAM without one), with SRAM
+ * growing to 64 KiB on a write above 32 KiB as GBA Rush does, and EEPROM
+ * to 8 KiB on any request with a 14-bit address (GBA Rush only on a read
+ * request); Flash with GBATEK's commands and the IDs GBA Rush reports
+ * (Panasonic 64 KiB, Sanyo 128 KiB), writes only clearing bits. The .sav
+ * file gets the chip as GBA Rush would have last saved it: as it stood
+ * once 10 frames had passed without a write, so stopping in the middle of
+ * a write is a power cut that keeps the previous state.
  *
- * Not modelled: timers, sound, serial, keys (none held), the PPU, HBlank
- * and VCOUNT IRQs, DMA0-2, DMA start modes other than immediate and DMA
+ * Not modelled: sound, serial, keys (none held), the PPU, HBlank and
+ * VCOUNT IRQs, DMA0-2, DMA start modes other than immediate and DMA
  * timing, open bus outside the BIOS (reads 0), STOP, cycle-exact
- * interrupt entry (it waits for the end of a block), the time the BIOS
+ * interrupt entry (an IRQ raised during a block waits for its end), a
+ * timer IRQ waking a halt before the next VBlank, the time the BIOS
  * itself takes, and EEPROM bit by bit (it is handled per DMA request, the
  * way the ROMs use it).
  *
@@ -131,6 +134,9 @@ static long long vblanks_by(long long t)
   return (t + FRAME_CYCLES - VBLANK_START) / FRAME_CYCLES;
 }
 
+static void timers_sync(void);
+
+/* Called with core.cycles at 0, once they are counted in. */
 static void advance(long long cycles)
 {
   long long before = now;
@@ -145,6 +151,7 @@ static void advance(long long cycles)
     saved_size = save_size;
     save_written_at = -1;
   }
+  timers_sync();
 }
 
 static long long next_vblank(void)
@@ -157,6 +164,64 @@ static long long next_vblank(void)
 static uint32_t line_now(void)
 {
   return (uint32_t)(now % FRAME_CYCLES / LINE_CYCLES);
+}
+
+/* ---- Timers ----------------------------------------------------------- */
+
+/* TMxCNT_L reads the counter and writes the reload value, kept in io[]
+   with TMxCNT_H. */
+static uint32_t timer_counter[4];
+/* The cycle the counters are up to date with. */
+static long long timers_at;
+
+/* Adds ticks to timer n. Each overflow loads the reload value, raises the
+   IRQ if it is enabled and ticks the next timer in count-up mode. */
+static void timer_tick(unsigned n, long long ticks)
+{
+  uint32_t reload = io16(0x100 + n * 4);
+  long long to_overflow = 0x10000 - timer_counter[n];
+  long long overflows;
+
+  if(ticks < to_overflow)
+  {
+    timer_counter[n] += (uint32_t)ticks;
+    return;
+  }
+  ticks -= to_overflow;
+  overflows = 1 + ticks / (0x10000 - reload);
+  timer_counter[n] = reload + (uint32_t)(ticks % (0x10000 - reload));
+  if(io16(0x102 + n * 4) & 0x40)
+    raise_irq(0x0008u << n);
+  if(n < 3 && (io16(0x106 + n * 4) & 0x84) == 0x84)
+    timer_tick(n + 1, overflows);
+}
+
+/* Brings the counters to the cycle running: during a block the core
+   counts its cycles in core.cycles, which run() then adds to now. */
+static void timers_sync(void)
+{
+  static const unsigned shift[4] = { 0, 6, 8, 10 };
+  long long t = now + core.cycles;
+  unsigned n;
+
+  for(n = 0; n < 4; n++)
+  {
+    uint32_t control = io16(0x102 + n * 4);
+    unsigned s = shift[control & 3];
+
+    if((control & 0x80) && !(n > 0 && (control & 0x04)))
+      timer_tick(n, (t >> s) - (timers_at >> s));
+  }
+  timers_at = t;
+}
+
+/* A write to TMxCNT_L or TMxCNT_H; a start loads the reload value. */
+static void timer_write(uint32_t reg, uint32_t value)
+{
+  timers_sync();
+  if((reg & 2) && (value & 0x80) && !(io16(reg) & 0x80))
+    timer_counter[(reg - 0x100) / 4] = io16(reg - 2);
+  store(io, reg, 2, value);
 }
 
 /* ---- Save chip -------------------------------------------------------- */
@@ -349,6 +414,12 @@ static uint32_t io_read16(uint32_t reg)
       return value;
     case 0x006:
       return line_now();
+    case 0x100: case 0x104: case 0x108: case 0x10C:
+      timers_sync();
+      return timer_counter[(reg - 0x100) / 4];
+    case 0x202:
+      timers_sync();
+      return io16(0x202);
     case 0x130:
       return 0x03FF;
     default:
@@ -378,7 +449,15 @@ static void io_write16(uint32_t reg, uint32_t value)
       halt();
       return;
   }
+  if(reg >= 0x100 && reg < 0x110)
+  {
+    timer_write(reg, value);
+    return;
+  }
   store(io, reg, 2, value);
+  /* A pending IRQ is taken after the instruction that enables it. */
+  if(reg == 0x200 || reg == 0x208)
+    arm_core_request_exit(&core);
   if(reg == 0x204)
     arm_core_set_waitcnt(&core, (uint16_t)value);
   if(reg == 0x0DE && (value & 0x8000))
@@ -567,6 +646,8 @@ static int irq_pending(void)
 
 static void run(long long end)
 {
+  int32_t cycles;
+
   while(now < end)
   {
     if(halted)
@@ -587,16 +668,15 @@ static void run(long long end)
       uint32_t pc = core.v[15];
       int arm = !(core.cpsr & ARM_CPSR_T);
 
-      advance(arm_core_step(&core));
+      arm_core_step(&core);
       if(arm)
         bios_protect = load(bios, (pc + 8) & 0x3FFC, 4);
     }
     else
-    {
-      core.cycles = 0;
       arm_core_run_block(&core);
-      advance(core.cycles);
-    }
+    cycles = core.cycles;
+    core.cycles = 0;
+    advance(cycles);
   }
 }
 
