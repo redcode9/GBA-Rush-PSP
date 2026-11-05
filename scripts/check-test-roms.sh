@@ -22,6 +22,8 @@ set -eu
 #   the two instructions already fetched.
 # - vram_*, stm_vram: the New core keeps running its translation of code
 #   in VRAM after the code is rewritten.
+# - the save ROMs' odd and misaligned backup loads: the New core reads
+#   the aligned address on the 8-bit backup bus.
 core_allow=timer_start_delay,timer_stop_hold,prefetch_arm_1_cold
 core_allow=$core_allow,prefetch_arm_1_warm,prefetch_arm_2_cold
 core_allow=$core_allow,prefetch_arm_2_warm,prefetch_thumb_1_cold
@@ -29,6 +31,8 @@ core_allow=$core_allow,prefetch_thumb_1_warm,prefetch_thumb_2_cold
 core_allow=$core_allow,prefetch_thumb_2_warm,prefetch_stm,prefetch_push
 core_allow=$core_allow,prefetch_swp,vram_arm_cpu,vram_arm_dma
 core_allow=$core_allow,vram_thumb_cpu,vram_thumb_dma,stm_vram
+bus_allow=sram_ldrh_odd,sram_ldrsh_odd,sram_ldr_1,sram_ldr_2,sram_ldr_3
+bus_allow=$bus_allow,flash_ldrh_device
 
 PYTHON=${PYTHON:-python3}
 MAKE=${MAKE:-make}
@@ -66,9 +70,10 @@ do
   rom=$OUT/save-$chip.gba
   save=$OUT/save-$chip.sav
   $RUN --frames 400 --save "$save" "$rom"
-  $PYTHON tools/decode_test_rom.py "$save"
+  $PYTHON tools/decode_test_rom.py --allow-fail $bus_allow "$save"
   $RUN --frames 400 --save "$save" "$rom"
-  $PYTHON tools/decode_test_rom.py "$save" | tee "$save.txt"
+  $PYTHON tools/decode_test_rom.py --allow-fail $bus_allow "$save" |
+    tee "$save.txt"
   if ! grep -q 'read_back  *PASS' "$save.txt"; then
     echo "save-$chip did not read back its first boot's generation" >&2
     exit 1

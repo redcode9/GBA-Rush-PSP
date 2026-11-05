@@ -152,7 +152,10 @@ static const TestCase cases_save[] =
   { NULL, NULL }
 };
 
-static const TestCase *const areas[] = { cases_save, NULL };
+/* cases_bus.c, empty except in the targets it is for. */
+extern const TestCase cases_bus[];
+
+static const TestCase *const areas[] = { cases_save, cases_bus, NULL };
 
 static void show_generation(u32 bad)
 {
