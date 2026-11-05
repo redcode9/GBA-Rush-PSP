@@ -286,11 +286,10 @@ static int stick_high_side(uint32_t dir)
 
 /* How far from its own edge a held direction is released: threshold +
    16, but at most 127 from the low edge (raw 127) or 126 from the high
-   edge (raw 129). */
+   edge (raw 129). The 16 is the specified value, not the header's. */
 static uint32_t stick_release(uint32_t sensitivity, uint32_t dir)
 {
-  uint32_t release = stick_threshold(sensitivity) +
-   INPUT_MODEL_STICK_HYSTERESIS;
+  uint32_t release = stick_threshold(sensitivity) + 16;
   uint32_t limit = stick_high_side(dir) ? 126 : 127;
 
   return release < limit ? release : limit;
@@ -312,11 +311,14 @@ static uint32_t stick_read(uint32_t held, uint32_t dir, uint32_t v,
 /* Every position on every axis against the rule: press past the
    threshold, release only at threshold + 16, never past raw 127 or 129,
    which leaves the centre released at every sensitivity; 10 is the
-   first where the limit applies. */
+   first where the limit applies. A held direction leaves the opposite
+   one's press point where it was. */
 static void test_stick_edges(void)
 {
   static const uint32_t dirs[] = { INPUT_MODEL_STICK_UP,
    INPUT_MODEL_STICK_DOWN, INPUT_MODEL_STICK_LEFT, INPUT_MODEL_STICK_RIGHT };
+  static const uint32_t opposite[] = { INPUT_MODEL_STICK_DOWN,
+   INPUT_MODEL_STICK_UP, INPUT_MODEL_STICK_RIGHT, INPUT_MODEL_STICK_LEFT };
   uint32_t sensitivity;
 
   for(sensitivity = 0; sensitivity <= 10; sensitivity++)
@@ -335,6 +337,8 @@ static void test_stick_edges(void)
          (v < threshold ? dirs[d] : 0));
         assert(stick_read(dirs[d], dirs[d], v, sensitivity) ==
          (v < release ? dirs[d] : 0));
+        assert(stick_read(dirs[d], opposite[d], v, sensitivity) ==
+         (v < threshold ? opposite[d] : 0));
       }
       assert(stick_read(dirs[d], dirs[d], 127, sensitivity) == 0);
       assert(stick_read(dirs[d], dirs[d], 128, sensitivity) == 0);
@@ -343,8 +347,9 @@ static void test_stick_edges(void)
   }
 }
 
-/* Samples within 6 of the press point or of the release point change a
-   direction at most once, at every sensitivity from 0 to 9. */
+/* Samples within 6 of any point from 6 before the press point to 6 past
+   the release point change a direction at most once, held or not at the
+   start, at every sensitivity from 0 to 9. */
 static void test_stick_noise_never_oscillates(void)
 {
   static const uint32_t dirs[] = { INPUT_MODEL_STICK_UP,
@@ -354,28 +359,33 @@ static void test_stick_noise_never_oscillates(void)
   for(sensitivity = 0; sensitivity <= 9; sensitivity++)
   {
     uint32_t d;
-    uint32_t c;
 
     for(d = 0; d < 4; d++)
     {
-      for(c = 0; c < 2; c++)
+      uint32_t centre;
+
+      for(centre = stick_threshold(sensitivity) - 6;
+       centre <= stick_release(sensitivity, dirs[d]) + 6; centre++)
       {
-        uint32_t centre = c == 0 ? stick_threshold(sensitivity) :
-         stick_release(sensitivity, dirs[d]);
-        uint32_t held = c == 0 ? 0 : dirs[d];
-        uint32_t changes = 0;
-        uint32_t i;
+        uint32_t start;
 
-        for(i = 0; i < 1000; i++)
+        for(start = 0; start < 2; start++)
         {
-          uint32_t v = centre - 6 + lcg_next() % 13;
-          uint32_t next = stick_read(held, dirs[d], v, sensitivity);
+          uint32_t held = start == 0 ? 0 : dirs[d];
+          uint32_t changes = 0;
+          uint32_t i;
 
-          if(next != held)
-            changes++;
-          held = next;
+          for(i = 0; i < 300; i++)
+          {
+            uint32_t v = centre - 6 + lcg_next() % 13;
+            uint32_t next = stick_read(held, dirs[d], v, sensitivity);
+
+            if(next != held)
+              changes++;
+            held = next;
+          }
+          assert(changes <= 1);
         }
-        assert(changes <= 1);
       }
     }
   }
