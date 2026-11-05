@@ -214,3 +214,28 @@ SaveStoreResult save_store_write(const SaveStoreIo *io, const char *dir,
   save_store_append(&transaction, data, size);
   return save_store_commit(&transaction);
 }
+
+SaveStoreResult save_store_ring_push(const SaveStoreIo *io, const char *dir,
+ const char *name, const uint8_t *data, size_t size)
+{
+  static char links[3][SAVE_STORE_PATH_MAX];
+  int i;
+
+  /* The write's .link1.tmp and .link1.bak are the longest names: a push
+     that could not write must not rotate the generations away. */
+  if(!join_path(links[0], dir, name, ".link1.tmp") ||
+     !join_path(links[0], dir, name, ".link1") ||
+     !join_path(links[1], dir, name, ".link2") ||
+     !join_path(links[2], dir, name, ".link3") ||
+     !io->remove(io->context, links[2]))
+    return SAVE_STORE_FAILED;
+  /* .link2 first, so each rename's target is free. */
+  for(i = 1; i >= 0; i--)
+  {
+    if(io->exists(io->context, links[i]) &&
+       !moved(io, links[i], links[i + 1]))
+      return SAVE_STORE_FAILED;
+  }
+  /* .link1 is gone, so the write keeps no .link1.bak. */
+  return save_store_write(io, "", links[0], data, size);
+}

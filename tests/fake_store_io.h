@@ -2,9 +2,9 @@
  * In-memory stand-in for the .sav file system behind SaveStoreIo, for the
  * host tests of save_store.c and of memory.c's save path. The primary
  * file, at the path given to fake_store_init(), keeps its fields at the
- * top of FakeStore; a few sibling files (the .tmp and .bak) live in a
- * small table. Fault switches make each operation fail the ways a Memory
- * Stick can, and counters record what was called.
+ * top of FakeStore; a few sibling files (the .tmp, .bak and .link
+ * generations) live in a small table. Fault switches make each operation
+ * fail the ways a Memory Stick can, and counters record what was called.
  */
 
 #ifndef FAKE_STORE_IO_H
@@ -18,7 +18,9 @@
 /* Room for a 512 KiB savestate plus a margin, and for .sav files larger
    than the 128 KiB save buffer. */
 #define FAKE_STORE_CAPACITY (576 * 1024)
-#define FAKE_STORE_SIBLINGS 3
+/* The .sav's .tmp, .bak and .orig, its .link1 to .link3, and
+   .link1.tmp: the older generations are only renamed. */
+#define FAKE_STORE_SIBLINGS 7
 
 typedef struct
 {
@@ -28,7 +30,7 @@ typedef struct
   int present;
 } FakeFile;
 
-/* About 2.3 MiB: keep instances static, not on the stack. */
+/* About 4.5 MiB: keep instances static, not on the stack. */
 typedef struct
 {
   /* The primary file. */

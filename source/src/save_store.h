@@ -72,7 +72,8 @@ typedef enum
   SAVE_STORE_NOT_FOUND,   /* no file, or an empty one: a blank cartridge */
   SAVE_STORE_FAILED,      /* unreadable, or a .tmp or .bak left by a cut
                              write could not be put back; also a path too
-                             long for SAVE_STORE_PATH_MAX */
+                             long for SAVE_STORE_PATH_MAX, or a generation
+                             that would not rotate */
   /* Write results. Unless noted, the old file was not touched. */
   SAVE_STORE_WRITE_FAILED,  /* the .tmp would not open, take every byte,
                                close or sync */
@@ -127,6 +128,15 @@ SaveStoreResult save_store_commit(SaveStoreWrite *transaction);
 /* save_store_begin(), one save_store_append() of size bytes of data, and
    save_store_commit(). */
 SaveStoreResult save_store_write(const SaveStoreIo *io, const char *dir,
+ const char *name, const uint8_t *data, size_t size);
+/* Keeps size bytes of data as the newest of three generations, dir
+   followed by name plus ".link1" (newest) to ".link3" (oldest): .link3 is
+   deleted, .link2 becomes .link3 and .link1 becomes .link2, each rename
+   checked on both names, then save_store_write() writes .link1. A failed
+   rename stops the push there, so only the oldest generation is lost.
+   FAILED if a name does not fit or a rename fails, before .link1 is
+   written; else save_store_write()'s result. */
+SaveStoreResult save_store_ring_push(const SaveStoreIo *io, const char *dir,
  const char *name, const uint8_t *data, size_t size);
 
 #endif /* SAVE_STORE_H */

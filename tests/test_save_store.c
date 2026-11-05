@@ -7,7 +7,9 @@
  * then a restart (recovery and load), gives the old image or the new one,
  * and each fault gives its own result with the old or new image left.
  * Each fault switch of the fake file system (fake_store_io.c) is shown to
- * take effect.
+ * take effect. The pre-link copies keep three generations, the newest in
+ * .link1; a power cut or a failed rename loses at most the oldest, and
+ * never leaves a partial .link1.
  */
 
 #include <assert.h>
@@ -38,6 +40,16 @@
 #define ANCIENT 9
 #define ANCIENT_SIZE 900u
 #define CHUNK 400u
+
+/* The pre-link generations. A seeded ring of n holds seeds n (in .link1)
+   down to 1; a push adds PUSHED. */
+#define LINK1 PRIMARY ".link1"
+#define LINK2 PRIMARY ".link2"
+#define LINK3 PRIMARY ".link3"
+#define LINK_SIZE 300u
+#define PUSHED 20
+
+static const char *const links[] = { LINK1, LINK2, LINK3 };
 
 /* What is on the Memory Stick before a write. */
 enum
@@ -247,6 +259,13 @@ static void test_long_path_fails_without_io(void)
          SAVE_STORE_NOT_FOUND);
   assert(store.calls == 1);
   assert(save_store_write(&io, "ms0:/", name, data, sizeof(data)) ==
+         SAVE_STORE_FAILED);
+  assert(store.calls == 1);
+
+  /* ".link1" fits after 500 characters, ".link1.tmp" does not: a push
+     that could not write .link1 rotates nothing. */
+  name[500] = '\0';
+  assert(save_store_ring_push(&io, "ms0:/", name, data, sizeof(data)) ==
          SAVE_STORE_FAILED);
   assert(store.calls == 1);
 }
@@ -554,6 +573,157 @@ static void test_streaming(void)
   }
 }
 
+static SaveStoreResult push(int seed)
+{
+  fill_source(LINK_SIZE, (uint8_t)seed);
+  return save_store_ring_push(&io, SAVE_DIR, NAME, source, LINK_SIZE);
+}
+
+/* The seed of the image in links[index]: 0 for no file, -1 for a file
+   that holds no whole image. */
+static int generation(int index)
+{
+  int seed;
+
+  if(fake_store_file_size(&store, links[index]) < 0)
+    return 0;
+  for(seed = 1; seed <= PUSHED + 1; seed++)
+  {
+    if(fake_store_file_is(&store, links[index], LINK_SIZE, (uint8_t)seed))
+      return seed;
+  }
+  return -1;
+}
+
+/* The .sav and count generations. */
+static void seed_ring(int count)
+{
+  int i;
+
+  seed_state(ONLY_FILE);
+  for(i = 0; i < count; i++)
+    fake_store_seed_file(&store, links[i], LINK_SIZE, (uint8_t)(count - i));
+}
+
+/* After a push of PUSHED over seed_ring(count), whole or cut: each link
+   holds a whole image, newer ones first; every generation is still there
+   but the oldest of three; the .sav is untouched and no .link1.bak was
+   made. */
+static void check_ring(int count)
+{
+  unsigned seen = 0;
+  int newer = PUSHED + 1;
+  int seed;
+  int i;
+
+  for(i = 0; i < 3; i++)
+  {
+    seed = generation(i);
+    assert(seed >= 0);
+    if(seed == 0)
+      continue;
+    assert(seed < newer && (seed == PUSHED || seed <= count));
+    newer = seed;
+    seen |= 1u << seed;
+  }
+  for(seed = (count == 3) ? 2 : 1; seed <= count; seed++)
+    assert(seen & (1u << seed));
+  assert(fake_store_file_is(&store, PRIMARY, OLD_SIZE, OLD));
+  assert(fake_store_file_size(&store, LINK1 ".bak") < 0);
+}
+
+/* From no generation to three and past: after n pushes there are
+   min(n, 3), the newest in .link1, and no .tmp. */
+static void test_ring_keeps_three_generations(void)
+{
+  int n;
+  int i;
+
+  seed_ring(0);
+  for(n = 1; n <= 5; n++)
+  {
+    assert(push(n) == SAVE_STORE_OK);
+    for(i = 0; i < 3; i++)
+      assert(generation(i) == (i < n ? n - i : 0));
+    assert(fake_store_file_size(&store, LINK1 ".tmp") < 0);
+    assert(fake_store_file_size(&store, LINK1 ".bak") < 0);
+    assert(fake_store_file_is(&store, PRIMARY, OLD_SIZE, OLD));
+  }
+}
+
+/* For 0 to 3 generations there and every call k of a push: the power goes
+   off after call k, the next start recovers .link1 (a leftover .link1.tmp
+   goes), and the ring has lost nothing but the oldest of three, with no
+   partial .link1. The next push works. */
+static void test_ring_power_cut_at_every_step(void)
+{
+  int count;
+  int cut;
+  int leftovers = 0;
+  SaveStoreResult result = SAVE_STORE_FAILED;
+
+  for(count = 0; count <= 3; count++)
+  {
+    for(cut = 1; ; cut++)
+    {
+      seed_ring(count);
+      store.cut_after = cut;
+      result = push(PUSHED);
+      if(!store.power_off)
+        break;
+      fake_store_restart(&store);
+      check_ring(count);
+      leftovers += fake_store_file_size(&store, LINK1 ".tmp") >= 0;
+      assert(save_store_recover(&io, SAVE_DIR, NAME ".link1") ==
+             SAVE_STORE_OK);
+      assert(fake_store_file_size(&store, LINK1 ".tmp") < 0);
+      check_ring(count);
+      assert(push(PUSHED + 1) == SAVE_STORE_OK);
+      assert(generation(0) == PUSHED + 1);
+    }
+    assert(result == SAVE_STORE_OK && generation(0) == PUSHED);
+    check_ring(count);
+    /* The removal, two checks, any renames, then the write's 13 calls. */
+    assert(cut > 16);
+  }
+  assert(leftovers > 0);
+}
+
+/* A rename that fails, or that the names do not confirm either way, stops
+   the push before .link1 is written, the generations as check_ring()
+   wants them; the next push works. A failed write of .link1 gives the
+   store's result. */
+static void test_ring_stops_at_a_failed_rename(void)
+{
+  static int *const renames[] =
+  {
+    &store.fail_move, &store.move_lies_ok, &store.move_lies_fail
+  };
+  size_t i;
+  int call;
+
+  for(i = 0; i < sizeof(renames) / sizeof(renames[0]); i++)
+  {
+    for(call = 1; call <= 2; call++)
+    {
+      seed_ring(3);
+      *renames[i] = call;
+      assert(push(PUSHED) == SAVE_STORE_FAILED);
+      assert(store.move_calls == call && store.open_write_calls == 0);
+      check_ring(3);
+      *renames[i] = 0;
+      assert(push(PUSHED) == SAVE_STORE_OK);
+      assert(generation(0) == PUSHED);
+    }
+  }
+
+  seed_ring(3);
+  store.fail_open_write = 1;
+  assert(push(PUSHED) == SAVE_STORE_WRITE_FAILED);
+  assert(generation(0) == 0);
+  check_ring(3);
+}
+
 int main(void)
 {
   test_missing_and_empty_files_are_blank();
@@ -568,6 +738,9 @@ int main(void)
   test_each_fault_gives_its_result();
   test_short_writes();
   test_streaming();
+  test_ring_keeps_three_generations();
+  test_ring_power_cut_at_every_step();
+  test_ring_stops_at_a_failed_rename();
   puts("save store tests passed");
   return 0;
 }
