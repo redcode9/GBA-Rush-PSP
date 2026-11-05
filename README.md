@@ -84,6 +84,10 @@ quits the game, and it does not count while a button mapped to GBA A or B is
 held, so A+B+START+SELECT still resets games that use it. The game receives
 START and SELECT during the hold and may open its own pause screen.
 
+HOME opens the menu as soon as it is pressed, even with A or B held. If HOME
+shows the system's quit screen instead of the emulator menu, leave that screen
+without quitting and use the hold.
+
 **SELECT+L** saves to the current savestate slot and **SELECT+R** loads it,
 with the usual confirmation. Hold SELECT, then press L or R: the game does not
 receive that L or R while it stays held. Pressing L or R first and SELECT
