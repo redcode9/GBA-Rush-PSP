@@ -19,7 +19,8 @@
  * Usage: mgba_run [--bios FILE] [--frames N] [--save FILE]
  *                 [--savetype TYPE] [--frame FILE] ROM
  *   --bios      the BIOS to run on; without it mGBA uses its own HLE BIOS.
- *               The ROM starts directly either way (skipBios).
+ *               The ROM starts directly either way (opts.skipBios): no
+ *               BIOS code runs before it.
  *   --frames    frames to run, 600 by default. Then the run goes on until
  *               the save chip has not changed for QUIET frames (at most
  *               3600 more), so the file never holds a write cut halfway.
@@ -174,8 +175,10 @@ int main(int argc, char **argv)
   core = GBACoreCreate();
   core->init(core);
   mCoreInitConfig(core, NULL);
-  mCoreConfigSetValue(&core->config, "skipBios", "1");
   core->loadConfig(core, &core->config);
+  /* Read by reset; mGBA fills opts only from mCoreLoadConfig, never
+     from the config values loadConfig takes. */
+  core->opts.skipBios = true;
   core->setVideoBuffer(core, frame, STRIDE);
   if(!core->loadROM(core, VFileOpen(rom, O_RDONLY)))
   {

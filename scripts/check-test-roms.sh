@@ -102,8 +102,8 @@ $PYTHON tools/decode_test_rom.py \
 # and only these cases may fail, each for a reason in mGBA's source:
 # - pc_high hangs: mGBA runs open bus above 0FFFFFFFh
 #   (docs/DESIGN-DECISIONS.md).
-# - bios_openbus_boot: mGBA starts the ROM without running the BIOS and
-#   leaves the BIOS latch at 0 (E59E1000h with its own BIOS).
+# - bios_openbus_boot: mgba_run starts the ROM without running the BIOS
+#   (skipBios), which leaves the BIOS latch at 0.
 # - cpu_irq_unmask: mGBA looks for a pending IRQ 7 cycles after the
 #   write that unmasks it, not at the end of that instruction.
 # - timer_overflow_reload: mGBA reads a timer 2 cycles in the past from

@@ -31,9 +31,9 @@
  * for an IRQ it may not take never wakes: the case hangs, and the next
  * boot records it as hung.
  *
- * mGBA 0.10.3 passes every case but bios_openbus_boot: it starts the
- * ROM without running the BIOS and leaves the latch at 0 (E59E1000h on
- * its own BIOS). To confirm on hardware.
+ * mGBA 0.10.3 passes every case but bios_openbus_boot: started with
+ * skipBios, it runs no BIOS code before the ROM and leaves the latch at
+ * 0, with its own BIOS or the official one. To confirm on hardware.
  */
 
 #include "result.h"
