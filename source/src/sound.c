@@ -964,8 +964,9 @@ void sound_power_suspend(void)
   }
 }
 
-// Power callback thread, on resume: reserves the output channel again.
-// The result (< 0 on failure) goes to sound_power_resume_finish().
+// Power callback thread on resume, or the main thread when a switch-only
+// entry times out: reserves the output channel again. The result (< 0 on
+// failure) goes to sound_power_resume_finish().
 int sound_power_resume(void)
 {
   SceUInt timeout = SOUND_POWER_TIMEOUT;
