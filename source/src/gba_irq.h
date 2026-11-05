@@ -35,4 +35,13 @@ static inline int gba_irq_enters(uint32_t ie, uint32_t if_, uint32_t ime,
   return ime != 0 && !(cpsr & 0x80u) && (ie & if_ & 0x3FFFu) != 0;
 }
 
+/* Whether a request that ends HALT or STOP without entering the IRQ
+   exception lets the CPU go on. The Classic core keeps STOP as it always
+   has (GBATEK does not say what IME 0 does there) until a test decides;
+   the New core goes on from both. */
+static inline int gba_irq_resumes(int classic_core, int stopped)
+{
+  return !(classic_core && stopped);
+}
+
 #endif /* GBA_IRQ_H */

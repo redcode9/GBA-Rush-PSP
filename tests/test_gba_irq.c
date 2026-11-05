@@ -29,6 +29,13 @@ int main(void)
   assert(gba_irq_halt_wakes(1, 0x1000, 0x1000));
   assert(gba_irq_halt_wakes(1, 0x2000, 0x3FFF));
 
+  /* Without the IRQ exception the CPU goes on after HALT on both cores
+     and after STOP on the New core; the Classic core stays in STOP. */
+  assert(gba_irq_resumes(0, 0));
+  assert(gba_irq_resumes(0, 1));
+  assert(gba_irq_resumes(1, 0));
+  assert(!gba_irq_resumes(1, 1));
+
   /* Every IE bit 0-13 ends HALT. */
   for(unsigned bit = 0; bit < 14; bit++)
     assert(gba_irq_halt_wakes(0, 1u << bit, 1u << bit));
