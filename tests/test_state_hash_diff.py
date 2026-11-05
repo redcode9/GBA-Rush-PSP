@@ -63,7 +63,8 @@ def gbsh(frames=200, changes=(), build="abc_def", game="BPR_", rev=1,
 def golden(full):
     """Compact golden of a full text, computed independently of the tool."""
     lines = full.split("\n")
-    sha = hashlib.sha256(full.split("\n", 2)[2].encode("ascii")).hexdigest()
+    body = [line for line in lines[2:] if line and not line.startswith("counters")]
+    sha = hashlib.sha256(("\n".join(body) + "\n").encode("ascii")).hexdigest()
     samples = [
         line for line in lines[3:]
         if line[:1].isdigit() and int(line.split(" ")[0]) % 60 == 0
@@ -79,7 +80,7 @@ class StateHashDiffTests(unittest.TestCase):
             paths = []
             for name, text in (("a.gbsh", a), ("b.gbsh", b)):
                 path = Path(directory) / name
-                path.write_bytes(text.encode("ascii"))
+                path.write_bytes(text.encode("latin-1"))
                 paths.append(str(path))
             output = io.StringIO()
             with contextlib.redirect_stdout(output), \
@@ -102,6 +103,19 @@ class StateHashDiffTests(unittest.TestCase):
         status, output = self.run_diff(gbsh(changes={(5, "audio")}), gbsh())
         self.assertEqual(status, 1, output)
         self.assertIn("frame 5 region audio\n", output)
+
+    def test_every_differing_region_is_named(self):
+        changes = {(7, "oam"), (7, "io")}
+        status, output = self.run_diff(gbsh(), gbsh(changes=changes))
+        self.assertEqual(status, 1, output)
+        self.assertIn("frame 7 region oam,io\n", output)
+
+    def test_different_region_lists_are_refused(self):
+        renamed = gbsh().replace(",audio\n", ",sound\n", 1)
+        for a, b in ((gbsh(), renamed), (golden(gbsh()), renamed)):
+            status, output = self.run_diff(a, b)
+            self.assertEqual(status, 2, output)
+            self.assertIn("different region lists", output)
 
     def test_different_rom_is_refused(self):
         for other in (gbsh(game="BPE_"), gbsh(rev=2), golden(gbsh(rev=2))):
@@ -157,6 +171,8 @@ class StateHashDiffTests(unittest.TestCase):
                                            + [""]),
             "frames out of order": "\n".join(lines[:3] + [lines[4], lines[3]]
                                              + lines[5:]),
+            "repeated frame": "\n".join(lines[:5] + [lines[4]] + lines[5:]),
+            "not ASCII": edit(4, record[:-1] + "\xe9"),
             "golden off the grid": golden(gbsh()).replace(
                 "\n60 ", "\n61 "),
             "golden sha": golden(gbsh()).replace("sha256=", "sha256=0"),
@@ -166,6 +182,10 @@ class StateHashDiffTests(unittest.TestCase):
                 status, output = self.run_diff(gbsh(frames=4), text)
                 self.assertEqual(status, 2, output)
                 self.assertIn("error: ", output)
+        status, output = self.run_diff(gbsh(frames=4), cases["not ASCII"])
+        self.assertIn("not ASCII text", output)
+        status, output = self.run_diff(gbsh(frames=4), cases["repeated frame"])
+        self.assertIn("frame 1 is out of order", output)
 
     def test_usage_errors(self):
         with tempfile.TemporaryDirectory() as directory, \
@@ -179,7 +199,8 @@ class StateHashDiffTests(unittest.TestCase):
     def test_golden_match(self):
         full = gbsh()
         for a, b in ((full, golden(full)), (golden(full), full),
-                     (golden(full), golden(full))):
+                     (golden(full), golden(full)),
+                     (full, golden(full).replace("\n", "\r\n"))):
             status, output = self.run_diff(a, b)
             self.assertEqual(status, 0, output)
             self.assertIn("same sha256", output)
@@ -189,27 +210,36 @@ class StateHashDiffTests(unittest.TestCase):
         for a, b in ((golden(gbsh()), changed), (changed, golden(gbsh()))):
             status, output = self.run_diff(a, b)
             self.assertEqual(status, 1, output)
-            self.assertIn("diverges in frames 121..180: frame 180 region iwram",
-                          output)
+            self.assertIn("first sampled divergence in frames 121..180: "
+                          "frame 180 region iwram\n", output)
+            self.assertIn("unsampled frame may differ first", output)
         status, output = self.run_diff(golden(gbsh()), gbsh(changes={(0, "regs")}))
-        self.assertIn("diverges in frames 0..0: frame 0 region regs", output)
+        self.assertEqual(status, 1, output)
+        self.assertIn("frames 0..0: frame 0 region regs", output)
         status, output = self.run_diff(golden(gbsh()), gbsh(frames=150))
         self.assertEqual(status, 1, output)
         self.assertRegex(output, r"frames 121\.\.180: frame 180 missing in .*b")
 
     def test_golden_sha_mismatch_with_equal_samples(self):
-        for other in (gbsh(changes={(61, "ewram")}),
-                      gbsh(counters="counters late=1")):
-            status, output = self.run_diff(golden(gbsh()), other)
-            self.assertEqual(status, 1, output)
-            self.assertIn("unsampled frame or in the counters line", output)
+        status, output = self.run_diff(golden(gbsh()), gbsh(changes={(61, "ewram")}))
+        self.assertEqual(status, 1, output)
+        self.assertIn("the sampled frames match but the sha256 differs", output)
 
-    def test_counters_lines_compare_between_full_files(self):
-        status, output = self.run_diff(gbsh(), gbsh(counters="counters late=1"))
-        self.assertEqual(status, 1, output)
-        self.assertIn("counters lines differ", output)
-        status, output = self.run_diff(gbsh(), gbsh(counters=None))
-        self.assertEqual(status, 1, output)
+    def test_counters_compare_by_shared_names(self):
+        late = "counters late=1"
+        for a, b in ((gbsh(), gbsh(counters=late)),
+                     (golden(gbsh()) + late + "\n", gbsh())):
+            status, output = self.run_diff(a, b)
+            self.assertEqual(status, 1, output)
+            self.assertIn("counters differ: late=", output)
+        # A build that adds a counter still matches older files and goldens.
+        newer = gbsh(counters="counters late=0 dside=0")
+        for a in (gbsh(counters=None), golden(gbsh(counters=None)), gbsh()):
+            status, output = self.run_diff(a, newer)
+            self.assertEqual(status, 0, output)
+            self.assertRegex(output, r"counter dside is only in .*b\.gbsh")
+        status, output = self.run_diff(golden(gbsh()), gbsh(counters=late))
+        self.assertEqual(status, 0, output)
 
     def test_pinned_text_matches_the_c_test(self):
         source = (ROOT / "tests" / "test_state_hash.c").read_text()

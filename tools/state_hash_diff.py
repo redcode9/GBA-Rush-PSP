@@ -9,19 +9,26 @@ source/src/state_hash.h) or a compact golden:
   build=<id> game=<code> rev=<n> start=<frame>
   regions=<name>,<name>,...
   <frame> <hash> ...   (only the records whose frame is a multiple of 60)
+  counters ...         (optional, compared like a full file's)
 
-The golden's sha256 is that of the full .gbsh from its regions line to the
-end (every record and the counters line), so neither the build id nor the
-start frame changes it.
+The golden's sha256 is that of the full .gbsh from its regions line through
+its last record: the magic, identity and counters lines are left out, so
+neither the build id, the start frame nor a counter changes it. A golden
+checked out with CRLF line ends is read as if it had LF ones.
 
-A different game code or revision is refused. A different build id is
-printed and the files are still compared; start= is never compared. Two
-full files are compared frame by frame, then by their counters lines.
-Against a golden, an equal sha256 means equal files; otherwise the first
-sampled frame that differs closes the window where the divergence begins.
+A different game code or revision, or a different region list, is refused.
+A different build id is printed and the files are still compared; start= is
+never compared. Two full files are compared frame by frame. Against a
+golden, an equal sha256 means equal records; otherwise the tool names the
+60-frame window of the first sampled divergence. A difference that heals
+before the next sample shows only in the full files: regenerate the full
+.gbsh with the reference build to find the first diverging frame.
+Counters are compared by the names both counters lines hold: a different
+value is a divergence, a name that one side lacks is printed (a newer build
+may add a counter) and does not fail.
 
 Exit status: 0 when the files match, 1 at the first divergence, 2 on a
-usage, format or identity error.
+usage, format, identity or region-list error.
 """
 
 from __future__ import annotations
@@ -45,6 +52,8 @@ REGIONS = re.compile(rf"regions=({NAME}+(?:,{NAME}+)*)")
 COUNTERS = re.compile(rf"counters(?: {NAME}+=[0-9]+)+")
 FRAME = re.compile(r"[0-9]+")
 HASH = re.compile(r"[0-9a-f]{8}")
+UNSAMPLED = ("an unsampled frame may differ first: compare the full .gbsh "
+             "files, regenerated with the reference build, to find it")
 
 
 class FormatError(Exception):
@@ -62,6 +71,8 @@ def header_line(lines: list[str], index: int, pattern: re.Pattern[str],
 
 def parse(data: bytes, path: str) -> dict[str, Any]:
     """Parse the bytes of a full .gbsh or of a golden."""
+    if data.startswith(GOLDEN_MAGIC.encode() + b"\r\n"):
+        data = data.replace(b"\r\n", b"\n")  # a golden's own bytes are never hashed
     try:
         text = data.decode("ascii")
     except UnicodeDecodeError:
@@ -77,8 +88,6 @@ def parse(data: bytes, path: str) -> dict[str, Any]:
     regions = header_line(lines, first + 1, REGIONS, path).group(1).split(",")
     if golden:
         sha256 = header_line(lines, 1, SHA256, path).group(1)
-    else:
-        sha256 = hashlib.sha256(data.split(b"\n", 2)[2]).hexdigest()
     records: dict[int, tuple[str, ...]] = {}
     counters = ""
     last = -1
@@ -100,6 +109,11 @@ def parse(data: bytes, path: str) -> dict[str, Any]:
             raise FormatError(f"{path}:{number}: frame {frame} is not a golden sample")
         records[frame] = tuple(fields[1:])
         last = frame
+    if not golden:
+        body = data.split(b"\n", 2)[2]
+        if counters:
+            body = body[:-len(counters) - 1]
+        sha256 = hashlib.sha256(body).hexdigest()
     return {
         "path": path,
         "golden": golden,
@@ -127,40 +141,55 @@ def compare(a: dict[str, Any], b: dict[str, Any]) -> int:
               f"{b['path']} build={b['build']}")
     sampled = a["golden"] or b["golden"]
     if sampled and a["sha256"] == b["sha256"]:
-        print("match: same sha256")
-        return 0
-    frames = sorted({
-        frame for side in (a, b) for frame in side["records"]
-        if not sampled or frame % GOLDEN_STEP == 0
-    })
-    previous = -1
-    for frame in frames:
-        hashes_a = a["records"].get(frame)
-        hashes_b = b["records"].get(frame)
-        if hashes_a != hashes_b:
-            if hashes_a is None or hashes_b is None:
-                missing = a["path"] if hashes_a is None else b["path"]
-                where = f"frame {frame} missing in {missing}"
-            else:
-                where = f"frame {frame} region " + ",".join(
-                    name for name, x, y in zip(a["regions"], hashes_a, hashes_b)
-                    if x != y
-                )
-            if sampled:
-                # Every earlier sample matched, so the split is after it.
-                print(f"diverges in frames {previous + 1}..{frame}: {where}")
-            else:
-                print(where)
+        result = "match: same sha256"
+    else:
+        frames = sorted({
+            frame for side in (a, b) for frame in side["records"]
+            if not sampled or frame % GOLDEN_STEP == 0
+        })
+        previous = -1
+        for frame in frames:
+            hashes_a = a["records"].get(frame)
+            hashes_b = b["records"].get(frame)
+            if hashes_a != hashes_b:
+                if hashes_a is None or hashes_b is None:
+                    missing = a["path"] if hashes_a is None else b["path"]
+                    where = f"frame {frame} missing in {missing}"
+                else:
+                    where = f"frame {frame} region " + ",".join(
+                        name for name, x, y in zip(a["regions"], hashes_a, hashes_b)
+                        if x != y
+                    )
+                if sampled:
+                    # The previous sample matched, but an unsampled frame
+                    # before it may have differed and healed.
+                    print(f"first sampled divergence in frames "
+                          f"{previous + 1}..{frame}: {where}")
+                    print(UNSAMPLED)
+                else:
+                    print(where)
+                return 1
+            previous = frame
+        if sampled:
+            print("the sampled frames match but the sha256 differs")
+            print(UNSAMPLED)
             return 1
-        previous = frame
-    if sampled:
-        print("the sampled frames match but the sha256 differs: the files "
-              "diverge at an unsampled frame or in the counters line")
+        result = f"match: {len(frames)} frames"
+    counters_a, counters_b = (
+        dict(field.split("=") for field in side["counters"].split(" ")[1:])
+        for side in (a, b)
+    )
+    for name in sorted(counters_a.keys() ^ counters_b.keys()):
+        side = a if name in counters_a else b
+        print(f"counter {name} is only in {side['path']}, not compared")
+    differ = [name for name in counters_a
+              if counters_b.get(name, counters_a[name]) != counters_a[name]]
+    if differ:
+        print("counters differ: " + ", ".join(
+            f"{name}={counters_a[name]} / {name}={counters_b[name]}"
+            for name in differ))
         return 1
-    if a["counters"] != b["counters"]:
-        print(f"the counters lines differ: {a['counters']!r} / {b['counters']!r}")
-        return 1
-    print(f"match: {len(frames)} frames")
+    print(result)
     return 0
 
 
