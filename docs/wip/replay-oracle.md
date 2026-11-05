@@ -9,10 +9,10 @@
 
 ## 1.6
 
-- [ ] **ENG-3.1** — Modulo puro state_hash · S, 1 gg · dipende da: — · PSP: no · **subito**
-- [ ] **ENG-3.2** — Traccia v2 con stato iniziale compagno · M, 1,5 gg · dipende da: ENG-3.1 · PSP: sì
+- [x] **ENG-3.1** — Modulo puro state_hash · S, 1 gg · dipende da: — · PSP: no · **subito**
+- [ ] **ENG-3.2** — Traccia v2 con stato iniziale compagno · M, 1,5 gg · dipende da: ENG-3.1 · PSP: sì · _codice pronto (9484557), manca la prova su PSP_
 - [ ] **ENG-3.3** — Cattura degli hash su PSP durante il replay · M, 1,5 gg · dipende da: ENG-3.1, ENG-3.2, ENG-2.2 · PSP: sì · aspetta: ENG-2.2 (`wip/release-and-ci`)
-- [ ] **ENG-3.4** — Strumento di confronto e procedure di autoverifica e perturbazione · S, 1 gg · dipende da: ENG-3.1 · PSP: no
+- [x] **ENG-3.4** — Strumento di confronto e procedure di autoverifica e perturbazione · S, 1 gg · dipende da: ENG-3.1 · PSP: no
 - [ ] **ENG-3.5** — Corpus pubblico di replay e golden compatti · M, 2,25 gg · dipende da: ENG-3.3, ENG-3.4, ENG-10.3, SAV-2.6, CMP-1.1, CMP-3.1, CMP-11.1, CMP-12.1, UI-10.5 · PSP: sì · aspetta: ENG-10.3 (`wip/test-roms`), SAV-2.6 (`wip/test-roms`), CMP-1.1 (`wip/open-bios`), CMP-3.1 (`wip/test-roms`), CMP-11.1 (`wip/test-roms`), CMP-12.1 (`wip/test-roms`), UI-10.5 (`wip/ui-ge`)
 - [ ] **ENG-3.6** — Registrazione e replay anche nelle build release · S, 1 gg · dipende da: ENG-3.2, F-027 · PSP: sì
 - [ ] **ENG-3.7** — Replay deterministico sui titoli con RTC · S, 0,5 gg · dipende da: ENG-3.2, CMP-7.3 · PSP: sì · aspetta: CMP-7.3 (`wip/game-compat`)
@@ -22,7 +22,7 @@
 
 ## 2.0
 
-- [ ] **ENG-7.1** — Modulo puro net_fault con i sei profili · S, 1,25 gg · dipende da: — · PSP: no · **subito**
+- [ ] **ENG-7.1** — Modulo puro net_fault con i sei profili · S, 1,25 gg · dipende da: — · PSP: no · **subito** · _in parte: manca check-rom-link (psp-stalls con i semi 4, 9 e 21, mksc-psp ad almeno 57 fps, mksc-psp-lossy ad almeno 53 fps), che richiede mGBA 0.10, le ROM e il BIOS_
 - [ ] **ENG-7.2** — Manopole di guasto nel worker ad-hoc (profilo diagnostico) · M, 1,5 gg · dipende da: ENG-7.1, ENG-6.2 · PSP: sì
 - [ ] **ENG-7.3** — Gate a due istanze PPSSPP prima di ogni bump di LINK_NET_VERSION o di LINK_CABLE_PROTOCOL · M, 2,5 gg · dipende da: ENG-6.1, ENG-6.2, ENG-1.2, CMP-1.1 · PSP: no · aspetta: ENG-1.2 (`wip/release-and-ci`), CMP-1.1 (`wip/open-bios`)
 
