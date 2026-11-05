@@ -9,8 +9,9 @@
  * (gba_ppu_log.c), as the Media Engine does: the hooks mark the blocks
  * mGBA's memory changed in, as the emulator's store paths do, and its
  * pictures must equal the first one's too. Its blocks go through the
- * quadword copy, and its frames turn between the log's frame and three
- * 480x272 pictures, as with every Media Engine switch on.
+ * quadword copy (OAM from a copy on 16 bytes, as the PSP's oam_ram is:
+ * mGBA's sits 8 bytes off), and its frames turn between the log's frame
+ * and three 480x272 pictures, as with every Media Engine switch on.
  * Build it against an mGBA compiled with COLOR_16_BIT, whose colours are
  * the GBA's own (see mgba_pixel).
  *
@@ -79,6 +80,9 @@ static uint16_t log_direct[GBA_PPU_LOG_TARGETS - 1][DIRECT_STRIDE * 272]
  __attribute__((aligned(64)));
 static uint32_t log_target;
 static uint8_t log_dirty[GBA_PPU_LOG_BLOCKS];
+/* OAM as mGBA holds it, kept by the OAM hook on 16 bytes for the
+   quadword copy. */
+static uint16_t log_oam[0x400 / 2] __attribute__((aligned(16)));
 static uint32_t log_groups[GBA_PPU_LOG_GROUP_BYTES / 4];
 static GbaPpuLogWriter log_writer;
 static GbaPpuLogReader log_reader;
@@ -198,6 +202,7 @@ static void on_oam(struct GBAVideoRenderer *renderer, uint32_t index)
   index &= 0x1FF;
   trace("oam", index * 2, renderer->oam->raw[index]);
   gba_ppu_write_oam(&ppu, index * 2, &renderer->oam->raw[index], 2);
+  log_oam[index] = renderer->oam->raw[index];
   log_mark(0x400 + index * 2);
   mgba_renderer.writeOAM(renderer, index);
 }
@@ -481,8 +486,9 @@ static void attach(void)
   gba_ppu_start_frame(&ppu);
   gba_ppu_init(&shared, gba->video.palette, gba->video.oam.raw,
    gba->video.vram, gba->memory.io);
+  memcpy(log_oam, gba->video.oam.raw, sizeof(log_oam));
   gba_ppu_log_writer_init(&log_writer, &log_mailbox, log_ring, log_frame,
-   gba->video.palette, gba->video.oam.raw, gba->video.vram, gba->memory.io,
+   gba->video.palette, log_oam, gba->video.vram, gba->memory.io,
    log_dirty, (uint8_t *)log_groups);
   log_writer.copy_quads = 1;
   for(offset = 1; offset < GBA_PPU_LOG_TARGETS; offset++)
