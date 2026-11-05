@@ -3973,10 +3973,12 @@ u32 menu(void)
 
     if (load_file(file_ext, filename_buffer, dir_roms, 1) == 0)
     {
-      if (load_gamepak(filename_buffer) < 0)
+      s32 load_result = load_gamepak(filename_buffer);
+
+      if (load_result < 0)
       {
         clear_screen(COLOR32_BLACK);
-        error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+        error_msg(MSG[load_result == -3 ? MSG_ERR_ZIP_CORRUPT : MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
 
         gamepak_file_none();
 
@@ -4201,10 +4203,12 @@ u32 menu(void)
                        load_gamepak() needs CWD to be the ROM directory */
                     chdir(dir_roms);
 
-                    if (load_gamepak(rom_file) < 0)
+                    s32 load_result = load_gamepak(rom_file);
+
+                    if (load_result < 0)
                     {
                         clear_screen(COLOR32_BLACK);
-                        error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+                        error_msg(MSG[load_result == -3 ? MSG_ERR_ZIP_CORRUPT : MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
                         gamepak_file_none();
                         /* Reopen file browser after error */
                         file_browser_repeat = 1;

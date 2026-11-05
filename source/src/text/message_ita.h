@@ -565,6 +565,9 @@
   // MSG_ERR_LOAD_GAMEPACK
   "Impossibile caricare il file di gioco.",
 
+  // MSG_ERR_ZIP_CORRUPT
+  "Il file ZIP e` danneggiato o incompleto.",
+
   // MSG_ERR_OPEN_GAMEPACK
   "Impossibile aprire il file di gioco.",
 

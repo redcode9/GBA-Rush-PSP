@@ -565,6 +565,9 @@
   // MSG_ERR_LOAD_GAMEPACK
   "ゲームファイルを読み込めませんでした.",
 
+  // MSG_ERR_ZIP_CORRUPT
+  "ZIP ファイルが壊れているか、不完全です.",
+
   // MSG_ERR_OPEN_GAMEPACK
   "ゲームファイルを開くことができませんでした.",
 
