@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # A build/sanitize binary is built with -DSANITIZE and wrapped: exit status 99
 # becomes a report on stderr and exit status 0, as UBSan does when it recovers.
 FAKE_MAKE = """#!/bin/sh
-# make [-C DIR] [VAR=VALUE]... TARGET... for the toy's targets.
+# make [-n] [-C DIR] [VAR=VALUE]... TARGET... for the toy's targets.
 build()
 {
   mkdir -p "${1%/*}" || return
@@ -32,11 +32,13 @@ build()
         >"$1" && chmod +x "$1" ;;
   esac
 }
+dry=
 while [ "$#" -gt 0 ]; do
   case $1 in
+    -n) dry=1 ;;
     -C) cd "$2" || exit 2; shift ;;
     *=*) ;;
-    *) grep -q "^$1:" Makefile && build "$1" || exit 2 ;;
+    *) grep -q "^$1:" Makefile && { [ -n "$dry" ] || build "$1"; } || exit 2 ;;
   esac
   shift
 done
@@ -87,7 +89,8 @@ class ProveRegressionTest(unittest.TestCase):
         self.commit("v1", {"source/toy.c": "int toy_add(int a, int b) { return a - b; }\n"})
         self.commit(None, {"source/toy.c": "int toy_add(int a, int b) { return a + b; }\n",
                            "Makefile": HEAD_MAKEFILE, "tests/test_toy.c": TOY_TEST,
-                           "tests/test_toy_sanitizer.c": TOY_SANITIZER_TEST})
+                           "tests/test_toy_sanitizer.c": TOY_SANITIZER_TEST,
+                           "tests/host_toy_stubs.c": ""})
         # sh needs LF, whatever line endings this checkout has.
         script = self.repo / "scripts/prove-regression.sh"
         script.parent.mkdir()
@@ -150,10 +153,15 @@ class ProveRegressionTest(unittest.TestCase):
         self.assertIn("/other\n", self.git("worktree", "list", "--porcelain"))
 
     def test_bad_arguments_are_errors(self):
-        for ref, test in (("v9", "test_toy"), ("../v1", "test_toy"), ("v1", "test_none"),
-                          ("v1", "../test_toy")):
+        for ref, test, error in (("v9", "test_toy", "Unknown REF"),
+                                 ("HEAD@{0}", "test_toy", "Invalid REF"),
+                                 ("v1", "test_none", "No such C test"),
+                                 ("v1", "../tests/test_toy", "Invalid TEST"),
+                                 ("v1", "host_toy_stubs", "No Makefile rules")):
             with self.subTest(ref=ref, test=test):
-                self.assertEqual(self.prove(ref, test)[0], 3)
+                status, text = self.prove(ref, test)
+                self.assertEqual(status, 3)
+                self.assertIn(error, text)
 
 
 if __name__ == "__main__":

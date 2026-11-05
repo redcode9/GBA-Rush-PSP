@@ -43,6 +43,14 @@ if [ ! -f "tests/$name.c" ]; then
   echo "No such C test: tests/$name.c" >&2
   exit 3
 fi
+# Command-line variables of the outer make reach these through MAKEFLAGS.
+dirs="HOST_BUILD_DIR=build/host HOST_SANITIZE_DIR=build/sanitize"
+# Without rules, make would fail on REF too and look like NOT-APPLICABLE.
+if ! ${MAKE:-make} -n $dirs "build/host/$name" "build/sanitize/$name" \
+     >/dev/null 2>&1; then
+  echo "No Makefile rules for build/host/$name and build/sanitize/$name" >&2
+  exit 3
+fi
 
 if ! commit=$(git rev-parse --verify --quiet --short "$ref^{commit}"); then
   echo "Unknown REF: $ref" >&2
@@ -74,18 +82,23 @@ rm -rf "$worktree/tests"
 cp -R tests "$worktree/tests"
 cp Makefile "$worktree/Makefile"
 
-if ! ${MAKE:-make} -C "$worktree" "build/host/$name"; then
+if ! ${MAKE:-make} -C "$worktree" $dirs "build/host/$name"; then
   echo "NOT-APPLICABLE: $name does not build on $ref ($commit)"
   result=2
   exit
 fi
-if ! ${MAKE:-make} -C "$worktree" "build/sanitize/$name"; then
+if ! ${MAKE:-make} -C "$worktree" $dirs "build/sanitize/$name"; then
   echo "build/sanitize/$name does not build where build/host/$name does" >&2
   exit
 fi
 
 status=0
 for binary in "build/host/$name" "build/sanitize/$name"; do
+  # make -n, for one, succeeds without building anything.
+  if [ ! -x "$worktree/$binary" ]; then
+    echo "$binary was not built" >&2
+    exit
+  fi
   echo "./$binary" >>"$log"
   (cd "$worktree" && "./$binary") >>"$log" 2>&1 || status=$?
 done
