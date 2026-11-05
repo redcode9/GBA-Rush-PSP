@@ -12,5 +12,6 @@ SOURCES += source/cases_timer.c source/cases_timer_asm.s
 SOURCES += source/cases_branch.c source/cases_branch_asm.s
 SOURCES += source/cases_prefetch.c source/cases_prefetch_asm.s
 SOURCES += source/cases_vram.c source/cases_vram_asm.s
+SOURCES += source/cases_stm.c source/cases_stm_asm.s
 
 include ../gba-rom.mk

@@ -24,6 +24,7 @@ extern const TestCase cases_timer[];
 extern const TestCase cases_branch[];
 extern const TestCase cases_prefetch[];
 extern const TestCase cases_vram[];
+extern const TestCase cases_stm[];
 extern const TestCase cases_pc[];
 
 static const TestCase *const areas[] =
@@ -36,6 +37,7 @@ static const TestCase *const areas[] =
   cases_branch,
   cases_prefetch,
   cases_vram,
+  cases_stm,
   /* Last: on a core that stops at an unmappable jump the emulator ends
      here, and the next boot marks the case hung and finishes. */
   cases_pc,
