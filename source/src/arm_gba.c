@@ -346,6 +346,9 @@ static SceUID sampler_thread = -1;
    never reads the core while another one owns its memory. */
 static volatile int profiling;
 static int profiled;
+/* Set while the menu is open: it runs on the emulation thread, inside a
+   frame, but its time is not emulation time. */
+static volatile int paused;
 
 /* Woken by the timer, the sampler runs ahead of the emulation thread,
    which is then ready if it was running and waiting if it was blocked
@@ -360,7 +363,7 @@ static int sampler(SceSize args, void *argp)
     u32 phase;
 
     sceKernelDelayThread(SAMPLE_US);
-    if(!profiling)
+    if(!profiling || paused)
       continue;
     status.size = sizeof(status);
     if(sceKernelReferThreadRunStatus(emulation_thread, &status) < 0)
@@ -402,6 +405,11 @@ void arm_gba_profile_stop(void)
     return;
   profiling = 0;
   stats_at_stop = jit->stats;
+}
+
+void arm_gba_profile_pause(int pause)
+{
+  paused = pause;
 }
 
 int arm_gba_profile_format(char *out, u32 size)

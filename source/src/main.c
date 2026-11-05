@@ -870,11 +870,15 @@ void main_link_pump(void)
 }
 
 /* menu() reports leaving (0) and resuming (1) the game. Each change is
-   logged, and the runtime log is flushed when the menu opens. */
+   logged, the runtime log is flushed when the menu opens, and the core
+   profile of diagnostic builds skips the menu. */
 void main_link_set_gameplay_active(int active)
 {
   u8 value = active != 0;
 
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+  arm_gba_profile_pause(!value);
+#endif
   if(gba_link_gameplay_active == value)
     return;
   gba_link_gameplay_active = value;
