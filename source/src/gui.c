@@ -3094,11 +3094,21 @@ static u32 ram_dynarec_policy_menu_prev = ~(u32)0;
    spelled out because tests/test_startup.py compiles this function alone. */
 void maybe_load_auto_savestate(void)
 {
+  char rom_name[MAX_FILE];
+  u32 answer;
+
   if (gamepak_filename[0] == '\0' || main_link_active() ||
       !auto_savestate_exists())
     return;
 
-  if (yesno_dialog(MSG[MSG_AUTO_SAVESTATE_LOAD_PROMPT]) == 0)
+  /* No ROM counts as loaded at the prompt: main_power_save_if_pending would
+     otherwise write the AUTO state from the machine just reset. */
+  strcpy(rom_name, gamepak_filename);
+  gamepak_filename[0] = '\0';
+  answer = yesno_dialog(MSG[MSG_AUTO_SAVESTATE_LOAD_PROMPT]);
+  strcpy(gamepak_filename, rom_name);
+
+  if (answer == 0)
     action_loadstate_slot(10);
 }
 

@@ -56,6 +56,7 @@ int regular_file, browser_result, load_result, menu_result;
 int reset_calls, prompt_calls, execute_calls, quit_calls, recent_calls;
 int error_calls;
 int popup_value, active_link, state_exists, dialog_result, restored_slot;
+int prompt_name, restored_name_length;
 jmp_buf stopped;
 void setup_main(const char *p) { (void)p; }
 int path_is_regular_file(const char *p) { (void)p; return regular_file; }
@@ -88,8 +89,13 @@ void main_run_cpu(void) {
 }
 int main_link_active(void) { return active_link; }
 u32 auto_savestate_exists(void) { return state_exists; }
-u32 yesno_dialog(const char *p) { (void)p; prompt_calls++; return dialog_result; }
-u32 action_loadstate_slot(u32 slot) { restored_slot = slot; return 1; }
+u32 yesno_dialog(const char *p) {
+  (void)p; prompt_calls++; prompt_name = gamepak_filename[0]; return dialog_result;
+}
+u32 action_loadstate_slot(u32 slot) {
+  restored_slot = slot; restored_name_length = (int)strlen(gamepak_filename);
+  return 1;
+}
 '''
 
 
@@ -100,7 +106,9 @@ u32 action_loadstate_slot(u32 slot) { restored_slot = slot; return 1; }
 # load (-1, or -2 for a zip too big for the ROM buffer) shows the load
 # error; one the player cancelled at the unreadable-save prompt goes on the
 # same way without it. The last lines check that the prompt is skipped with
-# no ROM, during a link session and without a saved state.
+# no ROM, during a link session and without a saved state, and that the ROM
+# name is blank while the prompt is open (a suspend then must not write the
+# AUTO state) and back after either answer, before the state loads.
 SCENARIOS = r'''
 static void clear_test(void) {
   regular_file = menu_result = active_link = 0;
@@ -108,6 +116,7 @@ static void clear_test(void) {
   reset_calls = prompt_calls = execute_calls = quit_calls = recent_calls = 0;
   error_calls = 0;
   state_exists = 1; dialog_result = 0; restored_slot = -1; popup_value = -1;
+  prompt_name = restored_name_length = -1;
   gamepak_filename[0] = 0; sound_pause = 1;
 }
 static void start(int argc) {
@@ -152,6 +161,11 @@ int main(void) {
   maybe_load_auto_savestate(); assert(prompt_calls == 0);
   state_exists = 1; dialog_result = 1;
   maybe_load_auto_savestate(); assert(prompt_calls == 1 && restored_slot == -1);
+  assert(prompt_name == 0 && strcmp(gamepak_filename, "game.gba") == 0);
+  prompt_name = -1; dialog_result = 0;
+  maybe_load_auto_savestate(); assert(prompt_calls == 2 && restored_slot == 10);
+  assert(prompt_name == 0 && restored_name_length == 8);
+  assert(strcmp(gamepak_filename, "game.gba") == 0);
   puts("startup and auto-state regressions passed");
   return 0;
 }

@@ -240,4 +240,19 @@ then
   fail "Load State File can overwrite the AUTO state it is loading"
 fi
 
+# A suspend at the resume question writes the AUTO state unless no ROM
+# counts as loaded, so the name is blank while yesno_dialog is open and back
+# before the state loads.
+if ! body '/^void maybe_load_auto_savestate(void)/,/^}/p' source/src/gui.c | awk '
+  BEGIN { named = 1 }
+  /gamepak_filename\[0\] = / { named = 0 }
+  /strcpy\(gamepak_filename, / { named = 1 }
+  /yesno_dialog\(/ { asked = 1; if (named) bad = 1 }
+  /action_loadstate_slot\(/ { loads = 1; if (!named) bad = 1 }
+  END { exit !(asked && loads && !bad) }
+'
+then
+  fail "The resume question is open with the ROM name set"
+fi
+
 echo "Runtime lifecycle checks passed"
