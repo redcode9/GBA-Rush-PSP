@@ -74,6 +74,20 @@ CFLAGS = \
 # the PSP with a reserved instruction. Fail the build instead.
 CFLAGS += -Werror=trampolines
 
+# The build id names the source/ tree, not the commit, so a commit that
+# changes only documents keeps it; -dirty marks uncommitted changes to
+# tracked files under source/ (untracked build output does not count).
+# Builds outside Git (a source tarball) pass BUILD_ID=... instead.
+ifeq ($(origin BUILD_ID),undefined)
+BUILD_ID := $(shell git rev-parse --short=12 HEAD:source 2>/dev/null)
+ifeq ($(BUILD_ID),)
+BUILD_ID := unknown
+else ifneq ($(shell git status --porcelain --untracked-files=no -- . 2>/dev/null),)
+BUILD_ID := $(BUILD_ID)-dirty
+endif
+endif
+CFLAGS += -DGBA_RUSH_BUILD_ID=\"$(BUILD_ID)\"
+
 # The new core's translation cache, halved from the default so the core
 # fits the Classic core's 2 MB writable code cache it borrows (arm_gba.c);
 # Mario Kart and FireRed flush it no more often.
@@ -93,6 +107,14 @@ C_ONLY_OBJS = $(filter-out video_cc_wrap.o mips_stub.o video_blend_mips.o ku_bri
 $(C_ONLY_OBJS): CFLAGS += -Wbad-function-cast -Wmissing-prototypes
 $(OBJZ) $(OBJG): CFLAGS += -Wno-old-style-definition
 $(MAINOBJS): $(COMMON_FILE)
+# A new build id rebuilds the objects: the stamp is rewritten only when the
+# configuration it records changes.
+$(MAINOBJS): build-config.stamp
+build-config.stamp: FORCE
+	@if [ "$$(cat $@ 2>/dev/null)" != '$(BUILD_ID)' ]; then \
+	 printf '%s\n' '$(BUILD_ID)' > $@; fi
+.PHONY: FORCE
+FORCE:
 # The translations are written in UTF-8 and stored as GBK, the encoding the
 # menu font code reads.
 message.o: $(MESSAGE_FILE)
@@ -125,4 +147,9 @@ all: $(EXTRA_TARGETS)
 # quoted defines reach the manifest unchanged.
 print-flags:
 	$(info $(CFLAGS))
+	@:
+
+# The build id alone, for the release manifest.
+print-build-id:
+	$(info $(BUILD_ID))
 	@:

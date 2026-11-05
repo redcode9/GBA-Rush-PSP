@@ -7,6 +7,7 @@ release/
 *.elf
 *.prx
 /source/prx/media_engine/renderer.bin
+/source/build-config.stamp
 *.PBP
 *.map
 PARAM.SFO
