@@ -451,6 +451,9 @@ CPU_ALERT_TYPE timer_control_high(u8 timer_number, u32 value)
   left = gba_timer_written(running, left, tm->reload, tm->prescale, shift);
   tm->status = status;
   tm->prescale = shift;
+  // A new rate takes its Direct Sound step at the next overflow, as a new
+  // reload value does
+  tm->reload_update = 1;
   pIO_REG(REG_TM0D + (timer_number << 1)) =
    gba_timer_counter(left, tm->reload, shift);
 
