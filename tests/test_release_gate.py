@@ -125,7 +125,8 @@ class Repo:
     def manifest(self, version="1.4.4", digest=DIGEST):
         self.dist.mkdir(exist_ok=True)
         (self.dist / f"GBA-Rush-PSP-{version}.manifest.json").write_text(
-         json.dumps({"format": 1, "files": {"EBOOT.PBP": {"sha256": digest}}}))
+         json.dumps({"format": release_gate.release_manifest.MANIFEST_FORMAT,
+                     "files": {"EBOOT.PBP": {"sha256": digest}}}))
 
     def gate(self, version="1.4.4", channel="stable", now=RC + 8 * DAY):
         return release_gate.gate(version, channel, self.root, self.dist, now)
