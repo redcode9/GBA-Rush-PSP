@@ -102,12 +102,12 @@ class Repo:
                 stream.write("/* changed */\n")
 
     def commit(self, when, *tags):
-        """Commit everything with this date, tagged with lightweight tags,
-        whose date for git for-each-ref is the commit's."""
+        """Commit everything with this date, tagged with annotated tags of
+        the same date."""
         self.git("add", "-A")
         self.git("commit", "-q", "--allow-empty", "-m", "change", when=when)
         for tag in tags:
-            self.git("tag", tag)
+            self.git("tag", "-a", "-m", tag, tag, when=when)
 
     def link(self, version, protocol):
         self.write("source/src/link_net.h",
@@ -210,6 +210,18 @@ class StableGateTest(ScratchRepoTest):
         self.assertEqual(self.repo.gate(now=RC + 7 * DAY + 12 * HOUR), [
          "soak: 156 h since 1.4.4-rc.2, 168 h needed"])
         self.assertEqual(self.repo.gate(now=RC + 8 * DAY), [])
+
+    def test_the_soak_counts_from_an_annotated_tag_not_its_commit(self):
+        # The rc commit is a week older than its tag.
+        self.repo.touch("source/src/main.c")
+        self.repo.commit(RC - 7 * DAY)
+        self.repo.git("tag", "1.4.4-rc.1")
+        self.assertEqual(self.repo.gate(now=RC + HOUR), [
+         "1.4.4-rc.1: a lightweight tag has only its commit's date; "
+         "recreate it with git tag -a, whose date starts the soak"])
+        self.repo.git("tag", "-f", "-a", "-m", "rc", "1.4.4-rc.1", when=RC)
+        self.assertEqual(self.repo.gate(now=RC + HOUR), [
+         "soak: 1 h since 1.4.4-rc.1, 168 h needed"])
 
     def test_a_data_hotfix_soaks_for_72_hours(self):
         self.rc()

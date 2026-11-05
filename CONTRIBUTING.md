@@ -179,7 +179,9 @@ A prerelease always passes, and its notes list every test as not validated.
 A stable release needs, for the `EBOOT.PBP` in its manifest, a `pass` row in
 [the hardware results](docs/HARDWARE-RESULTS.md) for every required test on
 every model class the test asks for; 7 days since the newest
-`<version>-rc.N` tag, or 72 hours with `hotfix-data: yes`; no change under
+`<version>-rc.N` tag, or 72 hours with `hotfix-data: yes` (make the rc tags
+with `git tag -a`: a lightweight tag has only its commit's date, so the gate
+refuses it); no change under
 `source/` since that tag; and, when `link_net.*`, `link_cable.*`, `gba_sio.*`,
 `adhoc_peer.*` or `psp_adhoc.c` changed since the previous release, a
 `link: wire-unchanged`, `wire-extended` (with a `mixed-pair:` line saying what

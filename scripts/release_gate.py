@@ -142,16 +142,20 @@ def link_constants(repo, ref):
     return tuple(values)
 
 
-def newest_rc(repo, version):
-    """(tag, unix time) of the newest <version>-rc.N tag, or None."""
+def rc_tags(repo, version):
+    """(tag, unix time, object type) of each <version>-rc.N tag, newest
+    first. Only an annotated tag (type "tag") has a date of its own; a
+    lightweight one (type "commit") gives its commit's date."""
     listed = git(repo, "for-each-ref", "--sort=-creatordate",
-                 "--format=%(creatordate:unix) %(refname:lstrip=2)",
-                 f"refs/tags/{version}-rc.*").stdout.split("\n")
+                 "--format=%(creatordate:unix) %(objecttype) "
+                 "%(refname:lstrip=2)",
+                 f"refs/tags/{version}-rc.*").stdout.splitlines()
+    tags = []
     for line in listed:
-        created, _, tag = line.partition(" ")
+        created, kind, tag = line.split(" ", 2)
         if re.fullmatch(re.escape(version) + r"-rc\.\d+", tag):
-            return tag, int(created)
-    return None
+            tags.append((tag, int(created), kind))
+    return tags
 
 
 def model_classes(model):
@@ -174,11 +178,16 @@ def required_test_problems(tests, catalog, passed, digest):
 
 def candidate_problems(repo, version, release, now):
     """The soak since the newest rc tag, and source/ unchanged since it."""
-    rc = newest_rc(repo, version)
-    if rc is None:
+    tags = rc_tags(repo, version)
+    if not tags:
         return [f"no {version}-rc.N tag: a stable release is a prerelease "
                 "that went through its soak"]
-    tag, created = rc
+    lightweight = [tag for tag, _, kind in tags if kind != "tag"]
+    if lightweight:
+        return [f"{', '.join(lightweight)}: a lightweight tag has only its "
+                "commit's date; recreate it with git tag -a, whose date "
+                "starts the soak"]
+    tag, created, _ = tags[0]
     hotfix = release["hotfix-data"] == ["yes"]
     needed = HOTFIX_SOAK_HOURS if hotfix else SOAK_HOURS
     problems = []
