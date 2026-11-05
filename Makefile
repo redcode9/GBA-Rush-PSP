@@ -4,6 +4,8 @@
 #   make test-sanitize    the C tests again under ASan and UBSan
 #   make psp-build        the EBOOT (needs the PSP SDK)
 #   make package VERSION=x.y.z   build, check and zip a release
+# psp-build, package and artifact-smoke take PROFILE=release (the default)
+# or PROFILE=diagnostic (source/Makefile).
 # Each test builds the module it covers straight from source/src, so most
 # need only a host C compiler.
 #
@@ -20,6 +22,8 @@ HOST_SANITIZE_FLAGS ?= -fsanitize=address,undefined -fno-omit-frame-pointer
 # SDK headers for the two tests that compile PSP sources (memory.c and
 # psp_video.c) on the host.
 PSP_SDK_INCLUDE ?= $(shell psp-config --pspsdk-path 2>/dev/null)/include
+# DIAGNOSTIC_INPUT_TRACE=1 is the old name of PROFILE=diagnostic.
+PROFILE ?= $(if $(DIAGNOSTIC_INPUT_TRACE),diagnostic,release)
 HOST_TEST_CODEBREAKER = $(HOST_BUILD_DIR)/test_codebreaker
 HOST_TEST_GBA_SIO = $(HOST_BUILD_DIR)/test_gba_sio
 HOST_TEST_LINK_NET = $(HOST_BUILD_DIR)/test_link_net
@@ -147,7 +151,8 @@ test-tools:
 	$(PYTHON) -m unittest tests/test_compare_benchmarks.py \
 	 tests/test_decode_runtime_log.py tests/test_startup.py \
 	 tests/test_browser_text.py tests/test_open_bios.py \
-	 tests/test_elf_info.py tests/test_release_manifest.py
+	 tests/test_elf_info.py tests/test_release_manifest.py \
+	 tests/test_build_profile.py
 
 # The link cable test runs fewer network profiles (--quick) under the
 # sanitizers, where it is much slower.
@@ -278,6 +283,7 @@ $(HOST_TEST_PERF_DMA_PROBE): tests/test_perf_dma_probe.c tests/host_dma_stubs.c 
 	# for memory.c (the shim psptypes.h must not shadow it).
 	$(HOST_CC) -std=c99 -O1 -w -include tests/host_shim/host_builtins.h \
 	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -DGBA_RUSH_PROFILE_RELEASE \
 	 -c source/src/memory.c -o $(HOST_BUILD_DIR)/perf_dma_memory.o
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror \
 	 -I source/src \
@@ -305,6 +311,7 @@ $(HOST_TEST_PERF_VIDEO_SENTINEL): tests/test_perf_video_sentinel.c \
 	# the shim psptypes.h (host_shim first, no SDK path).
 	$(HOST_CC) -std=c99 -O1 -w -include tests/host_shim/host_builtins.h \
 	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -DGBA_RUSH_PROFILE_RELEASE \
 	 -c source/src/psp_video.c -o $(HOST_BUILD_DIR)/perf_video_psp_video.o
 	$(HOST_CC) -std=c99 -O1 -w -include tests/host_shim/host_builtins.h \
 	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
@@ -492,6 +499,7 @@ $(HOST_SANITIZE_DIR)/test_perf_dma_probe: tests/test_perf_dma_probe.c \
 	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
 	 -include tests/host_shim/host_builtins.h \
 	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -DGBA_RUSH_PROFILE_RELEASE \
 	 -c source/src/memory.c -o $(HOST_SANITIZE_DIR)/perf_dma_memory.o
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -I source/src \
@@ -511,6 +519,7 @@ $(HOST_SANITIZE_DIR)/test_perf_video_sentinel: tests/test_perf_video_sentinel.c 
 	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
 	 -include tests/host_shim/host_builtins.h \
 	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -DGBA_RUSH_PROFILE_RELEASE \
 	 -c source/src/psp_video.c -o $(HOST_SANITIZE_DIR)/perf_video_psp_video.o
 	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
 	 -include tests/host_shim/host_builtins.h \
@@ -639,6 +648,7 @@ check-render:
 
 tree-check:
 	sh scripts/check-tree.sh
+	sh scripts/check-profiles.sh
 
 # The Media Engine program (source/prx/media_engine) must build and fit the
 # Media Engine's instruction cache.
@@ -650,7 +660,7 @@ media-engine-check:
 	fi
 
 psp-build:
-	$(MAKE) -C source
+	$(MAKE) -C source PROFILE=$(PROFILE)
 
 # Rebuilds the single-game launcher EBOOT that the desktop launcher tool
 # ships in its assets.
