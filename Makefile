@@ -4,6 +4,8 @@
 #   make test-sanitize    the C tests again under ASan and UBSan
 #   make psp-build        the EBOOT (needs the PSP SDK)
 #   make package VERSION=x.y.z   build, check and zip a release
+#   make release-gate VERSION=x.y.z CHANNEL=stable|prerelease
+#                         check a packaged release and write its notes
 # psp-build, package and artifact-smoke take PROFILE=release (the default)
 # or PROFILE=diagnostic (source/Makefile).
 # Each test builds the module it covers straight from source/src, so most
@@ -109,7 +111,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
 
 .PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
  check-core check-render tree-check media-engine-check psp-build \
- launcher-stub package artifact-smoke clean
+ launcher-stub package artifact-smoke release-gate clean
 
 all: check
 
@@ -155,7 +157,8 @@ test-tools:
 	 tests/test_elf_info.py tests/test_release_manifest.py \
 	 tests/test_build_profile.py tests/test_check_elf.py \
 	 tests/test_check_scripts.py \
-	 tests/test_hardware_session.py
+	 tests/test_hardware_session.py \
+	 tests/test_release_gate.py
 
 # The link cable test runs fewer network profiles (--quick) under the
 # sanitizers, where it is much slower.
@@ -683,6 +686,13 @@ artifact-smoke:
 	@test -n "$(VERSION)" || \
 	 (echo "Set VERSION, for example VERSION=1.4.3" >&2; exit 1)
 	PROFILE=$(PROFILE) sh scripts/check-package.sh "$(VERSION)"
+
+# Checks the hardware results, the soak and the link status of a packaged
+# release and writes dist/RELEASE-NOTES-VERSION.md; see "Releasing" in
+# CONTRIBUTING.md.
+release-gate:
+	$(PYTHON) scripts/release_gate.py --version "$(VERSION)" \
+	 --channel "$(CHANNEL)"
 
 clean:
 	$(MAKE) -C source clean

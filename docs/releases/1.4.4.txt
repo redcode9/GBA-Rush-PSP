@@ -1,0 +1,19 @@
+# What release 1.4.4 needs. make release-gate VERSION=1.4.4 checks it and
+# writes the release notes from it; see "Releasing" in CONTRIBUTING.md.
+# Keys: tests (ids from docs/hardware-tests.md), hotfix-data (yes: 72 hours
+# of soak instead of 7 days), known-limit (one per line), link
+# (wire-unchanged, wire-extended or bump) and mixed-pair (what a pair with an
+# earlier release loses; needed with wire-extended).
+
+# The SAV-1.8 read matrix, the SAV-2.7 trade, EXT-1 and UI-1.5 join this list
+# once the catalog has their ids.
+tests: save-sram-roundtrip, save-powerloss-10x, sleep-auto-20x, menu-every-page
+
+# 1.4.4 fixes saves that earlier releases lose.
+hotfix-data: yes
+
+known-limit: A .sav that an earlier release already cut to 1 byte has lost its data; 1.4.4 cannot bring it back.
+known-limit: With a 1.4.1 or 1.4.2 PSP joining, a host on 1.4.3 or later may give Mario Kart: Super Circuit a wrong word when a race starts. This comes from reading the code and has not been measured yet.
+
+# No link file has changed since 1.4.3 (git diff --stat 1.4.3 HEAD).
+link: wire-unchanged
