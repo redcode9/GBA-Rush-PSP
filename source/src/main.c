@@ -293,7 +293,6 @@ static void psp_sleep_loop(void);
 static void main_power_save_if_pending(void);
 static void main_power_reopen_gamepak(void);
 static void main_link_close(MainLinkEnd reason);
-static void main_log_cpu_clock(void);
 
 /* The clock last asked of set_cpu_clock, in MHz (0 before the first call). */
 static u32 main_clock_requested_mhz;
@@ -2090,7 +2089,8 @@ void main_power_service(void)
   runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_RESUME, cpu_ticks,
    (u8)(audio_result >= 0), (u32)audio_result,
    (u32)gba_link.status, main_adhoc_state_value());
-  main_log_cpu_clock();
+  /* The firmware may wake at another clock; the link closed on suspend. */
+  set_cpu_clock(option_clock_speed);
 }
 
 
@@ -2500,17 +2500,10 @@ u32 yesno_dialog(const char *text)
 }
 
 
-/* The requested clock and the CPU and bus clocks the firmware reports, as
-   LINK_COUNTERS record 13. Emulator thread only, like every main-ring write. */
-static void main_log_cpu_clock(void)
-{
-  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 13,
-   main_clock_requested_mhz, (u32)scePowerGetCpuClockFrequencyInt(),
-   (u32)scePowerGetBusClockFrequencyInt());
-}
-
 /* Sets PLL, CPU and bus clocks in MHz; the bus runs at half the CPU. Every
-   path calls it, so the log shows the clock of each one. */
+   path calls it, so the log shows the clock of each one: the requested
+   clock and the CPU and bus clocks the firmware reports, as LINK_COUNTERS
+   record 13. Emulator thread only, like every main-ring write. */
 int set_cpu_clock(u32 psp_clock)
 {
   int ret = -1;
@@ -2520,7 +2513,9 @@ int set_cpu_clock(u32 psp_clock)
     ret = (*__scePowerSetClockFrequency)(mhz, mhz, mhz / 2);
 
   main_clock_requested_mhz = mhz;
-  main_log_cpu_clock();
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 13,
+   main_clock_requested_mhz, (u32)scePowerGetCpuClockFrequencyInt(),
+   (u32)scePowerGetBusClockFrequencyInt());
   return ret;
 }
 

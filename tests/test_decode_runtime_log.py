@@ -196,11 +196,20 @@ class RuntimeLogDecoderTests(unittest.TestCase):
     def test_describes_cpu_clock_records(self):
         main_c = (Path(__file__).parents[1] / "source" / "src" /
                   "main.c").read_text(encoding="utf-8")
-        self.assertIn("RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 13",
-                      main_c)
+        # Requested, then CPU, then bus, as the decoder reads them.
+        self.assertRegex(
+            main_c,
+            r"cpu_ticks, 13,\s+main_clock_requested_mhz, "
+            r"\(u32\)scePowerGetCpuClockFrequencyInt\(\),\s+"
+            r"\(u32\)scePowerGetBusClockFrequencyInt\(\)\);")
         cases = [
             ([333, 333, 166], "requested=333MHz cpu=333MHz bus=166MHz"),
             ([222, 222, 111], "requested=222MHz cpu=222MHz bus=111MHz"),
+            ([333, 332, 167], "requested=333MHz cpu=332MHz bus=167MHz"),
+            ([333, 331, 166],
+             "requested=333MHz cpu=331MHz bus=166MHz MISMATCH"),
+            ([333, 333, 164],
+             "requested=333MHz cpu=333MHz bus=164MHz MISMATCH"),
             ([333, 222, 111],
              "requested=333MHz cpu=222MHz bus=111MHz MISMATCH"),
             ([333, 300, 166],

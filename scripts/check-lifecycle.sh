@@ -57,15 +57,42 @@ then
   fail "Menu clock transitions are not guarded by link state"
 fi
 
-# Game, menu, browser, ROM loading and link run at the configured clock;
-# only quit() lowers it, after the last log flush.
-clock_222_calls=$(rg -o 'set_cpu_clock\(PSP_CLOCK_222\)' source/src | \
-  wc -l)
-clock_222_quit=$(body '/^void quit(void)/,/^}/p' source/src/main.c | \
-  rg -c 'set_cpu_clock\(PSP_CLOCK_222\)' || true)
-if [ "$clock_222_calls" -ne "${clock_222_quit:-0}" ]
+# Game, menu, browser and resume run at the configured clock; only a link
+# session and ROM loading pin 333 MHz, and only quit() lowers it, after
+# the last log flush.
+other_clocks=$(rg -o --no-filename 'set_cpu_clock\([^)]*\)' source/src | \
+  rg -v '\((option_clock_speed|u32 psp_clock)\)$' | sort | tr '\n' ' ')
+if [ "$other_clocks" != "set_cpu_clock(PSP_CLOCK_222) \
+set_cpu_clock(PSP_CLOCK_333) set_cpu_clock(PSP_CLOCK_333) " ] || \
+   ! body '/^void quit(void)/,/^}/p' source/src/main.c | \
+  rg -q 'set_cpu_clock\(PSP_CLOCK_222\)'
 then
-  fail "A path drops the CPU clock to 222 MHz"
+  fail "A path runs at a clock other than the configured one"
+fi
+
+# Every clock change sets the bus at half the CPU and logs both read back;
+# the configured clock is applied before the file browser and on resume.
+clock_body=$(body '/^int set_cpu_clock(u32 psp_clock)/,/^}/p' \
+  source/src/main.c)
+if ! printf '%s\n' "$clock_body" | rg -q '\(mhz, mhz, mhz / 2\);' || \
+   ! printf '%s\n' "$clock_body" | rg -q 'cpu_ticks, 13,'
+then
+  fail "A clock change does not set the bus at half the CPU or log it"
+fi
+clock_applied_after()
+{
+  body "$1" source/src/main.c | awk -v after="$2" '
+    index($0, after) { reached = 1 }
+    reached && index($0, "set_cpu_clock(option_clock_speed);") { applied = 1 }
+    END { exit !applied }
+  '
+}
+if ! clock_applied_after '/^static void setup_main(/,/^}/p' \
+     'load_config_file();' || \
+   ! clock_applied_after '/^void main_power_service(void)/,/^}/p' \
+     'power_lifecycle_take_resume('
+then
+  fail "The configured clock is not applied at startup or on resume"
 fi
 
 # The PSP never time-slices equal priorities: the network stack and the
