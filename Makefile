@@ -49,6 +49,7 @@ HOST_TEST_FAST_FORWARD_AUDIO = $(HOST_BUILD_DIR)/test_fast_forward_audio
 HOST_TEST_VIDEO_MOSAIC = $(HOST_BUILD_DIR)/test_video_mosaic
 HOST_TEST_DYNAREC_WORKLIST = $(HOST_BUILD_DIR)/test_dynarec_worklist
 HOST_TEST_SOUND_MATH = $(HOST_BUILD_DIR)/test_sound_math
+HOST_TEST_EVENT_QUEUE = $(HOST_BUILD_DIR)/test_event_queue
 HOST_TEST_RUNTIME_LOG = $(HOST_BUILD_DIR)/test_runtime_log
 HOST_TEST_ARM_CORE = $(HOST_BUILD_DIR)/test_arm_core
 HOST_TEST_CORE_PROFILE = $(HOST_BUILD_DIR)/test_core_profile
@@ -73,6 +74,7 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE) $(HOST_TEST_FAST_FORWARD) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
+ $(HOST_TEST_EVENT_QUEUE) \
  $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_CORE_PROFILE) \
  $(HOST_TEST_GBA_PPU) $(HOST_TEST_GBA_PPU_LOG)
 # The same C tests built with HOST_SANITIZE_FLAGS for make test-sanitize.
@@ -99,6 +101,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_video_mosaic \
  $(HOST_SANITIZE_DIR)/test_dynarec_worklist \
  $(HOST_SANITIZE_DIR)/test_sound_math \
+ $(HOST_SANITIZE_DIR)/test_event_queue \
  $(HOST_SANITIZE_DIR)/test_runtime_log \
  $(HOST_SANITIZE_DIR)/test_arm_core \
  $(HOST_SANITIZE_DIR)/test_core_profile \
@@ -106,8 +109,9 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_ppu_log
 
 .PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
- check-core check-render tree-check media-engine-check psp-build \
- launcher-stub package artifact-smoke clean
+ check-core check-render check-core-quick check-render-quick check-eboot \
+ tree-check psp-sdk-headers media-engine-check psp-build launcher-stub \
+ package artifact-smoke clean
 
 all: check
 
@@ -138,6 +142,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_VIDEO_MOSAIC)
 	$(HOST_TEST_DYNAREC_WORKLIST)
 	$(HOST_TEST_SOUND_MATH)
+	$(HOST_TEST_EVENT_QUEUE)
 	$(HOST_TEST_RUNTIME_LOG)
 	$(HOST_TEST_ARM_CORE)
 	$(HOST_TEST_CORE_PROFILE)
@@ -178,6 +183,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_video_mosaic
 	$(HOST_SANITIZE_DIR)/test_dynarec_worklist
 	$(HOST_SANITIZE_DIR)/test_sound_math
+	$(HOST_SANITIZE_DIR)/test_event_queue
 	$(HOST_SANITIZE_DIR)/test_runtime_log
 	$(HOST_SANITIZE_DIR)/test_arm_core
 	$(HOST_SANITIZE_DIR)/test_core_profile
@@ -275,7 +281,7 @@ $(HOST_TEST_PERF_DMA_PROBE): tests/test_perf_dma_probe.c tests/host_dma_stubs.c 
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
- tests/host_shim/psptypes.h
+ tests/host_shim/psptypes.h | psp-sdk-headers
 	mkdir -p $(HOST_BUILD_DIR)
 	# SDK include before tests/host_shim: the real SDK psptypes.h must win
 	# for memory.c (the shim psptypes.h must not shadow it).
@@ -299,7 +305,7 @@ $(HOST_TEST_PERF_VIDEO_SENTINEL): tests/test_perf_video_sentinel.c \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/gba_types.h tests/host_shim/host_builtins.h \
- tests/host_shim/psptypes.h
+ tests/host_shim/psptypes.h | psp-sdk-headers
 	mkdir -p $(HOST_BUILD_DIR)
 	# Stages 1-2 put the SDK include before tests/host_shim: the real
 	# SDK psptypes.h (needed by pspthreadman.h, ...) wins, while the
@@ -382,6 +388,12 @@ $(HOST_TEST_SOUND_MATH): tests/test_sound_math.c source/src/sound_math.c \
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_sound_math.c source/src/sound_math.c -o $@
+
+$(HOST_TEST_EVENT_QUEUE): tests/test_event_queue.c source/src/event_queue.c \
+ source/src/event_queue.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_event_queue.c source/src/event_queue.c -o $@
 
 $(HOST_TEST_ARM_CORE): tests/test_arm_core.c $(ARM_CORE_SOURCES) \
  $(ARM_CORE_HEADERS)
@@ -494,7 +506,7 @@ $(HOST_SANITIZE_DIR)/test_perf_dma_probe: tests/test_perf_dma_probe.c \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
- tests/host_shim/psptypes.h
+ tests/host_shim/psptypes.h | psp-sdk-headers
 	mkdir -p $(HOST_SANITIZE_DIR)
 	# SDK include before tests/host_shim: the real SDK psptypes.h must win
 	# for memory.c (the shim psptypes.h must not shadow it).
@@ -515,7 +527,7 @@ $(HOST_SANITIZE_DIR)/test_perf_video_sentinel: tests/test_perf_video_sentinel.c 
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/gba_types.h tests/host_shim/host_builtins.h \
- tests/host_shim/psptypes.h
+ tests/host_shim/psptypes.h | psp-sdk-headers
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
 	 -include tests/host_shim/host_builtins.h \
@@ -610,6 +622,12 @@ $(HOST_SANITIZE_DIR)/test_sound_math: tests/test_sound_math.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_sound_math.c source/src/sound_math.c -o $@
 
+$(HOST_SANITIZE_DIR)/test_event_queue: tests/test_event_queue.c \
+ source/src/event_queue.c source/src/event_queue.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_event_queue.c source/src/event_queue.c -o $@
+
 $(HOST_SANITIZE_DIR)/test_arm_core: tests/test_arm_core.c \
  $(ARM_CORE_SOURCES) $(ARM_CORE_HEADERS)
 	mkdir -p $(HOST_SANITIZE_DIR)
@@ -652,8 +670,30 @@ check-core:
 check-render:
 	sh scripts/check-render.sh
 
+# Shorter runs of the two checks above, for every pull request; each part
+# is skipped when its inputs are missing.
+check-core-quick:
+	sh scripts/check-core.sh --quick
+
+check-render-quick:
+	sh scripts/check-render.sh --quick
+
+# Runs the EBOOT in PPSSPP's headless runner on your own games; see the
+# script. Build it first with make psp-build.
+check-eboot:
+	sh scripts/check-eboot.sh
+
 tree-check:
 	sh scripts/check-tree.sh
+
+# The tests that build memory.c and psp_video.c need the PSP SDK headers:
+# say where to get them instead of failing halfway through the build.
+psp-sdk-headers:
+	@test -f "$(PSP_SDK_INCLUDE)/pspkernel.h" || { \
+	  echo "PSP SDK headers not found in $(PSP_SDK_INCLUDE)." >&2; \
+	  echo "Run sh scripts/setup-dev.sh and export the PATH it prints," \
+	   "or set PSP_SDK_INCLUDE to the SDK's include directory." >&2; \
+	  exit 1; }
 
 # The Media Engine program (source/prx/media_engine) must build and fit the
 # Media Engine's instruction cache.
