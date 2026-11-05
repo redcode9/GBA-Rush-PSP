@@ -27,6 +27,10 @@
   Where the Media Engine cannot be used, as on official firmware or in an
   emulator, Exact draws on the main processor and is slower than New. With
   Show FPS on, the counter ends in ME or CPU to tell which.
+- `docs/PERFORMANCE.md` explains how to compare the speed of two builds and
+  holds a table of measured baselines for each PSP model and game, generated
+  by `scripts/perf-table.py` from the reports archived under `benchmarks/`.
+  No baselines are archived yet.
 
 ### Changed
 
@@ -39,6 +43,11 @@
   so it never overwrites the `<rom>_auto.svs` made with `gba_bios.bin`.
 - The `bios_rom_hack_39` and `bios_rom_hack_2C` options of `game_config.txt`
   apply only to `gba_bios.bin`.
+- `scripts/compare-benchmarks.py` takes three or more reports per build, and
+  the two builds may have different counts. PASS and FAIL work as before; for
+  each metric it also shows the median, lowest and highest run of both builds
+  and says whether the runs show a clear difference or how many runs per
+  build would be needed to tell.
 
 ## 1.4.3 - 2026-11-02
 
