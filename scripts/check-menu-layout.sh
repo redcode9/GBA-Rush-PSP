@@ -69,4 +69,22 @@ if ! grep -q '^static void menu_draw_background(void)' source/src/gui.c ||
   exit 1
 fi
 
+# The main menu row status is drawn every frame: it reads RAM only (the
+# state slots are counted when the main menu is entered) and is cut to the
+# room left after the label.
+status_body=$(awk '
+  /^static void menu_draw_main_status\(/ { inside = 1 }
+  inside { print }
+  inside && /^}/ { exit }
+' source/src/gui.c)
+if [ -z "$status_body" ] ||
+   printf '%s\n' "$status_body" |
+    grep -qE 'sceIo|savestate_file_exists|get_savestate_info' ||
+   ! printf '%s\n' "$status_body" | grep -q 'menu_layout_status_columns' ||
+   ! grep -q 'menu_draw_main_status(display_option->display_msg' \
+    source/src/gui.c; then
+  echo "The main menu row status is missing, unbounded or reads files." >&2
+  exit 1
+fi
+
 echo "Menu layout checks passed"

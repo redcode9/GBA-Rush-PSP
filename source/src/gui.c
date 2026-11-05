@@ -3007,6 +3007,26 @@ static u32 savestate_file_exists(u32 slot)
     return (sceIoGetstat(savestate_path, &stat) >= 0);
 }
 
+/* Numbered slots 0-9 with a file, and whether the auto slot has one, for
+   the Save and Load row of the main menu. Counted when the main menu is
+   entered, never per frame: each check is a file system stat. */
+static u32 menu_status_slots;
+static u32 menu_status_auto;
+
+static void menu_status_count_states(void)
+{
+  u32 slot;
+
+  menu_status_slots = 0;
+  menu_status_auto = 0;
+  if (gamepak_filename[0] == '\0')
+    return;
+
+  for (slot = 0; slot < AUTO_SAVESTATE_SLOT; slot++)
+    menu_status_slots += savestate_file_exists(slot);
+  menu_status_auto = savestate_file_exists(AUTO_SAVESTATE_SLOT);
+}
+
 
 /* Hotkey load of savestate_slot; load_state() asks for confirmation. */
 u32 action_loadstate(void)
@@ -3826,6 +3846,60 @@ static void menu_draw_background(void)
   /* COLOR15_TO_32 is 0xAABBGGRR, as draw_box_alpha takes; alpha 0xC0. */
   draw_box_alpha(0, 0, PSP_SCREEN_WIDTH - 1, PSP_SCREEN_HEIGHT - 1,
    (COLOR15_TO_32(color_bg) & 0x00FFFFFF) | 0xC0000000);
+}
+
+/* Status at the right end of a main menu row, after its label: the state
+   slots in use, the active cheats, or the link session. Other rows, and
+   every row while no game is loaded, show none. Reads RAM only. */
+static void menu_draw_main_status(u32 category, const char *label, s16 y)
+{
+  char status[64];
+  char code[5];
+  size_t start = 0;
+  size_t columns;
+  u32 active = 0;
+  u32 index;
+
+  if (gamepak_filename[0] == '\0' || label == NULL)
+    return;
+
+  switch (category)
+  {
+    case MSG_CATEGORY_SAVE_LOAD:
+      snprintf(status, sizeof(status), MSG[menu_status_auto ?
+       MSG_MAIN_STATUS_SLOTS_AUTO : MSG_MAIN_STATUS_SLOTS],
+       (unsigned long)menu_status_slots);
+      break;
+
+    case MSG_CATEGORY_GAME:
+      for (index = 0; index < num_cheats; index++)
+        active += cheats[index].cheat_active != 0;
+      snprintf(status, sizeof(status), MSG[MSG_MAIN_STATUS_CHEATS],
+       (unsigned long)active);
+      break;
+
+    case MSG_CATEGORY_LINK_CABLE:
+      if (main_link_connected())
+      {
+        menu_link_peer_code(code);
+        snprintf(status, sizeof(status), MSG[MSG_MAIN_STATUS_LINKED], code);
+      }
+      else if (main_link_active())
+        snprintf(status, sizeof(status), "%s", MSG[MSG_MAIN_STATUS_WAITING]);
+      else
+        return;
+      break;
+
+    default:
+      return;
+  }
+
+  /* One byte is one font column, so byte lengths are column counts. */
+  columns = menu_layout_status_columns(strlen(label), strlen(status),
+   SCROLL_MENU_MAX_CHARS, 2, &start);
+  if (columns != 0)
+    print_menu_line_clipped(status, (s16)(MENU_LIST_POS_X + start * FONTWIDTH),
+     y, color_tooltip_text, BG_NO_FILL, (u32)columns);
 }
 
 /* Runs the menu until the user leaves it. Returns 1 when it leaves through
@@ -5424,6 +5498,11 @@ u32 menu(void)
       new_menu = current_menu != NULL && current_menu->parent != NULL ?
        current_menu->parent : &main_menu;
 
+    /* Pages under it can save, load or delete states, and loading a ROM
+       writes the auto slot, so recount on every return to the main menu. */
+    if (new_menu == &main_menu)
+      menu_status_count_states();
+
     current_menu = new_menu;
     build_legacy_menu_model(&navigation_model, navigation_rows, new_menu);
     current_option_num = navigation_model.selected_index < new_menu->num_options ?
@@ -5625,6 +5704,11 @@ u32 menu(void)
                             (s16)option_y,
                             option_color, BG_NO_FILL, SCROLL_MENU_MAX_CHARS, -1);
         }
+
+        if (current_menu == &main_menu)
+          menu_draw_main_status(display_option->display_msg,
+                                display_option->display_string,
+                                (s16)option_y);
       }
     }
 
