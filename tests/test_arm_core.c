@@ -56,6 +56,19 @@ static const uint32_t program[] =
   0x04000000
 };
 
+/* call (ROM 300h), a wait with a call in it; f's read raises an IRQ
+   when irq_armed:
+     loop: bl f; cmp r0, #0; beq loop
+     f: mov r0, #0x04000000; ldr r0, [r0]; bx lr
+   irq (BIOS 18h), acknowledging it with a write:
+     mov sp, #0x04000000; str sp, [sp, #0x200]; subs pc, lr, #4 */
+static const uint32_t call[] =
+{
+  0xeb000001, 0xe3500000, 0x0afffffc, 0xe3a00301, 0xe5900000, 0xe12fff1e
+};
+static const uint32_t irq[] = { 0xe3a0d301, 0xe58dd200, 0xe25ef004 };
+static int irq_armed;
+
 static uint32_t load(const uint8_t *memory, uint32_t offset, unsigned size)
 {
   uint32_t value = 0;
@@ -89,6 +102,11 @@ static uint32_t read16(void *context, uint32_t address)
 static uint32_t read32(void *context, uint32_t address)
 {
   (void)context;
+  if((address >> 24) == 4)
+  {
+    core.irq_line |= irq_armed;
+    irq_armed = 0;
+  }
   return read_any(address, 4);
 }
 
@@ -97,6 +115,14 @@ static void ignore(void *context, uint32_t address, uint32_t value)
   (void)context;
   (void)address;
   (void)value;
+}
+
+static void acknowledge(void *context, uint32_t address, uint32_t value)
+{
+  (void)context;
+  (void)value;
+  if((address >> 24) == 4)
+    core.irq_line = 0;
 }
 
 static uint32_t code32(void *context, uint32_t address)
@@ -252,8 +278,79 @@ static void test_hook(void)
   arm_core_flush(&core);
 }
 
+/* One run of check_idle_loop: after a reset to pc (0: on from the last
+   run), with f raising an IRQ if irq. */
+typedef struct
+{
+  uint32_t pc;
+  int32_t budget;
+  int irq;
+} IdleRun;
+
+/* Makes the runs spinning, then again with the branch at idle named an
+   idle loop, and checks that the second time each run ends on the cycle
+   and at the pc it ended the first time, in fewer instructions. */
+static void check_idle_loop(uint32_t idle, const IdleRun *runs,
+ unsigned count)
+{
+  int32_t cycles[16];
+  uint32_t pc[16];
+  uint32_t spun = 0;
+  unsigned named, i;
+  int32_t ran;
+
+  CHECK(count <= 16 && runs[0].pc);
+  for(named = 0; named < 2 && count <= 16; named++)
+  {
+    core.idle_loops[0] = idle;
+    core.idle_loop_count = named;
+    core.instructions = 0;
+    for(i = 0; i < count; i++)
+    {
+      if(runs[i].pc)
+        reset(runs[i].pc, ARM_MODE_SYSTEM);
+      irq_armed = runs[i].irq;
+      ran = arm_core_run(&core, runs[i].budget);
+      if(!named)
+      {
+        cycles[i] = ran;
+        pc[i] = core.v[15];
+      }
+      else if(ran != cycles[i] || core.v[15] != pc[i])
+      {
+        printf("test_arm_core: idle loop %08x, run %u: cycle %d at %08x,"
+         " spinning %d at %08x\n", (unsigned)idle, i, (int)ran,
+         (unsigned)core.v[15], (int)cycles[i], (unsigned)pc[i]);
+        failures++;
+      }
+    }
+    CHECK(!named || core.instructions < spun);
+    spun = core.instructions;
+  }
+  core.idle_loop_count = 0;
+  arm_core_flush(&core);
+}
+
 static void test_idle_loop(void)
 {
+  /* Runs where a pass measured from an earlier branch would be wrong:
+     through the preamble to "stop: b stop" after a short run in it, in
+     the call loop from wherever the last run, short or long, left it,
+     and with an IRQ taken after the call loop's branch. */
+  static const IdleRun preamble[] =
+  {
+    { 0x08000020, 40, 0 }, { 0x08000000, 5000, 0 }
+  };
+  static const IdleRun calls[] =
+  {
+    { 0x08000300, 7, 0 }, { 0, 300, 0 }, { 0, 5, 0 }, { 0, 211, 0 },
+    { 0, 13, 0 }, { 0, 1000, 0 }, { 0, 3, 0 }, { 0, 97, 0 },
+    { 0, 30, 0 }, { 0, 450, 0 }
+  };
+  static const IdleRun interrupted[] =
+  {
+    { 0x08000304, 1000, 1 }, { 0, 500, 0 }
+  };
   unsigned pass;
   int32_t spun;
 
@@ -275,34 +372,42 @@ static void test_idle_loop(void)
   CHECK(arm_core_run(&core, 1) > 1);
 
   /* The Thumb countdown's bne, not idle: three passes per run while it
-     is taken, the first two measuring one, and running on once it is
-     not. */
+     is taken, the first two measuring one (12 cycles: adds, subs and the
+     taken bne) and the last ending the run on the first bne past the
+     budget, which after the preamble falls on cycle 2010 and from the
+     loop's head on 2004; running on once it is not taken. */
   core.idle_loops[0] = 0x0800002C;
   arm_core_flush(&core);
   reset(0x08000000, ARM_MODE_SYSTEM);
   for(pass = 3; pass < 10; pass += 3)
   {
-    CHECK(arm_core_run(&core, 2000) >= 2000);
+    CHECK(arm_core_run(&core, 2000) == (pass == 3 ? 2010 : 2004));
     CHECK(core.v[15] == 0x08000028 && core.v[4] == 10 - pass);
   }
   arm_core_run(&core, 2000);
   CHECK(core.v[0] == 55 && core.v[15] == 0x08000020);
   core.idle_loop_count = 0;
   arm_core_flush(&core);
+
+  check_idle_loop(0x08000020, preamble, 2);
+  check_idle_loop(0x08000308, calls, 10);
+  check_idle_loop(0x08000308, interrupted, 2);
 }
 
 int main(void)
 {
-  ArmBus bus = { NULL, read8, read16, read32, ignore, ignore, ignore,
+  ArmBus bus = { NULL, read8, read16, read32, ignore, ignore, acknowledge,
    code32 };
   uint32_t movs_pc_lr = 0xe1b0f00e;
   uint16_t movs_r0_0 = 0x2000;
   uint16_t muls_r0_r1 = 0x4348;
 
   memcpy(bios + 0x08, &movs_pc_lr, 4);
+  memcpy(bios + 0x18, irq, sizeof(irq));
   memcpy(rom, program, sizeof(program));
   memcpy(rom + 0x1FFFC, &movs_r0_0, 2);
   memcpy(rom + 0x100, &muls_r0_r1, 2);
+  memcpy(rom + 0x300, call, sizeof(call));
   /* The first 256 bytes of ROM, where the GPIO port may be, are never
      read at translate time; run the literal pool test further on. */
   memcpy(rom + 0x200, (const uint8_t *)program + 0x68, 12);
