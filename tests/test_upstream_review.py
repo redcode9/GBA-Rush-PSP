@@ -91,7 +91,13 @@ class UpstreamReviewTest(unittest.TestCase):
     def test_missing_clone_fails(self):
         result = self.review(str(self.clone.parent / "missing"), self.base)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Not a git clone of libretro/gpsp", result.stderr)
+        self.assertIn("Not the top directory of a git clone", result.stderr)
+
+    def test_subdirectory_of_a_clone_fails(self):
+        result = self.review(str(self.clone / "tests"), self.base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Not the top directory of a git clone", result.stderr)
+        self.assertEqual(result.stdout, "")
 
 
 if __name__ == "__main__":

@@ -6,9 +6,9 @@ set -eu
 # code docs/UPSTREAM.md tracks (the core, serial, rfu.c, bios/, gba_over.h
 # and tests/), one per line: short hash, date, subject.
 #   sh scripts/upstream-review.sh CLONE [LAST]
-# CLONE is a local clone of libretro/gpsp with its history, updated first:
-# the list ends at its HEAD. LAST defaults to the "Last reviewed upstream
-# commit" line of docs/UPSTREAM.md.
+# CLONE is the top directory of a local clone of libretro/gpsp with its
+# history, updated first: the list ends at its HEAD. LAST defaults to
+# the "Last reviewed upstream commit" line of docs/UPSTREAM.md.
 
 if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
   echo "Usage: $0 CLONE [LAST_REVIEWED_COMMIT]" >&2
@@ -33,9 +33,12 @@ else
   fi
 fi
 
-if [ ! -d "$clone" ] || ! git -C "$clone" rev-parse --git-dir >/dev/null 2>&1
+# The paths below are relative to CLONE: a subdirectory would list nothing.
+if [ ! -d "$clone" ] ||
+  ! prefix=$(git -C "$clone" rev-parse --show-prefix 2>/dev/null) ||
+  [ -n "$prefix" ]
 then
-  echo "Not a git clone of libretro/gpsp: $clone" >&2
+  echo "Not the top directory of a git clone of libretro/gpsp: $clone" >&2
   exit 1
 fi
 
