@@ -10,14 +10,14 @@
 ## 1.5
 
 - [ ] **CMP-6.1** — Gate: Classic NES Series su 1.4.2 · S, 0,5 gg · dipende da: — · PSP: sì · **subito**
-- [ ] **EXT-2.1** — Modulo puro zip_rom: inflate a blocchi con esiti distinti e CRC32 · M, 1,5 gg · dipende da: — · PSP: no · **subito**
-- [ ] **EXT-2.2** — zip.c sopra zip_rom e messaggio per lo zip danneggiato · S, 0,5 gg · dipende da: EXT-2.1 · PSP: sì
+- [ ] **EXT-2.1** — Modulo puro zip_rom: inflate a blocchi con esiti distinti e CRC32 · M, 1,5 gg · dipende da: — · PSP: no · **subito** · _in parte: codice e test host pronti (37756d8), passano normali e con UBSan; manca la prova sotto ASan (`make test-sanitize`)_
+- [ ] **EXT-2.2** — zip.c sopra zip_rom e messaggio per lo zip danneggiato · S, 0,5 gg · dipende da: EXT-2.1 · PSP: sì · _codice pronto (c60f182), manca la prova su PSP_
 - [ ] **EXT-5.1** — Finestra EEPROM decisa in read16_eeprom, con test host su una ROM paginata da 32 MiB · S, 1 gg · dipende da: EXT-1.1 · PSP: no · aspetta: EXT-1.1 (`wip/save-store`)
 - [ ] **EXT-5.2** — Variante da 32 MiB della ROM di test dei salvataggi · S, 1 gg · dipende da: SAV-2.6, EXT-5.1 · PSP: sì · aspetta: SAV-2.6 (`wip/test-roms`)
 
 ## 1.6
 
-- [ ] **UI-14.1** — Barra di avanzamento reale · S, 1 gg · dipende da: — · PSP: sì · **subito**
+- [ ] **UI-14.1** — Barra di avanzamento reale · S, 1 gg · dipende da: — · PSP: sì · **subito** · _codice pronto (c60f182), manca la prova su PSP_
 - [ ] **UI-14.2** — Tempi delle fasi nel runtime log · S, 1 gg · dipende da: ENG-1.6 · PSP: no · aspetta: ENG-1.6 (`wip/release-and-ci`)
 
 ## dopo gate
