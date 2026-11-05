@@ -93,6 +93,15 @@ class DecodeTestRomTest(unittest.TestCase):
         self.assertEqual(self.decode(data, "--allow-fail",
                                      "bios_openbus_swi")[0], 0)
 
+    def test_allowed_hang(self):
+        cases = [("halt_ime0", 1, 1), ("pc_high", 0, 0)]
+        data = image(signature("core-rom", cases, running=1), 0x8000)
+        self.assertEqual(self.decode(data)[0], 1)
+        self.assertEqual(self.decode(data, "--allow-fail", "pc_high")[0], 0)
+        cases[1] = ("pc_high", 4, 0)
+        data = image(signature("core-rom", cases, boots=2), 0x8000)
+        self.assertEqual(self.decode(data, "--allow-fail", "pc_high")[0], 0)
+
     def test_bad_crc(self):
         data = bytearray(image(signature("core-rom", [("pc_high", 1, 3)]),
                                0x8000))
