@@ -4,9 +4,9 @@
 package-release.sh runs it on the release profile. It fails when the ELF
 holds a diagnostic-only string or lacks the version or the build id, or
 when its load image leaves less startup heap on the PSP-1000 than
-docs/RAM-BUDGET.md allows. Until that document exists the heap is only
-reported. If scripts/check-layout.py exists it runs too: a failure there
-is a warning, or an error with --strict.
+docs/RAM-BUDGET.md allows. Until that document gives those numbers the
+heap is only reported. If scripts/check-layout.py exists it runs too: a
+failure there is a warning, or an error with --strict.
 """
 
 import argparse
@@ -49,7 +49,7 @@ def check(elf, build_id, strict=False):
     budget = elf_info.ram_budget()
     if budget is None:
         print(f"{elf}: load image {image} bytes; PSP-1000 startup heap not"
-              " measured (no docs/RAM-BUDGET.md)")
+              " measured (no numbers in docs/RAM-BUDGET.md)")
     else:
         memory, lowest = budget
         heap = memory - image

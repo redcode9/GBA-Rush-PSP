@@ -55,19 +55,38 @@ class LoadImageSizeTest(unittest.TestCase):
             self.size_of(data[:60])
 
 
-class RamBudgetTest(unittest.TestCase):
-    def test_no_numbers_without_the_document(self):
-        with tempfile.TemporaryDirectory() as directory:
-            self.assertIsNone(
-             elf_info.ram_budget(pathlib.Path(directory) / "RAM-BUDGET.md"))
+IMAGE_LINE = "psp1000-image-plus-startup-heap-bytes: 25165824\n"
+HEAP_LINE = "psp1000-min-startup-heap-bytes: 20971520\n"
 
-    def test_a_document_it_cannot_read_yet_is_an_error(self):
-        # Ignoring measured numbers would package an image they forbid.
-        with tempfile.TemporaryDirectory() as directory:
-            path = pathlib.Path(directory) / "RAM-BUDGET.md"
-            path.write_text("# RAM budget\n", encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "not written yet"):
-                elf_info.ram_budget(path)
+
+class RamBudgetTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.path = pathlib.Path(directory.name) / "RAM-BUDGET.md"
+
+    def budget(self, text):
+        self.path.write_text(text, encoding="utf-8")
+        return elf_info.ram_budget(self.path)
+
+    def test_no_numbers_without_the_document_or_its_lines(self):
+        self.assertIsNone(elf_info.ram_budget(self.path))
+        # Other tickets write the document before PRF-4.2 measures these.
+        self.assertIsNone(self.budget("# RAM budget\n\nVolatile memory: ok\n"))
+
+    def test_reads_both_numbers(self):
+        self.assertEqual(self.budget("# RAM budget\n\n```\n" + IMAGE_LINE
+                                     + HEAP_LINE + "```\n"),
+                         (24 << 20, 20 << 20))
+
+    def test_a_missing_or_malformed_number_is_an_error(self):
+        # Ignoring a measured number would package an image it forbids.
+        for text in (IMAGE_LINE, HEAP_LINE, IMAGE_LINE + HEAP_LINE + HEAP_LINE,
+                     IMAGE_LINE + "psp1000-min-startup-heap-bytes: 20 MiB\n",
+                     "psp1000-image-plus-startup-heap-bytes:\n" + HEAP_LINE):
+            with self.subTest(text=text):
+                with self.assertRaisesRegex(ValueError, "needs one line"):
+                    self.budget(text)
 
 
 if __name__ == "__main__":
