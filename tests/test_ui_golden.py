@@ -159,7 +159,9 @@ def render(pixels):
         if build.returncode != 0:
             raise AssertionError(build.stdout + build.stderr)
         run = subprocess.run([str(path / "ui_golden")], capture_output=True, text=True)
-        if run.returncode != 0:
+        # The screens never write to stderr; UBSan in recover mode reports
+        # there and still exits with 0.
+        if run.returncode != 0 or run.stderr:
             raise AssertionError(f"screens exited with {run.returncode}: {run.stderr}")
         return run.stdout.splitlines()
 
