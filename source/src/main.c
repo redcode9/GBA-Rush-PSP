@@ -1860,6 +1860,11 @@ int user_main(int argc, char *argv[])
 
     sound_pause = 0;
 
+    /* Save the log again now that it names the ROM and the CPU core, so a
+       game that hangs from its first frame still leaves them on the
+       Memory Stick; scripts/check-eboot.sh looks for them there. */
+    runtime_log_psp_flush(RUNTIME_LOG_FLUSH_START);
+
     // We'll never actually return from here.
     main_run_cpu();
   }

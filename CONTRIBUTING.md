@@ -4,10 +4,30 @@ Builds and tests should keep the emulator usable on real PSP hardware. Include
 reproduction steps for bug fixes and preserve the original copyright and license
 notices when changing inherited code.
 
+## Preparing a machine
+
+One command puts every tool the checks use in `ext/` (ignored by Git), at
+versions pinned by sha256 or Git commit, on macOS arm64 or Linux x86_64:
+
+```sh
+sh scripts/setup-dev.sh            # --dry-run lists each step first
+```
+
+It links a pspdev or arm-none-eabi-gcc already on the machine, and the
+Unicorn named by `UNICORN_DIR`, instead of downloading it (otherwise it
+builds Unicorn with the PSP's Allegrex instructions), and prints the
+`PSPDEV` and `PATH` lines to add to your shell. `make check-core`,
+`make check-render`, `make check-rom-link` and `make check-eboot` then
+find mGBA, Unicorn, the CPU test suites and PPSSPP's headless runner by
+themselves; your BIOS, ROMs and saves are named by the variables each
+script lists. `make check-core-quick` and `make check-render-quick` are
+the short runs for every pull request.
+
 ## Build
 
-Install a PSPDev toolchain and put `psp-config` in `PATH`. Host tests require a C
-compiler, Python 3 and PSP SDK headers; source checks also require `rg`.
+Install a PSPDev toolchain (or run `scripts/setup-dev.sh`) and put
+`psp-config` in `PATH`. Host tests require a C compiler, Python 3 and PSP
+SDK headers.
 `PSP_SDK_INCLUDE` can override the SDK include directory for host tests.
 
 ```sh
@@ -87,15 +107,16 @@ See the [link cable notes](docs/link-cable.md). `tests/test_link_cable.c`
 links two simulated consoles over a simulated lossy network and runs a port of
 the Pokemon serial driver plus word-by-word lockstep guests; extend it when
 changing `link_cable.c` or `link_net.c`. Changes to packet parsing should also
-pass the bounded proof, which requires CBMC. With an mGBA 0.10 build and your
-own FireRed files, `make check-rom-link` runs the harness in `tests/rom_link/`
-to trade between two real games and, with `MKSC` set to a Mario Kart: Super
-Circuit ROM (European release), to race two of them in lockstep mode:
+pass the bounded proof, which requires CBMC. With an mGBA 0.10 build (from
+`scripts/setup-dev.sh` or `MGBA_DIR`) and your own FireRed files,
+`make check-rom-link` runs the harness in `tests/rom_link/` to trade between
+two real games and, with `MKSC` set to a Mario Kart: Super Circuit ROM
+(European release), to race two of them in lockstep mode:
 
 ```sh
 make check-cbmc
-make check-rom-link MGBA_DIR=/path/to/mgba ROM=firered.gba \
-  BIOS=gba_bios.bin SAVE=firered.sav MKSC=mariokart.gba
+make check-rom-link ROM=firered.gba BIOS=gba_bios.bin SAVE=firered.sav \
+  MKSC=mariokart.gba
 ```
 
 Keep paired PSP logs with the build hashes and reproduction steps. Store local
