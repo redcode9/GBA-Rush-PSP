@@ -92,13 +92,16 @@ then
   fail "A clock change or quit does not set or log the clocks in order"
 fi
 
-# The configured clock is applied before the file browser and on resume.
+# The configured clock is applied before the file browser, on resume and
+# when a link fails to start.
 if ! in_order '/^static void setup_main(/,/^}/p' \
      'load_config_file();|set_cpu_clock(option_clock_speed);' || \
    ! in_order '/^void main_power_service(void)/,/^}/p' \
-     'power_lifecycle_take_resume(|set_cpu_clock(option_clock_speed);'
+     'power_lifecycle_take_resume(|set_cpu_clock(option_clock_speed);' || \
+   ! in_order '/^static int main_link_start(int host)/,/^}/p' \
+     'if(!psp_adhoc_start(host))|set_cpu_clock(option_clock_speed);|return 0;'
 then
-  fail "The configured clock is not applied at startup or on resume"
+  fail "The configured clock is not applied at startup, on resume or after a failed link"
 fi
 
 # The PSP never time-slices equal priorities: the network stack and the
