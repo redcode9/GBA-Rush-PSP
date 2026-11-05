@@ -371,11 +371,12 @@ static void eeprom_answer(uint32_t destination, uint32_t count)
 
 static void dma3(void)
 {
-  uint32_t source = load(io, 0x0D4, 4) & 0x0FFFFFFE;
-  uint32_t destination = load(io, 0x0D8, 4) & 0x0FFFFFFE;
-  uint32_t count = io16(0x0DC) ? io16(0x0DC) : 0x10000;
   uint32_t control = io16(0x0DE);
   unsigned size = (control & 0x0400) ? 4 : 2;
+  /* The address bits below the transfer unit are ignored. */
+  uint32_t source = load(io, 0x0D4, 4) & 0x0FFFFFFF & ~(size - 1);
+  uint32_t destination = load(io, 0x0D8, 4) & 0x0FFFFFFF & ~(size - 1);
+  uint32_t count = io16(0x0DC) ? io16(0x0DC) : 0x10000;
   int step[4] = { (int)size, -(int)size, 0, (int)size };
   uint32_t i;
 

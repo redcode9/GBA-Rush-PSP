@@ -60,6 +60,11 @@ ARM_CORE_HEADERS = source/src/arm_core.h source/src/arm_ir.h \
  source/src/arm_mips.h
 # Runs the GBA test ROMs for make test-roms.
 HOST_ROM_RUN = $(HOST_BUILD_DIR)/rom_run
+HOST_TEST_ROM_RUN = $(HOST_BUILD_DIR)/test_rom_run
+# The interpreter rom_run.c runs on; test_rom_run includes rom_run.c.
+ROM_RUN_SOURCES = source/src/arm_decode.c source/src/arm_interp.c
+ROM_RUN_DEPS = tests/core/rom_run.c $(ROM_RUN_SOURCES) $(ARM_CORE_HEADERS) \
+ source/src/open_bios.h
 HOST_TEST_GBA_PPU = $(HOST_BUILD_DIR)/test_gba_ppu
 HOST_TEST_GBA_PPU_LOG = $(HOST_BUILD_DIR)/test_gba_ppu_log
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
@@ -76,8 +81,8 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE) $(HOST_TEST_FAST_FORWARD) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
- $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_GBA_PPU) \
- $(HOST_TEST_GBA_PPU_LOG)
+ $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_ROM_RUN) \
+ $(HOST_TEST_GBA_PPU) $(HOST_TEST_GBA_PPU_LOG)
 # The same C tests built with HOST_SANITIZE_FLAGS for make test-sanitize.
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_net \
@@ -104,6 +109,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_sound_math \
  $(HOST_SANITIZE_DIR)/test_runtime_log \
  $(HOST_SANITIZE_DIR)/test_arm_core \
+ $(HOST_SANITIZE_DIR)/test_rom_run \
  $(HOST_SANITIZE_DIR)/test_gba_ppu \
  $(HOST_SANITIZE_DIR)/test_gba_ppu_log
 
@@ -143,6 +149,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_SOUND_MATH)
 	$(HOST_TEST_RUNTIME_LOG)
 	$(HOST_TEST_ARM_CORE)
+	$(HOST_TEST_ROM_RUN)
 	$(HOST_TEST_GBA_PPU)
 	$(HOST_TEST_GBA_PPU_LOG)
 
@@ -184,6 +191,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_sound_math
 	$(HOST_SANITIZE_DIR)/test_runtime_log
 	$(HOST_SANITIZE_DIR)/test_arm_core
+	$(HOST_SANITIZE_DIR)/test_rom_run
 	$(HOST_SANITIZE_DIR)/test_gba_ppu
 	$(HOST_SANITIZE_DIR)/test_gba_ppu_log
 
@@ -392,12 +400,15 @@ $(HOST_TEST_ARM_CORE): tests/test_arm_core.c $(ARM_CORE_SOURCES) \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_arm_core.c $(ARM_CORE_SOURCES) -o $@
 
-$(HOST_ROM_RUN): tests/core/rom_run.c source/src/arm_decode.c \
- source/src/arm_interp.c $(ARM_CORE_HEADERS) source/src/open_bios.h
+$(HOST_ROM_RUN): $(ROM_RUN_DEPS)
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -Isource/src \
-	 tests/core/rom_run.c source/src/arm_decode.c source/src/arm_interp.c \
-	 -o $@
+	 tests/core/rom_run.c $(ROM_RUN_SOURCES) -o $@
+
+$(HOST_TEST_ROM_RUN): tests/test_rom_run.c $(ROM_RUN_DEPS)
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_rom_run.c $(ROM_RUN_SOURCES) -o $@
 
 $(HOST_TEST_GBA_PPU): tests/test_gba_ppu.c source/src/gba_ppu.c \
  source/src/gba_ppu.h
@@ -619,6 +630,11 @@ $(HOST_SANITIZE_DIR)/test_arm_core: tests/test_arm_core.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_arm_core.c $(ARM_CORE_SOURCES) -o $@
+
+$(HOST_SANITIZE_DIR)/test_rom_run: tests/test_rom_run.c $(ROM_RUN_DEPS)
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_rom_run.c $(ROM_RUN_SOURCES) -o $@
 
 $(HOST_SANITIZE_DIR)/test_gba_ppu: tests/test_gba_ppu.c \
  source/src/gba_ppu.c source/src/gba_ppu.h
