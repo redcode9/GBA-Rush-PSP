@@ -164,7 +164,8 @@ test-tools:
 	 tests/test_hardware_session.py \
 	 tests/test_release_gate.py \
 	 tests/test_check_names.py \
-	 tests/test_prove_regression.py
+	 tests/test_prove_regression.py \
+	 tests/test_upstream_review.py
 
 # The link cable test runs fewer network profiles (--quick) under the
 # sanitizers, where it is much slower.
