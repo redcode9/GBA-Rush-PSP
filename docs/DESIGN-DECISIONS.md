@@ -44,3 +44,4 @@ that it is right: either one only starts a hardware run.
 |---|---|---|---|
 | Real GBA | core-rom from this repository | not run yet | |
 | New core interpreter, `tests/core/rom_run.c` (`make test-roms`) | — | PASS | 3 (it models reading 1, so this checks only the case's code) |
+| mGBA 0.10.3, `tests/core/mgba_run.c` (`make test-roms`) | — | hangs | none (it models reading 2, so this shows only that the case cannot pass on open bus) |

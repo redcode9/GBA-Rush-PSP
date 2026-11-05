@@ -19,7 +19,7 @@
  * (2, the new one). Each case has its own 64 bytes of OBJ VRAM from
  * 06014000h, above the mode 3 frame buffer.
  *
- * To confirm in mGBA and on hardware.
+ * mGBA 0.10.3 passes every case. To confirm on hardware.
  */
 
 #include "result.h"

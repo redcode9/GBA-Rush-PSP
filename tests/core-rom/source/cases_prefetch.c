@@ -28,7 +28,7 @@
  * Thumb PUSH of one word (two instructions) and an ARM SWP into the
  * instructions right after them: the old versions run, 3, 3 and 1.
  *
- * To confirm in mGBA and on hardware.
+ * mGBA 0.10.3 passes every case. To confirm on hardware.
  */
 
 #include "result.h"

@@ -23,7 +23,7 @@
  *   2  Thumb PUSH did not land in EWRAM
  *   3  Thumb POP did not load what is in EWRAM
  *   4  IWRAM 03007F00h-03007FFFh changed
- * To confirm in mGBA and on hardware.
+ * mGBA 0.10.3 passes the case. To confirm on hardware.
  */
 
 #include "result.h"

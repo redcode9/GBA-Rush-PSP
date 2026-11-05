@@ -50,7 +50,7 @@
  *                       (instructions run before it: STM in bits 0-7,
  *                       STR in 8-15; FFh if it never came)
  *
- * To confirm in mGBA and on hardware.
+ * mGBA 0.10.3 passes every case. To confirm on hardware.
  */
 
 #include "result.h"

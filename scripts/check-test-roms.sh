@@ -5,9 +5,10 @@ set -eu
 # make test-roms: builds every GBA test ROM (tests/core-rom, tests/save-rom,
 # tests/raster-rom) into build/test-roms, runs each on build/host/rom_run
 # (tests/core/rom_run.c: the New core's interpreter with a small GBA around
-# it) and checks the signature it leaves with tools/decode_test_rom.py. Each
-# save ROM boots twice on the same save file, so the second boot reads back
-# what the first one wrote. Skipped when there is no ARM compiler:
+# it) and checks the signature it leaves with tools/decode_test_rom.py;
+# then runs them in mGBA, if there is one (below). Each save ROM boots
+# twice on the same save file, so the second boot reads back what the
+# first one wrote. Skipped when there is no ARM compiler:
 # arm-none-eabi-gcc from PATH, $DEVKITARM/bin, or ARM_PREFIX as in
 # tests/gba-rom.mk.
 #
@@ -94,5 +95,87 @@ $RUN --frames 300 --save $OUT/raster-rom.sav $OUT/raster-rom.gba
 $PYTHON tools/decode_test_rom.py \
   --allow-fail hblank_dma_vcount,hblank_dma_reload,hblank_irq_vcount \
   $OUT/raster-rom.sav
+
+# mGBA 0.10 as the reference: MGBA_DIR, a source tree with libmgba.a
+# built in build/, by default ext/mgba-0.10.3 once scripts/setup-dev.sh
+# has built it. Every ROM runs again there through tests/core/mgba_run.c,
+# and only these cases may fail, each for a reason in mGBA's source:
+# - pc_high hangs: mGBA runs open bus above 0FFFFFFFh
+#   (docs/DESIGN-DECISIONS.md).
+# - bios_openbus_boot: mGBA starts the ROM without running the BIOS and
+#   leaves the BIOS latch at 0 (E59E1000h with its own BIOS).
+# - cpu_irq_unmask: mGBA looks for a pending IRQ 7 cycles after the
+#   write that unmasks it, not at the end of that instruction.
+# - timer_overflow_reload: mGBA reads a timer 2 cycles in the past from
+#   the reloaded count, so right after an overflow it reads up to 2 below
+#   the reload.
+# - without BIOS, the RL cases: mGBA's own BIOS decompresses RL data
+#   differently; with your official BIOS they pass.
+# mgba_run is told the save chips mGBA cannot guess (it ignores the ID
+# string) and the save ROMs get 900 frames, as filling the 8 KiB EEPROM
+# takes about 400. The raster ROM runs twice and must draw the same
+# frame.
+if [ -z "${MGBA_DIR+set}" ] && [ -f ext/mgba-0.10.3/build/libmgba.a ]; then
+  MGBA_DIR=ext/mgba-0.10.3
+fi
+if [ -z "${MGBA_DIR:-}" ]; then
+  echo "Test ROMs in mGBA skipped: no mGBA (MGBA_DIR or sh scripts/setup-dev.sh mgba)"
+  echo "Test ROMs passed"
+  exit 0
+fi
+frameworks=
+if [ "$(uname)" = Darwin ]; then
+  frameworks="-framework CoreFoundation"
+fi
+# shellcheck disable=SC2086
+${CC:-cc} -std=gnu99 -O2 -Wall -Wextra -I"$MGBA_DIR/include" \
+  -I"$MGBA_DIR/build/include" tests/core/mgba_run.c \
+  "$MGBA_DIR/build/libmgba.a" -lm $frameworks -o $OUT/mgba_run
+MGBA=$OUT/mgba_run
+mkdir -p $OUT/mgba
+rm -f $OUT/mgba/*.sav
+
+mgba_allow=pc_high,bios_openbus_boot,cpu_irq_unmask,timer_overflow_reload
+if [ -n "${BIOS:-}" ]; then
+  $MGBA --bios "$BIOS" --save $OUT/mgba/core-rom.sav $OUT/core-rom.gba
+else
+  mgba_allow=$mgba_allow,rl_wram_arm,rl_wram_thumb,rl_vram_arm,rl_vram_thumb
+  $MGBA --save $OUT/mgba/core-rom.sav $OUT/core-rom.gba
+fi
+$PYTHON tools/decode_test_rom.py --allow-fail $mgba_allow \
+  $OUT/mgba/core-rom.sav
+
+for chip in sram32 sram64 flash64 flash128 eeprom512 eeprom8k notag
+do
+  rom=$OUT/save-$chip.gba
+  save=$OUT/mgba/save-$chip.sav
+  case $chip in
+    sram64) type=SRAM512 ;;
+    flash64) type=FLASH512 ;;
+    flash128) type=FLASH1M ;;
+    *) type= ;;
+  esac
+  $MGBA ${type:+--savetype $type} --frames 900 --save "$save" "$rom"
+  $PYTHON tools/decode_test_rom.py "$save"
+  $MGBA ${type:+--savetype $type} --frames 900 --save "$save" "$rom"
+  $PYTHON tools/decode_test_rom.py "$save" > "$save.txt" ||
+    { cat "$save.txt"; exit 1; }
+  cat "$save.txt"
+  if ! grep -q 'read_back  *PASS' "$save.txt"; then
+    echo "save-$chip did not read back its first boot's generation in mGBA" >&2
+    exit 1
+  fi
+done
+
+for run in 1 2; do
+  rm -f $OUT/mgba/raster-rom.sav
+  $MGBA --frames 300 --save $OUT/mgba/raster-rom.sav \
+    --frame $OUT/mgba/raster-rom-$run.ppm $OUT/raster-rom.gba
+  $PYTHON tools/decode_test_rom.py $OUT/mgba/raster-rom.sav
+done
+if ! cmp -s $OUT/mgba/raster-rom-1.ppm $OUT/mgba/raster-rom-2.ppm; then
+  echo "raster-rom drew different frames in two mGBA runs" >&2
+  exit 1
+fi
 
 echo "Test ROMs passed"

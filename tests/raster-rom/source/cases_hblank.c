@@ -39,7 +39,7 @@
  * lines 1-160 by default, so there hblank_irq_vcount gets 160 IRQs
  * unless the window is turned off.
  *
- * To confirm in mGBA and on hardware: every value here (GBATEK only).
+ * mGBA 0.10.3 passes every case. To confirm on hardware.
  */
 
 #include "raster.h"

@@ -31,7 +31,7 @@
  * D is a data word from the code's region, 1 cycle in IWRAM and 6 in
  * EWRAM; the stack POP reads is in IWRAM.
  *
- * To confirm in mGBA and on hardware: every value here (GBATEK only).
+ * mGBA 0.10.3 measures every value here. To confirm on hardware.
  */
 
 #include "result.h"

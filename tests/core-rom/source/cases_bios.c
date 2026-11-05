@@ -21,7 +21,8 @@
  * bitmap modes, past the mode 3 frame buffer the results are drawn on.
  * The detail has bit n set when vector n of the case failed.
  *
- * To confirm in mGBA and on hardware: every value here (GBATEK only).
+ * mGBA 0.10.3 passes every case on the official BIOS; on its own BIOS
+ * it fails the four rl_* cases. To confirm on hardware.
  */
 
 #include "result.h"

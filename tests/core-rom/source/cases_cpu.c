@@ -15,7 +15,11 @@
  * the ARM Architecture Reference Manual, the ARM7TDMI data sheet and
  * GBATEK. Where the manual says UNPREDICTABLE (Rn = PC with a shift by
  * register, ARM state at an address with bit 1 set) the cases expect what
- * the ARM7TDMI does. To confirm in mGBA and on hardware.
+ * the ARM7TDMI does. mGBA 0.10.3 passes every case but cpu_irq_unmask,
+ * because it looks for a pending IRQ 7 cycles after the write that
+ * unmasks it instead of at the end of that instruction: the MSR cases
+ * enter one instruction late and the one-instruction window is missed.
+ * The expected values stay the data sheet's. To confirm on hardware.
  *
  * The IRQ cases get their IRQ from a one-word DMA3 copy that requests one
  * when it ends: it is pending as soon as the copy is done, with no timer

@@ -31,7 +31,9 @@
  * for an IRQ it may not take never wakes: the case hangs, and the next
  * boot records it as hung.
  *
- * To confirm in mGBA and on hardware: every value here (GBATEK only).
+ * mGBA 0.10.3 passes every case but bios_openbus_boot: it starts the
+ * ROM without running the BIOS and leaves the latch at 0 (E59E1000h on
+ * its own BIOS). To confirm on hardware.
  */
 
 #include "result.h"

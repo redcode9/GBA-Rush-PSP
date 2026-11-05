@@ -32,8 +32,8 @@
  * reads the maker byte twice, one from 0E000001h the device byte twice,
  * rotated: compared with the bytes LDRB reads there.
  *
- * To confirm in mGBA and on hardware (the byte taken at an odd address
- * above all).
+ * mGBA 0.10.3 reads every value here. To confirm on hardware (the byte
+ * taken at an odd address above all).
  */
 
 #include "result.h"
