@@ -77,6 +77,7 @@ u32 action_savestate(void) { saves++; return 0; }
 
 # GBA keys (KEYINPUT bits, active low in REG_P1) and the shortcut masks.
 SCENARIOS = r'''
+#define GBA_A 0x01
 #define GBA_SELECT 0x04
 #define GBA_START 0x08
 #define GBA_UP 0x40
@@ -88,13 +89,14 @@ SCENARIOS = r'''
 #define LT PSP_CTRL_LTRIGGER
 #define RT PSP_CTRL_RTRIGGER
 static u32 pad;
+static unsigned char stick_y = 128;
 
 static int fake_peek(SceCtrlData *data, int count)
 {
   memset(data, 0, sizeof(*data));
   data->Buttons = pad;
   data->Lx = 128;
-  data->Ly = 128;
+  data->Ly = stick_y;
   return count;
 }
 
@@ -129,6 +131,7 @@ int main(void)
 {
   int i;
   u32 fps;
+  u16 keys_before;
 
   (void)__sceCtrlReadBufferPositive;
   __sceCtrlPeekBufferPositive = fake_peek;
@@ -178,6 +181,15 @@ int main(void)
     read_pad(0, 16);
   }
 
+  /* Rapid-fire A presses GBA A too, so it blocks the hold as well. */
+  gamepad_config_map[1] = BUTTON_ID_RAPIDFIRE_A;
+  rebuild_fast_forward_button_mask();
+  read_pad(PSP_CTRL_CIRCLE | START | SEL, 16);
+  assert(read_pad(PSP_CTRL_CIRCLE | START | SEL, 1000) == 0 && menus == 0);
+  read_pad(0, 16);
+  gamepad_config_map[1] = BUTTON_ID_A;
+  rebuild_fast_forward_button_mask();
+
   /* Single-key mappings still work: Square toggles the FPS overlay,
      Triangle is fast-forward, HOME opens the menu. */
   read_pad(PSP_CTRL_SQUARE, 16);
@@ -221,6 +233,26 @@ int main(void)
   assert(psp_fps_debug == (fps ^ 1) && !game_has(GBA_DOWN));
   read_pad(0, 16);
   assert(ff_presses == 1 && saves == 0 && loads == 0 && menus == 0);
+
+  /* The read that saves stops there, as the save button does: a key
+     pressed with it reaches the game on the next read. */
+  read_pad(SEL, 16);
+  keys_before = io_registers[REG_P1];
+  assert(read_pad(SEL | LT | PSP_CTRL_CIRCLE, 16) == 0 && saves == 1);
+  assert(io_registers[REG_P1] == keys_before);
+  read_pad(SEL | LT | PSP_CTRL_CIRCLE, 16);
+  assert(game_has(GBA_A) && !game_has(GBA_L));
+  read_pad(0, 16);
+
+  /* With the stick on, its directions are chord keys: SELECT+stick up. */
+  option_enable_analog = 1;
+  set_shortcuts(0x1400, 0x0420, 0x0C00, 0, 0);
+  read_pad(SEL, 16);
+  stick_y = 0;
+  assert(read_pad(SEL, 16) == 0 && saves == 1 && !game_has(GBA_UP));
+  stick_y = 128;
+  read_pad(0, 16);
+  option_enable_analog = 0;
 
   /* Two slots with the same chord: the default chords apply instead. */
   set_shortcuts(0x0003, 0x0003, 0, 0, 0);
