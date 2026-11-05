@@ -190,7 +190,8 @@ s32 rtc_bit_count;
 //    size picks the type as before (save_format.h). A type still unknown
 //    is settled by the game: its first region 0xE access means SRAM, 0xAA
 //    written to 0x5555 means Flash, and an EEPROM access means EEPROM (a
-//    17-unit DMA to it selects the 8 KB size).
+//    17- or 81-unit DMA to it, a request with a 14-bit address, selects
+//    the 8 KB size).
 //  - Saving: each game write arms backup_update; update_backup() writes the
 //    .sav WRITE_BACKUP_DELAY frames later when auto-save is on, and
 //    update_backup_immediately() on quit, ROM change or a suspend from the
@@ -1385,8 +1386,9 @@ static void waitstate_control(u32 value)
   }                                                                           \
 }                                                                             \
 
-// DMA3 also detects 8 KB EEPROM: a 17-bit transfer to region 0xD is a read
-// request with a 14-bit address (2 command + 14 address + 1 stop bits).
+// DMA3 also detects 8 KB EEPROM: a transfer to region 0xD with a 14-bit
+// address, a 17-unit read request or an 81-unit write, makes it 8 KB
+// before its first bit (save_format_eeprom_8k_dma).
 #define TRIGGER_DMA3()                                                        \
 {                                                                             \
   DmaTransferType *dma3 = dma + 3;                                            \
@@ -1411,7 +1413,8 @@ static void waitstate_control(u32 value)
       dma3->length_type = (value >> 10) & 0x01;                               \
       dma3->length = (length == 0) ? 0x10000 : length;                        \
                                                                               \
-      if (((dma3->dest_address >> 24) == 0x0D) && (length == 17))             \
+      if (((dma3->dest_address >> 24) == 0x0D) &&                             \
+       save_format_eeprom_8k_dma(length))                                     \
         eeprom_size = EEPROM_8_KBYTE;                                         \
                                                                               \
       if (dma3->start_type == DMA_START_IMMEDIATELY)                          \
@@ -1917,10 +1920,11 @@ CPU_ALERT_TYPE write_io_register32(u32 address, u32 value)
 }
 
 
-// EEPROM is 512 bytes by default; it is autodetected as 8KB if
-// 14bit address DMAs are made (this is done in the DMA handler).
+// EEPROM is 512 bytes by default; the DMA handler (TRIGGER_DMA3) makes it
+// 8KB on a read or write request with a 14-bit address.
 // Serial protocol, one bit per halfword access: a 2-bit command (11 read,
-// 10 write), the 6- or 14-bit number of an 8-byte block, 64 data bits for
+// 10 write), the number of an 8-byte block, 6 bits wide at 512 bytes and
+// 14 at 8KB (eeprom_size decides, as the command ends), 64 data bits for
 // a write, then a stop bit. A read then returns 4 dummy bits and 64 data
 // bits.
 

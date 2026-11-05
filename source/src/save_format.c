@@ -94,6 +94,11 @@ SaveLayout save_format_resolve(SaveTag tag, uint32_t file_size)
   return layout;
 }
 
+int save_format_eeprom_8k_dma(uint32_t units)
+{
+  return units == 17 || units == 81;
+}
+
 uint32_t save_format_write_size(uint32_t type, uint32_t sram_size,
  uint32_t flash_size, uint32_t eeprom_size)
 {

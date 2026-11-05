@@ -72,8 +72,15 @@ typedef struct
    file size decides as before: 512 B and 8 KiB EEPROM, 32 KiB SRAM,
    128 KiB Flash, while 64 KiB leaves the type to the game with SRAM and
    Flash both at 64 KiB. EEPROM files other than 512 B and 8 KiB start at
-   512 B, and the game's first 17-unit DMA makes the chip 8 KiB. */
+   512 B, and the game's first 8 KiB request (save_format_eeprom_8k_dma)
+   makes the chip 8 KiB. */
 SaveLayout save_format_resolve(SaveTag tag, uint32_t file_size);
+
+/* Whether a DMA3 of this many units (DMA3CNT_L as written, 0 for 0x10000)
+   to the EEPROM is an 8 KiB chip's request: its 14-bit block number makes
+   a read request 17 units (2 command, 14 address, 1 stop) and a write 81
+   (64 data bits more). The 512 B chip's are 9 and 73. */
+int save_format_eeprom_8k_dma(uint32_t units);
 
 /* Bytes to write for the type and sizes in use: 0 while the type is
    unknown, else the chip's size, from 512 B to SAVE_FORMAT_MAX_SIZE. A

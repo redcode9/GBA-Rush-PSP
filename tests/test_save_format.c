@@ -154,6 +154,20 @@ static void test_write_size_never_cuts(void)
   assert(save_format_write_size(7, 32 * KIB, 64 * KIB, 512) == 0);
 }
 
+/* Only the 8 KiB chip's read request (17 units) and write (81) promote it:
+   not the 512 B chip's (9, 73), not 0 (a 0x10000-unit DMA), and not 49 or
+   113, which share 17's low five bits. */
+static void test_eeprom_8k_dma_lengths(void)
+{
+  assert(!save_format_eeprom_8k_dma(0));
+  assert(!save_format_eeprom_8k_dma(9));
+  assert(save_format_eeprom_8k_dma(17));
+  assert(!save_format_eeprom_8k_dma(49));
+  assert(!save_format_eeprom_8k_dma(73));
+  assert(save_format_eeprom_8k_dma(81));
+  assert(!save_format_eeprom_8k_dma(113));
+}
+
 static SaveState valid_state(void)
 {
   SaveState state;
@@ -368,6 +382,7 @@ int main(void)
   test_sram_64k_file_keeps_its_size();
   test_tag_beats_file_size();
   test_write_size_never_cuts();
+  test_eeprom_8k_dma_lengths();
   test_sanitize_keeps_valid_states();
   test_sanitize_repairs_each_field();
   test_sanitize_bounds_any_state();
