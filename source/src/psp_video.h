@@ -28,6 +28,7 @@ VideoAdaptiveQuality video_active_quality(void);
 
 void video_resolution_large(void);
 void video_resolution_small(void);
+int video_present_paused_frame(void);
 
 void clear_screen(u32 color);
 void clear_texture(u16 color);

@@ -3812,6 +3812,22 @@ static void menu_refresh_language(void)
    In-game menu
    ------------------------------------------------------------------ */
 
+/* Background of the menu screens: the paused game, in its screen mode, under
+   a veil of the theme background strong enough to keep text readable on
+   light themes. A plain fill when no game is loaded or video is asleep. */
+static void menu_draw_background(void)
+{
+  if (gamepak_filename[0] == 0 || !video_present_paused_frame())
+  {
+    clear_screen(COLOR15_TO_32(color_bg));
+    return;
+  }
+
+  /* COLOR15_TO_32 is 0xAABBGGRR, as draw_box_alpha takes; alpha 0xC0. */
+  draw_box_alpha(0, 0, PSP_SCREEN_WIDTH - 1, PSP_SCREEN_HEIGHT - 1,
+   (COLOR15_TO_32(color_bg) & 0x00FFFFFF) | 0xC0000000);
+}
+
 /* Runs the menu until the user leaves it. Returns 1 when it leaves through
    an action on the emulated machine (ROM load, reset, savestate save or
    load), 0 on a plain resume. The menu tables and screen handlers below are
@@ -5466,7 +5482,7 @@ u32 menu(void)
       preview_language = option_language;
     }
 
-    clear_screen(COLOR15_TO_32(color_bg));
+    menu_draw_background();
 
     if ((counter % 30) == 0)
 	{

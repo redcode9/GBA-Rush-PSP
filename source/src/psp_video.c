@@ -50,6 +50,9 @@ static void *draw_frame;
 static u32 present_pending;
 /* Set during sleep and shutdown so blit_gu/blit_sharp queue nothing. */
 static u32 present_blocked;
+/* Set while video_present_paused_frame() runs the presenter, so the menu's
+   backdrop is not counted as a presented gameplay frame. */
+static u32 presenting_paused_frame;
 /* One-shot: wait for the next present right away (set after resume). */
 static u32 synchronous_present;
 /* Time spent in the last video_sync_present() wait. */
@@ -592,7 +595,7 @@ static void blit_gu(void)
   sceGuFinish();
   present_pending = 1;
 
-  if(selected_texture_filter() == GU_NEAREST)
+  if(!presenting_paused_frame && selected_texture_filter() == GU_NEAREST)
     perf_monitor_record_quality_presented(0);
 
   if(synchronous_present)
@@ -705,7 +708,8 @@ static void blit_sharp(void)
   if(first_pass_ok && second_pass_ok)
   {
     present_pending = 1;
-    perf_monitor_record_quality_presented(1);
+    if(!presenting_paused_frame)
+      perf_monitor_record_quality_presented(1);
   }
   else
   {
@@ -779,6 +783,22 @@ static void blit_sw(void)
     vptr0 += (PSP_LINE_SIZE * 3);
     d0 += (GBA_LINE_SIZE * 2);
   }
+}
+
+/* Draws the paused game into the back buffer with the presenter picked at
+   gameplay entry, as the menu's backdrop, and waits for the GE so the menu
+   can draw on top. Returns 0 without drawing while presents are blocked
+   (sleep, shutdown). */
+int video_present_paused_frame(void)
+{
+  if(present_blocked)
+    return 0;
+
+  presenting_paused_frame = 1;
+  (*update_screen)();
+  presenting_paused_frame = 0;
+  video_sync_present();
+  return 1;
 }
 
 /* Called at startup and when entering the menu; nothing to do on PSP. */
