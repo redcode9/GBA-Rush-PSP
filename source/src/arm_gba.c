@@ -393,8 +393,15 @@ void arm_gba_profile_start(void)
   {
     sampler_thread = sceKernelCreateThread("Core sampler", sampler,
      SAMPLER_PRIORITY, 0x1000, 0, NULL);
-    if(sampler_thread < 0 || sceKernelStartThread(sampler_thread, 0, NULL) < 0)
+    if(sampler_thread < 0)
       return;
+    /* Not kept unstarted: the next capture creates it again. */
+    if(sceKernelStartThread(sampler_thread, 0, NULL) < 0)
+    {
+      sceKernelDeleteThread(sampler_thread);
+      sampler_thread = -1;
+      return;
+    }
   }
   profiling = profiled = 1;
 }
