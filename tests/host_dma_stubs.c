@@ -1,5 +1,5 @@
-// Host link stubs for tests/test_perf_dma_probe.c and
-// tests/test_memory_backup.c.
+// Host link stubs for tests/test_perf_dma_probe.c,
+// tests/test_memory_backup.c and tests/test_eeprom.c.
 //
 // memory.c is compiled on the host against the real PSP SDK headers (see
 // the test_perf_dma_probe Makefile target). Everything memory.c references

@@ -61,6 +61,7 @@ HOST_TEST_GBA_PPU_LOG = $(HOST_BUILD_DIR)/test_gba_ppu_log
 HOST_TEST_SAVE_FORMAT = $(HOST_BUILD_DIR)/test_save_format
 HOST_TEST_SAVE_STORE = $(HOST_BUILD_DIR)/test_save_store
 HOST_TEST_MEMORY_BACKUP = $(HOST_BUILD_DIR)/test_memory_backup
+HOST_TEST_EEPROM = $(HOST_BUILD_DIR)/test_eeprom
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_LINK_NET) $(HOST_TEST_LINK_CABLE) \
  $(HOST_TEST_ADHOC_PEER) \
@@ -77,7 +78,7 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
  $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_GBA_PPU) \
  $(HOST_TEST_GBA_PPU_LOG) $(HOST_TEST_SAVE_FORMAT) $(HOST_TEST_SAVE_STORE) \
- $(HOST_TEST_MEMORY_BACKUP)
+ $(HOST_TEST_MEMORY_BACKUP) $(HOST_TEST_EEPROM)
 # The same C tests built with HOST_SANITIZE_FLAGS for make test-sanitize.
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_net \
@@ -108,7 +109,8 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_ppu_log \
  $(HOST_SANITIZE_DIR)/test_save_format \
  $(HOST_SANITIZE_DIR)/test_save_store \
- $(HOST_SANITIZE_DIR)/test_memory_backup
+ $(HOST_SANITIZE_DIR)/test_memory_backup \
+ $(HOST_SANITIZE_DIR)/test_eeprom
 
 .PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
  check-core check-render tree-check media-engine-check psp-build \
@@ -150,6 +152,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_SAVE_FORMAT)
 	$(HOST_TEST_SAVE_STORE)
 	$(HOST_TEST_MEMORY_BACKUP)
+	$(HOST_TEST_EEPROM)
 
 # Python tests. test_startup, test_browser_text and test_open_bios also
 # compile functions cut out of main.c, gui.c and memory.c with HOST_CC.
@@ -192,6 +195,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_save_format
 	$(HOST_SANITIZE_DIR)/test_save_store
 	$(HOST_SANITIZE_DIR)/test_memory_backup
+	$(HOST_SANITIZE_DIR)/test_eeprom
 
 $(HOST_TEST_CODEBREAKER): tests/test_codebreaker.c source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_BUILD_DIR)
@@ -454,6 +458,28 @@ $(HOST_TEST_MEMORY_BACKUP): tests/test_memory_backup.c \
 	 source/src/perf_monitor.c source/src/perf_metrics.c \
 	 $(HOST_BUILD_DIR)/memory_backup_memory.o -o $@
 
+# The EEPROM protocol through memory.c's DMA3, built like test_memory_backup
+# into its own memory object.
+$(HOST_TEST_EEPROM): tests/test_eeprom.c \
+ tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
+ source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/save_format.c source/src/save_format.h \
+ source/src/save_store.c source/src/save_store.h \
+ source/src/perf_monitor.c source/src/perf_monitor.h \
+ source/src/perf_metrics.c source/src/perf_metrics.h \
+ tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
+ tests/host_shim/psptypes.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -O1 -w -include tests/host_shim/host_builtins.h \
+	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -c source/src/memory.c -o $(HOST_BUILD_DIR)/eeprom_memory.o
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror \
+	 -I source/src \
+	 tests/test_eeprom.c tests/fake_store_io.c tests/host_dma_stubs.c \
+	 source/src/save_format.c source/src/save_store.c \
+	 source/src/perf_monitor.c source/src/perf_metrics.c \
+	 $(HOST_BUILD_DIR)/eeprom_memory.o -o $@
+
 $(HOST_SANITIZE_DIR)/test_codebreaker: tests/test_codebreaker.c \
  source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_SANITIZE_DIR)
@@ -708,6 +734,27 @@ $(HOST_SANITIZE_DIR)/test_memory_backup: tests/test_memory_backup.c \
 	 source/src/save_format.c source/src/save_store.c \
 	 source/src/perf_monitor.c source/src/perf_metrics.c \
 	 $(HOST_SANITIZE_DIR)/memory_backup_memory.o -o $@
+
+$(HOST_SANITIZE_DIR)/test_eeprom: tests/test_eeprom.c \
+ tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
+ source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/save_format.c source/src/save_format.h \
+ source/src/save_store.c source/src/save_store.h \
+ source/src/perf_monitor.c source/src/perf_monitor.h \
+ source/src/perf_metrics.c source/src/perf_metrics.h \
+ tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
+ tests/host_shim/psptypes.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
+	 -include tests/host_shim/host_builtins.h \
+	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -c source/src/memory.c -o $(HOST_SANITIZE_DIR)/eeprom_memory.o
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -I source/src \
+	 tests/test_eeprom.c tests/fake_store_io.c tests/host_dma_stubs.c \
+	 source/src/save_format.c source/src/save_store.c \
+	 source/src/perf_monitor.c source/src/perf_metrics.c \
+	 $(HOST_SANITIZE_DIR)/eeprom_memory.o -o $@
 
 # Optional gates outside make check: the CBMC proof needs CBMC, the ROM link
 # trade needs mGBA plus your own FireRed ROM, BIOS and save, and races Mario
