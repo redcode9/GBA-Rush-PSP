@@ -37,6 +37,7 @@ fi
 # Adding or retiring a design note must not break every unrelated host test.
 for path in README.md CHANGELOG.md CONTRIBUTING.md \
   docs/link-cable.md docs/ROADMAP-1.4.0.md \
+  docs/hardware-tests.md docs/HARDWARE-RESULTS.md \
   source/single-game_launcher/tool/README.md
 do
   if [ ! -s "$path" ]; then
