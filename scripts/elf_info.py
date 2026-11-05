@@ -6,12 +6,28 @@ PT_LOAD segment's end. The release manifest records it for TempGBA.elf.
 """
 
 import argparse
+import pathlib
 import struct
 import sys
 
 
 PT_LOAD = 1
 PROGRAM_HEADER_SIZE = 32
+RAM_BUDGET = pathlib.Path(__file__).resolve().parents[1] / "docs" / "RAM-BUDGET.md"
+
+
+def ram_budget(path=RAM_BUDGET):
+    """The PSP-1000 memory numbers measured on hardware, in bytes.
+
+    (load image plus startup heap, lowest startup heap allowed), or None
+    while docs/RAM-BUDGET.md does not exist.
+    """
+    if not pathlib.Path(path).exists():
+        return None
+    # shortcut: the document's format is not written yet, so its numbers
+    # cannot be read; parse them here when docs/RAM-BUDGET.md lands.
+    raise ValueError(f"{path}: reading its PSP-1000 numbers is not written yet"
+                     " (scripts/elf_info.py ram_budget)")
 
 
 def load_image_size(path):

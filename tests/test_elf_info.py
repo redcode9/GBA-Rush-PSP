@@ -55,5 +55,20 @@ class LoadImageSizeTest(unittest.TestCase):
             self.size_of(data[:60])
 
 
+class RamBudgetTest(unittest.TestCase):
+    def test_no_numbers_without_the_document(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertIsNone(
+             elf_info.ram_budget(pathlib.Path(directory) / "RAM-BUDGET.md"))
+
+    def test_a_document_it_cannot_read_yet_is_an_error(self):
+        # Ignoring measured numbers would package an image they forbid.
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "RAM-BUDGET.md"
+            path.write_text("# RAM budget\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "not written yet"):
+                elf_info.ram_budget(path)
+
+
 if __name__ == "__main__":
     unittest.main()
