@@ -81,6 +81,29 @@ Record the PSP model, firmware, storage, ROM hash and actual ROM-cache capacity.
 Test menu transitions, suspend, resume and exit when changing threads, audio,
 networking or file access.
 
+### Replay state hashes
+
+A `.gbsh` file holds the state hashes of a replayed input trace (`.gbit`):
+one line per emulated frame, with one hash for each region (registers, IWRAM,
+EWRAM, VRAM, OAM, palette, I/O, backup memory, audio), in the `GBSH v1` text
+documented in `source/src/state_hash.h`. `tools/state_hash_diff.py A B`
+refuses files from different ROMs, exits 0 when every frame and the
+counters line match, and otherwise exits 1 and names the first diverging
+frame and its regions:
+
+- Self-check: replay the same `.gbit` twice with the same build. The diff
+  must exit 0; anything else is nondeterminism in the emulator or the replay.
+- Differential: compare the `.gbsh` of a baseline build with a candidate's
+  for the same trace. The diff prints both build ids and the first frame and
+  region where the candidate behaves differently.
+- Perturbation: compare a run with one IWRAM bit flipped at frame N with an
+  unperturbed run. The diff must exit 1 naming frame N and `iwram`;
+  otherwise the comparison cannot see a divergence.
+
+A compact golden keeps the sha256 of a full `.gbsh` and one record every 60
+frames; against a golden the diff names the 60-frame window where the
+divergence begins.
+
 ## Link development
 
 See the [link cable notes](docs/link-cable.md). `tests/test_link_cable.c`
