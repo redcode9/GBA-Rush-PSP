@@ -113,3 +113,24 @@ the official BIOS and are ignored with this one.
   pointers to a function that just returns.
 - `MultiBoot` (SWI 0x25) and `HardReset` (0x26) do nothing: a game that calls
   `HardReset` keeps running instead of restarting.
+- `Sqrt`, `ArcTan`, `ArcTan2`, `BgAffineSet` and `ObjAffineSet` (SWI
+  0x08-0x0A, 0x0E, 0x0F) give the official results on every input of the
+  core test ROM's `sqrt`, `arctan`, `arctan2`, `bg_affine_set` and
+  `obj_affine_set` cases (`tests/core-rom`), with one exception below, but
+  leave other registers differently, where GBATEK gives no result: the
+  official BIOS leaves working values in r1 and r3 after the first three
+  and in r3 after `BgAffineSet`, where this one keeps r3 and leaves r1 as
+  it was or at another value; after the two affine functions this one
+  returns the source pointer in r0 one entry further on, and after
+  `BgAffineSet` the destination pointer in r1 too.
+- `BgAffineSet` with a scale of -128 (0x8000) at 180 or 270 degrees, where
+  the cosine or the sine is -1, gives other start coordinates. The
+  official BIOS works them out from the product of scale and cosine or
+  sine at full width (+32768), this one from its 16 bits as stored in
+  PA-PD (-32768, the same halfword 0x8000). With centre
+  (0x698C0, -0x7DF0), display centre (-91, -86), scales (0x7FFF, -0x8000)
+  and angle 0x8000 the start Y is 0x002A8210 on the official BIOS and
+  0xFFD48210 on this one; with centre (-0x55CF0, 0xE960), display centre
+  (-107, -31), the same scales and angle 0xC000 it is 0x00366960 against
+  0xFFCB6960. PA-PD and the start X are the same. The `bg_affine_set` case
+  fails for this.
