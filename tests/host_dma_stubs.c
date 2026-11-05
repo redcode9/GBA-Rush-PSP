@@ -13,9 +13,13 @@
 // by the paged ROM test, controlled by host_stub_rom_io(). And for
 // load_gamepak(): the ROM file size (host_stub_file_length()), the answers
 // of the yes/no prompts (host_stub_yesno()) and a working change_ext().
+// And the runtime log, which keeps the last SAVE_LOAD event
+// (host_stub_save_load()).
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "runtime_log_psp.h"
 
 /* --- Controllable system clock ------------------------------------------ */
 
@@ -42,6 +46,33 @@ uint32_t sceKernelGetSystemTimeLow(void)
 uint64_t ticker(void)
 {
   return host_stub_t1;
+}
+
+/* --- Runtime log --------------------------------------------------------- */
+
+static int host_save_loads;
+static uint8_t host_save_load_flags;
+static uint32_t host_save_load_values[3];
+
+void runtime_log_psp_main(RuntimeLogEventType type, uint32_t emulated_cycle,
+ uint8_t flags, uint32_t value0, uint32_t value1, uint32_t value2)
+{
+  (void)emulated_cycle;
+  if(type != RUNTIME_LOG_EVENT_SAVE_LOAD)
+    return;
+  host_save_loads++;
+  host_save_load_flags = flags;
+  host_save_load_values[0] = value0;
+  host_save_load_values[1] = value1;
+  host_save_load_values[2] = value2;
+}
+
+/* SAVE_LOAD events so far; the last one's flags and values. */
+int host_stub_save_load(uint8_t *flags, uint32_t values[3])
+{
+  *flags = host_save_load_flags;
+  memcpy(values, host_save_load_values, sizeof(host_save_load_values));
+  return host_save_loads;
 }
 
 /* --- Data symbols -------------------------------------------------------- */

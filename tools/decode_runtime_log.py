@@ -51,6 +51,7 @@ EVENTS = {
     23: "link-stream-metrics",
     24: "link-timeout",
     25: "link-benchmark",
+    26: "save-load",
 }
 FLUSH_REASONS = {
     1: "start",
@@ -101,6 +102,12 @@ EXACT_RENDERER = [
     "cpu-no-answer", "cpu-stopped", "cpu-fault", "cpu-too-slow",
     "cpu-no-memory",
 ]
+# save-load, from memory.c's load_backup(): the load's SaveStoreResult
+# (source/src/save_store.h), then SaveType and SaveTag
+# (source/src/save_format.h).
+SAVE_LOAD_RESULTS = ["ok", "not-found", "failed"]
+SAVE_TYPES = ["sram", "flash", "eeprom", "none"]
+SAVE_TAGS = ["none", "eeprom", "sram", "flash64", "flash128"]
 LINK_EVENTS = {
     "link-command", "link-state", "link-pause-end", "link-error",
     "link-counters", "menu-presence", "power-suspend", "power-resume",
@@ -210,6 +217,13 @@ def describe(record: dict[str, Any]) -> str:
         )
     if event == "log-flush":
         return f"reason={FLUSH_REASONS.get(value0, value0)} main={value1} network={value2}"
+    if event == "save-load":
+        return (
+            f"result={_name(SAVE_LOAD_RESULTS, flags)} file-size={value0} "
+            f"write-size={value1} type={_name(SAVE_TYPES, value2 & 0xFF)} "
+            f"tag={_name(SAVE_TAGS, value2 >> 8 & 0xFF)} "
+            f"mismatch={bool(value2 >> 16 & 1)}"
+        )
     # Earlier versions belong to a retired link design; show raw values.
     if event not in LINK_EVENTS or record.get("version", 5) < 5:
         return f"flags=0x{flags:02X} values={value0}/{value1}/{value2}"

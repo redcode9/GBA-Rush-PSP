@@ -27,6 +27,7 @@
 #include "common.h"
 #include "perf_monitor.h"
 #include "open_bios.h"
+#include "runtime_log_psp.h"
 
 /* Popup depth frame — declared in psp_video.h, defined in psp_video.c */
 extern void draw_popup_frame_auto(int x, int y, int w, int h);
@@ -3240,6 +3241,13 @@ SaveStoreResult load_backup(char *name, SaveTag tag)
     flash_device_id = FLASH_DEVICE_PANASONIC_64KB;
     flash_manufacturer_id = FLASH_MANUFACTURER_PANASONIC;
   }
+
+  // Every load, retries too, logs what it read and the type and size it
+  // chose; the game has not run yet, so no emulated cycle.
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_SAVE_LOAD, 0, (u8)result,
+   (u32)file_size, save_format_write_size(layout.type, layout.sram_size,
+   layout.flash_size, layout.eeprom_size),
+   (u32)layout.type | ((u32)tag << 8) | ((u32)layout.mismatch << 16));
 
   return result;
 }

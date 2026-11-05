@@ -23,6 +23,7 @@ void host_stub_file_length(int length);
 void host_stub_yesno(const unsigned *answers, int count);
 int host_stub_yesno_asked(void);
 int host_stub_yesno_saw_rom(void);
+int host_stub_save_load(uint8_t *flags, uint32_t values[3]);
 
 #define KIB 1024u
 #define ROM_SIZE 0x8000
@@ -154,16 +155,24 @@ static void test_unreadable_save_blocks_every_write(void)
   assert(store.data[0x10] == fake_store_pattern(0x10, 3));
 }
 
-/* Retry reads the file again; once it reads, saving works again. */
+/* Retry reads the file again; once it reads, saving works again. The
+   runtime log has both loads. */
 static void test_retry_reads_the_save_again(void)
 {
   static const unsigned answers[] = { YES };
+  uint8_t flags;
+  uint32_t values[3];
+  int loads = host_stub_save_load(&flags, values);
 
   fresh_store();
   fake_store_seed(&store, 32 * KIB, 4);
   store.fail_reads = 1;
 
   assert(load("SRAM_V113", answers, 1) == ROM_SIZE);
+  assert(host_stub_save_load(&flags, values) == loads + 2);
+  assert(flags == SAVE_STORE_OK && values[0] == 32 * KIB &&
+         values[1] == 32 * KIB &&
+         values[2] == (uint32_t)(SAVE_TYPE_SRAM | (SAVE_TAG_SRAM << 8)));
   assert(host_stub_yesno_asked() == 1);
   assert(!host_stub_yesno_saw_rom());
   assert(strcmp(gamepak_filename, "game.gba") == 0);
@@ -252,13 +261,21 @@ static void test_oversized_save_loads_a_prefix(void)
 }
 
 /* The tag beats the file size: a 128 KiB image of a 64 KiB Flash game
-   goes back at the chip's 64 KiB. */
+   goes back at the chip's 64 KiB, the runtime log shows the mismatch, and
+   the 128 KiB file is kept as the .orig. */
 static void test_tag_beats_file_size(void)
 {
+  uint8_t flags;
+  uint32_t values[3];
+
   fresh_store();
   fake_store_seed(&store, 128 * KIB, 7);
 
   assert(load("FLASH512_V131", NULL, 0) == ROM_SIZE);
+  host_stub_save_load(&flags, values);
+  assert(flags == SAVE_STORE_OK && values[0] == 128 * KIB &&
+         values[1] == 64 * KIB &&
+         values[2] == (SAVE_TYPE_FLASH | (SAVE_TAG_FLASH64 << 8) | (1u << 16)));
   flash_write(0x10, 0x42);
   update_backup_immediately();
 
@@ -266,6 +283,7 @@ static void test_tag_beats_file_size(void)
   assert(store.size == 64 * KIB);
   assert(store.data[0x10] == 0x42);
   assert(store.data[0x8000] == fake_store_pattern(0x8000, 7));
+  assert(fake_store_file_is(&store, "game.sav.orig", 128 * KIB, 7));
 }
 
 int main(void)

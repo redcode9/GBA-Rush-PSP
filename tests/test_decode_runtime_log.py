@@ -86,6 +86,20 @@ def fixture_v3() -> bytes:
     return bytes(header) + payload
 
 
+def fixture_v5(*records: bytes) -> bytes:
+    """Version 5 log of main-ring records."""
+    payload = b"".join(records)
+    header = bytearray(64)
+    struct.pack_into(
+        ">4sHHHHHHIIIIIIQQ", header, 0, b"GBRL", 5, 64, 32, 0,
+        len(records), 0, 0x12345678, 1, 1, 0x06060110, 333, 0x42505249,
+        100, 120,
+    )
+    struct.pack_into(">I", header, 56, binascii.crc32(payload) & 0xFFFFFFFF)
+    struct.pack_into(">I", header, 60, binascii.crc32(header[:60]) & 0xFFFFFFFF)
+    return bytes(header) + payload
+
+
 class RuntimeLogDecoderTests(unittest.TestCase):
     def test_decodes_header_and_record(self):
         snapshot = decoder.parse_snapshot(fixture())
@@ -192,6 +206,64 @@ class RuntimeLogDecoderTests(unittest.TestCase):
             decoder.describe({"event": "link-counters", "flags": 12,
                               "values": [1, 8116, 2]}),
             "cpu-core=new blocks-compiled=8116 code-flushes=2")
+
+    def test_decodes_save_load(self):
+        # A 128 KiB file for a 64 KiB Flash game, then one that will not
+        # read (event 26, flags = the load's result).
+        snapshot = decoder.parse_snapshot(fixture_v5(
+            struct.pack(">QIIHBBIII", 110, 0, 1, 26, 1, 0,
+                        131072, 65536, 1 | 3 << 8 | 1 << 16),
+            struct.pack(">QIIHBBIII", 111, 0, 2, 26, 1, 2, 0, 0, 3),
+        ))
+        loaded, failed = snapshot["records"]
+
+        self.assertEqual(loaded["event"], "save-load")
+        self.assertEqual(
+            decoder.describe(loaded),
+            "result=ok file-size=131072 write-size=65536 type=flash "
+            "tag=flash64 mismatch=True")
+        self.assertEqual(
+            decoder.describe(failed),
+            "result=failed file-size=0 write-size=0 type=none tag=none "
+            "mismatch=False")
+
+    def test_save_load_names_match_the_c_enums(self):
+        source = Path(__file__).parents[1] / "source" / "src"
+        store = (source / "save_store.h").read_text()
+        formats = (source / "save_format.h").read_text()
+
+        def names(prefix, text):
+            return [name.lower().replace("_", "-") for name in
+                    re.findall(rf"^\s+{prefix}([A-Z0-9_]+)", text, re.M)]
+
+        self.assertEqual(names("SAVE_STORE_", store)[:3],
+                         decoder.SAVE_LOAD_RESULTS)
+        self.assertEqual(names("SAVE_TYPE_", formats), decoder.SAVE_TYPES)
+        self.assertEqual(names("SAVE_TAG_", formats), decoder.SAVE_TAGS)
+
+    # Events added at the end of the C enum keep the format version, so the
+    # decoder's table must follow the enum exactly.
+    def test_event_names_match_the_c_enum(self):
+        header = (Path(__file__).parents[1] / "source" / "src" /
+                  "runtime_log.h").read_text()
+        events = re.findall(r"^\s+RUNTIME_LOG_EVENT_([A-Z_]+)", header, re.M)
+
+        self.assertEqual(
+            [event.lower().replace("_", "-") for event in events],
+            [decoder.EVENTS[i] for i in range(1, len(decoder.EVENTS) + 1)])
+
+    def test_link_counter_groups_decode_by_name(self):
+        def counters(group):
+            return decoder.describe({"event": "link-counters", "flags": group,
+                                     "values": [1, 2, 3]})
+
+        self.assertEqual(
+            counters(7), "lockstep-priority/priority-seen/change-result=1/2/3")
+        self.assertEqual(counters(8), "frames/frames-drawn/vblank-wait-us=1/2/3")
+        # Groups 11 and 12 have lines of their own (Exact renderer, CPU
+        # core); the next one is still unknown.
+        unknown = max([*decoder.LINK_COUNTERS, 12]) + 1
+        self.assertEqual(counters(unknown), f"counters-{unknown}=1/2/3")
 
     def test_exact_renderer_names_match_the_c_enum(self):
         header = (Path(__file__).parents[1] / "source" / "src" /

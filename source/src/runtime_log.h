@@ -13,7 +13,9 @@
  * Runtime diagnostic log. Events are 32-byte records kept in fixed rings in
  * memory (main, network and critical sources) and encoded into a "GBRL"
  * snapshot when runtime_log_psp.c flushes. tools/decode_runtime_log.py
- * reads the files; enum values and record layouts are part of the format.
+ * reads the files. The record layout and the meaning of existing enum
+ * values are the format; a value added at the end of an enum keeps the
+ * version, and older decoders show it as a number.
  */
 
 #ifndef RUNTIME_LOG_H
@@ -72,7 +74,8 @@ typedef enum
   RUNTIME_LOG_EVENT_LINK_FAILURE,
   RUNTIME_LOG_EVENT_LINK_STREAM_METRICS,
   RUNTIME_LOG_EVENT_LINK_TIMEOUT,
-  RUNTIME_LOG_EVENT_LINK_BENCHMARK
+  RUNTIME_LOG_EVENT_LINK_BENCHMARK,
+  RUNTIME_LOG_EVENT_SAVE_LOAD
 } RuntimeLogEventType;
 
 typedef enum

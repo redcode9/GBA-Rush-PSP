@@ -285,6 +285,7 @@ $(HOST_TEST_PERF_MONITOR): tests/test_perf_monitor.c \
 # build); the test TU itself is built with -Wall -Wextra -Werror.
 $(HOST_TEST_PERF_DMA_PROBE): tests/test_perf_dma_probe.c tests/host_dma_stubs.c \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/runtime_log_psp.h source/src/runtime_log.h \
  source/src/save_format.c source/src/save_format.h \
  source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
@@ -442,6 +443,7 @@ $(HOST_TEST_SAVE_STORE): tests/test_save_store.c tests/fake_store_io.c \
 $(HOST_TEST_MEMORY_BACKUP): tests/test_memory_backup.c \
  tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/runtime_log_psp.h source/src/runtime_log.h \
  source/src/save_format.c source/src/save_format.h \
  source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
@@ -464,6 +466,7 @@ $(HOST_TEST_MEMORY_BACKUP): tests/test_memory_backup.c \
 $(HOST_TEST_EEPROM): tests/test_eeprom.c \
  tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/runtime_log_psp.h source/src/runtime_log.h \
  source/src/save_format.c source/src/save_format.h \
  source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
@@ -561,6 +564,7 @@ $(HOST_SANITIZE_DIR)/test_perf_report: tests/test_perf_report.c \
 $(HOST_SANITIZE_DIR)/test_perf_dma_probe: tests/test_perf_dma_probe.c \
  tests/host_dma_stubs.c \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/runtime_log_psp.h source/src/runtime_log.h \
  source/src/save_format.c source/src/save_format.h \
  source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
@@ -718,6 +722,7 @@ $(HOST_SANITIZE_DIR)/test_save_store: tests/test_save_store.c \
 $(HOST_SANITIZE_DIR)/test_memory_backup: tests/test_memory_backup.c \
  tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/runtime_log_psp.h source/src/runtime_log.h \
  source/src/save_format.c source/src/save_format.h \
  source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
@@ -739,6 +744,7 @@ $(HOST_SANITIZE_DIR)/test_memory_backup: tests/test_memory_backup.c \
 $(HOST_SANITIZE_DIR)/test_eeprom: tests/test_eeprom.c \
  tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/runtime_log_psp.h source/src/runtime_log.h \
  source/src/save_format.c source/src/save_format.h \
  source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
