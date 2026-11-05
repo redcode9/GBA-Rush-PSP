@@ -213,6 +213,15 @@ static void test_switch_during_resume_does_not_enter(void)
   assert(power_lifecycle_classify(BIT_RESUMING) == 0);
 }
 
+/* An entry and RESUME_COMPLETE in one callback: suspend, then resume. */
+static void test_entry_with_resume_complete_does_both(void)
+{
+  assert(power_lifecycle_classify(BIT_SUSPENDING | BIT_RESUME_COMPLETE) ==
+   (SUSPENDING | RESUME));
+  assert(power_lifecycle_classify(BIT_SWITCH | BIT_SUSPENDING |
+   BIT_RESUME_COMPLETE) == (SUSPENDING | RESUME));
+}
+
 /* Without SUSPENDING or RESUME_COMPLETE, a switch-only entry ends 2 s after
    the emulator thread saw it, as a resume that must reserve audio. */
 static void test_switch_entry_times_out(void)
@@ -305,6 +314,7 @@ int main(void)
   test_switch_and_suspending_save_once();
   test_resume_after_switch_only_entry();
   test_switch_during_resume_does_not_enter();
+  test_entry_with_resume_complete_does_both();
   test_switch_entry_times_out();
   test_suspending_entry_never_times_out();
   test_raw_bits_accumulate_and_are_taken_once();
