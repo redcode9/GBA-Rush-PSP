@@ -83,8 +83,9 @@ networking or file access.
 
 ## Test ROMs
 
-`tests/core-rom` (CPU, interrupt, BIOS and bus cases) and `tests/save-rom`
-(one target per save chip) are GBA ROMs built from source with
+`tests/core-rom` (CPU, interrupt, BIOS and bus cases), `tests/save-rom`
+(one target per save chip) and `tests/raster-rom` (HBlank DMA and IRQ cases,
+then a picture) are GBA ROMs built from source with
 arm-none-eabi-gcc, from the Arm GNU Toolchain or from devkitARM through
 `DEVKITARM`; the ROMs never go into Git. `make test-roms` builds them into
 `build/test-roms`, runs each on `tests/core/rom_run.c` (the New core's
@@ -101,6 +102,15 @@ and `source/main.c`. Expected values come from GBATEK or the ARM7TDMI
 documentation, never from an emulator. The header logo is left blank, so
 boot the ROMs directly: "Boot from BIOS" off, or in mGBA no BIOS or "Skip
 BIOS intro".
+
+The raster ROM leaves its results on screen for three seconds, then shows a
+picture that changes the affine registers and the palette in the middle of
+the frame, by HBlank DMA and from an HBlank IRQ. The picture is the same in
+every frame, so two screenshots in mGBA must match, and
+`MGBA_DIR=... RENDER_ROMS=build/test-roms/raster-rom.gba:tests/render/raster.txt make check-render`
+compares GBA Rush's renderer with mGBA's on it. `rom_run` has no PPU, HBlank
+DMA or HBlank IRQ, so in `make test-roms` the raster cases fail and only the
+run itself is checked.
 
 ## Link development
 
