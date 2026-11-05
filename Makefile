@@ -145,6 +145,7 @@ test: $(HOST_TESTS) test-tools
 # compile functions cut out of main.c, gui.c and memory.c with HOST_CC.
 test-tools:
 	$(PYTHON) -m unittest tests/test_compare_benchmarks.py \
+	 tests/test_perf_table.py \
 	 tests/test_decode_runtime_log.py tests/test_startup.py \
 	 tests/test_browser_text.py tests/test_open_bios.py
 
