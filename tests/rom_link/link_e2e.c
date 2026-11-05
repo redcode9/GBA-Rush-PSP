@@ -67,6 +67,9 @@
 #include "link_cable.h"
 #undef GBA_SIO_H
 
+/* Before mGBA's other headers: the build's options change the layout of
+   struct mCore, and savedataClone comes after the debugger fields. */
+#include <mgba/flags.h>
 #include <mgba/core/core.h>
 #include <mgba/core/log.h>
 #include <mgba/core/config.h>
