@@ -15,7 +15,9 @@ set -eu
 # the script again skips what is already in place, and a tool already on
 # the machine is linked into ext/ instead of downloaded: the pspdev at
 # PSPDEV or ~/Development/.tools/pspdev, the arm-none-eabi-gcc on PATH or
-# Homebrew's arm-gcc-bin@15, the Unicorn at UNICORN_DIR or Homebrew's.
+# Homebrew's arm-gcc-bin@15, the Unicorn at UNICORN_DIR. Without
+# UNICORN_DIR, Unicorn is built with the Allegrex instructions, and
+# Homebrew's stock one is linked only if that build fails.
 # Archives are checked against their sha256 and Git sources against their
 # commit; a mismatch or a failed download stops the script. Delete a
 # directory in ext/ to rebuild it.
@@ -200,7 +202,12 @@ step_arm_gcc()
 
 step_unicorn()
 {
-  if [ -f "$ext/unicorn/include/unicorn/unicorn.h" ]; then
+  # Homebrew's stock Unicorn lacks the Allegrex instructions, which the
+  # backend's tests then run from a slower hook. It is only the fallback,
+  # so a run finding it in ext/ tries the build again.
+  stock=/opt/homebrew/opt/unicorn
+  if [ -f "$ext/unicorn/include/unicorn/unicorn.h" ] &&
+    [ "$(readlink "$ext/unicorn")" != "$stock" ]; then
     say "Unicorn is in place"
     return
   fi
@@ -208,13 +215,18 @@ step_unicorn()
     link unicorn "$UNICORN_DIR"
     return
   fi
-  if [ -f /opt/homebrew/opt/unicorn/include/unicorn/unicorn.h ]; then
-    link unicorn /opt/homebrew/opt/unicorn
-    return
-  fi
   need curl tar cmake make cc python3
-  run sh scripts/build-unicorn.sh "$ext"
-  run ln -sfn unicorn-2.1.4 "$ext/unicorn"
+  if run sh scripts/build-unicorn.sh "$ext"; then
+    run ln -sfn unicorn-2.1.4 "$ext/unicorn"
+  elif [ -f "$stock/include/unicorn/unicorn.h" ]; then
+    say "building Unicorn with the Allegrex instructions failed (curl's"
+    say "error above, or ext/unicorn-2.1.4/build/*.log); using Homebrew's"
+    say "stock Unicorn instead, which runs those instructions from a slower"
+    say "hook in the backend's tests. Run this step again to retry the build."
+    link unicorn "$stock"
+  else
+    die "building Unicorn with the Allegrex instructions failed (curl's error above, or ext/unicorn-2.1.4/build/*.log)"
+  fi
 }
 
 step_mgba()

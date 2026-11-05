@@ -13,13 +13,15 @@ versions pinned by sha256 or Git commit, on macOS arm64 or Linux x86_64:
 sh scripts/setup-dev.sh            # --dry-run lists each step first
 ```
 
-It links a pspdev, arm-none-eabi-gcc or Unicorn already on the machine
-instead of downloading it, and prints the `PSPDEV` and `PATH` lines to add
-to your shell. `make check-core`, `make check-render`, `make check-rom-link`
-and `make check-eboot` then find mGBA, Unicorn, the CPU test suites and
-PPSSPP's headless runner by themselves; your BIOS, ROMs and saves are
-named by the variables each script lists. `make check-core-quick` and
-`make check-render-quick` are the short runs for every pull request.
+It links a pspdev or arm-none-eabi-gcc already on the machine, and the
+Unicorn named by `UNICORN_DIR`, instead of downloading it (otherwise it
+builds Unicorn with the PSP's Allegrex instructions), and prints the
+`PSPDEV` and `PATH` lines to add to your shell. `make check-core`,
+`make check-render`, `make check-rom-link` and `make check-eboot` then
+find mGBA, Unicorn, the CPU test suites and PPSSPP's headless runner by
+themselves; your BIOS, ROMs and saves are named by the variables each
+script lists. `make check-core-quick` and `make check-render-quick` are
+the short runs for every pull request.
 
 ## Build
 
