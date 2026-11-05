@@ -9,17 +9,59 @@
  * the License, or (at your option) any later version.
  */
 
+/*
+ * The .sav load and its write transaction; see save_store.h. The write
+ * follows config_store.c: a checked temporary file, the old file kept as
+ * the backup, then a rename into place. Here the temporary file is
+ * checked by its CRC32, every rename is checked on both names, and the
+ * backup always holds the previous verified image.
+ */
+
 #include <stdio.h>
 
 #include "save_store.h"
+#include "zlib/zlib.h"
 
-/* dir followed by name; 0 if that does not fit, since a cut path would
-   name another file. */
-static int join_path(char *path, const char *dir, const char *name)
+/* dir, name and suffix joined; 0 if that does not fit, since a cut path
+   would name another file. */
+static int join_path(char *path, const char *dir, const char *name,
+ const char *suffix)
 {
-  int length = snprintf(path, SAVE_STORE_PATH_MAX, "%s%s", dir, name);
+  int length = snprintf(path, SAVE_STORE_PATH_MAX, "%s%s%s", dir, name,
+   suffix);
 
   return length >= 0 && length < SAVE_STORE_PATH_MAX;
+}
+
+static int set_paths(SaveStoreWrite *transaction, const char *dir,
+ const char *name)
+{
+  return join_path(transaction->primary, dir, name, "") &&
+         join_path(transaction->temporary, dir, name, ".tmp") &&
+         join_path(transaction->backup, dir, name, ".bak");
+}
+
+/* A rename both names confirm: a device can report one that did not
+   happen, or fail one that did. */
+static int moved(const SaveStoreIo *io, const char *source,
+ const char *target)
+{
+  return io->move(io->context, source, target) &&
+         io->exists(io->context, target) && !io->exists(io->context, source);
+}
+
+/* See save_store_recover(). */
+static int recover(const SaveStoreIo *io, const SaveStoreWrite *paths)
+{
+  if(io->exists(io->context, paths->primary))
+    return io->remove(io->context, paths->temporary);
+  if(io->exists(io->context, paths->backup))
+  {
+    if(io->exists(io->context, paths->temporary))
+      return moved(io, paths->temporary, paths->primary);
+    return moved(io, paths->backup, paths->primary);
+  }
+  return io->remove(io->context, paths->temporary);
 }
 
 SaveStoreResult save_store_load(const SaveStoreIo *io, const char *dir,
@@ -30,7 +72,7 @@ SaveStoreResult save_store_load(const SaveStoreIo *io, const char *dir,
   size_t length = 0;
 
   *file_size = 0;
-  if(!join_path(path, dir, name))
+  if(!join_path(path, dir, name, ""))
     return SAVE_STORE_FAILED;
   if(!io->exists(io->context, path))
     return SAVE_STORE_NOT_FOUND;
@@ -46,12 +88,129 @@ SaveStoreResult save_store_load(const SaveStoreIo *io, const char *dir,
   return SAVE_STORE_OK;
 }
 
+SaveStoreResult save_store_recover(const SaveStoreIo *io, const char *dir,
+ const char *name)
+{
+  static SaveStoreWrite paths;
+
+  if(!set_paths(&paths, dir, name) || !recover(io, &paths))
+    return SAVE_STORE_FAILED;
+  return SAVE_STORE_OK;
+}
+
+SaveStoreResult save_store_begin(SaveStoreWrite *transaction,
+ const SaveStoreIo *io, const char *dir, const char *name)
+{
+  transaction->io = io;
+  transaction->file = -1;
+  transaction->crc = crc32(0L, Z_NULL, 0);
+  transaction->size = 0;
+  transaction->result = SAVE_STORE_FAILED;
+  if(!set_paths(transaction, dir, name) || !recover(io, transaction))
+    return SAVE_STORE_FAILED;
+
+  transaction->file = io->open_write(io->context, transaction->temporary);
+  transaction->result = (transaction->file < 0) ? SAVE_STORE_WRITE_FAILED :
+   SAVE_STORE_OK;
+  return transaction->result;
+}
+
+SaveStoreResult save_store_append(SaveStoreWrite *transaction,
+ const uint8_t *data, size_t size)
+{
+  const SaveStoreIo *io = transaction->io;
+  size_t done = 0;
+  int count;
+
+  while(transaction->result == SAVE_STORE_OK && done < size)
+  {
+    count = io->write(io->context, transaction->file, data + done,
+     size - done);
+    if(count <= 0 || (size_t)count > size - done)
+      transaction->result = SAVE_STORE_WRITE_FAILED;
+    else
+    {
+      transaction->crc = crc32(transaction->crc, data + done, (uInt)count);
+      transaction->size += (size_t)count;
+      done += (size_t)count;
+    }
+  }
+  return transaction->result;
+}
+
+/* Puts the .bak, the old file, back under the file's name, deleting what
+   a failed promotion left there. */
+static SaveStoreResult restore_backup(const SaveStoreWrite *transaction,
+ SaveStoreResult result)
+{
+  const SaveStoreIo *io = transaction->io;
+
+  if(io->remove(io->context, transaction->primary) &&
+     moved(io, transaction->backup, transaction->primary))
+    return result;
+  return SAVE_STORE_RESTORE_FAILED;
+}
+
+/* Once the .tmp checks out: the old file becomes the .bak, replacing the
+   one before it, and the .tmp takes the file's name. */
+static SaveStoreResult promote(const SaveStoreWrite *transaction)
+{
+  const SaveStoreIo *io = transaction->io;
+  int had_primary = io->exists(io->context, transaction->primary);
+
+  if(had_primary)
+  {
+    if(!io->remove(io->context, transaction->backup))
+      return SAVE_STORE_BACKUP_FAILED;
+    if(!moved(io, transaction->primary, transaction->backup))
+    {
+      if(io->exists(io->context, transaction->primary))
+        return SAVE_STORE_BACKUP_FAILED;
+      return restore_backup(transaction, SAVE_STORE_BACKUP_FAILED);
+    }
+  }
+  if(moved(io, transaction->temporary, transaction->primary) &&
+     io->flush(io->context, transaction->primary))
+    return SAVE_STORE_OK;
+  if(had_primary)
+    return restore_backup(transaction, SAVE_STORE_PROMOTE_FAILED);
+  return SAVE_STORE_PROMOTE_FAILED;
+}
+
+SaveStoreResult save_store_commit(SaveStoreWrite *transaction)
+{
+  const SaveStoreIo *io = transaction->io;
+  uint32_t crc = 0;
+  size_t size = 0;
+
+  if(transaction->file >= 0)
+  {
+    if(!io->close(io->context, transaction->file) &&
+       transaction->result == SAVE_STORE_OK)
+      transaction->result = SAVE_STORE_WRITE_FAILED;
+    transaction->file = -1;
+  }
+  if(transaction->result == SAVE_STORE_OK &&
+     !io->flush(io->context, transaction->temporary))
+    transaction->result = SAVE_STORE_WRITE_FAILED;
+  if(transaction->result != SAVE_STORE_OK)
+    return transaction->result;
+
+  /* A close that lost data shows here. */
+  if(!io->crc32(io->context, transaction->temporary, &crc, &size) ||
+     crc != transaction->crc || size != transaction->size)
+    transaction->result = SAVE_STORE_VERIFY_FAILED;
+  else
+    transaction->result = promote(transaction);
+  return transaction->result;
+}
+
 SaveStoreResult save_store_write(const SaveStoreIo *io, const char *dir,
  const char *name, const uint8_t *data, size_t size)
 {
-  char path[SAVE_STORE_PATH_MAX];
+  static SaveStoreWrite transaction;
 
-  if(!join_path(path, dir, name) || !io->write(io->context, path, data, size))
-    return SAVE_STORE_FAILED;
-  return SAVE_STORE_OK;
+  save_store_begin(&transaction, io, dir, name);
+  save_store_append(&transaction, data, size);
+  return save_store_commit(&transaction);
 }

@@ -286,7 +286,7 @@ $(HOST_TEST_PERF_MONITOR): tests/test_perf_monitor.c \
 $(HOST_TEST_PERF_DMA_PROBE): tests/test_perf_dma_probe.c tests/host_dma_stubs.c \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
  source/src/save_format.c source/src/save_format.h \
- source/src/save_store.c source/src/save_store.h \
+ source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
@@ -302,7 +302,7 @@ $(HOST_TEST_PERF_DMA_PROBE): tests/test_perf_dma_probe.c tests/host_dma_stubs.c 
 	 tests/test_perf_dma_probe.c tests/host_dma_stubs.c \
 	 source/src/perf_monitor.c source/src/perf_metrics.c \
 	 source/src/save_format.c source/src/save_store.c \
-	 $(HOST_BUILD_DIR)/perf_dma_memory.o -o $@
+	 $(HOST_BUILD_DIR)/perf_dma_memory.o -lz -o $@
 
 # Host test for the psp_video.c frame-time timestamp sentinel
 # psp_video.c and the stub TU are compiled against the
@@ -428,11 +428,12 @@ $(HOST_TEST_SAVE_FORMAT): tests/test_save_format.c \
 	 tests/test_save_format.c source/src/save_format.c -o $@
 
 $(HOST_TEST_SAVE_STORE): tests/test_save_store.c tests/fake_store_io.c \
- tests/fake_store_io.h source/src/save_store.c source/src/save_store.h
+ tests/fake_store_io.h source/src/save_store.c source/src/save_store.h \
+ source/src/zlib/zlib.h
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_save_store.c tests/fake_store_io.c source/src/save_store.c \
-	 -o $@
+	 -lz -o $@
 
 # The real memory.c save path (load_gamepak, the unreadable-save prompt,
 # every .sav write) against tests/fake_store_io.c, built like
@@ -442,7 +443,7 @@ $(HOST_TEST_MEMORY_BACKUP): tests/test_memory_backup.c \
  tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
  source/src/save_format.c source/src/save_format.h \
- source/src/save_store.c source/src/save_store.h \
+ source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
@@ -456,7 +457,7 @@ $(HOST_TEST_MEMORY_BACKUP): tests/test_memory_backup.c \
 	 tests/test_memory_backup.c tests/fake_store_io.c tests/host_dma_stubs.c \
 	 source/src/save_format.c source/src/save_store.c \
 	 source/src/perf_monitor.c source/src/perf_metrics.c \
-	 $(HOST_BUILD_DIR)/memory_backup_memory.o -o $@
+	 $(HOST_BUILD_DIR)/memory_backup_memory.o -lz -o $@
 
 # The EEPROM protocol through memory.c's DMA3, built like test_memory_backup
 # into its own memory object.
@@ -464,7 +465,7 @@ $(HOST_TEST_EEPROM): tests/test_eeprom.c \
  tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
  source/src/save_format.c source/src/save_format.h \
- source/src/save_store.c source/src/save_store.h \
+ source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
@@ -478,7 +479,7 @@ $(HOST_TEST_EEPROM): tests/test_eeprom.c \
 	 tests/test_eeprom.c tests/fake_store_io.c tests/host_dma_stubs.c \
 	 source/src/save_format.c source/src/save_store.c \
 	 source/src/perf_monitor.c source/src/perf_metrics.c \
-	 $(HOST_BUILD_DIR)/eeprom_memory.o -o $@
+	 $(HOST_BUILD_DIR)/eeprom_memory.o -lz -o $@
 
 $(HOST_SANITIZE_DIR)/test_codebreaker: tests/test_codebreaker.c \
  source/src/codebreaker.c source/src/codebreaker.h
@@ -561,7 +562,7 @@ $(HOST_SANITIZE_DIR)/test_perf_dma_probe: tests/test_perf_dma_probe.c \
  tests/host_dma_stubs.c \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
  source/src/save_format.c source/src/save_format.h \
- source/src/save_store.c source/src/save_store.h \
+ source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
@@ -578,7 +579,7 @@ $(HOST_SANITIZE_DIR)/test_perf_dma_probe: tests/test_perf_dma_probe.c \
 	 tests/test_perf_dma_probe.c tests/host_dma_stubs.c \
 	 source/src/perf_monitor.c source/src/perf_metrics.c \
 	 source/src/save_format.c source/src/save_store.c \
-	 $(HOST_SANITIZE_DIR)/perf_dma_memory.o -o $@
+	 $(HOST_SANITIZE_DIR)/perf_dma_memory.o -lz -o $@
 
 $(HOST_SANITIZE_DIR)/test_perf_video_sentinel: tests/test_perf_video_sentinel.c \
  tests/host_psp_video_stubs.c \
@@ -708,17 +709,17 @@ $(HOST_SANITIZE_DIR)/test_save_format: tests/test_save_format.c \
 
 $(HOST_SANITIZE_DIR)/test_save_store: tests/test_save_store.c \
  tests/fake_store_io.c tests/fake_store_io.h \
- source/src/save_store.c source/src/save_store.h
+ source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_save_store.c tests/fake_store_io.c \
-	 source/src/save_store.c -o $@
+	 source/src/save_store.c -lz -o $@
 
 $(HOST_SANITIZE_DIR)/test_memory_backup: tests/test_memory_backup.c \
  tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
  source/src/save_format.c source/src/save_format.h \
- source/src/save_store.c source/src/save_store.h \
+ source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
@@ -733,13 +734,13 @@ $(HOST_SANITIZE_DIR)/test_memory_backup: tests/test_memory_backup.c \
 	 tests/test_memory_backup.c tests/fake_store_io.c tests/host_dma_stubs.c \
 	 source/src/save_format.c source/src/save_store.c \
 	 source/src/perf_monitor.c source/src/perf_metrics.c \
-	 $(HOST_SANITIZE_DIR)/memory_backup_memory.o -o $@
+	 $(HOST_SANITIZE_DIR)/memory_backup_memory.o -lz -o $@
 
 $(HOST_SANITIZE_DIR)/test_eeprom: tests/test_eeprom.c \
  tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
  source/src/save_format.c source/src/save_format.h \
- source/src/save_store.c source/src/save_store.h \
+ source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
@@ -754,7 +755,7 @@ $(HOST_SANITIZE_DIR)/test_eeprom: tests/test_eeprom.c \
 	 tests/test_eeprom.c tests/fake_store_io.c tests/host_dma_stubs.c \
 	 source/src/save_format.c source/src/save_store.c \
 	 source/src/perf_monitor.c source/src/perf_metrics.c \
-	 $(HOST_SANITIZE_DIR)/eeprom_memory.o -o $@
+	 $(HOST_SANITIZE_DIR)/eeprom_memory.o -lz -o $@
 
 # Optional gates outside make check: the CBMC proof needs CBMC, the ROM link
 # trade needs mGBA plus your own FireRed ROM, BIOS and save, and races Mario
