@@ -239,6 +239,19 @@ static void screen_preview(void)
   flip_screen(1);
 }
 
+/* The same panel while the colour picker edits the battery low (item 9)
+   or charging (item 10) colour, the only screens that show those two. */
+static void screen_preview_battery(u32 item)
+{
+  color_picker_item_index = item;
+  clear_screen(COLOR15_TO_32(color_bg));
+  draw_theme_preview(0);  /* any value but 0xFFFF: a colour is being edited */
+  flip_screen(1);
+}
+
+static void screen_preview_low(void) { screen_preview_battery(9); }
+static void screen_preview_charging(void) { screen_preview_battery(10); }
+
 /* The clock and battery line at the top of the screen. */
 static void screen_status(void)
 {
@@ -262,6 +275,8 @@ static const struct
 {
   { "dialog", screen_dialog },
   { "preview", screen_preview },
+  { "preview-low", screen_preview_low },
+  { "preview-charging", screen_preview_charging },
   { "status", screen_status }
 };
 

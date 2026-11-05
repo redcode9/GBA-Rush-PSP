@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 HASHES = ROOT / "tests/ui_golden_hashes.txt"
 IMAGES = ROOT / "build/ui_golden"
 SCREEN_WIDTH, SCREEN_HEIGHT = 480, 272
-SCREENS, LANGUAGES, THEMES = 3, 5, 9
+SCREENS, LANGUAGES, THEMES = 5, 5, 9
 GUI = "source/src/gui.c"
 HEADER = """\
 # Golden hashes of menu screens: <screen> <language> <theme> <hash>.
