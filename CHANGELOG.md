@@ -40,6 +40,17 @@
 - The `bios_rom_hack_39` and `bios_rom_hack_2C` options of `game_config.txt`
   apply only to `gba_bios.bin`.
 
+### Fixed
+
+- Enabling a timer's interrupt while the timer runs had no effect, so the
+  interrupt never came, and changing its prescaler while it ran kept the old
+  rate. Both now take effect without resetting the count. A timer that
+  overflows several times between two updates counts every overflow, and
+  its value never reads past FFFFh.
+- With the New core a game reads a timer's count at the cycle of the read,
+  and starts and stops timers at the cycle of the write, instead of seeing
+  the count of up to a slice earlier.
+
 ## 1.4.3 - 2026-11-02
 
 ### Fixed
