@@ -92,6 +92,7 @@ typedef struct
 #define ARM_CODE_PAGE_SIZE 256u
 #define ARM_CODE_PAGES (1024u + 128u)
 #define ARM_NO_BLOCK 0xFFFFu
+#define ARM_IDLE_LOOPS 16u
 
 typedef struct
 {
@@ -151,6 +152,12 @@ typedef struct ArmCore
      which a backend leaves to the interpreter. Flush after changing it. */
   uint32_t hook;
   void (*hooked)(struct ArmCore *core);
+  /* Idle loops, a game spinning until an interrupt: the addresses of their
+     B instructions (or ARM BL), conditional or not. Taken, such a branch
+     ends arm_core_run as if its budget were spent, so the system skips
+     straight to its next event. Flush after changing them. */
+  uint32_t idle_loops[ARM_IDLE_LOOPS];
+  unsigned idle_loop_count;
 
   uint32_t block_count;
   uint32_t op_count;

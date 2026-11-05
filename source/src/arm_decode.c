@@ -312,12 +312,23 @@ static void jump(Builder *b, unsigned slot, unsigned flags, unsigned kind)
   emit(b, ARM_IR_EXIT_REG, flags, kind, slot, 0);
 }
 
+static int idle_loop(const ArmCore *core, uint32_t pc)
+{
+  unsigned i;
+
+  for(i = 0; i < core->idle_loop_count; i++)
+    if(core->idle_loops[i] == pc)
+      return 1;
+  return 0;
+}
+
 /* Branch to a target known now. */
 static void branch(Builder *b, uint32_t target, unsigned kind)
 {
   b->ended = 1;
   b->cost += refill(b, target, b->thumb);
-  emit(b, ARM_IR_EXIT, 0, kind, 0, target);
+  emit(b, ARM_IR_EXIT, idle_loop(b->core, b->pc) ? ARM_IR_IDLE_LOOP : 0,
+   kind, 0, target);
 }
 
 static void exception(Builder *b, unsigned code, uint32_t vector)

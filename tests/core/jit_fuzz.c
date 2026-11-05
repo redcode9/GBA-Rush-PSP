@@ -9,7 +9,8 @@
  * cycle and instruction it came at; a store to HALTCNT asks the core to
  * stop and one to WAITCNT changes the waitstates, flushing the code. The
  * registers point into that memory or hold random values, in a random mode
- * and state.
+ * and state; in half the cases some of the program's branches are idle
+ * loops.
  *
  * The case then runs some blocks one at a time (arm_mips_run_block against
  * arm_core_run_block) and then linked code with random budgets, waitstates
@@ -294,6 +295,31 @@ static void confine(uint8_t *p, uint32_t pc, unsigned count, int thumb)
   }
 }
 
+/* Names some of the program's direct branches idle loops, in half the
+   cases, without touching the random sequence: both cores get the list. */
+static void pick_idle_loops(ArmCore *core, const uint8_t *p, uint32_t pc,
+ unsigned count, int thumb, uint32_t seed)
+{
+  unsigned width = thumb ? 2u : 4u;
+  unsigned i;
+
+  core->idle_loop_count = 0;
+  if(!(hash(seed) & 1))
+    return;
+  for(i = 0; i < count && core->idle_loop_count < ARM_IDLE_LOOPS; i++)
+  {
+    uint32_t at = pc + i * width;
+    uint32_t op = 0;
+    int branch;
+
+    memcpy(&op, p + i * width, width);
+    branch = thumb ? ((op >> 12) == 13 && ((op >> 8) & 15) < 14) ||
+     (op >> 11) == 28 : ((op >> 25) & 7) == 5;
+    if(branch && (hash(at ^ seed) & 1))
+      core->idle_loops[core->idle_loop_count++] = at;
+  }
+}
+
 /* A value for a register: an address in the world (or near it, or one of
    the program's own instructions, for stores over code it runs again), or
    a random number. */
@@ -570,6 +596,7 @@ static int run_case(uint32_t seed)
 
     arm_core_reset(core);
     arm_core_set_waitcnt(core, waitcnt);
+    pick_idle_loops(core, program, pc, count, thumb, seed);
     set_state(core, values, cpsr, pc);
     core->prefetch = 0;
     core->instructions = 0;

@@ -15,10 +15,11 @@
  * Blocks come from the interpreter's cache (arm_interp.c), which keeps
  * their IR until the cache is flushed. That makes the interpreter the
  * backend's way out: whatever the generated code does not handle itself
- * (MSR, MRS, SWI, exception returns, user bank transfers, and the rest of
- * a block after a store asked the core to stop) it hands over by saving
- * the state and naming the op to go on from. The interpreter is also the
- * test oracle, so the two must agree on every cycle.
+ * (MSR, MRS, SWI, exception returns, user bank transfers, idle loop
+ * branches, and the rest of a block after a store asked the core to stop)
+ * it hands over by saving the state and naming the op to go on from. The
+ * interpreter is also the test oracle, so the two must agree on every
+ * cycle.
  *
  * Registers. r0-r7 live in s0-s7 and r13 in fp, which C preserves. r8-r12
  * live in t0-t4 and r14 in t5 for the whole run, rather than being loaded
@@ -889,7 +890,9 @@ static void exit_direct(Builder *b, const ArmIrOp *op, unsigned index)
   unsigned kind = op->d;
   uint32_t key = exit_key(b, op);
 
-  if(kind == ARM_EXIT_SYSTEM)
+  /* An idle loop's branch leaves the run anyway: the interpreter takes it
+     and spends the budget. */
+  if(kind == ARM_EXIT_SYSTEM || (op->flags & ARM_IR_IDLE_LOOP))
   {
     bail_here(b, index);
     return;

@@ -157,7 +157,8 @@ typedef enum
      a: with ARM_IR_BX bit 0 picks Thumb or ARM state, with ARM_IR_RESTORE
      the CPSR is first restored from the SPSR (an exception return), and
      the address is then aligned for the state. SWI and UNDEF enter their
-     exception with b as the return address. */
+     exception with b as the return address. An EXIT with ARM_IR_IDLE_LOOP
+     is a branch the embedder named an idle loop (ArmCore.idle_loops). */
   ARM_IR_EXIT,
   ARM_IR_EXIT_REG,
   ARM_IR_SWI,
@@ -182,6 +183,7 @@ typedef enum
 #define ARM_IR_CARTRIDGE_CODE 0x01u
 #define ARM_IR_BX      0x20u  /* EXIT_REG: bit 0 selects the state */
 #define ARM_IR_RESTORE 0x40u  /* EXIT_REG: CPSR = SPSR first */
+#define ARM_IR_IDLE_LOOP 0x80u  /* EXIT: the branch of an idle loop */
 
 /* What an exit is, for the dispatcher and a backend's predictors. Only
    NEXT is not a taken branch: the guest just runs on into the next block,

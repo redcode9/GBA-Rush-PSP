@@ -252,6 +252,38 @@ static void test_hook(void)
   arm_core_flush(&core);
 }
 
+static void test_idle_loop(void)
+{
+  unsigned pass;
+
+  /* "stop: b stop" named an idle loop: its first pass spends the whole
+     budget. */
+  core.idle_loops[0] = 0x08000020;
+  core.idle_loop_count = 1;
+  arm_core_flush(&core);
+  reset(0x08000020, ARM_MODE_SYSTEM);
+  core.instructions = 0;
+  CHECK(arm_core_run(&core, 1000) == 1000);
+  CHECK(core.instructions == 1 && core.v[15] == 0x08000020);
+  /* Spent already, the budget stays as it is. */
+  CHECK(arm_core_run(&core, 1) > 1);
+
+  /* The Thumb countdown's bne: one pass per run while it is taken, and
+     running on once it is not. */
+  core.idle_loops[0] = 0x0800002C;
+  arm_core_flush(&core);
+  reset(0x08000000, ARM_MODE_SYSTEM);
+  for(pass = 1; pass < 10; pass++)
+  {
+    CHECK(arm_core_run(&core, 2000) == 2000);
+    CHECK(core.v[15] == 0x08000028 && core.v[4] == 10 - pass);
+  }
+  arm_core_run(&core, 2000);
+  CHECK(core.v[0] == 55 && core.v[15] == 0x08000020);
+  core.idle_loop_count = 0;
+  arm_core_flush(&core);
+}
+
 int main(void)
 {
   ArmBus bus = { NULL, read8, read16, read32, ignore, ignore, ignore,
@@ -279,6 +311,7 @@ int main(void)
   test_timing();
   test_interrupt();
   test_hook();
+  test_idle_loop();
   if(failures)
     return 1;
   printf("test_arm_core: all checks passed\n");

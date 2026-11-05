@@ -844,6 +844,8 @@ ArmExitKind arm_core_execute(ArmCore *core, const ArmIrOp *op)
         set_pc(core, op->b, flags & ARM_IR_BX);
         if(op->d != ARM_EXIT_NEXT)
           prefetch_flush(core);
+        if((flags & ARM_IR_IDLE_LOOP) && core->cycles < core->cycle_limit)
+          core->cycles = core->cycle_limit;
         return (ArmExitKind)op->d;
       case ARM_IR_EXIT_REG:
         if((flags & ARM_IR_RESTORE) && has_spsr(core))

@@ -35,6 +35,11 @@
  * takes interrupts itself from its IRQ line (IME and IE & IF), which is
  * updated after every I/O store and every update_gba(); update_gba() only
  * ends a halt.
+ *
+ * Idle loops. game_config.txt's idle_loop_eliminate_target branches end a
+ * run as if its cycles were all spent, so update_gba() moves straight to
+ * the next event: the Classic core calls update_gba() at those branches,
+ * which then counts the whole budget as run.
  */
 
 #include "common.h"
@@ -43,6 +48,7 @@
 
 typedef char ArmGbaStorageCheck[sizeof(ArmMips) <= WRITABLE_CODE_CACHE_SIZE ?
  1 : -1];
+typedef char ArmGbaIdleLoopCheck[MAX_IDLE_LOOPS <= ARM_IDLE_LOOPS ? 1 : -1];
 
 static ArmMips *jit;
 /* Where CodeBreaker cheats run, 0 for none (cheats.c). */
@@ -230,6 +236,8 @@ static void load_registers(void)
   arm_core_reset(core);
   core->hook = cheat_hook;
   core->hooked = run_cheat_hook;
+  memcpy(core->idle_loops, idle_loop_target_pc, sizeof(idle_loop_target_pc));
+  core->idle_loop_count = (unsigned)idle_loop_targets;
   map_memory(core);
   arm_core_set_waitcnt(core, pIO_REG(REG_WAITCNT));
   arm_core_set_cpsr(core, reg[REG_CPSR]);
