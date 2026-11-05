@@ -6,9 +6,11 @@ set -eu
 # make check-eboot: runs the PSP build in PPSSPP's headless runner on your
 # own games, once on each CPU core, and fails when the game never starts
 # on that core (the runtime log the EBOOT writes in logs/ names no ROM
-# opened on it), a run ends before its time is up, PPSSPP reports a crash,
-# or FireRed's save no longer holds the same party. Skipped without PPSSPP
-# or without games:
+# opened on it), a run ends before its time is up (PPSSPP stops on a jump
+# to a bad address, and a crash of PPSSPP itself ends it too), PPSSPP logs
+# an invalid instruction, a bad memory access or a break (it skips those
+# and goes on), or FireRed's save no longer holds the same party. Skipped
+# without PPSSPP or without games:
 #   PPSSPP_HEADLESS  PPSSPPHeadless (default: the one scripts/setup-dev.sh
 #             built in ext/ppsspp/build)
 #   MKSC      Mario Kart: Super Circuit (European release)
@@ -20,7 +22,11 @@ set -eu
 #   RUN_SECONDS  how long each run lasts (120)
 # The games start from boot with no keys pressed. PPSSPP has no Media
 # Engine, so the Exact renderer draws on the CPU there. Each run's files
-# and PPSSPP's output stay in OUT (build/eboot/<game>-<core>).
+# and the lines of PPSSPP's full log that matter stay in OUT
+# (build/eboot/<game>-<core>/ppsspp.log). The frame count is the number
+# of 1/60 s audio blocks the game produced; with the full log on, the New
+# core runs about 1000 frames a second here, the Classic one about 200 on
+# Pokemon, so the default 120 s cover the 20,000-frame runs of the plan.
 
 headless=${PPSSPP_HEADLESS:-ext/ppsspp/build/PPSSPPHeadless}
 if [ ! -x "$headless" ]; then
@@ -86,8 +92,10 @@ run()
   fi
   "$out/global_config" "$number" "$dir/tempgba.cfg"
 
-  "$headless" --timeout="${RUN_SECONDS:-120}" "$dir/EBOOT.PBP" \
-    > "$dir/ppsspp.log" 2>&1 || true
+  "$headless" -l --timeout="${RUN_SECONDS:-120}" "$dir/EBOOT.PBP" 2>&1 |
+    awk '/sceAudioSRCOutputBlocking/ { frames++; next }
+      /TIMEOUT|Invalid (instruction|access|exec)|BREAK!|Bad memory/ { print }
+      END { print "frames", frames + 0 }' > "$dir/ppsspp.log"
   # An error message or the ROM browser waits for a key until the timeout,
   # so a run counts only once the game has started on the chosen core.
   # This proves the game started, not that it kept running: a hang after
@@ -100,7 +108,7 @@ run()
     return
   fi
   if ! grep -q TIMEOUT "$dir/ppsspp.log" ||
-    grep -Eiq 'exception|crash' "$dir/ppsspp.log"; then
+    grep -Eq 'Invalid|BREAK!|Bad memory' "$dir/ppsspp.log"; then
     echo "check-eboot: $name ended early or crashed, see $dir/ppsspp.log" >&2
     status=1
     return
@@ -111,7 +119,8 @@ run()
     status=1
     return
   fi
-  echo "check-eboot: $name ran ${RUN_SECONDS:-120} s"
+  echo "check-eboot: $name ran ${RUN_SECONDS:-120} s," \
+    "about $(awk '$1 == "frames" { print $2 }' "$dir/ppsspp.log") frames"
 }
 
 for core in classic new; do
