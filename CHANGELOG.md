@@ -27,6 +27,9 @@
   Where the Media Engine cannot be used, as on official firmware or in an
   emulator, Exact draws on the main processor and is slower than New. With
   Show FPS on, the counter ends in ME or CPU to tell which.
+- While a ROM loads, the loading popup shows the file name, whether it is
+  reading the ROM or unpacking the ZIP, the KiB read so far and a bar that
+  follows the whole read, for loose ROMs and `.zip` archives alike.
 
 ### Changed
 
@@ -39,6 +42,17 @@
   so it never overwrites the `<rom>_auto.svs` made with `gba_bios.bin`.
 - The `bios_rom_hack_39` and `bios_rom_hack_2C` options of `game_config.txt`
   apply only to `gba_bios.bin`.
+
+### Fixed
+
+- A damaged or truncated `.zip` no longer hangs the loader or starts a broken
+  game: the ROM's size and CRC32 are checked, and the file browser says the
+  ZIP file is damaged or incomplete. An encrypted `.zip`, or one whose first
+  file is not a `.gba`, `.agb` or `.bin` ROM, gets the same message.
+- A `.zip` written in streaming mode, with its sizes after the data, now
+  loads.
+- A `.gba` file that cannot be read in full now fails to load instead of
+  starting the game from part of the ROM.
 
 ## 1.4.3 - 2026-11-02
 
