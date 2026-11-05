@@ -73,13 +73,19 @@ void power_lifecycle_suspend(PowerLifecycle *lifecycle, uint32_t entry,
   lifecycle->suspended = entry;
 }
 
+/* The callback is the only writer: the slot is filled before the count
+   that publishes it. */
 void power_lifecycle_note_bits(PowerLifecycle *lifecycle, uint32_t bits)
 {
+  uint32_t count;
+
   if(lifecycle == NULL)
     return;
 
-  __sync_fetch_and_or(&lifecycle->raw_bits, bits);
-  __sync_fetch_and_add(&lifecycle->raw_callbacks, 1u);
+  count = lifecycle->raw_callbacks;
+  lifecycle->raw_bits[count % POWER_LIFECYCLE_RAW_SLOTS] = bits;
+  power_lifecycle_memory_barrier();
+  lifecycle->raw_callbacks = count + 1u;
 }
 
 void power_lifecycle_resume(PowerLifecycle *lifecycle, int audio_result)
@@ -157,20 +163,37 @@ int power_lifecycle_expire_switch(PowerLifecycle *lifecycle,
   return 1;
 }
 
-uint32_t power_lifecycle_take_bits(PowerLifecycle *lifecycle,
- uint32_t *callbacks)
+/* Callback index i overwrites the slot of i - POWER_LIFECYCLE_RAW_SLOTS
+   once the count reaches i, so a slot read while the count stays below its
+   index + POWER_LIFECYCLE_RAW_SLOTS is intact; otherwise skip ahead. */
+int power_lifecycle_take_bits(PowerLifecycle *lifecycle, uint32_t *bits,
+ uint32_t *number)
 {
-  uint32_t count = 0;
-  uint32_t bits = 0;
+  uint32_t count;
+  uint32_t next;
+  uint32_t value;
 
-  /* Bits first: a callback in between then adds its count to this record
-     and its bits to the next one, so neither is lost. */
-  if(lifecycle != NULL)
+  if(lifecycle == NULL)
+    return 0;
+
+  do
   {
-    bits = __sync_fetch_and_and(&lifecycle->raw_bits, 0u);
-    count = __sync_fetch_and_and(&lifecycle->raw_callbacks, 0u);
+    power_lifecycle_memory_barrier();
+    count = lifecycle->raw_callbacks;
+    next = lifecycle->taken_callbacks;
+    if(next == count)
+      return 0;
+    if(count - next >= POWER_LIFECYCLE_RAW_SLOTS)
+      next = count - (POWER_LIFECYCLE_RAW_SLOTS - 1u);
+    value = lifecycle->raw_bits[next % POWER_LIFECYCLE_RAW_SLOTS];
+    power_lifecycle_memory_barrier();
   }
-  if(callbacks != NULL)
-    *callbacks = count;
-  return bits;
+  while(lifecycle->raw_callbacks - next >= POWER_LIFECYCLE_RAW_SLOTS);
+
+  lifecycle->taken_callbacks = next + 1u;
+  if(bits != NULL)
+    *bits = value;
+  if(number != NULL)
+    *number = next + 1u;
+  return 1;
 }

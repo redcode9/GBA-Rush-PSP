@@ -1973,16 +1973,16 @@ typedef char MainPowerBitsCheck[
   PSP_POWER_CB_RESUMING == POWER_LIFECYCLE_BIT_RESUMING &&
   PSP_POWER_CB_SUSPENDING == POWER_LIFECYCLE_BIT_SUSPENDING) ? 1 : -1];
 
-/* Logs the raw callback bits noted since the last call, if any. */
+/* Logs one record per power callback not logged yet: its raw bits, its
+   number (a gap means callbacks were lost) and the entry kind now. */
 static void main_power_log_bits(void)
 {
-  uint32_t callbacks;
-  uint32_t bits = power_lifecycle_take_bits(&psp_power_lifecycle,
-   &callbacks);
+  uint32_t bits;
+  uint32_t number;
 
-  if(bits != 0 || callbacks != 0)
+  while(power_lifecycle_take_bits(&psp_power_lifecycle, &bits, &number))
     runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_BITS, cpu_ticks, 0, bits,
-     callbacks, psp_power_lifecycle.suspended);
+     number, psp_power_lifecycle.suspended);
 }
 
 /* Writes the suspend auto-savestate once per suspend, if one was asked for. */

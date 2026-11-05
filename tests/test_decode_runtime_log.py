@@ -207,17 +207,18 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         self.assertEqual(record["event"], "power-bits")
         self.assertEqual(
             decoder.describe(record),
-            "bits=0x80001080 (switch) callbacks=2 "
+            "bits=0x80001080 (switch) callback=2 "
             "outcome=entered-by-suspending")
+        # A wake callback that carries the switch, as its own record.
         self.assertEqual(
             decoder.describe({"event": "power-bits", "flags": 0,
-                              "values": [0x00050000, 1, 0]}),
-            "bits=0x00050000 (resume-complete|suspending) callbacks=1 "
+                              "values": [0x80040000, 4, 0]}),
+            "bits=0x80040000 (switch|resume-complete) callback=4 "
             "outcome=none")
         self.assertEqual(
             decoder.describe({"event": "power-bits", "flags": 0,
                               "values": [0, 0, 3]}),
-            "bits=0x00000000 (-) callbacks=0 outcome=switch-timed-out")
+            "bits=0x00000000 (-) callback=0 outcome=switch-timed-out")
 
     # Events are numbered by their place in the C enum, so a name table out
     # of step (an event appended on two branches) shows here.

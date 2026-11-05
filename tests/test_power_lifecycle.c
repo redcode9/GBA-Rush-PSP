@@ -4,7 +4,8 @@
  * audio restart result); the main loop later takes each pending save and
  * resume exactly once, however the callbacks repeat or interleave.
  * Callback bits become entries and resumes through power_lifecycle_classify,
- * and a switch-only entry ends by itself after 2 s.
+ * a switch-only entry ends by itself after 2 s, and each callback's raw
+ * bits are kept for the runtime log.
  */
 
 #include <assert.h>
@@ -278,25 +279,76 @@ static void test_suspending_entry_never_times_out(void)
   assert(!power_lifecycle_take_resume(&lifecycle, &result));
 }
 
-static void test_raw_bits_accumulate_and_are_taken_once(void)
+/* Each callback's bits come back on their own, in order, once. */
+static void test_raw_bits_are_kept_per_callback(void)
 {
+  static const uint32_t wake[] =
+  {
+    BIT_SWITCH, BIT_SUSPENDING | BIT_SWITCH, BIT_RESUMING,
+    BIT_RESUME_COMPLETE | BIT_SWITCH | BIT_STATUS
+  };
   PowerLifecycle lifecycle;
-  uint32_t callbacks = 99u;
+  uint32_t bits = 99u;
+  uint32_t number = 99u;
+  uint32_t i;
 
   power_lifecycle_init(&lifecycle);
-  assert(power_lifecycle_take_bits(&lifecycle, &callbacks) == 0);
-  assert(callbacks == 0);
+  assert(!power_lifecycle_take_bits(&lifecycle, &bits, &number));
+  assert(bits == 99u && number == 99u);
 
-  power_lifecycle_note_bits(&lifecycle, BIT_SWITCH | BIT_STATUS);
-  power_lifecycle_note_bits(&lifecycle, BIT_SUSPENDING);
-  assert(power_lifecycle_take_bits(&lifecycle, &callbacks) ==
-   (BIT_SWITCH | BIT_SUSPENDING | BIT_STATUS));
-  assert(callbacks == 2u);
-  assert(power_lifecycle_take_bits(&lifecycle, &callbacks) == 0);
-  assert(callbacks == 0);
+  for(i = 0; i < 4u; i++)
+    power_lifecycle_note_bits(&lifecycle, wake[i]);
+  for(i = 0; i < 4u; i++)
+  {
+    assert(power_lifecycle_take_bits(&lifecycle, &bits, &number));
+    assert(bits == wake[i]);
+    assert(number == i + 1u);
+  }
+  assert(!power_lifecycle_take_bits(&lifecycle, &bits, &number));
 
-  power_lifecycle_note_bits(&lifecycle, BIT_RESUME_COMPLETE);
-  assert(power_lifecycle_take_bits(&lifecycle, NULL) == BIT_RESUME_COMPLETE);
+  /* Taking resumes after the last callback taken. */
+  power_lifecycle_note_bits(&lifecycle, BIT_STATUS);
+  assert(power_lifecycle_take_bits(&lifecycle, NULL, &number));
+  assert(number == 5u);
+  assert(!power_lifecycle_take_bits(&lifecycle, NULL, NULL));
+}
+
+/* Callbacks the ring overwrote are skipped; the numbers show the gap. */
+static void test_raw_bits_overrun_leaves_a_gap(void)
+{
+  const uint32_t total = POWER_LIFECYCLE_RAW_SLOTS + 3u;
+  const uint32_t first = total - (POWER_LIFECYCLE_RAW_SLOTS - 1u) + 1u;
+  PowerLifecycle lifecycle;
+  uint32_t bits;
+  uint32_t number;
+  uint32_t i;
+
+  power_lifecycle_init(&lifecycle);
+  for(i = 1; i <= total; i++)
+    power_lifecycle_note_bits(&lifecycle, i << 8);
+
+  for(i = first; i <= total; i++)
+  {
+    assert(power_lifecycle_take_bits(&lifecycle, &bits, &number));
+    assert(number == i);
+    assert(bits == i << 8);
+  }
+  assert(!power_lifecycle_take_bits(&lifecycle, &bits, &number));
+
+  /* A full ring but for the slot being written loses nothing... */
+  for(i = 1; i < POWER_LIFECYCLE_RAW_SLOTS; i++)
+    power_lifecycle_note_bits(&lifecycle, i);
+  assert(power_lifecycle_take_bits(&lifecycle, &bits, &number));
+  assert(number == total + 1u && bits == 1u);
+  while(power_lifecycle_take_bits(&lifecycle, &bits, &number))
+    ;
+  assert(number == total + POWER_LIFECYCLE_RAW_SLOTS - 1u);
+
+  /* ...and one more callback costs the oldest. */
+  for(i = 1; i <= POWER_LIFECYCLE_RAW_SLOTS; i++)
+    power_lifecycle_note_bits(&lifecycle, i);
+  assert(power_lifecycle_take_bits(&lifecycle, &bits, &number));
+  assert(number == total + POWER_LIFECYCLE_RAW_SLOTS + 1u && bits == 2u);
 }
 
 /* Runs every callback case; a failing assert aborts the run. */
@@ -317,7 +369,8 @@ int main(void)
   test_entry_with_resume_complete_does_both();
   test_switch_entry_times_out();
   test_suspending_entry_never_times_out();
-  test_raw_bits_accumulate_and_are_taken_once();
+  test_raw_bits_are_kept_per_callback();
+  test_raw_bits_overrun_leaves_a_gap();
   puts("Power lifecycle tests passed");
   return 0;
 }

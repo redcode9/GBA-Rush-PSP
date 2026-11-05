@@ -102,9 +102,10 @@ EXACT_RENDERER = [
     "cpu-no-answer", "cpu-stopped", "cpu-fault", "cpu-too-slow",
     "cpu-no-memory",
 ]
-# power-bits: the PSP power callback bits ORed since the last record
-# (PSP_POWER_CB_* in source/src/libpower/psppower.h), the callbacks counted
-# and the power_lifecycle outcome (POWER_LIFECYCLE_ENTRY_* and
+# power-bits: one PSP power callback's raw bits (PSP_POWER_CB_* in
+# source/src/libpower/psppower.h), its number since boot (a gap means
+# callbacks were lost; 0 on a timeout record) and the power_lifecycle
+# outcome when logged (POWER_LIFECYCLE_ENTRY_* and
 # POWER_LIFECYCLE_SWITCH_EXPIRED in source/src/power_lifecycle.h).
 POWER_BITS = {
     0x80000000: "switch",
@@ -226,7 +227,7 @@ def describe(record: dict[str, Any]) -> str:
     if event == "power-bits":
         names = "|".join(name for bit, name in POWER_BITS.items() if value0 & bit)
         return (
-            f"bits=0x{value0:08X} ({names or '-'}) callbacks={value1} "
+            f"bits=0x{value0:08X} ({names or '-'}) callback={value1} "
             f"outcome={_name(POWER_OUTCOMES, value2)}"
         )
     # Earlier versions belong to a retired link design; show raw values.

@@ -45,6 +45,9 @@
    the emulator thread must reserve the audio channel itself. PSP error
    codes never take this value. */
 #define POWER_LIFECYCLE_AUDIO_NOT_RESERVED INT32_MIN
+/* Raw callback words kept until the emulator thread logs them; the slot the
+   next callback writes is never trusted, so up to 15 wait safely. */
+#define POWER_LIFECYCLE_RAW_SLOTS 16u
 
 typedef enum
 {
@@ -55,18 +58,21 @@ typedef enum
 
 typedef struct
 {
-  /* Written by the power callback. */
+  /* Written by the power callback; power_lifecycle_expire_switch also
+     writes suspended (by compare-and-swap), audio_result and
+     resume_sequence (by atomic add) from the emulator thread. */
   volatile uint32_t suspended;
   volatile uint32_t save_sequence;
   volatile uint32_t resume_sequence;
   volatile int32_t audio_result;
-  /* Raw callback bits ORed together and the callbacks counted since the
-     emulator thread last took them. */
-  volatile uint32_t raw_bits;
+  /* Written by the power callback only: each callback's raw bits, in the
+     slot of its index, and the callbacks counted since init. */
+  volatile uint32_t raw_bits[POWER_LIFECYCLE_RAW_SLOTS];
   volatile uint32_t raw_callbacks;
   /* Written by the emulator thread. */
   uint32_t handled_save_sequence;
   uint32_t handled_resume_sequence;
+  uint32_t taken_callbacks;
 } PowerLifecycle;
 
 void power_lifecycle_init(PowerLifecycle *lifecycle);
@@ -87,9 +93,11 @@ int power_lifecycle_take_resume(PowerLifecycle *lifecycle,
    as a resume with POWER_LIFECYCLE_AUDIO_NOT_RESERVED. Returns 1 if it did. */
 int power_lifecycle_expire_switch(PowerLifecycle *lifecycle,
  uint64_t entered_us, uint64_t now_us);
-/* Returns the bits noted since the last call (0 if none) and stores the
-   callback count in *callbacks. */
-uint32_t power_lifecycle_take_bits(PowerLifecycle *lifecycle,
- uint32_t *callbacks);
+/* Takes the oldest callback not taken yet: stores its raw bits and its
+   number (the first callback is 1) and returns 1, or returns 0 if there is
+   none. Callbacks overwritten before they were taken leave a gap in the
+   numbers. */
+int power_lifecycle_take_bits(PowerLifecycle *lifecycle, uint32_t *bits,
+ uint32_t *number);
 
 #endif /* POWER_LIFECYCLE_H */
