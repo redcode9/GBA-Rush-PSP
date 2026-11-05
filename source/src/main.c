@@ -408,64 +408,79 @@ void timer_control_low(u8 timer_number, u32 value)
 }
 
 /* TMxCNT_H write: bit 7 enables, bit 2 selects count-up (cascade) mode,
-   bit 6 enables the overflow IRQ, bits 0-1 pick the prescaler. Only an
-   enable edge is acted on; writes to a running timer are ignored. */
+   bit 6 enables the overflow IRQ, bits 0-1 pick the prescaler. It acts at
+   the cycle of the write (main_cycle_now): a start loads the reload
+   value, a stop holds the count, and a running timer keeps its count at a
+   new rate or mode. */
 CPU_ALERT_TYPE timer_control_high(u8 timer_number, u32 value)
 {
   TimerType *tm = timer + timer_number;
+  u32 event = MAIN_EVENT_TIMER0 + timer_number;
+  u32 now = main_cycle_now();
+  u32 running = tm->status != TIMER_INACTIVE;
+  TIMER_STATUS_TYPE status = TIMER_PRESCALE;
+  u32 shift = prescale_table[value & 0x03];
+  s32 left = 0;
 
-  if ((value & 0x80) != 0)
+  tm->irq = (value >> 6) & 0x01;
+  if (running)
+    left = timer_left(timer_number, now);
+
+  if ((value & 0x80) == 0)
   {
-    if (tm->status == TIMER_INACTIVE)
-    {
-      if ((value & 0x04) != 0)
-      {
-        tm->status = TIMER_CASCADE;
-        tm->prescale = 0;
-      }
-      else
-      {
-        tm->status = TIMER_PRESCALE;
-        tm->prescale = prescale_table[value & 0x03];
-      }
+    // Timers are 4 bytes apart
+    if (running)
+      pIO_REG(REG_TM0D + (timer_number << 1)) =
+       gba_timer_counter(left, tm->reload, tm->prescale);
+    tm->status = TIMER_INACTIVE;
+    event_queue_cancel(&main_events, event);
+    return CPU_ALERT_NONE;
+  }
 
-      tm->irq = (value >> 6) & 0x01;
+  // Timer 0 has no timer before it to count
+  if ((value & 0x04) != 0 && timer_number != 0)
+  {
+    status = TIMER_CASCADE;
+    shift = 0;
+  }
 
-      u32 timer_reload = tm->reload;
+  // Only the IRQ bit changed
+  if (running && status == tm->status && shift == tm->prescale)
+    return CPU_ALERT_NONE;
 
-      // TMxCNT_L reads back the reload value; timers are 4 bytes apart
-      pIO_REG(REG_TM0D + (timer_number << 1)) = 0x10000 - timer_reload;
+  left = gba_timer_written(running, left, tm->reload, tm->prescale, shift);
+  tm->status = status;
+  tm->prescale = shift;
+  pIO_REG(REG_TM0D + (timer_number << 1)) =
+   gba_timer_counter(left, tm->reload, shift);
 
-      timer_reload <<= tm->prescale;
-      tm->count = timer_reload;
-      // From the start of the slice: cpu_ticks advances on the next pass
-      if (tm->status == TIMER_PRESCALE)
-        event_queue_schedule(&main_events, MAIN_EVENT_TIMER0 + timer_number,
-         cpu_ticks + timer_reload, cpu_ticks);
-
-      // Only timers 0 and 1 can clock the Direct Sound FIFOs
-      if (timer_number < 2)
-      {
-        tm->frequency_step = SOUND_UPDATE_FREQUENCY_STEP;
-        tm->reload_update = 0;
-
-        if ((tm->direct_sound_channels & 0x01) != 0)
-          adjust_direct_sound_buffer(0, cpu_ticks + timer_reload);
-
-        if ((tm->direct_sound_channels & 0x02) != 0)
-          adjust_direct_sound_buffer(1, cpu_ticks + timer_reload);
-      }
-
-      return CPU_ALERT_TIMER;
-    }
+  if (status == TIMER_PRESCALE)
+  {
+    event_queue_schedule(&main_events, event, now + (u32)left, cpu_ticks);
+    tm->count = (s32)(now + (u32)left - cpu_ticks);
   }
   else
   {
-    tm->status = TIMER_INACTIVE;
-    event_queue_cancel(&main_events, MAIN_EVENT_TIMER0 + timer_number);
+    event_queue_cancel(&main_events, event);
+    tm->count = left;
   }
 
-  return CPU_ALERT_NONE;
+  // Only timers 0 and 1 can clock the Direct Sound FIFOs
+  if (!running && timer_number < 2)
+  {
+    u32 timer_reload = (u32)left;
+
+    tm->frequency_step = SOUND_UPDATE_FREQUENCY_STEP;
+    tm->reload_update = 0;
+
+    if ((tm->direct_sound_channels & 0x01) != 0)
+      adjust_direct_sound_buffer(0, now + timer_reload);
+
+    if ((tm->direct_sound_channels & 0x02) != 0)
+      adjust_direct_sound_buffer(1, now + timer_reload);
+  }
+
+  return CPU_ALERT_TIMER;
 }
 
 /* SOUNDCNT_H write: bits 10 and 14 pick timer 0 or 1 for Direct Sound A
