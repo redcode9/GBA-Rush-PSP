@@ -4,12 +4,13 @@ set -eu
 
 # Keeps the performance instrumentation cheap enough to leave on: sampling
 # never allocates or touches files, and the report is only formatted and
-# written outside the emulation hot paths.
+# written outside the emulation hot paths. The toast ring is read on every
+# presented frame, so it follows the same rule.
 
 if rg -q 'FILE_|sceIo|malloc\(|calloc\(|realloc\(|free\(' \
-  source/src/perf_metrics.c source/src/perf_monitor.c
+  source/src/perf_metrics.c source/src/perf_monitor.c source/src/toast.c
 then
-  echo "Performance sampling performs allocation or file access" >&2
+  echo "Performance sampling or the toast ring performs allocation or file access" >&2
   exit 1
 fi
 
