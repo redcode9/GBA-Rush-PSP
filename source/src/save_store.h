@@ -130,12 +130,15 @@ SaveStoreResult save_store_commit(SaveStoreWrite *transaction);
 SaveStoreResult save_store_write(const SaveStoreIo *io, const char *dir,
  const char *name, const uint8_t *data, size_t size);
 /* Keeps size bytes of data as the newest of three generations, dir
-   followed by name plus ".link1" (newest) to ".link3" (oldest): .link3 is
-   deleted, .link2 becomes .link3 and .link1 becomes .link2, each rename
-   checked on both names, then save_store_write() writes .link1. A failed
-   rename stops the push there, so only the oldest generation is lost.
-   FAILED if a name does not fit or a rename fails, before .link1 is
-   written; else save_store_write()'s result. */
+   followed by name plus ".link1" (newest) to ".link3" (oldest). The
+   generations move up one name as far as the first free one: with all
+   three there, .link3 is deleted, .link2 becomes .link3 and .link1
+   becomes .link2, each rename checked on both names. Then
+   save_store_write() writes .link1. A failed rename stops the push there,
+   so only the oldest generation is lost, and the gap a failed push leaves
+   is filled by the next one without losing another. FAILED if a name
+   does not fit, .link3 will not delete or a rename fails, before .link1
+   is written; else save_store_write()'s result. */
 SaveStoreResult save_store_ring_push(const SaveStoreIo *io, const char *dir,
  const char *name, const uint8_t *data, size_t size);
 

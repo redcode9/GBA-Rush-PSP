@@ -219,6 +219,7 @@ SaveStoreResult save_store_ring_push(const SaveStoreIo *io, const char *dir,
  const char *name, const uint8_t *data, size_t size)
 {
   static char links[3][SAVE_STORE_PATH_MAX];
+  int free_slot = 0;
   int i;
 
   /* The write's .link1.tmp and .link1.bak are the longest names: a push
@@ -226,14 +227,18 @@ SaveStoreResult save_store_ring_push(const SaveStoreIo *io, const char *dir,
   if(!join_path(links[0], dir, name, ".link1.tmp") ||
      !join_path(links[0], dir, name, ".link1") ||
      !join_path(links[1], dir, name, ".link2") ||
-     !join_path(links[2], dir, name, ".link3") ||
-     !io->remove(io->context, links[2]))
+     !join_path(links[2], dir, name, ".link3"))
     return SAVE_STORE_FAILED;
-  /* .link2 first, so each rename's target is free. */
-  for(i = 1; i >= 0; i--)
+  /* Shift only up to the first free name: a push that stopped before
+     writing .link1 left one, and filling it costs no generation. */
+  while(free_slot < 2 && io->exists(io->context, links[free_slot]))
+    free_slot++;
+  if(free_slot == 2 && !io->remove(io->context, links[2]))
+    return SAVE_STORE_FAILED;
+  /* The highest first, so each rename's target is free. */
+  for(i = free_slot - 1; i >= 0; i--)
   {
-    if(io->exists(io->context, links[i]) &&
-       !moved(io, links[i], links[i + 1]))
+    if(!moved(io, links[i], links[i + 1]))
       return SAVE_STORE_FAILED;
   }
   /* .link1 is gone, so the write keeps no .link1.bak. */

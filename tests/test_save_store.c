@@ -632,6 +632,46 @@ static void check_ring(int count)
   assert(fake_store_file_size(&store, LINK1 ".bak") < 0);
 }
 
+/* A push of PUSHED + 1 after one that failed or was cut works, and keeps
+   every generation there before but the oldest of three, newer ones
+   first. */
+static void check_next_push(void)
+{
+  unsigned before = 0;
+  unsigned after = 0;
+  int present = 0;
+  int oldest = 0;
+  int newer = PUSHED + 2;
+  int seed;
+  int i;
+
+  for(i = 0; i < 3; i++)
+  {
+    seed = generation(i);
+    if(seed > 0)
+    {
+      before |= 1u << seed;
+      present++;
+      oldest = seed;
+    }
+  }
+  if(present == 3)
+    before &= ~(1u << oldest);
+  assert(push(PUSHED + 1) == SAVE_STORE_OK);
+  assert(generation(0) == PUSHED + 1);
+  for(i = 0; i < 3; i++)
+  {
+    seed = generation(i);
+    assert(seed >= 0);
+    if(seed == 0)
+      continue;
+    assert(seed < newer);
+    newer = seed;
+    after |= 1u << seed;
+  }
+  assert(after == (before | 1u << (PUSHED + 1)));
+}
+
 /* From no generation to three and past: after n pushes there are
    min(n, 3), the newest in .link1, and no .tmp. */
 static void test_ring_keeps_three_generations(void)
@@ -654,7 +694,7 @@ static void test_ring_keeps_three_generations(void)
 /* For 0 to 3 generations there and every call k of a push: the power goes
    off after call k, the next start recovers .link1 (a leftover .link1.tmp
    goes), and the ring has lost nothing but the oldest of three, with no
-   partial .link1. The next push works. */
+   partial .link1. The next push loses no more than that. */
 static void test_ring_power_cut_at_every_step(void)
 {
   int count;
@@ -678,21 +718,22 @@ static void test_ring_power_cut_at_every_step(void)
              SAVE_STORE_OK);
       assert(fake_store_file_size(&store, LINK1 ".tmp") < 0);
       check_ring(count);
-      assert(push(PUSHED + 1) == SAVE_STORE_OK);
-      assert(generation(0) == PUSHED + 1);
+      check_next_push();
     }
     assert(result == SAVE_STORE_OK && generation(0) == PUSHED);
     check_ring(count);
-    /* The removal, two checks, any renames, then the write's 13 calls. */
-    assert(cut > 16);
+    /* One or two checks, any removal and renames, then the write's 13
+       calls. */
+    assert(cut > 14);
   }
   assert(leftovers > 0);
 }
 
 /* A rename that fails, or that the names do not confirm either way, stops
    the push before .link1 is written, the generations as check_ring()
-   wants them; the next push works. A failed write of .link1 gives the
-   store's result. */
+   wants them; the next push loses no more. A failed write of .link1 gives
+   the store's result, and push after push still loses only the oldest
+   generation. */
 static void test_ring_stops_at_a_failed_rename(void)
 {
   static int *const renames[] =
@@ -712,16 +753,19 @@ static void test_ring_stops_at_a_failed_rename(void)
       assert(store.move_calls == call && store.open_write_calls == 0);
       check_ring(3);
       *renames[i] = 0;
-      assert(push(PUSHED) == SAVE_STORE_OK);
-      assert(generation(0) == PUSHED);
+      check_next_push();
     }
   }
 
   seed_ring(3);
-  store.fail_open_write = 1;
-  assert(push(PUSHED) == SAVE_STORE_WRITE_FAILED);
-  assert(generation(0) == 0);
-  check_ring(3);
+  for(call = 1; call <= 3; call++)
+  {
+    store.fail_open_write = call;
+    assert(push(PUSHED) == SAVE_STORE_WRITE_FAILED);
+    assert(generation(0) == 0);
+    check_ring(3);
+  }
+  check_next_push();
 }
 
 int main(void)
