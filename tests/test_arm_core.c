@@ -127,10 +127,23 @@ static const ArmIrOp *find_op(const ArmIrOp *ops, unsigned count,
   return NULL;
 }
 
+static uint32_t returned_from;
+static uint32_t returned_to;
+
+static void record_return(ArmCore *c, uint32_t from)
+{
+  returned_from = from;
+  returned_to = c->v[15];
+}
+
 static void test_program(void)
 {
   reset(0x08000000, ARM_MODE_SYSTEM);
+  core.returned = record_return;
   arm_core_run(&core, 2000);
+  core.returned = NULL;
+  /* The SWI came back through the BIOS's movs pc, lr at 8. */
+  CHECK(returned_from == 0x08 && returned_to == 0x08000020);
   CHECK(core.v[15] == 0x08000020);
   CHECK(core.v[0] == 55);
   CHECK(core.v[1] == 0);

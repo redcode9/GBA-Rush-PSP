@@ -208,6 +208,16 @@ static void run_cheat_hook(ArmCore *core)
   process_cheats_at_hook(cheat_hook);
 }
 
+/* Leaving the BIOS from a SWI or an IRQ: the opcode two instructions after
+   its return, the last one it fetched, is what protected BIOS reads give
+   from now on (GBATEK). The official BIOS leaves 0xE3A02004 after a SWI
+   and 0xE55EC002 after an IRQ; the built-in one leaves its own words. */
+static void exception_returned(ArmCore *core, uint32_t from)
+{
+  if(from < 0x4000 && core->v[15] >= 0x4000)
+    bios_read_protect = ADDRESS32(bios.rom, (from + 8) & 0x3FFC);
+}
+
 /* Where register r (8-14, or 16 for the SPSR) of a mode not running is,
    or NULL when that mode is the one running (its registers are in v[]). */
 static u32 *banked(ArmCore *core, unsigned mode, unsigned r)
@@ -230,6 +240,7 @@ static void load_registers(void)
   arm_core_reset(core);
   core->hook = cheat_hook;
   core->hooked = run_cheat_hook;
+  core->returned = exception_returned;
   map_memory(core);
   arm_core_set_waitcnt(core, pIO_REG(REG_WAITCNT));
   arm_core_set_cpsr(core, reg[REG_CPSR]);
@@ -331,14 +342,9 @@ void arm_gba_run(void)
   {
     s32 ran = 0;
 
-    /* An interrupt the last events raised: entered here rather than in
-       the core, so protected BIOS reads see what the BIOS's IRQ handler
-       leaves, as with the Classic core (cpu_interrupt in main.c). */
+    /* An interrupt the last events raised. */
     if(core->irq_line && !(core->cpsr & ARM_CPSR_I))
-    {
       ran = arm_core_irq(core);
-      bios_read_protect = 0xe55ec002;
-    }
     ran += arm_mips_run(jit, (s32)reg[EXECUTE_CYCLES] - ran);
     reg[EXECUTE_CYCLES] = (u32)ran;
 

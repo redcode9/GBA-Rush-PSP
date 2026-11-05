@@ -851,6 +851,8 @@ ArmExitKind arm_core_execute(ArmCore *core, const ArmIrOp *op)
         set_pc(core, a, flags & ARM_IR_BX);
         core->cycles += (int32_t)refill(core);
         prefetch_flush(core);
+        if((flags & ARM_IR_RESTORE) && core->returned)
+          core->returned(core, core->insn_pc);
         return (ArmExitKind)op->d;
       case ARM_IR_SWI:
         exception(core, ARM_MODE_SUPERVISOR, 0x08, op->b);
