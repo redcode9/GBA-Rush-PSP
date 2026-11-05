@@ -890,8 +890,8 @@ static void exit_direct(Builder *b, const ArmIrOp *op, unsigned index)
   unsigned kind = op->d;
   uint32_t key = exit_key(b, op);
 
-  /* An idle loop's branch leaves the run anyway: the interpreter takes it
-     and spends the budget. */
+  /* An idle loop's branch goes to the interpreter, which skips its passes
+     (skip_idle_passes in arm_interp.c). */
   if(kind == ARM_EXIT_SYSTEM || (op->flags & ARM_IR_IDLE_LOOP))
   {
     bail_here(b, index);
@@ -2713,6 +2713,7 @@ int32_t arm_mips_run(ArmMips *jit, int32_t cycles)
   fast_regions(jit);
   core->cycles = 0;
   core->cycle_limit = cycles;
+  core->idle_target = ARM_NO_IDLE_PASS;
   for(;;)
   {
     uint32_t entry;

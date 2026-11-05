@@ -261,10 +261,32 @@ static unsigned refill(const ArmCore *core)
    arm_access_cycles(core, core->v[15] + width, width, 1);
 }
 
+/* An idle loop's branch, taken before the budget is spent. Spinning would
+   leave the run at the first taken branch past the budget, a few cycles
+   late, and a game can see those cycles (with the run ended on the budget
+   FireRed puts its save data at another random offset when it loads the
+   save), so skipping keeps them: this pass notes its cycle, the next one
+   measures a pass and skips every pass that would end before the budget,
+   and the last pass runs. Passes of changing length still end the run at a real branch past
+   the budget.
+   ponytail: three passes per wait, two more than ending on the budget;
+   when the block is the whole loop the second pass could jump straight
+   to the end, if the gain on the PSP needs that pass back. */
+static void skip_idle_passes(ArmCore *core, uint32_t target)
+{
+  int32_t pass = core->cycles - core->idle_cycles;
+
+  if(core->idle_target == target && pass > 0)
+    core->cycles += (core->cycle_limit - core->cycles - 1) / pass * pass;
+  core->idle_target = target;
+  core->idle_cycles = core->cycles;
+}
+
 int arm_core_irq(ArmCore *core)
 {
   if(core->cpsr & ARM_CPSR_I)
     return 0;
+  core->idle_target = ARM_NO_IDLE_PASS;
   /* lr points one instruction past the one to return to, so the handler
      returns with subs pc, lr, #4 in either state. */
   exception(core, ARM_MODE_IRQ, 0x18, core->v[15] + 4);
@@ -845,7 +867,7 @@ ArmExitKind arm_core_execute(ArmCore *core, const ArmIrOp *op)
         if(op->d != ARM_EXIT_NEXT)
           prefetch_flush(core);
         if((flags & ARM_IR_IDLE_LOOP) && core->cycles < core->cycle_limit)
-          core->cycles = core->cycle_limit;
+          skip_idle_passes(core, op->b);
         return (ArmExitKind)op->d;
       case ARM_IR_EXIT_REG:
         if((flags & ARM_IR_RESTORE) && has_spsr(core))
@@ -937,6 +959,7 @@ int32_t arm_core_run(ArmCore *core, int32_t cycles)
 
   core->cycles = 0;
   core->cycle_limit = cycles;
+  core->idle_target = ARM_NO_IDLE_PASS;
   for(;;)
   {
     /* Interrupts and the budget only at taken branches, so both depend on

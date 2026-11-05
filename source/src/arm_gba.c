@@ -39,7 +39,9 @@
  * Idle loops. game_config.txt's idle_loop_eliminate_target branches end a
  * run as if its cycles were all spent, so update_gba() moves straight to
  * the next event: the Classic core calls update_gba() at those branches,
- * which then counts the whole budget as run.
+ * which then counts the whole budget as run. The core skips whole passes
+ * of the loop instead, so the run ends on the cycle spinning would have
+ * ended it and the game runs exactly as without the skip.
  */
 
 #include "common.h"

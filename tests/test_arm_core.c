@@ -255,27 +255,34 @@ static void test_hook(void)
 static void test_idle_loop(void)
 {
   unsigned pass;
+  int32_t spun;
 
-  /* "stop: b stop" named an idle loop: its first pass spends the whole
-     budget. */
+  /* "stop: b stop" named an idle loop: two passes measure it, the
+     skipped ones and the last one end the run on the cycle spinning
+     ends it. */
+  reset(0x08000020, ARM_MODE_SYSTEM);
+  core.instructions = 0;
+  spun = arm_core_run(&core, 1000);
+  CHECK(spun > 1000 && core.instructions > 50);
   core.idle_loops[0] = 0x08000020;
   core.idle_loop_count = 1;
   arm_core_flush(&core);
   reset(0x08000020, ARM_MODE_SYSTEM);
   core.instructions = 0;
-  CHECK(arm_core_run(&core, 1000) == 1000);
-  CHECK(core.instructions == 1 && core.v[15] == 0x08000020);
+  CHECK(arm_core_run(&core, 1000) == spun);
+  CHECK(core.instructions == 3 && core.v[15] == 0x08000020);
   /* Spent already, the budget stays as it is. */
   CHECK(arm_core_run(&core, 1) > 1);
 
-  /* The Thumb countdown's bne: one pass per run while it is taken, and
-     running on once it is not. */
+  /* The Thumb countdown's bne, not idle: three passes per run while it
+     is taken, the first two measuring one, and running on once it is
+     not. */
   core.idle_loops[0] = 0x0800002C;
   arm_core_flush(&core);
   reset(0x08000000, ARM_MODE_SYSTEM);
-  for(pass = 1; pass < 10; pass++)
+  for(pass = 3; pass < 10; pass += 3)
   {
-    CHECK(arm_core_run(&core, 2000) == 2000);
+    CHECK(arm_core_run(&core, 2000) >= 2000);
     CHECK(core.v[15] == 0x08000028 && core.v[4] == 10 - pass);
   }
   arm_core_run(&core, 2000);

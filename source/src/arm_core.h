@@ -93,6 +93,7 @@ typedef struct
 #define ARM_CODE_PAGES (1024u + 128u)
 #define ARM_NO_BLOCK 0xFFFFu
 #define ARM_IDLE_LOOPS 16u
+#define ARM_NO_IDLE_PASS 0xFFFFFFFFu
 
 typedef struct
 {
@@ -154,10 +155,15 @@ typedef struct ArmCore
   void (*hooked)(struct ArmCore *core);
   /* Idle loops, a game spinning until an interrupt: the addresses of their
      B instructions (or ARM BL), conditional or not. Taken, such a branch
-     ends arm_core_run as if its budget were spent, so the system skips
-     straight to its next event. Flush after changing them. */
+     skips the passes that would only spend the budget, so arm_core_run
+     ends where spinning would have and the system moves straight to its
+     next event. Flush after changing them. */
   uint32_t idle_loops[ARM_IDLE_LOOPS];
   unsigned idle_loop_count;
+  /* The target and cycle of the last idle loop branch taken in this run,
+     to measure one pass; ARM_NO_IDLE_PASS when there is none. */
+  uint32_t idle_target;
+  int32_t idle_cycles;
 
   uint32_t block_count;
   uint32_t op_count;
