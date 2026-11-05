@@ -33,6 +33,7 @@ typedef struct
 {
   SceUID fd;
   const char *name;
+  uint32_t done;  /* archive bytes last reported to the popup */
 } ZipFile;
 
 static int32_t zip_file_read(void *ctx, uint8_t *buf, uint32_t len)
@@ -42,6 +43,7 @@ static int32_t zip_file_read(void *ctx, uint8_t *buf, uint32_t len)
 
 static void zip_file_progress(void *ctx, uint32_t done, uint32_t total)
 {
+  ((ZipFile *)ctx)->done = done;
   if (rom_load_progress != NULL)
     rom_load_progress(((ZipFile *)ctx)->name, MSG_LOADING_STAGE_UNZIP, done,
      total);
@@ -56,6 +58,7 @@ s32 load_file_zip(char *filename)
 
   FILE_OPEN(file.fd, filename, READ);
   file.name = filename;
+  file.done = 0;
 
   if (!FILE_CHECK_VALID(file.fd))
     return -1;
@@ -84,6 +87,11 @@ s32 load_file_zip(char *filename)
   // An empty ROM must fail here: load_gamepak()'s callers take 0 as success.
   if (result != ZIP_ROM_OK || rom_size == 0)
     return -3;
+
+  // The bytes after the entry (the central directory) are never read: show
+  // the full bar before the game starts.
+  if (file.done < io.total)
+    zip_file_progress(&file, io.total, io.total);
 
   return (s32)rom_size;
 }
