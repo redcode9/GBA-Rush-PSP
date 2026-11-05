@@ -36,6 +36,7 @@
 #include "psp_adhoc.h"
 #include "runtime_log_psp.h"
 #include "sound_math.h"
+#include "toast.h"
 #include "video_me.h"
 
 // Main thread params; on the PSP a lower priority number runs first.
@@ -1380,6 +1381,7 @@ static void synchronize(void)
   u32 used_frameskip_type  = option_frameskip_type;
   u32 used_frameskip_value = option_frameskip_value;
   int link_slept;
+  const Toast *toast;
 
   fps_window_frames++;
 
@@ -1442,6 +1444,19 @@ static void synchronize(void)
          (long)frames_drawn, drawn_on, core);
       }
       print_string(print_buffer, 0, 0, COLOR15_WHITE, COLOR15_BLACK);
+    }
+
+    // the current toast, below the fps and fast-forward lines; it expires
+    // in real time, so frameskip and fast-forward do not stretch it
+    toast = toast_current(sceKernelGetSystemTimeLow());
+    if (toast != NULL)
+    {
+      if (toast->sjis)
+        print_string(toast->text, X_POS_CENTER, 24, COLOR15_WHITE,
+         COLOR15_BLACK);
+      else
+        print_swap_aware(toast->text, X_POS_CENTER, 24, COLOR15_WHITE,
+         COLOR15_BLACK);
     }
   }
 
@@ -1921,13 +1936,15 @@ void quit(void)
   sceKernelExitGame();
 }
 
-/* Resets the GBA with the loaded ROM. Ends fast-forward, benchmark capture,
-   input traces and the link first; flushes the runtime log if the ROM
-   changed. */
+/* Resets the GBA with the loaded ROM. Drops queued toasts, ends
+   fast-forward, benchmark capture, input traces and the link first; flushes
+   the runtime log if the ROM changed. Every ROM load goes through here,
+   menu_load_file included. */
 void reset_gba(void)
 {
   u32 new_identity = 0;
 
+  toast_clear();
   main_fast_forward_stop();
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
