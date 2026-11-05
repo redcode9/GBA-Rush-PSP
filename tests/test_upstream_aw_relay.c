@@ -22,6 +22,7 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #define PKT_WORDS (2 + 128)    /* u32 pkt[2 + 128], serial_proto.c:420 */
@@ -208,5 +209,6 @@ int main(void)
 {
   test_packet_size_byte_overflows_pkt();
   test_intersync_run_overflows_pkt_and_queue();
+  puts("Upstream AW relay tests passed");
   return 0;
 }
