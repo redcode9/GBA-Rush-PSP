@@ -23,7 +23,7 @@
 - [ ] **SOA-8.3** — Pagine ROM della PSP-1000 lette con sceDmacMemcpy da un thread ausiliario · M, 2 gg · dipende da: SOA-8.1, PRF-5.2 · PSP: sì
 - [ ] **SOA-8.4** — Modelli 2000+: ROM residente, partizione volatile e VRAM da 4 MiB · M, 2,5 gg · dipende da: PRF-6.1 · PSP: sì
 - [ ] **SOA-8.5** — Ritmo sul VBlank e ricampionamento 59,73→59,94 Hz senza scatti · M, 2 gg · dipende da: SOA-8.1 · PSP: sì
-- [ ] **SOA-8.6** — Clock 333/166 MHz verificati in ogni percorso · S, 0,5 gg · dipende da: — · PSP: sì · **subito** · _codice pronto (98fc03e), manca la prova su PSP_
+- [ ] **SOA-8.6** — Clock 333/166 MHz verificati in ogni percorso · S, 0,5 gg · dipende da: — · PSP: sì · **subito** · _codice pronto (f4d895f), manca la prova su PSP_
 
 ## dopo gate
 
