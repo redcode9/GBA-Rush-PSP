@@ -80,8 +80,10 @@ do
   $RUN --frames 400 --save "$save" "$rom"
   $PYTHON tools/decode_test_rom.py --allow-fail $bus_allow "$save"
   $RUN --frames 400 --save "$save" "$rom"
-  $PYTHON tools/decode_test_rom.py --allow-fail $bus_allow "$save" |
-    tee "$save.txt"
+  # Into a file rather than through a pipe, which would hide a failing exit.
+  $PYTHON tools/decode_test_rom.py --allow-fail $bus_allow "$save" \
+    > "$save.txt" || { cat "$save.txt"; exit 1; }
+  cat "$save.txt"
   if ! grep -q 'read_back  *PASS' "$save.txt"; then
     echo "save-$chip did not read back its first boot's generation" >&2
     exit 1
