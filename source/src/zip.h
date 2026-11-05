@@ -22,8 +22,10 @@
 #define ZIP_H
 
 
-/* Loads the first ROM in a .zip into gamepak_rom. Returns its size, -1 on
-   error, or -2 if it does not fit in the ROM buffer. */
+/* Loads the ROM in the first entry of a .zip into gamepak_rom. Returns its
+   size (above 0), -1 if the file cannot be opened or memory runs out, -2 if
+   the ROM does not fit in the ROM buffer, or -3 for any other failure: a
+   damaged, truncated or unsupported archive, or a read error. */
 s32 load_file_zip(char *filename);
 
 
