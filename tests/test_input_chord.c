@@ -183,9 +183,15 @@ static void test_defaults(void)
 {
   InputChordState state;
   uint32_t hide;
+  uint32_t i;
 
   assert(input_chord_validate(input_chord_defaults,
    INPUT_CHORD_DEFAULT_COUNT));
+  /* update_input reads entry n as action n, for every action. */
+  for(i = 0; i < INPUT_CHORD_DEFAULT_COUNT; i++)
+    assert((uint32_t)input_chord_defaults[i].action == i);
+  assert(input_chord_defaults[INPUT_CHORD_FASTFORWARD].mask == 0);
+  assert(input_chord_defaults[INPUT_CHORD_FPS].mask == 0);
   assert(input_chord_defaults[0].action == INPUT_CHORD_SAVESTATE);
   assert(input_chord_defaults[0].mask == (KEY_SELECT | KEY_L));
   assert(input_chord_defaults[0].hold_ms == 0);
