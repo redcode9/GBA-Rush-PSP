@@ -96,7 +96,9 @@ check()
   if [ -f "$out/mismatch.bmp" ]; then
     mv "$out/mismatch.bmp" "$out/$name.bmp"
   fi
-  tail -n 3 "$out/$name.log" | sed "s|^[^ ]*:|$name:|"
+  # The game's line starts with its ROM path, which may hold spaces.
+  tail -n 3 "$out/$name.log" | awk -v rom="$rom" -v name="$name" \
+    'index($0, rom ":") == 1 { $0 = name substr($0, length(rom) + 1) } 1'
 }
 
 bios=
