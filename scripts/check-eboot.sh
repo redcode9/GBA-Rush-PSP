@@ -92,7 +92,11 @@ run()
   fi
   "$out/global_config" "$number" "$dir/tempgba.cfg"
 
-  "$headless" -l --timeout="${RUN_SECONDS:-120}" "$dir/EBOOT.PBP" 2>&1 |
+  # An absolute path: PPSSPP makes the EBOOT's folder umd0: and creates
+  # folders there from the root of the path, so with a relative one the
+  # EBOOT cannot make logs/ and never writes its runtime log.
+  "$headless" -l --timeout="${RUN_SECONDS:-120}" \
+    "$(absolute "$dir")/EBOOT.PBP" 2>&1 |
     awk '/sceAudioSRCOutputBlocking/ { frames++; next }
       /TIMEOUT|Invalid (instruction|access|exec)|BREAK!|Bad memory/ { print }
       END { print "frames", frames + 0 }' > "$dir/ppsspp.log"

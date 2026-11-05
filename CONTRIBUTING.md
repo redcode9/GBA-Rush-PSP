@@ -102,6 +102,46 @@ Record the PSP model, firmware, storage, ROM hash and actual ROM-cache capacity.
 Test menu transitions, suspend, resume and exit when changing threads, audio,
 networking or file access.
 
+## Test ROMs
+
+`tests/core-rom` (CPU, interrupt, BIOS and bus cases), `tests/save-rom`
+(one target per save chip) and `tests/raster-rom` (HBlank DMA and IRQ cases,
+then a picture) are GBA ROMs built from source with
+arm-none-eabi-gcc, from the Arm GNU Toolchain or from devkitARM through
+`DEVKITARM`; the ROMs never go into Git. `make test-roms` builds them into
+`build/test-roms`, runs each on `tests/core/rom_run.c` (the New core's
+interpreter with a small GBA around it, not an emulator) and checks the
+result, then runs them again in mGBA 0.10 (`tests/core/mgba_run.c`, with
+the mGBA of `scripts/setup-dev.sh` or `MGBA_DIR`), the reference, where
+only the cases `scripts/check-test-roms.sh` lists with mGBA's reason may
+fail; without an ARM compiler it is skipped. `BIOS=gba_bios.bin` runs the
+core ROM on your dump of the official BIOS, for the BIOS open bus cases.
+
+Each ROM reports every case on screen and in a signature at the start of
+its save chip (`tests/gba-rom/result.h`), which
+`python3 tools/decode_test_rom.py game.sav` prints from an emulator's save
+file. A case is an entry in the table of `cases_<area>.c`, with hand-written
+code in `cases_<area>_asm.s`; a new area is listed in the ROM's `Makefile`
+and `source/main.c`. Expected values come from GBATEK or the ARM7TDMI
+documentation; only a timing those leave open takes mGBA's measurement, and
+the case's comment says so. The header logo is left blank, so
+boot the ROMs directly: "Boot from BIOS" off, or in mGBA no BIOS or "Skip
+BIOS intro".
+The BIOS copy and decompression cases take their inputs and expected
+outputs from `tests/core-rom/source/bios_vectors.h`, which
+`python3 tools/make_bios_vectors.py` writes; run it again after changing
+the script (`make test` fails while the file is out of date).
+
+The raster ROM leaves its results on screen for three seconds, then shows a
+picture that changes the affine registers and the palette in the middle of
+the frame, by HBlank DMA and from an HBlank IRQ. The picture is the same in
+every frame, so in mGBA a run one frame longer must draw the same picture
+(`make test-roms` checks it), and
+`MGBA_DIR=... RENDER_ROMS=build/test-roms/raster-rom.gba:tests/render/raster.txt make check-render`
+compares GBA Rush's renderer with mGBA's on it. `rom_run` has no PPU, HBlank
+DMA or HBlank IRQ, so in `make test-roms` the raster cases fail and only the
+run itself is checked.
+
 ## Link development
 
 See the [link cable notes](docs/link-cable.md). `tests/test_link_cable.c`
