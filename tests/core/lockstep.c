@@ -34,6 +34,12 @@
  *   --trace FILE           run mode: a line per run (frame, cycles,
  *                          instructions, pc, register hash), so two runs
  *                          can be compared
+ *   --frame-hashes FILE    run mode: a line per frame (frame, hash of the
+ *                          picture, hash of work RAM), to compare runs
+ *                          whose runs end at different places
+ *   --idle-loop ADDR       run mode: the branch at ADDR (hex) is an idle
+ *                          loop, as game_config.txt's
+ *                          idle_loop_eliminate_target; repeatable
  * Built with LOCKSTEP_JIT (and Unicorn, see mips_unicorn.h):
  *   --jit                  the MIPS backend (arm_mips.c) runs the core
  *   --count                run mode: count the MIPS instructions run, the
@@ -82,6 +88,7 @@ static color_t video[256 * 160];
 static ArmCore interpreter;
 static ArmCore *core = &interpreter;
 static FILE *trace;
+static FILE *frame_hashes;
 
 #ifdef LOCKSTEP_JIT
 #include "arm_mips.h"
@@ -1174,6 +1181,17 @@ static int compare_once(int block_mode)
 }
 
 /* The core runs the game on mGBA's devices until the next mGBA event. */
+static uint32_t hashed_frame;
+
+static uint32_t fnv1a(uint32_t hash, const void *data, size_t bytes)
+{
+  const uint8_t *p = data;
+
+  while(bytes--)
+    hash = (hash ^ *p++) * 16777619u;
+  return hash;
+}
+
 static void run_once(void)
 {
   int32_t budget;
@@ -1202,6 +1220,19 @@ static void run_once(void)
       sum = sum * 31 + core->v[r];
     fprintf(trace, "%u %d %u %08X %08X\n", mcore->frameCounter(mcore),
      cpu->cycles, core->instructions, core->v[15], sum);
+  }
+  if(frame_hashes && mcore->frameCounter(mcore) != hashed_frame)
+  {
+    /* The frame just ended; the next one starts drawing 68 lines later. */
+    uint32_t picture = 2166136261u;
+    unsigned y;
+
+    hashed_frame = mcore->frameCounter(mcore);
+    for(y = 0; y < 160; y++)
+      picture = fnv1a(picture, &video[y * 256], 240 * sizeof(color_t));
+    fprintf(frame_hashes, "%u %08X %08X\n", hashed_frame, picture,
+     fnv1a(fnv1a(2166136261u, gba->memory.wram, 0x40000),
+     gba->memory.iwram, 0x8000));
   }
 }
 
@@ -1308,6 +1339,8 @@ int main(int argc, char **argv)
   unsigned path_count = 0;
   unsigned frames = 0;
   int bios_boot = 0;
+  uint32_t idle_loops[ARM_IDLE_LOOPS];
+  unsigned idle_loop_count = 0;
   unsigned s;
   int arg;
   uint32_t frame_end;
@@ -1349,6 +1382,19 @@ int main(int argc, char **argv)
         return 2;
       }
     }
+    else if(!strcmp(argv[arg], "--frame-hashes") && arg + 1 < argc)
+    {
+      frame_hashes = fopen(argv[++arg], "w");
+      if(!frame_hashes)
+      {
+        perror(argv[arg]);
+        return 2;
+      }
+    }
+    else if(!strcmp(argv[arg], "--idle-loop") && arg + 1 < argc &&
+     idle_loop_count < ARM_IDLE_LOOPS)
+      idle_loops[idle_loop_count++] = (uint32_t)strtoul(argv[++arg], NULL,
+       16);
 #ifdef LOCKSTEP_JIT
     else if(!strcmp(argv[arg], "--jit"))
       use_jit = 1;
@@ -1409,6 +1455,8 @@ int main(int argc, char **argv)
 #endif
   arm_core_init(core, strcmp(mode, "run") ? &replay : &direct);
   arm_core_set_waitcnt(core, gba->memory.io[REG_WAITCNT >> 1]);
+  memcpy(core->idle_loops, idle_loops, sizeof(idle_loops));
+  core->idle_loop_count = idle_loop_count;
   if(!strcmp(mode, "run"))
   {
     unsigned region;
@@ -1494,6 +1542,8 @@ int main(int argc, char **argv)
 #endif
   if(trace)
     fclose(trace);
+  if(frame_hashes)
+    fclose(frame_hashes);
   if(shot)
     write_bmp(shot);
   mcore->deinit(mcore);
