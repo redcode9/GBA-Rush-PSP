@@ -155,8 +155,9 @@ static int on_event(int id, char *name, void *param, int *result)
 }
 
 /* A kernel address of main memory (32 MiB, or 64 on later models). An
-   emulator that lacks sceKernelReferSysEventHandler, as PPSSPP does,
-   leaves whatever was in the result register: the chain is followed only
+   emulator that lacks sceKernelReferSysEventHandler returns an error code
+   instead, such as PPSSPP's 0x8002013A for an import it cannot resolve
+   (SCE_KERNEL_ERROR_LIBRARY_NOT_YET_LINKED): the chain is followed only
    through such addresses. */
 static int in_kernel_memory(const void *address, u32 alignment)
 {
