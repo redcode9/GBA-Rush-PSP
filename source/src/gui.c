@@ -4209,10 +4209,11 @@ u32 menu(void)
       return 0;
 
     get_savestate_filename(savestate_slot, filename_buffer);
+    /* A failed save may already have truncated the file. */
+    savestate_thumb_state[savestate_slot] = SAVESTATE_THUMB_UNKNOWN;
     if (save_state(filename_buffer, current_screen) == 0)
       return 0;
 
-    savestate_thumb_state[savestate_slot] = SAVESTATE_THUMB_UNKNOWN;
     get_savestate_info(filename_buffer, NULL, line_buffer);
     sprintf(savestate_timestamps[savestate_slot], "%d: %s", (int)savestate_slot, line_buffer);
     return 1;
