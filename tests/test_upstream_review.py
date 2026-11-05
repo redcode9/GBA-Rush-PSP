@@ -1,5 +1,6 @@
 """Tests for scripts/upstream-review.sh on a temporary git repository."""
 
+import datetime
 import os
 import pathlib
 import re
@@ -100,6 +101,60 @@ class UpstreamReviewTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Not the top directory of a git clone", result.stderr)
         self.assertEqual(result.stdout, "")
+
+
+class CheckAgeTest(unittest.TestCase):
+    """The --check-age warning on the register's "Last review" date."""
+
+    REVIEWED = datetime.date(2025, 12, 20)
+
+    def check_age(self, today, reviewed=REVIEWED.isoformat()):
+        with tempfile.TemporaryDirectory() as directory:
+            tree = pathlib.Path(directory)
+            (tree / "scripts").mkdir()
+            (tree / "docs").mkdir()
+            script = shutil.copy(SCRIPT, tree / "scripts")
+            (tree / "docs" / "UPSTREAM.md").write_bytes(
+                f"- Last reviewed upstream commit: `{'0' * 40}`\r\n"
+                f"- Last review: {reviewed}\r\n".encode())
+            return subprocess.run(["sh", str(script), "--check-age", "--today", today],
+                                  capture_output=True, text=True)
+
+    def after(self, days):
+        return (self.REVIEWED + datetime.timedelta(days=days)).isoformat()
+
+    def test_review_up_to_45_days_old_gives_no_warning(self):
+        for days in (0, 44, 45):
+            with self.subTest(days=days):
+                result = self.check_age(self.after(days))
+                self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                 (0, "", ""))
+
+    def test_review_older_than_45_days_warns(self):
+        for days in (46, 400):
+            with self.subTest(days=days):
+                result = self.check_age(self.after(days))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(f"Warning: the last upstream review, on 2025-12-20, is "
+                              f"{days} days old", result.stderr)
+
+    def test_unparsable_date_fails(self):
+        for reviewed in ("2026-13-01", "2026-11-32", "5 Nov 2026", ""):
+            with self.subTest(reviewed=reviewed):
+                result = self.check_age(self.after(1), reviewed)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("No 'Last review: YYYY-MM-DD' line", result.stderr)
+        result = self.check_age("2026/01/01")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Not a YYYY-MM-DD date", result.stderr)
+
+    def test_register_date_parses(self):
+        register = (ROOT / "docs" / "UPSTREAM.md").read_text(encoding="utf-8")
+        reviewed = re.search(r"^- Last review: (\d{4}-\d{2}-\d{2})$", register, re.M)
+        self.assertIsNotNone(reviewed)
+        result = subprocess.run(["sh", str(SCRIPT), "--check-age", "--today",
+                                 reviewed.group(1)], capture_output=True, text=True)
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
 
 
 if __name__ == "__main__":
