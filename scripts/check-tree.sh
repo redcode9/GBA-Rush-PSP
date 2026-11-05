@@ -45,14 +45,15 @@ do
   fi
 done
 
-git ls-files | while IFS= read -r path
-do
-  case "$path" in
-    *.gba|*.agb|*.bin|*.sav|*.svs|*.cht|*.o|*.elf|*.prx|*.PBP|*.exe|*/PARAM.SFO)
-      echo "Generated or private runtime file is tracked: $path" >&2
-      exit 1
-      ;;
-  esac
-done
+# :(icase) matches whatever the case, so EBOOT.pbp or ROM.GBA fail as well.
+tracked=$(git ls-files -- ':(icase)*.gba' ':(icase)*.agb' ':(icase)*.bin' \
+ ':(icase)*.sav' ':(icase)*.svs' ':(icase)*.cht' ':(icase)*.o' \
+ ':(icase)*.elf' ':(icase)*.prx' ':(icase)*.pbp' ':(icase)*.exe' \
+ ':(icase)*/param.sfo')
+if [ -n "$tracked" ]; then
+  printf '%s\n' "$tracked" |
+   sed 's/^/Generated or private runtime file is tracked: /' >&2
+  exit 1
+fi
 
 echo "Source tree checks passed"
