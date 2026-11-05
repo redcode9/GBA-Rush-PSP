@@ -62,14 +62,14 @@ u32 option_analog_sensitivity = 4;
 u32 enable_home_menu = 1;
 u32 psp_fps_debug = 0;
 static u32 now_us = 1000000;
-static int menus, loads, saves, ff_presses;
+static int menus, loads, saves, ff_presses, ff_held;
 u32 sceKernelGetSystemTimeLow(void) { return now_us; }
 int sceCtrlReadBufferPositive(SceCtrlData *data, int count);
 int sceCtrlReadBufferPositive(SceCtrlData *data, int count)
 { (void)data; return count; }
 void main_power_service(void) {}
 void main_fast_forward_input(u32 pressed, u32 held)
-{ (void)held; ff_presses += pressed != 0; }
+{ ff_presses += pressed != 0; ff_held = held != 0; }
 u32 menu(void) { menus++; return 7; }
 u32 action_loadstate(void) { loads++; return 0; }
 u32 action_savestate(void) { saves++; return 0; }
@@ -79,6 +79,8 @@ u32 action_savestate(void) { saves++; return 0; }
 SCENARIOS = r'''
 #define GBA_SELECT 0x04
 #define GBA_START 0x08
+#define GBA_UP 0x40
+#define GBA_DOWN 0x80
 #define GBA_L 0x200
 #define GBA_R 0x100
 #define SEL PSP_CTRL_SELECT
@@ -108,12 +110,15 @@ static int game_has(u32 key)
   return (io_registers[REG_P1] & key) == 0;
 }
 
-static void set_shortcuts(u32 save, u32 load, u32 open_menu)
+static void set_shortcuts(u32 save, u32 load, u32 open_menu, u32 ff,
+ u32 fps)
 {
   memset(option_shortcut, 0, sizeof(u32) * CONFIG_MODEL_SHORTCUT_COUNT);
   option_shortcut[0] = save;
   option_shortcut[1] = load;
   option_shortcut[2] = open_menu;
+  option_shortcut[3] = ff;
+  option_shortcut[4] = fps;
   rebuild_shortcut_chords();
   read_pad(0, 100);
   read_pad(0, 100);
@@ -123,11 +128,12 @@ static void set_shortcuts(u32 save, u32 load, u32 open_menu)
 int main(void)
 {
   int i;
+  u32 fps;
 
   (void)__sceCtrlReadBufferPositive;
   __sceCtrlPeekBufferPositive = fake_peek;
   rebuild_fast_forward_button_mask();
-  set_shortcuts(0x0410, 0x0420, 0x0C00);
+  set_shortcuts(0x0410, 0x0420, 0x0C00, 0, 0);
 
   /* SELECT+L saves once and the game never gets that L, even after
      SELECT is let go; a later L alone reaches the game. */
@@ -183,14 +189,41 @@ int main(void)
   read_pad(0, 16);
 
   /* A trigger hidden by a fired chord is no fast-forward press either. */
-  set_shortcuts(0x0401, 0x0420, 0x0C00);
+  set_shortcuts(0x0401, 0x0420, 0x0C00, 0, 0);
   read_pad(SEL, 16);
   assert(read_pad(SEL | PSP_CTRL_TRIANGLE, 16) == 0 && saves == 1);
   assert(ff_presses == 0);
   read_pad(0, 16);
 
+  /* SELECT+Up is fast-forward: one press when it fires, held until a
+     key of it is let go, and the game never gets that Up. Up first,
+     then SELECT, is no shortcut. */
+  set_shortcuts(0x0410, 0x0420, 0x0C00, 0x0500, 0x0440);
+  read_pad(SEL, 16);
+  assert(ff_presses == 0 && !ff_held);
+  assert(read_pad(SEL | PSP_CTRL_UP, 16) == 0 && ff_presses == 1 && ff_held);
+  assert(!game_has(GBA_UP));
+  read_pad(SEL | PSP_CTRL_UP, 16);
+  assert(ff_presses == 1 && ff_held && !game_has(GBA_UP));
+  read_pad(PSP_CTRL_UP, 16);
+  assert(!ff_held);
+  read_pad(0, 16);
+  read_pad(PSP_CTRL_UP, 16);
+  read_pad(PSP_CTRL_UP | SEL, 16);
+  assert(ff_presses == 1 && !ff_held && game_has(GBA_UP));
+  read_pad(0, 16);
+
+  /* SELECT+Down toggles the FPS overlay once per press. */
+  fps = psp_fps_debug;
+  read_pad(SEL, 16);
+  assert(read_pad(SEL | PSP_CTRL_DOWN, 16) == 0 && psp_fps_debug == (fps ^ 1));
+  read_pad(SEL | PSP_CTRL_DOWN, 16);
+  assert(psp_fps_debug == (fps ^ 1) && !game_has(GBA_DOWN));
+  read_pad(0, 16);
+  assert(ff_presses == 1 && saves == 0 && loads == 0 && menus == 0);
+
   /* Two slots with the same chord: the default chords apply instead. */
-  set_shortcuts(0x0003, 0x0003, 0);
+  set_shortcuts(0x0003, 0x0003, 0, 0, 0);
   read_pad(PSP_CTRL_TRIANGLE | PSP_CTRL_CIRCLE, 16);
   assert(saves == 0 && loads == 0);
   read_pad(0, 16);
