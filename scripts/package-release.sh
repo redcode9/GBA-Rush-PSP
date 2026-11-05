@@ -10,6 +10,10 @@ set -eu
 # build id, compiler, flags and the SHA-256 of every built file), the
 # corresponding source (dist/GBA-Rush-PSP-VERSION-source.zip, git archive
 # of the tag named VERSION) and dist/SHA256SUMS.
+# PROFILE=diagnostic (make package PROFILE=diagnostic) packages the
+# diagnostic EBOOT instead: GBA-Rush-PSP-VERSION-diag.zip, its manifest and
+# dist/SHA256SUMS-diag, installed in PSP/GAME/GBARushPSP-DIAG so that it
+# keeps its own settings, saves and logs.
 
 if [ "$#" -ne 1 ]; then
   echo "Usage: $0 VERSION" >&2
@@ -20,6 +24,16 @@ version=$1
 case "$version" in
   *[!0-9A-Za-z.-]*|'')
     echo "Invalid version: $version" >&2
+    exit 1
+    ;;
+esac
+
+profile=${PROFILE:-release}
+case "$profile" in
+  release) suffix='' install_folder=GBARushPSP ;;
+  diagnostic) suffix=-diag install_folder=GBARushPSP-DIAG ;;
+  *)
+    echo "Invalid profile: $profile (release or diagnostic)" >&2
     exit 1
     ;;
 esac
@@ -53,14 +67,16 @@ do
   fi
 done
 
-release_name="GBA-Rush-PSP-$version"
+release_name="GBA-Rush-PSP-$version$suffix"
 release_root="dist/$release_name"
-install_root="$release_root/GBARushPSP"
+install_root="$release_root/$install_folder"
 archive="dist/$release_name.zip"
 checksum="$archive.sha256"
 manifest="dist/$release_name.manifest.json"
-source_archive="dist/$release_name-source.zip"
-sums=dist/SHA256SUMS
+# One source zip per version: both profiles are built from the same tag.
+source_name="GBA-Rush-PSP-$version-source"
+source_archive="dist/$source_name.zip"
+sums="dist/SHA256SUMS$suffix"
 release_epoch=${SOURCE_DATE_EPOCH:-$(git log -1 --format=%at)}
 
 case "$release_epoch" in
@@ -117,21 +133,22 @@ if [ -n "$(git status --porcelain)" ]; then
   tree_clean=false
 fi
 compiler_version=$(psp-gcc --version)
-cflags=$(${MAKE:-make} -s --no-print-directory -C source print-flags)
+cflags=$(${MAKE:-make} -s --no-print-directory -C source PROFILE="$profile" \
+  print-flags)
 build_id=$(${MAKE:-make} -s --no-print-directory -C source print-build-id)
 pspsdk=$(psp-config --pspsdk-path)
 pspdev=$(psp-config --pspdev-path)
 ${PYTHON:-python3} scripts/release_manifest.py write --output "$manifest" \
-  --version "$version" --commit "$commit" --build-id "$build_id" \
-  --tree-clean "$tree_clean" \
+  --version "$version" --profile "$profile" --commit "$commit" \
+  --build-id "$build_id" --tree-clean "$tree_clean" \
   --source-date-epoch "$release_epoch" --compiler "$compiler_version" \
   --cflags="$cflags" --pspsdk "$pspsdk" --pspdev "$pspdev" \
   --source-dir source
 # autocrlf off: the zip holds the repository's bytes on every host.
 git -c core.autocrlf=false archive --format=zip \
-  --prefix="$release_name-source/" -o "$source_archive" "refs/tags/$version"
+  --prefix="$source_name/" -o "$source_archive" "refs/tags/$version"
 (cd dist && sha256 "$release_name.zip" "$release_name.manifest.json" \
-  "$release_name-source.zip") > "$sums"
+  "$source_name.zip") > "$sums"
 
 echo "Created $archive"
 echo "Created $checksum"

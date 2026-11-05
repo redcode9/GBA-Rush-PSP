@@ -6,7 +6,8 @@ set -eu
 # artifact-smoke on its own): exactly the approved files, no symbolic links,
 # contents identical to the tree and to the build manifest's hashes, a
 # source zip holding exactly the files of the tag named VERSION, and
-# matching SHA-256 files.
+# matching SHA-256 files. PROFILE=diagnostic checks the diagnostic
+# package (package-release.sh).
 
 if [ "$#" -ne 1 ]; then
   echo "Usage: $0 VERSION" >&2
@@ -21,12 +22,23 @@ case "$version" in
     ;;
 esac
 
-release_name="GBA-Rush-PSP-$version"
+profile=${PROFILE:-release}
+case "$profile" in
+  release) suffix='' install_folder=GBARushPSP ;;
+  diagnostic) suffix=-diag install_folder=GBARushPSP-DIAG ;;
+  *)
+    echo "Invalid profile: $profile (release or diagnostic)" >&2
+    exit 1
+    ;;
+esac
+
+release_name="GBA-Rush-PSP-$version$suffix"
 archive="dist/$release_name.zip"
 checksum="$archive.sha256"
 manifest="dist/$release_name.manifest.json"
-source_archive="dist/$release_name-source.zip"
-sums=dist/SHA256SUMS
+source_name="GBA-Rush-PSP-$version-source"
+source_archive="dist/$source_name.zip"
+sums="dist/SHA256SUMS$suffix"
 
 documentation_files='LICENSE NOTICE README.md CHANGELOG.md CONTRIBUTING.md
 docs/link-cable.md docs/ROADMAP-1.4.0.md docs/images/link-trade-room.jpg
@@ -50,9 +62,9 @@ expected_manifest="$temporary_root/expected.txt"
 actual_manifest="$temporary_root/actual.txt"
 
 {
-  echo "$release_name/GBARushPSP/EBOOT.PBP"
-  echo "$release_name/GBARushPSP/exception.prx"
-  echo "$release_name/GBARushPSP/media_engine.prx"
+  echo "$release_name/$install_folder/EBOOT.PBP"
+  echo "$release_name/$install_folder/exception.prx"
+  echo "$release_name/$install_folder/media_engine.prx"
   for document in $documentation_files
   do
     echo "$release_name/$document"
@@ -76,19 +88,19 @@ fi
 
 package_root="$temporary_root/extracted/$release_name"
 ${PYTHON:-python3} scripts/release_manifest.py verify --manifest "$manifest" \
-  "$package_root/GBARushPSP/EBOOT.PBP" \
-  "$package_root/GBARushPSP/exception.prx" \
-  "$package_root/GBARushPSP/media_engine.prx"
-cmp source/EBOOT.PBP "$package_root/GBARushPSP/EBOOT.PBP"
-cmp source/exception.prx "$package_root/GBARushPSP/exception.prx"
-cmp source/media_engine.prx "$package_root/GBARushPSP/media_engine.prx"
+  "$package_root/$install_folder/EBOOT.PBP" \
+  "$package_root/$install_folder/exception.prx" \
+  "$package_root/$install_folder/media_engine.prx"
+cmp source/EBOOT.PBP "$package_root/$install_folder/EBOOT.PBP"
+cmp source/exception.prx "$package_root/$install_folder/exception.prx"
+cmp source/media_engine.prx "$package_root/$install_folder/media_engine.prx"
 for document in $documentation_files
 do
   cmp "$document" "$package_root/$document"
 done
 
 # The source zip holds exactly the tag's files (GPL-2.0 section 3).
-source_prefix="$release_name-source/"
+source_prefix="$source_name/"
 git -c core.quotePath=false ls-tree -r --name-only "refs/tags/$version" \
   > "$temporary_root/tag-files.txt"
 sed "s|^|$source_prefix|" "$temporary_root/tag-files.txt" | LC_ALL=C sort \
@@ -123,11 +135,11 @@ sha256_check() {
 listed_files=$(awk '{ sub(/^\*/, "", $2); print $2 }' "$sums")
 if [ "$listed_files" != "$release_name.zip
 $release_name.manifest.json
-$release_name-source.zip" ]; then
+$source_name.zip" ]; then
   echo "$sums does not list $release_name.zip, its manifest and" \
-    "$release_name-source.zip" >&2
+    "$source_name.zip" >&2
   exit 1
 fi
-(cd dist && sha256_check SHA256SUMS)
+(cd dist && sha256_check "${sums#dist/}")
 
 echo "Release package checks passed"

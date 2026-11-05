@@ -46,9 +46,9 @@ class ManifestTest(unittest.TestCase):
          + struct.pack("<8I", 1, 0, 0x100, 0x100, 0x3000, 0x3000, 0, 4))
         self.manifest = self.root / "GBA-Rush-PSP-1.4.4.manifest.json"
 
-    def write(self, cflags=CFLAGS, version="1.4.4"):
+    def write(self, cflags=CFLAGS, version="1.4.4", profile="release"):
         return run("write", "--output", str(self.manifest), "--version", version,
-                   "--commit", "c5b58ea9f3d67c08696dfefdea73916991ec1088",
+                   "--profile", profile, "--commit", "c5b58ea9f3d67c08696dfefdea73916991ec1088",
                    "--build-id", "0123abcd4567-dirty",
                    "--tree-clean", "true", "--source-date-epoch", "1767225600",
                    "--compiler", "psp-gcc (GCC) 14.2.0\nCopyright (C) 2024",
@@ -66,6 +66,7 @@ class ManifestTest(unittest.TestCase):
                          ' -DGBA_RUSH_BUILD_ID=\\"0123abcd-dirty\\"'
                          " -D_PSP_FW_VERSION=371")
         self.assertEqual(manifest["version"], "1.4.4")
+        self.assertEqual(manifest["profile"], "release")
         self.assertEqual(manifest["channel"], "stable")
         self.assertEqual(manifest["build_id"], "0123abcd4567-dirty")
         self.assertIs(manifest["tree_clean"], True)
@@ -79,6 +80,15 @@ class ManifestTest(unittest.TestCase):
         self.assertNotIn(PSPDEV, text)
         self.assertNotIn(str(self.root), text)
         self.assertNotIn(str(self.root).replace("\\", "\\\\"), text)
+
+    def test_records_the_diagnostic_profile_and_refuses_others(self):
+        self.assertEqual(self.write(profile="diagnostic"), 0)
+        self.assertEqual(release_manifest.read_manifest(self.manifest)["profile"],
+                         "diagnostic")
+        self.manifest.unlink()
+        with self.assertRaises(SystemExit):
+            self.write(profile="debug")
+        self.assertFalse(self.manifest.exists())
 
     def test_refuses_absolute_paths_left_in_cflags(self):
         for token in ("-I/home/builder/include", "-IC:\\pspdev\\include",

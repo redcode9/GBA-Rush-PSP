@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Write or verify the build manifest of a release package.
 
-write: package-release.sh records what was built (version, channel, commit,
-build id, compiler and flags) and the SHA-256 of every built file in
-dist/GBA-Rush-PSP-<version>.manifest.json.
+write: package-release.sh records what was built (version, build profile,
+channel, commit, build id, compiler and flags) and the SHA-256 of every built
+file in dist/GBA-Rush-PSP-<version>[-diag].manifest.json.
 verify: check-package.sh checks the files extracted from the zip against it.
 """
 
@@ -22,6 +22,7 @@ MANIFEST_FORMAT = 1
 # Built files hashed from source/; all but the ELF ship in the zip.
 BUILT_FILES = ("EBOOT.PBP", "exception.prx", "media_engine.prx", "TempGBA.elf")
 CHANNELS = ("stable", "prerelease", "dev")
+PROFILES = ("release", "diagnostic")
 # A path from the root or a drive letter: alone, after -I, -L or -isystem,
 # or after "=".
 ABSOLUTE_PATH = re.compile(r"(?:^(?:-I|-L|-isystem)?|=)(?:/|[A-Za-z]:[\\/])")
@@ -77,6 +78,8 @@ def write(args):
     manifest = {
         "format": MANIFEST_FORMAT,
         "version": args.version,
+        # make PROFILE=..., as source/Makefile names it.
+        "profile": args.profile,
         "channel": channel_for(args.version, os.environ.get("CHANNEL")),
         "commit": args.commit,
         # The id the EBOOT shows and writes (make -C source print-build-id).
@@ -114,6 +117,7 @@ def main(argv=None):
                    "--compiler", "--cflags", "--pspsdk", "--pspdev",
                    "--source-dir"):
         writer.add_argument(option, required=True)
+    writer.add_argument("--profile", required=True, choices=PROFILES)
     writer.add_argument("--tree-clean", required=True, choices=("true", "false"))
     writer.add_argument("--source-date-epoch", required=True, type=int)
     verifier = commands.add_parser(
