@@ -489,6 +489,8 @@ static void io_write(uint32_t address, unsigned size, uint32_t value)
     io_write16(reg, value);
   else if((address & 0x3FF) == 0x301)
     halt();
+  else if((address & 0x3FF) == 0x300)
+    io[0x300] = (u8)value;  /* POSTFLG; only HALTCNT halts */
   else if(reg == 0x202)
     io_write16(reg, (value & 0xFF) << ((address & 1) * 8));
   else

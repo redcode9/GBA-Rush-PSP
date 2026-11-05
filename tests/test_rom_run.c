@@ -23,10 +23,21 @@ static void test_dma3_word_alignment(void)
   assert(load(vram, 0x17FFC, 4) == 0x11223344u);
 }
 
+/* A byte written to POSTFLG is stored and does not halt; one written to
+   HALTCNT halts. */
+static void test_postflg_byte_does_not_halt(void)
+{
+  mem_write(0x04000300, 1, 1);
+  assert(!halted && io[0x300] == 1);
+  mem_write(0x04000301, 1, 0);
+  assert(halted);
+}
+
 int main(void)
 {
   arm_core_init(&core, &bus);
   test_dma3_word_alignment();
+  test_postflg_byte_does_not_halt();
   puts("rom_run tests passed");
   return 0;
 }
