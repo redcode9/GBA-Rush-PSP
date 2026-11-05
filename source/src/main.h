@@ -129,6 +129,9 @@ void direct_sound_timer_select(u32 value);
 
 void timer_control_low(u8 timer_number, u32 value);
 CPU_ALERT_TYPE timer_control_high(u8 timer_number, u32 value);
+/* Called before a read of TM0CNT_L-TM3CNT_H: with the New core it sets
+   the timer's TMxCNT_L to its count at the cycle the core has reached. */
+void timer_read(u32 timer_number);
 
 extern u32 dma_cycle_count;
 

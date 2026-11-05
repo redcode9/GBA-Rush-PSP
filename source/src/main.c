@@ -31,6 +31,7 @@
 #include "common.h"
 #include "event_queue.h"
 #include "fast_forward_policy.h"
+#include "gba_timer.h"
 #include "perf_monitor.h"
 #include "perf_report.h"
 #include "power_lifecycle.h"
@@ -350,6 +351,51 @@ static void main_events_rebuild(void)
   }
 }
 
+
+/* The cycle the CPU has reached: cpu_ticks takes in a slice only when the
+   core returns to update_gba. The New core says how far into its run it
+   is. The Classic core's position in its slice is not known here, so for
+   it this is the start of the slice; its writes that act on the timers
+   return to update_gba right after. */
+static u32 main_cycle_now(void)
+{
+  return cpu_ticks + arm_gba_cycles_run();
+}
+
+/* How far running timer n's next overflow is from cycle `now`, which is
+   cpu_ticks or later: in cycles, or for a count-up timer in overflows of
+   the timer before, counting those update_gba has yet to serve. 0 or
+   less: the overflow is due and update_gba has yet to serve it. */
+static s32 timer_left(u32 timer_number, u32 now)
+{
+  TimerType *tm = timer + timer_number;
+  int32_t before;
+  s32 left;
+
+  if (tm->status == TIMER_PRESCALE)
+    return (s32)(main_events.deadline[MAIN_EVENT_TIMER0 + timer_number] - now);
+
+  left = tm->count;
+  if (timer_number != 0 && tm[-1].status != TIMER_INACTIVE)
+  {
+    before = timer_left(timer_number - 1, now);
+    left -= (s32)gba_timer_catch_up(&before, tm[-1].reload, tm[-1].prescale);
+  }
+  return left;
+}
+
+/* Before the New core reads TM0CNT_L-TM3CNT_H: TMxCNT_L of running timer
+   n becomes its count at the cycle the core has reached. The Classic core
+   reads the I/O registers in its own code, so it sees the counts
+   update_gba leaves. */
+void timer_read(u32 timer_number)
+{
+  TimerType *tm = timer + timer_number;
+
+  if (main_cpu_core == CPU_CORE_NEW && tm->status != TIMER_INACTIVE)
+    pIO_REG(REG_TM0D + (timer_number << 1)) = gba_timer_counter(
+     timer_left(timer_number, main_cycle_now()), tm->reload, tm->prescale);
+}
 
 /* TMxCNT_L write: the new reload value applies at the next start or
    overflow. */

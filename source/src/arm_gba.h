@@ -22,6 +22,10 @@
    the Classic core's execute_arm_translate does; never returns. */
 void arm_gba_run(void);
 
+/* Cycles the core has run since update_gba last advanced cpu_ticks: 0
+   outside its runs, which is always while the Classic core runs. */
+u32 arm_gba_cycles_run(void);
+
 /* Copies the core's registers to reg[], reg_mode[] and spsr[], where
    savestates read them (cpu_write_mem_savestate). */
 void arm_gba_save_registers(void);

@@ -700,10 +700,18 @@ static u32 read32_bios(u32 address)
   READ_BIOS(32);
 }
 
+// The timers count between update_gba passes: timer_read brings the
+// TMxCNT_L that a read of 0x4000100-0x400010F can reach up to date.
+#define READ_TIMER(address)                                                   \
+  if (((address) & 0xFFFFF0) == 0x100)                                        \
+    timer_read(((address) >> 2) & 0x03);                                      \
+
 // Registers live in the first 1 KiB; 0x4000800 (internal memory control)
 // repeats every 64 KiB. Unreadable offsets fall through to open bus.
 static u32 read8_io_registers(u32 address)
 {
+  READ_TIMER(address);
+
   if ((address & 0xFFFC) == 0x0800) // repeated each 64K
     return ADDRESS8(&iwram_control, address & 0x03);
 
@@ -716,6 +724,8 @@ static u32 read8_io_registers(u32 address)
 // An unreadable upper half of a readable register reads 0, not open bus.
 static u32 read16_io_registers(u32 address)
 {
+  READ_TIMER(address);
+
   if ((address & 0xFFFC) == 0x0800)
     return ADDRESS16(&iwram_control, address & 0x02);
 
@@ -733,6 +743,8 @@ static u32 read16_io_registers(u32 address)
 // A word whose upper half is unreadable returns only the lower half.
 static u32 read32_io_registers(u32 address)
 {
+  READ_TIMER(address);
+
   if ((address & 0xFFFC) == 0x0800)
     return iwram_control;
 

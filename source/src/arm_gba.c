@@ -45,6 +45,10 @@ typedef char ArmGbaStorageCheck[sizeof(ArmMips) <= WRITABLE_CODE_CACHE_SIZE ?
  1 : -1];
 
 static ArmMips *jit;
+/* While the core runs (running), the cycles of the IRQ entry before it,
+   which its own count leaves out. */
+static s32 run_start;
+static u8 running;
 /* Where CodeBreaker cheats run, 0 for none (cheats.c). */
 static u32 cheat_hook;
 
@@ -267,6 +271,13 @@ static void load_registers(void)
   update_irq_line();
 }
 
+u32 arm_gba_cycles_run(void)
+{
+  if(!running)
+    return 0;
+  return (u32)(run_start + jit->core.cycles);
+}
+
 void arm_gba_save_registers(void)
 {
   ArmCore *core;
@@ -468,7 +479,10 @@ void arm_gba_run(void)
       ran = arm_core_irq(core);
       bios_read_protect = 0xe55ec002;
     }
+    run_start = ran;
+    running = 1;
     ran += arm_mips_run(jit, (s32)reg[EXECUTE_CYCLES] - ran);
+    running = 0;
     reg[EXECUTE_CYCLES] = (u32)ran;
 
     update_gba();
