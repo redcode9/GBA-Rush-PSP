@@ -452,7 +452,7 @@ Dal 2026-11-04 tutto il backlog si sviluppa nell'epica `state-of-the-art-develop
 | ENG-19 | Rapporto vivo con upstream libretro/gpsp | consigliato | 1.6 | 3,25 | — | no |
 | EXT-1 | EEPROM da 8 KiB riconosciuta anche dalle scritture | consigliato | 1.4.4 | 1,5 | SAV-2.6 (solo EXT-1.2) | sì |
 | EXT-2 | Zip: il caricamento si ferma sugli errori e verifica il CRC32 | consigliato | 1.5 | 2 | — | sì |
-| EXT-3 | BIOS aperto: vettori di riferimento delle SWI, SoundBias e MultiBoot | consigliato | 1.5 (EXT-3.3 dopo gate) | 3 | CMP-1.1-1.3, CMP-3.1 | sì |
+| EXT-3 | BIOS aperto: vettori di riferimento delle SWI, SoundBias e MultiBoot | consigliato | 1.5 (EXT-3.3 dopo gate) | 3 | CMP-1.1, CMP-1.3, CMP-1.7, CMP-3.1 | sì |
 | EXT-4 | Vista del browser ricordata | consigliato | 1.5 | 0,5 | — (bump di ConfigModel con UI-4.2) | sì |
 | EXT-5 | EEPROM sulle cartucce oltre 16 MiB | consigliato | 1.5 (EXT-5.3 dopo gate) | 3 | EXT-1.1, SAV-2.6 | sì |
 | EXT-6 | Uscita dal gioco con una tenuta | sconsigliato | dopo gate (EXT-6.1 in 1.6) | 1,25 | ENG-17.3, UI-4.3 | sì |
@@ -460,7 +460,7 @@ Dal 2026-11-04 tutto il backlog si sviluppa nell'epica `state-of-the-art-develop
 | EXT-8 | Modalità USB per il giocatore | sconsigliato | dopo gate (EXT-8.1 in 1.6) | 3,75 | ENG-17.3 | sì |
 | SOA-1 | Ambiente di verifica riproducibile per core, renderer e Media Engine | consigliato | 1.5 (parte subito) | 6,5 | ENG-10.4 (solo SOA-1.3) | no |
 | SOA-2 | Validazione su hardware del core New e del renderer Exact sul Media Engine | in corso | 1.5 (parte subito) | 6 | SOA-1.1 | sì |
-| SOA-3 | Core New completo: le stesse funzioni del Classic | consigliato | 1.6 (SOA-3.1-3.4 in 1.5) | 10,5 | SOA-2.2, CMP-1.2, CMP-3.2, CMP-3.3, CMP-11.1, CMP-12.1 (+1) | sì |
+| SOA-3 | Core New completo: le stesse funzioni del Classic | consigliato | 1.6 (SOA-3.1-3.4 in 1.5) | 10,5 | SOA-2.2, CMP-1.7, CMP-3.2, CMP-3.3, CMP-11.1, CMP-12.1 (+1) | sì |
 | SOA-4 | Core New veloce: il budget del mirror | consigliato | 1.6 (SOA-4.7 dopo gate) | 18 | SOA-2.4, SOA-3.1, PRF-2.2, PRF-8.6 (+1) | sì |
 | SOA-5 | Scheduler a scadenza unica con timer letti dal vivo | consigliato | 1.6 | 10,5 | CMP-12.1, ENG-3.3 | sì |
 | SOA-6 | Renderer Exact sul Media Engine pronto per la release | in corso | 1.6 | 13,5 | SOA-2.2, SAV-7.5, PRF-11.5 (solo SOA-6.7) | sì |
@@ -1440,7 +1440,7 @@ Il suo `source/bios/README.md` elenca i difetti del BIOS aperto:
   - Nessun titolo di CMP-1.5 regredisce.
 - **Licenza:** modifica a codice GPL-2.0-or-later (VBA, VBA-M, Normmatt), con avviso datato nei file toccati (GPL-2.0 §2a). I crediti restano invariati.
 
-#### CMP-1.4 — Tipo di BIOS e SWI nel runtime log (v6) e nel perf report (v7) · M, 1,5 gg · dipende da: CMP-1.1, CMP-1.2, ENG-1.6 · PSP: no
+#### CMP-1.4 — Tipo di BIOS e SWI nel runtime log (v6) e nel perf report (v7) · M, 1,5 gg · dipende da: CMP-1.1, CMP-1.7, ENG-1.6 · PSP: no
 - **Cosa:**
   - **Classificazione.** All'avvio si calcola il CRC32 di `bios.rom` con la zlib già presente (`source/src/zlib/crc32.c`). Tre esiti: `official` (81977335, SHA-1 `300c20df…`, il dump ufficiale noto), `other` (vettore di reset valido ma CRC diverso, per esempio un dump da DS), `builtin`.
   - **Runtime log.** Il value2 di ROM_OPEN, che oggi vale 0 (`runtime_log_psp.c:226-227`), porta il tipo di BIOS nei bit 0-1 e l'HLE nel bit 2; gli altri bit sono riservati. Nessun bump proprio: il campo entra nel bump della 1.5 di ENG-1.6, che porta `RUNTIME_LOG_VERSION` da 5 a 6 (`runtime_log.h:25`). È l'unico punto in cui il tipo di BIOS entra nel runtime log: LNK-1.2 non lo scrive nel record link-command, e il suo decoder lo legge da ROM_OPEN.
@@ -1464,7 +1464,7 @@ Il suo `source/bios/README.md` elenca i difetti del BIOS aperto:
   - `make test` e `test-sanitize` sono verdi.
 - **Licenza:** codice nuovo GPL-2.0-or-later; crc32 dalla zlib nel tree (licenza zlib).
 
-#### CMP-1.5 — Passata di compatibilità su PSP con il BIOS integrato · M, 1,5 gg · dipende da: CMP-1.2, CMP-1.3, CMP-1.4 · PSP: sì
+#### CMP-1.5 — Passata di compatibilità su PSP con il BIOS integrato · M, 1,5 gg · dipende da: CMP-1.7, CMP-1.3, CMP-1.4 · PSP: sì
 - **Cosa:** Sul candidato 1.5, senza `gba_bios.bin`, su PSP-1000: The Minish Cap, Golden Sun, Kirby & the Amazing Mirror, DK: King of Swing, Gradius Galaxies, Bubble Bobble Old & New, Blackthorne e Colin McRae Rally 2.0. Per ogni titolo si verificano:
   - avvio;
   - 10 minuti di gioco, con un salvataggio a batteria e la ricarica;
@@ -6776,7 +6776,7 @@ Il gruppo raccoglie quello che le altre sezioni avevano lasciato fuori: tre dife
 
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
-| consigliato | 1.5 (EXT-3.3 dopo gate) | 3 gg | CMP-1.1, CMP-1.2, CMP-3.1 (EXT-3.3 anche CMP-1.3) |
+| consigliato | 1.5 (EXT-3.3 dopo gate) | 3 gg | CMP-1.1, CMP-1.7, CMP-3.1 (EXT-3.3 anche CMP-1.3) |
 
 **Copre:** F-012 (parte) verifica funzionale del BIOS aperto: vettori di riferimento per le SWI, comportamento di SoundBias e di MultiBoot.
 **Obiettivo:** Le uscite di CpuSet, CpuFastSet, LZ77, Huffman, RL, BitUnPack, Sqrt, ArcTan, ArcTan2, BgAffineSet e ObjAffineSet si confrontano con valori di riferimento confermati da una seconda esecuzione indipendente; con `gba_bios.bin` il 100% dei casi passa su PSP-1000; ogni differenza del BIOS integrato è scritta in `source/bios/README.md` con SWI, ingresso, valore atteso e ottenuto; un FAIL su LZ77, RL, Huffman, CpuSet o CpuFastSet blocca la release finché non è corretto o motivato.
@@ -6812,7 +6812,7 @@ Il gruppo raccoglie quello che le altre sezioni avevano lasciato fuori: tre dife
 - **Accettazione:** il generatore è deterministico; `bios_vectors.h` resta sotto i 64 KiB; con il BIOS ufficiale tutti i casi passano.
 - **Licenza:** codice nuovo GPL-2.0-or-later, con i formati presi da GBATEK; nessun byte del BIOS ufficiale e nessun compressore di terzi.
 
-#### EXT-3.2 — Valori aritmetici registrati col BIOS ufficiale ed esecuzione sul BIOS integrato · M, 1 gg · dipende da: EXT-3.1, CMP-1.2 · PSP: sì
+#### EXT-3.2 — Valori aritmetici registrati col BIOS ufficiale ed esecuzione sul BIOS integrato · M, 1 gg · dipende da: EXT-3.1, CMP-1.7 · PSP: sì
 - **Cosa:** Nuovi casi:
   - Sqrt: 0, 1, 2, 3, quadrati e numeri vicini, 2^32−1;
   - ArcTan: da −0x4000 a 0x4000 a passi fissi;
@@ -7226,7 +7226,7 @@ Il gruppo copre l'epica `state-of-the-art-development`: un core ARM scritto da z
 
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
-| consigliato | 1.6 (SOA-3.1-3.4 in 1.5) | 10,5 gg | SOA-2.2, CMP-1.2, CMP-3.2, CMP-3.3, CMP-11.1, CMP-12.1, CMP-9.1 |
+| consigliato | 1.6 (SOA-3.1-3.4 in 1.5) | 10,5 gg | SOA-2.2, CMP-1.7, CMP-3.2, CMP-3.3, CMP-11.1, CMP-12.1, CMP-9.1 |
 
 **Copre:** nessuna capacità del catalogo; parità del core New.
 
@@ -7254,7 +7254,7 @@ Il gruppo copre l'epica `state-of-the-art-development`: un core ARM scritto da z
 - **Accettazione:** guadagno misurato su due titoli con idle loop in tabella, hash identici.
 - **Licenza:** nessuna nuova.
 
-#### SOA-3.3 — BIOS integrato con il core New: HLE di Div/DivArm e open bus a run time · M, 2 gg · dipende da: CMP-1.2, CMP-3.3 · PSP: sì
+#### SOA-3.3 — BIOS integrato con il core New: HLE di Div/DivArm e open bus a run time · M, 2 gg · dipende da: CMP-1.7, CMP-3.3 · PSP: sì
 - **Cosa:** le SWI 6/7 in HLE nell'IR del core New con il modulo `bios_hle` di CMP-1.2 e la stessa chiave `bios_div_hle`; `bios_read_protect` scritto a run time dopo SWI e IRQ con il valore del BIOS caricato (CMP-3.3), non fisso.
 - **File:** `source/src/arm_decode.c`, `source/src/arm_interp.c`, `source/src/arm_mips.c`, `source/src/arm_gba.c`
 - **Test:** `cases_bios.c` della core-rom con New; check-core.
