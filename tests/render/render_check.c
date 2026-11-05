@@ -8,7 +8,9 @@
  * the first one's. A third draws on its own thread from the write log
  * (gba_ppu_log.c), as the Media Engine does: the hooks mark the blocks
  * mGBA's memory changed in, as the emulator's store paths do, and its
- * pictures must equal the first one's too.
+ * pictures must equal the first one's too. Its blocks go through the
+ * quadword copy, and its frames turn between the log's frame and three
+ * 480x272 pictures, as with every Media Engine switch on.
  * Build it against an mGBA compiled with COLOR_16_BIT, whose colours are
  * the GBA's own (see mgba_pixel).
  *
@@ -69,6 +71,13 @@ static GbaPpuLogMailbox log_mailbox __attribute__((aligned(64)));
 static uint32_t log_ring[GBA_PPU_LOG_RING_WORDS] __attribute__((aligned(64)));
 static uint16_t log_frame[GBA_PPU_LOG_FRAME_STRIDE * HEIGHT]
  __attribute__((aligned(64)));
+/* The pictures shown directly at 1x (video_me.c), the GBA's in the
+   middle; the target the frame being drawn goes to. */
+#define DIRECT_STRIDE 512
+#define DIRECT_ORIGIN ((272 - HEIGHT) / 2 * DIRECT_STRIDE + (480 - WIDTH) / 2)
+static uint16_t log_direct[GBA_PPU_LOG_TARGETS - 1][DIRECT_STRIDE * 272]
+ __attribute__((aligned(64)));
+static uint32_t log_target;
 static uint8_t log_dirty[GBA_PPU_LOG_BLOCKS];
 static uint32_t log_groups[GBA_PPU_LOG_GROUP_BYTES / 4];
 static GbaPpuLogWriter log_writer;
@@ -312,9 +321,15 @@ static int darkening_rounds(int x, int y)
 static void check_log_frame(void)
 {
   uint32_t number = gba_ppu_log_frame(&log_writer);
+  uint32_t stride = log_target ? DIRECT_STRIDE : GBA_PPU_LOG_FRAME_STRIDE;
+  const uint16_t *picture = log_mailbox.writer.targets[log_target];
   int y;
 
   gba_ppu_log_vblank(&log_writer);
+  /* The next frame to the next picture, as video_me_vblank does. */
+  log_target = (log_target + 1) % GBA_PPU_LOG_TARGETS;
+  gba_ppu_log_target(&log_writer, log_target,
+   log_target ? DIRECT_STRIDE : GBA_PPU_LOG_FRAME_STRIDE);
   while(__atomic_load_n(&log_mailbox.reader.read, __ATOMIC_ACQUIRE) !=
         log_mailbox.writer.write)
     sched_yield();
@@ -325,7 +340,7 @@ static void check_log_frame(void)
   }
   log_frames++;
   for(y = 0; y < HEIGHT; y++)
-    if(memcmp(log_frame + y * GBA_PPU_LOG_FRAME_STRIDE, ppu_frame + y * WIDTH,
+    if(memcmp(picture + y * stride, ppu_frame + y * WIDTH,
      WIDTH * sizeof(*ppu_frame)))
     {
       log_differ++;
@@ -469,6 +484,10 @@ static void attach(void)
   gba_ppu_log_writer_init(&log_writer, &log_mailbox, log_ring, log_frame,
    gba->video.palette, gba->video.oam.raw, gba->video.vram, gba->memory.io,
    log_dirty, (uint8_t *)log_groups);
+  log_writer.copy_quads = 1;
+  for(offset = 1; offset < GBA_PPU_LOG_TARGETS; offset++)
+    log_mailbox.writer.targets[offset] = log_direct[offset - 1] +
+     DIRECT_ORIGIN;
   gba_ppu_log_reader_start(&log_reader, &log_mailbox);
   pthread_create(&log_thread, NULL, log_reader_thread, NULL);
 }
