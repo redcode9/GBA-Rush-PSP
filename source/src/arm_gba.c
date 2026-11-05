@@ -208,14 +208,15 @@ static void run_cheat_hook(ArmCore *core)
   process_cheats_at_hook(cheat_hook);
 }
 
-/* Leaving the BIOS from a SWI or an IRQ: the opcode two instructions after
-   its return, the last one it fetched, is what protected BIOS reads give
-   from now on (GBATEK). The official BIOS leaves 0xE3A02004 after a SWI
-   and 0xE55EC002 after an IRQ; the built-in one leaves its own words. */
-static void exception_returned(ArmCore *core, uint32_t from)
+/* Leaving the BIOS from an IRQ or a SWI: protected BIOS reads give the
+   last opcode the BIOS fetched, two instructions after its return. With
+   the official BIOS that is 0xE55EC002 after an IRQ and 0xE3A02004 after
+   a SWI (GBATEK). The built-in BIOS returns from other addresses, so the
+   official words are set with either BIOS, as the Classic core does. */
+static void exception_returned(ArmCore *core, uint32_t from, uint32_t left)
 {
   if(from < 0x4000 && core->v[15] >= 0x4000)
-    bios_read_protect = ADDRESS32(bios.rom, (from + 8) & 0x3FFC);
+    bios_read_protect = left == ARM_MODE_IRQ ? 0xe55ec002 : 0xe3a02004;
 }
 
 /* Where register r (8-14, or 16 for the SPSR) of a mode not running is,

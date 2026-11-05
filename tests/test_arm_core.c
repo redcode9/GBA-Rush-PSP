@@ -129,11 +129,13 @@ static const ArmIrOp *find_op(const ArmIrOp *ops, unsigned count,
 
 static uint32_t returned_from;
 static uint32_t returned_to;
+static uint32_t returned_left;
 
-static void record_return(ArmCore *c, uint32_t from)
+static void record_return(ArmCore *c, uint32_t from, uint32_t left)
 {
   returned_from = from;
   returned_to = c->v[15];
+  returned_left = left;
 }
 
 static void test_program(void)
@@ -144,6 +146,7 @@ static void test_program(void)
   core.returned = NULL;
   /* The SWI came back through the BIOS's movs pc, lr at 8. */
   CHECK(returned_from == 0x08 && returned_to == 0x08000020);
+  CHECK(returned_left == ARM_MODE_SUPERVISOR);
   CHECK(core.v[15] == 0x08000020);
   CHECK(core.v[0] == 55);
   CHECK(core.v[1] == 0);
@@ -235,6 +238,13 @@ static void test_interrupt(void)
   CHECK(core.spsr == (ARM_MODE_SYSTEM | ARM_CPSR_T | ARM_CPSR_Z));
   /* Masked: nothing happens. */
   CHECK(arm_core_irq(&core) == 0);
+  /* The BIOS's subs pc, lr, #4 at 18h returns from IRQ mode. */
+  core.returned = record_return;
+  arm_core_step(&core);
+  core.returned = NULL;
+  CHECK(returned_from == 0x18 && returned_to == 0x08000024);
+  CHECK(returned_left == ARM_MODE_IRQ);
+  CHECK((arm_core_cpsr(&core) & ARM_CPSR_MODE) == ARM_MODE_SYSTEM);
 }
 
 static unsigned hook_calls;
@@ -270,10 +280,12 @@ int main(void)
   ArmBus bus = { NULL, read8, read16, read32, ignore, ignore, ignore,
    code32 };
   uint32_t movs_pc_lr = 0xe1b0f00e;
+  uint32_t subs_pc_lr_4 = 0xe25ef004;
   uint16_t movs_r0_0 = 0x2000;
   uint16_t muls_r0_r1 = 0x4348;
 
   memcpy(bios + 0x08, &movs_pc_lr, 4);
+  memcpy(bios + 0x18, &subs_pc_lr_4, 4);
   memcpy(rom, program, sizeof(program));
   memcpy(rom + 0x1FFFC, &movs_r0_0, 2);
   memcpy(rom + 0x100, &muls_r0_r1, 2);

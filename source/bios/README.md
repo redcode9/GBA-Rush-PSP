@@ -113,8 +113,3 @@ the official BIOS and are ignored with this one.
   pointers to a function that just returns.
 - `MultiBoot` (SWI 0x25) and `HardReset` (0x26) do nothing: a game that calls
   `HardReset` keeps running instead of restarting.
-- Reading the BIOS from a game returns the last opcode the BIOS fetched. With
-  the New CPU core that is this BIOS's own word after its return
-  instruction: 0x00001524 after a SWI and 0xE3A000DF after an IRQ, where the
-  official BIOS gives 0xE3A02004 and 0xE55EC002. The Classic core always
-  gives the official values. Both BIOSes leave 0xE129F000 after booting.

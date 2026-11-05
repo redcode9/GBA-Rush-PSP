@@ -152,9 +152,9 @@ typedef struct ArmCore
   uint32_t hook;
   void (*hooked)(struct ArmCore *core);
   /* Told after every exception return (an S write of r15), with the
-     address of the instruction that made it; r15 holds where it went.
-     NULL if none. */
-  void (*returned)(struct ArmCore *core, uint32_t from);
+     address of the instruction that made it and the mode it left; r15
+     holds where it went. NULL if none. */
+  void (*returned)(struct ArmCore *core, uint32_t from, uint32_t left);
 
   uint32_t block_count;
   uint32_t op_count;

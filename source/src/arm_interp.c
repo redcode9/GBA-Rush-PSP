@@ -846,13 +846,14 @@ ArmExitKind arm_core_execute(ArmCore *core, const ArmIrOp *op)
           prefetch_flush(core);
         return (ArmExitKind)op->d;
       case ARM_IR_EXIT_REG:
+        result = core->cpsr & ARM_CPSR_MODE;  /* the mode it leaves */
         if((flags & ARM_IR_RESTORE) && has_spsr(core))
           arm_core_set_cpsr(core, core->spsr);
         set_pc(core, a, flags & ARM_IR_BX);
         core->cycles += (int32_t)refill(core);
         prefetch_flush(core);
         if((flags & ARM_IR_RESTORE) && core->returned)
-          core->returned(core, core->insn_pc);
+          core->returned(core, core->insn_pc, result);
         return (ArmExitKind)op->d;
       case ARM_IR_SWI:
         exception(core, ARM_MODE_SUPERVISOR, 0x08, op->b);
