@@ -24,6 +24,20 @@ make package VERSION=1.4.3
 make artifact-smoke VERSION=1.4.3
 ```
 
+CI (`.github/workflows/check.yml`) runs on every push, tag and pull request
+in the images of `tools/ci/Dockerfile`, pinned by digest: `make check`,
+`make test-sanitize`, `make check-cbmc`, both build profiles and
+`make package` under a local `ci-<sha>` tag, keeping the EBOOT and its
+manifest as artifacts. A tag also runs `make artifact-smoke` and checks that
+a rebuild gives the manifest's build id; a tag without a suffix must pass
+`make release-gate CHANNEL=stable`. The job summary shows whether two
+consecutive release builds gave the same EBOOT. To run a step as CI does:
+
+```sh
+docker build --target psp -t gba-rush-ci tools/ci
+docker run --rm -v "$PWD:/workspace" -w /workspace gba-rush-ci make check
+```
+
 The optional desktop launcher has its own
 [build instructions](https://github.com/redcode9/GBA-Rush-PSP/blob/master/source/single-game_launcher/tool/README.md).
 
