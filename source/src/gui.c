@@ -26,6 +26,7 @@
  * the global, per-game and directory settings files. */
 
 #include "common.h"
+#include "art_filter.h"
 #include "boxart.h"   // carousel / boxart support
 #include "config_store.h"
 #include "menu_layout.h"
@@ -3027,6 +3028,84 @@ static void menu_status_count_states(void)
   menu_status_auto = savestate_file_exists(AUTO_SAVESTATE_SLOT);
 }
 
+/* Save and Load page thumbnails: each slot's .svs preview shrunk to 60x40.
+   A slot's state goes back to unknown (0) when its file may have changed,
+   and unknown slots are read one per frame while the page is open. */
+#define SAVESTATE_THUMB_W        60
+#define SAVESTATE_THUMB_H        40
+#define SAVESTATE_THUMB_UNKNOWN  0
+#define SAVESTATE_THUMB_LOADED   1
+#define SAVESTATE_THUMB_EMPTY    2
+
+static u16 savestate_thumbs[SAVESTATE_SLOT_COUNT][SAVESTATE_THUMB_W * SAVESTATE_THUMB_H];
+static u8 savestate_thumb_state[SAVESTATE_SLOT_COUNT];
+
+/* Reads the first unknown slot's 240x160 preview into scratch (one 76.8 KB
+   read) and shrinks it into the slot's thumbnail. A missing or short file
+   leaves the slot empty. */
+static void savestate_thumbs_load_next(u16 *scratch)
+{
+  char savestate_filename[MAX_FILE];
+  char savestate_path[MAX_PATH];
+  SceUID fd;
+  u32 slot;
+  u32 loaded = 0;
+
+  for (slot = 0; slot < SAVESTATE_SLOT_COUNT; slot++)
+    if (savestate_thumb_state[slot] == SAVESTATE_THUMB_UNKNOWN)
+      break;
+  if (slot == SAVESTATE_SLOT_COUNT)
+    return;
+
+  get_savestate_filename(slot, savestate_filename);
+  snprintf(savestate_path, sizeof(savestate_path), "%s%s", dir_state, savestate_filename);
+
+  scePowerLock(0);
+  fd = sceIoOpen(savestate_path, PSP_O_RDONLY, 0);
+  if (fd >= 0)
+  {
+    loaded = (sceIoRead(fd, scratch, GBA_SCREEN_SIZE) == (s32)GBA_SCREEN_SIZE);
+    sceIoClose(fd);
+  }
+  scePowerUnlock(0);
+
+  if (loaded)
+    art_filter_box_shrink(scratch, GBA_SCREEN_WIDTH, GBA_SCREEN_HEIGHT,
+     GBA_SCREEN_WIDTH, savestate_thumbs[slot], SAVESTATE_THUMB_W,
+     SAVESTATE_THUMB_H, SAVESTATE_THUMB_W);
+  savestate_thumb_state[slot] = loaded ? SAVESTATE_THUMB_LOADED : SAVESTATE_THUMB_EMPTY;
+}
+
+/* The 11 thumbnails as a 4x3 grid centred in the 240x160 screenshot panel,
+   each tagged with its slot. Slots without a thumbnail (yet) are blank
+   framed cells; the selected slot gets a frame in the active item color. */
+static void savestate_thumbs_draw(u32 selected_slot)
+{
+  u32 slot;
+
+  for (slot = 0; slot < SAVESTATE_SLOT_COUNT; slot++)
+  {
+    u16 x = SCREEN_IMAGE_POS_X + (slot % 4) * SAVESTATE_THUMB_W;
+    u16 y = SCREEN_IMAGE_POS_Y + ((GBA_SCREEN_HEIGHT - 3 * SAVESTATE_THUMB_H) / 2) +
+     (slot / 4) * SAVESTATE_THUMB_H;
+    char tag[8];
+
+    if (savestate_thumb_state[slot] == SAVESTATE_THUMB_LOADED)
+      blit_to_screen(savestate_thumbs[slot], SAVESTATE_THUMB_W, SAVESTATE_THUMB_H, x, y);
+    else
+      draw_box_line(x, y, x + SAVESTATE_THUMB_W - 1, y + SAVESTATE_THUMB_H - 1, color_inactive_item);
+
+    if (slot == AUTO_SAVESTATE_SLOT)
+      strcpy(tag, "AUTO");
+    else
+      sprintf(tag, "%d", (int)slot);
+    print_string(tag, x + 2, y + 2, COLOR15_WHITE, COLOR15_BLACK);
+
+    if (slot == selected_slot)
+      draw_box_line(x, y, x + SAVESTATE_THUMB_W - 1, y + SAVESTATE_THUMB_H - 1, color_active_item);
+  }
+}
+
 
 /* Hotkey load of savestate_slot; load_state() asks for confirmation. */
 u32 action_loadstate(void)
@@ -4109,11 +4188,12 @@ u32 menu(void)
     }
   }
 
-  /* Show the selected slot's screenshot and refresh its timestamp row. */
+  /* Refresh the selected slot's timestamp row; with no game loaded, also
+     show its screenshot (with a game, the page shows the thumbnails). */
   void menu_change_state(void)
   {
     get_savestate_filename(savestate_slot, filename_buffer);
-    get_savestate_info(filename_buffer, savestate_screen, line_buffer);
+    get_savestate_info(filename_buffer, first_load ? savestate_screen : NULL, line_buffer);
     if (savestate_slot == AUTO_SAVESTATE_SLOT)
       sprintf(savestate_timestamps[savestate_slot], "AUTO: %s", line_buffer);
     else
@@ -4131,7 +4211,8 @@ u32 menu(void)
     if (save_state(filename_buffer, current_screen) == 0)
       return 0;
 
-    get_savestate_info(filename_buffer, savestate_screen, line_buffer);
+    savestate_thumb_state[savestate_slot] = SAVESTATE_THUMB_UNKNOWN;
+    get_savestate_info(filename_buffer, NULL, line_buffer);
     sprintf(savestate_timestamps[savestate_slot], "%d: %s", (int)savestate_slot, line_buffer);
     return 1;
   }
@@ -4329,6 +4410,9 @@ u32 menu(void)
         counter = 0;
       }
     }
+
+    /* The auto slot may have been written, or another ROM loaded. */
+    memset(savestate_thumb_state, SAVESTATE_THUMB_UNKNOWN, sizeof(savestate_thumb_state));
   }
 
   void menu_delete_state(void)
@@ -4359,12 +4443,7 @@ u32 menu(void)
                  (int)savestate_slot,
                  MSG[(date_format == 0) ? MSG_STATE_MENU_DATE_NONE_0 : MSG_STATE_MENU_DATE_NONE_1]);
 
-      /* Refresh screenshot to blank */
-      memset(savestate_screen, 0, GBA_SCREEN_SIZE);
-      print_string_ext_gbk(MSG[MSG_STATE_MENU_STATE_NONE], X_POS_CENTER, 74,
-                         COLOR15_WHITE, BG_NO_FILL, savestate_screen, GBA_SCREEN_WIDTH);
-
-      screen_image_ptr = savestate_screen;
+      savestate_thumb_state[savestate_slot] = SAVESTATE_THUMB_UNKNOWN;
     }
   }
 
@@ -4608,6 +4687,11 @@ u32 menu(void)
 
       menu_init_flag = 0;
     }
+
+    /* With a game loaded the panel shows the thumbnails instead of
+       savestate_screen, which then holds the preview being read. */
+    if (!first_load)
+      savestate_thumbs_load_next(savestate_screen);
 
     if (current_option_num < SAVESTATE_SLOT_COUNT)
     {
@@ -5502,6 +5586,8 @@ u32 menu(void)
        writes the auto slot, so recount on every return to the main menu. */
     if (new_menu == &main_menu)
       menu_status_count_states();
+    if (new_menu == &savestate_menu)
+      memset(savestate_thumb_state, SAVESTATE_THUMB_UNKNOWN, sizeof(savestate_thumb_state));
 
     current_menu = new_menu;
     build_legacy_menu_model(&navigation_model, navigation_rows, new_menu);
@@ -5589,7 +5675,10 @@ u32 menu(void)
     }
     else
     {
-        blit_to_screen(screen_image_ptr, GBA_SCREEN_WIDTH, GBA_SCREEN_HEIGHT, SCREEN_IMAGE_POS_X, SCREEN_IMAGE_POS_Y);
+        if (current_menu == &savestate_menu && !first_load)
+          savestate_thumbs_draw(current_option_num);
+        else
+          blit_to_screen(screen_image_ptr, GBA_SCREEN_WIDTH, GBA_SCREEN_HEIGHT, SCREEN_IMAGE_POS_X, SCREEN_IMAGE_POS_Y);
         // --- Border around game screenshot ---
         draw_box_line(SCREEN_IMAGE_POS_X - 1, SCREEN_IMAGE_POS_Y - 1,
                       SCREEN_IMAGE_POS_X + GBA_SCREEN_WIDTH, SCREEN_IMAGE_POS_Y + GBA_SCREEN_HEIGHT,
@@ -5944,6 +6033,7 @@ u32 menu(void)
                           get_savestate_filename(AUTO_SAVESTATE_SLOT, filename_buffer);
                           get_savestate_info(filename_buffer, NULL, line_buffer);
                           sprintf(savestate_timestamps[AUTO_SAVESTATE_SLOT], "AUTO: %s", line_buffer);
+                          savestate_thumb_state[AUTO_SAVESTATE_SLOT] = SAVESTATE_THUMB_UNKNOWN;
                         }
                       }
                       if ((savestate_action != 0 ? menu_save_state() : menu_load_state()) != 0)
