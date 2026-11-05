@@ -700,8 +700,8 @@ static u32 read32_bios(u32 address)
   READ_BIOS(32);
 }
 
-// The timers count between update_gba passes: timer_read brings the
-// TMxCNT_L that a read of 0x4000100-0x400010F can reach up to date.
+// Timers count on between update_gba passes: before a read of
+// 0x4000100-0x400010F, timer_read brings that timer's TMxCNT_L up to date.
 #define READ_TIMER(address)                                                   \
   if (((address) & 0xFFFFF0) == 0x100)                                        \
     timer_read(((address) >> 2) & 0x03);                                      \
