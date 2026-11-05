@@ -44,6 +44,7 @@ HOST_TEST_MENU_MODEL = $(HOST_BUILD_DIR)/test_menu_model
 HOST_TEST_MENU_LAYOUT = $(HOST_BUILD_DIR)/test_menu_layout
 HOST_TEST_TOAST = $(HOST_BUILD_DIR)/test_toast
 HOST_TEST_INPUT_CHORD = $(HOST_BUILD_DIR)/test_input_chord
+HOST_TEST_INPUT_MODEL = $(HOST_BUILD_DIR)/test_input_model
 HOST_TEST_CONFIG_MODEL = $(HOST_BUILD_DIR)/test_config_model
 HOST_TEST_CONFIG_STORE = $(HOST_BUILD_DIR)/test_config_store
 HOST_TEST_FAST_FORWARD = $(HOST_BUILD_DIR)/test_fast_forward_policy
@@ -71,6 +72,7 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_PERF_VIDEO_SENTINEL) \
  $(HOST_TEST_INPUT_TRACE) $(HOST_TEST_MENU_MODEL) \
  $(HOST_TEST_MENU_LAYOUT) $(HOST_TEST_TOAST) $(HOST_TEST_INPUT_CHORD) \
+ $(HOST_TEST_INPUT_MODEL) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE) $(HOST_TEST_FAST_FORWARD) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
@@ -95,6 +97,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_menu_layout \
  $(HOST_SANITIZE_DIR)/test_toast \
  $(HOST_SANITIZE_DIR)/test_input_chord \
+ $(HOST_SANITIZE_DIR)/test_input_model \
  $(HOST_SANITIZE_DIR)/test_config_model \
  $(HOST_SANITIZE_DIR)/test_config_store \
  $(HOST_SANITIZE_DIR)/test_fast_forward_policy \
@@ -135,6 +138,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_MENU_LAYOUT)
 	$(HOST_TEST_TOAST)
 	$(HOST_TEST_INPUT_CHORD)
+	$(HOST_TEST_INPUT_MODEL)
 	$(HOST_TEST_CONFIG_MODEL)
 	$(HOST_TEST_CONFIG_STORE)
 	$(HOST_TEST_FAST_FORWARD)
@@ -178,6 +182,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_menu_layout
 	$(HOST_SANITIZE_DIR)/test_toast
 	$(HOST_SANITIZE_DIR)/test_input_chord
+	$(HOST_SANITIZE_DIR)/test_input_model
 	$(HOST_SANITIZE_DIR)/test_config_model
 	$(HOST_SANITIZE_DIR)/test_config_store
 	$(HOST_SANITIZE_DIR)/test_fast_forward_policy
@@ -356,6 +361,12 @@ $(HOST_TEST_INPUT_CHORD): tests/test_input_chord.c source/src/input_chord.c \
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_input_chord.c source/src/input_chord.c -o $@
+
+$(HOST_TEST_INPUT_MODEL): tests/test_input_model.c source/src/input_model.c \
+ source/src/input_model.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_input_model.c source/src/input_model.c -o $@
 
 $(HOST_TEST_CONFIG_MODEL): tests/test_config_model.c \
  source/src/config_model.c source/src/config_model.h
@@ -585,6 +596,12 @@ $(HOST_SANITIZE_DIR)/test_input_chord: tests/test_input_chord.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_input_chord.c source/src/input_chord.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_input_model: tests/test_input_model.c \
+ source/src/input_model.c source/src/input_model.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_input_model.c source/src/input_model.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_config_model: tests/test_config_model.c \
  source/src/config_model.c source/src/config_model.h
