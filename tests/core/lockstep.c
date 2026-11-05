@@ -62,6 +62,9 @@
 
 #include "arm_core.h"
 
+/* Before mGBA's other headers: the build's options change the layout of
+   struct mCore, so the fields after the debugger ones move. */
+#include <mgba/flags.h>
 #include <mgba/core/core.h>
 #include <mgba/core/config.h>
 #include <mgba/core/log.h>
