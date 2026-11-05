@@ -27,6 +27,12 @@ int menu_viewport_baseline(const MenuViewport *viewport,
  uint32_t *baseline);
 size_t menu_layout_max_columns(uint32_t screen_width, uint32_t start_x,
  uint32_t glyph_width);
+/* Columns of a status drawn right-aligned in a max_columns row after a
+   label and at least gap blank columns, and in *start_column the column it
+   starts at; 0 when nothing fits. */
+size_t menu_layout_status_columns(size_t label_columns,
+ size_t status_columns, size_t max_columns, size_t gap,
+ size_t *start_column);
 /* Byte lengths and offsets for drawing text within a column budget;
    none of them splits a double-byte character. menu_text_clip_length
    assumes GBK; the _for_encoding variant also takes Shift-JIS. */

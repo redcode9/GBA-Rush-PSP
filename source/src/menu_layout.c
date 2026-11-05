@@ -52,6 +52,26 @@ size_t menu_layout_max_columns(uint32_t screen_width, uint32_t start_x,
   return (screen_width - start_x) / glyph_width;
 }
 
+/* A status too long for the room left after the label and the gap starts
+   right after the gap and is cut to the row's end; *start_column is left
+   alone when nothing fits. */
+size_t menu_layout_status_columns(size_t label_columns,
+ size_t status_columns, size_t max_columns, size_t gap,
+ size_t *start_column)
+{
+  size_t room;
+
+  if(start_column == NULL || status_columns == 0 ||
+     label_columns >= max_columns || gap >= max_columns - label_columns)
+    return 0;
+
+  room = max_columns - label_columns - gap;
+  if(status_columns > room)
+    status_columns = room;
+  *start_column = max_columns - status_columns;
+  return status_columns;
+}
+
 /* Length of the character at text: 2 for a valid lead/trail pair in the
    given encoding (Shift-JIS lead 0x81-0x9F or 0xE0-0xEF, GBK lead
    0x81-0xFE), otherwise 1. Every byte takes one font column, so a
