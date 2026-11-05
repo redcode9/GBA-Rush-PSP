@@ -47,6 +47,7 @@ HOST_TEST_CONFIG_STORE = $(HOST_BUILD_DIR)/test_config_store
 HOST_TEST_FAST_FORWARD = $(HOST_BUILD_DIR)/test_fast_forward_policy
 HOST_TEST_FAST_FORWARD_AUDIO = $(HOST_BUILD_DIR)/test_fast_forward_audio
 HOST_TEST_VIDEO_MOSAIC = $(HOST_BUILD_DIR)/test_video_mosaic
+HOST_TEST_ART_FILTER = $(HOST_BUILD_DIR)/test_art_filter
 HOST_TEST_DYNAREC_WORKLIST = $(HOST_BUILD_DIR)/test_dynarec_worklist
 HOST_TEST_SOUND_MATH = $(HOST_BUILD_DIR)/test_sound_math
 HOST_TEST_RUNTIME_LOG = $(HOST_BUILD_DIR)/test_runtime_log
@@ -77,6 +78,7 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_MENU_LAYOUT) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE) $(HOST_TEST_FAST_FORWARD) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
+ $(HOST_TEST_ART_FILTER) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
  $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_GBA_PPU) \
  $(HOST_TEST_GBA_PPU_LOG) $(HOST_TEST_UI_BATCH) \
@@ -103,6 +105,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_fast_forward_policy \
  $(HOST_SANITIZE_DIR)/test_fast_forward_audio \
  $(HOST_SANITIZE_DIR)/test_video_mosaic \
+ $(HOST_SANITIZE_DIR)/test_art_filter \
  $(HOST_SANITIZE_DIR)/test_dynarec_worklist \
  $(HOST_SANITIZE_DIR)/test_sound_math \
  $(HOST_SANITIZE_DIR)/test_runtime_log \
@@ -143,6 +146,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_FAST_FORWARD)
 	$(HOST_TEST_FAST_FORWARD_AUDIO)
 	$(HOST_TEST_VIDEO_MOSAIC)
+	$(HOST_TEST_ART_FILTER)
 	$(HOST_TEST_DYNAREC_WORKLIST)
 	$(HOST_TEST_SOUND_MATH)
 	$(HOST_TEST_RUNTIME_LOG)
@@ -187,6 +191,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_fast_forward_policy
 	$(HOST_SANITIZE_DIR)/test_fast_forward_audio
 	$(HOST_SANITIZE_DIR)/test_video_mosaic
+	$(HOST_SANITIZE_DIR)/test_art_filter
 	$(HOST_SANITIZE_DIR)/test_dynarec_worklist
 	$(HOST_SANITIZE_DIR)/test_sound_math
 	$(HOST_SANITIZE_DIR)/test_runtime_log
@@ -384,6 +389,12 @@ $(HOST_TEST_VIDEO_MOSAIC): tests/test_video_mosaic.c source/src/video_mosaic.h
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_video_mosaic.c -o $@
+
+$(HOST_TEST_ART_FILTER): tests/test_art_filter.c source/src/art_filter.c \
+ source/src/art_filter.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_art_filter.c source/src/art_filter.c -o $@
 
 $(HOST_TEST_DYNAREC_WORKLIST): tests/test_dynarec_worklist.c \
  source/src/dynarec_worklist.c source/src/dynarec_worklist.h
@@ -615,6 +626,12 @@ $(HOST_SANITIZE_DIR)/test_video_mosaic: tests/test_video_mosaic.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_video_mosaic.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_art_filter: tests/test_art_filter.c \
+ source/src/art_filter.c source/src/art_filter.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_art_filter.c source/src/art_filter.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_dynarec_worklist: tests/test_dynarec_worklist.c \
  source/src/dynarec_worklist.c source/src/dynarec_worklist.h
