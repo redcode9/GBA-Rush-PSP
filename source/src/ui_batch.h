@@ -30,6 +30,11 @@
  *   draw_vline(x, sy, ey, c)          -> ui_batch_vline(b, x, sy, ey, c)
  *   blit_to_screen(src, w, h, x, y)   -> ui_batch_image(b, t, x, y, 0, 0, w, h)
  *                                        with t from ui_batch_add_texture(b, src, ...)
+ * The batch reads a texture's pixels only when it flushes, so they must stay
+ * unchanged until the next ui_batch_flush or ui_batch_clear_textures. A
+ * caller that refills a buffer it already queued (boxart_carousel_draw
+ * scales every carousel slot into one scratch buffer), or gets -1 from
+ * ui_batch_add_texture, calls ui_batch_clear_textures (which flushes) first.
  *
  * Commands are cut to the clip rectangle when they are queued, so a stored
  * command never reaches outside the screen and a fully hidden one is not
