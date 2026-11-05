@@ -9,6 +9,7 @@ target. Needs git and sh.
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -112,8 +113,8 @@ class ProveRegressionTest(unittest.TestCase):
         result = subprocess.run(["sh", "scripts/prove-regression.sh", ref, test],
                                 cwd=self.repo, env=self.env, capture_output=True,
                                 text=True)
-        self.assertFalse((self.repo / "build/prove").exists(), result.stdout)
-        self.assertEqual(self.git("worktree", "list", "--porcelain").count("worktree "), 1)
+        self.assertFalse((self.repo / "build/prove" / ref).exists(), result.stdout)
+        self.assertNotIn("build/prove", self.git("worktree", "list", "--porcelain"))
         lines = result.stdout.splitlines()
         return result.returncode, lines[-1].split(":")[0] if lines else result.stderr
 
@@ -135,6 +136,18 @@ class ProveRegressionTest(unittest.TestCase):
         stale.mkdir(parents=True)
         (stale / "leftover").write_text("")
         self.assertEqual(self.prove("v1", "test_toy"), (0, "FAIL-AS-EXPECTED"))
+        # Still registered, but its folder is gone. git checks this only while
+        # build/prove holds something else, such as a run for another REF.
+        self.git("worktree", "add", "-q", "--detach", "build/prove/v1", "v1")
+        shutil.rmtree(stale)
+        (self.repo / "build/prove/v0").mkdir()
+        self.assertEqual(self.prove("v1", "test_toy"), (0, "FAIL-AS-EXPECTED"))
+
+    def test_other_worktrees_with_a_missing_folder_stay_registered(self):
+        self.git("worktree", "add", "-q", "--detach", "other", "v0")
+        shutil.rmtree(self.repo / "other")
+        self.assertEqual(self.prove("v1", "test_toy"), (0, "FAIL-AS-EXPECTED"))
+        self.assertIn("/other\n", self.git("worktree", "list", "--porcelain"))
 
     def test_bad_arguments_are_errors(self):
         for ref, test in (("v9", "test_toy"), ("../v1", "test_toy"), ("v1", "test_none"),

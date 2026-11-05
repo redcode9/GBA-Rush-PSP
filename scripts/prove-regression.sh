@@ -55,7 +55,8 @@ result=3
 
 remove_worktree()
 {
-  if ! git worktree remove --force "$worktree" 2>/dev/null; then
+  # Pruning is only for a stale copy that git no longer knows as a worktree.
+  if [ -e "$worktree" ] && ! git worktree remove --force "$worktree" 2>/dev/null; then
     rm -rf "$worktree"
     git worktree prune
   fi
@@ -67,7 +68,8 @@ remove_worktree
 trap 'remove_worktree; exit "$result"' EXIT
 trap 'exit' HUP INT TERM
 
-git worktree add --quiet --detach "$worktree" "$commit"
+# --force takes over a registration whose folder was deleted.
+git worktree add --quiet --force --detach "$worktree" "$commit"
 rm -rf "$worktree/tests"
 cp -R tests "$worktree/tests"
 cp Makefile "$worktree/Makefile"
