@@ -341,6 +341,10 @@ static void classic_set(const View *s) {
     reg_mode[m][6] = s->r14[m];
     spsr[m] = s->spsr[m];
   }
+  /* The running mode's SP and LR are banked only when it is left: its
+     copy is stale, and a loader must take reg[13] and reg[14]. */
+  reg_mode[cur][5] = ~s->r[13];
+  reg_mode[cur][6] = ~s->r[14];
   memcpy(reg_mode[MODE_FIQ], s->fiq, sizeof(s->fiq));
 }
 
