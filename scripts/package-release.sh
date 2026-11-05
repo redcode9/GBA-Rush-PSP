@@ -77,6 +77,12 @@ then
   exit 1
 fi
 
+# No diagnostic code in a release, and the version and build id it must show.
+if [ "$profile" = release ]; then
+  ${PYTHON:-python3} scripts/check-elf.py --build-id "$build_id" \
+    source/TempGBA.elf
+fi
+
 release_name="GBA-Rush-PSP-$version$suffix"
 release_root="dist/$release_name"
 install_root="$release_root/$install_folder"
