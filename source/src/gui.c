@@ -25,12 +25,15 @@
  * screens are nested functions), the status bar, and loading and saving of
  * the global, per-game and directory settings files. */
 
+#include <stdarg.h>
+
 #include "common.h"
 #include "boxart.h"   // carousel / boxart support
 #include "config_store.h"
 #include "menu_layout.h"
 #include "menu_model.h"
 #include "psp_adhoc.h"
+#include "toast.h"
 
 extern u32 option_swap_confirm_buttons;
 
@@ -785,6 +788,22 @@ void print_swap_aware(const char *src, u32 x, u32 y, u16 color, u16 bg)
     copy_swap_aware(src, buf, sizeof(buf));
 
     print_string_gbk(buf, x, y, color, bg);
+}
+
+/* Queues MSG[msg_id], formatted with the arguments, as a 3 s toast that
+   synchronize() draws in game. Every message table is GBK, Japanese too. */
+void toast_show(u32 msg_id, ...)
+{
+    /* Longer than a toast, so the ring's cut, which never splits a
+       double-byte character, comes before vsnprintf's. */
+    char text[TOAST_TEXT_SIZE * 2];
+    va_list args;
+
+    va_start(args, msg_id);
+    vsnprintf(text, sizeof(text), MSG[msg_id], args);
+    va_end(args);
+
+    toast_push(text, 3000000, 0, sceKernelGetSystemTimeLow());
 }
 
 /* ------------------------------------------------------------------

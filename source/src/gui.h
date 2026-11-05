@@ -56,6 +56,9 @@ void maybe_load_auto_savestate(void);
 void load_recent_roms(void);
 void add_recent_rom(const char *filename);
 
+/* Shows MSG[msg_id], formatted with printf arguments, as a 3 s toast. */
+void toast_show(u32 msg_id, ...);
+
 /* Theme colors — defined in gui.c, accessible everywhere via common.h */
 extern u16 color_bg;
 extern u16 color_rom_info;
