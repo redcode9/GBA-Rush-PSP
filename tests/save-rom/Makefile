@@ -5,7 +5,7 @@
 TARGETS := save-sram32 save-sram64 save-flash64 save-flash128 \
  save-eeprom512 save-eeprom8k save-notag
 GAME_CODE := GRSV
-SOURCES := source/main.c
+SOURCES := source/main.c source/cases_bus.c
 
 FLAGS_save-sram32 := -DBACKUP_KIND=BACKUP_SRAM -DBACKUP_SIZE=0x8000
 FLAGS_save-sram64 := -DBACKUP_KIND=BACKUP_SRAM -DBACKUP_SIZE=0x10000

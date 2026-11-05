@@ -9,6 +9,11 @@ GAME_CODE := GRCR
 SOURCES := source/main.c source/cases_irq.c source/cases_stack.c \
  source/cases_stack_asm.s source/cases_pc.c source/cases_pc_asm.s \
  source/cases_cpu.c source/cases_cpu_asm.s
+SOURCES += source/cases_timer.c source/cases_timer_asm.s
+SOURCES += source/cases_branch.c source/cases_branch_asm.s
+SOURCES += source/cases_prefetch.c source/cases_prefetch_asm.s
+SOURCES += source/cases_vram.c source/cases_vram_asm.s
+SOURCES += source/cases_stm.c source/cases_stm_asm.s
 # The expected results of cpu_shift_reg, written at build time.
 SHIFT_TABLE = $(OUT)/gen/shift_table.h
 FLAGS_core-rom = -I$(OUT)/gen
