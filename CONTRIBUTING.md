@@ -16,8 +16,8 @@ make -j4 test-sanitize HOST_CC='cc -O1'
 make -j4 psp-build
 ```
 
-Use a clean build after changing compiler or diagnostic flags. Release packages
-are created and checked with:
+Use a clean build after changing compiler flags. Release packages are created
+and checked with:
 
 ```sh
 make package VERSION=1.4.3
@@ -26,6 +26,45 @@ make artifact-smoke VERSION=1.4.3
 
 The optional desktop launcher has its own
 [build instructions](https://github.com/redcode9/GBA-Rush-PSP/blob/master/source/single-game_launcher/tool/README.md).
+
+### Build profiles
+
+`psp-build`, `package` and `artifact-smoke` use the release profile, the EBOOT
+players get, unless given `PROFILE=diagnostic`. The diagnostic profile adds
+the features that `source/src/build_profile.h` switches on (today the input
+trace), is titled "GBA Rush PSP [DIAG]" with its own icon, and is packaged as
+`dist/GBA-Rush-PSP-<version>-diag.zip`, with its manifest and
+`dist/SHA256SUMS-diag`, for the folder `PSP/GAME/GBARushPSP-DIAG/`:
+
+```sh
+make -j4 psp-build PROFILE=diagnostic
+make package VERSION=1.4.3 PROFILE=diagnostic
+```
+
+Switching profile rebuilds every object. A release build given an
+`ENABLE_DIAGNOSTIC_*` macro stops with an `#error`, and
+`scripts/check-profiles.sh` (part of `make check`) refuses those macros
+anywhere but `build_profile.h`. `DIAGNOSTIC_INPUT_TRACE=1`, the old name of
+`PROFILE=diagnostic`, still works with a warning until the next release.
+
+### Reproducing a player's bug with the diagnostic build
+
+The emulator keeps its files in the folder its EBOOT starts from, so the
+diagnostic build in `PSP/GAME/GBARushPSP-DIAG/` has its own settings, saves
+and logs and leaves `PSP/GAME/GBARushPSP/` alone. To reproduce a bug, copy the
+player's files from their `GBARushPSP/` into `GBARushPSP-DIAG/`:
+
+- settings: `tempgba.cfg`, `tempgba_theme.cfg`, `game_config.txt` and the
+  game's `<rom>.cfg`;
+- saves: the game's `.sav` and `.svs` files, and `gba_bios.bin` if they have
+  one;
+- logs: the `logs/` folder, to read their sessions next to the new ones with
+  `tools/decode_runtime_log.py`. Keep a copy on the PC: each new session
+  renames the copied ones one slot down and deletes the oldest.
+
+Copy a `dir.ini` only if its paths are relative (no `ms0:`), together with the
+folders it names: a full path would point the diagnostic build at the player's
+own folders.
 
 ## Source tree
 
