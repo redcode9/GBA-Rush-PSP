@@ -217,6 +217,37 @@ class RuntimeLogDecoderTests(unittest.TestCase):
                                       "values": values}),
                     "cpu-clock " + expected)
 
+    def test_describes_me_clock_records(self):
+        main_c = (Path(__file__).parents[1] / "source" / "src" /
+                  "main.c").read_text(encoding="utf-8")
+        # Requested MHz, then 2 * counter ticks / us rounded, then ms.
+        self.assertRegex(
+            main_c,
+            r"cpu_ticks, 14,\s+main_clock_requested_mhz,\s+"
+            r"me_us \? \(u32\)\(\(2 \* me_ticks \+ me_us / 2\) / me_us\)"
+            r" : 0,\s+\(u32\)\(me_us / 1000\)\);")
+        cases = [
+            ([333, 333, 61234], "requested=333MHz me=333MHz over=61.2s"),
+            ([222, 222, 2000], "requested=222MHz me=222MHz over=2.0s"),
+            ([333, 332, 1000], "requested=333MHz me=332MHz over=1.0s"),
+            ([333, 334, 1000], "requested=333MHz me=334MHz over=1.0s"),
+            ([333, 331, 1000],
+             "requested=333MHz me=331MHz over=1.0s MISMATCH"),
+            ([333, 335, 1000],
+             "requested=333MHz me=335MHz over=1.0s MISMATCH"),
+            ([333, 222, 5000],
+             "requested=333MHz me=222MHz over=5.0s MISMATCH"),
+            ([333, 0, 0], "requested=333MHz me=unmeasured"),
+            # Under a millisecond is too short to trust.
+            ([333, 333, 0], "requested=333MHz me=unmeasured"),
+        ]
+        for values, expected in cases:
+            with self.subTest(values=values):
+                self.assertEqual(
+                    decoder.describe({"event": "link-counters", "flags": 14,
+                                      "values": values}),
+                    "me-clock " + expected)
+
     def test_exact_renderer_names_match_the_c_enum(self):
         header = (Path(__file__).parents[1] / "source" / "src" /
                   "video_me.h").read_text()

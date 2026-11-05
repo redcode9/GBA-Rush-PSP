@@ -166,8 +166,12 @@ static void convert_busy_time(void)
   u32 ticks = mailbox->reader.busy;
 
   if(busy_known && clock != busy_clock && now - busy_time < 5000000u)
+  {
     counters.me_busy_us += (u64)(ticks - busy_ticks) *
      (now - busy_time) / (clock - busy_clock);
+    counters.me_clock_ticks += clock - busy_clock;
+    counters.me_clock_us += now - busy_time;
+  }
   busy_clock = clock;
   busy_ticks = ticks;
   busy_time = now;

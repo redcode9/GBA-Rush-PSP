@@ -79,7 +79,8 @@ ADHOC_PHASES = [
     "peer-list", "socket", "send", "receive", "group-lost",
 ]
 # Counter records by kind; describe() spells out 11 (Exact renderer),
-# 12 (CPU core) and 13 (requested and read-back CPU and bus clocks).
+# 12 (CPU core), 13 (requested and read-back CPU and bus clocks) and 14
+# (requested and measured Media Engine clock).
 LINK_COUNTERS = {
     0: "rtt-us/rtt-max-us/resends",
     1: "datagrams-sent/received/rejected",
@@ -251,6 +252,15 @@ def describe(record: dict[str, Any]) -> str:
         return (
             f"cpu-clock requested={value0}MHz cpu={cpu}MHz bus={bus}MHz"
             + (" MISMATCH" if mismatch else "")
+        )
+    if event == "link-counters" and flags == 14:
+        # Measured only while the Media Engine draws (Exact renderer).
+        if not value2:
+            return f"me-clock requested={value0}MHz me=unmeasured"
+        return (
+            f"me-clock requested={value0}MHz me={value1}MHz "
+            f"over={value2 / 1000:.1f}s"
+            + (" MISMATCH" if abs(value1 - value0) > 1 else "")
         )
     if event == "link-counters":
         return f"{LINK_COUNTERS.get(flags, f'counters-{flags}')}={value0}/{value1}/{value2}"

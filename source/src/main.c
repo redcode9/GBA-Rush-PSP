@@ -295,6 +295,9 @@ static void main_power_reopen_gamepak(void);
 static void main_link_close(MainLinkEnd reason);
 static void main_log_cpu_clock(void);
 
+/* The clock last asked of set_cpu_clock, in MHz (0 before the first call). */
+static u32 main_clock_requested_mhz;
+
 /* The clock call under the NID newer firmware exports; setup_main picks
    which one to use. */
 #define scePowerSetClockFrequency371  scePower_EBD177D6
@@ -557,17 +560,22 @@ static void main_link_log_state(void)
    drew, frames shown late and its busy time per frame; the main
    processor's time per frame in the log's hooks, log words per frame and
    full resends; whether it draws on the Media Engine (VideoMeState) and
-   the cause and address of an exception there. */
+   the cause and address of an exception there. Record 14 holds the
+   requested clock, then the Media Engine's measured clock and the
+   milliseconds it was measured over, both 0 if it never drew. */
 static void main_log_video_counters(const VideoMeCounters *since)
 {
   VideoMeCounters now;
   VideoMeState state = video_me_state();
   u32 frames, sampled, cause, address;
+  u64 me_ticks, me_us;
 
   video_me_counters(&now);
   video_me_fault(&cause, &address);
   frames = now.frames - since->frames;
   sampled = now.log_frames - since->log_frames;
+  me_ticks = now.me_clock_ticks - since->me_clock_ticks;
+  me_us = now.me_clock_us - since->me_clock_us;
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 9,
    now.me_frames - since->me_frames, now.late_frames - since->late_frames,
    frames ? (u32)((now.me_busy_us - since->me_busy_us) / frames) : 0);
@@ -577,6 +585,11 @@ static void main_log_video_counters(const VideoMeCounters *since)
    now.resends - since->resends);
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 11,
    (u32)state, cause, address);
+  /* Its cycle counter runs at half the clock: MHz = 2 * ticks / us. */
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 14,
+   main_clock_requested_mhz,
+   me_us ? (u32)((2 * me_ticks + me_us / 2) / me_us) : 0,
+   (u32)(me_us / 1000));
 }
 
 /* The CPU core running and, for the new one, its compiled blocks and code
@@ -2486,9 +2499,6 @@ u32 yesno_dialog(const char *text)
   return (gui_action == CURSOR_SELECT) ? 0 : 1;
 }
 
-
-/* The clock last asked of set_cpu_clock, in MHz (0 before the first call). */
-static u32 main_clock_requested_mhz;
 
 /* The requested clock and the CPU and bus clocks the firmware reports, as
    LINK_COUNTERS record 13. Emulator thread only, like every main-ring write. */
