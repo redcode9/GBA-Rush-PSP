@@ -39,6 +39,14 @@
   so it never overwrites the `<rom>_auto.svs` made with `gba_bios.bin`.
 - The `bios_rom_hack_39` and `bios_rom_hack_2C` options of `game_config.txt`
   apply only to `gba_bios.bin`.
+- In development builds with input tracing, starting a recording also saves
+  a savestate beside the trace in `traces/`, and replaying the trace loads
+  it first, so a recording replays from where it began even after the
+  console is restarted, without loading a state by hand. A trace whose
+  savestate is missing or has changed is refused. On games with a
+  real-time clock the replay warns that it may not match the recording.
+  Traces recorded by earlier versions still replay. A recording does not
+  start during a link session.
 
 ## 1.4.3 - 2026-11-02
 
