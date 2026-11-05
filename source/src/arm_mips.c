@@ -1616,6 +1616,18 @@ static void host_address(Builder *b, unsigned p, unsigned reg,
   emit(b, ADDU(p, p, s));
 }
 
+/* The low half of a host address, signed, so that one lui loads the rest;
+   the accesses add it to their offsets (up to span) if they all fit. */
+static int32_t low_half(uint32_t host)
+{
+  return (int16_t)(host & 0xFFFF);
+}
+
+static int low_half_fits(uint32_t host, uint32_t span)
+{
+  return low_half(host) + (int32_t)span <= 32767;
+}
+
 /* Branches to slow if the 32 bytes of work RAM holding the address in reg
    (or the constant address, with reg ZERO) may hold translated code; s is
    a scratch register. */
@@ -1793,6 +1805,8 @@ static unsigned memory(Builder *b, unsigned i)
   unsigned done = label_new(b);
   unsigned s;
   unsigned p = V0;
+  /* Added to the accesses: the low half of an address in p's high half. */
+  int32_t offset = 0;
   int known = b->known[base_slot];
   int exact;
   int level_known;
@@ -1847,11 +1861,19 @@ static unsigned memory(Builder *b, unsigned i)
   s = scratch(b);
   if(exact)
   {
+    uint32_t host = region_target(b, region) +
+     (guess & b->core->map[region].mask);
+
     if(store && region <= 3)
       code_checks(b, ZERO, guess, span, region, slow, s);
     p = scratch(b);
-    load_constant(b, p, region_target(b, region) +
-     (guess & b->core->map[region].mask));
+    if(low_half_fits(host, span))
+    {
+      offset = low_half(host);
+      emit(b, LUI(p, (host - (uint32_t)offset) >> 16));
+    }
+    else
+      load_constant(b, p, host);
   }
   else if(region < 16)
   {
@@ -1860,6 +1882,8 @@ static unsigned memory(Builder *b, unsigned i)
     unsigned bits = mask_bits(map->mask);
     unsigned base = source(b, base_slot);
     unsigned address = base;
+    int aligned = !(target & map->mask);
+    int folded = !aligned && low_half_fits(target, span);
 
     if(first->b)
     {
@@ -1884,8 +1908,13 @@ static unsigned memory(Builder *b, unsigned i)
     if(size > 1)
       emit(b, ANDI(s, s, size == 2 ? 0x1FF : 0x3FF));
     branch(b, BNE(s, ZERO), slow);
-    if(!(target & map->mask))
-      emit(b, LUI(p, target >> 16));
+    /* A buffer not aligned to its size (work RAM on the PSP, where nothing
+       aligns a relocatable EBOOT's data beyond 16 bytes) gets the offset
+       added, the low half of its address folded into the accesses. */
+    if(folded)
+      offset = low_half(target);
+    if(aligned || folded)
+      emit(b, LUI(p, (target - (uint32_t)offset) >> 16));
     else
       emit(b, NOP);
     if(span)
@@ -1902,7 +1931,13 @@ static unsigned memory(Builder *b, unsigned i)
     }
     if(store && region <= 3)
       code_checks(b, address, 0, span, region, slow, s);
-    host_address(b, p, address, region, !(target & map->mask), s);
+    if(folded)
+    {
+      emit(b, EXT(s, address, 0, bits));
+      emit(b, ADDU(p, p, s));
+    }
+    else
+      host_address(b, p, address, region, aligned, s);
   }
 
   if(region < 16)
@@ -1912,7 +1947,7 @@ static unsigned memory(Builder *b, unsigned i)
       const ArmIrOp *op = &b->ops[i + j];
       unsigned rt = store ? source(b, op->d) : dest[j];
 
-      emit(b, access_word(op->code, rt, (int)(4 * j), p));
+      emit(b, access_word(op->code, rt, offset + (int)(4 * j), p));
       if(in_memory & (1u << j))
         emit(b, SW(rt, SLOT(op->d), GP));
     }

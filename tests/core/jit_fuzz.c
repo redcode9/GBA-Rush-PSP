@@ -680,10 +680,10 @@ int main(int argc, char **argv)
   mips_unicorn_map(jit, sizeof(ArmMips), 0x10000000u);
   mips_unicorn_map(code, CODE_BYTES, 0x08800000u);
   mips_unicorn_map(rom, ROM_SIZE, 0x0C000000u);
-  /* Work RAM not aligned to its size, for the code that adds the offset;
-     internal RAM aligned but not to 64 KB, for the code that adds the low
-     half; ROM aligned. */
-  mips_unicorn_map(worlds[1].ewram, EWRAM_SIZE, 0x0A010000u);
+  /* Work RAM not aligned to its size, for the code that adds the offset,
+     with a low half that is negative as a signed offset; internal RAM
+     aligned but not to 64 KB, for the code that inserts it; ROM aligned. */
+  mips_unicorn_map(worlds[1].ewram, EWRAM_SIZE, 0x0A00F000u);
   mips_unicorn_map(worlds[1].iwram, IWRAM_SIZE, 0x0A068000u);
 
   host = mips_unicorn_host(jit);
