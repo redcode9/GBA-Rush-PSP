@@ -348,8 +348,9 @@ def gate(version, channel, repo, dist, now):
         except (KeyError, TypeError):
             raise ValueError(f"{manifest} has no EBOOT.PBP sha256") from None
     elif channel == "stable":
-        raise ValueError(f"{manifest} not found: build the candidate with "
-                         f"make package VERSION={version}")
+        raise ValueError(f"{manifest} not found: the stable gate checks the "
+                         f"rc's package, made with make package "
+                         f"VERSION={version} CHANNEL=prerelease")
     passed = [row for row in rows if digest and row["Result"] == "pass"
               and row["EBOOT sha256"] == digest[:12]]
     problems = []

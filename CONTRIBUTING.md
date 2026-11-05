@@ -167,8 +167,11 @@ untested console build must be published as a prerelease.
 [hardware tests](docs/hardware-tests.md) it requires, whether it fixes lost
 data (`hotfix-data`), its known limits and, when the link code changed, the
 link status. `docs/releases/link-compat.txt` holds the link facts that the
-protocol constants of each tag do not show. After `make package`, check the
-candidate and write `dist/RELEASE-NOTES-<version>.md`:
+protocol constants of each tag do not show. Package an rc with its final
+version, `make package VERSION=1.4.4 CHANNEL=prerelease`: the gate reads
+`dist/GBA-Rush-PSP-<version>.manifest.json`, and the stable release checks
+that same package rather than a new build. Then check the candidate and
+write `dist/RELEASE-NOTES-<version>.md`:
 
 ```sh
 make release-gate VERSION=1.4.4 CHANNEL=prerelease
