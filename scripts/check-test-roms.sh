@@ -100,8 +100,8 @@ $PYTHON tools/decode_test_rom.py \
 # built in build/, by default ext/mgba-0.10.3 once scripts/setup-dev.sh
 # has built it. Every ROM runs again there through tests/core/mgba_run.c,
 # and only these cases may fail, each for a reason in mGBA's source:
-# - pc_high hangs: mGBA runs open bus above 0FFFFFFFh
-#   (docs/DESIGN-DECISIONS.md).
+# - pc_high hangs (the only case allowed to): mGBA runs open bus above
+#   0FFFFFFFh (docs/DESIGN-DECISIONS.md).
 # - bios_openbus_boot: mgba_run starts the ROM without running the BIOS
 #   (skipBios), which leaves the BIOS latch at 0.
 # - cpu_irq_unmask: mGBA looks for a pending IRQ 7 cycles after the
@@ -136,7 +136,7 @@ MGBA=$OUT/mgba_run
 mkdir -p $OUT/mgba
 rm -f $OUT/mgba/*.sav
 
-mgba_allow=pc_high,bios_openbus_boot,cpu_irq_unmask,timer_overflow_reload
+mgba_allow=bios_openbus_boot,cpu_irq_unmask,timer_overflow_reload
 if [ -n "${BIOS:-}" ]; then
   $MGBA --bios "$BIOS" --save $OUT/mgba/core-rom.sav $OUT/core-rom.gba
 else
@@ -144,7 +144,7 @@ else
   $MGBA --save $OUT/mgba/core-rom.sav $OUT/core-rom.gba
 fi
 $PYTHON tools/decode_test_rom.py --allow-fail $mgba_allow \
-  $OUT/mgba/core-rom.sav
+  --allow-hang pc_high $OUT/mgba/core-rom.sav
 
 for chip in sram32 sram64 flash64 flash128 eeprom512 eeprom8k notag
 do

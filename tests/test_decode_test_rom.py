@@ -95,12 +95,21 @@ class DecodeTestRomTest(unittest.TestCase):
 
     def test_allowed_hang(self):
         cases = [("halt_ime0", 1, 1), ("pc_high", 0, 0)]
-        data = image(signature("core-rom", cases, running=1), 0x8000)
-        self.assertEqual(self.decode(data)[0], 1)
-        self.assertEqual(self.decode(data, "--allow-fail", "pc_high")[0], 0)
+        running = image(signature("core-rom", cases, running=1), 0x8000)
         cases[1] = ("pc_high", 4, 0)
-        data = image(signature("core-rom", cases, boots=2), 0x8000)
-        self.assertEqual(self.decode(data, "--allow-fail", "pc_high")[0], 0)
+        hung = image(signature("core-rom", cases, boots=2), 0x8000)
+        for data in (running, hung):
+            self.assertEqual(self.decode(data)[0], 1)
+            self.assertEqual(self.decode(data, "--allow-hang",
+                                         "pc_high")[0], 0)
+            # A failure allowed is not a hang allowed.
+            self.assertEqual(self.decode(data, "--allow-fail",
+                                         "pc_high")[0], 1)
+
+    def test_allowed_hang_is_not_an_allowed_failure(self):
+        cases = [("halt_ime0", 1, 1), ("pc_high", 2, 1)]
+        data = image(signature("core-rom", cases), 0x8000)
+        self.assertEqual(self.decode(data, "--allow-hang", "pc_high")[0], 1)
 
     def test_bad_crc(self):
         data = bytearray(image(signature("core-rom", [("pc_high", 1, 3)]),

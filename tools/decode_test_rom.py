@@ -10,7 +10,7 @@
 
 """Print the result signature a GBA Rush test ROM left in its save file.
 
-Usage: decode_test_rom.py [--allow-fail NAME,...] SAVE
+Usage: decode_test_rom.py [--allow-fail NAME,...] [--allow-hang NAME,...] SAVE
 
 The test ROMs (tests/core-rom, tests/save-rom; layout in
 tests/gba-rom/result.h) write the signature at the start of their save chip,
@@ -18,8 +18,9 @@ SRAM, Flash or EEPROM alike, so this reads it from offset 0 of the emulator's
 .sav file. The case names come from the signature itself.
 
 Exit status: 0 when every case passed or was skipped, 1 when one failed,
-hung or did not run (except the cases --allow-fail names failing or
-hanging), 2 when the file holds no valid signature.
+hung or did not run (except the cases --allow-fail names failing and
+those --allow-hang names hanging), 2 when the file holds no valid
+signature.
 """
 
 import argparse
@@ -64,7 +65,7 @@ def parse(data):
             "cases": cases}
 
 
-def report(signature, allow_fail=()):
+def report(signature, allow_fail=(), allow_hang=()):
     """Lines to print and the exit status."""
     cases = signature["cases"]
     running = signature["running"]
@@ -77,7 +78,9 @@ def report(signature, allow_fail=()):
     for i, (name, status, detail) in enumerate(cases):
         shown = "RUNNING" if i == running else status
         lines.append(f"  {name:<24} {shown:<8} {detail:08X}")
-        if shown in ("FAIL", "HUNG", "RUNNING") and name in allow_fail:
+        if shown == "FAIL" and name in allow_fail:
+            continue
+        if shown in ("HUNG", "RUNNING") and name in allow_hang:
             continue
         if shown not in ("PASS", "SKIP"):
             bad += 1
@@ -88,8 +91,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Print the result signature of a GBA Rush test ROM.")
     parser.add_argument("--allow-fail", default="",
-                        help="comma-separated cases whose failure or "
-                        "hang is expected here")
+                        help="comma-separated cases whose failure is "
+                        "expected here")
+    parser.add_argument("--allow-hang", default="",
+                        help="comma-separated cases whose hang is "
+                        "expected here")
     parser.add_argument("save", help="the emulator's .sav file")
     args = parser.parse_args(argv)
     with open(args.save, "rb") as f:
@@ -100,7 +106,8 @@ def main(argv=None):
         print(f"{args.save}: {error}", file=sys.stderr)
         return 2
     lines, status = report(signature,
-                           [n for n in args.allow_fail.split(",") if n])
+                           [n for n in args.allow_fail.split(",") if n],
+                           [n for n in args.allow_hang.split(",") if n])
     print("\n".join(lines))
     return status
 
