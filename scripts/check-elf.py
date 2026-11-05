@@ -23,7 +23,8 @@ MAIN_HEADER = ROOT / "source" / "src" / "main.h"
 CHECK_LAYOUT = ROOT / "scripts" / "check-layout.py"
 # Strings only the diagnostic profile may hold: the autorun control files
 # (diag-autorun.txt and .result), input trace files and their magic, and
-# the diagnostic EBOOT's title tag.
+# [DIAG] in case code ever prints the diagnostic title tag (the title itself
+# is in PARAM.SFO, which the build-config.stamp check covers).
 FORBIDDEN = (b"diag-autorun", b".gbit", b"GBIT", b"[DIAG]")
 
 
