@@ -40,6 +40,13 @@ static const uint32_t default_gamepad[CONFIG_MODEL_GAMEPAD_COUNT] =
   0, 3, 9, 8, 0, 1, 2, 3
 };
 
+/* The chords of input_chord_defaults: SELECT+L saves, SELECT+R loads,
+   START+SELECT (held) opens the menu; the other slots have none. */
+static const uint32_t default_shortcut[CONFIG_MODEL_SHORTCUT_COUNT] =
+{
+  0x0410, 0x0420, 0x0C00, 0, 0, 0, 0, 0
+};
+
 static void write_u16(uint8_t *output, uint16_t value)
 {
   output[0] = (uint8_t)value;
@@ -91,6 +98,18 @@ static uint32_t valid_or_default(uint32_t value, uint32_t limit,
   return value < limit ? value : default_value;
 }
 
+/* A shortcut is 0 (none) or 1 to 4 of the 16 inputs. */
+static uint32_t valid_shortcut_or_default(uint32_t mask,
+ uint32_t default_mask)
+{
+  uint32_t keys = 0;
+  uint32_t rest;
+
+  for(rest = mask; rest != 0; rest &= rest - 1)
+    keys++;
+  return mask <= 0xFFFFU && keys <= 4 ? mask : default_mask;
+}
+
 /* Headerless files numbered the RAM dynarec setting differently: 4-6 map to
    policies 0-2, 0-1 to policies 1-2, anything else to the default (2). */
 static uint32_t decode_legacy_ram_policy(uint32_t value)
@@ -135,6 +154,7 @@ void config_model_defaults(ConfigModel *model)
   model->cpu_core = 0;                  /* CPU_CORE_CLASSIC */
   model->browser_view = 0;              /* list */
   memcpy(model->gamepad, default_gamepad, sizeof(model->gamepad));
+  memcpy(model->shortcut, default_shortcut, sizeof(model->shortcut));
 }
 
 /* The value index is the on-disk position: append new settings, never
@@ -176,6 +196,8 @@ static void model_to_values(const ConfigModel *model, uint32_t *values)
   values[44] = model->fast_forward_audio;
   values[45] = model->cpu_core;
   values[46] = model->browser_view;
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    values[47 + i] = model->shortcut[i];
 }
 
 /* Inverse of model_to_values(). A value outside [0, limit) takes its
@@ -218,6 +240,9 @@ static void values_to_model(const uint32_t *values, ConfigModel *model)
   model->fast_forward_audio = valid_or_default(values[44], 2, 0);
   model->cpu_core = valid_or_default(values[45], 2, 0);
   model->browser_view = valid_or_default(values[46], 2, 0);
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    model->shortcut[i] = valid_shortcut_or_default(values[47 + i],
+                                                   default_shortcut[i]);
 }
 
 /* Writes the current versioned format; output needs at least

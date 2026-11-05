@@ -13,6 +13,20 @@
 
 #include "config_model.h"
 
+/* SELECT+L saves, SELECT+R loads, START+SELECT opens the menu (bit i is
+   gamepad index i: 4 L, 5 R, 10 SELECT, 11 START); slots 3-7 are empty. */
+static const uint32_t default_shortcut[CONFIG_MODEL_SHORTCUT_COUNT] =
+{
+  (1u << 10) | (1u << 4), (1u << 10) | (1u << 5), (1u << 11) | (1u << 10),
+  0, 0, 0, 0, 0
+};
+
+static void assert_default_shortcuts(const ConfigModel *model)
+{
+  assert(memcmp(model->shortcut, default_shortcut,
+   sizeof(default_shortcut)) == 0);
+}
+
 static void write_u32(uint8_t *output, uint32_t value)
 {
   output[0] = (uint8_t)value;
@@ -85,7 +99,8 @@ static size_t forge_versioned(uint8_t *output, uint16_t version,
   return size;
 }
 
-/* Also flips a bit in the last byte: decoding must then fail and leave the
+/* Per-game files use the same codec, so this also covers their shortcuts.
+   Also flips a bit in the last byte: decoding must then fail and leave the
    output untouched. */
 static void test_defaults_and_versioned_round_trip(void)
 {
@@ -112,6 +127,7 @@ static void test_defaults_and_versioned_round_trip(void)
   assert(original.cpu_core == 0);
   assert(original.browser_view == 0);
   assert(original.gamepad[0] == 11);
+  assert_default_shortcuts(&original);
 
   original.screen_filter = 0;
   original.video_renderer = 2;
@@ -126,6 +142,9 @@ static void test_defaults_and_versioned_round_trip(void)
   original.fast_forward_audio = 1;
   original.cpu_core = 1;
   original.browser_view = 1;
+  original.shortcut[0] = (1u << 11) | (1u << 0);
+  original.shortcut[2] = 0;
+  original.shortcut[7] = 0xF000;
 
   assert(config_model_encode(&original, encoded, sizeof(encoded), &written));
   assert(written == CONFIG_MODEL_ENCODED_SIZE);
@@ -163,11 +182,12 @@ static void test_previous_versioned_migration(void)
   assert(decoded.fast_forward_audio == 0);
   assert(decoded.cpu_core == 0);
   assert(decoded.browser_view == 0);
+  assert_default_shortcuts(&decoded);
 }
 
-/* A version 2 file (1.4.x) carries 45 values: the CPU core and the browser
-   view that version 3 added decode as Classic and the list, every value the
-   file has is kept. */
+/* A version 2 file (1.4.x) carries 45 values: the CPU core, the browser
+   view and the shortcuts that version 3 added decode as Classic, the list
+   and the default shortcuts; every value the file has is kept. */
 static void test_version_2_migration(void)
 {
   uint8_t encoded[CONFIG_MODEL_ENCODED_SIZE];
@@ -183,6 +203,8 @@ static void test_version_2_migration(void)
   model.fast_forward_audio = 1;
   model.cpu_core = 1;
   model.browser_view = 1;
+  model.shortcut[0] = 0x0003;
+  model.shortcut[3] = 0x0003;
   size = forge_versioned(encoded, 2, 45, &model);
 
   assert(config_model_decode(encoded, size, &decoded) ==
@@ -190,11 +212,13 @@ static void test_version_2_migration(void)
   expected = model;
   expected.cpu_core = 0;
   expected.browser_view = 0;
+  memcpy(expected.shortcut, default_shortcut, sizeof(default_shortcut));
   assert_models_equal(&expected, &decoded);
 }
 
 /* Earlier builds of version 3 wrote 46 values, ending at the CPU core: the
-   browser view decodes as the list, the rest is kept. */
+   browser view decodes as the list and the shortcuts as their defaults,
+   the rest is kept. */
 static void test_version_3_without_browser_view(void)
 {
   uint8_t encoded[CONFIG_MODEL_ENCODED_SIZE];
@@ -208,13 +232,72 @@ static void test_version_3_without_browser_view(void)
   model.fast_forward_speed = 1;
   model.cpu_core = 1;
   model.browser_view = 1;
+  model.shortcut[1] = 0x0003;
   size = forge_versioned(encoded, 3, 46, &model);
 
   assert(config_model_decode(encoded, size, &decoded) ==
    CONFIG_MODEL_DECODE_VERSIONED);
   expected = model;
   expected.browser_view = 0;
+  memcpy(expected.shortcut, default_shortcut, sizeof(default_shortcut));
   assert_models_equal(&expected, &decoded);
+}
+
+/* Builds of version 3 with the browser view wrote 47 values: it is kept
+   and the shortcuts decode as their defaults. */
+static void test_version_3_without_shortcuts(void)
+{
+  uint8_t encoded[CONFIG_MODEL_ENCODED_SIZE];
+  ConfigModel model;
+  ConfigModel expected;
+  ConfigModel decoded;
+  size_t size;
+
+  config_model_defaults(&model);
+  model.browser_view = 1;
+  model.shortcut[2] = 0x0003;
+  size = forge_versioned(encoded, 3, 47, &model);
+
+  assert(config_model_decode(encoded, size, &decoded) ==
+   CONFIG_MODEL_DECODE_VERSIONED);
+  expected = model;
+  memcpy(expected.shortcut, default_shortcut, sizeof(default_shortcut));
+  assert_models_equal(&expected, &decoded);
+}
+
+/* A stored shortcut is kept when it is 0 or 1-4 of the 16 inputs; a mask
+   past bit 15 or with 5 or more keys reads back as that slot's default and
+   leaves the other slots alone. */
+static void test_shortcut_values(void)
+{
+  static const uint32_t stored[] =
+  {
+    0, 0x0001, 0x8421, 0xF000, 0x10000, 0x10001, 0x001F, 0xFFFF, 0xFFFFFFFFU
+  };
+  static const int kept[] = { 1, 1, 1, 1, 0, 0, 0, 0, 0 };
+  static const size_t slots[] = { 0, 2, 5 };
+  uint8_t encoded[CONFIG_MODEL_ENCODED_SIZE];
+  ConfigModel model;
+  ConfigModel decoded;
+  size_t written;
+  size_t i;
+  size_t s;
+
+  for(s = 0; s < sizeof(slots) / sizeof(slots[0]); s++)
+  {
+    for(i = 0; i < sizeof(stored) / sizeof(stored[0]); i++)
+    {
+      config_model_defaults(&model);
+      model.browser_view = 1;
+      model.shortcut[slots[s]] = stored[i];
+      assert(config_model_encode(&model, encoded, sizeof(encoded), &written));
+      assert(config_model_decode(encoded, written, &decoded) ==
+       CONFIG_MODEL_DECODE_VERSIONED);
+      if(!kept[i])
+        model.shortcut[slots[s]] = default_shortcut[slots[s]];
+      assert_models_equal(&model, &decoded);
+    }
+  }
 }
 
 /* The browser view is 0 (list) or 1 (carousel); any other stored value
@@ -331,6 +414,7 @@ static void test_current_binary_migration_and_field_validation(void)
   assert(decoded.video_renderer == 1);
   assert(decoded.language == 1);
   assert(decoded.gamepad[0] == 11);
+  assert_default_shortcuts(&decoded);
 }
 
 /* 37-word and 32-word files from older releases; settings those releases
@@ -427,6 +511,7 @@ static void test_game_binary_layout(void)
   assert(decoded.gamepad[0] == 15);
   assert(decoded.gamepad[15] == 0);
   assert(decoded.theme == 0);
+  assert_default_shortcuts(&decoded);
 }
 
 static void test_rejects_unknown_or_truncated_data(void)
@@ -461,7 +546,9 @@ int main(void)
   test_previous_versioned_migration();
   test_version_2_migration();
   test_version_3_without_browser_view();
+  test_version_3_without_shortcuts();
   test_browser_view_values();
+  test_shortcut_values();
   test_fast_forward_fields_fall_back_independently();
   test_current_binary_migration_and_field_validation();
   test_older_binary_layouts();

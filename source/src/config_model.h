@@ -7,7 +7,8 @@
 /* Settings as stored in tempgba.cfg and the per-game .cfg files; see
    config_model.c for the byte layout. */
 #define CONFIG_MODEL_GAMEPAD_COUNT 16U
-#define CONFIG_MODEL_VALUE_COUNT 47U
+#define CONFIG_MODEL_SHORTCUT_COUNT 8U
+#define CONFIG_MODEL_VALUE_COUNT 55U
 #define CONFIG_MODEL_LEGACY_CURRENT_WORDS 39U   // largest headerless layout
 #define CONFIG_MODEL_HEADER_SIZE 16U
 #define CONFIG_MODEL_ENCODED_SIZE \
@@ -55,6 +56,9 @@ typedef struct
   uint32_t fast_forward_audio;
   uint32_t cpu_core;
   uint32_t browser_view;                // ROM browser: 0 list, 1 carousel
+  /* Slot n is the chord of input_chord.h action n: a mask of 0 (none) or
+     1-4 of the 16 inputs, bit k being gamepad index k. */
+  uint32_t shortcut[CONFIG_MODEL_SHORTCUT_COUNT];
 } ConfigModel;
 
 void config_model_defaults(ConfigModel *model);
