@@ -148,15 +148,18 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_GBA_PPU_LOG)
 	$(HOST_TEST_UI_BATCH)
 
-# Python tests. test_startup, test_browser_text and test_open_bios also
-# compile functions cut out of main.c, gui.c and memory.c with HOST_CC.
+# Python tests. test_startup, test_browser_text, test_open_bios and
+# test_ui_golden also compile functions cut out of main.c, gui.c,
+# memory.c and psp_video.c with HOST_CC.
 test-tools:
 	$(PYTHON) -m unittest tests/test_compare_benchmarks.py \
 	 tests/test_decode_runtime_log.py tests/test_startup.py \
-	 tests/test_browser_text.py tests/test_open_bios.py
+	 tests/test_browser_text.py tests/test_open_bios.py \
+	 tests/test_ui_golden.py
 
 # The link cable test runs fewer network profiles (--quick) under the
-# sanitizers, where it is much slower.
+# sanitizers, where it is much slower. The menu goldens build their
+# screens with the sanitizer flags too.
 test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_codebreaker
 	$(HOST_SANITIZE_DIR)/test_gba_sio
@@ -187,6 +190,8 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_gba_ppu
 	$(HOST_SANITIZE_DIR)/test_gba_ppu_log
 	$(HOST_SANITIZE_DIR)/test_ui_batch
+	UI_GOLDEN_CFLAGS='$(HOST_SANITIZE_FLAGS)' $(PYTHON) -m unittest \
+	 tests/test_ui_golden.py
 
 $(HOST_TEST_CODEBREAKER): tests/test_codebreaker.c source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_BUILD_DIR)
