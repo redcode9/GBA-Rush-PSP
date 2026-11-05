@@ -189,6 +189,8 @@ void arm_core_request_exit(ArmCore *core);
 int32_t arm_core_run(ArmCore *core, int32_t cycles);
 /* The block at r15, translated now if the cache does not hold it. */
 const ArmBlock *arm_core_block(ArmCore *core);
+/* The block at r15 if the cache holds it, else NULL. */
+const ArmBlock *arm_core_cached(ArmCore *core);
 /* Runs the block at r15 and returns its exit kind; no interrupt or budget
    check. */
 ArmExitKind arm_core_run_block(ArmCore *core);

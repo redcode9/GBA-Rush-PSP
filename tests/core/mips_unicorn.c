@@ -260,6 +260,7 @@ ArmMipsHost mips_unicorn_host(ArmMips *jit)
   host.sync = sync_code;
   host.enter = enter;
   host.access = TRAP;
+  host.clock = NULL;
   return host;
 }
 
