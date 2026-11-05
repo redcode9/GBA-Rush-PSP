@@ -22,6 +22,7 @@
 
 #include "arm_core.h"
 
+#include <stddef.h>
 #include <string.h>
 
 #define NO_OP 0xFFFFFFFFu
@@ -94,7 +95,7 @@ static void set_known(Builder *b, unsigned slot, uint32_t value)
 /* Computes an ALU op whose operands are all known. */
 static int fold(const Builder *b, const ArmIrOp *op, uint32_t *result)
 {
-  uint32_t x = b->value[op->a];
+  uint32_t x = 0;
   uint32_t y = op->b;
 
   if(op->flags & ARM_IR_USE_C)
@@ -105,8 +106,12 @@ static int fold(const Builder *b, const ArmIrOp *op, uint32_t *result)
       return 0;
     y = b->value[op->b];
   }
-  if(op->code != ARM_IR_MOV && op->code != ARM_IR_MVN && !b->known[op->a])
-    return 0;
+  if(op->code != ARM_IR_MOV && op->code != ARM_IR_MVN)
+  {
+    if(!b->known[op->a])
+      return 0;
+    x = b->value[op->a];
+  }
   /* Shifts by a register follow other rules; leave them alone. */
   if(op->code >= ARM_IR_LSL && op->code <= ARM_IR_ROR &&
      !(op->flags & ARM_IR_IMM))
@@ -251,8 +256,9 @@ static unsigned refill(const Builder *b, uint32_t target, int thumb)
 
 static void begin(Builder *b, unsigned cond)
 {
-  memset(b->known + ARM_IR_FIRST_TEMP, 0,
-   ARM_IR_SLOTS - ARM_IR_FIRST_TEMP);
+  /* Only the temporaries the last instruction took can be known. */
+  if(b->temp > ARM_IR_FIRST_TEMP)
+    memset(b->known + ARM_IR_FIRST_TEMP, 0, b->temp - ARM_IR_FIRST_TEMP);
   b->temp = ARM_IR_FIRST_TEMP;
   b->insn_op = emit(b, ARM_IR_INSN, b->stored ? ARM_IR_CHECK : 0, 0, 0,
    b->pc);
@@ -1482,7 +1488,8 @@ unsigned arm_translate(ArmCore *core, uint32_t pc, int thumb,
   tables_init();
   if(max_ops > ARM_BLOCK_MAX_OPS)
     max_ops = ARM_BLOCK_MAX_OPS;
-  memset(&b, 0, sizeof(b));
+  /* Values are read only where known is set. */
+  memset(&b, 0, offsetof(Builder, value));
   b.core = core;
   b.ops = ops;
   b.pc = pc;

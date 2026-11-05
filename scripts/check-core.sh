@@ -12,6 +12,7 @@ set -eu
 #   BIOS      a GBA BIOS, for lockstep runs (instruction by instruction,
 #             then block by block) of
 #   MKSC      Mario Kart: Super Circuit (Europe), tests/core/mksc_race.txt
+#             (BIOS and MKSC alone run the translation bench on it)
 #   ROM SAVE  FireRed or LeafGreen and a save whose last Pokemon Center
 #             visit was in a town, tests/rom_link/firered_trade.txt
 #   UNICORN_DIR  Unicorn 2.1, for the MIPS backend (arm_mips.c): its
@@ -25,8 +26,10 @@ set -eu
 # With --quick (make check-core-quick, for every pull request) the fuzzer
 # runs 5 cases, the suite the first 1000 tests of each file and lockstep
 # the first 60 frames of each game.
-# The runs stop at the first instruction where the core and mGBA disagree
-# and leave their logs in OUT (build/core).
+# The runs stop at the first instruction where the core and mGBA disagree,
+# and fail when a cycle count differs in code run off the GamePak (on it
+# the two model the prefetch buffer differently); they leave their logs in
+# OUT (build/core).
 
 out=${OUT:-build/core}
 mkdir -p "$out"
@@ -67,7 +70,7 @@ if [ -n "${UNICORN_DIR:-}" ]; then
     echo "check-core: the backend differs, see $out/jit_fuzz.log" >&2
     exit 1
   fi
-  tail -1 "$out/jit_fuzz.log"
+  grep "cases agree" "$out/jit_fuzz.log"
 else
   echo "check-core: no UNICORN_DIR, MIPS backend checks skipped"
 fi
@@ -86,6 +89,13 @@ if [ -n "${SST_DIR:-}" ]; then
   tail -2 "$out/single_step.log"
 else
   echo "check-core: no SST_DIR, SingleStepTests skipped"
+fi
+
+if [ -n "${BIOS:-}" ] && [ -n "${MKSC:-}" ]; then
+  # What translating the game's code costs, and how much code it makes.
+  ${CC:-cc} -std=c99 -O2 -Wall -Wextra -Werror -Isource/src \
+    tests/core/translate_bench.c $core_sources -o "$out/translate_bench"
+  "$out/translate_bench" --repeat 5 "$MKSC" "$BIOS"
 fi
 
 if [ -z "${MGBA_DIR:-}" ] || [ -z "${BIOS:-}" ]; then
@@ -112,7 +122,7 @@ lockstep()
       echo "check-core: $name ($mode) diverged, see $out/$name-$mode.log" >&2
       exit 1
     fi
-    grep -m 1 "compared" "$out/$name-$mode.log"
+    grep -m 2 -e compared -e "off the GamePak" "$out/$name-$mode.log"
   done
   if [ -n "$backend" ]; then
     # The backend in lockstep, then the whole game run by each core: the
@@ -121,7 +131,7 @@ lockstep()
       echo "check-core: $name (backend) diverged, see $out/$name-jit.log" >&2
       exit 1
     fi
-    grep -m 1 "compared" "$out/$name-jit.log"
+    grep -m 2 -e compared -e "off the GamePak" "$out/$name-jit.log"
     "$out/lockstep" --mode run --trace "$out/$name-run.trace" "$@" \
       > /dev/null
     "$out/lockstep" --jit --mode run --trace "$out/$name-jit.trace" "$@" \
