@@ -16,13 +16,20 @@
 int load_progress_due(LoadProgressState *state, uint64_t now_us,
  uint32_t done, uint32_t total)
 {
-  int due = !state->started || done <= state->last_done || done >= total ||
-   now_us - state->last_us >= LOAD_PROGRESS_INTERVAL_US;
+  int new_load = !state->started || done <= state->last_done;
+  uint64_t late = now_us - state->last_us;
+  int due = new_load || late >= LOAD_PROGRESS_INTERVAL_US ||
+   (total != 0 && done >= total);
 
   state->started = 1;
   state->last_done = done;
-  if(due)
+  /* Redraws keep to a grid of whole intervals from the first one, so a read
+     time that does not divide the interval cannot stretch it; a load that
+     fell more than an interval behind starts a new grid. */
+  if(new_load || late >= 2 * LOAD_PROGRESS_INTERVAL_US)
     state->last_us = now_us;
+  else if(late >= LOAD_PROGRESS_INTERVAL_US)
+    state->last_us += LOAD_PROGRESS_INTERVAL_US;
   return due;
 }
 

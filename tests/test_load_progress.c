@@ -13,21 +13,76 @@
 #define KIB 1024u
 #define MIB (1024u * 1024u)
 
-/* A 16 MiB ROM read in 64 KiB chunks: the first chunk draws, then one
-   redraw per 50 ms, and the last chunk draws whatever the time. */
+/* A 16 MiB ROM read in 64 KiB chunks: the first chunk draws, then the
+   first chunk on or after each 45 ms step from it, and the last chunk
+   draws whatever the time. */
 static void test_redraws_are_paced(void)
 {
   LoadProgressState state = { 0, 0, 0 };
   uint64_t t = 1000;
 
   assert(load_progress_due(&state, t, 64 * KIB, 16 * MIB));
-  assert(!load_progress_due(&state, t + 49999, 128 * KIB, 16 * MIB));
-  assert(load_progress_due(&state, t + 50000, 192 * KIB, 16 * MIB));
-  /* The interval runs from the last redraw, not from the last call. */
-  assert(!load_progress_due(&state, t + 50001, 256 * KIB, 16 * MIB));
-  assert(!load_progress_due(&state, t + 99999, 320 * KIB, 16 * MIB));
-  assert(load_progress_due(&state, t + 100000, 384 * KIB, 16 * MIB));
-  assert(load_progress_due(&state, t + 100001, 16 * MIB, 16 * MIB));
+  assert(!load_progress_due(&state, t + 44999, 128 * KIB, 16 * MIB));
+  /* A redraw 30 ms late does not push the next one back. */
+  assert(load_progress_due(&state, t + 75000, 192 * KIB, 16 * MIB));
+  assert(!load_progress_due(&state, t + 89999, 256 * KIB, 16 * MIB));
+  assert(load_progress_due(&state, t + 90000, 320 * KIB, 16 * MIB));
+  /* More than one step behind: one redraw, then a new grid from it. */
+  assert(load_progress_due(&state, t + 200000, 384 * KIB, 16 * MIB));
+  assert(!load_progress_due(&state, t + 244999, 448 * KIB, 16 * MIB));
+  assert(load_progress_due(&state, t + 245000, 512 * KIB, 16 * MIB));
+  assert(load_progress_due(&state, t + 245001, 16 * MIB, 16 * MIB));
+}
+
+/* Counts the redraws of a 16 MiB load whose 64 KiB reads take period_us
+   each, from before the first read to the last. */
+static uint32_t count_redraws(uint64_t period_us, uint64_t *elapsed_us)
+{
+  LoadProgressState state = { 0, 0, 0 };
+  uint64_t t = 1000000;
+  uint32_t done = 0;
+  uint32_t redraws = 0;
+
+  while(done < 16 * MIB)
+  {
+    t += period_us;
+    done += 64 * KIB;
+    redraws += (uint32_t)(load_progress_due(&state, t, done, 16 * MIB) != 0);
+  }
+  *elapsed_us = t - 1000000;
+  return redraws;
+}
+
+/* At least 20 redraws per second for any read time up to 50 ms, including
+   those that do not divide the interval, and no more than the interval
+   allows plus the first and last. */
+static void test_rate_is_at_least_20_per_second(void)
+{
+  static const uint64_t periods_us[] = {
+    1000, 7000, 10000, 12000, 13000, 16000, 20000, 23000, 30000, 34000,
+    44000, 45000, 46000, 49000, 50000
+  };
+  size_t i;
+
+  for(i = 0; i < sizeof(periods_us) / sizeof(periods_us[0]); i++)
+  {
+    uint64_t elapsed_us;
+    uint32_t redraws = count_redraws(periods_us[i], &elapsed_us);
+
+    assert((uint64_t)redraws * 1000000u >= 20u * elapsed_us);
+    assert((uint64_t)redraws * 45000u <= elapsed_us + 2u * 45000u);
+  }
+}
+
+/* An unknown size (total 0) is paced like any other load: no chunk counts
+   as the last one. */
+static void test_unknown_size_is_paced(void)
+{
+  LoadProgressState state = { 0, 0, 0 };
+
+  assert(load_progress_due(&state, 0, 64 * KIB, 0));
+  assert(!load_progress_due(&state, 10000, 128 * KIB, 0));
+  assert(load_progress_due(&state, 45000, 192 * KIB, 0));
 }
 
 /* The first call of a load draws even right after the last redraw: done
@@ -108,6 +163,8 @@ static void test_small_buffer_is_cut(void)
 int main(void)
 {
   test_redraws_are_paced();
+  test_rate_is_at_least_20_per_second();
+  test_unknown_size_is_paced();
   test_new_load_draws_at_once();
   test_bar_length();
   test_kib_line();

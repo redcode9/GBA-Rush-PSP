@@ -21,21 +21,22 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* 50 ms between redraws: 20 per second while the reads keep up. */
-#define LOAD_PROGRESS_INTERVAL_US 50000u
+/* 45 ms between redraws: over 20 per second, with a margin, while each read
+   takes less. */
+#define LOAD_PROGRESS_INTERVAL_US 45000u
 
 typedef struct
 {
-  uint64_t last_us;   /* time of the last redraw */
+  uint64_t last_us;   /* the redraw grid's latest point */
   uint32_t last_done; /* done at the last call */
   int started;        /* nonzero after the first call */
 } LoadProgressState;
 
 /* Nonzero when the popup should be redrawn for done of total bytes at
    now_us: on the first call of a load (done only grows during a load, so a
-   done not above the last call's starts a new one), once
-   LOAD_PROGRESS_INTERVAL_US has passed since the last redraw, and always
-   at the end (done >= total). */
+   done not above the last call's starts a new one), at the first call on or
+   after each LOAD_PROGRESS_INTERVAL_US step from there, and always at the
+   end (done >= total, total not 0). */
 int load_progress_due(LoadProgressState *state, uint64_t now_us,
  uint32_t done, uint32_t total);
 

@@ -966,9 +966,9 @@ static void draw_rom_load_popup(const char *name, u32 stage_msg, u32 done, u32 t
     print_string_gbk(kib, 345 - strlen(kib) * FONTWIDTH, 176, color_active_item, BG_NO_FILL);
 }
 
-/* rom_load_progress (zip.h): redraws the loading popup for each 64 KiB
-   read, at most every 50 ms (load_progress_due()). No vsync wait, so the
-   popup costs little of the load time. */
+/* rom_load_progress (zip.h): redraws the loading popup after the 64 KiB
+   reads load_progress_due() picks, over 20 times per second. No vsync
+   wait, so the popup costs little of the load time. */
 static void draw_rom_load_progress(const char *name, u32 stage_msg, u32 done, u32 total)
 {
     static LoadProgressState state;
@@ -985,7 +985,7 @@ static void draw_rom_load_progress(const char *name, u32 stage_msg, u32 done, u3
 
     /* load_gamepak() prints its next line into the other buffer: give it
        the full bar too, once that buffer has left the screen. */
-    if (done >= total)
+    if (total != 0 && done >= total)
     {
         sceDisplayWaitVblankStart();
         draw_rom_load_popup(name, stage_msg, done, total);
