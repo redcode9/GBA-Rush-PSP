@@ -21,16 +21,16 @@ set -eu
 # Cases rom_run fails for known reasons, which are not ROM bugs:
 # - cpu_irq_latency: the New core takes an IRQ at the end of a block,
 #   not within a few cycles of the line rising.
-# - timer_start_delay, timer_stop_hold: rom_run times an access after its
-#   instruction's other cycles (a load's internal cycle comes first), so
-#   it reads 2 more right after a start and 1 more at a stop.
+# - timer_start_delay: rom_run times an access after its instruction's
+#   other cycles (a load's internal cycle comes first), so right after a
+#   start it reads 3 where mGBA reads 0.
 # - prefetch_*: the New core runs a store's new code at once instead of
 #   the two instructions already fetched.
 # - vram_*, stm_vram: the New core keeps running its translation of code
 #   in VRAM after the code is rewritten.
 # - the save ROMs' odd and misaligned backup loads: the New core reads
 #   the aligned address on the 8-bit backup bus.
-core_allow=cpu_irq_latency,timer_start_delay,timer_stop_hold
+core_allow=cpu_irq_latency,timer_start_delay
 core_allow=$core_allow,prefetch_arm_1_cold
 core_allow=$core_allow,prefetch_arm_1_warm,prefetch_arm_2_cold
 core_allow=$core_allow,prefetch_arm_2_warm,prefetch_thumb_1_cold

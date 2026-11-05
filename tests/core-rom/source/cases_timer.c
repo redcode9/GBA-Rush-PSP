@@ -52,14 +52,20 @@
  *                          goes on (bits 16-31, about 513) at the new
  *                          rate (bits 0-15, the loop)
  *
- * GBATEK gives no start delay. The two start cases assume the counter
- * holds the reload value at the cycle of the write and steps at each
- * cycle after it, so a load right after the store reads 1 (its opcode
- * fetch passed). Reports of hardware starting a cycle or two late would
- * read less: TIMER_FIRST_READ is what to change once mGBA and a real GBA
- * have run it.
+ * GBATEK gives no start delay. Counting from GBATEK alone, with the
+ * counter holding the reload value at the cycle of the write and
+ * stepping at each cycle after it, a load right after the store would
+ * read 1 (its opcode fetch passed) and the stopped timer would hold 64.
+ * mGBA 0.10.3 reads 0 and holds 65: its timer reads return the count of
+ * 2 cycles earlier, and its timer writes act at the start of the store.
+ * TIMER_FIRST_READ and TIMER_STOP_HELD are mGBA's values, to confirm on
+ * a real GBA.
  *
- * To confirm in mGBA and on hardware: every value here (GBATEK only).
+ * Every other value here is GBATEK's, and mGBA 0.10.3 measures the same,
+ * except in timer_overflow_reload: there mGBA reads up to 2 below the
+ * reload right after an overflow (FFFDh with reload FFFFh), because it
+ * steps back 2 cycles from the reloaded counter instead of from the
+ * value before the overflow. The case keeps GBATEK's range.
  */
 
 #include "result.h"
@@ -70,7 +76,8 @@
 #define TIMER_IRQ      0x0040
 #define TIMER_COUNT_UP 0x0004
 
-#define TIMER_FIRST_READ 1
+#define TIMER_FIRST_READ 0
+#define TIMER_STOP_HELD 65
 #define LOOP_TURNS 1024
 #define LOOP_IWRAM 4097
 #define LOOP_EWRAM 24572
@@ -149,7 +156,7 @@ static int timer_stop_hold(u32 *detail)
   TIMER_L(0) = 0;
   *detail = timer_stop_read(&TIMER_L(0));
   held = *detail & 0xFFFF;
-  return held == 63 + TIMER_FIRST_READ && *detail >> 16 == held ?
+  return held == TIMER_STOP_HELD && *detail >> 16 == held ?
    RESULT_PASS : RESULT_FAIL;
 }
 
