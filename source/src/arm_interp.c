@@ -922,6 +922,11 @@ const ArmBlock *arm_core_block(ArmCore *core)
   return block ? block : translate(core, key);
 }
 
+const ArmBlock *arm_core_cached(ArmCore *core)
+{
+  return lookup(core, core->v[15] | ((core->cpsr & ARM_CPSR_T) ? 1u : 0u));
+}
+
 ArmExitKind arm_core_run_block(ArmCore *core)
 {
   const ArmBlock *block = arm_core_block(core);
