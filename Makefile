@@ -645,8 +645,9 @@ check-rom-link:
 check-core:
 	sh scripts/check-core.sh
 
-# Builds the GBA test ROMs (tests/core-rom, tests/save-rom) and runs each on
-# rom_run, checking the signature it leaves; see scripts/check-test-roms.sh.
+# Builds the GBA test ROMs (tests/core-rom, tests/save-rom, tests/raster-rom)
+# and runs each on rom_run, checking the signature it leaves; see
+# scripts/check-test-roms.sh.
 test-roms: $(HOST_ROM_RUN)
 	RUN=$(HOST_ROM_RUN) sh scripts/check-test-roms.sh
 

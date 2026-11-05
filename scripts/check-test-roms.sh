@@ -2,17 +2,21 @@
 
 set -eu
 
-# make test-roms: builds every GBA test ROM (tests/core-rom, tests/save-rom)
-# into build/test-roms, runs each on build/host/rom_run (tests/core/rom_run.c:
-# the New core's interpreter with a small GBA around it) and checks the
-# signature it leaves with tools/decode_test_rom.py. Each save ROM boots
-# twice on the same save file, so the second boot reads back what the first
-# one wrote. Skipped when there is no ARM compiler: arm-none-eabi-gcc from
-# PATH, $DEVKITARM/bin, or ARM_PREFIX as in tests/gba-rom.mk.
+# make test-roms: builds every GBA test ROM (tests/core-rom, tests/save-rom,
+# tests/raster-rom) into build/test-roms, runs each on build/host/rom_run
+# (tests/core/rom_run.c: the New core's interpreter with a small GBA around
+# it) and checks the signature it leaves with tools/decode_test_rom.py. Each
+# save ROM boots twice on the same save file, so the second boot reads back
+# what the first one wrote. Skipped when there is no ARM compiler:
+# arm-none-eabi-gcc from PATH, $DEVKITARM/bin, or ARM_PREFIX as in
+# tests/gba-rom.mk.
 #
 # BIOS=/path/to/gba_bios.bin runs the core ROM on your dump of the official
 # BIOS (never commit it), where the BIOS open bus cases must pass as well;
 # the built-in BIOS returns from other addresses, so with it they fail.
+#
+# rom_run has no HBlank DMA, HBlank IRQ or PPU, so the raster ROM's cases
+# fail there: it only has to boot, run them and leave its signature.
 
 PYTHON=${PYTHON:-python3}
 MAKE=${MAKE:-make}
@@ -33,6 +37,7 @@ fi
 
 $MAKE -C tests/core-rom
 $MAKE -C tests/save-rom
+$MAKE -C tests/raster-rom
 rm -f build/test-roms/*.sav
 
 if [ -n "${BIOS:-}" ]; then
@@ -57,5 +62,10 @@ do
     exit 1
   fi
 done
+
+$RUN --frames 300 --save $OUT/raster-rom.sav $OUT/raster-rom.gba
+$PYTHON tools/decode_test_rom.py \
+  --allow-fail hblank_dma_vcount,hblank_dma_reload,hblank_irq_vcount \
+  $OUT/raster-rom.sav
 
 echo "Test ROMs passed"
