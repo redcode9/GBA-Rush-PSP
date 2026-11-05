@@ -113,8 +113,9 @@ $PYTHON tools/decode_test_rom.py \
 #   differently; with your official BIOS they pass.
 # mgba_run is told the save chips mGBA cannot guess (it ignores the ID
 # string) and the save ROMs get 900 frames, as filling the 8 KiB EEPROM
-# takes about 400. The raster ROM runs twice and must draw the same
-# frame.
+# takes about 400. The raster ROM runs for 300 frames, then for 301, and
+# must draw the same picture both times: it must not change from one
+# frame to the next.
 if [ -z "${MGBA_DIR+set}" ] && [ -f ext/mgba-0.10.3/build/libmgba.a ]; then
   MGBA_DIR=ext/mgba-0.10.3
 fi
@@ -167,14 +168,15 @@ do
   fi
 done
 
-for run in 1 2; do
+# mGBA is deterministic: two runs of the same length always match.
+for frames in 300 301; do
   rm -f $OUT/mgba/raster-rom.sav
-  $MGBA --frames 300 --save $OUT/mgba/raster-rom.sav \
-    --frame $OUT/mgba/raster-rom-$run.ppm $OUT/raster-rom.gba
+  $MGBA --frames $frames --save $OUT/mgba/raster-rom.sav \
+    --frame $OUT/mgba/raster-rom-$frames.ppm $OUT/raster-rom.gba
   $PYTHON tools/decode_test_rom.py $OUT/mgba/raster-rom.sav
 done
-if ! cmp -s $OUT/mgba/raster-rom-1.ppm $OUT/mgba/raster-rom-2.ppm; then
-  echo "raster-rom drew different frames in two mGBA runs" >&2
+if ! cmp -s $OUT/mgba/raster-rom-300.ppm $OUT/mgba/raster-rom-301.ppm; then
+  echo "raster-rom drew a different picture one frame later in mGBA" >&2
   exit 1
 fi
 

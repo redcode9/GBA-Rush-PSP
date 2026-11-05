@@ -134,8 +134,8 @@ the script (`make test` fails while the file is out of date).
 The raster ROM leaves its results on screen for three seconds, then shows a
 picture that changes the affine registers and the palette in the middle of
 the frame, by HBlank DMA and from an HBlank IRQ. The picture is the same in
-every frame, so two runs in mGBA must draw the same frame (`make test-roms`
-checks it), and
+every frame, so in mGBA a run one frame longer must draw the same picture
+(`make test-roms` checks it), and
 `MGBA_DIR=... RENDER_ROMS=build/test-roms/raster-rom.gba:tests/render/raster.txt make check-render`
 compares GBA Rush's renderer with mGBA's on it. `rom_run` has no PPU, HBlank
 DMA or HBlank IRQ, so in `make test-roms` the raster cases fail and only the
