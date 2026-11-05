@@ -9,5 +9,6 @@ GAME_CODE := GRCR
 SOURCES := source/main.c source/cases_irq.c source/cases_stack.c \
  source/cases_stack_asm.s source/cases_pc.c source/cases_pc_asm.s
 SOURCES += source/cases_timer.c source/cases_timer_asm.s
+SOURCES += source/cases_branch.c source/cases_branch_asm.s
 
 include ../gba-rom.mk
