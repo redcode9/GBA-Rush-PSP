@@ -30,8 +30,8 @@ static const char *visible_text(uint32_t now_us)
   return toast == NULL ? NULL : toast->text;
 }
 
-/* The ninth toast drops the first; the rest follow in order, each shown
-   for its whole duration once the previous one expires. */
+/* The ninth toast, pushed at 500, drops the first; the rest follow in
+   order, each shown for its whole duration from when it becomes visible. */
 static void test_full_ring_drops_oldest(void)
 {
   char text[TOAST_RING_SIZE + 1][12];
@@ -41,18 +41,19 @@ static void test_full_ring_drops_oldest(void)
   for(i = 0; i <= TOAST_RING_SIZE; i++)
   {
     snprintf(text[i], sizeof(text[i]), "toast %u", (unsigned)i);
-    toast_push(text[i], 1000, 0, 0);
+    toast_push(text[i], 1000, 0, i == TOAST_RING_SIZE ? 500 : 0);
   }
 
   for(i = 1; i <= TOAST_RING_SIZE; i++)
   {
-    assert(strcmp(visible_text((i - 1) * 1000), text[i]) == 0);
-    assert(strcmp(visible_text(i * 1000 - 1), text[i]) == 0);
+    assert(strcmp(visible_text(500 + (i - 1) * 1000), text[i]) == 0);
+    assert(strcmp(visible_text(500 + i * 1000 - 1), text[i]) == 0);
   }
-  assert(visible_text(TOAST_RING_SIZE * 1000) == NULL);
+  assert(visible_text(500 + TOAST_RING_SIZE * 1000) == NULL);
 }
 
-/* A repeated text restarts its timer and takes no second slot. */
+/* A repeated text restarts its timer with the new duration and takes no
+   second slot, whether it is visible or still queued. */
 static void test_duplicate_restarts_timer(void)
 {
   char long_text[100];
@@ -64,6 +65,21 @@ static void test_duplicate_restarts_timer(void)
   assert(strcmp(visible_text(1899), "Slot 1") == 0);
   assert(strcmp(visible_text(1900), "Slot 10") == 0);
   assert(visible_text(2900) == NULL);
+
+  /* A shorter text does not match a longer queued one it starts. */
+  toast_clear();
+  toast_push("Slot 10", 1000, 0, 0);
+  toast_push("Slot 1", 1000, 0, 0);
+  assert(strcmp(visible_text(999), "Slot 10") == 0);
+  assert(strcmp(visible_text(1000), "Slot 1") == 0);
+
+  toast_clear();
+  toast_push("A", 1000, 0, 0);
+  toast_push("B", 1000, 0, 0);
+  toast_push("B", 2000, 0, 0);
+  assert(strcmp(visible_text(1000), "B") == 0);
+  assert(strcmp(visible_text(2999), "B") == 0);
+  assert(visible_text(3000) == NULL);
 
   /* Texts equal once cut to 63 bytes are the same toast. */
   memset(long_text, 'x', sizeof(long_text) - 1);
@@ -192,6 +208,9 @@ static void test_clear_empties_ring(void)
   toast_push("Two", DURATION, 0, 10);
   assert(strcmp(visible_text(10), "Two") == 0);
   assert(visible_text(10 + DURATION) == NULL);
+
+  toast_push(NULL, DURATION, 0, 20);
+  assert(toast_current(20) == NULL);
 }
 
 /* Runs every case; a failing assert aborts the run. */
