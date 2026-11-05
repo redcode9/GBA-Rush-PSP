@@ -99,8 +99,9 @@ static u16 get_preset_color(u32 theme, u32 item_index)
     return 0;
 }
 
-/* Load preset theme (0-8, else 0) into the menu colours, and delete the
-   custom colours file so it cannot override the preset. */
+/* Load preset theme (0-8, else 0) into the menu colours. Boot calls it
+   before load_theme_config(), so it must leave tempgba_theme.cfg alone.
+   tests/test_theme_boot.py compiles this function alone. */
 static void apply_theme(u32 theme)
 {
     if (theme >= 9) theme = 0;
@@ -116,13 +117,17 @@ static void apply_theme(u32 theme)
     color_batt_normal   = theme_presets[theme].batt_normal;
     color_batt_low      = theme_presets[theme].batt_low;
     color_batt_charg    = theme_presets[theme].batt_charg;
+}
 
-    /* When a preset is chosen, delete custom theme so preset isn't overridden on boot */
-    {
-        char path[MAX_PATH];
-        sprintf(path, "%s%s", main_path, GPSP_THEME_FILENAME);
-        sceIoRemove(path);
-    }
+/* A preset picked in the menu replaces the custom colours: delete their
+   file so they do not come back at the next boot. */
+static void select_theme_preset(u32 theme)
+{
+    char path[MAX_PATH];
+
+    sprintf(path, "%s%s", main_path, GPSP_THEME_FILENAME);
+    sceIoRemove(path);
+    apply_theme(theme);
 }
 
 
@@ -5048,13 +5053,13 @@ u32 menu(void)
 
   void menu_passive_theme(void)
   {
-    apply_theme(option_theme);
+    select_theme_preset(option_theme);
   }
 
   void menu_theme_default(void)
   {
     option_theme = 0;
-    apply_theme(option_theme);
+    select_theme_preset(option_theme);
   }
 
   /* ------------------------------------------------------------------
