@@ -12,10 +12,12 @@
 /*
  * Writes GBA Rush's global settings file (tempgba.cfg beside EBOOT.PBP)
  * with the default settings and the given CPU core (0 Classic, 1 New), so
- * scripts/check-eboot.sh can start a game on either core. The core comes
- * only from this file: a game's own settings file does not set it.
+ * scripts/check-eboot.sh can start a game on either core, and optionally
+ * the video renderer (VIDEO_RENDERER_* in source/src/main.h, 2 Exact).
+ * Both come only from this file: a game's own settings file does not set
+ * them.
  *
- * Usage: global_config CORE FILE
+ * Usage: global_config CORE FILE [RENDERER]
  */
 
 #include <stdio.h>
@@ -30,13 +32,15 @@ int main(int argc, char **argv)
   size_t size;
   FILE *file;
 
-  if(argc != 3)
+  if(argc != 3 && argc != 4)
   {
-    fprintf(stderr, "usage: global_config CORE FILE\n");
+    fprintf(stderr, "usage: global_config CORE FILE [RENDERER]\n");
     return 2;
   }
   config_model_defaults(&model);
   model.cpu_core = (uint32_t)strtoul(argv[1], NULL, 10);
+  if(argc == 4)
+    model.video_renderer = (uint32_t)strtoul(argv[3], NULL, 10);
   if(!config_model_encode(&model, data, sizeof(data), &size))
     return 1;
   file = fopen(argv[2], "wb");

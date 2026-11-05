@@ -20,6 +20,8 @@ set -eu
 #   EBOOT     the EBOOT.PBP to run (source/EBOOT.PBP, from make psp-build),
 #             such as one built to crash, which must fail this check
 #   RUN_SECONDS  how long each run lasts (120)
+#   RENDERER  the video renderer, VIDEO_RENDERER_* in source/src/main.h
+#             (2 is Exact); the default setting otherwise
 # The games start from boot with no keys pressed. PPSSPP has no Media
 # Engine, so the Exact renderer draws on the CPU there. Each run's files
 # and the lines of PPSSPP's full log that matter stay in OUT
@@ -90,7 +92,8 @@ run()
   if [ "$2" = new ]; then
     number=1
   fi
-  "$out/global_config" "$number" "$dir/tempgba.cfg"
+  # shellcheck disable=SC2086
+  "$out/global_config" "$number" "$dir/tempgba.cfg" ${RENDERER:-}
 
   # An absolute path: PPSSPP makes the EBOOT's folder umd0: and creates
   # folders there from the root of the path, so with a relative one the
