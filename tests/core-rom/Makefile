@@ -14,6 +14,7 @@ SOURCES += source/cases_branch.c source/cases_branch_asm.s
 SOURCES += source/cases_prefetch.c source/cases_prefetch_asm.s
 SOURCES += source/cases_vram.c source/cases_vram_asm.s
 SOURCES += source/cases_stm.c source/cases_stm_asm.s
+SOURCES += source/cases_bios.c source/cases_bios_asm.s
 # The expected results of cpu_shift_reg, written at build time.
 SHIFT_TABLE = $(OUT)/gen/shift_table.h
 FLAGS_core-rom = -I$(OUT)/gen

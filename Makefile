@@ -152,7 +152,8 @@ test-tools:
 	$(PYTHON) -m unittest tests/test_compare_benchmarks.py \
 	 tests/test_decode_runtime_log.py tests/test_startup.py \
 	 tests/test_browser_text.py tests/test_open_bios.py \
-	 tests/test_decode_test_rom.py tests/test_gen_shift_table.py
+	 tests/test_decode_test_rom.py tests/test_gen_shift_table.py \
+	 tests/test_make_bios_vectors.py
 
 # The link cable test runs fewer network profiles (--quick) under the
 # sanitizers, where it is much slower.
