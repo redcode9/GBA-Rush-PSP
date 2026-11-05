@@ -57,6 +57,7 @@ typedef struct
 static uint8_t *bios;
 static uint8_t *rom;
 static World worlds[2];
+static uint8_t *ewram_pages;  /* the backend's work RAM, placed by seed */
 static ArmCore reference;
 static ArmMips *jit;
 static uint32_t rng_state;
@@ -544,6 +545,12 @@ static int run_case(uint32_t seed)
   int thumb;
 
   rng_state = seed ? seed : 1;
+  /* The backend's work RAM where the low half of its address is negative
+     as an offset, or, for every other pair of seeds, where it leaves no
+     room for the later words of a run, which then add the whole address.
+     The core's reset below drops the code built for the other place. */
+  worlds[1].ewram = ewram_pages + ((seed & 2) ? 0xFFCu : 0x8000u);
+  map_world(&worlds[1]);
   fill(bios, BIOS_SIZE, 0);
   fill(rom, ROM_SIZE / 2, 0);
   fill(rom + ROM_SIZE / 2, ROM_SIZE / 2, 1);
@@ -672,18 +679,18 @@ int main(int argc, char **argv)
   code = mips_unicorn_alloc(CODE_BYTES);
   bios = mips_unicorn_alloc(BIOS_SIZE);
   rom = mips_unicorn_alloc(ROM_SIZE);
+  worlds[0].ewram = mips_unicorn_alloc(EWRAM_SIZE);
+  ewram_pages = mips_unicorn_alloc(EWRAM_SIZE + 0x9000u);
+  worlds[1].ewram = ewram_pages + 0x8000u;
   for(i = 0; i < 2; i++)
-  {
-    worlds[i].ewram = mips_unicorn_alloc(EWRAM_SIZE);
     worlds[i].iwram = mips_unicorn_alloc(IWRAM_SIZE);
-  }
   mips_unicorn_map(jit, sizeof(ArmMips), 0x10000000u);
   mips_unicorn_map(code, CODE_BYTES, 0x08800000u);
   mips_unicorn_map(rom, ROM_SIZE, 0x0C000000u);
-  /* Work RAM not aligned to its size, for the code that adds the offset,
-     with a low half that is negative as a signed offset; internal RAM
-     aligned but not to 64 KB, for the code that inserts it; ROM aligned. */
-  mips_unicorn_map(worlds[1].ewram, EWRAM_SIZE, 0x0A00F000u);
+  /* Work RAM not aligned to its size, for the code that adds the offset:
+     at 0x0A00F000 or 0x0A007FFC (see run_case); internal RAM aligned but
+     not to 64 KB, for the code that inserts it; ROM aligned. */
+  mips_unicorn_map(ewram_pages, EWRAM_SIZE + 0x9000u, 0x0A007000u);
   mips_unicorn_map(worlds[1].iwram, IWRAM_SIZE, 0x0A068000u);
 
   host = mips_unicorn_host(jit);
