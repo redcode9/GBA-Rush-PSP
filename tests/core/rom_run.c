@@ -26,7 +26,8 @@
  * IE & IF whatever IME and the CPSR say), VCOUNT, DISPSTAT and the VBlank
  * IRQ, taken after an instruction that sets IE or IME; the four timers,
  * read at the cycle of the load, with prescalers that divide the clock
- * from cycle 0, count-up and overflow IRQs; DMA3 immediate transfers; the
+ * from cycle 0, count-up and overflow IRQs; DMA transfers started at once
+ * or at VBlank, with their IRQ at the end; the
  * save chip the ROM's ID string names (SRAM without one), with SRAM
  * growing to 64 KiB on a write above 32 KiB as GBA Rush does, and EEPROM
  * to 8 KiB on any request with a 14-bit address (GBA Rush only on a read
@@ -37,7 +38,7 @@
  * a write is a power cut that keeps the previous state.
  *
  * Not modelled: sound, serial, keys (none held), the PPU, HBlank and
- * VCOUNT IRQs, DMA0-2, DMA start modes other than immediate and DMA
+ * VCOUNT IRQs, HBlank and special DMA starts, DMA repeat and DMA
  * timing, open bus outside the BIOS (reads 0), STOP, cycle-exact
  * interrupt entry (an IRQ raised during a block waits for its end), a
  * timer IRQ waking a halt before the next VBlank, the time the BIOS
@@ -135,6 +136,7 @@ static long long vblanks_by(long long t)
 }
 
 static void timers_sync(void);
+static void dma_vblank(void);
 
 /* Called with core.cycles at 0, once they are counted in. */
 static void advance(long long cycles)
@@ -142,8 +144,12 @@ static void advance(long long cycles)
   long long before = now;
 
   now += cycles;
-  if(vblanks_by(now) != vblanks_by(before) && (io16(0x004) & 0x0008))
-    raise_irq(0x0001);
+  if(vblanks_by(now) != vblanks_by(before))
+  {
+    if(io16(0x004) & 0x0008)
+      raise_irq(0x0001);
+    dma_vblank();
+  }
   if(save_written_at >= 0 &&
      now / FRAME_CYCLES - save_written_at / FRAME_CYCLES >= SAVE_DELAY_FRAMES)
   {
@@ -369,20 +375,19 @@ static void eeprom_answer(uint32_t destination, uint32_t count)
 
 /* ---- I/O -------------------------------------------------------------- */
 
-static void dma3(void)
+/* Runs DMA channel n, whose registers start at reg, now. */
+static void dma_run(unsigned n, uint32_t reg)
 {
-  uint32_t control = io16(0x0DE);
+  uint32_t control = io16(reg + 10);
   unsigned size = (control & 0x0400) ? 4 : 2;
   /* The address bits below the transfer unit are ignored. */
-  uint32_t source = load(io, 0x0D4, 4) & 0x0FFFFFFF & ~(size - 1);
-  uint32_t destination = load(io, 0x0D8, 4) & 0x0FFFFFFF & ~(size - 1);
-  uint32_t count = io16(0x0DC) ? io16(0x0DC) : 0x10000;
+  uint32_t source = load(io, reg, 4) & 0x0FFFFFFF & ~(size - 1);
+  uint32_t destination = load(io, reg + 4, 4) & 0x0FFFFFFF & ~(size - 1);
+  uint32_t count = io16(reg + 8) ? io16(reg + 8) : 0x10000;
   int step[4] = { (int)size, -(int)size, 0, (int)size };
   uint32_t i;
 
-  store(io, 0x0DE, 2, control & 0x7FFF);
-  if(control & 0x3000)
-    return;
+  store(io, reg + 10, 2, control & 0x7FFF);
   if(save_kind == SAVE_EEPROM && (destination >> 24) == 0x0D)
     eeprom_request(source, count);
   else if(save_kind == SAVE_EEPROM && (source >> 24) == 0x0D)
@@ -395,7 +400,33 @@ static void dma3(void)
       destination += (uint32_t)step[(control >> 5) & 3];
     }
   if(control & 0x4000)
-    raise_irq(0x0800);
+    raise_irq(0x0100u << n);
+}
+
+/* A write that sets the enable bit of channel n: an immediate transfer
+   runs now, a VBlank one waits for dma_vblank(), the others never run. */
+static void dma_start(unsigned n)
+{
+  uint32_t reg = 0x0B0 + n * 12;
+  uint32_t timing = io16(reg + 10) & 0x3000;
+
+  if(timing == 0)
+    dma_run(n, reg);
+  else if(timing != 0x1000)
+    store(io, reg + 10, 2, io16(reg + 10) & 0x7FFF);
+}
+
+static void dma_vblank(void)
+{
+  unsigned n;
+
+  for(n = 0; n < 4; n++)
+  {
+    uint32_t reg = 0x0B0 + n * 12;
+
+    if((io16(reg + 10) & 0xB000) == 0x9000)
+      dma_run(n, reg);
+  }
 }
 
 static uint32_t io_read16(uint32_t reg)
@@ -461,8 +492,9 @@ static void io_write16(uint32_t reg, uint32_t value)
     arm_core_request_exit(&core);
   if(reg == 0x204)
     arm_core_set_waitcnt(&core, (uint16_t)value);
-  if(reg == 0x0DE && (value & 0x8000))
-    dma3();
+  if(reg >= 0x0B0 && reg < 0x0E0 && (reg - 0x0B0) % 12 == 10 &&
+     (value & 0x8000))
+    dma_start((reg - 0x0B0) / 12);
 }
 
 static uint32_t io_read(uint32_t address, unsigned size)

@@ -23,6 +23,20 @@ static void test_dma3_word_alignment(void)
   assert(load(vram, 0x17FFC, 4) == 0x11223344u);
 }
 
+/* DMA0 started at VBlank copies nothing until the VBlank, then raises
+   its IRQ (IF bit 8) if asked to and turns itself off. */
+static void test_dma0_vblank_irq(void)
+{
+  store(iwram, 0x100, 4, 0x55667788u);
+  mem_write(0x040000B0, 4, 0x03000100);
+  mem_write(0x040000B4, 4, 0x03000200);
+  mem_write(0x040000B8, 4, 0xD4000001u);
+  assert(load(iwram, 0x200, 4) == 0 && !(io16(0x202) & 0x0100));
+  advance(next_vblank() - now);
+  assert(load(iwram, 0x200, 4) == 0x55667788u);
+  assert((io16(0x202) & 0x0100) && !(io16(0x0BA) & 0x8000));
+}
+
 /* A byte written to POSTFLG is stored and does not halt; one written to
    HALTCNT halts. */
 static void test_postflg_byte_does_not_halt(void)
@@ -37,6 +51,7 @@ int main(void)
 {
   arm_core_init(&core, &bus);
   test_dma3_word_alignment();
+  test_dma0_vblank_irq();
   test_postflg_byte_does_not_halt();
   puts("rom_run tests passed");
   return 0;
