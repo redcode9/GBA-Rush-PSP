@@ -2,6 +2,7 @@
 tags and synthetic test records."""
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -344,6 +346,19 @@ class PrereleaseAndLinksTest(ScratchRepoTest):
          "## Not validated\n\n"
          "The stable release needs:\n\n"
          "- link-a on second model\n", self.repo.notes())
+
+    def test_a_forbidden_word_since_the_previous_release_fails(self):
+        self.history((1, 1))
+        self.repo.release()
+        self.repo.git("commit", "-q", "--allow-empty", "-m",
+                      "Port the zorblequint idea")
+        listed = self.repo.root.parent / "words.sha256"
+        listed.write_text(hashlib.sha256(b"zorblequint").hexdigest())
+        with mock.patch.object(release_gate.check_names, "LIST", listed):
+            problems = self.repo.gate(channel="prerelease")
+        self.assertEqual(len(problems), 1, problems)
+        self.assertRegex(problems[0], r"^forbidden word in commit [0-9a-f]+: "
+                         r"message line 1$")
 
     def test_a_new_cable_protocol_links_with_no_earlier_release(self):
         self.history((1, 1))

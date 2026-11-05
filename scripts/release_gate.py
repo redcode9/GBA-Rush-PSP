@@ -11,8 +11,10 @@ passes only when, for the EBOOT.PBP of the candidate's manifest:
 - if the link code changed since the previous release, the release file
   declares the link status, and a changed protocol constant has a link test
   that passed.
-The prerelease channel always passes. Both write
-dist/RELEASE-NOTES-<version>.md; the CHANGELOG stays hand-written.
+Both channels fail when a commit message since the previous release holds a
+forbidden word (scripts/check-names.py); otherwise the prerelease channel
+always passes. Both write dist/RELEASE-NOTES-<version>.md; the CHANGELOG
+stays hand-written.
 """
 
 import argparse
@@ -29,11 +31,17 @@ import release_manifest
 SCRIPTS = pathlib.Path(__file__).resolve().parent
 ROOT = SCRIPTS.parent
 
-# The script name has a dash, so load it as a module by path.
-_SPEC = importlib.util.spec_from_file_location(
- "hardware_session", SCRIPTS / "hardware-session.py")
-hardware_session = importlib.util.module_from_spec(_SPEC)
-_SPEC.loader.exec_module(hardware_session)
+
+def load(name, file):
+    """The script name has a dash, so load it as a module by path."""
+    spec = importlib.util.spec_from_file_location(name, SCRIPTS / file)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+hardware_session = load("hardware_session", "hardware-session.py")
+check_names = load("check_names", "check-names.py")
 
 CHANNELS = ("stable", "prerelease")
 RELEASE_KEYS = ("tests", "hotfix-data", "known-limit", "link", "mixed-pair")
@@ -210,14 +218,28 @@ def candidate_problems(repo, version, release, now):
     return problems
 
 
+def previous_release(repo, version):
+    """The newest X.Y.Z tag before version, or None."""
+    earlier = [t for t in release_tags(repo)
+               if version_key(t) < version_key(version)]
+    return earlier[-1] if earlier else None
+
+
+def name_problems(repo, version):
+    """The commits since the previous release whose message holds a word of
+    scripts/forbidden-words.sha256."""
+    previous = previous_release(repo, version)
+    matcher = check_names.Matcher(check_names.load_hashes(check_names.LIST))
+    return [f"forbidden word in {hit}" for hit in check_names.commit_hits(
+     repo, f"{previous}..HEAD" if previous else "HEAD", matcher)]
+
+
 def link_problems(repo, version, release, passed):
     """The link status a change of the link code since the previous release
     must declare, and the link test a changed protocol constant needs."""
-    earlier = [t for t in release_tags(repo)
-               if version_key(t) < version_key(version)]
-    if not earlier:
+    previous = previous_release(repo, version)
+    if previous is None:
         return []
-    previous = earlier[-1]
     changed = git(repo, "diff", "--name-only", previous, "HEAD", "--",
                   *LINK_FILES).stdout.split()
     if not changed:
@@ -353,7 +375,7 @@ def gate(version, channel, repo, dist, now):
                          f"VERSION={version} CHANNEL=prerelease")
     passed = [row for row in rows if digest and row["Result"] == "pass"
               and row["EBOOT sha256"] == digest[:12]]
-    problems = []
+    problems = name_problems(repo, version)
     if channel == "stable":
         problems += required_test_problems(tests, catalog, passed, digest[:12])
         problems += candidate_problems(repo, version, release, now)
