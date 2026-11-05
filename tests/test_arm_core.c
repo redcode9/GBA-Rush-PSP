@@ -125,9 +125,14 @@ static void acknowledge(void *context, uint32_t address, uint32_t value)
     core.irq_line = 0;
 }
 
+/* Where test_runaway's slide would meet a branch (b .). */
+#define SLIDE_END 0x102005D8u
+
 static uint32_t code32(void *context, uint32_t address)
 {
   (void)context;
+  if(address == SLIDE_END)
+    return 0xeafffffe;
   if((address >> 24) == 3)
     return load(iwram, address & 0x7FFF, 4);
   return read_any(address, 4);
@@ -278,6 +283,21 @@ static void test_hook(void)
   arm_core_flush(&core);
 }
 
+/* A jump where nothing is mapped, as the core test ROM's pc_high makes:
+   the zeros there run as andeq r0, r0, r0, one cycle each, in blocks of 64
+   from the jump on, and no branch comes before SLIDE_END. The run still
+   ends 2^ARM_RUNAWAY_SHIFT cycles past its budget, at a block's end. */
+static void test_runaway(void)
+{
+  int32_t ran;
+
+  reset(0x100005D8, ARM_MODE_SYSTEM);
+  ran = arm_core_run(&core, 1000);
+  CHECK(ran >= 1000 + (1 << ARM_RUNAWAY_SHIFT));
+  CHECK(ran <= 1000 + (1 << ARM_RUNAWAY_SHIFT) + 64);
+  CHECK(core.v[15] < SLIDE_END && (core.v[15] & 0xFF) == 0xD8);
+}
+
 /* One run of check_idle_loop: after a reset to pc (0: on from the last
    run), with f raising an IRQ if irq. */
 typedef struct
@@ -424,6 +444,7 @@ int main(void)
   test_interrupt();
   test_hook();
   test_idle_loop();
+  test_runaway();
   if(failures)
     return 1;
   printf("test_arm_core: all checks passed\n");

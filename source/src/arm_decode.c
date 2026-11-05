@@ -1521,7 +1521,7 @@ unsigned arm_translate(ArmCore *core, uint32_t pc, int thumb,
       break;
   }
   if(!b.ended)
-    emit(&b, ARM_IR_EXIT, 0, ARM_EXIT_NEXT, 0, b.pc);
+    emit(&b, ARM_IR_EXIT, ARM_IR_LIMIT, ARM_EXIT_NEXT, 0, b.pc);
   liveness(ops, b.count);
   if(info)
   {

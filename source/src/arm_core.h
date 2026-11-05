@@ -20,7 +20,8 @@
  * Timing is a pure function of the guest instruction stream. The core
  * counts cycles per instruction from the GBA's waitstates and checks its
  * cycle budget, and a raised interrupt line, only at taken branches and
- * exception entries and returns. A bus handler can ask it to stop after
+ * exception entries and returns (and far past the budget, see
+ * ARM_RUNAWAY_SHIFT). A bus handler can ask it to stop after
  * the current instruction (arm_core_request_exit) when a store changes
  * something the system must act on at once, such as HALTCNT or IME.
  */
@@ -94,6 +95,14 @@ typedef struct
 #define ARM_NO_BLOCK 0xFFFFu
 #define ARM_IDLE_LOOPS 16u
 #define ARM_NO_IDLE_PASS 0xFFFFFFFFu
+/* A run still going 2^ARM_RUNAWAY_SHIFT cycles past its budget ends at the
+   next block that fell through at its length or page limit (an EXIT with
+   ARM_IR_LIMIT). Only code sliding through memory without branches gets
+   that far, such as zeros (no-ops) where nothing is mapped, and such a run
+   would otherwise never return to the system: no frame, no menu, no save.
+   Real code takes a branch long before, so this never changes its
+   timing. */
+#define ARM_RUNAWAY_SHIFT 18
 
 typedef struct
 {
@@ -198,7 +207,8 @@ int arm_core_irq(ArmCore *core);
 void arm_core_request_exit(ArmCore *core);
 
 /* Runs until at least `cycles` have passed, checking only at taken
-   branches, or until an exit request; returns the cycles run. */
+   branches (and ARM_RUNAWAY_SHIFT), or until an exit request; returns the
+   cycles run. */
 int32_t arm_core_run(ArmCore *core, int32_t cycles);
 /* The block at r15, translated now if the cache does not hold it. */
 const ArmBlock *arm_core_block(ArmCore *core);

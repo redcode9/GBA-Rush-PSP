@@ -531,6 +531,50 @@ static int smc_case(unsigned variant)
   return 1;
 }
 
+/* A slide through zeroed work RAM (Thumb movs r0, r0, two blocks to a
+   page) with no branch for far longer than ARM_RUNAWAY_SHIFT allows: both
+   cores end the run at the same block. The second run goes through code
+   already linked, where only the backend's own check can stop it. */
+static int slide_case(void)
+{
+  const int32_t budget = 1000;
+  int32_t ran[2];
+  unsigned w;
+  unsigned i;
+
+  for(i = 0; i < 2; i++)
+  {
+    for(w = 0; w < 2; w++)
+    {
+      ArmCore *core = w ? &jit->core : &reference;
+
+      /* The reset flushes the code, so only before the first run. */
+      if(i == 0)
+      {
+        memset(worlds[w].ewram, 0, EWRAM_SIZE);
+        arm_core_reset(core);
+        arm_core_set_cpsr(core, ARM_MODE_SYSTEM | ARM_CPSR_T);
+      }
+      core->v[15] = 0x02000000u;
+      core->prefetch = 0;
+      core->instructions = 0;
+      worlds[w].log_count = 0;
+    }
+    ran[0] = arm_core_run(&reference, budget);
+    ran[1] = arm_mips_run(jit, budget);
+    if(!compare("slide run", 0, i))
+      return 0;
+    if(ran[0] != ran[1] || ran[0] - budget < 1 << ARM_RUNAWAY_SHIFT ||
+       ran[0] - budget > (1 << ARM_RUNAWAY_SHIFT) + 512)
+    {
+      printf("slide run %u: ended %d/%d cycles past the budget\n", i,
+       ran[0] - budget, ran[1] - budget);
+      return 0;
+    }
+  }
+  return 1;
+}
+
 static int run_case(uint32_t seed)
 {
   uint32_t values[7 * 8 + 15];
@@ -707,6 +751,9 @@ int main(int argc, char **argv)
       return 1;
   printf("jit_fuzz: 9 self-modifying loops agree, %u blocks dropped\n",
    jit->stats.dropped);
+  if(!slide_case())
+    return 1;
+  printf("jit_fuzz: a slide past the budget ends on the same cycle\n");
   for(i = 0; i < cases; i++)
   {
     if(run_case(seed + i))

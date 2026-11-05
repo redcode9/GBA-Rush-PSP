@@ -55,7 +55,8 @@
  * Exits. Every block starts with its key, then a refill entry that adds the
  * pipeline refill for indirect jumps, checks the budget and empties the
  * prefetch buffer, then the main entry. Direct exits check the budget
- * (taken branches only) and end with a j that the C side patches once the
+ * (taken branches only; a fall-through at a block's limit only for
+ * ARM_RUNAWAY_SHIFT) and end with a j that the C side patches once the
  * target is compiled. Indirect exits look the target up in a direct-mapped
  * dispatch cache, (pc, Thumb) -> refill entry; returns first try a
  * 16-entry return stack, which calls fill with the address of a per-call
@@ -204,7 +205,9 @@ enum
                            counted yet */
   STATUS_BAIL,          /* the interpreter goes on: op index */
   STATUS_DROPPED,       /* a dropped block was entered: its key */
-  STATUS_EXIT           /* code compiled to run once left: key */
+  STATUS_EXIT,          /* code compiled to run once left: key */
+  STATUS_RUNAWAY        /* a block fell through at its limit far past
+                           the budget (ARM_RUNAWAY_SHIFT): key */
 };
 #define STATUS_THUMB 0x100u
 #define STATUS_STEP 0x200u     /* the bail's op is in step_ops */
@@ -918,6 +921,23 @@ static void exit_direct(Builder *b, const ArmIrOp *op, unsigned index)
     }
     else
       emit(b, MOVE(REG_PREFETCH, ZERO));
+  }
+  else if(b->mode == MODE_LINKED && (op->flags & ARM_IR_LIMIT))
+  {
+    unsigned runaway = label_new(b);
+
+    /* Far past the budget, back to C, which ends the run where the
+       interpreter would (ARM_RUNAWAY_SHIFT). The cycle register counts
+       towards a base no later than the budget, so it never comes too
+       late, and C goes on when it comes early. */
+    emit(b, SRA(V1, REG_CYCLES, ARM_RUNAWAY_SHIFT));
+    branch(b, BGTZ(V1), runaway);
+    emit(b, NOP);
+    b->cold = 1;
+    label_bind(b, runaway);
+    load_constant(b, A1, key);
+    leave(b, status(b, STATUS_RUNAWAY, kind));
+    b->cold = 0;
   }
   if(b->mode == MODE_LINKED)
     link_jump(b, key, 0);
@@ -2759,6 +2779,12 @@ int32_t arm_mips_run(ArmMips *jit, int32_t cycles)
           check = arm_core_execute(core, bail_ops(jit, code) + arg) !=
            ARM_EXIT_NEXT;
           jit->stats.bails++;
+          break;
+        case STATUS_RUNAWAY:
+          go_to(core, arg);
+          check = 0;
+          if(core->cycles - core->cycle_limit >= 1 << ARM_RUNAWAY_SHIFT)
+            core->exit_request |= ARM_EXIT_STOP;
           break;
         default:
           go_to(core, arg);

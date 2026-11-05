@@ -184,6 +184,8 @@ typedef enum
 #define ARM_IR_BX      0x20u  /* EXIT_REG: bit 0 selects the state */
 #define ARM_IR_RESTORE 0x40u  /* EXIT_REG: CPSR = SPSR first */
 #define ARM_IR_IDLE_LOOP 0x80u  /* EXIT: the branch of an idle loop */
+#define ARM_IR_LIMIT   0x40u  /* EXIT: the fall-through of a block that
+                                 reached its length or page limit */
 
 /* What an exit is, for the dispatcher and a backend's predictors. Only
    NEXT is not a taken branch: the guest just runs on into the next block,
