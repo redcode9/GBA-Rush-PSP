@@ -115,17 +115,19 @@ git_at()
 {
   if [ "$(git -C "$3" rev-parse HEAD 2>/dev/null)" = "$2" ]; then
     say "${3#"$ext"/} is at $2"
-    return
+  else
+    need git
+    run git init -q "$3"
+    run git -C "$3" fetch -q --depth 1 "$1" "$2"
+    run git -C "$3" checkout -q --detach FETCH_HEAD
+    if [ -z "$dry" ] && [ "$(git -C "$3" rev-parse HEAD)" != "$2" ]; then
+      die "$3 is not at $2"
+    fi
   fi
-  need git
-  run git init -q "$3"
-  run git -C "$3" fetch -q --depth 1 "$1" "$2"
-  run git -C "$3" checkout -q --detach FETCH_HEAD
+  # On every run: it finishes the submodules a failed run left out, and
+  # leaves alone those already checked out.
   if [ "${4:-}" = --recursive ]; then
     run git -C "$3" submodule update -q --init --recursive --depth 1
-  fi
-  if [ -z "$dry" ] && [ "$(git -C "$3" rev-parse HEAD)" != "$2" ]; then
-    die "$3 is not at $2"
   fi
 }
 
