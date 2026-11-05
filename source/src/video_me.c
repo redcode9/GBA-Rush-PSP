@@ -160,6 +160,8 @@ static u32 read_switches(void)
 {
   char path[MAX_PATH];
   char text[16];
+  char *end;
+  unsigned long value;
   SceUID file;
   int bytes;
 
@@ -172,7 +174,11 @@ static u32 read_switches(void)
   if(bytes <= 0)
     return 0;
   text[bytes] = '\0';
-  return (u32)strtoul(text, NULL, 0) & VIDEO_ME_SWITCHES;
+  /* Decimal, or hex after 0x (base 0 would read a leading 0 as octal). */
+  value = strtoul(text, &end, 10);
+  if(value == 0 && end != text && (*end == 'x' || *end == 'X'))
+    value = strtoul(end + 1, NULL, 16);
+  return (u32)value & VIDEO_ME_SWITCHES;
 }
 
 static void start(void)
