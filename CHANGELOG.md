@@ -39,12 +39,13 @@
   so it never overwrites the `<rom>_auto.svs` made with `gba_bios.bin`.
 - The `bios_rom_hack_39` and `bios_rom_hack_2C` options of `game_config.txt`
   apply only to `gba_bios.bin`.
-- The menu, the file browser and ROM loading run at the configured CPU
-  clock (333 MHz by default) instead of dropping to 222 MHz, and the PSP
-  returns to the configured clock when it resumes from sleep. The runtime log
+- The menu and the file browser run at the configured CPU clock (333 MHz by
+  default) instead of 222 MHz: after a ROM loads (at 333 MHz) or a link
+  session ends, the PSP returns to the configured clock instead of 222 MHz,
+  and it sets that clock again when it resumes from sleep. The runtime log
   records the requested clock and the CPU and bus clocks the PSP reports each
   time the clock is set and, when the Exact renderer draws on the Media
-  Engine, the Media Engine clock it measures.
+  Engine, the Media Engine clock it measured under each requested clock.
 
 ## 1.4.3 - 2026-11-02
 
