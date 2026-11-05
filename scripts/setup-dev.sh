@@ -19,8 +19,9 @@ set -eu
 # UNICORN_DIR, Unicorn is built with the Allegrex instructions, and
 # Homebrew's stock one is linked only if that build fails.
 # Archives are checked against their sha256 and Git sources against their
-# commit; a mismatch or a failed download stops the script. Delete a
-# directory in ext/ to rebuild it.
+# commit; a mismatch or a failed download stops the script, except for
+# Unicorn, which then falls back to Homebrew's stock one when installed.
+# Delete a directory in ext/ to rebuild it.
 #
 # What comes from where, with its licence. Nothing of it enters the
 # repository or the EBOOT; test data is only read by local checks.

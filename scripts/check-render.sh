@@ -17,9 +17,8 @@ set -eu
 #   RENDER_ROMS  more ROM:SCRIPT pairs, such as test ROMs
 # MGBA_DIR defaults to what scripts/setup-dev.sh put in ext/, once its
 # build16/ is built, and with no game set RENDER_ROMS to the free test ROMs
-# it fetched. With --quick (make
-# check-render-quick, for every pull request) each game runs its first 300
-# frames.
+# it fetched. With --quick (make check-render-quick, for every pull
+# request) each game runs its first 300 frames.
 # The first frame that differs in each game is saved as
 # build/render/<game>.bmp, mGBA's picture on the left.
 
