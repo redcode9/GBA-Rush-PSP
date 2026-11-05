@@ -18,7 +18,14 @@ set -eu
 # - timer_start_delay, timer_stop_hold: rom_run times an access after its
 #   instruction's other cycles (a load's internal cycle comes first), so
 #   it reads 2 more right after a start and 1 more at a stop.
-core_allow=timer_start_delay,timer_stop_hold
+# - prefetch_*: the New core runs a store's new code at once instead of
+#   the two instructions already fetched.
+core_allow=timer_start_delay,timer_stop_hold,prefetch_arm_1_cold
+core_allow=$core_allow,prefetch_arm_1_warm,prefetch_arm_2_cold
+core_allow=$core_allow,prefetch_arm_2_warm,prefetch_thumb_1_cold
+core_allow=$core_allow,prefetch_thumb_1_warm,prefetch_thumb_2_cold
+core_allow=$core_allow,prefetch_thumb_2_warm,prefetch_stm,prefetch_push
+core_allow=$core_allow,prefetch_swp
 
 PYTHON=${PYTHON:-python3}
 MAKE=${MAKE:-make}
