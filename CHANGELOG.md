@@ -27,8 +27,21 @@
   Where the Media Engine cannot be used, as on official firmware or in an
   emulator, Exact draws on the main processor and is slower than New. With
   Show FPS on, the counter ends in ME or CPU to tell which.
+- A new Video > Display mode, 2x integer (crop): every GBA pixel becomes an
+  exact 2x2 block and rows 12-147 of the game fill the screen. It always uses
+  nearest sampling, whatever the screen filter says.
+- The main menu shows a live status next to Save and Load (the state slots
+  in use and whether the AUTO slot exists), Game (how many cheats are on) and
+  Link Cable (the other console's game code, or waiting).
+- The Save and Load page shows thumbnails of all 11 slots (0-9 and AUTO)
+  with the selected slot framed. They appear one per frame as the page opens.
 
 ### Changed
+
+- The game stays visible full screen behind the menu, in its display mode,
+  under a veil of the theme's background colour.
+- The Italian menu writes accented letters (è, più, modalità) instead of a
+  backtick after the vowel or no accent at all.
 
 - A savestate loads only with the BIOS it was saved with, `gba_bios.bin` or
   the built-in one; otherwise a message says which one it needs, instead of
@@ -39,6 +52,11 @@
   so it never overwrites the `<rom>_auto.svs` made with `gba_bios.bin`.
 - The `bios_rom_hack_39` and `bios_rom_hack_2C` options of `game_config.txt`
   apply only to `gba_bios.bin`.
+
+### Fixed
+
+- The messages shown after loading a cheat file are translated into every
+  menu language; the Japanese and Chinese menus showed them in English.
 
 ## 1.4.3 - 2026-11-02
 
