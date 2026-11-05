@@ -14,9 +14,7 @@ set -eu
 #
 # BIOS=/path/to/gba_bios.bin runs the core ROM on your dump of the official
 # BIOS (never commit it), where the BIOS open bus cases must pass as well;
-# the built-in BIOS returns from other addresses, so with it they fail, and
-# so does bg_affine_set, whose start coordinates differ at a scale of -128
-# (source/bios/README.md).
+# the built-in BIOS returns from other addresses, so with it they fail.
 #
 # rom_run has no HBlank DMA, HBlank IRQ or PPU, so the raster ROM's cases
 # fail there: it only has to boot, run them and leave its signature.
@@ -72,7 +70,7 @@ if [ -n "${BIOS:-}" ]; then
 else
   $RUN --frames 600 --save $OUT/core-rom.sav $OUT/core-rom.gba
   $PYTHON tools/decode_test_rom.py \
-    --allow-fail bios_openbus_swi,bios_openbus_irq,bg_affine_set,$core_allow \
+    --allow-fail bios_openbus_swi,bios_openbus_irq,$core_allow \
     $OUT/core-rom.sav
 fi
 

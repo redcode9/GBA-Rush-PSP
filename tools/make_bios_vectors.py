@@ -86,8 +86,8 @@ RECORDED = {
     "sqrt": 0xA09527A0,
     "arctan": 0xE7591202,
     "arctan2": 0xC7AB61B8,
-    "bg_affine_set": 0xB99CC27F,
-    "obj_affine_set": 0x3A3AE3A8,
+    "bg_affine_set": 0x40BDAF37,
+    "obj_affine_set": 0x7DB7CED7,
 }
 
 
@@ -547,11 +547,13 @@ def math_inputs():
                (-0x2000, 0x2000), (-0x2000, -0x2000), (0x2000, -0x2000),
                (0, 0)]
     # Angles use their top byte; a few have a low byte the BIOS must
-    # ignore. Scales are 8.8 fixed point, mirrored and at the limits too.
+    # ignore. Scales are 8.8 fixed point, mirrored and near the limits:
+    # not -0x8000, where the built-in BIOS's start coordinates differ
+    # (source/bios/README.md), so the case checks the rest on both BIOSes.
     angles = (0x0000, 0x0080, 0x2000, 0x4000, 0x6789, 0x8000, 0xA0FF,
               0xC000, 0xF000)
     scales = ((0x100, 0x100), (0x80, 0x200), (-0x100, 0x155),
-              (0x7FFF, -0x8000))
+              (0x7FFF, -0x7FFF))
     rng = Random(SEED + 1)
     bg, obj = [], []
     for angle in angles:

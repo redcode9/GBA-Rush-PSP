@@ -116,7 +116,7 @@ the official BIOS and are ignored with this one.
 - `Sqrt`, `ArcTan`, `ArcTan2`, `BgAffineSet` and `ObjAffineSet` (SWI
   0x08-0x0A, 0x0E, 0x0F) give the official results on every input of the
   core test ROM's `sqrt`, `arctan`, `arctan2`, `bg_affine_set` and
-  `obj_affine_set` cases (`tests/core-rom`), with one exception below, but
+  `obj_affine_set` cases (`tests/core-rom`), but
   leave other registers differently, where GBATEK gives no result: the
   official BIOS leaves working values in r1 and r3 after the first three
   and in r3 after `BgAffineSet`, where this one keeps r3 and leaves r1 as
@@ -133,4 +133,4 @@ the official BIOS and are ignored with this one.
   0xFFD48210 on this one; with centre (-0x55CF0, 0xE960), display centre
   (-107, -31), the same scales and angle 0xC000 it is 0x00366960 against
   0xFFCB6960. PA-PD and the start X are the same. The `bg_affine_set` case
-  fails for this.
+  uses -0x7FFF instead, so that it checks everything else on both BIOSes.
