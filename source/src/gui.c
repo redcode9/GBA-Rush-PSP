@@ -4189,7 +4189,8 @@ u32 menu(void)
   }
 
   /* Refresh the selected slot's timestamp row; with no game loaded, also
-     show its screenshot (with a game, the page shows the thumbnails). */
+     show its screenshot. With a game, the page shows the thumbnails and the
+     other pages keep the game frame, since savestate_screen is only scratch. */
   void menu_change_state(void)
   {
     get_savestate_filename(savestate_slot, filename_buffer);
@@ -4199,7 +4200,7 @@ u32 menu(void)
     else
       sprintf(savestate_timestamps[savestate_slot], "%d: %s", (int)savestate_slot, line_buffer);
 
-    screen_image_ptr = savestate_screen;
+    screen_image_ptr = first_load ? savestate_screen : current_screen;
   }
 
   u32 menu_save_state(void)
