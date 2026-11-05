@@ -67,6 +67,16 @@ do
   fi
 done
 
+# The built EBOOT must be this tree's, in this profile: source/Makefile
+# records both in build-config.stamp when it builds the objects.
+build_id=$(${MAKE:-make} -s --no-print-directory -C source print-build-id)
+if [ "$(cat source/build-config.stamp 2>/dev/null)" != "$build_id $profile" ]
+then
+  echo "source/EBOOT.PBP was not built as $build_id $profile:" \
+    "run make package VERSION=$version PROFILE=$profile" >&2
+  exit 1
+fi
+
 release_name="GBA-Rush-PSP-$version$suffix"
 release_root="dist/$release_name"
 install_root="$release_root/$install_folder"
@@ -135,7 +145,6 @@ fi
 compiler_version=$(psp-gcc --version)
 cflags=$(${MAKE:-make} -s --no-print-directory -C source PROFILE="$profile" \
   print-flags)
-build_id=$(${MAKE:-make} -s --no-print-directory -C source print-build-id)
 pspsdk=$(psp-config --pspsdk-path)
 pspdev=$(psp-config --pspdev-path)
 ${PYTHON:-python3} scripts/release_manifest.py write --output "$manifest" \
