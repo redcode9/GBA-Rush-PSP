@@ -45,8 +45,8 @@ int load_progress_due(LoadProgressState *state, uint64_t now_us,
 uint32_t load_progress_bar(uint32_t done, uint32_t total, uint32_t width);
 
 /* Writes "done / total KiB" into buf, cut to fit its cap bytes; done is
-   rounded down and total up, so the line reads total / total only at the
-   end. */
+   rounded down and total up, and at the end (done >= total, total not 0)
+   both read total. */
 void load_progress_text(char *buf, size_t cap, uint32_t done, uint32_t total);
 
 #endif /* LOAD_PROGRESS_H */

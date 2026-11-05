@@ -46,6 +46,8 @@ void load_progress_text(char *buf, size_t cap, uint32_t done, uint32_t total)
 {
   unsigned int total_kib = (unsigned int)(total >> 10) +
    ((total & 1023u) != 0);
+  unsigned int done_kib = total != 0 && done >= total ? total_kib :
+   (unsigned int)(done >> 10);
 
-  snprintf(buf, cap, "%u / %u KiB", (unsigned int)(done >> 10), total_kib);
+  snprintf(buf, cap, "%u / %u KiB", done_kib, total_kib);
 }

@@ -133,10 +133,15 @@ static void test_kib_line(void)
   check_text(16 * MIB, 16 * MIB, "16384 / 16384 KiB");
   check_text(32 * MIB - 1, 32 * MIB, "32767 / 32768 KiB");
   check_text(32 * MIB, 32 * MIB, "32768 / 32768 KiB");
-  /* done rounds down and total up. */
+  /* done rounds down and total up, until the end reads total / total. */
   check_text(1023, 1025, "0 / 2 KiB");
-  check_text(1025, 1025, "1 / 2 KiB");
-  check_text(UINT32_MAX, UINT32_MAX, "4194303 / 4194304 KiB");
+  check_text(1024, 1025, "1 / 2 KiB");
+  check_text(1025, 1025, "2 / 2 KiB");
+  check_text(4000001, 4000001, "3907 / 3907 KiB");
+  check_text(UINT32_MAX - 1, UINT32_MAX, "4194303 / 4194304 KiB");
+  check_text(UINT32_MAX, UINT32_MAX, "4194304 / 4194304 KiB");
+  /* An unknown size has no end. */
+  check_text(64 * KIB, 0, "64 / 0 KiB");
   check_text(0, 0, "0 / 0 KiB");
 }
 
