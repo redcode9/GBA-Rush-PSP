@@ -7,7 +7,9 @@
  *          core then runs the same instruction from the same registers
  *          with a bus that replays those reads and checks its writes
  *          against them. Registers of every mode, CPSR, SPSRs, writes
- *          and cycles are compared after each instruction.
+ *          and cycles are compared after each instruction; a cycle
+ *          difference in code run off the GamePak fails the run (see
+ *          off_gamepak), one on it is only counted.
  *   block  the same a whole cached block at a time: mGBA runs as many
  *          instructions as the core's block holds (its events held back
  *          until the block ends, as the core only stops at blocks), then
@@ -348,6 +350,10 @@ static int recording;
 static int diverged;
 static char divergence[256];
 static unsigned long replay_misses;
+/* Cycles mGBA 0.10.3 leaves out of the instruction being compared: an LDM
+   or STM on the GamePak starts from S - N instead of N - S, so its first
+   word costs 2 * (N - S) too little. Only the comparison adds them back. */
+static int32_t mgba_missing;
 
 /* Run mode */
 static int32_t run_base;
@@ -489,6 +495,16 @@ static unsigned multiple_addresses(uint32_t address, int mask,
   return count;
 }
 
+/* GBALoadMultiple and GBAStoreMultiple share the GamePak start error. */
+static void add_mgba_missing(uint32_t address, int *cycles)
+{
+  unsigned region = address >> 24;
+
+  if(cycles && region >= 8 && region <= 13)
+    mgba_missing += 2 * (gba->memory.waitstatesNonseq32[region] -
+     gba->memory.waitstatesSeq32[region]);
+}
+
 static uint32_t hook_load_multiple(struct ARMCore *c, uint32_t address,
  int mask, enum LSMDirection direction, int *cycles)
 {
@@ -500,6 +516,7 @@ static uint32_t hook_load_multiple(struct ARMCore *c, uint32_t address,
 
     for(i = 0; i < n; i++)
       record(0, 4, list[i], peek(list[i], 4), 0);
+    add_mgba_missing(list[0], cycles);
   }
   return original.loadMultiple(c, address, mask, direction, cycles);
 }
@@ -509,9 +526,12 @@ static uint32_t hook_store_multiple(struct ARMCore *c, uint32_t address,
 {
   uint32_t list[16];
   unsigned n = multiple_addresses(address, mask, direction, list);
-  uint32_t result = original.storeMultiple(c, address, mask, direction,
-   cycles);
+  uint32_t result;
   unsigned i;
+
+  if(recording)
+    add_mgba_missing(list[0], cycles);
+  result = original.storeMultiple(c, address, mask, direction, cycles);
 
   for(i = 0; i < n; i++)
   {
@@ -884,6 +904,12 @@ typedef struct
 static CycleBucket buckets[4096];
 static unsigned bucket_count;
 static unsigned long cycle_mismatches;
+/* Off the GamePak the two must agree on every cycle. On it they differ by
+   design: the core follows GBATEK (the prefetch buffer's fill level, a
+   fetch that stays sequential after a load from elsewhere, the prefetch
+   disable bug) where mGBA estimates the buffer with a stall heuristic. */
+static unsigned long off_gamepak;
+static unsigned long off_gamepak_mismatches;
 static unsigned long long cycles_mine;
 static unsigned long long cycles_theirs;
 
@@ -896,6 +922,11 @@ static uint32_t opcode_at(uint32_t pc, int thumb)
   return (pc & 2) ? word >> 16 : word & 0xFFFF;
 }
 
+static int gamepak_code(uint32_t pc)
+{
+  return (pc >> 24) >= 8 && (pc >> 24) <= 13;
+}
+
 /* Groups differences by instruction class, code region and both counts. */
 static void note_cycles(uint32_t pc, int thumb, int32_t mine,
  int32_t theirs)
@@ -903,12 +934,15 @@ static void note_cycles(uint32_t pc, int thumb, int32_t mine,
   uint32_t opcode = opcode_at(pc, thumb);
   uint32_t key;
   unsigned i;
+  int gamepak = gamepak_code(pc);
 
   cycles_mine += (unsigned long long)mine;
   cycles_theirs += (unsigned long long)theirs;
+  off_gamepak += !gamepak;
   if(mine == theirs)
     return;
   cycle_mismatches++;
+  off_gamepak_mismatches += !gamepak;
   if(thumb)
     key = 0x10000u | (opcode >> 8);
   else
@@ -944,16 +978,26 @@ static int by_count(const void *a, const void *b)
 
 static void print_cycle_summary(void)
 {
+  unsigned pass;
   unsigned i;
+  unsigned shown;
 
   printf("cycles: core %llu, mGBA %llu, %lu instructions or blocks differ\n",
    cycles_mine, cycles_theirs, cycle_mismatches);
+  printf("cycles off the GamePak: %lu of %lu differ\n",
+   off_gamepak_mismatches, off_gamepak);
   qsort(buckets, bucket_count, sizeof(buckets[0]), by_count);
-  for(i = 0; i < bucket_count && i < 16; i++)
-    printf("  %8lu x %s %08X at %08X: core %d, mGBA %d\n", buckets[i].count,
-     (buckets[i].key & 0x10000u) ? "thumb" : "arm  ",
-     buckets[i].example_opcode, buckets[i].example_pc, buckets[i].mine,
-     buckets[i].theirs);
+  /* The most frequent differences off the GamePak, then on it. */
+  for(pass = 0; pass < 2; pass++)
+    for(i = shown = 0; i < bucket_count && shown < 16; i++)
+      if(gamepak_code(buckets[i].example_pc) == (int)pass)
+      {
+        printf("  %8lu x %s %08X at %08X: core %d, mGBA %d\n",
+         buckets[i].count, (buckets[i].key & 0x10000u) ? "thumb" : "arm  ",
+         buckets[i].example_opcode, buckets[i].example_pc, buckets[i].mine,
+         buckets[i].theirs);
+        shown++;
+      }
 }
 
 /* ---- Script ------------------------------------------------------------ */
@@ -1118,6 +1162,7 @@ static int compare_once(int block_mode)
   access_count = 0;
   diverged = 0;
   replay_misses = 0;
+  mgba_missing = 0;
   recording = 1;
   mgba_start = cpu->cycles;
   if(block_mode)
@@ -1140,7 +1185,7 @@ static int compare_once(int block_mode)
   else
     ARMRun(cpu);
   recording = 0;
-  mgba_cycles = cpu->cycles - mgba_start;
+  mgba_cycles = cpu->cycles - mgba_start + mgba_missing;
 
   core->cycles = 0;
   if(block_mode)
@@ -1533,6 +1578,8 @@ int main(int argc, char **argv)
       printf("C after a multiply differed %lu times (not compared)\n",
        multiply_carries);
     print_cycle_summary();
+    if(off_gamepak_mismatches)
+      ok = 0;
   }
 #ifdef LOCKSTEP_JIT
   if(jit && count)

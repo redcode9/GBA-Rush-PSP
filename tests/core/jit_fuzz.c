@@ -575,6 +575,104 @@ static int slide_case(void)
   return 1;
 }
 
+/* Multiplies whose operands sit at the byte boundaries of the multiplier's
+   early termination, both signs, run from internal RAM and from the ROM
+   with the prefetch buffer on: the cycles must agree. */
+static const uint32_t multiply_arm[8] =
+{
+  0xE0020190,   /* mul r2, r0, r1 */
+  0xE0232190,   /* mla r3, r0, r1, r2 */
+  0xE0854190,   /* umull r4, r5, r0, r1 */
+  0xE0A54190,   /* umlal r4, r5, r0, r1 */
+  0xE0C76190,   /* smull r6, r7, r0, r1 */
+  0xE0E76190,   /* smlal r6, r7, r0, r1 */
+  0xE0180091,   /* muls r8, r1, r0 */
+  0xEAFFFFFE    /* b . */
+};
+/* muls r2, r1; muls r1, r0; b . */
+static const uint16_t multiply_thumb[4] = { 0x434A, 0x4341, 0xE7FE, 0 };
+static const uint32_t multiply_values[] =
+{
+  0, 1, 0x7F, 0x80, 0xFF, 0x100, 0xFFFF, 0x10000, 0xFFFFFF, 0x1000000,
+  0x7FFFFFFF, 0x80000000, 0xFFFFFFFF, 0xFFFFFF80, 0xFFFFFF00, 0xFFFF7FFF,
+  0xFFFF0000, 0xFF7FFFFF, 0xFF000000, 0x12345678
+};
+
+static int multiply_case(void)
+{
+  unsigned n = sizeof(multiply_values) / sizeof(multiply_values[0]);
+  unsigned place;
+
+  for(place = 0; place < 4; place++)
+  {
+    int thumb = place & 1;
+    int in_rom = place >> 1;
+    uint32_t pc = in_rom ? 0x080F0000u : 0x03007000u;
+    unsigned w;
+    unsigned i;
+
+    for(w = 0; w < 2; w++)
+    {
+      uint8_t *at = in_rom ? rom + 0xF0000 : worlds[w].iwram + 0x7000;
+
+      if(thumb)
+        memcpy(at, multiply_thumb, sizeof(multiply_thumb));
+      else
+        memcpy(at, multiply_arm, sizeof(multiply_arm));
+    }
+    for(i = 0; i < n * n; i++)
+    {
+      for(w = 0; w < 2; w++)
+      {
+        ArmCore *core = w ? &jit->core : &reference;
+
+        arm_core_reset(core);
+        arm_core_set_waitcnt(core, 0x4317);
+        arm_core_set_cpsr(core, ARM_MODE_SYSTEM | (thumb ? ARM_CPSR_T : 0));
+        core->v[0] = multiply_values[i / n];
+        core->v[1] = multiply_values[i % n];
+        core->v[15] = pc;
+        core->prefetch = 0;
+        core->instructions = 0;
+        core->cycles = 0;
+        worlds[w].log_count = 0;
+      }
+      arm_core_run_block(&reference);
+      arm_mips_run_block(jit);
+      if(!compare("multiply block", place, i))
+        return 0;
+      if(arm_core_run(&reference, 60) != arm_mips_run(jit, 60) ||
+         !compare("multiply run", place, i))
+        return 0;
+    }
+  }
+  return 1;
+}
+
+/* With sampling set, the block generated code last entered (where a
+   profiler would put a sample) must be a block of the cache compiled at
+   that address. Runs that flushed or dropped code are left out. */
+static unsigned long long sampled_runs;
+
+static int sampled_block_ok(uint32_t flushes, uint32_t dropped)
+{
+  uint32_t key = arm_mips_sampled_key(jit);
+  unsigned i;
+
+  if(!jit->sampling || !jit->entered || jit->stats.flushes != flushes ||
+     jit->stats.dropped != dropped)
+    return 1;
+  for(i = 0; i < jit->core.block_count; i++)
+    if(jit->core.blocks[i].key == key && jit->code[i] == jit->entered - 8)
+    {
+      sampled_runs++;
+      return 1;
+    }
+  printf("sampled block %08X at %08X is no compiled block\n", key,
+   jit->entered);
+  return 0;
+}
+
 static int run_case(uint32_t seed)
 {
   uint32_t values[7 * 8 + 15];
@@ -675,6 +773,8 @@ static int run_case(uint32_t seed)
     int32_t budget = (int32_t)(rng() % 1500) + 1;
     int irq = (rng() & 7) == 0;
     int32_t ran[2];
+    uint32_t flushes;
+    uint32_t dropped;
 
     reference.irq_line = jit->core.irq_line = irq;
     if((rng() & 15) == 0)
@@ -683,8 +783,13 @@ static int run_case(uint32_t seed)
       arm_core_set_waitcnt(&reference, waitcnt);
       arm_core_set_waitcnt(&jit->core, waitcnt);
     }
+    flushes = jit->stats.flushes;
+    dropped = jit->stats.dropped;
+    jit->entered = 0;
     ran[0] = arm_core_run(&reference, budget);
     ran[1] = arm_mips_run(jit, budget);
+    if(!sampled_block_ok(flushes, dropped))
+      return 0;
     if(!compare("run", seed, i) || ran[0] != ran[1])
     {
       if(ran[0] != ran[1])
@@ -694,6 +799,16 @@ static int run_case(uint32_t seed)
   }
   guest_instructions += reference.instructions;
   return 1;
+}
+
+/* A clock that ticks once per reading, so each translation adds one to
+   the decode and compile times. */
+static uint32_t clock_ticks;
+
+static uint32_t tick(void *context)
+{
+  (void)context;
+  return clock_ticks++;
 }
 
 int main(int argc, char **argv)
@@ -706,6 +821,7 @@ int main(int argc, char **argv)
   unsigned cases = 1000;
   unsigned passed = 0;
   unsigned i;
+  unsigned n;
   int arg;
 
   for(arg = 1; arg < argc; arg++)
@@ -738,6 +854,7 @@ int main(int argc, char **argv)
   mips_unicorn_map(worlds[1].iwram, IWRAM_SIZE, 0x0A068000u);
 
   host = mips_unicorn_host(jit);
+  host.clock = tick;
   arm_core_init(&reference, &bus);
   arm_mips_init(jit, &bus, &host, code, CODE_BYTES);
   jit->count_instructions = 1;
@@ -746,6 +863,11 @@ int main(int argc, char **argv)
   map_world(&worlds[0]);
   map_world(&worlds[1]);
 
+  if(!multiply_case())
+    return 1;
+  printf("jit_fuzz: multiplies agree on %u operand pairs\n",
+   (unsigned)(4 * sizeof(multiply_values) / sizeof(multiply_values[0]) *
+   sizeof(multiply_values) / sizeof(multiply_values[0])));
   for(i = 0; i < 9; i++)
     if(!smc_case(i))
       return 1;
@@ -754,6 +876,10 @@ int main(int argc, char **argv)
   if(!slide_case())
     return 1;
   printf("jit_fuzz: a slide past the budget ends on the same cycle\n");
+  /* Host instructions per guest instruction over the random cases, a
+     before and after number for changes to the generated code. */
+  mips_unicorn_count(NULL);
+  mips_unicorn_executed = 0;
   for(i = 0; i < cases; i++)
   {
     if(run_case(seed + i))
@@ -763,9 +889,28 @@ int main(int argc, char **argv)
   }
   printf("jit_fuzz: %u/%u cases agree (seeds %u-%u), %llu guest "
    "instructions; %u blocks compiled, %u links, %u dispatch misses, %u "
-   "bails, %u dropped, %u flushes, %llu slow accesses\n", passed, i, seed,
-   seed + i - 1, guest_instructions, jit->stats.blocks, jit->stats.links,
+   "bails, %u dropped, %u flushes, %llu slow accesses; %.2f MIPS "
+   "instructions per guest instruction\n", passed, i, seed, seed + i - 1,
+   guest_instructions, jit->stats.blocks, jit->stats.links,
    jit->stats.misses, jit->stats.bails, jit->stats.dropped,
-   jit->stats.flushes, mips_unicorn_calls);
+   jit->stats.flushes, mips_unicorn_calls, guest_instructions ?
+   (double)mips_unicorn_executed / (double)guest_instructions : 0.0);
+  /* The first cases again with blocks noting their entry, as for the
+     profiler: same results, and the notes point at the blocks. */
+  jit->sampling = 1;
+  for(n = 0; n < 4 && n < cases; n++)
+    if(!run_case(seed + n))
+      return 1;
+  printf("jit_fuzz: with sampling, %llu runs left from the block noted\n",
+   sampled_runs);
+  if(!sampled_runs)
+    return 1;
+  if(jit->stats.compile_ticks != jit->stats.blocks + jit->stats.interpreted)
+  {
+    printf("jit_fuzz: %u compile ticks for %u blocks compiled and %u "
+     "interpreted\n", jit->stats.compile_ticks, jit->stats.blocks,
+     jit->stats.interpreted);
+    return 1;
+  }
   return passed == i ? 0 : 1;
 }

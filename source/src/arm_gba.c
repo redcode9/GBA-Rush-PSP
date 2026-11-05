@@ -171,7 +171,18 @@ static void sync_code(void *context, void *code, uint32_t bytes)
   sceKernelIcacheInvalidateRange(code, bytes);
 }
 
-static const ArmMipsHost host = { NULL, NULL, sync_code, NULL, 0 };
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+/* Times the core's translations for the profile, in microseconds. */
+static uint32_t clock_us(void *context)
+{
+  (void)context;
+  return sceKernelGetSystemTimeLow();
+}
+
+static const ArmMipsHost host = { NULL, NULL, sync_code, NULL, 0, clock_us };
+#else
+static const ArmMipsHost host = { NULL, NULL, sync_code, NULL, 0, NULL };
+#endif
 
 /* ---- Memory map --------------------------------------------------------- */
 
@@ -327,6 +338,119 @@ void arm_gba_set_cheat_hook(u32 address)
   }
 }
 
+/* ---- Diagnostic profile -------------------------------------------------- */
+
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+/* Microseconds between samples, a prime so that they do not beat with
+   frames or scanlines. */
+#define SAMPLE_US 997
+/* Ahead of the emulation thread (32), behind the callback thread. */
+#define SAMPLER_PRIORITY 0x12
+
+static CoreProfile profile;
+static ArmMipsStats stats_at_start;
+static ArmMipsStats stats_at_stop;
+static SceUID emulation_thread = -1;
+static SceUID sampler_thread = -1;
+/* Set while a capture runs; a reset ends it (reset_gba), so the sampler
+   never reads the core while another one owns its memory. */
+static volatile int profiling;
+static int profiled;
+/* Set while the menu is open: it runs on the emulation thread, inside a
+   frame, but its time is not emulation time. */
+static volatile int paused;
+
+/* Woken by the timer, the sampler runs ahead of the emulation thread,
+   which is then ready if it was running and waiting if it was blocked
+   (on VBlank or audio): only the first is emulation time. */
+static int sampler(SceSize args, void *argp)
+{
+  (void)args;
+  (void)argp;
+  for(;;)
+  {
+    SceKernelThreadRunStatus status;
+    u32 phase;
+
+    sceKernelDelayThread(SAMPLE_US);
+    if(!profiling || paused)
+      continue;
+    status.size = sizeof(status);
+    if(sceKernelReferThreadRunStatus(emulation_thread, &status) < 0)
+      continue;
+    if(!(status.status & (PSP_THREAD_RUNNING | PSP_THREAD_READY)))
+    {
+      core_profile_add_waiting(&profile);
+      continue;
+    }
+    phase = jit->phase;
+    core_profile_add(&profile, phase, phase == ARM_MIPS_PHASE_CODE ?
+     arm_mips_sampled_key(jit) : 0);
+  }
+  return 0;
+}
+
+void arm_gba_profile_start(void)
+{
+  /* A capture on the Classic core has no profile, not the last one. */
+  profiled = 0;
+  if(main_cpu_core != CPU_CORE_NEW || jit == NULL)
+    return;
+  core_profile_clear(&profile);
+  stats_at_start = jit->stats;
+  emulation_thread = sceKernelGetThreadId();
+  if(sampler_thread < 0)
+  {
+    sampler_thread = sceKernelCreateThread("Core sampler", sampler,
+     SAMPLER_PRIORITY, 0x1000, 0, NULL);
+    if(sampler_thread < 0)
+      return;
+    /* Not kept unstarted: the next capture creates it again. */
+    if(sceKernelStartThread(sampler_thread, 0, NULL) < 0)
+    {
+      sceKernelDeleteThread(sampler_thread);
+      sampler_thread = -1;
+      return;
+    }
+  }
+  profiling = profiled = 1;
+}
+
+void arm_gba_profile_stop(void)
+{
+  if(!profiling)
+    return;
+  profiling = 0;
+  stats_at_stop = jit->stats;
+}
+
+void arm_gba_profile_pause(int pause)
+{
+  paused = pause;
+}
+
+int arm_gba_profile_format(char *out, u32 size)
+{
+  ArmMipsStats capture;
+
+  if(profiling || !profiled)
+    return -1;
+  /* The translations of the capture alone. */
+  memset(&capture, 0, sizeof(capture));
+  capture.blocks = stats_at_stop.blocks - stats_at_start.blocks;
+  capture.guest_insns = stats_at_stop.guest_insns -
+   stats_at_start.guest_insns;
+  capture.misses = stats_at_stop.misses - stats_at_start.misses;
+  capture.bails = stats_at_stop.bails - stats_at_start.bails;
+  capture.flushes = stats_at_stop.flushes - stats_at_start.flushes;
+  capture.decode_ticks = stats_at_stop.decode_ticks -
+   stats_at_start.decode_ticks;
+  capture.compile_ticks = stats_at_stop.compile_ticks -
+   stats_at_start.compile_ticks;
+  return core_profile_format(out, size, &profile, SAMPLE_US, &capture);
+}
+#endif
+
 void arm_gba_run(void)
 {
   ArmCore *core;
@@ -334,6 +458,11 @@ void arm_gba_run(void)
   jit = (ArmMips *)(void *)writable_code_cache;
   arm_mips_init(jit, &bus, &host, (uint32_t *)(void *)readonly_code_cache,
    READONLY_CODE_CACHE_SIZE);
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+  /* Every block notes its entry for the sampler, so that starting a
+     capture needs no flush. */
+  jit->sampling = 1;
+#endif
   core = &jit->core;
   load_registers();
 
