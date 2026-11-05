@@ -70,7 +70,7 @@ if [ -n "${UNICORN_DIR:-}" ]; then
     echo "check-core: the backend differs, see $out/jit_fuzz.log" >&2
     exit 1
   fi
-  tail -1 "$out/jit_fuzz.log"
+  grep "cases agree" "$out/jit_fuzz.log"
 else
   echo "check-core: no UNICORN_DIR, MIPS backend checks skipped"
 fi
