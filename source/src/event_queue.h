@@ -35,7 +35,8 @@
 
 typedef struct
 {
-  uint32_t deadline[EVENT_QUEUE_CAPACITY]; /* by id, valid while pending */
+  uint32_t deadline[EVENT_QUEUE_CAPACITY]; /* by id; kept after the event
+                                              is popped or cancelled */
   uint8_t order[EVENT_QUEUE_CAPACITY];     /* pending ids, soonest last */
   uint32_t pending;                        /* bit n set: id n is queued */
   uint32_t count;                          /* entries used in order[] */
@@ -59,6 +60,12 @@ int event_queue_next(const EventQueue *queue, uint32_t *deadline);
 
 /* Removes and returns the soonest event if it is due at `now`, else -1. */
 int event_queue_pop_due(EventQueue *queue, uint32_t now);
+
+/* The smallest deadline - now of the pending events, taken as unsigned, or
+   UINT32_MAX when none is pending. An event already behind `now` counts as
+   2^31 cycles or more away, so it never shortens the wait for the others:
+   it is served the next time the caller pops the due events. */
+uint32_t event_queue_cycles_until(const EventQueue *queue, uint32_t now);
 
 static inline int event_queue_pending(const EventQueue *queue, uint32_t id)
 {

@@ -102,3 +102,22 @@ int event_queue_pop_due(EventQueue *queue, uint32_t now)
   queue->count--;
   return (int)id;
 }
+
+uint32_t event_queue_cycles_until(const EventQueue *queue, uint32_t now)
+{
+  uint32_t position = queue->count;
+  uint32_t cycles = UINT32_MAX;
+
+  /* Soonest first: the events behind now, then the first one ahead, which
+     is nearer than every later one. */
+  while(position-- > 0)
+  {
+    uint32_t offset = queue->deadline[queue->order[position]] - now;
+
+    if(offset < cycles)
+      cycles = offset;
+    if((int32_t)offset >= 0)
+      break;
+  }
+  return cycles;
+}

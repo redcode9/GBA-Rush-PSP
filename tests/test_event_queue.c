@@ -1,8 +1,9 @@
 /*
  * Host tests for event_queue.c, the deadline-ordered queue of timed
  * hardware events: ordering, ties served by id, reschedule and cancel,
- * deadlines across the wrap of the 32-bit cycle counter, and a long random
- * run checked operation by operation against a plain linear model.
+ * deadlines across the wrap of the 32-bit cycle counter, a long random
+ * run checked operation by operation against a plain linear model, and
+ * the wait to the nearest event ahead.
  */
 
 #include <assert.h>
@@ -257,6 +258,31 @@ static void test_fuzz_against_linear_model(void)
   assert(full_checks > FUZZ_OPERATIONS / 20);
 }
 
+/* The wait handed to the CPU: the nearest event ahead, never one already
+   behind the clock, which waits for the next pop. */
+static void test_cycles_until(void)
+{
+  EventQueue queue;
+
+  event_queue_clear(&queue);
+  assert(event_queue_cycles_until(&queue, 0) == UINT32_MAX);
+  event_queue_schedule(&queue, 5, 1000, 0);
+  event_queue_schedule(&queue, 1, 300, 0);
+  assert(event_queue_cycles_until(&queue, 100) == 200);
+  assert(event_queue_cycles_until(&queue, 300) == 0);
+  event_queue_schedule(&queue, 2, 290, 300);
+  assert(event_queue_cycles_until(&queue, 300) == 0);
+  assert(event_queue_pop_due(&queue, 300) == 2);
+  assert(event_queue_pop_due(&queue, 300) == 1);
+  /* A popped event keeps its deadline, from which the next one counts. */
+  assert(queue.deadline[1] == 300 && queue.deadline[2] == 290);
+  event_queue_schedule(&queue, 2, 295, 300);
+  assert(event_queue_cycles_until(&queue, 300) == 700);
+  event_queue_clear(&queue);
+  event_queue_schedule(&queue, 3, 0xFFFFFFF0u, 0xFFFFFFF8u);
+  assert(event_queue_cycles_until(&queue, 0xFFFFFFF8u) == 0xFFFFFFF8u);
+}
+
 int main(void)
 {
   test_events_come_out_by_deadline();
@@ -264,6 +290,7 @@ int main(void)
   test_reschedule_and_cancel();
   test_deadlines_across_the_wrap();
   test_fuzz_against_linear_model();
+  test_cycles_until();
   puts("Event queue tests passed");
   return 0;
 }
