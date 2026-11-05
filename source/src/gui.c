@@ -1838,13 +1838,19 @@ static int is_listed_rom(const char *name)
   return strcasecmp(name, "gba_bios.bin") != 0;
 }
 
+/* View the ROM browser opens in, 0 list or 1 carousel. Only memory changes
+   when SELECT switches it; quit() saves it with the other settings. */
+static u32 option_browser_view = 0;
+
 /* Modal file browser for files ending in one of the NULL-terminated
    wildcards. Starts in default_dir_name (or the current directory) and
    chdir()s as the user navigates. On success copies the bare file name to
    result, leaves the current directory set to its folder and returns 0;
    returns -1 if the user backs out. show_recent marks the ROM browser: it
    adds the recent ROMs list and the card for a folder with no games.
-   SELECT toggles between the list view and the carousel view. */
+   SELECT toggles between the list view and the carousel view. Opened on
+   dir_roms it starts in option_browser_view and keeps it up to date; the
+   savestate and cheat browsers always start in the list. */
 s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 show_recent)
 {
   char current_dir_name[MAX_PATH];
@@ -1896,7 +1902,8 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
   /* ------------------------------------------------------------------
      Carousel mode state
      ------------------------------------------------------------------ */
-  u32 carousel_mode = 0;        /* 0 = list view, 1 = carousel view */
+  u32 carousel_mode =           /* 0 = list view, 1 = carousel view */
+   (default_dir_name == dir_roms) ? option_browser_view : 0;
   u32 prev_select_state = 0;    /* For edge-detecting SELECT button */
   u32 carousel_sel = 0;         /* Unified selection: dirs first, then files */
   u32 total_items = 0;          /* num_dirs + num_files */
@@ -2510,6 +2517,8 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
               cursor_row[DIR_LIST] = 0;
             }
           }
+          if (default_dir_name == dir_roms)
+            option_browser_view = carousel_mode;
           /* Clear the old boxart state when switching modes */
           current_boxart_rom[0] = '\0';
           boxart_free();
@@ -6279,6 +6288,7 @@ static void capture_global_config(ConfigModel *model)
   model->fast_forward_presentation = option_fast_forward_presentation;
   model->fast_forward_audio = option_fast_forward_audio;
   model->cpu_core = option_cpu_core;
+  model->browser_view = option_browser_view;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     model->gamepad[i] = gamepad_config_map[i];
 }
@@ -6319,6 +6329,7 @@ static void apply_global_config(const ConfigModel *model)
   option_fast_forward_presentation = model->fast_forward_presentation;
   option_fast_forward_audio = model->fast_forward_audio;
   option_cpu_core = model->cpu_core;
+  option_browser_view = model->browser_view;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
   {
     gamepad_config_map[i] = model->gamepad[i];
