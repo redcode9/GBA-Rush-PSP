@@ -5981,10 +5981,10 @@ static void update_status_string_gbk(char *time_str, char *batt_str, u16 *color_
 
   char batt_icon[4][4] =
   {
-    FONT_BATTERY0_GBK "\0", // empty
-    FONT_BATTERY1_GBK "\0",
-    FONT_BATTERY2_GBK "\0",
-    FONT_BATTERY3_GBK "\0", // full
+    FONT_BATTERY0_GBK, // empty
+    FONT_BATTERY1_GBK,
+    FONT_BATTERY2_GBK,
+    FONT_BATTERY3_GBK, // full
   };
 
   sceRtcGetCurrentClockLocalTime(&current_time);
