@@ -6,6 +6,8 @@
 #   make package VERSION=x.y.z   build, check and zip a release
 #   make release-gate VERSION=x.y.z CHANNEL=stable|prerelease
 #                         check a packaged release and write its notes
+#   make prove-regression REF=<tag> TEST=<name>   show that a test fails on
+#                         an older tag that has the bug it guards against
 # psp-build, package and artifact-smoke take PROFILE=release (the default)
 # or PROFILE=diagnostic (source/Makefile).
 # Each test builds the module it covers straight from source/src, so most
@@ -111,7 +113,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
 
 .PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
  check-core check-render tree-check media-engine-check psp-build \
- launcher-stub package artifact-smoke release-gate clean
+ launcher-stub package artifact-smoke release-gate prove-regression clean
 
 all: check
 
@@ -160,7 +162,8 @@ test-tools:
 	 tests/test_check_scripts.py \
 	 tests/test_hardware_session.py \
 	 tests/test_release_gate.py \
-	 tests/test_check_names.py
+	 tests/test_check_names.py \
+	 tests/test_prove_regression.py
 
 # The link cable test runs fewer network profiles (--quick) under the
 # sanitizers, where it is much slower.
@@ -695,6 +698,13 @@ artifact-smoke:
 release-gate:
 	$(PYTHON) scripts/release_gate.py --version "$(VERSION)" \
 	 --channel "$(CHANNEL)"
+
+# Builds and runs TEST against REF's source/ to show that it catches the bug
+# it was written for; scripts/prove-regression.sh explains the outcomes.
+prove-regression:
+	@test -n "$(REF)" && test -n "$(TEST)" || \
+	 (echo "Set REF and TEST, for example REF=1.4.2 TEST=test_link_net" >&2; exit 1)
+	MAKE='$(MAKE)' PYTHON='$(PYTHON)' sh scripts/prove-regression.sh "$(REF)" "$(TEST)"
 
 clean:
 	$(MAKE) -C source clean
