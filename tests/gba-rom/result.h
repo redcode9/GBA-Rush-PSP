@@ -70,6 +70,10 @@ typedef struct
    end with an entry whose name is NULL, then returns. */
 void result_run(const TestCase *const *areas);
 
+/* zlib's CRC-32 of size bytes at data, carried on from crc: 0 starts a
+   new one, and a CRC passed back in continues it over more data. */
+u32 result_crc32(u32 crc, const void *data, u32 size);
+
 /* Text on a grid of 40 columns and 20 lines of 6x8 pixels, in mode 3.
    result_run() uses lines 0-2 and from 4 on; line 3 is the ROM's. Only
    capitals, digits and - : / . _ have glyphs; lower case letters draw as

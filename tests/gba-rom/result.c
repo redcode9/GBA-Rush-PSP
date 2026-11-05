@@ -180,11 +180,12 @@ static u32 get32(u32 offset)
   return get16(offset) | get16(offset + 2) << 16;
 }
 
-static u32 crc32(const u8 *data, u32 size)
+u32 result_crc32(u32 crc, const void *data, u32 size)
 {
-  u32 crc = ~0u;
+  const u8 *bytes = data;
   u32 i;
 
+  crc = ~crc;
   if(crc_table[1] == 0)
     for(i = 0; i < 256; i++)
     {
@@ -196,7 +197,7 @@ static u32 crc32(const u8 *data, u32 size)
       crc_table[i] = c;
     }
   for(i = 0; i < size; i++)
-    crc = crc_table[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
+    crc = crc_table[(crc ^ bytes[i]) & 0xFF] ^ (crc >> 8);
   return ~crc;
 }
 
@@ -206,7 +207,7 @@ static u32 signature_crc(void)
   u32 crc;
 
   put32(12, 0);
-  crc = crc32(image, signature_size);
+  crc = result_crc32(0, image, signature_size);
   put32(12, stored);
   return crc;
 }
