@@ -10,7 +10,7 @@
 
 ## 1.5
 
-- [ ] **SOA-2.1** — Build di prova da main con New ed Exact e installer che archivia prima i log · S, 0,5 gg · dipende da: SOA-1.1 · PSP: sì · aspetta: SOA-1.1 (`wip/dev-environment`) in main prima della PR di questo branch (regola 4) · _implementato 2026-11-04 su questo branch in anticipo su SOA-1.1, con la toolchain locale e senza `setup-dev.sh`; manca: installazione sulle due PSP con il permesso dell'utente e lo sha256 riletto dalle due schede uguale (pacchetto e installer pronti, sotto)_
+- [ ] **SOA-2.1** — Build di prova da main con New ed Exact e installer che archivia prima i log · S, 0,5 gg · dipende da: SOA-1.1 · PSP: sì · aspetta: SOA-1.1 (`wip/dev-environment`) in main prima della PR di questo branch (eccezione alla regola 4: la storia è partita prima) · _implementato 2026-11-04 su questo branch in anticipo su SOA-1.1, con la toolchain locale e senza `setup-dev.sh`; manca: installazione sulle due PSP con il permesso dell'utente e lo sha256 riletto dalle due schede uguale (pacchetto e installer pronti, sotto)_
 - [ ] **SOA-2.2** — Sessione da soli: MKSC, FireRed, LeafGreen e Golden Sun su Classic/New × CPU/ME · M, 1,5 gg · dipende da: SOA-2.1 · PSP: sì · _piano pronto 2026-11-04 (sotto), manca: la sessione sulle due PSP, con Golden Sun sulle schede_
 - [ ] **SOA-2.3** — Sessione link: gara MKSC e scambio FireRed↔LeafGreen con New ed Exact nei due ruoli · S, 1 gg · dipende da: SOA-2.2 · PSP: sì · _piano pronto 2026-11-04 (sotto), manca: la sessione sulle due PSP e `tools/gen3_sav_check.py` (ENG-10.1, `wip/link-diagnostics`)_
 - [ ] **SOA-2.4** — Analisi dei log e decisioni scritte per i gate di SOA-4, SOA-6 e SOA-7 · S, 1 gg · dipende da: SOA-2.2, SOA-2.3 · PSP: no
