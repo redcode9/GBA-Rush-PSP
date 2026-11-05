@@ -886,6 +886,12 @@
   // MSG_BROWSER_ALL_GAMES
   "--- 所有游戏 ---",
 
+  // MSG_BROWSER_EMPTY_TITLE
+  "未找到游戏",
+
+  // MSG_BROWSER_EMPTY_HINT
+  "请将 .gba 或 .zip 文件复制到:",
+
   // MSG_MAIN_MENU_LINK
   "联机线",
 

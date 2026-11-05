@@ -1842,7 +1842,8 @@ static int is_listed_rom(const char *name)
    wildcards. Starts in default_dir_name (or the current directory) and
    chdir()s as the user navigates. On success copies the bare file name to
    result, leaves the current directory set to its folder and returns 0;
-   returns -1 if the user backs out. show_recent adds the recent ROMs list.
+   returns -1 if the user backs out. show_recent marks the ROM browser: it
+   adds the recent ROMs list and the card for a folder with no games.
    SELECT toggles between the list view and the carousel view. */
 s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 show_recent)
 {
@@ -1900,6 +1901,7 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
   u32 carousel_sel = 0;         /* Unified selection: dirs first, then files */
   u32 total_items = 0;          /* num_dirs + num_files */
   u32 browsing_savestates = 0;  /* 1 = wildcards are .svs, use savestate screenshots */
+  u32 library_empty;            /* ROM browser: no games and no subfolders here */
 
   auto void filelist_term(void);
   auto void malloc_error(void);
@@ -2066,6 +2068,11 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
 
     qsort((void *)file_list, num[FILE_LIST], sizeof(char *), sort_function);
     qsort((void *)dir_list,  num[DIR_LIST],  sizeof(char *), sort_function);
+
+    /* ".." is the only entry starting with a dot, and it sorts first. */
+    library_empty = show_recent && num[FILE_LIST] == 0 &&
+     (num[DIR_LIST] == 0 ||
+      (num[DIR_LIST] == 1 && strcmp(dir_list[0], "..") == 0));
 
 
     current_dir_length = strlen(current_dir_name);
@@ -2451,6 +2458,21 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
         {
           boxart_draw(SCREEN_IMAGE_POS_X+108, SCREEN_IMAGE_POS_Y+70, color_inactive_item);
         }
+      }
+
+      /* Empty ROM folder: say where the games go, at the top of the file
+         list (below the recent games) or above the carousel's covers. */
+      if (library_empty)
+      {
+        u32 card_y = FILE_LIST_POS_Y + (carousel_mode ? 0 : file_list_y_offset);
+
+        print_string_gbk(MSG[MSG_BROWSER_EMPTY_TITLE], FILE_LIST_POS_X, card_y,
+         color_active_item, BG_NO_FILL);
+        print_string_gbk(MSG[MSG_BROWSER_EMPTY_HINT], FILE_LIST_POS_X,
+         card_y + (FONTHEIGHT * 2), color_help_text, BG_NO_FILL);
+        print_string_clipped(current_dir_name, FILE_LIST_POS_X,
+         card_y + (FONTHEIGHT * 3), color_inactive_item, BG_NO_FILL,
+         SCROLL_FILE_MAX_CHARS);
       }
 
       __draw_volume_status(1);

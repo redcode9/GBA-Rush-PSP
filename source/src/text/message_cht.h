@@ -887,6 +887,12 @@
   // MSG_BROWSER_ALL_GAMES
   "--- 所有遊戲 ---",
 
+  // MSG_BROWSER_EMPTY_TITLE
+  "找不到遊戲",
+
+  // MSG_BROWSER_EMPTY_HINT
+  "請將 .gba 或 .zip 檔案複製到:",
+
   // MSG_MAIN_MENU_LINK
   "連線線纜",
 

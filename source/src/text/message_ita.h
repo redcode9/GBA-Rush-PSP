@@ -886,6 +886,12 @@
   // MSG_BROWSER_ALL_GAMES
   "--- Tutti i Giochi ---",
 
+  // MSG_BROWSER_EMPTY_TITLE
+  "Nessun gioco trovato",
+
+  // MSG_BROWSER_EMPTY_HINT
+  "Copia i file .gba o .zip in:",
+
   // MSG_MAIN_MENU_LINK
   "Cavo link",
 

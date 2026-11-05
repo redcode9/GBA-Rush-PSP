@@ -886,6 +886,12 @@
   // MSG_BROWSER_ALL_GAMES
   "--- All Games ---",
 
+  // MSG_BROWSER_EMPTY_TITLE
+  "No games found",
+
+  // MSG_BROWSER_EMPTY_HINT
+  "Copy .gba or .zip files to:",
+
   // MSG_MAIN_MENU_LINK
   "Link cable",
 
