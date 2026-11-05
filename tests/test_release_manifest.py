@@ -45,6 +45,11 @@ class ManifestTest(unittest.TestCase):
          + struct.pack("<HHIIIIIHHHHHH", 2, 8, 1, 0, 52, 0, 0, 52, 32, 1, 0, 0, 0)
          + struct.pack("<8I", 1, 0, 0x100, 0x100, 0x3000, 0x3000, 0, 4))
         self.manifest = self.root / "GBA-Rush-PSP-1.4.4.manifest.json"
+        # No docs/RAM-BUDGET.md numbers, whatever the tree holds.
+        patch = mock.patch.object(release_manifest.elf_info, "ram_budget",
+                                  return_value=None)
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def write(self, cflags=CFLAGS, version="1.4.4", profile="release"):
         return run("write", "--output", str(self.manifest), "--version", version,
@@ -76,10 +81,18 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(sorted(manifest["files"]), sorted(release_manifest.BUILT_FILES))
         self.assertEqual(manifest["files"]["exception.prx"]["size"], 9)
         self.assertEqual(manifest["elf_load_image_bytes"], 0x3000)
+        self.assertIsNone(manifest["estimated_heap_bytes"])
         text = self.manifest.read_text(encoding="utf-8")
         self.assertNotIn(PSPDEV, text)
         self.assertNotIn(str(self.root), text)
         self.assertNotIn(str(self.root).replace("\\", "\\\\"), text)
+
+    def test_records_the_startup_heap_the_image_leaves(self):
+        with mock.patch.object(release_manifest.elf_info, "ram_budget",
+                               return_value=(0x10000, 0x8000)):
+            self.assertEqual(self.write(), 0)
+        manifest = release_manifest.read_manifest(self.manifest)
+        self.assertEqual(manifest["estimated_heap_bytes"], 0x10000 - 0x3000)
 
     def test_records_the_diagnostic_profile_and_refuses_others(self):
         self.assertEqual(self.write(profile="diagnostic"), 0)

@@ -75,6 +75,8 @@ def read_manifest(path):
 
 def write(args):
     source = pathlib.Path(args.source_dir)
+    image = elf_info.load_image_size(source / "TempGBA.elf")
+    budget = elf_info.ram_budget()
     manifest = {
         "format": MANIFEST_FORMAT,
         "version": args.version,
@@ -91,7 +93,10 @@ def write(args):
         "cflags": portable_cflags(
          args.cflags, {"PSPSDK": args.pspsdk, "PSPDEV": args.pspdev}),
         "files": {name: file_entry(source / name) for name in BUILT_FILES},
-        "elf_load_image_bytes": elf_info.load_image_size(source / "TempGBA.elf"),
+        "elf_load_image_bytes": image,
+        # The PSP-1000 startup heap left by this image; null until
+        # docs/RAM-BUDGET.md gives the measured numbers.
+        "estimated_heap_bytes": None if budget is None else budget[0] - image,
     }
     with open(args.output, "w", encoding="utf-8", newline="\n") as stream:
         stream.write(json.dumps(manifest, indent=2) + "\n")
