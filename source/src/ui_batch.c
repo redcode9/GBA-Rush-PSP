@@ -25,8 +25,7 @@ static int ui_coord_ok(int v)
 
 /* Cuts [x0, x1) x [y0, y1) to the clip rectangle, moves a textured
    command's texels with the cut edges and queues it; 0 when nothing is
-   left. At 1:1 the texels move exactly; stretched, in proportion,
-   rounded down. */
+   left. */
 static int ui_batch_queue(UiBatch *batch, UiCommand *command, int x0, int y0,
  int x1, int y1)
 {
@@ -45,14 +44,11 @@ static int ui_batch_queue(UiBatch *batch, UiCommand *command, int x0, int y0,
 
   if(command->kind == UI_COMMAND_IMAGE || command->kind == UI_COMMAND_GLYPH)
   {
-    int du = command->u1 - command->u0;
-    int dv = command->v1 - command->v0;
-
-    /* cut * du stays below 2^16 * UI_TEXTURE_MAX_SIDE, inside an int. */
-    command->u0 = (uint16_t)(command->u0 + (cx0 - x0) * du / (x1 - x0));
-    command->u1 = (uint16_t)(command->u1 - (x1 - cx1) * du / (x1 - x0));
-    command->v0 = (uint16_t)(command->v0 + (cy0 - y0) * dv / (y1 - y0));
-    command->v1 = (uint16_t)(command->v1 - (y1 - cy1) * dv / (y1 - y0));
+    /* Drawn 1:1, so each texel edge moves as far as its screen edge. */
+    command->u0 = (uint16_t)(command->u0 + (cx0 - x0));
+    command->u1 = (uint16_t)(command->u1 - (x1 - cx1));
+    command->v0 = (uint16_t)(command->v0 + (cy0 - y0));
+    command->v1 = (uint16_t)(command->v1 - (y1 - cy1));
   }
 
   command->x0 = (int16_t)cx0;
@@ -76,11 +72,11 @@ static int ui_batch_solid(UiBatch *batch, UiCommandKind kind, int x0, int y0,
   return ui_batch_queue(batch, &command, x0, y0, x1, y1);
 }
 
-/* Queues texels [u0, u1) x [v0, v1) of slot texture, which must hold the
-   given format, onto [x0, x1) x [y0, y1). */
+/* Queues the w x h texels at (u, v) of slot texture, which must hold the
+   given format, 1:1 at (x, y). */
 static int ui_batch_textured(UiBatch *batch, UiCommandKind kind,
- UiTextureFormat format, int texture, int x0, int y0, int x1, int y1,
- int u0, int v0, int u1, int v1, uint32_t color)
+ UiTextureFormat format, int texture, int x, int y, int u, int v, int w,
+ int h, uint32_t color)
 {
   const UiTexture *registered;
   UiCommand command = { 0 };
@@ -88,18 +84,20 @@ static int ui_batch_textured(UiBatch *batch, UiCommandKind kind,
   if(texture < 0 || (uint32_t)texture >= batch->texture_count)
     return 0;
   registered = &batch->textures[texture];
-  if(registered->format != format || u0 < 0 || v0 < 0 || u0 >= u1 ||
-     v0 >= v1 || u1 > registered->width || v1 > registered->height)
+  /* An empty or negative size leaves an empty rectangle, which the queue
+     refuses. */
+  if(registered->format != format || u < 0 || v < 0 ||
+     u + w > registered->width || v + h > registered->height)
     return 0;
 
   command.kind = (uint8_t)kind;
   command.texture = (uint8_t)texture;
-  command.u0 = (uint16_t)u0;
-  command.v0 = (uint16_t)v0;
-  command.u1 = (uint16_t)u1;
-  command.v1 = (uint16_t)v1;
+  command.u0 = (uint16_t)u;
+  command.v0 = (uint16_t)v;
+  command.u1 = (uint16_t)(u + w);
+  command.v1 = (uint16_t)(v + h);
   command.color = color;
-  return ui_batch_queue(batch, &command, x0, y0, x1, y1);
+  return ui_batch_queue(batch, &command, x, y, x + w, y + h);
 }
 
 void ui_batch_init(UiBatch *batch, UiBatchFlush flush, void *context)
@@ -192,18 +190,18 @@ int ui_batch_box_line(UiBatch *batch, int x1, int y1, int x2, int y2,
   return queued;
 }
 
-int ui_batch_image(UiBatch *batch, int texture, int x0, int y0, int x1,
- int y1, int u0, int v0, int u1, int v1)
+int ui_batch_image(UiBatch *batch, int texture, int x, int y, int u, int v,
+ int w, int h)
 {
   return ui_batch_textured(batch, UI_COMMAND_IMAGE, UI_TEXTURE_5551, texture,
-   x0, y0, x1, y1, u0, v0, u1, v1, 0);
+   x, y, u, v, w, h, 0);
 }
 
 int ui_batch_glyph(UiBatch *batch, int texture, int x, int y, int u, int v,
  int w, int h, uint16_t color)
 {
   return ui_batch_textured(batch, UI_COMMAND_GLYPH, UI_TEXTURE_T4, texture,
-   x, y, x + w, y + h, u, v, u + w, v + h, color);
+   x, y, u, v, w, h, color);
 }
 
 void ui_batch_flush(UiBatch *batch)

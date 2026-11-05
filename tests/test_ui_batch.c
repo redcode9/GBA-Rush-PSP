@@ -30,7 +30,7 @@
 #define IMAGE_SIDE   16
 #define IMAGE_STRIDE 20
 /* The hash of compose_screen() in ui_raster. */
-#define COMPOSED_HASH 0xF6B8FC41u
+#define COMPOSED_HASH 0x35D6FB01u
 
 static UiBatch batch;
 static UiRaster raster;
@@ -133,33 +133,40 @@ static void test_clip_edges(void)
   assert(texture == 0);
 
   /* Left and top screen edges, from negative coordinates. */
-  assert(ui_batch_image(&batch, texture, -3, -4, 13, 12, 0, 0, 16, 16));
+  assert(ui_batch_image(&batch, texture, -3, -4, 0, 0, 16, 16));
   /* Right and bottom screen edges. */
-  assert(ui_batch_image(&batch, texture, 470, 262, 486, 278, 0, 0, 16, 16));
+  assert(ui_batch_image(&batch, texture, 470, 262, 0, 0, 16, 16));
   /* All four edges of a clip rectangle. */
   ui_batch_set_clip(&batch, 100, 50, 110, 60);
-  assert(ui_batch_image(&batch, texture, 95, 45, 111, 61, 0, 0, 16, 16));
-  /* Stretched twice: the texels move by half the cut. */
+  assert(ui_batch_image(&batch, texture, 95, 45, 0, 0, 16, 16));
+  /* A clip larger than the screen still cuts at the screen: 16 x 8
+     pieces cut on the top and right, then on the left and bottom. */
   ui_batch_set_clip(&batch, -50, -50, 1000, 1000);
-  assert(ui_batch_image(&batch, texture, -4, 200, 12, 216, 0, 0, 8, 8));
+  assert(ui_batch_image(&batch, texture, 470, -3, 0, 4, 16, 8));
+  assert(ui_batch_image(&batch, texture, -5, 266, 0, 8, 16, 8));
   assert(ui_batch_fill(&batch, -10, -10, 5, 5, RED));
+  assert(ui_batch_fill(&batch, 470, 262, 600, 300, RED));
   ui_batch_flush(&batch);
 
-  assert(flush_calls == 1 && logged_count == 5);
+  assert(flush_calls == 1 && logged_count == 7);
   check_rect(&logged[0], 0, 0, 13, 12);
   check_texels(&logged[0], 3, 4, 16, 16);
   check_rect(&logged[1], 470, 262, 480, 272);
   check_texels(&logged[1], 0, 0, 10, 10);
   check_rect(&logged[2], 100, 50, 110, 60);
   check_texels(&logged[2], 5, 5, 15, 15);
-  check_rect(&logged[3], 0, 200, 12, 216);
-  check_texels(&logged[3], 2, 0, 8, 8);
-  check_rect(&logged[4], 0, 0, 5, 5);
+  check_rect(&logged[3], 470, 0, 480, 5);
+  check_texels(&logged[3], 0, 7, 10, 12);
+  check_rect(&logged[4], 0, 266, 11, 272);
+  check_texels(&logged[4], 5, 8, 16, 14);
+  check_rect(&logged[5], 0, 0, 5, 5);
+  check_rect(&logged[6], 470, 262, 480, 272);
 
+  /* The images only, so each pixel shows the texel it was cut to. */
   registry = batch.textures[texture];
   start_raster(0);
   ui_batch_flush(&batch);
-  ui_raster_execute(&raster, logged, 4, &registry);
+  ui_raster_execute(&raster, logged, 5, &registry);
   assert(raster.pixels[0][0] == image_texel(3, 4));
   assert(raster.pixels[11][12] == image_texel(15, 15));
   assert(raster.pixels[271][479] == image_texel(9, 9));
@@ -167,11 +174,12 @@ static void test_clip_edges(void)
   assert(raster.pixels[59][109] == image_texel(14, 14));
   assert(raster.pixels[49][100] == 0 && raster.pixels[50][99] == 0);
   assert(raster.pixels[60][109] == 0 && raster.pixels[59][110] == 0);
-  /* Clipped or not, screen column x samples texel (x + 4) / 2. */
-  assert(raster.pixels[200][0] == image_texel(2, 0));
-  assert(raster.pixels[200][1] == image_texel(2, 0));
-  assert(raster.pixels[200][2] == image_texel(3, 0));
-  assert(raster.pixels[215][11] == image_texel(7, 7));
+  assert(raster.pixels[0][470] == image_texel(0, 7));
+  assert(raster.pixels[4][479] == image_texel(9, 11));
+  assert(raster.pixels[5][470] == 0);
+  assert(raster.pixels[266][0] == image_texel(5, 8));
+  assert(raster.pixels[271][10] == image_texel(15, 13));
+  assert(raster.pixels[265][0] == 0 && raster.pixels[266][11] == 0);
 }
 
 static void test_glyph_clip_and_coverage(void)
@@ -261,26 +269,36 @@ static void test_refusals(void)
   assert(ui_batch_add_texture(&batch, image, UI_TEXTURE_5551, IMAGE_SIDE,
    IMAGE_SIDE, IMAGE_STRIDE) == -1);
 
-  /* Unknown slots, the wrong format, texels outside the texture. */
-  assert(!ui_batch_image(&batch, -1, 0, 0, 16, 16, 0, 0, 16, 16));
-  assert(!ui_batch_image(&batch, UI_BATCH_TEXTURES, 0, 0, 16, 16, 0, 0, 16,
-   16));
+  /* Unknown slots, the wrong format, texels outside the texture, empty
+     sizes. */
+  assert(!ui_batch_image(&batch, -1, 0, 0, 0, 0, 16, 16));
+  assert(!ui_batch_image(&batch, UI_BATCH_TEXTURES, 0, 0, 0, 0, 16, 16));
   assert(!ui_batch_glyph(&batch, 0, 0, 0, 0, 0, 8, 8, RED));
-  assert(!ui_batch_image(&batch, 0, 0, 0, 17, 16, 0, 0, 17, 16));
-  assert(!ui_batch_image(&batch, 0, 0, 0, 16, 16, 4, 0, 4, 16));
+  assert(!ui_batch_image(&batch, 0, 0, 0, 0, 0, 17, 16));
+  assert(!ui_batch_image(&batch, 0, 0, 0, 0, 1, 16, 16));
+  assert(!ui_batch_image(&batch, 0, 0, 0, -1, 0, 4, 4));
+  assert(!ui_batch_image(&batch, 0, 0, 0, 0, -1, 4, 4));
+  assert(!ui_batch_image(&batch, 0, 0, 0, 4, 0, 0, 16));
+  assert(!ui_batch_image(&batch, 0, 0, 0, 4, 4, 4, -2));
 
   /* Clearing the registry first draws what still names its slots. */
-  assert(ui_batch_image(&batch, 0, 0, 0, 16, 16, 0, 0, 16, 16));
+  assert(ui_batch_image(&batch, 0, 0, 0, 0, 0, 16, 16));
   ui_batch_clear_textures(&batch);
   assert(flush_calls == 1 && logged_count == 1);
-  assert(!ui_batch_image(&batch, 0, 0, 0, 16, 16, 0, 0, 16, 16));
+  assert(!ui_batch_image(&batch, 0, 0, 0, 0, 0, 16, 16));
   assert(ui_batch_add_texture(&batch, image, UI_TEXTURE_5551, IMAGE_SIDE,
    IMAGE_SIDE, IMAGE_STRIDE) == 0);
   assert(ui_batch_add_texture(&batch, NULL, UI_TEXTURE_5551, 1, 1, 1) == -1);
   assert(ui_batch_add_texture(&batch, image, UI_TEXTURE_5551, 513, 1,
    513) == -1);
+  assert(ui_batch_add_texture(&batch, image, UI_TEXTURE_5551, 1, 513,
+   1) == -1);
   assert(ui_batch_add_texture(&batch, image, UI_TEXTURE_5551, 16, 16,
    15) == -1);
+  assert(ui_batch_add_texture(&batch, image, UI_TEXTURE_5551, 16, 16,
+   600) == -1);
+  assert(ui_batch_add_texture(&batch, image, (UiTextureFormat)2, 16, 16,
+   16) == -1);
 }
 
 /* draw_box_line, draw_hline and draw_vline take inclusive ends. */
@@ -329,13 +347,13 @@ static uint32_t compose_screen(void)
   page = ui_batch_add_texture(&batch, glyph_page, UI_TEXTURE_T4, 8, 8, 8);
 
   assert(ui_batch_fill(&batch, 0, 0, W, H, 0x8C63));
-  assert(ui_batch_image(&batch, texture, 20, 20, 52, 52, 0, 0, 16, 16));
+  assert(ui_batch_image(&batch, texture, 20, 20, 0, 0, 16, 16));
   assert(ui_batch_fill_alpha(&batch, 0, 0, W, H, 0x8F000000));
   assert(ui_batch_fill(&batch, 103, 63, 303, 163, 0x8421));
   assert(ui_batch_box_line(&batch, 99, 59, 300, 160, 0xFFE0) == 4);
   assert(ui_batch_fill(&batch, 100, 60, 300, 160, 0x9CE7));
   assert(ui_batch_hline(&batch, 101, 298, 61, 0xA94A));
-  assert(ui_batch_image(&batch, texture, 110, 70, 126, 86, 0, 0, 16, 16));
+  assert(ui_batch_image(&batch, texture, 110, 70, 0, 0, 16, 16));
   assert(ui_batch_glyph(&batch, page, 130, 70, 0, 0, 8, 8, 0xFFFF));
   ui_batch_flush(&batch);
   return ui_raster_hash(&raster);

@@ -28,13 +28,15 @@
  *   draw_box_line(x1, y1, x2, y2, c)  -> ui_batch_box_line(b, x1, y1, x2, y2, c)
  *   draw_hline(sx, ex, y, c)          -> ui_batch_hline(b, sx, ex, y, c)
  *   draw_vline(x, sy, ey, c)          -> ui_batch_vline(b, x, sy, ey, c)
- *   blit_to_screen(src, w, h, x, y)   -> ui_batch_image(b, t, x, y, x + w, y + h, 0, 0, w, h)
+ *   blit_to_screen(src, w, h, x, y)   -> ui_batch_image(b, t, x, y, 0, 0, w, h)
  *                                        with t from ui_batch_add_texture(b, src, ...)
  *
  * Commands are cut to the clip rectangle when they are queued, so a stored
  * command never reaches outside the screen and a fully hidden one is not
- * stored at all. Colours are RGBA5551 (red in the low bits), except for
- * ui_batch_fill_alpha, which takes the GU 8888 value 0xAABBGGRR.
+ * stored at all. Textures are drawn 1:1, one texel per pixel, so a cut
+ * moves the texels exactly with the edges. Colours are RGBA5551 (red in
+ * the low bits), except for ui_batch_fill_alpha, which takes the GU 8888
+ * value 0xAABBGGRR.
  */
 
 #ifndef UI_BATCH_H
@@ -78,8 +80,8 @@ typedef struct
   uint8_t kind;    /* UiCommandKind */
   uint8_t texture; /* IMAGE and GLYPH: the registry slot */
   int16_t x0, y0, x1, y1;
-  /* IMAGE and GLYPH: the texels [u0, u1) x [v0, v1) mapped onto the
-     rectangle. */
+  /* IMAGE and GLYPH: the texels [u0, u1) x [v0, v1), drawn 1:1 onto the
+     rectangle (u1 - u0 == x1 - x0, v1 - v0 == y1 - y0). */
   uint16_t u0, v0, u1, v1;
   uint32_t color;
 } UiCommand;
@@ -125,10 +127,10 @@ int ui_batch_vline(UiBatch *batch, int x, int sy, int ey, uint16_t color);
    not overlap; returns how many it queued. */
 int ui_batch_box_line(UiBatch *batch, int x1, int y1, int x2, int y2,
  uint16_t color);
-/* Texels [u0, u1) x [v0, v1) of a 5551 texture onto [x0, x1) x [y0, y1),
-   stretched when the sizes differ. */
-int ui_batch_image(UiBatch *batch, int texture, int x0, int y0, int x1,
- int y1, int u0, int v0, int u1, int v1);
+/* A w x h rectangle at texels (u, v) of a 5551 texture, drawn 1:1 at
+   (x, y). */
+int ui_batch_image(UiBatch *batch, int texture, int x, int y, int u, int v,
+ int w, int h);
 /* A w x h glyph at texels (u, v) of a T4 page, drawn 1:1 at (x, y). */
 int ui_batch_glyph(UiBatch *batch, int texture, int x, int y, int u, int v,
  int w, int h, uint16_t color);

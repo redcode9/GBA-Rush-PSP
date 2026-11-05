@@ -13,8 +13,8 @@
  * Reference rasterizer for ui_batch commands, host only. It follows what
  * the menu asks of the GE: replaced 5551 fills, lines and images, and
  * blending set up as init_video does it, sceGuBlendFunc(GU_ADD,
- * GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA). Textures are sampled nearest at
- * the pixel's centre. Dithering is not modelled.
+ * GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA). Textures are drawn 1:1, one texel
+ * per pixel. Dithering is not modelled.
  */
 
 #include "ui_raster.h"
@@ -48,15 +48,6 @@ static uint32_t ui_raster_rgb8(uint32_t color5551)
    ui_raster_expand((color5551 >> 10) & 0x1Fu) << 16;
 }
 
-/* The texel under the centre of pixel pos of [start, end), mapped onto
-   texels [t0, t1). */
-static uint32_t ui_raster_sample(int pos, int start, int end, uint32_t t0,
- uint32_t t1)
-{
-  return t0 + (uint32_t)((pos - start) * 2 + 1) * (t1 - t0) /
-   (uint32_t)((end - start) * 2);
-}
-
 static uint32_t ui_raster_texel(const UiTexture *texture, uint32_t u,
  uint32_t v)
 {
@@ -82,11 +73,11 @@ void ui_raster_execute(UiRaster *raster, const UiCommand *commands,
     for(y = c->y0; y < c->y1; y++)
     {
       uint16_t *row = raster->pixels[y];
-      uint32_t v = ui_raster_sample(y, c->y0, c->y1, c->v0, c->v1);
+      uint32_t v = c->v0 + (uint32_t)(y - c->y0);
 
       for(x = c->x0; x < c->x1; x++)
       {
-        uint32_t u = ui_raster_sample(x, c->x0, c->x1, c->u0, c->u1);
+        uint32_t u = c->u0 + (uint32_t)(x - c->x0);
 
         switch(c->kind)
         {
