@@ -134,6 +134,26 @@ static void test_odd_ratio_stays_inside_buffers(void)
   }
 }
 
+/* 5x4 -> 3x3 pins the box edges [x*src_w/dst_w, (x+1)*src_w/dst_w): columns
+   [0,1) [1,3) [3,5) and rows [0,1) [1,2) [2,4). Red ramps with x and green
+   with y, so red averages to 0, 6, 14 and green to 0, 4, 10. */
+static void test_uneven_boxes(void)
+{
+  static const uint32_t red[3] = { 0, 6, 14 };
+  static const uint32_t green[3] = { 0, 4, 10 };
+  uint16_t image[5 * 4];
+  uint16_t out[3 * 3];
+  uint32_t x, y;
+
+  for(y = 0; y < 4; y++)
+    for(x = 0; x < 5; x++)
+      image[y * 5 + x] = RGB5(4 * x, 4 * y, 7);
+  art_filter_box_shrink(image, 5, 4, 5, out, 3, 3, 3);
+  for(y = 0; y < 3; y++)
+    for(x = 0; x < 3; x++)
+      assert(out[y * 3 + x] == RGB5(red[x], green[y], 7));
+}
+
 /* Pixels past the width in either pitch are neither read nor written. */
 static void test_pitch_padding_untouched(void)
 {
@@ -181,6 +201,7 @@ int main(void)
   test_channels_never_carry();
   test_alpha_majority();
   test_odd_ratio_stays_inside_buffers();
+  test_uneven_boxes();
   test_pitch_padding_untouched();
   test_invalid_sizes_do_nothing();
   puts("Art filter tests passed");
