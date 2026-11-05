@@ -515,9 +515,10 @@ static void cpu_interrupt(void)
 
 /* Runs a timer up to cpu_ticks. A prescaled timer takes its count from its
    event's deadline, so it overflows exactly when the event is due; a
-   cascaded one counts the overflows of the timer before. On overflow it
-   raises the IRQ, ticks a cascaded next timer, clocks its Direct Sound
-   FIFOs and reloads. TMxCNT_L then reads back the current count. */
+   cascaded one counts the overflows of the timer before. Every overflow
+   due raises the IRQ, ticks a cascaded next timer and clocks its Direct
+   Sound FIFOs; the timer goes on from the reload value. TMxCNT_L then
+   reads back the current count. */
 #define UPDATE_TIMER(timer_number)                                            \
 {                                                                             \
   TimerType *tm = timer + timer_number;                                       \
@@ -528,7 +529,10 @@ static void cpu_interrupt(void)
                                                                               \
   if (tm->status != TIMER_INACTIVE)                                           \
   {                                                                           \
-    if (tm->count <= 0)                                                       \
+    int32_t left = tm->count;                                                 \
+    u32 overflows = gba_timer_catch_up(&left, tm->reload, tm->prescale);      \
+                                                                              \
+    if (overflows != 0)                                                       \
     {                                                                         \
       if (tm->irq == TIMER_TRIGGER_IRQ)                                       \
       {                                                                       \
@@ -538,18 +542,25 @@ static void cpu_interrupt(void)
       if (timer_number != 3)                                                  \
       {                                                                       \
         if (tm[1].status == TIMER_CASCADE)                                    \
-          tm[1].count--;                                                      \
+          tm[1].count -= (s32)overflows;                                      \
       }                                                                       \
                                                                               \
       u32 timer_reload = tm->reload << tm->prescale;                          \
                                                                               \
       if (timer_number < 2)                                                   \
       {                                                                       \
-        if ((tm->direct_sound_channels & 0x01) != 0)                          \
-          sound_timer(tm->frequency_step, 0);                                 \
+        /* ponytail: one FIFO step per overflow, so a timer far faster than \
+           its slices costs a call per overflow; batch them if one shows */ \
+        u32 step;                                                             \
                                                                               \
-        if ((tm->direct_sound_channels & 0x02) != 0)                          \
-          sound_timer(tm->frequency_step, 1);                                 \
+        for (step = 0; step < overflows; step++)                              \
+        {                                                                     \
+          if ((tm->direct_sound_channels & 0x01) != 0)                        \
+            sound_timer(tm->frequency_step, 0);                               \
+                                                                              \
+          if ((tm->direct_sound_channels & 0x02) != 0)                        \
+            sound_timer(tm->frequency_step, 1);                               \
+        }                                                                     \
                                                                               \
         if (tm->reload_update != 0)                                           \
         {                                                                     \
@@ -558,13 +569,14 @@ static void cpu_interrupt(void)
         }                                                                     \
       }                                                                       \
                                                                               \
-      tm->count += timer_reload;                                              \
+      tm->count = left;                                                       \
       if (tm->status == TIMER_PRESCALE)                                       \
-        event_queue_schedule(&main_events, event,                             \
-         main_events.deadline[event] + timer_reload, cpu_ticks);              \
+        event_queue_schedule(&main_events, event, cpu_ticks + (u32)left,      \
+         cpu_ticks);                                                          \
     }                                                                         \
                                                                               \
-    pIO_REG(REG_TM0D + (timer_number << 1)) = 0x10000 - (tm->count >> tm->prescale); \
+    pIO_REG(REG_TM0D + (timer_number << 1)) =                                 \
+     gba_timer_counter(left, tm->reload, tm->prescale);                       \
   }                                                                           \
 }                                                                             \
 
