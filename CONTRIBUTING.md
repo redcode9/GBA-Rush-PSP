@@ -112,7 +112,10 @@ built-in BIOS: `open_bios.h` holds its image, and `source/bios/` (kept byte for
 byte, see its README) its source. Modules with a host
 test, such as the `*_model`, `*_policy`, `*_math` and `*_store` files,
 `gba_sio.c`, `link_cable.c` and `link_net.c`, avoid PSP headers; keep new logic
-in that shape when it can be tested off the console.
+in that shape when it can be tested off the console. `make check` fails when
+a `source/src/*.c` that includes neither `common.h` nor a PSP header has no
+`tests/test_<module>.c` registered as the Makefile header explains;
+`scripts/check-module-tests.sh` lists the few exceptions and why.
 
 ## Testing changes
 
