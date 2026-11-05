@@ -42,7 +42,7 @@ SEED = 0x47425253
 
 # The fill guard of cases_bios.c holds one bit per vector of a case.
 MAX_VECTORS = 32
-# The ticket's limit for the generated header.
+# The generated header must stay under 64 KiB.
 MAX_HEADER = 64 * 1024
 
 
