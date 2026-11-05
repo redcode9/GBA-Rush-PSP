@@ -4,7 +4,8 @@ set -eu
 
 # make tree-check, part of make check: whitespace errors, the source-level
 # guard scripts, the syntax of every script (check-scripts.sh), no forbidden
-# word (check-names.py), the CBMC gate's inputs (CBMC itself runs only in
+# word (check-names.py), a host test for every pure module
+# (check-module-tests.sh), the CBMC gate's inputs (CBMC itself runs only in
 # make check-cbmc), maintained docs, and no ROMs, saves or build output in
 # Git.
 
@@ -30,6 +31,7 @@ do
 done
 sh scripts/check-scripts.sh
 "${PYTHON:-python3}" scripts/check-names.py
+sh scripts/check-module-tests.sh
 if ! grep -q -- '--unwinding-assertions' scripts/check-cbmc.sh; then
   echo "CBMC gate must check complete unwinding" >&2
   exit 1
