@@ -1,4 +1,5 @@
-# Build rules shared by the GBA test ROMs (tests/core-rom, tests/save-rom).
+# Build rules shared by the GBA test ROMs (tests/core-rom, tests/save-rom,
+# tests/raster-rom).
 # A ROM's Makefile sets
 #   TARGETS         the ROMs to build, each to $(OUT)/<target>.gba
 #   SOURCES         its own .c and .s files, compiled once per target
