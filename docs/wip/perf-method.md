@@ -15,10 +15,10 @@
 
 ## 1.6
 
-- [ ] **PRF-1.1** — compare-benchmarks: verdetto esatto su N≥3 run per braccio · S, 1 gg · dipende da: — · PSP: no · **subito**
+- [x] **PRF-1.1** — compare-benchmarks: verdetto esatto su N≥3 run per braccio · S, 1 gg · dipende da: — · PSP: no · **subito**
 - [ ] **PRF-1.2** — Gate sugli estremi: p99, massimo robusto, work p95, frame oltre 1,5× budget al minuto · S, 1 gg · dipende da: PRF-1.1, PRF-2.1, ENG-1.6 · PSP: no · aspetta: ENG-1.6 (`wip/release-and-ci`)
 - [ ] **PRF-1.3** — Ordine alternato verificato, ora di cattura e affermazione dichiarata prima · S, 1 gg · dipende da: PRF-1.1, PRF-2.1, ENG-1.6 · PSP: no · aspetta: ENG-1.6 (`wip/release-and-ci`)
-- [ ] **PRF-1.4** — Archivio delle baseline e tabella per modello generata · M, 2 gg · dipende da: PRF-1.1 · PSP: no
+- [x] **PRF-1.4** — Archivio delle baseline e tabella per modello generata · M, 2 gg · dipende da: PRF-1.1 · PSP: no
 - [ ] **PRF-1.5** — Sessione hardware: baseline 1.6 per PSP-1000 e uno slim · M, 2,5 gg · dipende da: PRF-1.3, PRF-1.4, PRF-2.2, PRF-2.3, PRF-3.1, PRF-4.1, CMP-1.4, ENG-1.6 · PSP: sì · aspetta: PRF-4.1 (`wip/platform`), CMP-1.4 (`wip/open-bios`), ENG-1.6 (`wip/release-and-ci`)
 - [ ] **PRF-1.6** — Controllo delle prestazioni nel gate di release · S, 1 gg · dipende da: PRF-1.4, F-139, F-118 · PSP: no
 - [ ] **PRF-2.2** — Timer di fase su frame campionati: update_gba, update_scanline, PSG audio · M, 2,5 gg · dipende da: PRF-2.1, ENG-1.6 · PSP: no · aspetta: ENG-1.6 (`wip/release-and-ci`)
