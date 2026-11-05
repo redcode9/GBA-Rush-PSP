@@ -307,6 +307,70 @@ static void test_hold_never_with_a_or_b(void)
    500 * MS, KEY_SELECT, &hide) == BIT(INPUT_CHORD_MENU));
 }
 
+/* Reads pad every 1 ms from from_us to before to_us and returns how many
+   reads opened the menu; *fired_us gets the time of the last one. */
+static uint32_t menu_fires(InputChordState *state, uint32_t *prev_pad,
+ uint32_t pad, uint32_t from_us, uint32_t to_us, uint32_t *fired_us)
+{
+  uint32_t fires = 0;
+  uint32_t hide;
+  uint32_t t;
+
+  for(t = from_us; t < to_us; t += MS)
+  {
+    if(input_chord_eval(state, pad, *prev_pad, t, KEY_A_B, &hide) &
+     BIT(INPUT_CHORD_MENU))
+    {
+      fires++;
+      *fired_us = t;
+    }
+    *prev_pad = pad;
+  }
+  return fires;
+}
+
+/* A+B+START+SELECT is the soft reset of many games: in whatever order the
+   keys arrive, it never opens the menu, and once A and B are both let go
+   the hold needs a full 500 ms of its own. */
+static void test_soft_reset_keys_never_open_menu(void)
+{
+  static const uint32_t first_keys[] = { MENU_KEYS, KEY_A_B };
+  static const uint32_t first_released[] = { KEY_CIRCLE, KEY_CROSS };
+  InputChordState state;
+  uint32_t prev_pad = 0;
+  uint32_t fired_us = 0;
+  uint32_t f;
+  uint32_t r;
+
+  /* START+SELECT alone: one menu, at 500 ms, for a 2 s hold. */
+  input_chord_init(&state, input_chord_defaults, INPUT_CHORD_DEFAULT_COUNT);
+  assert(menu_fires(&state, &prev_pad, MENU_KEYS, 0, 2000 * MS, &fired_us)
+   == 1);
+  assert(fired_us == 500 * MS);
+
+  for(f = 0; f < 2; f++)
+  {
+    for(r = 0; r < 2; r++)
+    {
+      uint32_t still_held = KEY_A_B & ~first_released[r];
+
+      input_chord_init(&state, input_chord_defaults,
+       INPUT_CHORD_DEFAULT_COUNT);
+      prev_pad = 0;
+      assert(menu_fires(&state, &prev_pad, first_keys[f], 0, 100 * MS,
+       &fired_us) == 0);
+      assert(menu_fires(&state, &prev_pad, MENU_KEYS | KEY_A_B, 100 * MS,
+       2100 * MS, &fired_us) == 0);
+      /* One of A and B let go: the other still blocks the hold. */
+      assert(menu_fires(&state, &prev_pad, MENU_KEYS | still_held,
+       2100 * MS, 3000 * MS, &fired_us) == 0);
+      assert(menu_fires(&state, &prev_pad, MENU_KEYS, 3000 * MS, 5000 * MS,
+       &fired_us) == 1);
+      assert(fired_us == 3500 * MS);
+    }
+  }
+}
+
 static void test_hold_rearms_after_release(void)
 {
   InputChordState state;
@@ -375,6 +439,7 @@ int main(void)
   test_defaults();
   test_hold_counts_time_not_calls();
   test_hold_never_with_a_or_b();
+  test_soft_reset_keys_never_open_menu();
   test_hold_rearms_after_release();
   test_all_pad_states();
   puts("Input chord tests passed");

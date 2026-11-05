@@ -496,6 +496,7 @@ u32 update_input(void)
     return 1;
   }
 
+  // No hold ever closes the game: the menu hold only opens the menu
   if ((shortcut_actions & (1u << INPUT_CHORD_MENU)) != 0)
     return menu();
 
