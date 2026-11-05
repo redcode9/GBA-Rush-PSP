@@ -4,8 +4,8 @@
  * DMA3, programmed through its registers, carries them to region 0xD
  * (write_eeprom) and back (read_eeprom). memory.c is built as for
  * test_memory_backup (see the Makefile target): the cartridge is an
- * EEPROM-tagged ROM with no .sav yet, and the .sav is flushed into
- * tests/fake_store_io.c.
+ * EEPROM-tagged ROM, its .sav lives in tests/fake_store_io.c and each
+ * case flushes it there.
  *
  * Regression it guards: an 8 KiB chip whose game wrote before it ever read
  * stayed at 512 B, so the 81-unit write took a 6-bit block number, landed
@@ -32,17 +32,21 @@ void host_stub_yesno(const unsigned *answers, int count);
 #define BITS_OUT 0x02000000u /* the bits a DMA sends to the chip */
 #define BITS_IN  0x02001000u /* the bits a read brings back */
 #define EEPROM   0x0D000000u
+#define SEED     0x5A
 
 static FakeStore store;
 static SaveStoreIo io;
 
 static const u8 data[8] = { 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0 };
 
-/* Loads an EEPROM-tagged ROM with no .sav (a 512 B chip until a request
-   says otherwise), then resets memory and DMA3 as a GBA reset does. */
-static void insert_cartridge(void)
+/* Loads an EEPROM-tagged ROM over a sav_size-byte .sav seeded with SEED
+   (none if 0); either way a 512 B chip until a request says otherwise.
+   Then resets memory and DMA3 as a GBA reset does. */
+static void insert_cartridge(u32 sav_size)
 {
   fake_store_init(&store, &io, "game.sav");
+  if(sav_size != 0)
+    fake_store_seed(&store, sav_size, SEED);
   backup_io = &io;
   memset(gamepak_rom, 0, ROM_SIZE);
   memcpy(gamepak_rom + 0x4000, "EEPROM_V124", 11);
@@ -114,7 +118,7 @@ static void test_512_write_then_read(void)
 {
   u8 got[8];
 
-  insert_cartridge();
+  insert_cartridge(0);
   eeprom_write(0x2A, 6);
   eeprom_read(0x2A, 6, 9, got);
   assert(memcmp(got, data, 8) == 0);
@@ -128,24 +132,26 @@ static void test_8k_write_before_read(void)
 {
   u8 got[8];
 
-  insert_cartridge();
+  insert_cartridge(0);
   eeprom_write(0x2AB, 14);
   eeprom_read(0x2AB, 14, 17, got);
   assert(memcmp(got, data, 8) == 0);
   assert_saved(8 * KIB, 0x2AB);
 }
 
-/* (c) 8 KiB chip read first: the 17-unit read of the blank block 0x155
-   returns ones, then an 81-unit write and a read back. */
+/* (c) 8 KiB chip read first, over a 4 KiB .sav (which loads as 512 B):
+   the 17-unit read of block 0x155 returns that block's bytes, not those
+   of the 6-bit block its first bits would name at 512 B. Then an 81-unit
+   write and a read back. */
 static void test_8k_read_then_write(void)
 {
-  static const u8 blank[8] =
-   { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
   u8 got[8];
+  int i;
 
-  insert_cartridge();
+  insert_cartridge(4 * KIB);
   eeprom_read(0x155, 14, 17, got);
-  assert(memcmp(got, blank, 8) == 0);
+  for(i = 0; i < 8; i++)
+    assert(got[i] == fake_store_pattern(0x155 * 8 + i, SEED));
   eeprom_write(0x155, 14);
   eeprom_read(0x155, 14, 17, got);
   assert(memcmp(got, data, 8) == 0);
@@ -161,7 +167,7 @@ static void test_49_units_do_not_promote(void)
 {
   u8 got[8];
 
-  insert_cartridge();
+  insert_cartridge(0);
   eeprom_write(0x15, 6);
   eeprom_read(0x15, 6, 49, got);
   assert(memcmp(got, data, 8) == 0);
