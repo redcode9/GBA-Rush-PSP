@@ -1901,7 +1901,7 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
   u32 carousel_sel = 0;         /* Unified selection: dirs first, then files */
   u32 total_items = 0;          /* num_dirs + num_files */
   u32 browsing_savestates = 0;  /* 1 = wildcards are .svs, use savestate screenshots */
-  u32 library_empty;            /* ROM browser: no games and no subfolders here */
+  u32 library_empty;            /* ROM browser: no games listed here */
 
   auto void filelist_term(void);
   auto void malloc_error(void);
@@ -2069,10 +2069,9 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
     qsort((void *)file_list, num[FILE_LIST], sizeof(char *), sort_function);
     qsort((void *)dir_list,  num[DIR_LIST],  sizeof(char *), sort_function);
 
-    /* ".." is the only entry starting with a dot, and it sorts first. */
-    library_empty = show_recent && num[FILE_LIST] == 0 &&
-     (num[DIR_LIST] == 0 ||
-      (num[DIR_LIST] == 1 && strcmp(dir_list[0], "..") == 0));
+    /* Subfolders do not hide the card: the default ROM folder is the
+       install folder, which always holds the emulator's own logs/. */
+    library_empty = show_recent && num[FILE_LIST] == 0;
 
 
     current_dir_length = strlen(current_dir_name);

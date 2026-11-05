@@ -109,8 +109,15 @@ class BrowserTextTests(unittest.TestCase):
         source += function("source/src/gui.c", "static int is_listed_rom(const char *name)")
         source += FILTER_SCENARIOS
         self.build_and_run(source)
-        # load_file() cannot be built on the host: its listing loop must call the filter.
-        self.assertIn("is_listed_rom(current_file.d_name)",
+        # load_file() cannot be built on the host: its file branch must call the filter.
+        self.assertIn("if ((ext_pos = strrchr(current_file.d_name, '.')) != NULL &&\n"
+                      "         is_listed_rom(current_file.d_name))",
+                      (ROOT / "source/src/gui.c").read_text())
+
+    def test_empty_library_card_condition(self):
+        # Only the ROM browser shows the card, whenever it lists no games:
+        # subfolders such as the install folder's own logs/ do not hide it.
+        self.assertIn("library_empty = show_recent && num[FILE_LIST] == 0;",
                       (ROOT / "source/src/gui.c").read_text())
 
 
