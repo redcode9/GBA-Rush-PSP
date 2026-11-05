@@ -317,7 +317,15 @@ static void sample_end(void)
    read is woken (VIDEO_ME_SLEEP). */
 static void wake_if_sleeping(void)
 {
-  if((switches & VIDEO_ME_SLEEP) && mailbox->reader.sleeping)
+  if(!(switches & VIDEO_ME_SLEEP))
+    return;
+  /* Pairs with sleep_for_words on the Media Engine, which sets sleeping,
+     syncs, then reads write. publish() just stored write: without this
+     sync it may still sit in the write buffer when sleeping is read, so
+     the Media Engine finds no new words and halts while this side reads
+     sleeping as 0 and does not wake it. */
+  __asm__ volatile("sync" ::: "memory");
+  if(mailbox->reader.sleeping)
   {
     media_engine_wake();
     counters.wakes++;
