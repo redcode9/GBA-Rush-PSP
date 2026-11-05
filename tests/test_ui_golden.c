@@ -171,7 +171,8 @@ static void queue_text(FontPrint print, const char *str, s16 x, u16 y,
 
   /* Centred as psp_video.c does it. */
   if(x < 0) x = (PSP_SCREEN_WIDTH - (strlen(str) * FONTWIDTH)) >> 1;
-  if(x >= PSP_SCREEN_WIDTH)
+  /* The fonts take x as u16: a text wider than the screen draws nothing. */
+  if((u16)x >= PSP_SCREEN_WIDTH)
     return;
   for(c = str; *c != '\0'; c++)
     if(*c == '\n')
