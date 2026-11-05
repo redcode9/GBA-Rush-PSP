@@ -1,4 +1,4 @@
-"""Check production filename clipping and scrolling with host draw stubs."""
+"""Check production filename clipping, scrolling and the ROM filter on the host."""
 
 import os
 from pathlib import Path
@@ -62,8 +62,38 @@ int main(void) {
 }
 '''
 
+# The browser never lists gba_bios.bin, in any case; other .bin files and
+# names that only contain "gba_bios" stay.
+FILTER_SCENARIOS = r'''
+int main(void) {
+  assert(!is_listed_rom("gba_bios.bin"));
+  assert(!is_listed_rom("GBA_BIOS.BIN"));
+  assert(!is_listed_rom("Gba_Bios.Bin"));
+  assert(is_listed_rom("game.bin"));
+  assert(is_listed_rom("bios.bin"));
+  assert(is_listed_rom("gba_bios.gba"));
+  assert(is_listed_rom("my_gba_bios.bin"));
+  puts("browser ROM filter passed");
+  return 0;
+}
+'''
+
 
 class BrowserTextTests(unittest.TestCase):
+    def build_and_run(self, source, *sources):
+        with tempfile.TemporaryDirectory(prefix="gbarush-browser-") as directory:
+            path = Path(directory)
+            (path / "browser.c").write_text(source)
+            command = shlex.split(os.environ.get("HOST_CC", "cc"))
+            result = subprocess.run(command + ["-std=c99", "-Wall", "-Wextra", "-Werror",
+                                               "-I", str(ROOT / "source/src"),
+                                               str(path / "browser.c"),
+                                               *[str(ROOT / extra) for extra in sources],
+                                               "-o", str(path / "browser")],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            subprocess.run([str(path / "browser")], check=True)
+
     def test_production_browser_paths(self):
         # The real gui.c functions, compiled between the stubs and scenarios.
         source = STUBS
@@ -72,18 +102,16 @@ class BrowserTextTests(unittest.TestCase):
         source += function("source/src/gui.c",
                            "static void print_string_scroll(const char *str, u32 x, u32 y, u16 color, u16 bg, u32 max_chars, s32 scroll_offset)")
         source += SCENARIOS
-        with tempfile.TemporaryDirectory(prefix="gbarush-browser-") as directory:
-            path = Path(directory)
-            (path / "browser.c").write_text(source)
-            command = shlex.split(os.environ.get("HOST_CC", "cc"))
-            result = subprocess.run(command + ["-std=c99", "-Wall", "-Wextra", "-Werror",
-                                               "-I", str(ROOT / "source/src"),
-                                               str(path / "browser.c"),
-                                               str(ROOT / "source/src/menu_layout.c"),
-                                               "-o", str(path / "browser")],
-                                    capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            subprocess.run([str(path / "browser")], check=True)
+        self.build_and_run(source, "source/src/menu_layout.c")
+
+    def test_bios_file_is_not_listed(self):
+        source = "#include <assert.h>\n#include <stdio.h>\n#include <string.h>\n#include <strings.h>\n"
+        source += function("source/src/gui.c", "static int is_listed_rom(const char *name)")
+        source += FILTER_SCENARIOS
+        self.build_and_run(source)
+        # load_file() cannot be built on the host: its listing loop must call the filter.
+        self.assertIn("is_listed_rom(current_file.d_name)",
+                      (ROOT / "source/src/gui.c").read_text())
 
 
 if __name__ == "__main__":

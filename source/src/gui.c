@@ -1831,6 +1831,13 @@ static int sort_function(const void *dest_str_ptr, const void *src_str_ptr)
   return strcmp(dest_str, src_str);
 }
 
+/* gba_bios.bin often sits next to the games but is never one, so the
+   browser leaves it out whatever its case. */
+static int is_listed_rom(const char *name)
+{
+  return strcasecmp(name, "gba_bios.bin") != 0;
+}
+
 /* Modal file browser for files ending in one of the NULL-terminated
    wildcards. Starts in default_dir_name (or the current directory) and
    chdir()s as the user navigates. On success copies the bare file name to
@@ -2016,7 +2023,8 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
       }
       else
       {
-        if ((ext_pos = strrchr(current_file.d_name, '.')) != NULL)
+        if ((ext_pos = strrchr(current_file.d_name, '.')) != NULL &&
+         is_listed_rom(current_file.d_name))
         {
           for (i = 0; wildcards[i] != NULL; i++)
           {
