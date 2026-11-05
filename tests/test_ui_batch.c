@@ -236,6 +236,9 @@ static void test_alpha(void)
   assert(ui_batch_fill_alpha(&batch, 1, 0, 2, 1, 0xFF0000FF));
   assert(ui_batch_fill_alpha(&batch, 2, 0, 3, 1, 0x80000000));
   assert(ui_batch_fill_alpha(&batch, 3, 0, 4, 1, 0xFF7F7F7F));
+  /* The blend keeps the destination's alpha bit, here clear. */
+  assert(ui_batch_fill(&batch, 4, 0, 5, 1, 0x7FFF));
+  assert(ui_batch_fill_alpha(&batch, 4, 0, 5, 1, 0x80000000));
   ui_batch_flush(&batch);
 
   assert(raster.pixels[0][0] == WHITE);
@@ -243,6 +246,7 @@ static void test_alpha(void)
   /* 255 * 127 / 255 == 127, 15 in five bits. */
   assert(raster.pixels[0][2] == 0xBDEF);
   assert(raster.pixels[0][3] == 0xBDEF);
+  assert(raster.pixels[0][4] == 0x3DEF);
 }
 
 static void test_refusals(void)
