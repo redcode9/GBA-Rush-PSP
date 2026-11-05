@@ -219,6 +219,15 @@ static void exception_returned(ArmCore *core, uint32_t from, uint32_t left)
     bios_read_protect = left == ARM_MODE_IRQ ? 0xe55ec002 : 0xe3a02004;
 }
 
+/* Entering an IRQ: the official BIOS's handler jumps to the game's from
+   0x134, so protected BIOS reads give 0xE25EF004, the word at 0x13C, while
+   the game's handler runs (GBATEK). Set with either BIOS, as above. */
+static void irq_entered(ArmCore *core)
+{
+  (void)core;
+  bios_read_protect = 0xe25ef004;
+}
+
 /* Where register r (8-14, or 16 for the SPSR) of a mode not running is,
    or NULL when that mode is the one running (its registers are in v[]). */
 static u32 *banked(ArmCore *core, unsigned mode, unsigned r)
@@ -242,6 +251,7 @@ static void load_registers(void)
   core->hook = cheat_hook;
   core->hooked = run_cheat_hook;
   core->returned = exception_returned;
+  core->interrupted = irq_entered;
   map_memory(core);
   arm_core_set_waitcnt(core, pIO_REG(REG_WAITCNT));
   arm_core_set_cpsr(core, reg[REG_CPSR]);

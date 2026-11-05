@@ -138,6 +138,14 @@ static void record_return(ArmCore *c, uint32_t from, uint32_t left)
   returned_left = left;
 }
 
+static unsigned irq_entries;
+
+static void count_irq(ArmCore *c)
+{
+  (void)c;
+  irq_entries++;
+}
+
 static void test_program(void)
 {
   reset(0x08000000, ARM_MODE_SYSTEM);
@@ -231,13 +239,17 @@ static void test_timing(void)
 static void test_interrupt(void)
 {
   reset(0x08000024, ARM_MODE_SYSTEM | ARM_CPSR_T | ARM_CPSR_Z);
+  core.interrupted = count_irq;
   CHECK(arm_core_irq(&core) > 0);
+  CHECK(irq_entries == 1);
   CHECK(core.v[15] == 0x18);
   CHECK((arm_core_cpsr(&core) & 0xFF) == (ARM_MODE_IRQ | ARM_CPSR_I));
   CHECK(core.v[14] == 0x08000028);
   CHECK(core.spsr == (ARM_MODE_SYSTEM | ARM_CPSR_T | ARM_CPSR_Z));
   /* Masked: nothing happens. */
   CHECK(arm_core_irq(&core) == 0);
+  CHECK(irq_entries == 1);
+  core.interrupted = NULL;
   /* The BIOS's subs pc, lr, #4 at 18h returns from IRQ mode. */
   core.returned = record_return;
   arm_core_step(&core);

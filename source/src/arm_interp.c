@@ -269,6 +269,8 @@ int arm_core_irq(ArmCore *core)
      returns with subs pc, lr, #4 in either state. */
   exception(core, ARM_MODE_IRQ, 0x18, core->v[15] + 4);
   prefetch_flush(core);
+  if(core->interrupted)
+    core->interrupted(core);
   return (int)refill(core);
 }
 

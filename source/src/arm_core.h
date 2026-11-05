@@ -155,6 +155,9 @@ typedef struct ArmCore
      address of the instruction that made it and the mode it left; r15
      holds where it went. NULL if none. */
   void (*returned)(struct ArmCore *core, uint32_t from, uint32_t left);
+  /* Told after the core enters the IRQ exception; r15 holds the vector.
+     NULL if none. */
+  void (*interrupted)(struct ArmCore *core);
 
   uint32_t block_count;
   uint32_t op_count;
