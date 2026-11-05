@@ -19,12 +19,12 @@ matters to us, whether we take its code, why, and where it landed.
 - Decisions: **port** (we take upstream's code, when the ticket named in the
   reason runs), **skip** (we do not take it; the reason says what we do
   instead), **already ported** (it is in our tree at the commit shown).
-- Review: update a clone of libretro/gpsp, then run
-  `sh scripts/upstream-review.sh <clone>`. It lists the upstream commits after
-  the last reviewed one that touch `cpu*`, `gba_memory.c`, `video.cc`,
-  `sound.c`, `serial*.c`, `rfu.c`, `bios/`, `gba_over.h` and `tests/`, then
-  prints `Reviewed up to <commit>`. Give each listed commit a row, then move
-  the two lines above to that commit and today's date.
+- Review, once a month (`CONTRIBUTING.md`): update a clone of libretro/gpsp,
+  then run `sh scripts/upstream-review.sh <clone>`. It lists the upstream
+  commits after the last reviewed one that touch `cpu*`, `gba_memory.c`,
+  `video.cc`, `sound.c`, `serial*.c`, `rfu.c`, `bios/`, `gba_over.h` and
+  `tests/`, then prints `Reviewed up to <commit>`. Give each listed commit a
+  row, then move the two lines above to that commit and today's date.
 
 ## Register
 

@@ -117,6 +117,16 @@ a `source/src/*.c` that includes neither `common.h` nor a PSP header has no
 `tests/test_<module>.c` registered as the Makefile header explains;
 `scripts/check-module-tests.sh` lists the few exceptions and why.
 
+## Upstream
+
+[libretro/gpsp](https://github.com/libretro/gpsp) still develops the gpSP core
+this tree descends from. Give one day a month to its review: update a clone of
+it, run `sh scripts/upstream-review.sh <clone>`, record a decision for each
+commit it lists in the [upstream register](docs/UPSTREAM.md), then set the
+register's last reviewed commit to the one the script reached and its last
+review to that day's date. `sh scripts/upstream-review.sh --check-age` warns
+when the last review is more than 45 days old.
+
 ## Testing changes
 
 Add a focused regression for a reproduced bug where practical. `make check`
