@@ -6,8 +6,9 @@
 #   make package VERSION=x.y.z   build, check and zip a release
 #   make release-gate VERSION=x.y.z CHANNEL=stable|prerelease
 #                         check a packaged release and write its notes
-#   make prove-regression REF=<tag> TEST=<name>   show that a test fails on
-#                         an older tag that has the bug it guards against
+#   make prove-regression REF=<tag> TEST=<name>   show that a C test fails,
+#                         plain or under ASan and UBSan, on an older tag that
+#                         has the bug it guards against
 # psp-build, package and artifact-smoke take PROFILE=release (the default)
 # or PROFILE=diagnostic (source/Makefile).
 # Each test builds the module it covers straight from source/src, so most
@@ -704,7 +705,7 @@ release-gate:
 prove-regression:
 	@test -n "$(REF)" && test -n "$(TEST)" || \
 	 (echo "Set REF and TEST, for example REF=1.4.2 TEST=test_link_net" >&2; exit 1)
-	MAKE='$(MAKE)' PYTHON='$(PYTHON)' sh scripts/prove-regression.sh "$(REF)" "$(TEST)"
+	MAKE='$(MAKE)' sh scripts/prove-regression.sh "$(REF)" "$(TEST)"
 
 clean:
 	$(MAKE) -C source clean

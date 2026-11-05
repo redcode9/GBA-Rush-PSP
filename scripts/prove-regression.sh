@@ -6,14 +6,15 @@ set -eu
 # (make prove-regression REF=<tag> TEST=<name>). REF, an older tag or commit
 # that has the bug, is checked out in build/prove/REF; the tests/ folder and
 # the top-level Makefile of this checkout replace REF's own, while REF's
-# source/ stays. TEST is then built and run there: a C test by its name
-# (test_link_net builds build/host/test_link_net with HOST_CC) or a Python
-# test by its file name (test_startup.py). The last line is the outcome:
-#   FAIL-AS-EXPECTED  exit 0: the test fails on REF, or a sanitizer reports
-#                     an error there, so it catches the bug
-#   PASSES-ON-REF     exit 1: the test passes on REF, so it does not
+# source/ stays. TEST names a C test of the Makefile (test_link_net): its
+# build/host/TEST and its ASan and UBSan build, build/sanitize/TEST, are
+# built and run there. The last line is the outcome:
+#   FAIL-AS-EXPECTED  exit 0: a run fails on REF, or a sanitizer reports an
+#                     error there, so the test catches the bug
+#   PASSES-ON-REF     exit 1: both runs pass on REF, so it does not
 #   NOT-APPLICABLE    exit 2: the test does not build on REF
-# Any other error exits with 3. The worktree is removed in every case.
+# Any other error exits with 3, a sanitizer build that fails where the plain
+# build works included. The worktree is removed in every case.
 
 if [ "$#" -ne 2 ]; then
   echo "Usage: $0 REF TEST" >&2
@@ -38,12 +39,8 @@ esac
 
 cd "$(dirname "$0")/.."
 
-case "$name" in
-  *.py) test_source=tests/$name ;;
-  *) test_source=tests/$name.c ;;
-esac
-if [ ! -f "$test_source" ]; then
-  echo "No such test: $test_source" >&2
+if [ ! -f "tests/$name.c" ]; then
+  echo "No such C test: tests/$name.c" >&2
   exit 3
 fi
 
@@ -75,21 +72,21 @@ rm -rf "$worktree/tests"
 cp -R tests "$worktree/tests"
 cp Makefile "$worktree/Makefile"
 
+if ! ${MAKE:-make} -C "$worktree" "build/host/$name"; then
+  echo "NOT-APPLICABLE: $name does not build on $ref ($commit)"
+  result=2
+  exit
+fi
+if ! ${MAKE:-make} -C "$worktree" "build/sanitize/$name"; then
+  echo "build/sanitize/$name does not build where build/host/$name does" >&2
+  exit
+fi
+
 status=0
-case "$name" in
-  *.py)
-    (cd "$worktree" && ${PYTHON:-python3} -m unittest "tests/$name") \
-     >"$log" 2>&1 || status=$?
-    ;;
-  *)
-    if ! ${MAKE:-make} -C "$worktree" "build/host/$name"; then
-      echo "NOT-APPLICABLE: $name does not build on $ref ($commit)"
-      result=2
-      exit
-    fi
-    (cd "$worktree" && "./build/host/$name") >"$log" 2>&1 || status=$?
-    ;;
-esac
+for binary in "build/host/$name" "build/sanitize/$name"; do
+  echo "./$binary" >>"$log"
+  (cd "$worktree" && "./$binary") >>"$log" 2>&1 || status=$?
+done
 cat "$log"
 
 # UBSan reports and carries on unless built with -fno-sanitize-recover.

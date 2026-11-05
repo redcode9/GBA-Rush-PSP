@@ -138,12 +138,13 @@ Test menu transitions, suspend, resume and exit when changing threads, audio,
 networking or file access.
 
 A bug fix shows that its regression test catches the bug. `make
-prove-regression REF=<tag> TEST=<name>` builds and runs the test from your
-checkout against the `source/` of an older tag or commit that has the bug.
-`TEST` names a C test (`test_link_net`) or a Python test file
-(`test_startup.py`). The last line reads FAIL-AS-EXPECTED when the test fails
-there, PASSES-ON-REF when it does not catch the bug and NOT-APPLICABLE when it
-does not build there. Paste the output into the pull request.
+prove-regression REF=<tag> TEST=<name>` builds the C test `TEST` (for example
+`test_link_net`) from your checkout against the `source/` of an older tag or
+commit that has the bug, and runs it both plain and under ASan and UBSan. The
+last line reads FAIL-AS-EXPECTED when a run fails or a sanitizer reports an
+error there, PASSES-ON-REF when the test does not catch the bug and
+NOT-APPLICABLE when it does not build there. Paste the output into the pull
+request.
 
 ## Link development
 
