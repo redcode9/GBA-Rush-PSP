@@ -296,6 +296,11 @@ class RebuiltReleasesTest(ScratchRepoTest):
          "ppsspp-link-pair or of a link-* test for this EBOOT"])
         self.assertEqual(self.candidate(
          "1.4.1", "link: bump\n", row("link-a", "PSP-2000 + PSP-1000")), [])
+        self.assertEqual(self.candidate(
+         "1.4.1", "link: wire-unchanged\n",
+         row("link-a", "PSP-2000 + PSP-1000")), [
+         "LINK_CABLE_PROTOCOL changed since 1.4.0: docs/releases/1.4.1.txt "
+         "must declare link: bump"])
 
 
 class PrereleaseAndLinksTest(ScratchRepoTest):

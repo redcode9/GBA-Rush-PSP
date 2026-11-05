@@ -188,5 +188,6 @@ refuses it); no change under
 `adhoc_peer.*` or `psp_adhoc.c` changed since the previous release, a
 `link: wire-unchanged`, `wire-extended` (with a `mixed-pair:` line saying what
 a pair with an earlier release loses) or `bump` line. A change of
-`LINK_NET_VERSION` or `LINK_CABLE_PROTOCOL` also needs a passed link test.
+`LINK_NET_VERSION` or `LINK_CABLE_PROTOCOL` needs `link: bump` and a passed
+link test.
 The notes do not replace the CHANGELOG, which stays hand-written.

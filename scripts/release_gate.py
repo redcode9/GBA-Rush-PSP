@@ -235,6 +235,9 @@ def link_problems(repo, version, release, passed):
     new = link_constants(repo, "HEAD") or (None,) * len(LINK_CONSTANTS)
     bumped = [constant for (_, constant), a, b in zip(LINK_CONSTANTS, old, new)
               if a != b]
+    if bumped and release["link"] and release["link"] != ["bump"]:
+        problems.append(f"{' and '.join(bumped)} changed since {previous}: "
+                        f"{name} must declare link: bump")
     if bumped and not any(row["Test id"] == "ppsspp-link-pair"
                           or row["Test id"].startswith("link-")
                           for row in passed):
