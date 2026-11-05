@@ -177,7 +177,8 @@ class StableGateTest(ScratchRepoTest):
 
     def test_a_missing_row_names_the_test_and_the_model_class(self):
         self.rc()
-        self.repo.results(row("save-a", "PSP-1000"))
+        # A pass of another test on the second model does not count.
+        self.repo.results(row("save-a", "PSP-1000"), row("other-a", "PSP-3000"))
         self.assertEqual(self.repo.gate(), [
          "save-a: no pass row for EBOOT 0123456789ab on second model"])
         self.assertFalse((self.repo.dist / "RELEASE-NOTES-1.4.4.md").exists())
@@ -343,6 +344,17 @@ class PrereleaseAndLinksTest(ScratchRepoTest):
          "## Not validated\n\n"
          "The stable release needs:\n\n"
          "- link-a on second model\n", self.repo.notes())
+
+    def test_a_new_cable_protocol_links_with_no_earlier_release(self):
+        self.history((1, 1))
+        self.repo.link(1, 3)
+        self.repo.commit(START + 6 * HOUR)
+        self.repo.release()
+        self.assertEqual(self.repo.gate(channel="prerelease"), [])
+        links = self.repo.notes().partition("## Links with\n\n")[2]
+        self.assertEqual(links.splitlines(), [
+         "- Links with no earlier release (link version 1, cable protocol 3).",
+         "- Does not link with 1.4.0, 1.4.1, 1.4.2, 1.4.3."])
 
     def test_the_notes_never_say_1_4_0_links_with_later_releases(self):
         # The real 1.4.0, and one whose constants match that only
