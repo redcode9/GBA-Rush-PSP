@@ -60,7 +60,9 @@ typedef struct
 
 /* What the thread running the core is doing, in ArmMips.phase, for a
    sampling profiler. Outside arm_mips_run it is EVENTS: the rest of the
-   system (timers, video, sound) between two runs of the core. */
+   system (timers, video, sound) between two runs of the core. Only the
+   diagnostic build (ENABLE_DIAGNOSTIC_CORE_PROFILE) keeps it: otherwise it
+   stays EVENTS. */
 enum
 {
   ARM_MIPS_PHASE_CODE,       /* generated code and the routines it calls */
