@@ -76,6 +76,24 @@ To upgrade, replace only `EBOOT.PBP` and `exception.prx`. Keep the BIOS, ROMs,
 saves, savestates, cheat lists and configuration files. Back up important save
 data before an update.
 
+## Controls
+
+HOME opens the emulator menu. Holding **START+SELECT** for half a second opens
+it too, for systems where HOME does not reach the emulator. The hold never
+quits the game, and it does not count while a button mapped to GBA A or B is
+held, so A+B+START+SELECT still resets games that use it. The game receives
+START and SELECT during the hold and may open its own pause screen.
+
+**SELECT+L** saves to the current savestate slot and **SELECT+R** loads it,
+with the usual confirmation. Hold SELECT, then press L or R: the game does not
+receive that L or R while it stays held. Pressing L or R first and SELECT
+after does nothing.
+
+Shortcuts act on the press that completes them, with no added delay, so a
+longer sequence stops there: SELECT, then L, then R saves as soon as L is
+pressed. They are kept with the settings and in each game's settings. The
+single-button mappings in the controls menu work as before.
+
 ## Fast-forward
 
 Assign **Fast forward** in the controls menu. Triangle is the default.
