@@ -149,7 +149,8 @@ test: $(HOST_TESTS) test-tools
 
 # Python tests. test_startup, test_browser_text and test_open_bios also
 # compile functions cut out of main.c, gui.c and memory.c with HOST_CC;
-# test_check_scripts runs scripts/check-scripts.sh on scratch Git trees.
+# test_check_scripts and test_check_names run their scripts on scratch Git
+# trees.
 test-tools:
 	$(PYTHON) -m unittest tests/test_compare_benchmarks.py \
 	 tests/test_decode_runtime_log.py tests/test_startup.py \
@@ -158,7 +159,8 @@ test-tools:
 	 tests/test_build_profile.py tests/test_check_elf.py \
 	 tests/test_check_scripts.py \
 	 tests/test_hardware_session.py \
-	 tests/test_release_gate.py
+	 tests/test_release_gate.py \
+	 tests/test_check_names.py
 
 # The link cable test runs fewer network profiles (--quick) under the
 # sanitizers, where it is much slower.

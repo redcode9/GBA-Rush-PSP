@@ -12,6 +12,7 @@ release/
 *.map
 PARAM.SFO
 *.sha256
+!/scripts/forbidden-words.sha256
 /models/link/states/
 /source/single-game_launcher/tool/build_exe_output/
 /source/single-game_launcher/tool/*.spec

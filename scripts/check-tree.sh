@@ -3,9 +3,10 @@
 set -eu
 
 # make tree-check, part of make check: whitespace errors, the source-level
-# guard scripts, the syntax of every script (check-scripts.sh), the CBMC
-# gate's inputs (CBMC itself runs only in make check-cbmc), maintained docs,
-# and no ROMs, saves or build output in Git.
+# guard scripts, the syntax of every script (check-scripts.sh), no forbidden
+# word (check-names.py), the CBMC gate's inputs (CBMC itself runs only in
+# make check-cbmc), maintained docs, and no ROMs, saves or build output in
+# Git.
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "Source tree checks require a Git checkout." >&2
@@ -28,6 +29,7 @@ do
   fi
 done
 sh scripts/check-scripts.sh
+"${PYTHON:-python3}" scripts/check-names.py
 if ! grep -q -- '--unwinding-assertions' scripts/check-cbmc.sh; then
   echo "CBMC gate must check complete unwinding" >&2
   exit 1
