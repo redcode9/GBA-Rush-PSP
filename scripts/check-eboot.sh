@@ -4,9 +4,11 @@ set -eu
 # GBA Rush PSP, Copyright (C) 2026 Piero Carrieri, GPL-2.0-or-later.
 
 # make check-eboot: runs the PSP build in PPSSPP's headless runner on your
-# own games, once on each CPU core, and fails when a run ends before its
-# time is up, PPSSPP reports a crash, or FireRed's save no longer holds the
-# same party. Skipped without PPSSPP or without games:
+# own games, once on each CPU core, and fails when the game never starts
+# on that core (the runtime log the EBOOT writes in logs/ names no ROM
+# opened on it), a run ends before its time is up, PPSSPP reports a crash,
+# or FireRed's save no longer holds the same party. Skipped without PPSSPP
+# or without games:
 #   PPSSPP_HEADLESS  PPSSPPHeadless (default: the one scripts/setup-dev.sh
 #             built in ext/ppsspp/build)
 #   MKSC      Mario Kart: Super Circuit (European release)
@@ -86,6 +88,17 @@ run()
 
   "$headless" --timeout="${RUN_SECONDS:-120}" "$dir/EBOOT.PBP" \
     > "$dir/ppsspp.log" 2>&1 || true
+  # An error message or the ROM browser waits for a key until the timeout,
+  # so a run counts only once the game has started on the chosen core.
+  # This proves the game started, not that it kept running: a hang after
+  # the start still passes until a run checks the picture.
+  if ! python3 tools/decode_runtime_log.py "$dir/logs" 2>/dev/null |
+    grep -Eq "rom-open +code=.* core=$2\$"; then
+    echo "check-eboot: $name never started the game on the $2 core," \
+      "see $dir/ppsspp.log and $dir/logs" >&2
+    status=1
+    return
+  fi
   if ! grep -q TIMEOUT "$dir/ppsspp.log" ||
     grep -Eiq 'exception|crash' "$dir/ppsspp.log"; then
     echo "check-eboot: $name ended early or crashed, see $dir/ppsspp.log" >&2
