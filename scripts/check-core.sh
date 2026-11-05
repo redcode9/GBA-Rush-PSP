@@ -26,8 +26,10 @@ set -eu
 # With --quick (make check-core-quick, for every pull request) the fuzzer
 # runs 5 cases, the suite the first 1000 tests of each file and lockstep
 # the first 60 frames of each game.
-# The runs stop at the first instruction where the core and mGBA disagree
-# and leave their logs in OUT (build/core).
+# The runs stop at the first instruction where the core and mGBA disagree,
+# and fail when a cycle count differs in code run off the GamePak (on it
+# the two model the prefetch buffer differently); they leave their logs in
+# OUT (build/core).
 
 out=${OUT:-build/core}
 mkdir -p "$out"
@@ -120,7 +122,7 @@ lockstep()
       echo "check-core: $name ($mode) diverged, see $out/$name-$mode.log" >&2
       exit 1
     fi
-    grep -m 1 "compared" "$out/$name-$mode.log"
+    grep -m 2 -e compared -e "off the GamePak" "$out/$name-$mode.log"
   done
   if [ -n "$backend" ]; then
     # The backend in lockstep, then the whole game run by each core: the
@@ -129,7 +131,7 @@ lockstep()
       echo "check-core: $name (backend) diverged, see $out/$name-jit.log" >&2
       exit 1
     fi
-    grep -m 1 "compared" "$out/$name-jit.log"
+    grep -m 2 -e compared -e "off the GamePak" "$out/$name-jit.log"
     "$out/lockstep" --mode run --trace "$out/$name-run.trace" "$@" \
       > /dev/null
     "$out/lockstep" --jit --mode run --trace "$out/$name-jit.trace" "$@" \
