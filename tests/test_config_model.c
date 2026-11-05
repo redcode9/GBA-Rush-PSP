@@ -61,6 +61,30 @@ static void assert_models_equal(const ConfigModel *left,
   assert(memcmp(left, right, sizeof(*left)) == 0);
 }
 
+/* Forges a valid versioned file (header: magic, version, value count,
+   checksum, payload bytes) holding the first value_count values of model;
+   values past the current count are zeros. Returns the file size. */
+static size_t forge_versioned(uint8_t *output, uint16_t version,
+ uint16_t value_count, const ConfigModel *model)
+{
+  uint8_t current[CONFIG_MODEL_ENCODED_SIZE];
+  size_t size = 16 + (size_t)value_count * 4;
+  size_t copied = value_count;
+  size_t written;
+
+  if(copied > CONFIG_MODEL_VALUE_COUNT)
+    copied = CONFIG_MODEL_VALUE_COUNT;
+  assert(config_model_encode(model, current, sizeof(current), &written));
+  memset(output, 0, size);
+  memcpy(output, "GBRC", 4);
+  write_u16(output + 4, version);
+  write_u16(output + 6, value_count);
+  write_u32(output + 12, (uint32_t)value_count * 4);
+  memcpy(output + 16, current + 16, copied * 4);
+  write_u32(output + 8, config_checksum(output, size));
+  return size;
+}
+
 /* Also flips a bit in the last byte: decoding must then fail and leave the
    output untouched. */
 static void test_defaults_and_versioned_round_trip(void)
@@ -86,6 +110,7 @@ static void test_defaults_and_versioned_round_trip(void)
   assert(original.fast_forward_presentation == 1);
   assert(original.fast_forward_audio == 0);
   assert(original.cpu_core == 0);
+  assert(original.browser_view == 0);
   assert(original.gamepad[0] == 11);
 
   original.screen_filter = 0;
@@ -100,6 +125,7 @@ static void test_defaults_and_versioned_round_trip(void)
   original.fast_forward_presentation = 2;
   original.fast_forward_audio = 1;
   original.cpu_core = 1;
+  original.browser_view = 1;
 
   assert(config_model_encode(&original, encoded, sizeof(encoded), &written));
   assert(written == CONFIG_MODEL_ENCODED_SIZE);
@@ -115,31 +141,19 @@ static void test_defaults_and_versioned_round_trip(void)
   assert(decoded.screen_scale == 0xA5A5A5A5U);
 }
 
-/* A hand-built version 1 file (header: magic, version, value count,
-   checksum, payload bytes) carrying the first 39 values: the fast-forward
-   fields that version 2 added must decode as their defaults. */
+/* A version 1 file carrying the first 39 values: the fast-forward fields
+   that version 2 added must decode as their defaults. */
 static void test_previous_versioned_migration(void)
 {
-  enum { previous_count = 39, previous_size = 16 + previous_count * 4 };
-  uint8_t encoded[previous_size];
-  uint8_t current[CONFIG_MODEL_ENCODED_SIZE];
+  uint8_t encoded[CONFIG_MODEL_ENCODED_SIZE];
   ConfigModel defaults;
   ConfigModel decoded;
-  size_t written;
-  size_t i;
+  size_t size;
 
   config_model_defaults(&defaults);
-  assert(config_model_encode(&defaults, current, sizeof(current), &written));
-  memset(encoded, 0, sizeof(encoded));
-  memcpy(encoded, "GBRC", 4);
-  write_u16(encoded + 4, 1);
-  write_u16(encoded + 6, previous_count);
-  write_u32(encoded + 12, previous_count * 4);
-  for(i = 0; i < previous_count; i++)
-    memcpy(encoded + 16 + i * 4, current + 16 + i * 4, 4);
-  write_u32(encoded + 8, config_checksum(encoded, sizeof(encoded)));
+  size = forge_versioned(encoded, 1, 39, &defaults);
 
-  assert(config_model_decode(encoded, sizeof(encoded), &decoded) ==
+  assert(config_model_decode(encoded, size, &decoded) ==
    CONFIG_MODEL_DECODE_VERSIONED);
   assert(decoded.fast_forward_profile == 0);
   assert(decoded.fast_forward_game_override == 0);
@@ -148,37 +162,84 @@ static void test_previous_versioned_migration(void)
   assert(decoded.fast_forward_presentation == 1);
   assert(decoded.fast_forward_audio == 0);
   assert(decoded.cpu_core == 0);
+  assert(decoded.browser_view == 0);
 }
 
-/* A version 2 file (1.4.x) carries 45 values: the CPU core that version 3
-   added decodes as Classic, the values it has are kept. */
+/* A version 2 file (1.4.x) carries 45 values: the CPU core and the browser
+   view that version 3 added decode as Classic and the list, every value the
+   file has is kept. */
 static void test_version_2_migration(void)
 {
-  enum { previous_count = 45, previous_size = 16 + previous_count * 4 };
-  uint8_t encoded[previous_size];
-  uint8_t current[CONFIG_MODEL_ENCODED_SIZE];
+  uint8_t encoded[CONFIG_MODEL_ENCODED_SIZE];
+  ConfigModel model;
+  ConfigModel expected;
+  ConfigModel decoded;
+  size_t size;
+
+  config_model_defaults(&model);
+  model.screen_scale = 5;
+  model.theme = 8;
+  model.gamepad[15] = 19;
+  model.fast_forward_audio = 1;
+  model.cpu_core = 1;
+  model.browser_view = 1;
+  size = forge_versioned(encoded, 2, 45, &model);
+
+  assert(config_model_decode(encoded, size, &decoded) ==
+   CONFIG_MODEL_DECODE_VERSIONED);
+  expected = model;
+  expected.cpu_core = 0;
+  expected.browser_view = 0;
+  assert_models_equal(&expected, &decoded);
+}
+
+/* Earlier builds of version 3 wrote 46 values, ending at the CPU core: the
+   browser view decodes as the list, the rest is kept. */
+static void test_version_3_without_browser_view(void)
+{
+  uint8_t encoded[CONFIG_MODEL_ENCODED_SIZE];
+  ConfigModel model;
+  ConfigModel expected;
+  ConfigModel decoded;
+  size_t size;
+
+  config_model_defaults(&model);
+  model.theme = 3;
+  model.fast_forward_speed = 1;
+  model.cpu_core = 1;
+  model.browser_view = 1;
+  size = forge_versioned(encoded, 3, 46, &model);
+
+  assert(config_model_decode(encoded, size, &decoded) ==
+   CONFIG_MODEL_DECODE_VERSIONED);
+  expected = model;
+  expected.browser_view = 0;
+  assert_models_equal(&expected, &decoded);
+}
+
+/* The browser view is 0 (list) or 1 (carousel); any other stored value
+   reads back as the list and leaves its neighbours alone. */
+static void test_browser_view_values(void)
+{
+  static const uint32_t stored[] = { 0, 1, 2, 7 };
+  static const uint32_t expected[] = { 0, 1, 0, 0 };
+  uint8_t encoded[CONFIG_MODEL_ENCODED_SIZE];
   ConfigModel model;
   ConfigModel decoded;
   size_t written;
   size_t i;
 
-  config_model_defaults(&model);
-  model.fast_forward_audio = 1;
-  model.cpu_core = 1;
-  assert(config_model_encode(&model, current, sizeof(current), &written));
-  memset(encoded, 0, sizeof(encoded));
-  memcpy(encoded, "GBRC", 4);
-  write_u16(encoded + 4, 2);
-  write_u16(encoded + 6, previous_count);
-  write_u32(encoded + 12, previous_count * 4);
-  for(i = 0; i < previous_count; i++)
-    memcpy(encoded + 16 + i * 4, current + 16 + i * 4, 4);
-  write_u32(encoded + 8, config_checksum(encoded, sizeof(encoded)));
-
-  assert(config_model_decode(encoded, sizeof(encoded), &decoded) ==
-   CONFIG_MODEL_DECODE_VERSIONED);
-  assert(decoded.fast_forward_audio == 1);
-  assert(decoded.cpu_core == 0);
+  for(i = 0; i < sizeof(stored) / sizeof(stored[0]); i++)
+  {
+    config_model_defaults(&model);
+    model.cpu_core = 1;
+    model.browser_view = stored[i];
+    assert(config_model_encode(&model, encoded, sizeof(encoded), &written));
+    assert(config_model_decode(encoded, written, &decoded) ==
+     CONFIG_MODEL_DECODE_VERSIONED);
+    assert(decoded.browser_view == expected[i]);
+    assert(decoded.cpu_core == 1);
+  }
 }
 
 /* Out-of-range fast-forward values reset only themselves to the default;
@@ -371,12 +432,23 @@ static void test_game_binary_layout(void)
 static void test_rejects_unknown_or_truncated_data(void)
 {
   uint8_t bytes[CONFIG_MODEL_ENCODED_SIZE] = { 0 };
+  uint8_t longer[CONFIG_MODEL_ENCODED_SIZE + 4];
+  ConfigModel defaults;
   ConfigModel model;
 
   /* 7 bytes and 38 words match no known layout. */
   assert(config_model_decode(bytes, 7, &model) == CONFIG_MODEL_DECODE_INVALID);
   assert(config_model_decode(bytes, 38 * 4, &model) ==
          CONFIG_MODEL_DECODE_INVALID);
+
+  /* Version 3 files hold 46 to CONFIG_MODEL_VALUE_COUNT values. */
+  config_model_defaults(&defaults);
+  assert(config_model_decode(longer,
+   forge_versioned(longer, 3, 45, &defaults), &model) ==
+   CONFIG_MODEL_DECODE_INVALID);
+  assert(config_model_decode(longer,
+   forge_versioned(longer, 3, CONFIG_MODEL_VALUE_COUNT + 1, &defaults),
+   &model) == CONFIG_MODEL_DECODE_INVALID);
   assert(config_model_decode(NULL, 0, &model) == CONFIG_MODEL_DECODE_INVALID);
   assert(config_model_decode(bytes, sizeof(bytes), NULL) ==
          CONFIG_MODEL_DECODE_INVALID);
@@ -388,6 +460,8 @@ int main(void)
   test_defaults_and_versioned_round_trip();
   test_previous_versioned_migration();
   test_version_2_migration();
+  test_version_3_without_browser_view();
+  test_browser_view_values();
   test_fast_forward_fields_fall_back_independently();
   test_current_binary_migration_and_field_validation();
   test_older_binary_layouts();
