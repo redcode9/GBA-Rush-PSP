@@ -3,6 +3,8 @@
 #                         the Media Engine program's build where the PSP SDK is
 #   make test-sanitize    the C tests again under ASan and UBSan
 #   make psp-build        the EBOOT (needs the PSP SDK)
+#   make test-roms        the GBA test ROMs, built and run on the New core
+#                         (needs arm-none-eabi-gcc, skipped without it)
 #   make package VERSION=x.y.z   build, check and zip a release
 # Each test builds the module it covers straight from source/src, so most
 # need only a host C compiler.
@@ -58,6 +60,13 @@ ARM_CORE_SOURCES = source/src/arm_decode.c source/src/arm_interp.c \
  source/src/arm_mips.c
 ARM_CORE_HEADERS = source/src/arm_core.h source/src/arm_ir.h \
  source/src/arm_mips.h
+# Runs the GBA test ROMs for make test-roms.
+HOST_ROM_RUN = $(HOST_BUILD_DIR)/rom_run
+HOST_TEST_ROM_RUN = $(HOST_BUILD_DIR)/test_rom_run
+# The interpreter rom_run.c runs on; test_rom_run includes rom_run.c.
+ROM_RUN_SOURCES = source/src/arm_decode.c source/src/arm_interp.c
+ROM_RUN_DEPS = tests/core/rom_run.c $(ROM_RUN_SOURCES) $(ARM_CORE_HEADERS) \
+ source/src/open_bios.h
 HOST_TEST_GBA_PPU = $(HOST_BUILD_DIR)/test_gba_ppu
 HOST_TEST_GBA_PPU_LOG = $(HOST_BUILD_DIR)/test_gba_ppu_log
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
@@ -76,6 +85,7 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
  $(HOST_TEST_EVENT_QUEUE) \
  $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_CORE_PROFILE) \
+ $(HOST_TEST_ROM_RUN) \
  $(HOST_TEST_GBA_PPU) $(HOST_TEST_GBA_PPU_LOG)
 # The same C tests built with HOST_SANITIZE_FLAGS for make test-sanitize.
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
@@ -105,13 +115,14 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_runtime_log \
  $(HOST_SANITIZE_DIR)/test_arm_core \
  $(HOST_SANITIZE_DIR)/test_core_profile \
+ $(HOST_SANITIZE_DIR)/test_rom_run \
  $(HOST_SANITIZE_DIR)/test_gba_ppu \
  $(HOST_SANITIZE_DIR)/test_gba_ppu_log
 
-.PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
- check-core check-render check-core-quick check-render-quick check-eboot \
- tree-check psp-sdk-headers media-engine-check psp-build launcher-stub \
- package artifact-smoke clean
+.PHONY: all check test test-tools test-sanitize test-roms check-cbmc \
+ check-rom-link check-core check-render check-core-quick check-render-quick \
+ check-eboot tree-check psp-sdk-headers media-engine-check psp-build \
+ launcher-stub package artifact-smoke clean
 
 all: check
 
@@ -146,6 +157,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_RUNTIME_LOG)
 	$(HOST_TEST_ARM_CORE)
 	$(HOST_TEST_CORE_PROFILE)
+	$(HOST_TEST_ROM_RUN)
 	$(HOST_TEST_GBA_PPU)
 	$(HOST_TEST_GBA_PPU_LOG)
 
@@ -154,7 +166,9 @@ test: $(HOST_TESTS) test-tools
 test-tools:
 	$(PYTHON) -m unittest tests/test_compare_benchmarks.py \
 	 tests/test_decode_runtime_log.py tests/test_startup.py \
-	 tests/test_browser_text.py tests/test_open_bios.py
+	 tests/test_browser_text.py tests/test_open_bios.py \
+	 tests/test_decode_test_rom.py tests/test_gen_shift_table.py \
+	 tests/test_make_bios_vectors.py
 
 # The link cable test runs fewer network profiles (--quick) under the
 # sanitizers, where it is much slower.
@@ -187,6 +201,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_runtime_log
 	$(HOST_SANITIZE_DIR)/test_arm_core
 	$(HOST_SANITIZE_DIR)/test_core_profile
+	$(HOST_SANITIZE_DIR)/test_rom_run
 	$(HOST_SANITIZE_DIR)/test_gba_ppu
 	$(HOST_SANITIZE_DIR)/test_gba_ppu_log
 
@@ -406,6 +421,16 @@ $(HOST_TEST_CORE_PROFILE): tests/test_core_profile.c \
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_core_profile.c source/src/core_profile.c -o $@
+
+$(HOST_ROM_RUN): $(ROM_RUN_DEPS)
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -Isource/src \
+	 tests/core/rom_run.c $(ROM_RUN_SOURCES) -o $@
+
+$(HOST_TEST_ROM_RUN): tests/test_rom_run.c $(ROM_RUN_DEPS)
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_rom_run.c $(ROM_RUN_SOURCES) -o $@
 
 $(HOST_TEST_GBA_PPU): tests/test_gba_ppu.c source/src/gba_ppu.c \
  source/src/gba_ppu.h
@@ -640,6 +665,11 @@ $(HOST_SANITIZE_DIR)/test_core_profile: tests/test_core_profile.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_core_profile.c source/src/core_profile.c -o $@
 
+$(HOST_SANITIZE_DIR)/test_rom_run: tests/test_rom_run.c $(ROM_RUN_DEPS)
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_rom_run.c $(ROM_RUN_SOURCES) -o $@
+
 $(HOST_SANITIZE_DIR)/test_gba_ppu: tests/test_gba_ppu.c \
  source/src/gba_ppu.c source/src/gba_ppu.h
 	mkdir -p $(HOST_SANITIZE_DIR)
@@ -665,6 +695,12 @@ check-rom-link:
 
 check-core:
 	sh scripts/check-core.sh
+
+# Builds the GBA test ROMs (tests/core-rom, tests/save-rom, tests/raster-rom)
+# and runs each on rom_run, checking the signature it leaves; see
+# scripts/check-test-roms.sh.
+test-roms: $(HOST_ROM_RUN)
+	RUN=$(HOST_ROM_RUN) sh scripts/check-test-roms.sh
 
 # Compares gba_ppu with mGBA's renderer on your own ROMs; see the script.
 check-render:
@@ -731,5 +767,6 @@ clean:
 	$(MAKE) -C source/single-game_launcher clean
 	$(RM) source/single-game_launcher/tool/assets/EBOOT.PBP
 	$(RM) $(HOST_TESTS)
-	$(RM) $(HOST_SANITIZE_TESTS)
+	$(RM) $(HOST_SANITIZE_TESTS) $(HOST_ROM_RUN)
+	$(RM) -r build/test-roms
 	-rmdir $(HOST_BUILD_DIR) $(HOST_SANITIZE_DIR) build 2>/dev/null
