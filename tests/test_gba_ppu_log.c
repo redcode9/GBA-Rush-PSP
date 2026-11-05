@@ -25,7 +25,7 @@
 #define STRIDE GBA_PPU_LOG_FRAME_STRIDE
 
 /* The pretend emulator's memory, laid out as the dirty map numbers it. */
-static GbaPpuMemory game;
+static GbaPpuMemory game __attribute__((aligned(64)));
 static uint8_t dirty[GBA_PPU_LOG_BLOCKS];
 static uint32_t group_words[GBA_PPU_LOG_GROUP_BYTES / 4];
 static GbaPpu direct;
@@ -269,44 +269,18 @@ static void test_unknown_word_is_refused(void)
 }
 
 /* Block data starts on 16 bytes in the ring, so that it can be copied in
-   quadwords, also after the ring went round. */
+   quadwords, also after the ring went round: the host's quadword copy
+   stops the test on any other address. */
 static void test_block_data_is_aligned(void)
 {
-  uint32_t at, end, data_commands = 0;
   int i;
 
   start();
+  writer.copy_quads = 1;
   scene();
-  for(i = 0; i < 3; i++)
+  for(i = 0; i < 33; i++)
     check(caught_up(run_frame(1)));
-  at = writer.write;
-  for(i = 0; i < 30; i++)
-    check(caught_up(run_frame(1)));
-  end = writer.write;
-  while((int32_t)(end - at) > 0)
-  {
-    uint32_t word = ring[at & writer.mask];
-
-    switch(word & 0xFF)
-    {
-      case GBA_PPU_LOG_WRAP:
-        at += GBA_PPU_LOG_RING_WORDS - (at & writer.mask);
-        continue;
-      case GBA_PPU_LOG_DATA:
-      {
-        uint32_t data = (at + 4) & ~3u;
-
-        check(((uintptr_t)(ring + (data & writer.mask)) & 15) == 0);
-        at = data + (word >> 20) * 16;
-        data_commands++;
-        continue;
-      }
-      default:
-        at++;
-        break;
-    }
-  }
-  check(data_commands > 30);
+  check(writer.write > GBA_PPU_LOG_RING_WORDS);
 }
 
 /* Each finished frame goes into the reader's frame times by the working

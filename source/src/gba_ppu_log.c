@@ -149,8 +149,12 @@ static void hand_over(const void *start, uint32_t bytes)
   (void)bytes;
 }
 
+/* lv.q and sv.q raise an address error off 16 bytes; so does this, for
+   the tests to see. */
 static void copy_quads(uint32_t *to, const uint16_t *from, uint32_t blocks)
 {
+  if(((uintptr_t)to | (uintptr_t)from) & 15)
+    __builtin_trap();
   memcpy(to, from, blocks * GBA_PPU_LOG_BLOCK_BYTES);
 }
 #endif
