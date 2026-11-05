@@ -25,7 +25,7 @@
 - **Installer:** `sh scripts/install-test-build.sh [--dry-run] [--no-media-engine] dist/GBA-Rush-PSP-test-700de75.zip`. Per ogni PSP montata (PSP_2004 → `PSP/GAME/CAT_Emulators/gpSP`, PSP_1004 → `PSP/GAME/gpSP`): copia e confronta `logs/`, `benchmarks/`, `traces/`, `GBA/SAV/`, `tempgba_crash.log` e la build che sostituisce in `artifacts/hardware/<data>-<ora>/<volume>/` del checkout principale anche se lanciato da un worktree (`git worktree remove` cancellerebbe senza avvisi la cartella ignorata, unica copia dei log tolti dalla scheda); controlla lo spazio (lascia 2 MB liberi, `PSP_MIN_FREE_KB`); copia i tre file; smonta e rimonta la scheda per rileggerli e confrontare lo sha256 (`installed.sha256` nella cartella); toglie dalla scheda solo log, report e crash log già archiviati; espelle. Non tocca mai salvataggi, savestate, ROM, BIOS, trucchi e impostazioni. `--no-media-engine` archivia e toglie `media_engine.prx`, così Exact disegna sulla CPU; rilanciato senza l'opzione lo rimette. Provato solo con `--dry-run` su un albero finto (`tests/test_install_test_build.py` in `make check`).
 - **Ogni collegamento USB durante le sessioni passa dall'installer:** archivia i log del blocco appena finito e riparte con log puliti. Il runtime log tiene solo le ultime 4 sessioni (`logs/session-1..4.gbrlog`, una per avvio dell'EBOOT): mai più di 4 avvii tra due collegamenti.
 
-## Piano della sessione da soli (SOA-2.2, con CMP-1.1 e la prova di sospensione)
+## Piano della sessione da soli (SOA-2.2, con CMP-1.1, la prova di sospensione e i 10 minuti con salvataggio)
 
 **Che cosa serve sulle schede.** PSP-2000: `mariokart.gba`, `rosso.gba` + `ROSSO.sav`, `verde.gba` + `verde.sav` ci sono già; manca Golden Sun. PSP-1000 (Memory Stick da ~31 MB, 5,6 MB di EBOOT): una ROM grande alla volta; oggi ha `mariokart.gba` (FireRed è in `~/Development/PSP-Backups/psp1004-firered-before-mariokart-20261101`). Golden Sun lo porta l'utente. Su entrambe resta `gba_bios.bin`, tranne nella prova CMP-1.1.
 
@@ -40,12 +40,13 @@
 **Un gioco** = Classic poi New, nello stesso avvio dell'EBOOT:
 1. Prestazioni > Advanced settings > CPU core: Classic, Gioco > Riavvia ROM, una prova.
 2. CPU core: New, Gioco > Riavvia ROM, controllare che il contatore finisca in NEW, una prova.
-3. Solo per MKSC e solo nel blocco ME: Video renderer: New (il renderer di oggi) e una prova per core, come riferimento senza Exact; poi di nuovo Exact.
-4. Esci da GBA Rush PSP (menu Esci; non spegnere): solo all'uscita il runtime log scrive i contatori del ME (record 9-11, cumulati dall'avvio) e del core (record 12).
+3. Solo per FireRed e LeafGreen e solo nel blocco ME, con New ancora attivo: 10 minuti di gioco dalla scena della prova (camminare, entrare in un edificio, almeno un combattimento), poi salvare dal menu del gioco e aspettare che il gioco dica di aver salvato; Gioco > Riavvia ROM e, nel menu del gioco, Continua: deve ripartire dal punto salvato. Annotare l'ora di inizio e di fine e qualsiasi difetto. È «FireRed e LeafGreen 10 minuti con salvataggio» dell'obiettivo di SOA-2: il salvataggio riscrive il `.sav` sulla scheda e l'installer ne archivia la copia di prima e quella di dopo ai collegamenti USB attorno al blocco.
+4. Solo per MKSC e solo nel blocco ME: Video renderer: New (il renderer di oggi) e una prova per core, come riferimento senza Exact; poi di nuovo Exact.
+5. Esci da GBA Rush PSP (menu Esci; non spegnere): solo all'uscita il runtime log scrive i contatori del ME (record 9-11, cumulati dall'avvio) e del core (record 12).
 
 **PSP-2000** (scheda SD, tutte le ROM insieme):
 1. USB: `sh scripts/install-test-build.sh dist/GBA-Rush-PSP-test-700de75.zip` (archivia i log della 1.4.3). Annotare lo sha256 stampato.
-2. Blocco ME: MKSC, FireRed, LeafGreen, Golden Sun (4 avvii). Il contatore deve finire in ME.
+2. Blocco ME: MKSC, FireRed, LeafGreen, Golden Sun (4 avvii), con i 10 minuti e il salvataggio per FireRed e LeafGreen. Il contatore deve finire in ME.
 3. Prova di sospensione con il ME acceso, nello stesso avvio di Golden Sun dopo le sue prove (così il blocco resta di 4 avvii): 20 cicli con l'interruttore (5 s spenta, poi riaccesa). Ogni volta: il gioco riparte, l'immagine si muove, il suono c'è, il contatore resta in ME. Se diventa CPU annotare il ciclo; se la console si blocca, tenere l'interruttore 10 s, annotare il ciclo e non cancellare niente. Poi Esci.
 4. USB: `... --no-media-engine ...` (archivia il blocco ME).
 5. Blocco CPU: gli stessi 4 giochi; il contatore deve finire in CPU.
@@ -57,19 +58,19 @@
 3. USB: togliere `mariokart.gba` (copia di riserva già nei backup), copiare `rosso.gba` e `ROSSO.sav`; rinominare `gba_bios.bin` in `gba_bios.bin.off`; installer con `--no-media-engine`.
 4. **CMP-1.1, senza `gba_bios.bin`:** FireRed con Classic fino al gioco (Continua dal salvataggio, non dai savestate, che con il BIOS integrato vengono rifiutati con un messaggio), poi CPU core: New, Riavvia ROM, di nuovo fino al gioco (il BIOS integrato non è mai stato provato con New). Non salvare in gioco. Esci.
 5. USB: rimettere `gba_bios.bin`; installer `--no-media-engine`. FireRed con la CPU (gioco completo, 2 prove).
-6. USB: installer senza opzioni. FireRed con il ME; poi la prova di sospensione (20 cicli, come sopra) ed Esci.
-7. USB: FireRed via (salvataggio archiviato), copiare `verde.gba` + `verde.sav`; installer senza opzioni. LeafGreen con il ME.
+6. USB: installer senza opzioni. FireRed con il ME, con i 10 minuti e il salvataggio; poi la prova di sospensione (20 cicli, come sopra) ed Esci.
+7. USB: togliere `rosso.gba` e lasciare `ROSSO.sav`, così l'installer archivia il salvataggio della partita da 10 minuti; copiare `verde.gba` + `verde.sav`; installer senza opzioni. LeafGreen con il ME, con i 10 minuti e il salvataggio.
 8. USB: `--no-media-engine`. LeafGreen con la CPU.
 9. USB: LeafGreen via, copiare Golden Sun; rinominare `gba_bios.bin` in `gba_bios.bin.off`; installer `--no-media-engine`. **CMP-1.1:** Golden Sun con Classic e con New fino al gioco senza `gba_bios.bin`. Esci.
 10. USB: rimettere `gba_bios.bin`; installer `--no-media-engine`. Golden Sun con la CPU.
 11. USB: installer senza opzioni. Golden Sun con il ME.
 12. USB: installer senza opzioni (archivia l'ultimo blocco); rimettere la ROM che l'utente vuole tenere.
 
-**Che cosa si salva.** Tutto lo raccoglie l'installer in `artifacts/hardware/<data>-<ora>/PSP_2004|PSP_1004/`: `benchmarks/perf-*.txt` (un report per prova, nell'ordine del piano), `logs/session-*.gbrlog` (uno per avvio: ROM aperte con il core, sospensioni e riprese, record 9-12 all'uscita), `tempgba_crash.log` se c'è stato un crash, `installed.sha256`. Annotare a mano, per ogni cartella, il blocco (ME/CPU) e l'ordine delle prove: il report non dice né il core né dove disegna Exact.
+**Che cosa si salva.** Tutto lo raccoglie l'installer in `artifacts/hardware/<data>-<ora>/PSP_2004|PSP_1004/`: `benchmarks/perf-*.txt` (un report per prova, nell'ordine del piano), `logs/session-*.gbrlog` (uno per avvio: ROM aperte con il core, sospensioni e riprese, record 9-12 all'uscita), `GBA/SAV/` (il `.sav` archiviato dopo una partita da 10 minuti deve essere diverso da quello del collegamento prima), `tempgba_crash.log` se c'è stato un crash, `installed.sha256`. Annotare a mano, per ogni cartella, il blocco (ME/CPU) e l'ordine delle prove: il report non dice né il core né dove disegna Exact.
 
-**Durata stimata:** PSP-2000 circa 1 h 30 (18 prove, 2 USB, 20 sospensioni); PSP-1000 circa 2 h 30 per i 12 collegamenti.
+**Durata stimata:** PSP-2000 circa 2 h (18 prove, 2 partite da 10 minuti, 2 USB, 20 sospensioni); PSP-1000 circa 3 h per i 12 collegamenti e le 2 partite da 10 minuti.
 
-**Lettura dei risultati:** `python3 tools/decode_runtime_log.py artifacts/hardware/<cartella>/<volume>/logs` per gli eventi (`rom-open ... core=`, `power-suspend/resume`, `exact-renderer=`, `me-frames/frames-late/me-busy-us-per-frame`, `log-us-per-frame/...`, `cpu-core=... blocks-compiled=`); dai report `emulated-frames`, `presented-frames`, `skipped-frames`, `frame-time-p50/p95/p99-us`, `renderer-total-us` diviso per `presented-frames`. Le righe vanno in `docs/HARDWARE-RESULTS.md`, con l'id di prova `solo-<gioco>-<core>-<me|cpu>` finché ENG-1.1 non porta il catalogo.
+**Lettura dei risultati:** `python3 tools/decode_runtime_log.py artifacts/hardware/<cartella>/<volume>/logs` per gli eventi (`rom-open ... core=`, `power-suspend/resume`, `exact-renderer=`, `me-frames/frames-late/me-busy-us-per-frame`, `log-us-per-frame/...`, `cpu-core=... blocks-compiled=`); dai report `emulated-frames`, `presented-frames`, `skipped-frames`, `frame-time-p50/p95/p99-us`, `renderer-total-us` diviso per `presented-frames`. Le righe vanno in `docs/HARDWARE-RESULTS.md`, con l'id di prova `solo-<gioco>-<core>-<me|cpu>` (`solo-<gioco>-new-me-10min` per le partite da 10 minuti, con i minuti giocati e i due `.sav` come prova) finché ENG-1.1 non porta il catalogo.
 
 ## Piano della sessione link (SOA-2.3)
 
@@ -88,5 +89,5 @@
 
 | Sessione | Branch | Console | Che cosa | Stato |
 |---|---|---|---|---|
-| 1 | `wip/hardware-validation` (+ CMP-1.1 di `wip/open-bios`) | PSP-2000, PSP-1000 | SOA-2.1 installazione, SOA-2.2, CMP-1.1, 20 sospensioni con il ME | pronta, aspetta l'utente |
+| 1 | `wip/hardware-validation` (+ CMP-1.1 di `wip/open-bios`) | PSP-2000, PSP-1000 | SOA-2.1 installazione, SOA-2.2, CMP-1.1, FireRed e LeafGreen 10 minuti con salvataggio, 20 sospensioni con il ME | pronta, aspetta l'utente |
 | 2 | `wip/hardware-validation` | le due insieme | SOA-2.3 gare e scambi | dopo la 1 |
