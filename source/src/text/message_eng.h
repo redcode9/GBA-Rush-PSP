@@ -1047,6 +1047,16 @@
   "Measure and report emulator behavior",
   // MSG_CATEGORY_HELP_EXIT
   "Sleep or close the emulator",
+  // MSG_MAIN_STATUS_SLOTS
+  "%lu/10",
+  // MSG_MAIN_STATUS_SLOTS_AUTO
+  "%lu/10 + AUTO",
+  // MSG_MAIN_STATUS_CHEATS
+  "%lu cheats on",
+  // MSG_MAIN_STATUS_LINKED
+  "linked: %s",
+  // MSG_MAIN_STATUS_WAITING
+  "waiting",
 
   // MSG_DIAGNOSTICS_TITLE
   "Diagnostics",

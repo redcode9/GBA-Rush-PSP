@@ -1047,6 +1047,16 @@
   "Misura e registra il comportamento",
   // MSG_CATEGORY_HELP_EXIT
   "Sospendi o chiudi l'emulatore",
+  // MSG_MAIN_STATUS_SLOTS
+  "%lu/10",
+  // MSG_MAIN_STATUS_SLOTS_AUTO
+  "%lu/10 + AUTO",
+  // MSG_MAIN_STATUS_CHEATS
+  "%lu trucchi attivi",
+  // MSG_MAIN_STATUS_LINKED
+  "collegato: %s",
+  // MSG_MAIN_STATUS_WAITING
+  "in attesa",
 
   // MSG_DIAGNOSTICS_TITLE
   "Diagnostica",
