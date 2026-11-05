@@ -11,6 +11,7 @@
 """Write the BIOS reference vectors of the core test ROM.
 
 Usage: make_bios_vectors.py [OUTPUT]
+       make_bios_vectors.py --record SAVE [SAVE ...]
 
 Writes tests/core-rom/source/bios_vectors.h (or OUTPUT): the inputs of the
 BIOS copy and decompression functions and the output each one must produce,
@@ -30,11 +31,26 @@ even length and LZ77 streams that never copy from the byte just before
 at a time, so it gets texts of a multiple of 4 bytes; BitUnPack gets
 sources that fill whole output words, and offsets that never overflow the
 output width.
+
+The arithmetic functions (Sqrt, ArcTan, ArcTan2, BgAffineSet and
+ObjAffineSet) get one case each, which runs the function on every input
+of its list. For each input the ROM takes the CRC-32 of what comes back:
+r0-r3, r12, the CPSR and the destination with the guard bytes around it.
+It leaves those CRCs in SRAM from MATH_LOG on, past the signature, and
+the case's detail is the CRC-32 of that list. GBATEK gives no formula
+precise enough to fix every bit of these results, so the expected details
+are the official BIOS's, recorded in RECORDED: --record reads the saves
+of runs on the official BIOS in two emulators (build/host/rom_run and
+mGBA) and prints them when all agree. With saves that disagree, such as
+one made on the official BIOS and one on the built-in BIOS, it prints
+the inputs where a case differs instead.
 """
 
 import heapq
 import os
+import struct
 import sys
+import zlib
 
 OUTPUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
                       "tests", "core-rom", "source", "bios_vectors.h")
@@ -44,6 +60,35 @@ SEED = 0x47425253
 MAX_VECTORS = 32
 # The generated header must stay under 64 KiB.
 MAX_HEADER = 64 * 1024
+
+# The per-input CRCs of the arithmetic cases, in SRAM past the signature's
+# 8 KiB (RESULT_SPACE in tests/gba-rom/backup.h), at most math_log's 128
+# per case (cases_bios.c).
+MATH_LOG = 0x2000
+MAX_MATH_CRCS = 128
+# Registers left out of each case's CRCs, bit n for rn, because GBATEK
+# gives no result in them and the two BIOSes leave them differently: the
+# official BIOS leaves working values in r1 and r3 after Sqrt, ArcTan and
+# ArcTan2 and in r3 after BgAffineSet, where the built-in one keeps r3,
+# and the built-in BIOS's pointers end one entry further on after
+# BgAffineSet (r0, r1) and ObjAffineSet (r0).
+LEFT_OUT = {
+    "sqrt": 0b1010,
+    "arctan": 0b1010,
+    "arctan2": 0b1010,
+    "bg_affine_set": 0b1011,
+    "obj_affine_set": 0b0001,
+}
+# The detail of each arithmetic case on the official BIOS: --record on
+# the saves of build/host/rom_run and of mGBA 0.10.3, both with the
+# official BIOS, which gave the same values.
+RECORDED = {
+    "sqrt": 0xA09527A0,
+    "arctan": 0xE7591202,
+    "arctan2": 0xC7AB61B8,
+    "bg_affine_set": 0xB99CC27F,
+    "obj_affine_set": 0x3A3AE3A8,
+}
 
 
 class Random:
@@ -279,6 +324,7 @@ class Header:
         self.data = {}
         self.infos = []
         self.tables = []
+        self.maths = []
 
     def array(self, name, data):
         """The C name of an array holding data, shared between equal ones."""
@@ -332,6 +378,20 @@ class Header:
             "  u16 dest_offset;",
             "} BiosVector;",
             "",
+            "/* An arithmetic case: count inputs of words u32 each from in,",
+            "   the registers its CRCs leave out (bit n for rn), the SRAM",
+            "   offset of the CRCs and the case's detail on the official",
+            "   BIOS. */",
+            "typedef struct",
+            "{",
+            "  const u32 *in;",
+            "  u16 count;",
+            "  u8 words;",
+            "  u8 left_out;",
+            "  u32 log;",
+            "  u32 expect;",
+            "} BiosMath;",
+            "",
         ]
         for name in self.arrays:
             data = self.data[name]
@@ -357,6 +417,13 @@ class Header:
                 lines.append(f"    {v['expect']}, {v['length']},"
                              f" {v.get('dest_offset', 0)} }},")
             lines.append("};")
+            lines.append("")
+        for name, comment, array, count, words, log in self.maths:
+            lines.append(f"/* {comment} */")
+            lines.append(f"static const BiosMath bios_{name} =")
+            lines.append(f"  {{ {array}, {count}, {words},"
+                         f" 0x{LEFT_OUT[name]:X}, 0x{log:04X},"
+                         f" 0x{RECORDED[name]:08X} }};")
             lines.append("")
         biggest = max(v["length"] + v.get("dest_offset", 0)
                       for _, _, vectors in self.tables for v in vectors)
@@ -460,6 +527,118 @@ def bitunpack_table(header, source_name):
                  "4 to 8 bits, zero flag off and on.", vectors)
 
 
+def s16(value):
+    return value & 0xFFFF
+
+
+def math_inputs():
+    """(case, comment, words per input, inputs as tuples of u32 words),
+    in the order of the cases and of their CRCs in SRAM."""
+    sqrt = [0, 1, 2, 3, 4, 5, 8, 9, 15, 16, 17, 99, 100, 101, 0xFFFF,
+            0x10000, 0x10001, 0x3FFF0000, 0x3FFF0001, 0x3FFF0002,
+            0x40000000, 0x7FFFFFFF, 0x80000000, 0xFFFE0000, 0xFFFE0001,
+            0xFFFFFFFF]
+    # Tangents and coordinates are 1.1.14 fixed point, sign extended.
+    arctan = range(-0x4000, 0x4001, 0x200)
+    arctan2 = [(0x4000, 0), (-0x4000, 0), (0, 0x4000), (0, -0x4000),
+               (0x3000, 0x1000), (0x1000, 0x3000), (-0x1000, 0x3000),
+               (-0x3000, 0x1000), (-0x3000, -0x1000), (-0x1000, -0x3000),
+               (0x1000, -0x3000), (0x3000, -0x1000), (0x2000, 0x2000),
+               (-0x2000, 0x2000), (-0x2000, -0x2000), (0x2000, -0x2000),
+               (0, 0)]
+    # Angles use their top byte; a few have a low byte the BIOS must
+    # ignore. Scales are 8.8 fixed point, mirrored and at the limits too.
+    angles = (0x0000, 0x0080, 0x2000, 0x4000, 0x6789, 0x8000, 0xA0FF,
+              0xC000, 0xF000)
+    scales = ((0x100, 0x100), (0x80, 0x200), (-0x100, 0x155),
+              (0x7FFF, -0x8000))
+    rng = Random(SEED + 1)
+    bg, obj = [], []
+    for angle in angles:
+        for sx, sy in scales:
+            # Centre in 20.8 fixed point, display centre in pixels; the
+            # last halfword of each source is padding.
+            cx = ((rng.byte() << 8 | rng.byte()) << 4) - 0x80000
+            cy = ((rng.byte() << 8 | rng.byte()) << 4) - 0x80000
+            dx, dy = rng.byte() - 128, rng.byte() - 128
+            bg.append((cx & 0xFFFFFFFF, cy & 0xFFFFFFFF,
+                       s16(dx) | s16(dy) << 16, s16(sx) | s16(sy) << 16,
+                       angle | 0xA55A << 16))
+            obj.append((s16(sx) | s16(sy) << 16, angle | 0xA55A << 16))
+    return [
+        ("sqrt", "Sqrt (SWI 08h): r0.", 1, [(v,) for v in sqrt]),
+        ("arctan", "ArcTan (SWI 09h): r0 from -4000h to 4000h.", 1,
+         [(v & 0xFFFFFFFF,) for v in arctan]),
+        ("arctan2", "ArcTan2 (SWI 0Ah): r0 = x, r1 = y.", 2,
+         [(x & 0xFFFFFFFF, y & 0xFFFFFFFF) for x, y in arctan2]),
+        ("bg_affine_set", "BgAffineSet (SWI 0Eh): one 20-byte source "
+         "each, then all in one call.", 5, bg),
+        ("obj_affine_set", "ObjAffineSet (SWI 0Fh): one 8-byte source "
+         "each, then all in one call.", 2, obj),
+    ]
+
+
+def math_layout():
+    """(case, inputs, SRAM offset, CRCs) per arithmetic case: the affine
+    cases end with one more call that takes the whole list."""
+    layout = []
+    log = MATH_LOG
+    for name, _, _, inputs in math_inputs():
+        crcs = len(inputs) + name.endswith("affine_set")
+        assert crcs <= MAX_MATH_CRCS
+        layout.append((name, inputs, log, crcs))
+        log += 4 * crcs
+    return layout
+
+
+def math_tables(header):
+    logs = {name: log for name, _, log, _ in math_layout()}
+    for name, comment, words, inputs in math_inputs():
+        array = header.array(f"{name}_in", b"".join(
+            w.to_bytes(4, "little") for entry in inputs for w in entry))
+        header.maths.append((name, comment, array, len(inputs), words,
+                             logs[name]))
+
+
+def record(paths):
+    """Lines to print and the exit status for --record: the RECORDED
+    entry of each case whose CRCs are the same in every save, and each
+    input where the others differ."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import decode_test_rom
+
+    runs = []
+    for path in paths:
+        with open(path, "rb") as f:
+            data = f.read()
+        details = {name: detail for name, _, detail in
+                   decode_test_rom.parse(data)["cases"]}
+        run = {}
+        for name, _, log, crcs in math_layout():
+            raw = data[log:log + 4 * crcs]
+            if details.get(name) != zlib.crc32(raw):
+                raise ValueError(f"{path}: {name} left no CRCs: it did not "
+                                 "run, or did not finish")
+            run[name] = struct.unpack(f"<{crcs}I", raw)
+        runs.append(run)
+    lines = []
+    status = 0
+    for name, inputs, _, crcs in math_layout():
+        logs = [run[name] for run in runs]
+        differ = [i for i in range(crcs)
+                  if any(log[i] != logs[0][i] for log in logs)]
+        if not differ:
+            crc = zlib.crc32(struct.pack(f"<{crcs}I", *logs[0]))
+            lines.append(f'    "{name}": 0x{crc:08X},')
+        status |= bool(differ)
+        for i in differ:
+            what = (" ".join(f"{w:08X}" for w in inputs[i])
+                    if i < len(inputs) else "all inputs in one call")
+            lines.append(f"{name}: input {i} ({what}) differs: " +
+                         " ".join(f"{log[i]:08X}" for log in logs))
+    return lines, status
+
+
 def generate():
     header = Header()
     texts = make_texts()
@@ -468,12 +647,21 @@ def generate():
     decompression_tables(header, texts)
     copy_tables(header, "text_random")
     bitunpack_table(header, "text_random")
+    math_tables(header)
     text = header.render()
     assert len(text.encode()) < MAX_HEADER, "bios_vectors.h over 64 KiB"
     return text
 
 
 def main(argv):
+    if len(argv) > 2 and argv[1] == "--record":
+        try:
+            lines, status = record(argv[2:])
+        except ValueError as error:
+            print(error, file=sys.stderr)
+            return 2
+        print("\n".join(lines))
+        return status
     path = argv[1] if len(argv) > 1 else OUTPUT
     with open(path, "w", newline="\n") as f:
         f.write(generate())

@@ -64,7 +64,7 @@ div_\name\()_arm:
 	ldr	r12, =0xCCCCCCCC
 	msr	cpsr_f, r5
 	swi	\number << 16
-	b	div_store
+	b	swi_store
 
 	.global	div_\name\()_thumb
 	.type	div_\name\()_thumb, %function
@@ -86,15 +86,42 @@ div_\name\()_thumb:
 	bx	pc
 	nop
 	.arm
-	b	div_store
+	b	swi_store
 	.endm
 
 	div_call	div, 0x06
 	div_call	divarm, 0x07
 
+@ Sqrt (SWI 08h), ArcTan (09h), ArcTan2 (0Ah), BgAffineSet (0Eh) and
+@ ObjAffineSet (0Fh) for cases_bios.c: math_<name>(const u32 in[4],
+@ u32 out[6]) calls the SWI from ARM code with r0-r3 from in,
+@ r12 = CCCCCCCCh and the flags at 6h, and stores the r0, r1, r2, r3, r12
+@ and CPSR it returns with.
+
+	.macro	math_call name, number
 	.arm
 	.align	2
-div_store:
+	.global	math_\name
+	.type	math_\name, %function
+math_\name:
+	push	{r4, r5, lr}
+	mov	r4, r1
+	ldmia	r0, {r0-r3}
+	ldr	r12, =0xCCCCCCCC
+	msr	cpsr_f, #0x60000000
+	swi	\number << 16
+	b	swi_store
+	.endm
+
+	math_call	sqrt, 0x08
+	math_call	arctan, 0x09
+	math_call	arctan2, 0x0A
+	math_call	bg_affine_set, 0x0E
+	math_call	obj_affine_set, 0x0F
+
+	.arm
+	.align	2
+swi_store:
 	mrs	r5, cpsr
 	stmia	r4, {r0, r1, r2, r3, r12}
 	str	r5, [r4, #20]

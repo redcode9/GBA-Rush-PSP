@@ -38,11 +38,26 @@
  * (GBATEK); a BIOS that only checks flags 0-7 keeps waiting and the case
  * hangs. The detail is the IRQs taken meanwhile.
  *
+ * sqrt, arctan, arctan2, bg_affine_set and obj_affine_set run Sqrt,
+ * ArcTan, ArcTan2, BgAffineSet and ObjAffineSet (SWI 08h-0Ah, 0Eh, 0Fh)
+ * from ARM code on every input of their list in bios_vectors.h. Each
+ * call starts with r12 = CCCCCCCCh, the flags at 6h and any register the
+ * function does not take set to a pattern, and an affine call's
+ * destination filled as above; the CRC-32 of the r0-r3, r12 and CPSR it
+ * returns with (less the registers bios_vectors.h leaves out) and of its
+ * destination window goes into a list, which the case leaves in SRAM
+ * past the signature for tools/make_bios_vectors.py --record. The detail
+ * is the CRC-32 of that list, and must be the one recorded on the
+ * official BIOS. The affine cases end with a call over the whole list,
+ * and ObjAffineSet spaces its parameters 2 and 8 bytes apart in turn.
+ *
  * mGBA 0.10.3 passes every case on the official BIOS; on its own BIOS
- * it fails the four rl_* cases. To confirm on hardware.
+ * it fails the four rl_* cases, bg_affine_set and obj_affine_set. To
+ * confirm on hardware.
  */
 
 #include "result.h"
+#include "backup.h"
 #include "bios_vectors.h"
 
 #define GUARD 32
@@ -68,7 +83,15 @@ typedef void DivCall(const u32 in[3], u32 out[6]);
 
 DivCall div_div_arm, div_div_thumb, div_divarm_arm, div_divarm_thumb;
 
+/* r0-r3 in; r0, r1, r2, r3, r12 and the CPSR after the SWI out. */
+typedef void MathCall(const u32 in[4], u32 out[6]);
+
+MathCall math_sqrt, math_arctan, math_arctan2, math_bg_affine_set,
+ math_obj_affine_set;
+
 EWRAM_BSS static u32 wram_dest[(BIOS_VECTORS_MAX_OUTPUT + GUARD + 3) / 4];
+/* tools/make_bios_vectors.py keeps every list within this. */
+EWRAM_BSS static u32 math_log[128];
 
 static int run(const BiosVector *v, unsigned count, BiosCall *call,
  u32 *dest, u32 *detail)
@@ -219,6 +242,100 @@ static int div_cycles(u32 *detail)
   return RESULT_PASS;
 }
 
+/* The CRC of one call's registers, without those GBATEK gives no result
+   in and the two BIOSes leave differently (m->left_out). */
+static u32 math_crc(const BiosMath *m, u32 out[6])
+{
+  unsigned k;
+
+  for(k = 0; k < 4; k++)
+    if(m->left_out >> k & 1)
+      out[k] = 0;
+  return result_crc32(0, out, 6 * 4);
+}
+
+static int math_finish(const BiosMath *m, unsigned crcs, u32 *detail)
+{
+  /* A failed write shows when --record finds the list does not match. */
+  backup_write(m->log, math_log, crcs * 4);
+  *detail = result_crc32(0, math_log, crcs * 4);
+  return *detail == m->expect ? RESULT_PASS : RESULT_FAIL;
+}
+
+/* Sqrt, ArcTan and ArcTan2: r0 (and r1) from the input. */
+static int math_regs(MathCall *call, const BiosMath *m, u32 *detail)
+{
+  unsigned i;
+
+  for(i = 0; i < m->count; i++)
+  {
+    const u32 *input = m->in + i * m->words;
+    u32 in[4] = { input[0], m->words > 1 ? input[1] : 0x11111111u,
+     0x22222222u, 0x33333333u };
+    u32 out[6];
+
+    call(in, out);
+    math_log[i] = math_crc(m, out);
+  }
+  return math_finish(m, m->count, detail);
+}
+
+/* BgAffineSet and ObjAffineSet: one source per call, then all of them. */
+static int math_affine(MathCall *call, const BiosMath *m, int obj,
+ u32 *detail)
+{
+  unsigned i, k;
+
+  if(m->count * 32u + GUARD > sizeof(wram_dest))
+    return RESULT_FAIL;
+  for(i = 0; i <= m->count; i++)
+  {
+    u32 count = i < m->count ? 1 : m->count;
+    /* ObjAffineSet's r3: bytes between its four parameters. */
+    u32 stride = i % 2 == 0 && i < m->count ? 2 : 8;
+    u32 bytes = count * (obj ? 4 * stride : 16) + GUARD;
+    u32 in[4];
+    u32 out[6];
+
+    in[0] = (u32)(m->in + (i < m->count ? i * m->words : 0));
+    in[1] = (u32)wram_dest;
+    in[2] = count;
+    in[3] = obj ? stride : 0x33333333u;
+    for(k = 0; k < bytes / 4; k++)
+      wram_dest[k] = FILL;
+    call(in, out);
+    /* Free of where the buffer is linked. */
+    out[1] -= (u32)wram_dest;
+    math_log[i] = result_crc32(math_crc(m, out), wram_dest, bytes);
+  }
+  return math_finish(m, m->count + 1, detail);
+}
+
+static int sqrt_case(u32 *detail)
+{
+  return math_regs(math_sqrt, &bios_sqrt, detail);
+}
+
+static int arctan_case(u32 *detail)
+{
+  return math_regs(math_arctan, &bios_arctan, detail);
+}
+
+static int arctan2_case(u32 *detail)
+{
+  return math_regs(math_arctan2, &bios_arctan2, detail);
+}
+
+static int bg_affine_set_case(u32 *detail)
+{
+  return math_affine(math_bg_affine_set, &bios_bg_affine_set, 0, detail);
+}
+
+static int obj_affine_set_case(u32 *detail)
+{
+  return math_affine(math_obj_affine_set, &bios_obj_affine_set, 1, detail);
+}
+
 static inline void swi_intr_wait(u32 discard, u32 flags)
 {
   register u32 r0 __asm__("r0") = discard;
@@ -275,5 +392,10 @@ const TestCase cases_bios[] =
   { "divarm_thumb", divarm_thumb },
   { "div_cycles", div_cycles },
   { "intrwait_dma0", intrwait_dma0 },
+  { "sqrt", sqrt_case },
+  { "arctan", arctan_case },
+  { "arctan2", arctan2_case },
+  { "bg_affine_set", bg_affine_set_case },
+  { "obj_affine_set", obj_affine_set_case },
   { NULL, NULL }
 };

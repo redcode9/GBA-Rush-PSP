@@ -1,16 +1,21 @@
 """Tests of tools/make_bios_vectors.py: each encoder against a decoder
 written from GBATEK's description of the BIOS decompression functions, the
-BitUnPack model against a worked example, and the committed
-tests/core-rom/source/bios_vectors.h against a fresh run."""
+BitUnPack model against a worked example, --record on synthetic core ROM
+saves, and the committed tests/core-rom/source/bios_vectors.h against a
+fresh run."""
 
 import os
+import struct
 import sys
 import tempfile
 import unittest
+import zlib
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
+sys.path.insert(0, os.path.dirname(__file__))
 
 import make_bios_vectors as gen  # noqa: E402
+from test_decode_test_rom import signature  # noqa: E402
 
 
 def header(stream, kind):
@@ -90,7 +95,66 @@ def huffman_decode(stream):
                  for k in range(0, len(units), 2))
 
 
+def core_save(logs):
+    """A core ROM save whose arithmetic cases left the CRC lists logs."""
+    data = bytearray(0x8000)
+    cases = []
+    for name, _, log, crcs in gen.math_layout():
+        raw = struct.pack(f"<{crcs}I", *logs[name])
+        data[log:log + len(raw)] = raw
+        cases.append((name, 1, zlib.crc32(raw)))
+    sig = signature("core-rom", cases)
+    data[:len(sig)] = sig
+    return bytes(data)
+
+
+def math_logs():
+    return {name: [n * 0x01010101 + k for n in range(crcs)]
+            for k, (name, _, _, crcs) in enumerate(gen.math_layout())}
+
+
 class MakeBiosVectorsTest(unittest.TestCase):
+    def record(self, *saves):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for n, data in enumerate(saves):
+                paths.append(os.path.join(directory, f"{n}.sav"))
+                with open(paths[-1], "wb") as f:
+                    f.write(data)
+            return gen.record(paths)
+
+    def test_record_prints_the_details_saves_agree_on(self):
+        logs = math_logs()
+        lines, status = self.record(core_save(logs), core_save(logs))
+        self.assertEqual(status, 0)
+        self.assertEqual(lines, [
+            f'    "{name}": 0x'
+            f'{zlib.crc32(struct.pack(f"<{len(crcs)}I", *crcs)):08X},'
+            for name, crcs in logs.items()])
+
+    def test_record_names_every_input_saves_differ_at(self):
+        logs = math_logs()
+        other = math_logs()
+        other["arctan2"][3] ^= 1
+        other["bg_affine_set"][-1] ^= 1
+        lines, status = self.record(core_save(logs), core_save(other))
+        self.assertEqual(status, 1)
+        self.assertIn("arctan2: input 3 (00000000 FFFFC000) differs: "
+                      f"{logs['arctan2'][3]:08X} {other['arctan2'][3]:08X}",
+                      lines)
+        self.assertIn("bg_affine_set: input 36 (all inputs in one call) "
+                      f"differs: {logs['bg_affine_set'][36]:08X} "
+                      f"{other['bg_affine_set'][36]:08X}", lines)
+        self.assertEqual(sum("differs" in line for line in lines), 2)
+        self.assertEqual(sum(line.startswith("    ") for line in lines), 3)
+
+    def test_record_refuses_a_case_that_left_no_list(self):
+        data = bytearray(core_save(math_logs()))
+        data[gen.MATH_LOG] ^= 1
+        with self.assertRaisesRegex(ValueError, "sqrt left no CRCs"):
+            self.record(bytes(data))
+
+
     def test_encoders_round_trip(self):
         for name, text in gen.make_texts():
             with self.subTest(text=name):

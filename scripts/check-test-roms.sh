@@ -14,7 +14,9 @@ set -eu
 #
 # BIOS=/path/to/gba_bios.bin runs the core ROM on your dump of the official
 # BIOS (never commit it), where the BIOS open bus cases must pass as well;
-# the built-in BIOS returns from other addresses, so with it they fail.
+# the built-in BIOS returns from other addresses, so with it they fail, and
+# so does bg_affine_set, whose start coordinates differ at a scale of -128
+# (source/bios/README.md).
 #
 # rom_run has no HBlank DMA, HBlank IRQ or PPU, so the raster ROM's cases
 # fail there: it only has to boot, run them and leave its signature.
@@ -70,7 +72,7 @@ if [ -n "${BIOS:-}" ]; then
 else
   $RUN --frames 600 --save $OUT/core-rom.sav $OUT/core-rom.gba
   $PYTHON tools/decode_test_rom.py \
-    --allow-fail bios_openbus_swi,bios_openbus_irq,$core_allow \
+    --allow-fail bios_openbus_swi,bios_openbus_irq,bg_affine_set,$core_allow \
     $OUT/core-rom.sav
 fi
 
@@ -110,7 +112,9 @@ $PYTHON tools/decode_test_rom.py \
 #   the reloaded count, so right after an overflow it reads up to 2 below
 #   the reload.
 # - without BIOS, the RL cases: mGBA's own BIOS decompresses RL data
-#   differently; with your official BIOS they pass.
+#   differently; with your official BIOS they pass. The same goes for
+#   bg_affine_set and obj_affine_set: it computes the affine parameters in
+#   floating point and leaves r1 where it was.
 # mgba_run is told the save chips mGBA cannot guess (it ignores the ID
 # string) and the save ROMs get 900 frames, as filling the 8 KiB EEPROM
 # takes about 400. The raster ROM runs for 300 frames, then for 301, and
@@ -141,6 +145,7 @@ if [ -n "${BIOS:-}" ]; then
   $MGBA --bios "$BIOS" --save $OUT/mgba/core-rom.sav $OUT/core-rom.gba
 else
   mgba_allow=$mgba_allow,rl_wram_arm,rl_wram_thumb,rl_vram_arm,rl_vram_thumb
+  mgba_allow=$mgba_allow,bg_affine_set,obj_affine_set
   $MGBA --save $OUT/mgba/core-rom.sav $OUT/core-rom.gba
 fi
 $PYTHON tools/decode_test_rom.py --allow-fail $mgba_allow \
