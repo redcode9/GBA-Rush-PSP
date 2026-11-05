@@ -379,10 +379,11 @@ static int sampler(SceSize args, void *argp)
 
 void arm_gba_profile_start(void)
 {
+  /* A capture on the Classic core has no profile, not the last one. */
+  profiled = 0;
   if(main_cpu_core != CPU_CORE_NEW || jit == NULL)
     return;
   core_profile_clear(&profile);
-  profiled = 0;
   stats_at_start = jit->stats;
   emulation_thread = sceKernelGetThreadId();
   if(sampler_thread < 0)
