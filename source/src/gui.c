@@ -6095,8 +6095,64 @@ static void get_timestamp_string(char *buffer, u16 msg_id, ScePspDateTime *msg_t
   Save Config Files
 -----------------------------------------------------------------------------*/
 
-/* ConfigStoreIo callbacks: config_store.c's save-to-temp, validate, rename
-   sequence carried out with sceIo calls. Each returns nonzero on success. */
+/* ConfigStoreIo and SaveStoreIo callbacks: the settings file and the .sav
+   share these sceIo calls. Unless noted, each returns nonzero on success;
+   every negative sceIo result counts as a failure, and none allocates. */
+
+/* SaveStoreIo open_write: creates or truncates path; a negative handle on
+   failure. */
+static int32_t save_io_open_write(void *context, const char *path)
+{
+  (void)context;
+  return sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+}
+
+/* Writes all of data, looping over short writes: size, or 0 on failure. */
+static int save_io_write(void *context, int32_t file, const uint8_t *data,
+ size_t size)
+{
+  size_t total = 0;
+  int result;
+
+  (void)context;
+  while(total < size)
+  {
+    result = sceIoWrite(file, data + total, (SceSize)(size - total));
+    if(result <= 0)
+      return 0;
+    total += (size_t)result;
+  }
+  return (int)size;
+}
+
+/* A failed close may have lost data. */
+static int save_io_close(void *context, int32_t file)
+{
+  (void)context;
+  return sceIoClose(file) >= 0;
+}
+
+/* Syncs the device of path up to its ':', e.g. "ms0:" or "ef0:"; a path
+   without one is on main_path's device. */
+static int save_io_flush(void *context, const char *path)
+{
+  char device[8];
+  const char *separator;
+  size_t length;
+
+  (void)context;
+  if(strchr(path, ':') == NULL)
+    path = main_path;
+  separator = strchr(path, ':');
+  if(separator == NULL)
+    return 0;
+  length = (size_t)(separator - path) + 1;
+  if(length >= sizeof(device))
+    return 0;
+  memcpy(device, path, length);
+  device[length] = '\0';
+  return sceIoSync(device, 0) >= 0;
+}
 
 /* Fails if the file holds more than capacity bytes. */
 static int config_io_read(void *context, const char *path, uint8_t *data,
@@ -6132,55 +6188,35 @@ static int config_io_read(void *context, const char *path, uint8_t *data,
   return 1;
 }
 
-/* Writes the whole buffer, looping over short writes; 0 on any failure. */
+/* Writes the whole buffer; 0 if the open, a write or the close fails. */
 static int config_io_write(void *context, const char *path,
  const uint8_t *data, size_t size)
 {
-  SceUID file;
-  size_t total = 0;
+  int32_t file = save_io_open_write(context, path);
+  int written;
 
-  (void)context;
-  FILE_OPEN(file, path, WRITE);
-  if(!FILE_CHECK_VALID(file))
+  if(file < 0)
     return 0;
-  while(total < size)
-  {
-    s32 result = FILE_WRITE(file, data + total, size - total);
-    if(result <= 0)
-    {
-      FILE_CLOSE(file);
-      return 0;
-    }
-    total += (size_t)result;
-  }
-  FILE_CLOSE(file);
-  return 1;
+  written = save_io_write(context, file, data, size);
+  return save_io_close(context, file) && (size_t)written == size;
 }
 
 /* Sync the device that holds main_path, e.g. "ms0:". */
 static int config_io_flush(void *context)
 {
-  char device[8];
-  const char *separator;
-  size_t length;
-
-  (void)context;
-  separator = strchr(main_path, ':');
-  if(separator == NULL)
-    return 0;
-  length = (size_t)(separator - main_path) + 1;
-  if(length >= sizeof(device))
-    return 0;
-  memcpy(device, main_path, length);
-  device[length] = '\0';
-  return sceIoSync(device, 0) >= 0;
+  return save_io_flush(context, main_path);
 }
 
+/* Renames source to target, then checks both names: target there, source
+   gone. */
 static int config_io_move(void *context, const char *source,
  const char *target)
 {
+  SceIoStat stat;
+
   (void)context;
-  return sceIoRename(source, target) >= 0;
+  return sceIoRename(source, target) >= 0 &&
+         sceIoGetstat(target, &stat) >= 0 && sceIoGetstat(source, &stat) < 0;
 }
 
 /* Removing a file that does not exist counts as success. */
@@ -6284,13 +6320,46 @@ static int save_io_read(void *context, const char *path, uint8_t *data,
   return 1;
 }
 
-/* memory.c's .sav I/O, sharing write with the settings file. */
+/* SaveStoreIo crc32: reads path to its end in 16 KiB blocks. The block is
+   static, so only the emulator and menu thread may call this. */
+static int save_io_crc32(void *context, const char *path, uint32_t *crc,
+ size_t *size)
+{
+  static u8 block[16 * 1024];
+  SceUID file;
+  uLong value = crc32(0L, Z_NULL, 0);
+  size_t total = 0;
+  int result;
+
+  (void)context;
+  file = sceIoOpen(path, PSP_O_RDONLY, 0);
+  if(file < 0)
+    return 0;
+  while((result = sceIoRead(file, block, sizeof(block))) > 0)
+  {
+    value = crc32(value, block, (uInt)result);
+    total += (size_t)result;
+  }
+  if(sceIoClose(file) < 0 || result < 0)
+    return 0;
+  *crc = (uint32_t)value;
+  *size = total;
+  return 1;
+}
+
+/* memory.c's .sav I/O, sharing move and remove with the settings file. */
 const SaveStoreIo gui_save_store_io =
 {
   NULL,
   save_io_exists,
   save_io_read,
-  config_io_write
+  save_io_open_write,
+  save_io_write,
+  save_io_close,
+  save_io_flush,
+  config_io_move,
+  config_io_remove,
+  save_io_crc32
 };
 
 /* tempgba.cfg plus its .tmp (write target) and .bak (last good) siblings. */
