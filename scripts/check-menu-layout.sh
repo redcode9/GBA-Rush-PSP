@@ -4,8 +4,8 @@ set -eu
 
 # Source-level checks of the main menu in gui.c, which host tests do not
 # compile: the category order (the same order test_menu_model.c checks in
-# menu_catalog.c) and that menu text is drawn through the clipped,
-# viewport-bounded helpers.
+# menu_catalog.c), that menu text is drawn through the clipped,
+# viewport-bounded helpers, and that the paused game is the background.
 
 expected='MSG_CATEGORY_CONTINUE
 MSG_CATEGORY_SAVE_LOAD
@@ -57,6 +57,15 @@ fi
 if grep -q 'print_string.*guide_line' source/src/gui.c ||
    grep -q 'print_string_gbk.*guide_line' source/src/gui.c; then
   echo "Contextual guide text bypasses bounded rendering." >&2
+  exit 1
+fi
+
+# The menu shows the paused game behind its rows, from one top-level
+# function that other full-screen cards can reuse.
+if ! grep -q '^static void menu_draw_background(void)' source/src/gui.c ||
+   ! grep -q '^    menu_draw_background();' source/src/gui.c ||
+   ! grep -q 'video_present_paused_frame()' source/src/gui.c; then
+  echo "The menu does not draw the paused game behind its rows." >&2
   exit 1
 fi
 
