@@ -7,8 +7,9 @@ set -eu
 # reproducible: every file gets the last commit's time (or
 # SOURCE_DATE_EPOCH) and zip -X leaves out extra file attributes.
 # Next to it go the build manifest (scripts/release_manifest.py: commit,
-# build id, compiler, flags and the SHA-256 of every built file) and
-# dist/SHA256SUMS.
+# build id, compiler, flags and the SHA-256 of every built file), the
+# corresponding source (dist/GBA-Rush-PSP-VERSION-source.zip, git archive
+# of the tag named VERSION) and dist/SHA256SUMS.
 
 if [ "$#" -ne 1 ]; then
   echo "Usage: $0 VERSION" >&2
@@ -22,6 +23,21 @@ case "$version" in
     exit 1
     ;;
 esac
+
+# The source zip must be the source of the binary being packaged.
+if ! git rev-parse -q --verify "refs/tags/$version" >/dev/null; then
+  echo "Missing tag $version: tag the release before packaging it" >&2
+  exit 1
+fi
+if [ -n "$(git status --porcelain -- source/)" ]; then
+  echo "source/ has uncommitted changes: commit them before packaging" >&2
+  exit 1
+fi
+if [ "$(git rev-parse "refs/tags/$version:source")" != \
+  "$(git rev-parse HEAD:source)" ]; then
+  echo "Tag $version has a different source/ tree than HEAD" >&2
+  exit 1
+fi
 
 documentation_files='LICENSE NOTICE README.md CHANGELOG.md CONTRIBUTING.md
 docs/link-cable.md docs/ROADMAP-1.4.0.md docs/images/link-trade-room.jpg
@@ -43,6 +59,7 @@ install_root="$release_root/GBARushPSP"
 archive="dist/$release_name.zip"
 checksum="$archive.sha256"
 manifest="dist/$release_name.manifest.json"
+source_archive="dist/$release_name-source.zip"
 sums=dist/SHA256SUMS
 release_epoch=${SOURCE_DATE_EPOCH:-$(git log -1 --format=%at)}
 
@@ -68,7 +85,7 @@ else
 fi
 
 rm -rf "$release_root"
-rm -f "$archive" "$checksum" "$manifest" "$sums"
+rm -f "$archive" "$checksum" "$manifest" "$source_archive" "$sums"
 mkdir -p "$install_root"
 
 cp source/EBOOT.PBP "$install_root/EBOOT.PBP"
@@ -110,10 +127,14 @@ ${PYTHON:-python3} scripts/release_manifest.py write --output "$manifest" \
   --source-date-epoch "$release_epoch" --compiler "$compiler_version" \
   --cflags="$cflags" --pspsdk "$pspsdk" --pspdev "$pspdev" \
   --source-dir source
-(cd dist && sha256 "$release_name.zip" "$release_name.manifest.json") \
-  > "$sums"
+# autocrlf off: the zip holds the repository's bytes on every host.
+git -c core.autocrlf=false archive --format=zip \
+  --prefix="$release_name-source/" -o "$source_archive" "refs/tags/$version"
+(cd dist && sha256 "$release_name.zip" "$release_name.manifest.json" \
+  "$release_name-source.zip") > "$sums"
 
 echo "Created $archive"
 echo "Created $checksum"
 echo "Created $manifest"
+echo "Created $source_archive"
 echo "Created $sums"
