@@ -87,22 +87,28 @@ A `.gbsh` file holds the state hashes of a replayed input trace (`.gbit`):
 one line per emulated frame, with one hash for each region (registers, IWRAM,
 EWRAM, VRAM, OAM, palette, I/O, backup memory, audio), in the `GBSH v1` text
 documented in `source/src/state_hash.h`. `tools/state_hash_diff.py A B`
-refuses files from different ROMs, exits 0 when every frame and the
-counters line match, and otherwise exits 1 and names the first diverging
-frame and its regions:
+exits 0 when every frame matches, exits 1 and names the first diverging
+frame and its regions, and exits 2 on a malformed file or on files from
+different ROMs or with different region lists. Counters are compared by the
+names both counters lines hold: a different value exits 1, and a counter
+only one file has is printed but does not fail.
 
 - Self-check: replay the same `.gbit` twice with the same build. The diff
   must exit 0; anything else is nondeterminism in the emulator or the replay.
 - Differential: compare the `.gbsh` of a baseline build with a candidate's
-  for the same trace. The diff prints both build ids and the first frame and
-  region where the candidate behaves differently.
+  for the same trace. The diff prints both build ids when they differ, and
+  the first frame and region where the candidate behaves differently.
 - Perturbation: compare a run with one IWRAM bit flipped at frame N with an
   unperturbed run. The diff must exit 1 naming frame N and `iwram`;
   otherwise the comparison cannot see a divergence.
 
-A compact golden keeps the sha256 of a full `.gbsh` and one record every 60
-frames; against a golden the diff names the 60-frame window where the
-divergence begins.
+A compact golden keeps one record every 60 frames and the sha256 of a full
+`.gbsh` taken from its regions line through its last record, without the
+magic, identity and counters lines (`tools/state_hash_diff.py --help`
+defines the format). Against a golden the diff names the 60-frame window of
+the first sampled divergence. A difference that heals before the next
+sample shows only in the full file: regenerate the full `.gbsh` with the
+reference build and compare it to find the first diverging frame.
 
 ## Link development
 
