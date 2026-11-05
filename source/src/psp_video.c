@@ -301,6 +301,16 @@ static void finish_present_list(void)
   sceGuFinishId(PRESENT_LIST_ID);
 }
 
+/* After waiting for the GE: adds the present it timed, if any. */
+static void count_present_time(void)
+{
+  if(!present_done_at)
+    return;
+  ge_present_us += present_done_at - present_queued_at;
+  ge_presents++;
+  present_done_at = 0;
+}
+
 void video_present_time(u32 *presents, u64 *us)
 {
   *presents = ge_presents;
@@ -409,12 +419,7 @@ void video_sync_present(void)
   sceGuSync(0, GU_SYNC_FINISH);
   last_ge_wait_us = sceKernelGetSystemTimeLow() - wait_start;
   present_pending = 0;
-  if(present_done_at)
-  {
-    ge_present_us += present_done_at - present_queued_at;
-    ge_presents++;
-    present_done_at = 0;
-  }
+  count_present_time();
 }
 
 u32 video_last_ge_wait_us(void)
@@ -828,8 +833,9 @@ static void blit_sw(void)
   copied = copy_texture_source();
   sceGuClear(GU_COLOR_BUFFER_BIT | GU_FAST_CLEAR_BIT);
 
-  sceGuFinish();
+  finish_present_list();
   video_ge_sync_direct();
+  count_present_time();
   if(copied)
     forget_texture_rows();
 
