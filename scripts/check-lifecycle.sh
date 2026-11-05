@@ -213,6 +213,19 @@ then
   fail "A .sav write can bypass the unreadable-save block"
 fi
 
+# The sceIo binding of the .sav and the settings file allocates nothing,
+# so a save is still written when memory has run out.
+if ! awk '
+  /^static [^(]*config_io_[a-z0-9_]+\(/ { inside = 1; config++ }
+  /^static [^(]*save_io_[a-z0-9_]+\(/ { inside = 1; save++ }
+  inside && /malloc\(|calloc\(|realloc\(/ { bad = 1 }
+  inside && /^}/ { inside = 0 }
+  END { exit !(config && save && !bad) }
+' source/src/gui.c
+then
+  fail "The save and settings sceIo binding allocates memory"
+fi
+
 # A dialog under load_gamepak()'s power lock would hold off standby.
 if ! body '/^s32 load_gamepak(char \*name)/,/^}/p' source/src/memory.c | awk '
   /scePowerLock\(/ { locked = 1 }
