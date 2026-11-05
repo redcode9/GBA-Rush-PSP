@@ -159,8 +159,8 @@ static void start(void)
 /* The Media Engine's busy ticks over the last stretch, as a share of its
    clock ticks, times the main processor's time over the same stretch. A
    stretch longer than a few seconds (the menu was open) is skipped: the
-   clock goes round in 25 s at 333 MHz. So is one across a reboot: its
-   clock restarts on resume. */
+   clock goes round in 25 s at 333 MHz. So is one across a reboot (its
+   clock restarts on resume) or a clock change. */
 static void convert_busy_time(void)
 {
   u32 now = sceKernelGetSystemTimeLow();
@@ -181,6 +181,11 @@ static void convert_busy_time(void)
   busy_time = now;
   busy_boots = boots;
   busy_known = 1;
+}
+
+void video_me_clock_changed(void)
+{
+  busy_known = 0;
 }
 
 /* Whether the Media Engine is still drawing; gives up on it if not. */

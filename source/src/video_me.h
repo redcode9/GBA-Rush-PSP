@@ -82,6 +82,8 @@ void video_me_present_finish(void);
 
 VideoMeState video_me_state(void);
 void video_me_counters(VideoMeCounters *counters);
+/* The clock just changed: the next busy-time stretch starts here. */
+void video_me_clock_changed(void);
 /* A processor exception on the Media Engine: cause and address, or 0. */
 void video_me_fault(u32 *cause, u32 *address);
 

@@ -199,7 +199,7 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         # Requested, then CPU, then bus, as the decoder reads them.
         self.assertRegex(
             main_c,
-            r"cpu_ticks, 13,\s+main_clock_requested_mhz, "
+            r"cpu_ticks, 16,\s+mhz, "
             r"\(u32\)scePowerGetCpuClockFrequencyInt\(\),\s+"
             r"\(u32\)scePowerGetBusClockFrequencyInt\(\)\);")
         cases = [
@@ -222,7 +222,7 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         for values, expected in cases:
             with self.subTest(values=values):
                 self.assertEqual(
-                    decoder.describe({"event": "link-counters", "flags": 13,
+                    decoder.describe({"event": "link-counters", "flags": 16,
                                       "values": values}),
                     "cpu-clock " + expected)
 
@@ -232,9 +232,9 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         # Requested MHz, then 2 * counter ticks / us rounded, then ms.
         self.assertRegex(
             main_c,
-            r"cpu_ticks, 14,\s+main_clock_requested_mhz,\s+"
-            r"me_us \? \(u32\)\(\(2 \* me_ticks \+ me_us / 2\) / me_us\)"
-            r" : 0,\s+\(u32\)\(me_us / 1000\)\);")
+            r"cpu_ticks, 17,\s+main_clock_requested_mhz, "
+            r"\(u32\)\(\(2 \* ticks \+ us / 2\) / us\),\s+"
+            r"\(u32\)\(us / 1000\)\);")
         cases = [
             ([333, 333, 61234], "requested=333MHz me=333MHz over=61.2s"),
             ([222, 222, 2000], "requested=222MHz me=222MHz over=2.0s"),
@@ -246,14 +246,13 @@ class RuntimeLogDecoderTests(unittest.TestCase):
              "requested=333MHz me=335MHz over=1.0s MISMATCH"),
             ([333, 222, 5000],
              "requested=333MHz me=222MHz over=5.0s MISMATCH"),
-            ([333, 0, 0], "requested=333MHz me=unmeasured"),
             # Under a millisecond is too short to trust.
             ([333, 333, 0], "requested=333MHz me=unmeasured"),
         ]
         for values, expected in cases:
             with self.subTest(values=values):
                 self.assertEqual(
-                    decoder.describe({"event": "link-counters", "flags": 14,
+                    decoder.describe({"event": "link-counters", "flags": 17,
                                       "values": values}),
                     "me-clock " + expected)
 

@@ -294,8 +294,11 @@ static void main_power_save_if_pending(void);
 static void main_power_reopen_gamepak(void);
 static void main_link_close(MainLinkEnd reason);
 
-/* The clock last asked of set_cpu_clock, in MHz (0 before the first call). */
+/* The clock last asked of set_cpu_clock, in MHz (0 before the first call),
+   and the Media Engine's counters when it was asked. */
 static u32 main_clock_requested_mhz;
+static VideoMeCounters main_clock_me_start;
+static void main_log_me_clock(void);
 
 /* The clock call under the NID newer firmware exports; setup_main picks
    which one to use. */
@@ -559,22 +562,17 @@ static void main_link_log_state(void)
    drew, frames shown late and its busy time per frame; the main
    processor's time per frame in the log's hooks, log words per frame and
    full resends; whether it draws on the Media Engine (VideoMeState) and
-   the cause and address of an exception there. Record 14 holds the
-   requested clock, then the Media Engine's measured clock and the
-   milliseconds it was measured over, both 0 if it never drew. */
+   the cause and address of an exception there. */
 static void main_log_video_counters(const VideoMeCounters *since)
 {
   VideoMeCounters now;
   VideoMeState state = video_me_state();
   u32 frames, sampled, cause, address;
-  u64 me_ticks, me_us;
 
   video_me_counters(&now);
   video_me_fault(&cause, &address);
   frames = now.frames - since->frames;
   sampled = now.log_frames - since->log_frames;
-  me_ticks = now.me_clock_ticks - since->me_clock_ticks;
-  me_us = now.me_clock_us - since->me_clock_us;
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 9,
    now.me_frames - since->me_frames, now.late_frames - since->late_frames,
    frames ? (u32)((now.me_busy_us - since->me_busy_us) / frames) : 0);
@@ -584,11 +582,6 @@ static void main_log_video_counters(const VideoMeCounters *since)
    now.resends - since->resends);
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 11,
    (u32)state, cause, address);
-  /* Its cycle counter runs at half the clock: MHz = 2 * ticks / us. */
-  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 14,
-   main_clock_requested_mhz,
-   me_us ? (u32)((2 * me_ticks + me_us / 2) / me_us) : 0,
-   (u32)(me_us / 1000));
 }
 
 /* The CPU core running and, for the new one, its compiled blocks and code
@@ -1914,6 +1907,7 @@ void quit(void)
 
     main_log_video_counters(&session_start);
   }
+  main_log_me_clock();
   main_log_core_counters();
   runtime_log_psp_main(RUNTIME_LOG_EVENT_SESSION_END, cpu_ticks, 0,
    (u32)gba_link.status, (u32)gba_link_end, 0);
@@ -2500,21 +2494,43 @@ u32 yesno_dialog(const char *text)
 }
 
 
+/* The Media Engine's clock since the last clock change, as LINK_COUNTERS
+   record 17: the clock requested then, the clock its cycle counter
+   measured and the milliseconds measured. Nothing if it did not draw. */
+static void main_log_me_clock(void)
+{
+  VideoMeCounters now;
+  u64 ticks, us;
+
+  video_me_counters(&now);
+  ticks = now.me_clock_ticks - main_clock_me_start.me_clock_ticks;
+  us = now.me_clock_us - main_clock_me_start.me_clock_us;
+  main_clock_me_start = now;
+  /* Its cycle counter runs at half the clock: MHz = 2 * ticks / us. */
+  if(us != 0)
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 17,
+     main_clock_requested_mhz, (u32)((2 * ticks + us / 2) / us),
+     (u32)(us / 1000));
+}
+
 /* Sets PLL, CPU and bus clocks in MHz; the bus runs at half the CPU. Every
    path calls it, so the log shows the clock of each one: the requested
    clock and the CPU and bus clocks the firmware reports, as LINK_COUNTERS
-   record 13. Emulator thread only, like every main-ring write. */
+   record 16, after the Media Engine's clock at the previous request.
+   Emulator thread only, like every main-ring write. */
 int set_cpu_clock(u32 psp_clock)
 {
   int ret = -1;
   u32 mhz = main_clock_mhz(psp_clock);
 
+  main_log_me_clock();
   if (__scePowerSetClockFrequency != NULL)
     ret = (*__scePowerSetClockFrequency)(mhz, mhz, mhz / 2);
+  video_me_clock_changed();
 
   main_clock_requested_mhz = mhz;
-  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 13,
-   main_clock_requested_mhz, (u32)scePowerGetCpuClockFrequencyInt(),
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 16,
+   mhz, (u32)scePowerGetCpuClockFrequencyInt(),
    (u32)scePowerGetBusClockFrequencyInt());
   return ret;
 }
