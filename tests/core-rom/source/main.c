@@ -13,7 +13,8 @@
  * The core test ROM. Each area of behaviour is a table of cases in its
  * own cases_<area>.c; this list sets the order they run in, and so the
  * case numbers in the signature. Expected values come from GBATEK and the
- * ARM7TDMI documentation, never from an emulator.
+ * ARM7TDMI documentation; only where those leave a timing open does a
+ * case take mGBA's measurement, and its comment says so (cases_timer.c).
  */
 
 #include "result.h"
