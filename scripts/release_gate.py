@@ -247,11 +247,6 @@ def link_problems(repo, version, release, passed):
     return problems
 
 
-def performance_problems(repo, digest):
-    """PRF-1.6 runs compare-benchmarks' group check here; nothing yet."""
-    return []
-
-
 def link_section(repo, version, release, facts):
     """The "Links with" lines: the earlier releases whose protocol constants
     match the candidate's and that no "no link" fact excludes, the others,
@@ -362,7 +357,6 @@ def gate(version, channel, repo, dist, now):
         problems += required_test_problems(tests, catalog, passed, digest[:12])
         problems += candidate_problems(repo, version, release, now)
         problems += link_problems(repo, version, release, passed)
-        problems += performance_problems(repo, digest)
     if not problems:
         dist.mkdir(parents=True, exist_ok=True)
         (dist / f"RELEASE-NOTES-{version}.md").write_text(
