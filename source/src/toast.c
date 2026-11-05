@@ -76,8 +76,10 @@ const Toast *toast_current(uint32_t now_us)
   {
     const Toast *toast = &toast_ring[toast_head];
 
-    /* Unsigned elapsed time stays right across the 2^32 us wrap. */
-    if((uint32_t)(now_us - toast->start_us) < toast->duration_us)
+    /* Unsigned differences stay right across the 2^32 us wrap. A push
+       stamped after now_us, by a later clock read, has not expired. */
+    if((uint32_t)(now_us - toast->start_us) < toast->duration_us
+     || (uint32_t)(toast->start_us - now_us) < toast->duration_us)
       return toast;
     toast_drop_oldest(now_us);
   }

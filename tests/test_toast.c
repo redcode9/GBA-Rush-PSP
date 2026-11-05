@@ -101,6 +101,17 @@ static void test_exact_expiry(void)
   assert(visible_text(5000 + DURATION) == NULL);
 }
 
+/* A push stamped after the reader's time, from a later clock read, is
+   shown rather than dropped as expired. */
+static void test_push_stamped_after_now(void)
+{
+  toast_clear();
+  toast_push("Saved", DURATION, 0, 1005);
+  assert(visible_text(1000) != NULL);
+  assert(visible_text(1005 + DURATION - 1) != NULL);
+  assert(visible_text(1005 + DURATION) == NULL);
+}
+
 /* sceKernelGetSystemTimeLow wraps after 2^32 us. */
 static void test_time_wraps_mid_toast(void)
 {
@@ -219,6 +230,7 @@ int main(void)
   test_full_ring_drops_oldest();
   test_duplicate_restarts_timer();
   test_exact_expiry();
+  test_push_stamped_after_now();
   test_time_wraps_mid_toast();
   test_gbk_cut_keeps_pairs();
   test_shift_jis_cut();

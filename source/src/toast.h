@@ -39,7 +39,9 @@ typedef struct
 void toast_push(const char *text, uint32_t duration_us, int sjis,
  uint32_t now_us);
 /* The toast to show at now_us, or NULL. Drops expired toasts; the next
- * one in the queue is shown for its whole duration from now_us. */
+ * one in the queue is shown for its whole duration from now_us. A toast
+ * pushed with a now_us up to its duration later than this one is shown,
+ * not dropped, so the caller may read the clock before or after pushes. */
 const Toast *toast_current(uint32_t now_us);
 void toast_clear(void);
 
