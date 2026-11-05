@@ -37,6 +37,7 @@ class UpstreamReviewTest(unittest.TestCase):
             commit = self.commit(path, day)
             if path in TRACKED:
                 self.listed.insert(0, f"{commit} 2024-01-{day:02d} Change {path}")
+        self.head = self.git("rev-parse", "HEAD")
 
     def git(self, *argv, env=GIT_ENV):
         return subprocess.run(["git", "-C", str(self.clone), *argv], env=env,
@@ -60,6 +61,7 @@ class UpstreamReviewTest(unittest.TestCase):
     def assert_lists_tracked_commits(self, result):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), self.listed)
+        self.assertEqual(result.stderr.splitlines(), ["Reviewed up to " + self.head])
 
     def test_lists_only_commits_that_touch_tracked_paths(self):
         self.assert_lists_tracked_commits(self.review(str(self.clone), self.base))

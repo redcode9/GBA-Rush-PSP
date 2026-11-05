@@ -4,11 +4,12 @@ set -eu
 
 # Lists the libretro/gpsp commits after the last reviewed one that touch the
 # code docs/UPSTREAM.md tracks (the core, serial, rfu.c, bios/, gba_over.h
-# and tests/), one per line: short hash, date, subject.
+# and tests/), one per line: short hash, date, subject. Then it prints on
+# stderr the full hash of the clone's HEAD, where the list ends.
 #   sh scripts/upstream-review.sh CLONE [LAST]
 # CLONE is the top directory of a local clone of libretro/gpsp with its
-# history, updated first: the list ends at its HEAD. LAST defaults to
-# the "Last reviewed upstream commit" line of docs/UPSTREAM.md.
+# history, updated first. LAST defaults to the "Last reviewed upstream
+# commit" line of docs/UPSTREAM.md.
 
 if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
   echo "Usage: $0 CLONE [LAST_REVIEWED_COMMIT]" >&2
@@ -49,6 +50,8 @@ then
   exit 1
 fi
 
-git -C "$clone" log --format='%h %ad %s' --date=short "$last..HEAD" -- \
+head=$(git -C "$clone" rev-parse --verify HEAD)
+git -C "$clone" log --format='%h %ad %s' --date=short "$last..$head" -- \
   'cpu*' gba_memory.c video.cc sound.c 'serial*.c' rfu.c bios/ gba_over.h \
   tests/
+echo "Reviewed up to $head" >&2

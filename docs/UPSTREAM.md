@@ -22,9 +22,9 @@ matters to us, whether we take its code, why, and where it landed.
 - Review: update a clone of libretro/gpsp, then run
   `sh scripts/upstream-review.sh <clone>`. It lists the upstream commits after
   the last reviewed one that touch `cpu*`, `gba_memory.c`, `video.cc`,
-  `sound.c`, `serial*.c`, `rfu.c`, `bios/`, `gba_over.h` and `tests/`. Give
-  each listed commit a row, then move the two lines above to the new upstream
-  HEAD and today's date.
+  `sound.c`, `serial*.c`, `rfu.c`, `bios/`, `gba_over.h` and `tests/`, then
+  prints `Reviewed up to <commit>`. Give each listed commit a row, then move
+  the two lines above to that commit and today's date.
 
 ## Register
 
