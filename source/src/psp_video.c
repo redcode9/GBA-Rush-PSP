@@ -63,14 +63,12 @@ static const u16 *texture_source;
 static int texture_source_clean;
 static int last_present_from_source;
 /* A whole picture in main memory (PSP_LINE_SIZE pixels a row) the next
-   flip shows instead of a framebuffer (video_show_direct); the one shown,
-   or about to be, and the one before it, which the display may still read
-   until two vblanks after switch_vcount. failed: the display refused one,
-   so none is shown again. */
+   flip shows instead of a framebuffer (video_show_direct), and the one
+   shown. The display takes a new picture at the next hsync, so it stops
+   reading the one before right after the flip. failed: the display refused
+   one, so none is shown again. */
 static const u16 *direct_next;
 static const u16 *direct_shown;
-static const u16 *direct_previous;
-static u32 direct_switch_vcount;
 static int direct_failed;
 /* The GE's time on each frame present, from queueing its list to the
    finish callback for it. */
@@ -330,10 +328,7 @@ int video_show_direct_again(void)
    does not read it now and will not before the next flip shows it. */
 int video_direct_free(const u16 *picture)
 {
-  if(direct_failed || picture == direct_next || picture == direct_shown)
-    return 0;
-  return picture != direct_previous ||
-   sceDisplayGetVcount() - direct_switch_vcount >= 2;
+  return !direct_failed && picture != direct_next && picture != direct_shown;
 }
 
 /* Center of the GE's 4096x4096 virtual screen; sceGuOffset and
@@ -520,27 +515,20 @@ void flip_screen(u32 vsync)
 
   if(direct)
   {
-    /* Refused: the last picture stays, and no other is offered. */
+    /* At the next hsync, as sceGuSwapBuffers does by default: after the
+       vblank wait that is before the next refresh, so direct and GE frames
+       can take turns without one hiding the other. Refused: the last
+       picture stays, and no other is offered. */
     if(sceDisplaySetFrameBuf((void *)direct, PSP_LINE_SIZE,
-       PSP_DISPLAY_PIXEL_FORMAT_5551, PSP_DISPLAY_SETBUF_NEXTFRAME) < 0)
+       PSP_DISPLAY_PIXEL_FORMAT_5551, PSP_DISPLAY_SETBUF_NEXTHSYNC) < 0)
     {
       direct_failed = 1;
       return;
     }
-    if(direct != direct_shown)
-    {
-      direct_previous = direct_shown;
-      direct_shown = direct;
-      direct_switch_vcount = sceDisplayGetVcount();
-    }
+    direct_shown = direct;
     return;
   }
-  if(direct_shown)
-  {
-    direct_previous = direct_shown;
-    direct_shown = NULL;
-    direct_switch_vcount = sceDisplayGetVcount();
-  }
+  direct_shown = NULL;
 
   disp_frame = draw_frame;
   draw_frame = sceGuSwapBuffers();
