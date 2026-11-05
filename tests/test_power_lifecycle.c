@@ -223,7 +223,7 @@ static void test_entry_with_resume_complete_does_both(void)
 }
 
 /* Without SUSPENDING or RESUME_COMPLETE, a switch-only entry ends 2 s after
-   the emulator thread saw it, as a resume that must reserve audio. */
+   the emulator thread parked, as a resume that must reserve audio. */
 static void test_switch_entry_times_out(void)
 {
   PowerLifecycle lifecycle;
