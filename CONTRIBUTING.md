@@ -157,6 +157,32 @@ These directories are ignored. BIOS dumps (`gba_bios.bin`), game ROMs, saves
 and local settings stay out of Git; diagnostic ROM sources must be
 redistributable.
 
+## Releasing
+
 Open release pull requests against `develop`, then promote the reviewed source
 to `master`. Hardware acceptance remains required for a stable release; an
 untested console build must be published as a prerelease.
+
+`docs/releases/<version>.txt` says what a release needs: the ids of the
+[hardware tests](docs/hardware-tests.md) it requires, whether it fixes lost
+data (`hotfix-data`), its known limits and, when the link code changed, the
+link status. `docs/releases/link-compat.txt` holds the link facts that the
+protocol constants of each tag do not show. After `make package`, check the
+candidate and write `dist/RELEASE-NOTES-<version>.md`:
+
+```sh
+make release-gate VERSION=1.4.4 CHANNEL=prerelease
+make release-gate VERSION=1.4.4 CHANNEL=stable
+```
+
+A prerelease always passes, and its notes list every test as not validated.
+A stable release needs, for the `EBOOT.PBP` in its manifest, a `pass` row in
+[the hardware results](docs/HARDWARE-RESULTS.md) for every required test on
+every model class the test asks for; 7 days since the newest
+`<version>-rc.N` tag, or 72 hours with `hotfix-data: yes`; no change under
+`source/` since that tag; and, when `link_net.*`, `link_cable.*`, `gba_sio.*`,
+`adhoc_peer.*` or `psp_adhoc.c` changed since the previous release, a
+`link: wire-unchanged`, `wire-extended` (with a `mixed-pair:` line saying what
+a pair with an earlier release loses) or `bump` line. A change of
+`LINK_NET_VERSION` or `LINK_CABLE_PROTOCOL` also needs a passed link test.
+The notes do not replace the CHANGELOG, which stays hand-written.
