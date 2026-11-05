@@ -341,6 +341,10 @@ static int recording;
 static int diverged;
 static char divergence[256];
 static unsigned long replay_misses;
+/* Cycles mGBA 0.10.3 leaves out of the instruction being compared: an LDM
+   from the GamePak starts from S - N instead of N - S, so its first word
+   costs 2 * (N - S) too little. Only the comparison adds them back. */
+static int32_t mgba_missing;
 
 /* Run mode */
 static int32_t run_base;
@@ -489,10 +493,14 @@ static uint32_t hook_load_multiple(struct ARMCore *c, uint32_t address,
   {
     uint32_t list[16];
     unsigned n = multiple_addresses(address, mask, direction, list);
+    unsigned region = list[0] >> 24;
     unsigned i;
 
     for(i = 0; i < n; i++)
       record(0, 4, list[i], peek(list[i], 4), 0);
+    if(cycles && region >= 8 && region <= 13)
+      mgba_missing += 2 * (gba->memory.waitstatesNonseq32[region] -
+       gba->memory.waitstatesSeq32[region]);
   }
   return original.loadMultiple(c, address, mask, direction, cycles);
 }
@@ -1111,6 +1119,7 @@ static int compare_once(int block_mode)
   access_count = 0;
   diverged = 0;
   replay_misses = 0;
+  mgba_missing = 0;
   recording = 1;
   mgba_start = cpu->cycles;
   if(block_mode)
@@ -1133,7 +1142,7 @@ static int compare_once(int block_mode)
   else
     ARMRun(cpu);
   recording = 0;
-  mgba_cycles = cpu->cycles - mgba_start;
+  mgba_cycles = cpu->cycles - mgba_start + mgba_missing;
 
   core->cycles = 0;
   if(block_mode)
