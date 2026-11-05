@@ -26,6 +26,7 @@
 #include "common.h"
 #include "config_model.h"
 #include "input_chord.h"
+#include "input_model.h"
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 #include "input_trace.h"
@@ -105,6 +106,25 @@ const u32 ALIGN_DATA button_psp_mask_to_config[] =
   PSP_CTRL_ANALOG_RIGHT	//15
 };
 
+/* GBA key of each BUTTON_ID_*; IDs from BUTTON_ID_MENU on press no key. */
+const u32 ALIGN_DATA button_id_to_gba_mask[] =
+{
+  BUTTON_UP,
+  BUTTON_DOWN,
+  BUTTON_LEFT,
+  BUTTON_RIGHT,
+  BUTTON_A,
+  BUTTON_B,
+  BUTTON_L,
+  BUTTON_R,
+  BUTTON_START,
+  BUTTON_SELECT,
+  BUTTON_NONE,
+  BUTTON_NONE,
+  BUTTON_NONE,
+  BUTTON_NONE
+};
+
 static u32 fast_forward_button_mask = PSP_CTRL_TRIANGLE;
 
 /* Shortcut chords: slot n holds the input mask of chord action n
@@ -121,8 +141,18 @@ static u32 shortcut_fast_forward_held = 0;
    of them is held, so A+B+START+SELECT still resets the game. */
 static u32 shortcut_block_inputs = 0;
 
-/* Collects the PSP buttons mapped to fast-forward and the inputs that
-   block held chords; call after gamepad_config_map changes. */
+/* The inputs mapped to BUTTON_ID_RAPIDFIRE_* pulse their GBA key, each
+   with its own train; the zeroed speed and mode is 30 per second, held. */
+static InputModelTurbo turbo_inputs[INPUT_MODEL_INPUTS];
+static InputModelTurboState turbo_state;
+/* Emulated frames, counted by input_frame_tick. */
+static u32 turbo_frame = 0;
+/* Stick directions held after the last read, as INPUT_MODEL_STICK_* bits. */
+static u32 stick_held = 0;
+
+/* Collects the PSP buttons mapped to fast-forward, the inputs that block
+   held chords and the turbo inputs; call after gamepad_config_map
+   changes. */
 void rebuild_fast_forward_button_mask(void)
 {
   u32 i;
@@ -138,6 +168,12 @@ void rebuild_fast_forward_button_mask(void)
        (gamepad_config_map[i] == BUTTON_ID_RAPIDFIRE_A) ||
        (gamepad_config_map[i] == BUTTON_ID_RAPIDFIRE_B))
       shortcut_block_inputs |= 1u << i;
+
+    turbo_inputs[i].key = 0;
+    if((gamepad_config_map[i] >= BUTTON_ID_RAPIDFIRE_A) &&
+       (gamepad_config_map[i] <= BUTTON_ID_RAPIDFIRE_R))
+      turbo_inputs[i].key = button_id_to_gba_mask[gamepad_config_map[i] -
+       BUTTON_ID_RAPIDFIRE_A + BUTTON_ID_A];
   }
 }
 
@@ -161,25 +197,6 @@ void rebuild_shortcut_chords(void)
      INPUT_CHORD_DEFAULT_COUNT);
 }
 
-/* GBA key of each BUTTON_ID_*; IDs from BUTTON_ID_MENU on press no key. */
-const u32 ALIGN_DATA button_id_to_gba_mask[] =
-{
-  BUTTON_UP,
-  BUTTON_DOWN,
-  BUTTON_LEFT,
-  BUTTON_RIGHT,
-  BUTTON_A,
-  BUTTON_B,
-  BUTTON_L,
-  BUTTON_R,
-  BUTTON_START,
-  BUTTON_SELECT,
-  BUTTON_NONE,
-  BUTTON_NONE,
-  BUTTON_NONE,
-  BUTTON_NONE
-};
-
 typedef enum
 {
   BUTTON_NOT_HELD,
@@ -198,10 +215,6 @@ GUI_ACTION_TYPE cursor_repeat = CURSOR_NONE;
 /* Buttons of the previous read, to detect new presses. */
 u32 last_buttons = 0;
 u32 button_repeat_timestamp;
-
-/* Flips on every rapid-fire key handled, so rapid-fire keys alternate
-   between pressed and released from frame to frame. */
-u32 rapidfire_flag = 1;
 
 /* Tilt cartridges read 12-bit values; 0x800 is level. */
 u32 enable_tilt_sensor = 0;
@@ -395,6 +408,20 @@ static u32 buttons_to_inputs(u32 buttons)
   return inputs;
 }
 
+/* Advances the emulated frame count that turbo trains follow; update_gba
+   calls it once per frame, never in link waits. */
+void input_frame_tick(void)
+{
+  turbo_frame++;
+}
+
+/* Stops every turbo train, for the menu, state loads and sleep; an input
+   still held pulses again only after a new press. */
+void input_turbo_stop(void)
+{
+  input_model_turbo_stop(&turbo_state);
+}
+
 /* Called at every GBA V-blank and during link waits. Returns nonzero when
    the menu or a state load changed the machine and update_gba must not
    continue its pass. */
@@ -410,6 +437,7 @@ u32 update_input(void)
   u32 button_id = 0;
   u32 i;
   u32 new_key = 0;
+  u32 stick = 0;
   u32 analog_sensitivity = 20 + (option_analog_sensitivity * 10);
   u32 inv_analog_sensitivity = 255 - analog_sensitivity;
 
@@ -439,19 +467,25 @@ u32 update_input(void)
     }
     else
     {
-      if (ctrl_data.Lx < analog_sensitivity)
+      // A held direction is let go only nearer the centre, so noise at
+      // the threshold does not flicker it
+      stick = input_model_stick(stick_held, ctrl_data.Lx, ctrl_data.Ly,
+       option_analog_sensitivity);
+
+      if ((stick & INPUT_MODEL_STICK_LEFT) != 0)
         buttons |= PSP_CTRL_ANALOG_LEFT;
 
-      if (ctrl_data.Lx > inv_analog_sensitivity)
+      if ((stick & INPUT_MODEL_STICK_RIGHT) != 0)
         buttons |= PSP_CTRL_ANALOG_RIGHT;
 
-      if (ctrl_data.Ly < analog_sensitivity)
+      if ((stick & INPUT_MODEL_STICK_UP) != 0)
         buttons |= PSP_CTRL_ANALOG_UP;
 
-      if (ctrl_data.Ly > inv_analog_sensitivity)
+      if ((stick & INPUT_MODEL_STICK_DOWN) != 0)
         buttons |= PSP_CTRL_ANALOG_DOWN;
     }
   }
+  stick_held = stick;
 
   // Decided on this read, so a chord adds no latency; holds count real time
   inputs = buttons_to_inputs(buttons);
@@ -481,7 +515,10 @@ u32 update_input(void)
    (buttons & fast_forward_button_mask) | shortcut_fast_forward_held);
 
   if ((enable_home_menu != 0) && ((non_repeat_buttons & PSP_CTRL_HOME) != 0))
+  {
+    input_turbo_stop();
     return menu();
+  }
 
   // Same effects as the BUTTON_ID_ mappings below
   if ((shortcut_actions & (1u << INPUT_CHORD_SAVESTATE)) != 0)
@@ -492,13 +529,17 @@ u32 update_input(void)
 
   if ((shortcut_actions & (1u << INPUT_CHORD_LOADSTATE)) != 0)
   {
+    input_turbo_stop();
     action_loadstate();
     return 1;
   }
 
   // No hold ever closes the game: the menu hold only opens the menu
   if ((shortcut_actions & (1u << INPUT_CHORD_MENU)) != 0)
+  {
+    input_turbo_stop();
     return menu();
+  }
 
   if ((shortcut_actions & (1u << INPUT_CHORD_FPS)) != 0)
   {
@@ -513,9 +554,11 @@ u32 update_input(void)
       switch (gamepad_config_map[i])
       {
         case BUTTON_ID_MENU:
+          input_turbo_stop();
           return menu();
 
         case BUTTON_ID_LOADSTATE:
+          input_turbo_stop();
           action_loadstate();
           return 1;
 
@@ -540,24 +583,13 @@ u32 update_input(void)
       {
         new_key |= button_id_to_gba_mask[button_id];
       }
-      else
-      {
-        if ((button_id >= BUTTON_ID_RAPIDFIRE_A) && (button_id <= BUTTON_ID_RAPIDFIRE_R))
-        {
-          rapidfire_flag ^= 1;
-
-          if (rapidfire_flag != 0)
-          {
-            new_key |= button_id_to_gba_mask[button_id - BUTTON_ID_RAPIDFIRE_A + BUTTON_ID_A];
-          }
-          else
-          {
-            new_key &= ~button_id_to_gba_mask[button_id - BUTTON_ID_RAPIDFIRE_A + BUTTON_ID_A];
-          }
-        }
-      }
     }
   }
+
+  // Turbo follows emulated frames, so the reads of a link wait repeat the
+  // same keys
+  new_key = input_model_turbo(&turbo_state, inputs & ~hidden_inputs,
+   turbo_frame, turbo_inputs, new_key);
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
   new_key = input_trace_apply(&diagnostic_trace, diagnostic_trace_frame,

@@ -1,4 +1,5 @@
-"""Check the shortcut chords in input.c's update_input on the host."""
+"""Check input.c's update_input on the host: the shortcut chords, turbo and
+the stick."""
 
 from pathlib import Path
 import unittest
@@ -10,7 +11,7 @@ from tests.test_startup import ROOT, build_and_run, function
 SRC = (Path(__file__).resolve().parents[1] / "source/src").as_posix()
 
 # Stand-ins for the PSP SDK and for what update_input calls, with the real
-# chord module. Counters record the actions that ran.
+# chord and input model modules. Counters record the actions that ran.
 STUBS = r'''
 #include <assert.h>
 #include <stddef.h>
@@ -18,6 +19,7 @@ STUBS = r'''
 #include <stdio.h>
 #include <string.h>
 #include "@SRC@/input_chord.c"
+#include "@SRC@/input_model.c"
 #include "@SRC@/config_model.h"
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -267,6 +269,216 @@ int main(void)
 }
 '''
 
+# Turbo on Circle (A), Cross (B) and Square (R), and the stick, read once
+# per emulated frame as update_gba does, plus the extra reads of link waits.
+TURBO_SCENARIOS = r'''
+#define GBA_A 0x01
+#define GBA_B 0x02
+#define GBA_UP 0x40
+#define GBA_R 0x100
+#define GBA_L 0x200
+#define SEL PSP_CTRL_SELECT
+#define START PSP_CTRL_START
+#define LT PSP_CTRL_LTRIGGER
+#define RT PSP_CTRL_RTRIGGER
+#define TURBO_R PSP_CTRL_SQUARE
+static u32 pad;
+static unsigned char stick_y = 128;
+
+static int fake_peek(SceCtrlData *data, int count)
+{
+  memset(data, 0, sizeof(*data));
+  data->Buttons = pad;
+  data->Lx = 128;
+  data->Ly = stick_y;
+  return count;
+}
+
+/* One emulated frame: the tick, then update_gba's read. */
+static u32 frame(u32 buttons)
+{
+  pad = buttons;
+  now_us += 16667;
+  input_frame_tick();
+  return update_input();
+}
+
+/* A read of a link wait, which does not tick. */
+static u32 wait_read(u32 buttons)
+{
+  pad = buttons;
+  now_us += 1000;
+  return update_input();
+}
+
+static int game_has(u32 key)
+{
+  return (io_registers[REG_P1] & key) == 0;
+}
+
+static u32 press_home(void)
+{
+  return frame(TURBO_R | PSP_CTRL_HOME);
+}
+
+static u32 load_chord(void)
+{
+  frame(TURBO_R | SEL);
+  return frame(TURBO_R | SEL | RT);
+}
+
+static u32 menu_hold(void)
+{
+  u32 result = 0;
+  int i;
+
+  for(i = 0; i < 40 && result == 0; i++)
+    result = frame(TURBO_R | START | SEL);
+  return result;
+}
+
+static u32 press_triangle(void)
+{
+  return frame(TURBO_R | PSP_CTRL_TRIANGLE);
+}
+
+static u32 sleep_stop(void)
+{
+  input_turbo_stop();
+  return 0;
+}
+
+/* Turbo R runs, then action opens the menu, loads a state or sleeps:
+   Square, still held, pulses again only after a new press. */
+static void check_stop(u32 (*action)(void), u32 expected)
+{
+  int i;
+
+  frame(0);
+  frame(TURBO_R);
+  assert(game_has(GBA_R));
+  assert(action() == expected);
+  for(i = 0; i < 4; i++)
+  {
+    frame(TURBO_R);
+    assert(!game_has(GBA_R));
+  }
+  frame(0);
+  frame(TURBO_R);
+  assert(game_has(GBA_R));
+  frame(0);
+}
+
+int main(void)
+{
+  int i, j, a_on, b_on;
+
+  (void)__sceCtrlReadBufferPositive;
+  __sceCtrlPeekBufferPositive = fake_peek;
+  option_shortcut[0] = 0x0410;
+  option_shortcut[1] = 0x0420;
+  option_shortcut[2] = 0x0C00;
+  rebuild_shortcut_chords();
+  gamepad_config_map[1] = BUTTON_ID_RAPIDFIRE_A;
+  gamepad_config_map[2] = BUTTON_ID_RAPIDFIRE_B;
+  gamepad_config_map[3] = BUTTON_ID_RAPIDFIRE_R;
+  rebuild_fast_forward_button_mask();
+  frame(0);
+
+  /* Turbo A and B held together each press 30 times in 60 frames, on in
+     the frame of the press; the reads of a link wait repeat the keys of
+     their frame. */
+  a_on = b_on = 0;
+  for(i = 0; i < 60; i++)
+  {
+    u16 keys;
+
+    assert(frame(PSP_CTRL_CIRCLE | PSP_CTRL_CROSS) == 0);
+    keys = io_registers[REG_P1];
+    assert(i != 0 || (game_has(GBA_A) && game_has(GBA_B)));
+    a_on += game_has(GBA_A);
+    b_on += game_has(GBA_B);
+    for(j = 0; j < i % 4; j++)
+    {
+      assert(wait_read(PSP_CTRL_CIRCLE | PSP_CTRL_CROSS) == 0);
+      assert(io_registers[REG_P1] == keys);
+    }
+  }
+  assert(a_on == 30 && b_on == 30);
+  frame(0);
+  assert(!game_has(GBA_A) && !game_has(GBA_B));
+
+  /* Triangle on plain A keeps A held through turbo A's off frames. */
+  gamepad_config_map[0] = BUTTON_ID_A;
+  rebuild_fast_forward_button_mask();
+  for(i = 0; i < 4; i++)
+  {
+    frame(PSP_CTRL_TRIANGLE | PSP_CTRL_CIRCLE);
+    assert(game_has(GBA_A));
+  }
+  frame(0);
+
+  /* HOME, the load chord, the menu hold, the menu and load buttons and
+     sleep all stop turbo. */
+  check_stop(press_home, 7);
+  check_stop(load_chord, 1);
+  check_stop(menu_hold, 7);
+  gamepad_config_map[0] = BUTTON_ID_MENU;
+  rebuild_fast_forward_button_mask();
+  check_stop(press_triangle, 7);
+  gamepad_config_map[0] = BUTTON_ID_LOADSTATE;
+  rebuild_fast_forward_button_mask();
+  check_stop(press_triangle, 1);
+  check_stop(sleep_stop, 0);
+  assert(menus == 3 && loads == 2 && saves == 0);
+  assert(ff_presses == 0 && !ff_held);
+
+  /* Turbo L on the L of the SELECT+L save: the L hidden by the chord
+     starts no train while it stays held. */
+  gamepad_config_map[4] = BUTTON_ID_RAPIDFIRE_L;
+  rebuild_fast_forward_button_mask();
+  frame(SEL);
+  assert(frame(SEL | LT) == 0 && saves == 1);
+  for(i = 0; i < 4; i++)
+  {
+    frame(i < 2 ? SEL | LT : LT);
+    assert(!game_has(GBA_L));
+  }
+  frame(0);
+  frame(LT);
+  assert(game_has(GBA_L));
+  frame(0);
+
+  /* Sensitivity 4: stick up presses below 60, stays held up to 75 and
+     lets go from 76; turning the stick off forgets it. */
+  option_enable_analog = 1;
+  stick_y = 59;
+  frame(0);
+  assert(game_has(GBA_UP));
+  stick_y = 75;
+  frame(0);
+  assert(game_has(GBA_UP));
+  stick_y = 76;
+  frame(0);
+  assert(!game_has(GBA_UP));
+  stick_y = 60;
+  frame(0);
+  assert(!game_has(GBA_UP));
+  stick_y = 59;
+  frame(0);
+  option_enable_analog = 0;
+  frame(0);
+  assert(!game_has(GBA_UP));
+  option_enable_analog = 1;
+  stick_y = 70;
+  frame(0);
+  assert(!game_has(GBA_UP));
+
+  puts("update_input turbo and stick passed");
+  return 0;
+}
+'''
+
 
 def input_region():
     """input.c from its PSP button masks to the end of update_input."""
@@ -279,6 +491,25 @@ class InputShortcutTests(unittest.TestCase):
     def test_update_input_runs_shortcut_chords(self):
         source = STUBS + input_region() + SCENARIOS
         build_and_run(source, "input_shortcuts")
+
+    def test_update_input_runs_turbo_and_stick_model(self):
+        source = STUBS + input_region() + TURBO_SCENARIOS
+        build_and_run(source, "input_turbo")
+
+    def test_update_gba_ticks_turbo_outside_link_waits(self):
+        # main.c cannot be built on the host: the V-blank read ticks the
+        # frame count, the link wait loop does not, and sleep stops turbo.
+        update = function("source/src/main.c", "u32 update_gba(void)")
+        self.assertEqual(update.count("input_frame_tick();"), 1)
+        self.assertLess(update.index("input_frame_tick();"),
+                        update.index("if (update_input() != 0)"))
+        link = function("source/src/main.c",
+                        "static int main_link_service(IRQ_TYPE *irq_raised)")
+        self.assertIn("update_input()", link)
+        self.assertNotIn("input_frame_tick", link)
+        self.assertIn("input_turbo_stop();",
+                      function("source/src/main.c",
+                               "static void psp_sleep_loop(void)"))
 
     def test_settings_carry_the_shortcuts(self):
         # gui.c's settings glue cannot be built on the host: both captures

@@ -1153,6 +1153,8 @@ u32 update_gba(void)
           // Transition from vrefresh to vblank (lines 160-227)
           dispstat |= 0x01;
 
+          input_frame_tick();
+
           // The menu or a state load replaced the machine; drop this pass
           if (update_input() != 0)
           {
@@ -2026,6 +2028,7 @@ static void psp_sleep_loop(void)
   runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_SUSPEND, cpu_ticks, 0,
    (u32)gba_link.status, main_adhoc_state_value(), sleep_flag);
   main_fast_forward_stop();
+  input_turbo_stop();
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
   input_diagnostic_trace_cancel();

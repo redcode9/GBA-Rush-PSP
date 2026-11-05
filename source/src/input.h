@@ -96,6 +96,8 @@ void init_input(void);
 void init_input_kernel(void);
 
 u32 update_input(void);
+void input_frame_tick(void);
+void input_turbo_stop(void);
 void rebuild_fast_forward_button_mask(void);
 void rebuild_shortcut_chords(void);
 
