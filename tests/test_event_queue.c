@@ -3,7 +3,7 @@
  * hardware events: ordering, ties served by id, reschedule and cancel,
  * deadlines across the wrap of the 32-bit cycle counter, a long random
  * run checked operation by operation against a plain linear model, and
- * the wait to the nearest event ahead.
+ * update_gba's pass run from the queue against the counters it replaced.
  */
 
 #include <assert.h>
@@ -283,6 +283,109 @@ static void test_cycles_until(void)
   assert(event_queue_cycles_until(&queue, 0xFFFFFFF8u) == 0xFFFFFFF8u);
 }
 
+/* update_gba's pass two ways: with a counter per event as it had before the
+   queue (cycles left, less each slice, due at 0 or below, the next slice
+   the smallest counter taken as unsigned), and from the queue, collecting
+   the due events in a mask, serving them lowest id first and moving each
+   from its old deadline. Slices end early at random, as an alert ends
+   them, or run past the budget, as the New core runs; timer 1 restarts
+   at the start of a slice with periods shorter than a slice, so it falls
+   behind and comes due on every pass. Each pass must serve the same
+   events in the same order, keep counters equal to deadline - now and
+   hand out the same slice. */
+static void test_pass_matches_counters(void)
+{
+  /* main.c's ids: the line comes after the timers. */
+  enum { TIMER0 = 1, TIMER1 = 2, LINE = 5, EVENTS = 3, PASSES = 200000 };
+  static const uint32_t ids[EVENTS] = { TIMER0, TIMER1, LINE };
+  uint32_t period[EVENTS] = { 1000, 16, 272 };
+  uint32_t line_period[2] = { 272, 960 };
+  int32_t count[EVENTS];
+  EventQueue queue;
+  uint32_t now = 0xFFFF0000u;
+  uint32_t slice = UINT32_MAX;
+  uint32_t pass;
+  uint32_t k;
+  uint32_t late = 0;
+
+  event_queue_clear(&queue);
+  for(k = 0; k < EVENTS; k++)
+  {
+    count[k] = (int32_t)period[k];
+    event_queue_schedule(&queue, ids[k], now + period[k], now);
+    if((uint32_t)count[k] < slice)
+      slice = (uint32_t)count[k];
+  }
+
+  for(pass = 0; pass < PASSES; pass++)
+  {
+    uint32_t elapsed = slice;
+    uint32_t served_counters[EVENTS];
+    uint32_t served_queue[EVENTS];
+    uint32_t served = 0;
+    uint32_t served_from_queue = 0;
+    uint32_t due = 0;
+    int event;
+
+    assert(event_queue_cycles_until(&queue, now) == slice);
+    if(fuzz_random() % 50 == 0)
+    {
+      period[1] = 1 + fuzz_random() % 64;
+      count[1] = (int32_t)period[1];
+      event_queue_schedule(&queue, TIMER1, now + period[1], now);
+    }
+    switch(fuzz_random() % 4)
+    {
+      case 0:
+        elapsed = fuzz_random() % (slice + 1);
+        break;
+      case 1:
+        elapsed = slice + fuzz_random() % 8;
+        break;
+    }
+    now += elapsed;
+
+    for(k = 0; k < EVENTS; k++)
+    {
+      count[k] -= (int32_t)elapsed;
+      if(count[k] <= 0)
+      {
+        served_counters[served++] = ids[k];
+        count[k] += (int32_t)period[k];
+      }
+    }
+
+    while((event = event_queue_pop_due(&queue, now)) >= 0)
+      due |= 1u << event;
+    for(k = 0; k < EVENTS; k++)
+    {
+      if((due & (1u << ids[k])) != 0)
+      {
+        served_queue[served_from_queue++] = ids[k];
+        event_queue_schedule(&queue, ids[k],
+         queue.deadline[ids[k]] + period[k], now);
+      }
+    }
+
+    assert(served_from_queue == served);
+    assert(memcmp(served_counters, served_queue,
+     served * sizeof(served_queue[0])) == 0);
+    if((due & (1u << LINE)) != 0)
+      period[2] = line_period[period[2] == 272];
+
+    slice = UINT32_MAX;
+    for(k = 0; k < EVENTS; k++)
+    {
+      assert(count[k] == (int32_t)(queue.deadline[ids[k]] - now));
+      if((uint32_t)count[k] < slice)
+        slice = (uint32_t)count[k];
+    }
+    late += count[1] <= 0;
+  }
+  /* The test covers a timer behind the clock. */
+  assert(late > PASSES / 100);
+}
+
 int main(void)
 {
   test_events_come_out_by_deadline();
@@ -291,6 +394,7 @@ int main(void)
   test_deadlines_across_the_wrap();
   test_fuzz_against_linear_model();
   test_cycles_until();
+  test_pass_matches_counters();
   puts("Event queue tests passed");
   return 0;
 }

@@ -29,6 +29,7 @@
 #include <pspsysmem.h>
 
 #include "common.h"
+#include "event_queue.h"
 #include "fast_forward_policy.h"
 #include "perf_monitor.h"
 #include "perf_report.h"
@@ -144,7 +145,9 @@ typedef struct
   TIMER_IRQ_TYPE irq;
   TIMER_STATUS_TYPE status;
   FIXED08_24 frequency_step;  /* Direct Sound sample step per overflow */
-  s32 count;                  /* CPU cycles left until overflow */
+  s32 count;                  /* CPU cycles left until overflow; when
+                                 prescaled, set from its event's deadline
+                                 on each update_gba pass */
   u32 reload;                 /* ticks per overflow: 0x10000 - TMxCNT_L */
   u32 reload_update;          /* reload changed; recompute frequency_step */
   u32 prescale;               /* log2 of CPU cycles per tick */
@@ -241,8 +244,27 @@ static volatile int quit_cleanup_complete = 0;
 /* Guest CPU cycles since reset; wraps. The guest clock for sound and link. */
 u32 cpu_ticks = 0;
 /* Cycles left in the current LCD phase: 960 of H-draw, then 272 of H-blank
-   per scanline. */
+   per scanline. Set from the line event's deadline on each update_gba
+   pass. */
 s32 video_count = 272;
+
+/* update_gba's events by deadline, in cpu_ticks. An id is also the order
+   in which a pass serves the events due on it, the order the pass had
+   when each event kept its own counter. The timers and the line are
+   served from the queue. A serial transfer, the link cable and a DMA stall
+   keep their own state and go in the queue only so the next slice ends on
+   them. The savestate keeps the counters (video_count, timer[].count),
+   which every pass sets from the deadlines: main_events_rebuild turns
+   them back into deadlines after a load or a reset. */
+enum
+{
+  MAIN_EVENT_SIO,
+  MAIN_EVENT_TIMER0,  /* to MAIN_EVENT_TIMER0 + 3: a prescaled timer */
+  MAIN_EVENT_LINE = MAIN_EVENT_TIMER0 + 4,
+  MAIN_EVENT_LINK,
+  MAIN_EVENT_DMA
+};
+static EventQueue main_events;
 
 /* IRQ entry delay: irq_delay_pending is set while an IRQ waits
    irq_ticks cycles before it is taken. */
@@ -311,11 +333,22 @@ static int (*__scePowerSetClockFrequency)(int pllfreq, int cpufreq, int busfreq)
     reg[EXECUTE_CYCLES] = count_var;                                          \
   }                                                                           \
 
-#define CHECK_TIMER(timer_number)                                             \
-  if (timer[timer_number].status == TIMER_PRESCALE)                           \
-  {                                                                           \
-    CHECK_COUNT((u32)timer[timer_number].count);                              \
-  }                                                                           \
+/* Queues the events kept in the savestate from their counters, relative
+   to cpu_ticks: the line and the prescaled timers. */
+static void main_events_rebuild(void)
+{
+  u32 i;
+
+  event_queue_clear(&main_events);
+  event_queue_schedule(&main_events, MAIN_EVENT_LINE,
+   cpu_ticks + (u32)video_count, cpu_ticks);
+  for (i = 0; i < 4; i++)
+  {
+    if (timer[i].status == TIMER_PRESCALE)
+      event_queue_schedule(&main_events, MAIN_EVENT_TIMER0 + i,
+       cpu_ticks + (u32)timer[i].count, cpu_ticks);
+  }
+}
 
 
 /* TMxCNT_L write: the new reload value applies at the next start or
@@ -359,6 +392,10 @@ CPU_ALERT_TYPE timer_control_high(u8 timer_number, u32 value)
 
       timer_reload <<= tm->prescale;
       tm->count = timer_reload;
+      // From the start of the slice: cpu_ticks advances on the next pass
+      if (tm->status == TIMER_PRESCALE)
+        event_queue_schedule(&main_events, MAIN_EVENT_TIMER0 + timer_number,
+         cpu_ticks + timer_reload, cpu_ticks);
 
       // Only timers 0 and 1 can clock the Direct Sound FIFOs
       if (timer_number < 2)
@@ -379,6 +416,7 @@ CPU_ALERT_TYPE timer_control_high(u8 timer_number, u32 value)
   else
   {
     tm->status = TIMER_INACTIVE;
+    event_queue_cancel(&main_events, MAIN_EVENT_TIMER0 + timer_number);
   }
 
   return CPU_ALERT_NONE;
@@ -414,18 +452,21 @@ static void cpu_interrupt(void)
   reg[CHANGED_PC_STATUS] = 1;
 }
 
-/* Runs a timer for the cycles just executed. On overflow it raises the IRQ,
-   ticks a cascaded next timer, clocks its Direct Sound FIFOs and reloads.
-   TMxCNT_L then reads back the current count. */
+/* Runs a timer up to cpu_ticks. A prescaled timer takes its count from its
+   event's deadline, so it overflows exactly when the event is due; a
+   cascaded one counts the overflows of the timer before. On overflow it
+   raises the IRQ, ticks a cascaded next timer, clocks its Direct Sound
+   FIFOs and reloads. TMxCNT_L then reads back the current count. */
 #define UPDATE_TIMER(timer_number)                                            \
 {                                                                             \
   TimerType *tm = timer + timer_number;                                       \
+  u32 event = MAIN_EVENT_TIMER0 + timer_number;                               \
+                                                                              \
+  if (tm->status == TIMER_PRESCALE)                                           \
+    tm->count = (s32)(main_events.deadline[event] - cpu_ticks);               \
                                                                               \
   if (tm->status != TIMER_INACTIVE)                                           \
   {                                                                           \
-    if (tm->status != TIMER_CASCADE)                                          \
-      tm->count -= reg[EXECUTE_CYCLES];                                       \
-                                                                              \
     if (tm->count <= 0)                                                       \
     {                                                                         \
       if (tm->irq == TIMER_TRIGGER_IRQ)                                       \
@@ -457,6 +498,9 @@ static void cpu_interrupt(void)
       }                                                                       \
                                                                               \
       tm->count += timer_reload;                                              \
+      if (tm->status == TIMER_PRESCALE)                                       \
+        event_queue_schedule(&main_events, event,                             \
+         main_events.deadline[event] + timer_reload, cpu_ticks);              \
     }                                                                         \
                                                                               \
     pIO_REG(REG_TM0D + (timer_number << 1)) = 0x10000 - (tm->count >> tm->prescale); \
@@ -1037,14 +1081,16 @@ void main_fast_forward_reset_game_settings(void)
 }
 
 /* The hardware scheduler. The dynarec calls it when a slice of
-   reg[EXECUTE_CYCLES] cycles has run: it advances serial, timers, LCD timing
-   and DMA by that amount, raises IRQs, and returns the length of the next
-   slice (cycles to the next event). While the CPU is halted it keeps
-   advancing time itself. Once per frame it also runs input, rendering,
-   sound sync and frame pacing. */
+   reg[EXECUTE_CYCLES] cycles has run: it advances cpu_ticks by that amount,
+   serves the events of main_events that are due, raises IRQs, and returns
+   the length of the next slice (cycles to the next event). While the CPU
+   is halted it keeps advancing time itself. Once per frame it also runs
+   input, rendering, sound sync and frame pacing. */
 u32 update_gba(void)
 {
   s32 i;
+  int event;
+  u32 due;
   IRQ_TYPE irq_raised = IRQ_NONE;
   GbaSioEvent sio_event;
 
@@ -1067,6 +1113,12 @@ u32 update_gba(void)
 
     cpu_ticks += reg[EXECUTE_CYCLES];
 
+    due = 0;
+    while ((event = event_queue_pop_due(&main_events, cpu_ticks)) >= 0)
+      due |= 1u << event;
+
+    // Every pass, not only when its event is due: gba_sio_set_cycle takes
+    // only the cycle the transfer has reached
     if(gba_sio.active)
     {
       sio_event = gba_sio_advance(&gba_sio, reg[EXECUTE_CYCLES]);
@@ -1087,9 +1139,9 @@ u32 update_gba(void)
       UPDATE_TIMER(i);
     }
 
-    video_count -= reg[EXECUTE_CYCLES];
+    video_count = (s32)(main_events.deadline[MAIN_EVENT_LINE] - cpu_ticks);
 
-    if (video_count <= 0)
+    if ((due & (1u << MAIN_EVENT_LINE)) != 0)
     {
       /* DISPSTAT bits: 0 V-blank, 1 H-blank, 2 VCOUNT match flags;
          3-5 their IRQ enables; 8-15 the VCOUNT match line. */
@@ -1100,6 +1152,8 @@ u32 update_gba(void)
       {
         // Transition from hdraw to hblank (272 cycles)
         video_count += 272;
+        event_queue_schedule(&main_events, MAIN_EVENT_LINE,
+         cpu_ticks + (u32)video_count, cpu_ticks);
         dispstat |= 0x02;
 
         if ((dispstat & 0x01) == 0)
@@ -1143,6 +1197,8 @@ u32 update_gba(void)
       {
         // Transition from hblank to next line (960 cycles of hdraw)
         video_count += 960;
+        event_queue_schedule(&main_events, MAIN_EVENT_LINE,
+         cpu_ticks + (u32)video_count, cpu_ticks);
         dispstat &= ~0x02;
 
         vcount++;
@@ -1260,29 +1316,38 @@ u32 update_gba(void)
       }
     }
 
-    reg[EXECUTE_CYCLES] = video_count;
-
-    for (i = 0; i < 4; i++)
-    {
-      CHECK_TIMER(i);
-    }
-
     if(gba_sio.active)
-    {
-      CHECK_COUNT(gba_sio.cycles_remaining);
-    }
+      event_queue_schedule(&main_events, MAIN_EVENT_SIO,
+       cpu_ticks + gba_sio.cycles_remaining, cpu_ticks);
+    else
+      event_queue_cancel(&main_events, MAIN_EVENT_SIO);
+
     if(gba_link_open)
     {
       u32 link_cycles = link_cable_cycles_until_service(&gba_link,
        cpu_ticks);
 
-      CHECK_COUNT(link_cycles);
+      // UINT32_MAX: the cable has nothing timed
+      if(link_cycles < 0x80000000u)
+        event_queue_schedule(&main_events, MAIN_EVENT_LINK,
+         cpu_ticks + link_cycles, cpu_ticks);
+      else
+        event_queue_cancel(&main_events, MAIN_EVENT_LINK);
     }
+    else
+      event_queue_cancel(&main_events, MAIN_EVENT_LINK);
+
+    if (dma_cycle_count != 0)
+      event_queue_schedule(&main_events, MAIN_EVENT_DMA,
+       cpu_ticks + dma_cycle_count, cpu_ticks);
+    else
+      event_queue_cancel(&main_events, MAIN_EVENT_DMA);
+
+    reg[EXECUTE_CYCLES] = event_queue_cycles_until(&main_events, cpu_ticks);
 
     // A DMA stalls the CPU: spend its cycles here without running code
     if (dma_cycle_count != 0)
     {
-      CHECK_COUNT(dma_cycle_count);
       dma_cycle_count -= reg[EXECUTE_CYCLES];
 
       goto update_gba_loop;
@@ -1600,6 +1665,7 @@ static void init_main(void)
   // (init_memory sets VCOUNT to 126)
   video_count = option_boot_mode ? 960 : 272;
   reg[EXECUTE_CYCLES] = video_count;
+  main_events_rebuild();
   video_reset();
   video_dispatch_frame_begin();
 
@@ -2595,6 +2661,7 @@ void *safe_malloc(size_t size)
 void main_read_savestate(SceUID savestate_file)
 {
   MAIN_SAVESTATE_BODY(READ);
+  main_events_rebuild();
 }
 
 void main_write_mem_savestate(SceUID savestate_file)
