@@ -164,12 +164,18 @@ def model_classes(model):
             for name in model.split(" + ")}
 
 
+def missing_classes(test_id, catalog, passed):
+    """The model classes the catalog asks of test_id that no pass row
+    covers."""
+    covered = set().union(*(model_classes(row["Model"]) for row in passed
+                            if row["Test id"] == test_id))
+    return [c for c in catalog[test_id]["Models"] if c not in covered]
+
+
 def required_test_problems(tests, catalog, passed, digest):
     problems = []
     for test_id in tests:
-        covered = set().union(*(model_classes(row["Model"]) for row in passed
-                                if row["Test id"] == test_id))
-        missing = [c for c in catalog[test_id]["Models"] if c not in covered]
+        missing = missing_classes(test_id, catalog, passed)
         if missing:
             problems.append(f"{test_id}: no pass row for EBOOT {digest} on "
                             f"{', '.join(missing)}")
@@ -277,7 +283,8 @@ def notes(version, channel, digest, release, tests, catalog, passed, links):
     if digest:
         lines.append(f"EBOOT.PBP sha256: {digest}.")
     lines += ["", "## Validated on", ""]
-    validated = tests if channel == "stable" else []
+    validated = [test_id for test_id in tests
+                 if any(row["Test id"] == test_id for row in passed)]
     for test_id in validated:
         rows = [row for row in passed if row["Test id"] == test_id]
         line = f"- {test_id}: " + ", ".join(dict.fromkeys(
@@ -290,10 +297,13 @@ def notes(version, channel, digest, release, tests, catalog, passed, links):
         lines.append("Nothing yet: this build has not been through its "
                      "hardware tests.")
     lines += ["", "## Not validated", ""]
-    if not validated:
+    missing = [(test_id, missing_classes(test_id, catalog, passed))
+               for test_id in tests]
+    missing = [(test_id, classes) for test_id, classes in missing if classes]
+    if missing:
         lines += ["The stable release needs:", ""]
-        lines += [f"- {test_id} on {', '.join(catalog[test_id]['Models'])}"
-                  for test_id in tests]
+        lines += [f"- {test_id} on {', '.join(classes)}"
+                  for test_id, classes in missing]
         lines.append("")
     others = [test_id for test_id in catalog if test_id not in tests]
     if others:

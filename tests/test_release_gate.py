@@ -324,6 +324,21 @@ class PrereleaseAndLinksTest(ScratchRepoTest):
                       "other-a.", notes)
         self.assertNotIn("EBOOT.PBP sha256", notes)
 
+    def test_a_prerelease_lists_what_its_eboot_already_passed(self):
+        self.history((1, 1))
+        self.repo.release(tests="save-a, link-a")
+        self.repo.manifest()
+        self.repo.results(row("save-a", "PSP-1000"), row("save-a", "PSP-3000"),
+                          row("link-a", "PSP-1000"))
+        self.assertEqual(self.repo.gate(channel="prerelease"), [])
+        self.assertIn(
+         "## Validated on\n\n"
+         "- save-a: PSP-1000 (6.61 PRO-C), PSP-3000 (6.61 PRO-C)\n"
+         "- link-a: PSP-1000 (6.61 PRO-C)\n\n"
+         "## Not validated\n\n"
+         "The stable release needs:\n\n"
+         "- link-a on second model\n", self.repo.notes())
+
     def test_the_notes_never_say_1_4_0_links_with_later_releases(self):
         # The real 1.4.0, and one whose constants match that only
         # link-compat.txt excludes.

@@ -175,7 +175,9 @@ make release-gate VERSION=1.4.4 CHANNEL=prerelease
 make release-gate VERSION=1.4.4 CHANNEL=stable
 ```
 
-A prerelease always passes, and its notes list every test as not validated.
+A prerelease always passes. Its notes list the required tests that its
+`EBOOT.PBP` already passed, with their models, and under "Not validated" the
+model classes each test still needs; with no results yet, that is every test.
 A stable release needs, for the `EBOOT.PBP` in its manifest, a `pass` row in
 [the hardware results](docs/HARDWARE-RESULTS.md) for every required test on
 every model class the test asks for; 7 days since the newest
