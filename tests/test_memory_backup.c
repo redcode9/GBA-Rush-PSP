@@ -196,6 +196,26 @@ static void test_retry_without_the_file_stays_blocked(void)
   assert(store.write_calls == 0);
 }
 
+/* A write cut between its two renames left only the .bak and the verified
+   .tmp. The load recovers them before reading; a recovery that fails is
+   an unreadable save, and retrying finishes it and loads the new image. */
+static void test_cut_write_is_recovered_at_load(void)
+{
+  static const unsigned answers[] = { YES };
+
+  fresh_store();
+  fake_store_seed_file(&store, "game.sav.bak", 32 * KIB, 1);
+  fake_store_seed_file(&store, "game.sav.tmp", 32 * KIB, 9);
+  store.fail_move = 1;
+
+  assert(load("SRAM_V113", answers, 1) == ROM_SIZE);
+  assert(host_stub_yesno_asked() == 1);
+  assert(store.move_calls == 2);
+  assert(read_backup(0x30) == (u32)fake_store_pattern(0x30, 9));
+  assert(fake_store_file_size(&store, "game.sav.tmp") < 0);
+  assert(fake_store_file_is(&store, "game.sav.bak", 32 * KIB, 1));
+}
+
 /* Refusing both prompts cancels the load: no ROM stays loaded, and nothing
    writes the file. */
 static void test_refusing_both_prompts_cancels(void)
@@ -262,6 +282,7 @@ int main(void)
   test_unreadable_save_blocks_every_write();
   test_retry_reads_the_save_again();
   test_retry_without_the_file_stays_blocked();
+  test_cut_write_is_recovered_at_load();
   test_refusing_both_prompts_cancels();
   test_oversized_save_loads_a_prefix();
   test_tag_beats_file_size();

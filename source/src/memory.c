@@ -3210,12 +3210,17 @@ SaveStoreResult load_backup(char *name, SaveTag tag)
 {
   SaveStoreResult result;
   SaveLayout layout;
-  size_t file_size;
+  size_t file_size = 0;
 
   memset(gamepak_backup, 0xFF, sizeof(gamepak_backup));
 
-  result = save_store_load(backup_io, dir_save, name, gamepak_backup,
-   sizeof(gamepak_backup), &file_size);
+  // A write cut between its two renames leaves no .sav, only the .tmp and
+  // .bak: recovery first, or a blank cartridge would load and its writes
+  // would push the real save out through the .bak.
+  result = save_store_recover(backup_io, dir_save, name);
+  if (result == SAVE_STORE_OK)
+    result = save_store_load(backup_io, dir_save, name, gamepak_backup,
+     sizeof(gamepak_backup), &file_size);
   backup_write_blocked = (result == SAVE_STORE_FAILED);
 
   layout = save_format_resolve(tag, (u32)file_size);
