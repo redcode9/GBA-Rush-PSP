@@ -57,7 +57,7 @@ static uint32_t count_presses(InputModelTurboState *state, uint32_t pad,
 
   for(i = 0; i < count; i++)
   {
-    uint32_t down = input_model_turbo(state, pad, first + i, turbo) & key;
+    uint32_t down = input_model_turbo(state, pad, first + i, turbo, 0) & key;
 
     if(down != 0 && was_down == 0)
       presses++;
@@ -80,12 +80,12 @@ static void test_two_turbo_inputs_both_pulse(void)
 
   /* Pressed one frame apart, each train keeps its own phase. */
   memset(&state, 0, sizeof(state));
-  assert(input_model_turbo(&state, IN_CIRCLE, 100, turbo) == GBA_A);
-  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 101, turbo) ==
+  assert(input_model_turbo(&state, IN_CIRCLE, 100, turbo, 0) == GBA_A);
+  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 101, turbo, 0) ==
    GBA_B);
-  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 102, turbo) ==
+  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 102, turbo, 0) ==
    GBA_A);
-  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 103, turbo) ==
+  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 103, turbo, 0) ==
    GBA_B);
 }
 
@@ -109,14 +109,14 @@ static void test_tap_gives_a_press(void)
         reset_turbo();
         set_turbo(1, GBA_A, (uint8_t)speed, (uint8_t)toggle);
         memset(&state, 0, sizeof(state));
-        assert(input_model_turbo(&state, 0, frames[f] - 1, turbo) == 0);
-        assert(input_model_turbo(&state, IN_CIRCLE, frames[f], turbo) ==
+        assert(input_model_turbo(&state, 0, frames[f] - 1, turbo, 0) == 0);
+        assert(input_model_turbo(&state, IN_CIRCLE, frames[f], turbo, 0) ==
          GBA_A);
         /* Hold stops on the release, Toggle keeps pulsing. */
-        assert((input_model_turbo(&state, 0, frames[f] + 1, turbo) ==
+        assert((input_model_turbo(&state, 0, frames[f] + 1, turbo, 0) ==
          0) == (toggle == 0 || speed == INPUT_MODEL_TURBO_30));
         assert(input_model_turbo(&state, 0, frames[f] + 2 * (speed + 1),
-         turbo) == (toggle != 0 ? GBA_A : 0));
+         turbo, 0) == (toggle != 0 ? GBA_A : 0));
       }
     }
   }
@@ -142,7 +142,7 @@ static void test_toggle_inverts_on_each_press(void)
     for(i = 0; i < 23; i++, frame++)
     {
       uint32_t pad = i < 3 ? IN_CIRCLE : 0;
-      uint32_t keys = input_model_turbo(&state, pad, frame, turbo);
+      uint32_t keys = input_model_turbo(&state, pad, frame, turbo, 0);
 
       if(round % 2 == 0)
         assert(keys == (((i / 2) % 2 == 0) ? GBA_A : 0));
@@ -166,44 +166,41 @@ static void test_stop(void)
   reset_turbo();
   set_turbo(2, GBA_B, INPUT_MODEL_TURBO_30, 1);
   memset(&state, 0, sizeof(state));
-  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 0, turbo) ==
+  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 0, turbo, 0) ==
    (GBA_A | GBA_B));
   input_model_turbo_stop(&state);
 
   for(frame = 1; frame < 40; frame++)
-    assert(input_model_turbo(&state, IN_CIRCLE, frame, turbo) == 0);
+    assert(input_model_turbo(&state, IN_CIRCLE, frame, turbo, 0) == 0);
 
-  assert(input_model_turbo(&state, 0, 40, turbo) == 0);
-  assert(input_model_turbo(&state, IN_CIRCLE, 41, turbo) == GBA_A);
-  assert(input_model_turbo(&state, IN_CROSS, 42, turbo) == GBA_B);
-  assert(input_model_turbo(&state, 0, 43, turbo) == 0);
-  assert(input_model_turbo(&state, 0, 44, turbo) == GBA_B);
+  assert(input_model_turbo(&state, 0, 40, turbo, 0) == 0);
+  assert(input_model_turbo(&state, IN_CIRCLE, 41, turbo, 0) == GBA_A);
+  assert(input_model_turbo(&state, IN_CROSS, 42, turbo, 0) == GBA_B);
+  assert(input_model_turbo(&state, 0, 43, turbo, 0) == 0);
+  assert(input_model_turbo(&state, 0, 44, turbo, 0) == GBA_B);
 }
 
-/* The turbo keys are ORed in: a normal input on the same GBA key keeps
-   it held through the turbo's off frames. */
+/* Turbo A plus a normal input on A give a held A: the old rapid-fire
+   code cleared A in the turbo's off frames. A normal key on another GBA
+   key passes through while the turbo keeps pulsing. */
 static void test_turbo_and_normal_key_hold(void)
 {
   InputModelTurboState state;
   uint32_t frame;
-  uint32_t off_frames = 0;
 
-  /* Circle is turbo A and Cross is a normal input mapped to A. */
+  /* Circle is turbo A; Cross is a normal input, so its GBA key comes in
+     as normal_keys. */
   reset_turbo();
   set_turbo(2, 0, 0, 0);
   memset(&state, 0, sizeof(state));
-
   for(frame = 0; frame < 60; frame++)
-  {
-    uint32_t keys = input_model_turbo(&state, IN_CIRCLE | IN_CROSS, frame,
-     turbo);
-    uint32_t normal_keys = GBA_A;
+    assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, frame, turbo,
+     GBA_A) == GBA_A);
 
-    if((keys & GBA_A) == 0)
-      off_frames++;
-    assert(((normal_keys | keys) & GBA_A) != 0);
-  }
-  assert(off_frames > 0);
+  memset(&state, 0, sizeof(state));
+  for(frame = 0; frame < 60; frame++)
+    assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, frame, turbo,
+     GBA_B) == (GBA_B | (frame % 2 == 0 ? GBA_A : 0)));
 }
 
 /* Speeds 30, 15 and 10 give 30, 15 and 10 presses over 60 frames, with
@@ -235,7 +232,7 @@ static void test_speeds(void)
 
       memset(&state, 0, sizeof(state));
       for(i = 0; i < 12; i++)
-        assert(input_model_turbo(&state, IN_CIRCLE, 500 + i, turbo) ==
+        assert(input_model_turbo(&state, IN_CIRCLE, 500 + i, turbo, 0) ==
          (((i / (speed + 1)) % 2 == 0) ? GBA_A : 0));
     }
   }
@@ -266,12 +263,12 @@ static void test_same_inputs_same_keys(void)
   {
     uint32_t pad = lcg_next() & 0xFFFFu;
     uint32_t reads = 1 + lcg_next() % 3;
-    uint32_t keys = input_model_turbo(&once, pad, frame, turbo);
+    uint32_t keys = input_model_turbo(&once, pad, frame, turbo, 0);
     InputModelTurboState copy = repeated;
 
-    assert(input_model_turbo(&copy, pad, frame, turbo) == keys);
+    assert(input_model_turbo(&copy, pad, frame, turbo, 0) == keys);
     while(reads-- > 0)
-      assert(input_model_turbo(&repeated, pad, frame, turbo) == keys);
+      assert(input_model_turbo(&repeated, pad, frame, turbo, 0) == keys);
     assert(memcmp(&copy, &repeated, sizeof(copy)) == 0);
     assert(memcmp(&once, &repeated, sizeof(once)) == 0);
   }

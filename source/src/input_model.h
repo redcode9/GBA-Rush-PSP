@@ -48,13 +48,14 @@ typedef struct
   uint32_t prev_pad;
 } InputModelTurboState;
 
-/* Returns the GBA keys to OR into the ones of the normal inputs. pad
- * holds the 16 inputs held now; frame is the emulated frame counter,
- * which may wrap. Calling again with the same frame and pad gives the
- * same keys. A train is on in the frame of its press. turbo has
- * INPUT_MODEL_INPUTS entries. */
+/* Returns normal_keys, the GBA keys of the normal inputs, with the keys
+ * of the turbo trains that are on ORed in; a turbo off frame never
+ * clears a key a normal input holds. pad holds the 16 inputs held now;
+ * frame is the emulated frame counter, which may wrap. Calling again
+ * with the same frame and pad gives the same keys. A train is on in the
+ * frame of its press. turbo has INPUT_MODEL_INPUTS entries. */
 uint32_t input_model_turbo(InputModelTurboState *state, uint32_t pad,
- uint32_t frame, const InputModelTurbo *turbo);
+ uint32_t frame, const InputModelTurbo *turbo, uint32_t normal_keys);
 /* Stops every train, for the menu, state loads and sleep; an input
  * still held starts again only on a new press. */
 void input_model_turbo_stop(InputModelTurboState *state);

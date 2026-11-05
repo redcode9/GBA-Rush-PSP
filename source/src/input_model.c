@@ -12,10 +12,10 @@
 #include "input_model.h"
 
 uint32_t input_model_turbo(InputModelTurboState *state, uint32_t pad,
- uint32_t frame, const InputModelTurbo *turbo)
+ uint32_t frame, const InputModelTurbo *turbo, uint32_t normal_keys)
 {
   uint32_t pressed = pad & ~state->prev_pad;
-  uint32_t keys = 0;
+  uint32_t keys = normal_keys;
   uint32_t i;
 
   state->prev_pad = pad;
@@ -40,7 +40,8 @@ uint32_t input_model_turbo(InputModelTurboState *state, uint32_t pad,
       state->active &= ~bit;
 
     /* Each input has its own train, so held turbo inputs never share a
-       phase. */
+       phase. An off frame clears nothing, so a normal input on the same
+       GBA key stays held. */
     if((state->active & bit) != 0 &&
      ((frame - state->start_frame[i]) / (turbo[i].speed + 1u)) % 2 == 0)
       keys |= turbo[i].key;
