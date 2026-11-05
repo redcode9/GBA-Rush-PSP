@@ -1266,7 +1266,10 @@ static void boot(const char *rom, const char *bios, const char *save,
   mCoreConfigSetValue(&mcore->config, "skipBios", bios_boot ? "0" : "1");
   /* mGBA would otherwise halt in loops it believes idle. */
   mCoreConfigSetValue(&mcore->config, "idleOptimization", "ignore");
-  mcore->loadConfig(mcore, &mcore->config);
+  /* Not mcore->loadConfig alone: skipBios is read from core->opts, which
+     only this fills, and without it every run started with the BIOS
+     intro. */
+  mCoreLoadForeignConfig(mcore, &mcore->config);
   mcore->setVideoBuffer(mcore, video, 256);
   if(!mcore->loadROM(mcore, VFileOpen(rom, O_RDONLY)))
   {
