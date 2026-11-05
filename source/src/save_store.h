@@ -20,6 +20,12 @@
  * does the old file become <name>.bak and the .tmp take its name. A power
  * cut at any step leaves the old image or the new one, which
  * save_store_recover() puts back under the file's own name.
+ *
+ * A save keeps its size from write to write, so a .bak of another size
+ * than the image being written is the file from before a load of the
+ * wrong size. While there is no <name>.orig, such a .bak is renamed to
+ * .orig instead of being deleted: the first file of another size is kept
+ * once, and no write ever replaces it.
  */
 
 #ifndef SAVE_STORE_H
@@ -78,23 +84,29 @@ typedef enum
   SAVE_STORE_WRITE_FAILED,  /* the .tmp would not open, take every byte,
                                close or sync */
   SAVE_STORE_VERIFY_FAILED, /* the .tmp read back wrong */
-  SAVE_STORE_BACKUP_FAILED, /* the old file would not become the .bak; if
-                               it moved, it is back */
+  SAVE_STORE_BACKUP_FAILED, /* the old file would not become the .bak, or
+                               a .bak to keep would not become the .orig;
+                               if the old file moved, it is back */
   SAVE_STORE_PROMOTE_FAILED, /* the .tmp would not take the file's name;
                                 the old file is back */
-  SAVE_STORE_RESTORE_FAILED  /* a step failed after the old file became
+  SAVE_STORE_RESTORE_FAILED, /* a step failed after the old file became
                                 the .bak, and it would not go back either;
                                 save_store_recover() retries */
+  SAVE_STORE_ORIGINAL_FAILED /* the new file is in place, but the old one,
+                                of another size, would not become the
+                                .orig: it stays the .bak, and the next
+                                write fails BACKUP_FAILED until it moves */
 } SaveStoreResult;
 
 /* One write in progress, from save_store_begin() to save_store_commit().
-   It holds three paths: keep it static, not on a thread's stack. */
+   It holds four paths: keep it static, not on a thread's stack. */
 typedef struct
 {
   const SaveStoreIo *io;
   char primary[SAVE_STORE_PATH_MAX];
   char temporary[SAVE_STORE_PATH_MAX]; /* primary plus ".tmp" */
   char backup[SAVE_STORE_PATH_MAX];    /* primary plus ".bak" */
+  char original[SAVE_STORE_PATH_MAX];  /* primary plus ".orig" */
   int32_t file;     /* the open .tmp, or negative */
   uint32_t crc;     /* CRC32 of the bytes appended so far */
   size_t size;
@@ -123,7 +135,8 @@ SaveStoreResult save_store_begin(SaveStoreWrite *transaction,
 SaveStoreResult save_store_append(SaveStoreWrite *transaction,
  const uint8_t *data, size_t size);
 /* Closes, syncs and checks the .tmp, then makes it the file, the old file
-   becoming the .bak. Returns the first failure of the whole write. */
+   becoming the .bak; a .bak to keep becomes the .orig (see the top of
+   this file). Returns the first failure of the whole write. */
 SaveStoreResult save_store_commit(SaveStoreWrite *transaction);
 /* save_store_begin(), one save_store_append() of size bytes of data, and
    save_store_commit(). */

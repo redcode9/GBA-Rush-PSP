@@ -38,7 +38,8 @@ static int set_paths(SaveStoreWrite *transaction, const char *dir,
 {
   return join_path(transaction->primary, dir, name, "") &&
          join_path(transaction->temporary, dir, name, ".tmp") &&
-         join_path(transaction->backup, dir, name, ".bak");
+         join_path(transaction->backup, dir, name, ".bak") &&
+         join_path(transaction->original, dir, name, ".orig");
 }
 
 /* A rename both names confirm: a device can report one that did not
@@ -151,6 +152,27 @@ static SaveStoreResult restore_backup(const SaveStoreWrite *transaction,
   return SAVE_STORE_RESTORE_FAILED;
 }
 
+/* While there is no .orig, a .bak of another size than the image being
+   written becomes the .orig (see save_store.h). 0 if it would not, or its
+   size will not read: then it stays, and no write deletes it. */
+static int keep_original(const SaveStoreWrite *transaction)
+{
+  const SaveStoreIo *io = transaction->io;
+  uint8_t none;
+  size_t size = 0;
+  size_t length = 0;
+
+  if(!io->exists(io->context, transaction->backup) ||
+     io->exists(io->context, transaction->original))
+    return 1;
+  /* Capacity 0 reads the length only. */
+  if(!io->read(io->context, transaction->backup, &none, 0, &size, &length))
+    return 0;
+  return length == transaction->size ||
+         (moved(io, transaction->backup, transaction->original) &&
+          io->flush(io->context, transaction->original));
+}
+
 /* Once the .tmp checks out: the old file becomes the .bak, replacing the
    one before it, and the .tmp takes the file's name. */
 static SaveStoreResult promote(const SaveStoreWrite *transaction)
@@ -160,7 +182,8 @@ static SaveStoreResult promote(const SaveStoreWrite *transaction)
 
   if(had_primary)
   {
-    if(!io->remove(io->context, transaction->backup))
+    if(!keep_original(transaction) ||
+       !io->remove(io->context, transaction->backup))
       return SAVE_STORE_BACKUP_FAILED;
     if(!moved(io, transaction->primary, transaction->backup))
     {
@@ -171,7 +194,12 @@ static SaveStoreResult promote(const SaveStoreWrite *transaction)
   }
   if(moved(io, transaction->temporary, transaction->primary) &&
      io->flush(io->context, transaction->primary))
+  {
+    /* Only now: a failed promotion must still find the .bak to restore. */
+    if(had_primary && !keep_original(transaction))
+      return SAVE_STORE_ORIGINAL_FAILED;
     return SAVE_STORE_OK;
+  }
   if(had_primary)
     return restore_backup(transaction, SAVE_STORE_PROMOTE_FAILED);
   return SAVE_STORE_PROMOTE_FAILED;
@@ -222,9 +250,9 @@ SaveStoreResult save_store_ring_push(const SaveStoreIo *io, const char *dir,
   int free_slot = 0;
   int i;
 
-  /* The write's .link1.tmp and .link1.bak are the longest names: a push
-     that could not write must not rotate the generations away. */
-  if(!join_path(links[0], dir, name, ".link1.tmp") ||
+  /* The write's .link1.orig is the longest name: a push that could not
+     write must not rotate the generations away. */
+  if(!join_path(links[0], dir, name, ".link1.orig") ||
      !join_path(links[0], dir, name, ".link1") ||
      !join_path(links[1], dir, name, ".link2") ||
      !join_path(links[2], dir, name, ".link3"))

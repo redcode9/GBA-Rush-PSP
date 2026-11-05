@@ -7,9 +7,10 @@
  * then a restart (recovery and load), gives the old image or the new one,
  * and each fault gives its own result with the old or new image left.
  * Each fault switch of the fake file system (fake_store_io.c) is shown to
- * take effect. The pre-link copies keep three generations, the newest in
- * .link1; a power cut or a failed rename loses at most the oldest, and
- * never leaves a partial .link1.
+ * take effect. A write over a file of another size keeps that file once
+ * as the .orig, through any cut or fault. The pre-link copies keep three
+ * generations, the newest in .link1; a power cut or a failed rename loses
+ * at most the oldest, and never leaves a partial .link1.
  */
 
 #include <assert.h>
@@ -30,15 +31,19 @@
 #define PRIMARY SAVE_DIR NAME
 #define TMP PRIMARY ".tmp"
 #define BAK PRIMARY ".bak"
+#define ORIG_PATH PRIMARY ".orig"
 
 /* The images the write tests use: the file before the write, the one
-   written, and an older .bak. */
+   written, and an older .bak, all one size as a game's save keeps it; and
+   a file of another size, as a load of the wrong size leaves it. */
 #define OLD 1
-#define OLD_SIZE 1000u
+#define OLD_SIZE 1200u
 #define NEW 2
 #define NEW_SIZE 1200u
 #define ANCIENT 9
-#define ANCIENT_SIZE 900u
+#define ANCIENT_SIZE 1200u
+#define ORIG 5
+#define ORIG_SIZE 2000u
 #define CHUNK 400u
 
 /* The pre-link generations. A seeded ring of n holds seeds n (in .link1)
@@ -51,12 +56,16 @@
 
 static const char *const links[] = { LINK1, LINK2, LINK3 };
 
-/* What is on the Memory Stick before a write. */
+/* What is on the Memory Stick before a write. The last two hold the ORIG
+   file to keep: as the load left it, and as the .bak of a write that has
+   not kept it yet. */
 enum
 {
   NO_FILE,
   ONLY_FILE,
-  FILE_AND_BACKUP
+  FILE_AND_BACKUP,
+  ONLY_ORIGINAL,
+  FILE_AND_ORIGINAL
 };
 
 static FakeStore store;
@@ -100,10 +109,24 @@ static void fill_source(size_t size, uint8_t seed)
 static void seed_state(int state)
 {
   reset();
-  if(state != NO_FILE)
+  if(state == ONLY_ORIGINAL)
+    fake_store_seed(&store, ORIG_SIZE, ORIG);
+  else if(state != NO_FILE)
     fake_store_seed(&store, OLD_SIZE, OLD);
   if(state == FILE_AND_BACKUP)
     fake_store_seed_file(&store, BAK, ANCIENT_SIZE, ANCIENT);
+  if(state == FILE_AND_ORIGINAL)
+    fake_store_seed_file(&store, BAK, ORIG_SIZE, ORIG);
+}
+
+/* After a whole write over state: the ORIG file is the .orig, and only
+   then is there one. */
+static void check_original(int state)
+{
+  if(state >= ONLY_ORIGINAL)
+    assert(fake_store_file_is(&store, ORIG_PATH, ORIG_SIZE, ORIG));
+  else
+    assert(fake_store_file_size(&store, ORIG_PATH) < 0);
 }
 
 /* The new image in CHUNK-byte appends, so a cut can fall between them. */
@@ -133,9 +156,9 @@ static int loaded(size_t file_size, size_t size, uint8_t seed)
   return 1;
 }
 
-/* The next start of the emulator: recovery, then the load. Returns NEW or
-   OLD for the image it finds, 0 for a blank cartridge. No .tmp is left,
-   and the next write works. */
+/* The next start of the emulator: recovery, then the load. Returns NEW,
+   ORIG or OLD for the image it finds, 0 for a blank cartridge. No .tmp is
+   left, and the next write works. */
 static int restart(void)
 {
   size_t file_size = 0;
@@ -153,6 +176,8 @@ static int restart(void)
     assert(result == SAVE_STORE_OK);
     if(loaded(file_size, NEW_SIZE, NEW))
       image = NEW;
+    else if(loaded(file_size, ORIG_SIZE, ORIG))
+      image = ORIG;
     else
     {
       assert(loaded(file_size, OLD_SIZE, OLD));
@@ -268,6 +293,11 @@ static void test_long_path_fails_without_io(void)
   assert(save_store_ring_push(&io, "ms0:/", name, data, sizeof(data)) ==
          SAVE_STORE_FAILED);
   assert(store.calls == 1);
+  /* ".link1.tmp" fits after 496 characters, ".link1.orig" does not. */
+  name[496] = '\0';
+  assert(save_store_ring_push(&io, "ms0:/", name, data, sizeof(data)) ==
+         SAVE_STORE_FAILED);
+  assert(store.calls == 1);
 }
 
 /* Loading reads only: no write, rename or delete. */
@@ -288,7 +318,8 @@ static void test_load_never_writes(void)
 }
 
 /* Each write leaves the new image under the file's name and the one it
-   replaced as the .bak, with no .tmp. */
+   replaced as the .bak, with no .tmp; a save that keeps its size gets no
+   .orig. */
 static void test_write_keeps_the_old_image_as_backup(void)
 {
   reset();
@@ -311,6 +342,7 @@ static void test_write_keeps_the_old_image_as_backup(void)
   assert(fake_store_file_is(&store, PRIMARY, ANCIENT_SIZE, ANCIENT));
   assert(fake_store_file_is(&store, BAK, NEW_SIZE, NEW));
   assert(store.open_file == -1);
+  assert(fake_store_file_size(&store, ORIG_PATH) < 0);
 }
 
 /* The recovery table, one row per state a cut write can leave. */
@@ -381,6 +413,7 @@ static int cut_and_restart(int state, int cut, int recovery_cut)
 {
   SaveStoreResult result;
   int image;
+  int before = (state == NO_FILE) ? 0 : (state == ONLY_ORIGINAL) ? ORIG : OLD;
 
   seed_state(state);
   store.cut_after = cut;
@@ -389,6 +422,7 @@ static int cut_and_restart(int state, int cut, int recovery_cut)
   {
     assert(result == SAVE_STORE_OK);
     assert(fake_store_file_is(&store, PRIMARY, NEW_SIZE, NEW));
+    check_original(state);
     return 0;
   }
   if(recovery_cut != 0)
@@ -400,14 +434,15 @@ static int cut_and_restart(int state, int cut, int recovery_cut)
       return -1;
   }
   image = restart();
-  assert(image == NEW || image == (state == NO_FILE ? 0 : OLD));
+  assert(image == NEW || image == before);
+  check_original(state);
   return 1;
 }
 
 /* For every call k of a write, from each starting state: the power goes
    off after call k (and again during the recovery that follows), and the
    next start finds the old image or the new one, never a blank cartridge
-   where there was a save. */
+   where there was a save, and a file of another size ends up the .orig. */
 static void test_power_cut_at_every_step(void)
 {
   int state;
@@ -415,7 +450,7 @@ static void test_power_cut_at_every_step(void)
   int recovery_cut;
   int recoveries_cut = 0;
 
-  for(state = NO_FILE; state <= FILE_AND_BACKUP; state++)
+  for(state = NO_FILE; state <= FILE_AND_ORIGINAL; state++)
   {
     for(cut = 1; cut_and_restart(state, cut, 0) != 0; cut++)
     {
@@ -561,7 +596,8 @@ static void test_streaming(void)
   fill_source(sizeof(source), 4);
   for(i = 0; i < sizeof(chunks) / sizeof(chunks[0]); i++)
   {
-    seed_state(ONLY_FILE);
+    reset();
+    fake_store_seed(&store, sizeof(source), OLD);
     assert(save_store_begin(&transaction, &io, SAVE_DIR, NAME) == SAVE_STORE_OK);
     for(offset = 0; offset < sizeof(source); offset += chunks[i])
       assert(save_store_append(&transaction, source + offset, chunks[i]) ==
@@ -569,7 +605,80 @@ static void test_streaming(void)
     assert(save_store_commit(&transaction) == SAVE_STORE_OK);
     assert(store.write_calls == (int)(sizeof(source) / chunks[i]));
     assert(fake_store_file_is(&store, PRIMARY, sizeof(source), 4));
-    assert(fake_store_file_is(&store, BAK, OLD_SIZE, OLD));
+    assert(fake_store_file_is(&store, BAK, sizeof(source), OLD));
+  }
+}
+
+/* The first write over a file of another size keeps it as the .orig;
+   later writes, of any size, never change that .orig. */
+static void test_original_is_kept_once(void)
+{
+  seed_state(ONLY_ORIGINAL);
+  assert(write_new_in_chunks() == SAVE_STORE_OK);
+  assert(fake_store_file_is(&store, PRIMARY, NEW_SIZE, NEW));
+  assert(fake_store_file_is(&store, ORIG_PATH, ORIG_SIZE, ORIG));
+  assert(fake_store_file_size(&store, BAK) < 0);
+
+  fill_source(ORIG_SIZE, ANCIENT);
+  assert(save_store_write(&io, SAVE_DIR, NAME, source, ORIG_SIZE) ==
+         SAVE_STORE_OK);
+  assert(fake_store_file_is(&store, BAK, NEW_SIZE, NEW));
+  assert(write_new_in_chunks() == SAVE_STORE_OK);
+  assert(fake_store_file_is(&store, BAK, ORIG_SIZE, ANCIENT));
+  assert(fake_store_file_is(&store, ORIG_PATH, ORIG_SIZE, ORIG));
+}
+
+typedef struct
+{
+  int *fault;     /* the fake's switch */
+  int call;       /* the call it hits */
+  int next_call;  /* the same switch for the next write's try; 0 if the
+                     ORIG file is the .orig already */
+} KeepFault;
+
+/* Over ONLY_ORIGINAL: moves 1 and 2 make the .bak and promote the .tmp,
+   3 makes the .bak the .orig, and flush 3 syncs that. Only the length
+   check reads. */
+static const KeepFault keep_faults[] =
+{
+  { &store.fail_open, 1, 1 },
+  { &store.fail_move, 3, 4 },
+  { &store.move_lies_ok, 3, 4 },
+  { &store.move_lies_fail, 3, 0 },
+  { &store.fail_flush, 3, 0 }
+};
+
+/* A write whose keeping fails still puts the new file in place, and the
+   ORIG file is never lost: it is the .orig, or it stays the .bak and the
+   next write fails before it changes anything, until one keeps it. */
+static void test_original_survives_a_failed_keep(void)
+{
+  size_t i;
+
+  for(i = 0; i < sizeof(keep_faults) / sizeof(keep_faults[0]); i++)
+  {
+    const KeepFault *fault = &keep_faults[i];
+
+    seed_state(ONLY_ORIGINAL);
+    *fault->fault = fault->call;
+    assert(write_new_in_chunks() == SAVE_STORE_ORIGINAL_FAILED);
+    assert(fake_store_file_is(&store, PRIMARY, NEW_SIZE, NEW));
+    assert(fake_store_file_is(&store, fault->next_call ? BAK : ORIG_PATH,
+     ORIG_SIZE, ORIG));
+    if(fault->next_call != 0)
+    {
+      assert(fake_store_file_size(&store, ORIG_PATH) < 0);
+      *fault->fault = fault->next_call;
+      fill_source(NEW_SIZE, ANCIENT);
+      assert(save_store_write(&io, SAVE_DIR, NAME, source, NEW_SIZE) ==
+             SAVE_STORE_BACKUP_FAILED);
+      assert(fake_store_file_is(&store, PRIMARY, NEW_SIZE, NEW));
+      assert(fake_store_file_is(&store, BAK, ORIG_SIZE, ORIG));
+      assert(fake_store_file_size(&store, ORIG_PATH) < 0);
+    }
+    *fault->fault = 0;
+    assert(restart() == NEW);
+    assert(fake_store_file_is(&store, ORIG_PATH, ORIG_SIZE, ORIG));
   }
 }
 
@@ -782,6 +891,8 @@ int main(void)
   test_each_fault_gives_its_result();
   test_short_writes();
   test_streaming();
+  test_original_is_kept_once();
+  test_original_survives_a_failed_keep();
   test_ring_keeps_three_generations();
   test_ring_power_cut_at_every_step();
   test_ring_stops_at_a_failed_rename();
