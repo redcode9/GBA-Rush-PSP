@@ -99,14 +99,20 @@ class CheckElfTest(unittest.TestCase):
         self.assertIn("below", err)
 
     def test_a_failing_check_layout_warns_or_fails_with_strict(self):
-        (self.root / "check-layout.py").write_text("import sys\nsys.exit(1)\n",
-                                                   encoding="utf-8")
+        # A stand-in that records its arguments and fails.
+        arguments = self.root / "check-layout.args"
+        (self.root / "check-layout.py").write_text(
+         "import pathlib, sys\n"
+         f"pathlib.Path({str(arguments)!r}).write_text(repr(sys.argv[1:]))\n"
+         "sys.exit(1)\n", encoding="utf-8")
         status, _, err = self.run_check(elf32(clean_payload()))
         self.assertEqual(status, 0)
         self.assertIn("warning: check-layout.py failed", err)
+        self.assertEqual(arguments.read_text(), repr([str(self.elf)]))
         status, _, err = self.run_check(elf32(clean_payload()), "--strict")
         self.assertEqual(status, 1)
         self.assertIn("check-layout.py failed", err)
+        self.assertEqual(arguments.read_text(), repr([str(self.elf), "--strict"]))
 
     def test_reads_the_version_from_main_h(self):
         header = self.root / "main.h"
