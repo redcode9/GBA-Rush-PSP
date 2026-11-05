@@ -15,6 +15,7 @@
  */
 
 #include <assert.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -280,6 +281,19 @@ static void test_refusals(void)
   assert(!ui_batch_image(&batch, 0, 0, 0, 0, -1, 4, 4));
   assert(!ui_batch_image(&batch, 0, 0, 0, 4, 0, 0, 16));
   assert(!ui_batch_image(&batch, 0, 0, 0, 4, 4, 4, -2));
+  /* Values that would overflow an int when the batch adds a size or 1 to
+     them (the UBSan build traps if it ever does). */
+  assert(!ui_batch_image(&batch, 0, INT_MAX, 0, 0, 0, 4, 4));
+  assert(!ui_batch_image(&batch, 0, 0, INT_MAX, 0, 0, 4, 4));
+  assert(!ui_batch_image(&batch, 0, 0, 0, INT_MAX, 0, 4, 4));
+  assert(!ui_batch_image(&batch, 0, 0, 0, 0, INT_MAX, 4, 4));
+  assert(!ui_batch_image(&batch, 0, 0, 0, 0, 0, INT_MIN, 4));
+  assert(!ui_batch_image(&batch, 0, 0, 0, 0, 0, 4, INT_MIN));
+  assert(!ui_batch_hline(&batch, 0, INT_MAX, 0, RED));
+  assert(!ui_batch_hline(&batch, 0, 4, INT_MAX, RED));
+  assert(!ui_batch_vline(&batch, INT_MAX, 0, 4, RED));
+  assert(!ui_batch_vline(&batch, 0, 0, INT_MAX, RED));
+  assert(!ui_batch_box_line(&batch, 0, INT_MIN, 4, INT_MIN, RED));
 
   /* Clearing the registry first draws what still names its slots. */
   assert(ui_batch_image(&batch, 0, 0, 0, 0, 0, 16, 16));

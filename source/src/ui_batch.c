@@ -84,10 +84,11 @@ static int ui_batch_textured(UiBatch *batch, UiCommandKind kind,
   if(texture < 0 || (uint32_t)texture >= batch->texture_count)
     return 0;
   registered = &batch->textures[texture];
-  /* An empty or negative size leaves an empty rectangle, which the queue
-     refuses. */
-  if(registered->format != format || u < 0 || v < 0 ||
-     u + w > registered->width || v + h > registered->height)
+  /* The texels must lie inside the texture; each check comes before a sum
+     that could overflow an int. */
+  if(registered->format != format || !ui_coord_ok(x) || !ui_coord_ok(y) ||
+     w < 1 || h < 1 || u < 0 || v < 0 || u > registered->width - w ||
+     v > registered->height - h)
     return 0;
 
   command.kind = (uint8_t)kind;
@@ -162,14 +163,17 @@ int ui_batch_fill_alpha(UiBatch *batch, int x0, int y0, int x1, int y1,
   return ui_batch_solid(batch, UI_COMMAND_FILL_ALPHA, x0, y0, x1, y1, color);
 }
 
+/* The lines check what they add 1 to first, so the sum cannot overflow. */
 int ui_batch_hline(UiBatch *batch, int sx, int ex, int y, uint16_t color)
 {
-  return ui_batch_solid(batch, UI_COMMAND_LINE, sx, y, ex + 1, y + 1, color);
+  return ui_coord_ok(ex) && ui_coord_ok(y) &&
+   ui_batch_solid(batch, UI_COMMAND_LINE, sx, y, ex + 1, y + 1, color);
 }
 
 int ui_batch_vline(UiBatch *batch, int x, int sy, int ey, uint16_t color)
 {
-  return ui_batch_solid(batch, UI_COMMAND_LINE, x, sy, x + 1, ey + 1, color);
+  return ui_coord_ok(x) && ui_coord_ok(ey) &&
+   ui_batch_solid(batch, UI_COMMAND_LINE, x, sy, x + 1, ey + 1, color);
 }
 
 int ui_batch_box_line(UiBatch *batch, int x1, int y1, int x2, int y2,
@@ -177,7 +181,7 @@ int ui_batch_box_line(UiBatch *batch, int x1, int y1, int x2, int y2,
 {
   int queued = 0;
 
-  if(x2 < x1 || y2 < y1)
+  if(x2 < x1 || y2 < y1 || !ui_coord_ok(y1) || !ui_coord_ok(y2))
     return 0;
 
   queued += ui_batch_hline(batch, x1, x2, y1, color);
