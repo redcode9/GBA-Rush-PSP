@@ -49,6 +49,7 @@ class ManifestTest(unittest.TestCase):
     def write(self, cflags=CFLAGS, version="1.4.4"):
         return run("write", "--output", str(self.manifest), "--version", version,
                    "--commit", "c5b58ea9f3d67c08696dfefdea73916991ec1088",
+                   "--build-id", "0123abcd4567-dirty",
                    "--tree-clean", "true", "--source-date-epoch", "1767225600",
                    "--compiler", "psp-gcc (GCC) 14.2.0\nCopyright (C) 2024",
                    f"--cflags={cflags}", "--pspsdk", PSPSDK + "/",
@@ -66,7 +67,7 @@ class ManifestTest(unittest.TestCase):
                          " -D_PSP_FW_VERSION=371")
         self.assertEqual(manifest["version"], "1.4.4")
         self.assertEqual(manifest["channel"], "stable")
-        self.assertIsNone(manifest["build_id"])
+        self.assertEqual(manifest["build_id"], "0123abcd4567-dirty")
         self.assertIs(manifest["tree_clean"], True)
         self.assertEqual(manifest["source_date_epoch"], 1767225600)
         self.assertEqual(manifest["compiler"], "psp-gcc (GCC) 14.2.0")

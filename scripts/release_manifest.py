@@ -2,7 +2,7 @@
 """Write or verify the build manifest of a release package.
 
 write: package-release.sh records what was built (version, channel, commit,
-compiler and flags) and the SHA-256 of every built file in
+build id, compiler and flags) and the SHA-256 of every built file in
 dist/GBA-Rush-PSP-<version>.manifest.json.
 verify: check-package.sh checks the files extracted from the zip against it.
 """
@@ -79,8 +79,8 @@ def write(args):
         "version": args.version,
         "channel": channel_for(args.version, os.environ.get("CHANNEL")),
         "commit": args.commit,
-        # Stays null until the build carries an id of its own.
-        "build_id": None,
+        # The id the EBOOT shows and writes (make -C source print-build-id).
+        "build_id": args.build_id,
         "tree_clean": args.tree_clean == "true",
         "source_date_epoch": args.source_date_epoch,
         "compiler": args.compiler.partition("\n")[0].rstrip(),
@@ -110,8 +110,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
     writer = commands.add_parser("write", help="write the manifest")
-    for option in ("--output", "--version", "--commit", "--compiler",
-                   "--cflags", "--pspsdk", "--pspdev", "--source-dir"):
+    for option in ("--output", "--version", "--commit", "--build-id",
+                   "--compiler", "--cflags", "--pspsdk", "--pspdev",
+                   "--source-dir"):
         writer.add_argument(option, required=True)
     writer.add_argument("--tree-clean", required=True, choices=("true", "false"))
     writer.add_argument("--source-date-epoch", required=True, type=int)

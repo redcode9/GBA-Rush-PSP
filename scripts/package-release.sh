@@ -7,7 +7,8 @@ set -eu
 # reproducible: every file gets the last commit's time (or
 # SOURCE_DATE_EPOCH) and zip -X leaves out extra file attributes.
 # Next to it go the build manifest (scripts/release_manifest.py: commit,
-# compiler, flags and the SHA-256 of every built file) and dist/SHA256SUMS.
+# build id, compiler, flags and the SHA-256 of every built file) and
+# dist/SHA256SUMS.
 
 if [ "$#" -ne 1 ]; then
   echo "Usage: $0 VERSION" >&2
@@ -100,10 +101,12 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 compiler_version=$(psp-gcc --version)
 cflags=$(${MAKE:-make} -s --no-print-directory -C source print-flags)
+build_id=$(${MAKE:-make} -s --no-print-directory -C source print-build-id)
 pspsdk=$(psp-config --pspsdk-path)
 pspdev=$(psp-config --pspdev-path)
 ${PYTHON:-python3} scripts/release_manifest.py write --output "$manifest" \
-  --version "$version" --commit "$commit" --tree-clean "$tree_clean" \
+  --version "$version" --commit "$commit" --build-id "$build_id" \
+  --tree-clean "$tree_clean" \
   --source-date-epoch "$release_epoch" --compiler "$compiler_version" \
   --cflags="$cflags" --pspsdk "$pspsdk" --pspdev "$pspdev" \
   --source-dir source
