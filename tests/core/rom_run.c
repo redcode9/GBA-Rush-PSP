@@ -637,7 +637,7 @@ static uint32_t bus_code32(void *context, uint32_t address)
 static const ArmBus bus =
 {
   NULL, bus_read8, bus_read16, bus_read32, bus_write8, bus_write16,
-  bus_write32, bus_code32
+  bus_write32, bus_code32, NULL
 };
 
 /* ---- Running ---------------------------------------------------------- */

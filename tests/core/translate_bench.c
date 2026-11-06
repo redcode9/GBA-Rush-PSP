@@ -190,7 +190,7 @@ static long load(const char *path, uint8_t *to, long max)
 int main(int argc, char **argv)
 {
   ArmBus bus = { NULL, read_none, read_none, read_none, write_none,
-   write_none, write_none, code32 };
+   write_none, write_none, code32, NULL };
   ArmMipsHost host = { NULL, target, sync_none, NULL, 0x08700000u, NULL };
   static ArmIrOp ops[ARM_BLOCK_MAX_OPS];
   unsigned repeat = 20;

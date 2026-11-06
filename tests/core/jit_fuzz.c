@@ -814,7 +814,7 @@ static uint32_t tick(void *context)
 int main(int argc, char **argv)
 {
   ArmBus bus = { NULL, read8, read16, read32, write8, write16, write32,
-   code32 };
+   code32, NULL };
   ArmMipsHost host;
   uint32_t *code;
   uint32_t seed = 1;

@@ -1397,9 +1397,9 @@ int main(int argc, char **argv)
   double seconds;
   int ok = 1;
   ArmBus replay = { NULL, replay_read8, replay_read16, replay_read32,
-   replay_write8, replay_write16, replay_write32, code32 };
+   replay_write8, replay_write16, replay_write32, code32, NULL };
   ArmBus direct = { NULL, run_read8, run_read16, run_read32, run_write8,
-   run_write16, run_write32, code32 };
+   run_write16, run_write32, code32, NULL };
 #ifdef LOCKSTEP_JIT
   int use_jit = 0;
   int count = 0;

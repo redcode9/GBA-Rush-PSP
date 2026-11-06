@@ -2706,7 +2706,8 @@ static uint32_t ticks(const ArmMips *jit)
 }
 
 /* The main entry of the block at r15, compiled now if need be; 0 if the
-   interpreter has to run it. */
+   interpreter has to run it, or if there is no block: zeros where nothing
+   is mapped, which the run loop moves past (arm_core_skip). */
 static uint32_t block_entry(ArmMips *jit)
 {
   ArmCore *core = &jit->core;
@@ -2719,6 +2720,8 @@ static uint32_t block_entry(ArmMips *jit)
 
   if(!block)
   {
+    if(arm_core_zeros(core))
+      return 0;
     set_phase(jit, ARM_MIPS_PHASE_TRANSLATE);
     start = ticks(jit);
     block = arm_core_block(core);
@@ -2827,7 +2830,8 @@ int32_t arm_mips_run(ArmMips *jit, int32_t cycles)
     if(!entry)
     {
       set_phase(jit, ARM_MIPS_PHASE_INTERPRET);
-      check = arm_core_run_block(core) != ARM_EXIT_NEXT;
+      check = !arm_core_skip(core) &&
+       arm_core_run_block(core) != ARM_EXIT_NEXT;
       set_phase(jit, ARM_MIPS_PHASE_DISPATCH);
     }
     else

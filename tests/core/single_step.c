@@ -601,7 +601,7 @@ int main(int argc, char **argv)
 {
   static Test test;
   ArmBus bus = { NULL, read8, read16, read32, write8, write16, write32,
-   code32 };
+   code32, NULL };
   int verbose = 0;
   unsigned limit = 0;
   int arg;

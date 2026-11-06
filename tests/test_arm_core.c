@@ -138,6 +138,13 @@ static uint32_t code32(void *context, uint32_t address)
   return read_any(address, 4);
 }
 
+/* Regions 1 and 2 hold nothing: code32 reads 0 there. */
+static int unmapped(void *context, uint32_t address)
+{
+  (void)context;
+  return (address >> 24) == 1 || (address >> 24) == 2;
+}
+
 static void reset(uint32_t pc, uint32_t cpsr)
 {
   arm_core_reset(&core);
@@ -298,6 +305,55 @@ static void test_runaway(void)
   CHECK(core.v[15] < SLIDE_END && (core.v[15] & 0xFF) == 0xD8);
 }
 
+/* Zeros where nothing is mapped, which the core moves past without
+   translating them: the run must end where running them one at a time
+   up to the budget does, with the same registers, flags, cycles and
+   instructions. ARM and Thumb (lsls r0, r0, #0 sets N from r0) through
+   region 1, then ARM through region 2, where the fetches cost six cycles,
+   into internal RAM at 3000000h (mov r0, #1; b .), where the last two
+   zeros' fetches cost one: the skip stops before them. */
+static void check_zeros(uint32_t pc, uint32_t cpsr, int32_t budget)
+{
+  uint32_t v[16];
+  uint32_t flags;
+  uint32_t insns;
+  int32_t ran;
+
+  reset(pc, cpsr);
+  core.v[0] = 0x80000000u;
+  core.cycles = 0;
+  core.instructions = 0;
+  while(core.cycles < budget)
+    arm_core_step(&core);
+  memcpy(v, core.v, sizeof(v));
+  flags = arm_core_cpsr(&core);
+  insns = core.instructions;
+  ran = core.cycles;
+  reset(pc, cpsr);
+  core.v[0] = 0x80000000u;
+  core.instructions = 0;
+  if(arm_core_run(&core, budget) != ran || memcmp(v, core.v, sizeof(v)) ||
+     arm_core_cpsr(&core) != flags || core.instructions != insns)
+  {
+    printf("test_arm_core: zeros from %08x, budget %d: cycle %d at %08x,"
+     " one at a time %d at %08x\n", (unsigned)pc, (int)budget,
+     (int)core.cycles, (unsigned)core.v[15], (int)ran, (unsigned)v[15]);
+    failures++;
+  }
+}
+
+static void test_zeros(void)
+{
+  static const uint32_t ram[] = { 0xe3a00001, 0xeafffffe };
+
+  check_zeros(0x01000000, ARM_MODE_SYSTEM, 1000);
+  check_zeros(0x01FFF000, ARM_MODE_SYSTEM, 70000);
+  check_zeros(0x01000002, ARM_MODE_SYSTEM | ARM_CPSR_T | ARM_CPSR_Z, 333);
+  memcpy(iwram, ram, sizeof(ram));
+  check_zeros(0x02FFFF00, ARM_MODE_SYSTEM, 1000);
+  CHECK(core.v[0] == 1 && core.v[15] == 0x03000004);
+}
+
 /* One run of check_idle_loop: after a reset to pc (0: on from the last
    run), with f raising an IRQ if irq. */
 typedef struct
@@ -417,7 +473,7 @@ static void test_idle_loop(void)
 int main(void)
 {
   ArmBus bus = { NULL, read8, read16, read32, ignore, ignore, acknowledge,
-   code32 };
+   code32, unmapped };
   uint32_t movs_pc_lr = 0xe1b0f00e;
   uint16_t movs_r0_0 = 0x2000;
   uint16_t muls_r0_r1 = 0x4348;
@@ -445,6 +501,7 @@ int main(void)
   test_hook();
   test_idle_loop();
   test_runaway();
+  test_zeros();
   if(failures)
     return 1;
   printf("test_arm_core: all checks passed\n");

@@ -949,10 +949,76 @@ const ArmBlock *arm_core_cached(ArmCore *core)
   return lookup(core, core->v[15] | ((core->cpsr & ARM_CPSR_T) ? 1u : 0u));
 }
 
-ArmExitKind arm_core_run_block(ArmCore *core)
-{
-  const ArmBlock *block = arm_core_block(core);
+/* ---- Zeros where nothing is mapped -------------------------------------- */
 
+/* Code read where nothing is mapped is 0, which runs as a no-op: ARM
+   andeq r0, r0, r0, Thumb lsls r0, r0, #0 (N and Z from r0), each costing
+   its sequential opcode fetch two instructions on. Translated, a jump
+   there (the core test ROM's pc_high) costs a new block every 64 cycles
+   and only returns to the system 2^ARM_RUNAWAY_SHIFT cycles past each
+   budget, so the emulator stops. These are the zeros at r15 arm_core_skip
+   may move past instead: up to the last two before the end of the 16 MB
+   region, so that every fetch it counts costs the same, and not past the
+   hook. GamePak regions, with their prefetch buffer and 128 KB
+   boundaries, stay translated. */
+static uint32_t zeros_ahead(const ArmCore *core)
+{
+  uint32_t pc = core->v[15];
+  uint32_t width = (core->cpsr & ARM_CPSR_T) ? 2 : 4;
+  uint32_t count = ((pc | 0xFFFFFFu) - pc + 1) / width;
+  uint32_t hook = (core->hook & ~1u) - pc;
+  unsigned region = region_of(pc);
+
+  count = count > 2 ? count - 2 : 0;
+  if(core->hook && hook / width < count)
+    count = hook / width;
+  if(!count || (region >= 8 && region <= 13) || !core->bus.unmapped ||
+     !core->bus.unmapped(core->bus.context, pc))
+    return 0;
+  return count;
+}
+
+int arm_core_zeros(const ArmCore *core)
+{
+  return zeros_ahead(core) != 0;
+}
+
+/* The run ends on the first instruction at or past the budget, where a
+   taken branch would have ended it, and the system takes its events and
+   interrupts there; registers, flags, cycles and instructions are what
+   running the zeros one by one leaves. */
+int arm_core_skip(ArmCore *core)
+{
+  uint32_t count = zeros_ahead(core);
+  uint32_t width = (core->cpsr & ARM_CPSR_T) ? 2 : 4;
+  uint32_t cost;
+  uint32_t left;
+
+  if(!count || arm_core_cached(core))
+    return 0;
+  cost = arm_access_cycles(core, core->v[15] + 2 * width, width, 1);
+  left = core->cycles < core->cycle_limit ?
+   ((uint32_t)(core->cycle_limit - core->cycles) + cost - 1) / cost : 0;
+  core->exit_request = 0;
+  if(left <= count)
+  {
+    count = left;
+    core->exit_request = ARM_EXIT_STOP;
+  }
+  if(count)
+  {
+    core->v[15] += count * width;
+    core->insn_pc = core->v[15] - width;
+    core->cycles += (int32_t)(count * cost);
+    core->instructions += count;
+    if(width == 2)
+      core->flag_n = core->flag_z = core->v[0];
+  }
+  return 1;
+}
+
+static ArmExitKind run_block(ArmCore *core, const ArmBlock *block)
+{
   /* Requests made between blocks (a DMA invalidating code) are about
      blocks no longer running. */
   core->exit_request = 0;
@@ -961,9 +1027,15 @@ ArmExitKind arm_core_run_block(ArmCore *core)
   return arm_core_execute(core, &core->ops[block->first]);
 }
 
+ArmExitKind arm_core_run_block(ArmCore *core)
+{
+  return run_block(core, arm_core_block(core));
+}
+
 int32_t arm_core_run(ArmCore *core, int32_t cycles)
 {
   ArmExitKind kind = ARM_EXIT_JUMP;
+  const ArmBlock *block;
 
   core->cycles = 0;
   core->cycle_limit = cycles;
@@ -979,7 +1051,13 @@ int32_t arm_core_run(ArmCore *core, int32_t cycles)
       if(core->irq_line && !(core->cpsr & ARM_CPSR_I))
         core->cycles += arm_core_irq(core);
     }
-    kind = arm_core_run_block(core);
+    block = arm_core_cached(core);
+    if(block)
+      kind = run_block(core, block);
+    else if(arm_core_skip(core))
+      kind = ARM_EXIT_NEXT;
+    else
+      kind = run_block(core, arm_core_block(core));
     if(core->exit_request)
     {
       unsigned request = core->exit_request;
