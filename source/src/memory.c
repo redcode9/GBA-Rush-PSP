@@ -2588,8 +2588,8 @@ u32 read_open_memory32(u32 address)
 
 // Stores for C code (cheats) and the new core's bus, aligned down to their
 // size; addresses of 0x10000000 and above are ignored. Returns the
-// handler's CPU_ALERT_* bits. A store to work RAM drops the new core's
-// code there (arm_gba_written).
+// handler's CPU_ALERT_* bits. A store to work RAM or VRAM drops the new
+// core's code there (arm_gba_written).
 CPU_ALERT_TYPE write_memory8(u32 address, u8 value)
 {
   u32 region = address >> 24;

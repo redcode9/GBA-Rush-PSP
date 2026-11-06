@@ -1509,7 +1509,7 @@ unsigned arm_translate(ArmCore *core, uint32_t pc, int thumb,
   b.skip_op = NO_OP;
   b.cartridge = region >= 8 && region <= 13;
   b.prefetch = b.cartridge && (core->waitcnt & 0x4000);
-  if(region == 2 || region == 3)
+  if(region == 2 || region == 3 || region == 6)
     page_end = (pc | (ARM_CODE_PAGE_SIZE - 1)) + 1;
   /* Only blocks keyed in work RAM sit on its code pages, so a block from
      the zeros before it stops there and the code in it gets its own. */

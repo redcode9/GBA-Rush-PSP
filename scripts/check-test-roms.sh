@@ -27,8 +27,6 @@ set -eu
 #   start it reads 3 where mGBA reads 0.
 # - prefetch_*: the New core runs a store's new code at once instead of
 #   the two instructions already fetched.
-# - vram_*, stm_vram: the New core keeps running its translation of code
-#   in VRAM after the code is rewritten.
 # - the save ROMs' odd and misaligned backup loads: the New core reads
 #   the aligned address on the 8-bit backup bus.
 core_allow=cpu_irq_latency,timer_start_delay
@@ -37,8 +35,7 @@ core_allow=$core_allow,prefetch_arm_1_warm,prefetch_arm_2_cold
 core_allow=$core_allow,prefetch_arm_2_warm,prefetch_thumb_1_cold
 core_allow=$core_allow,prefetch_thumb_1_warm,prefetch_thumb_2_cold
 core_allow=$core_allow,prefetch_thumb_2_warm,prefetch_stm,prefetch_push
-core_allow=$core_allow,prefetch_swp,vram_arm_cpu,vram_arm_dma
-core_allow=$core_allow,vram_thumb_cpu,vram_thumb_dma,stm_vram
+core_allow=$core_allow,prefetch_swp
 bus_allow=sram_ldrh_odd,sram_ldrsh_odd,sram_ldr_1,sram_ldr_2,sram_ldr_3
 bus_allow=$bus_allow,flash_ldrh_device
 

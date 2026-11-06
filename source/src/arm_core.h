@@ -74,8 +74,8 @@ typedef struct
 /* Optional direct access to one of the 16 regions (address bits 24-27),
    such as work RAM: the core reads and writes host memory at
    (address & mask) instead of calling the bus. NULL pointers use the
-   bus. Writes to work RAM must stay with the core either way, which
-   invalidates translated code they overwrite. */
+   bus. Writes to work RAM and VRAM must stay with the core either way,
+   which invalidates translated code they overwrite. */
 typedef struct
 {
   const uint8_t *read;
@@ -94,10 +94,11 @@ typedef struct
 #define ARM_CACHE_HASH (1u << 13)
 #define ARM_BLOCK_MAX_OPS 1024u
 #define ARM_BLOCK_MAX_INSNS 64u
-/* Translated code in work RAM is tracked in pages of this size: 1024 for
-   the 256 KB on board, 128 for the 32 KB on chip. */
+/* Translated code in RAM is tracked in pages of this size: 1024 for the
+   256 KB of work RAM on board, 128 for the 32 KB on chip, then 384 for
+   the 96 KB of VRAM. */
 #define ARM_CODE_PAGE_SIZE 256u
-#define ARM_CODE_PAGES (1024u + 128u)
+#define ARM_CODE_PAGES (1024u + 128u + 384u)
 #define ARM_NO_BLOCK 0xFFFFu
 #define ARM_IDLE_LOOPS 16u
 #define ARM_NO_IDLE_PASS 0xFFFFFFFFu
@@ -117,7 +118,7 @@ typedef struct
   uint16_t count;       /* ops */
   uint16_t insns;       /* guest instructions */
   uint16_t next_hash;   /* next block in the same hash bucket */
-  uint16_t next_page;   /* next block in the same work RAM page */
+  uint16_t next_page;   /* next block in the same RAM page */
 } ArmBlock;
 
 /* Bits of ArmCore.exit_request. */
@@ -179,6 +180,9 @@ typedef struct ArmCore
      to measure one pass; ARM_NO_IDLE_PASS when there is none. */
   uint32_t idle_target;
   int32_t idle_cycles;
+  /* Set once code in VRAM is translated, until the next flush: until then
+     a store to VRAM needs no look at its pages. */
+  uint32_t vram_code;
 
   uint32_t block_count;
   uint32_t op_count;
@@ -204,7 +208,8 @@ uint32_t *arm_core_register(ArmCore *core, unsigned mode, unsigned reg);
 /* New WAITCNT value; flushes the translations, whose timing it changes. */
 void arm_core_set_waitcnt(ArmCore *core, uint16_t waitcnt);
 void arm_core_flush(ArmCore *core);
-/* Drops translations of work RAM written behind the core's back (DMA). */
+/* Drops translations of RAM (work RAM, VRAM) written behind the core's
+   back (DMA). */
 void arm_core_invalidate(ArmCore *core, uint32_t address, uint32_t size);
 
 /* Enters the IRQ exception if the CPSR allows it; returns its cycles. */

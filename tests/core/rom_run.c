@@ -571,6 +571,7 @@ static void mem_write(uint32_t address, unsigned size, uint32_t value)
       break;
     case 0x6:
       store(vram, vram_offset(address), size, value);
+      arm_core_invalidate(&core, address, size);
       break;
     case 0x7:
       store(oam, address & 0x3FF, size, value);

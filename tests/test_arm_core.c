@@ -16,6 +16,7 @@
 static ArmCore core;
 static uint8_t bios[0x4000];
 static uint8_t iwram[0x8000];
+static uint8_t vram[0x18000];
 static uint8_t rom[ROM_SIZE];
 static int failures;
 
@@ -77,11 +78,19 @@ static uint32_t load(const uint8_t *memory, uint32_t offset, unsigned size)
   return value;
 }
 
+/* 96 KB repeating every 128 KB, the last 32 KB twice. */
+static uint32_t vram_offset(uint32_t address)
+{
+  address &= 0x1FFFF;
+  return address >= 0x18000 ? address - 0x8000 : address;
+}
+
 static uint32_t read_any(uint32_t address, unsigned size)
 {
   switch(address >> 24)
   {
     case 0: return address < sizeof(bios) ? load(bios, address, size) : 0;
+    case 6: return load(vram, vram_offset(address), size);
     case 8: return load(rom, address & (ROM_SIZE - 1), size);
     default: return 0;
   }
@@ -110,19 +119,31 @@ static uint32_t read32(void *context, uint32_t address)
   return read_any(address, 4);
 }
 
-static void ignore(void *context, uint32_t address, uint32_t value)
+/* Stores reach VRAM; a word to I/O acknowledges the IRQ. */
+static void write_any(uint32_t address, unsigned size, uint32_t value)
 {
-  (void)context;
-  (void)address;
-  (void)value;
+  if((address >> 24) == 6)
+    memcpy(vram + vram_offset(address), &value, size);
+  if((address >> 24) == 4 && size == 4)
+    core.irq_line = 0;
 }
 
-static void acknowledge(void *context, uint32_t address, uint32_t value)
+static void write8(void *context, uint32_t address, uint32_t value)
 {
   (void)context;
-  (void)value;
-  if((address >> 24) == 4)
-    core.irq_line = 0;
+  write_any(address, 1, value);
+}
+
+static void write16(void *context, uint32_t address, uint32_t value)
+{
+  (void)context;
+  write_any(address, 2, value);
+}
+
+static void write32(void *context, uint32_t address, uint32_t value)
+{
+  (void)context;
+  write_any(address, 4, value);
 }
 
 /* Where test_runaway's slide would meet a branch (b .). */
@@ -361,6 +382,45 @@ static void test_zeros(void)
   CHECK(info.insns == 2 && info.end == 0x02000000);
 }
 
+/* Code in VRAM (mov r0, #n; bx lr at 6014000h) run, then rewritten by a
+   CPU store, by one through a mirror and behind the core's back (DMA):
+   each time the new version runs. Blocks there stop at the end of their
+   page, as in work RAM. */
+static void test_vram_code(void)
+{
+  static const uint32_t routine[] = { 0xe3a00001, 0xe12fff1e };
+  ArmIrOp ops[ARM_BLOCK_MAX_OPS];
+  ArmIrBlockInfo info;
+  uint32_t n;
+
+  memcpy(vram + 0x14000, routine, sizeof(routine));
+  reset(0x06014000, ARM_MODE_SYSTEM);
+  for(n = 1; n <= 4; n++)
+  {
+    if(n == 2)
+      arm_core_access(&core, ARM_IR_ST32, 0, 0x06014000, 0xe3a00002);
+    if(n == 3)
+      arm_core_access(&core, ARM_IR_ST16, 0, 0x0603C000, 0x0003);
+    if(n == 4)
+    {
+      vram[0x14000] = 4;
+      arm_core_invalidate(&core, 0x06014000, 4);
+    }
+    core.v[14] = 0x08000020;
+    core.v[15] = 0x06014000;
+    arm_core_run(&core, 100);
+    if(core.v[0] != n)
+    {
+      printf("test_arm_core: VRAM code, version %u: returned %u\n",
+       (unsigned)n, (unsigned)core.v[0]);
+      failures++;
+    }
+  }
+  arm_translate(&core, 0x060140F8, 0, ops, ARM_BLOCK_MAX_OPS,
+   ARM_BLOCK_MAX_INSNS, &info);
+  CHECK(info.end == 0x06014100);
+}
+
 /* One run of check_idle_loop: after a reset to pc (0: on from the last
    run), with f raising an IRQ if irq. */
 typedef struct
@@ -479,7 +539,7 @@ static void test_idle_loop(void)
 
 int main(void)
 {
-  ArmBus bus = { NULL, read8, read16, read32, ignore, ignore, acknowledge,
+  ArmBus bus = { NULL, read8, read16, read32, write8, write16, write32,
    code32, unmapped };
   uint32_t movs_pc_lr = 0xe1b0f00e;
   uint16_t movs_r0_0 = 0x2000;
@@ -509,6 +569,7 @@ int main(void)
   test_idle_loop();
   test_runaway();
   test_zeros();
+  test_vram_code();
   if(failures)
     return 1;
   printf("test_arm_core: all checks passed\n");

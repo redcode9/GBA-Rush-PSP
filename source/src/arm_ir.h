@@ -230,8 +230,9 @@ struct ArmCore;
 
 /* Translates the block at pc (Thumb when thumb is set) into at most
    max_ops ops and max_insns instructions, then runs the flag liveness
-   pass. Returns the number of ops. Blocks in work RAM stop at the end of
-   their ARM_CODE_PAGE_SIZE page so a store can invalidate them by page. */
+   pass. Returns the number of ops. Blocks in work RAM and VRAM stop at
+   the end of their ARM_CODE_PAGE_SIZE page so a store can invalidate them
+   by page. */
 unsigned arm_translate(struct ArmCore *core, uint32_t pc, int thumb,
  ArmIrOp *ops, unsigned max_ops, unsigned max_insns, ArmIrBlockInfo *info);
 

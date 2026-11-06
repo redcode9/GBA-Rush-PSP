@@ -342,13 +342,33 @@ static unsigned hash_of(uint32_t key)
   return ((key >> 1) ^ (key >> 13)) & (ARM_CACHE_HASH - 1);
 }
 
-/* Index of the work RAM page holding address, or -1. */
-static int code_page(uint32_t address)
+/* Offset of a RAM address within its RAM, whichever mirror it is seen
+   through: work RAM, internal RAM or VRAM, whose 96 KB repeat every 128
+   KB with the last 32 KB twice. */
+static uint32_t ram_offset(uint32_t address)
+{
+  switch(region_of(address))
+  {
+    case 2: return address & 0x3FFFFu;
+    case 3: return address & 0x7FFFu;
+    default:
+      address &= 0x1FFFFu;
+      return address >= 0x18000u ? address - 0x8000u : address;
+  }
+}
+
+/* Index of the RAM page holding address, or -1: work RAM, and VRAM once
+   code there has been translated. */
+static int code_page(const ArmCore *core, uint32_t address)
 {
   switch(region_of(address))
   {
     case 2: return (int)((address & 0x3FFFFu) / ARM_CODE_PAGE_SIZE);
     case 3: return 1024 + (int)((address & 0x7FFFu) / ARM_CODE_PAGE_SIZE);
+    case 6:
+      if(!core->vram_code)
+        return -1;
+      return 1152 + (int)(ram_offset(address) / ARM_CODE_PAGE_SIZE);
     default: return -1;
   }
 }
@@ -360,6 +380,7 @@ void arm_core_flush(ArmCore *core)
   core->flushes++;
   memset(core->hash, 0xFF, sizeof(core->hash));
   memset(core->page_blocks, 0xFF, sizeof(core->page_blocks));
+  core->vram_code = 0;
   core->exit_request |= ARM_EXIT_LEAVE_BLOCK;
   if(core->dropped)
     core->dropped(core, ARM_NO_BLOCK);
@@ -382,15 +403,8 @@ static void unlink_block(ArmCore *core, unsigned index)
   }
 }
 
-/* Offset of a work RAM address within its RAM, whichever mirror it is
-   seen through. */
-static uint32_t ram_offset(uint32_t address)
-{
-  return address & (region_of(address) == 2 ? 0x3FFFFu : 0x7FFFu);
-}
-
 /* Forgets the blocks of a page whose code overlaps [offset, offset +
-   size), offsets within the RAM. Blocks never cross a page, so data
+   size), offsets within its RAM. Blocks never cross a page, so data
    stored next to code (a stack, say) leaves the code alone. The block
    running may be one of those forgotten, so it is left at the next
    instruction boundary. */
@@ -424,7 +438,7 @@ void arm_core_invalidate(ArmCore *core, uint32_t address, uint32_t size)
   {
     uint32_t page_end = (address | (ARM_CODE_PAGE_SIZE - 1)) + 1;
     uint32_t length = (page_end < end ? page_end : end) - address;
-    int page = code_page(address);
+    int page = code_page(core, address);
 
     if(page >= 0 && core->page_blocks[page] != ARM_NO_BLOCK)
       invalidate_page(core, (unsigned)page, ram_offset(address), length);
@@ -470,7 +484,9 @@ static ArmBlock *translate(ArmCore *core, uint32_t key)
   block->next_hash = core->hash[bucket];
   core->hash[bucket] = (uint16_t)index;
   block->next_page = ARM_NO_BLOCK;
-  page = code_page(key);
+  if(region_of(key) == 6)
+    core->vram_code = 1;
+  page = code_page(core, key);
   if(page >= 0)
   {
     block->next_page = core->page_blocks[page];
@@ -539,11 +555,11 @@ static uint32_t read8(ArmCore *core, uint32_t address)
   return core->bus.read8(core->bus.context, address);
 }
 
-/* A write to work RAM holding translated code drops those translations. */
+/* A write to RAM holding translated code drops those translations. */
 static const ArmRegion *write_region(ArmCore *core, uint32_t address,
  unsigned size)
 {
-  int page = code_page(address);
+  int page = code_page(core, address);
 
   if(page >= 0 && core->page_blocks[page] != ARM_NO_BLOCK)
     invalidate_page(core, (unsigned)page, ram_offset(address), size);
