@@ -60,14 +60,14 @@
   |---|---|---|---|---|---|
   | Memory | 1546/1552 | 842/1552 | 1311/1552 | 1290/1552 | 1311/1552 |
   | I/O read | 120/130 | 10/130 | 94/130 | 15/130 | 94/130 |
-  | Timing | 1768/2020 | 1350/2020 | si blocca | 44/2020 | 12/2020 |
+  | Timing | 1768/2020 | 1350/2020 | 12/2020 (si blocca in 4 corse su 8) | 44/2020 | 12/2020 |
   | Timer count-up | 429/936 (430) | 359/936 | 104/936 | 88/936 | 104/936 |
   | Timer IRQ | 60/90 | 0/90 | 0/90 | 0/90 | 0/90 |
   | Shifter | 140/140 | 140/140 | 132/140 | 140/140 | 132/140 |
   | Carry | 93/93 | 93/93 | 93/93 | 93/93 | 93/93 |
   | Multiply long | 52/72 | 52/72 | 52/72 | 52/72 | 52/72 |
 
-  Nella sezione Timing il Classic della build del branch resta su «Testing...» anche dopo 300 s e non scrive il `.sav` (il salvataggio automatico non arriva), mentre la 1.4.3, sullo stesso core congelato, la finisce in meno di 120 s; nelle altre sezioni le due build danno numeri uguali. È una differenza fra la 1.4.3 e la build del branch sul Classic, vista in PPSSPP: dalla 1.4.3 a main sono cambiati anche `mips_stub.S`, `cpu.c`, `memory.c` e `main.c`; il test dove si ferma non è identificato. Il New finisce Timing tra 45 e 240 s di PPSSPP; le altre sezioni finiscono in meno di 45 s su tutte le macchine. Come leggere i numeri:
+  Nella sezione Timing il Classic della build del branch a volte si blocca: su 8 corse in PPSSPP, da 180 a 300 s, 4 finiscono con 12/2020, come la 1.4.3, e 4 restano su «Testing...» senza scrivere il `.sav` (il salvataggio automatico non arriva); si blocca anche una corsa senza `media_engine.prx`. La 1.4.3 l'ha finita in 6 corse su 6 (una di 120 s): troppo poche per dire che non si blocca mai. Il blocco è da indagare e il test dove si ferma non è identificato. Nelle altre sezioni le due build danno numeri uguali. Il New finisce Timing tra 45 e 240 s di PPSSPP; le altre sezioni finiscono in meno di 45 s su tutte le macchine. Come leggere i numeri:
   - Shifter, Carry e Multiply long girano sui core e non dipendono dalla build: sul New (PPSSPP) e su rom_run i FAIL scritti in SRAM sono identici a quelli di mGBA; i 20 di Multiply long (il flag C dopo UMULLS e simili) sono quelli di mGBA. Il Classic fallisce in più gli 8 «add r0, pc, r1, <shift> r0», 4 in meno del valore atteso: ancora PC+8 al posto di PC+12, come jsmolka arm 225 e `cpu_pc12_rn`.
   - mGBA 0.10.3 è più vecchio della suite: parte dei suoi rossi viene da attese scritte dopo (I/O read: registri audio, DMA1CNT_HI e DMA2CNT_HI, la lettura a 302h che dà DEADh). I 6 rossi di Memory («SRAM load», DMA0) dipendono dalla build: il valore atteso viene dal latch del DMA caricato da una variabile `r2` che il codice C della suite lascia al compilatore.
   - Timer count-up e Timer IRQ misurano il percorso dell'interrupt: il dispatcher di `libgba_asm.s` e i gestori C compilati da GCC 15 non hanno i cicli di libgba, quindi questi punteggi valgono solo accanto a mGBA sulla stessa ROM; in mGBA la latenza di Timer IRQ esce 3Ch-3Eh invece di 51h-52h. Sui core di GBA Rush anche le letture prima dell'IRQ sono sbagliate (Timer IRQ 0/90 su tutti e due).
