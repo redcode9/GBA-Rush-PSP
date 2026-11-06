@@ -9,7 +9,8 @@
  *     while(length--) counter;
  *   - the gamepak-pair class must cover GBA ROM regions 0x08-0x0D on BOTH
  *     source and destination, and nothing else.
- * It also checks paged ROM loading (test_paged_rom_cache_and_io).
+ * It also checks paged ROM loading (test_paged_rom_cache_and_io) and the
+ * reads main.c brings up to date first (test_reads_synced_first).
  *
  * The system clock is stubbed (host_stub_set_time) so each transfer
  * observes a deterministic measured duration.
@@ -24,6 +25,8 @@
 
 void host_stub_set_time(uint64_t t0, uint64_t t1);
 void host_stub_rom_io(int read_limit, int seek_fails);
+extern int host_stub_line_syncs;
+extern int host_stub_sound_status_reads;
 
 
 
@@ -121,6 +124,34 @@ static void test_paged_rom_cache_and_io(void)
    "valid partial final page is cached");
   perf_monitor_snapshot(&snap);
   CHECK_EQ(snap.gamepak_read_errors, 4, "final page padding is not an I/O error");
+}
+
+/* DISPSTAT and VCOUNT reads catch the LCD up first (line_sync), and so
+   does an open bus read while a DMA value is on the bus, which a skipped
+   LCD change ends; a SOUNDCNT_X read brings the channel bits up to date
+   (sound_status_read). */
+static void test_reads_synced_first(void)
+{
+  reg[CPU_DMA_HACK] = 0;
+  host_stub_line_syncs = 0;
+  read_memory16(0x04000004);
+  read_memory8(0x04000006);
+  read_memory32(0x04000004);
+  CHECK_EQ(host_stub_line_syncs, 3, "DISPSTAT and VCOUNT reads sync");
+  read_memory16(0x04000008);
+  read_memory16(0x01000000);
+  CHECK_EQ(host_stub_line_syncs, 3, "other reads do not sync");
+
+  reg[CPU_DMA_HACK] = 1;
+  reg[CPU_DMA_LAST] = 0x12345678;
+  CHECK_EQ(read_memory16(0x01000000), 0x5678, "DMA value on the open bus");
+  CHECK_EQ(host_stub_line_syncs, 4, "open bus read after a DMA syncs");
+  reg[CPU_DMA_HACK] = 0;
+
+  host_stub_sound_status_reads = 0;
+  read_memory16(0x04000084);
+  read_memory16(0x04000080);
+  CHECK_EQ(host_stub_sound_status_reads, 1, "SOUNDCNT_X read syncs");
 }
 
 /* Transfers A-G share one monitor, so each checks running totals; then the
@@ -229,6 +260,7 @@ int main(void)
   CHECK_EQ(snap.dma_gamepak_pairs, 2, "G dma_gamepak_pairs unchanged");
 
   test_paged_rom_cache_and_io();
+  test_reads_synced_first();
 
   if (failures != 0)
   {

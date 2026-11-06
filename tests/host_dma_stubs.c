@@ -9,7 +9,8 @@
 // timestamps, so the first sceKernelGetSystemTimeLow() call of a transfer
 // returns t0 and the second returns t1, giving a deterministic measured DMA
 // duration of (t1 - t0) microseconds. And the ROM file reads used by the
-// paged ROM test, controlled by host_stub_rom_io().
+// paged ROM test, controlled by host_stub_rom_io(). line_sync() and
+// sound_status_read() also count their calls.
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -219,7 +220,8 @@ void load_file_zip(void) {}
 void main_read_savestate(void) {}
 void main_write_mem_savestate(void) {}
 int line_rearm(void) { return 0; }
-void line_sync(void) {}
+int host_stub_line_syncs = 0;
+void line_sync(void) { host_stub_line_syncs++; }
 void load_game_config_file(void) {}
 int main_link_active(void) { return 0; }
 void message(void) {}
@@ -234,7 +236,8 @@ void sound_control_low(void) {}
 void sound_control_x(void) {}
 void sound_pause(void) {}
 void sound_read_savestate(void) {}
-void sound_status_read(void) {}
+int host_stub_sound_status_reads = 0;
+void sound_status_read(void) { host_stub_sound_status_reads++; }
 void sound_timer_queue(void) {}
 void timer_control_high(void) {}
 void timer_control_low(void) {}
