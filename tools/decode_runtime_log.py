@@ -245,6 +245,11 @@ def describe(record: dict[str, Any]) -> str:
             f"me-switches=0x{value0:02X} me-wakes={value1} "
             f"cpu-fallback-frames={value2}"
         )
+    if event == "link-counters" and flags == 17:
+        return (
+            f"me-idle-reads-per-frame={value0} me-sleeps={value1} "
+            f"me-switches-asked=0x{value2:02X}"
+        )
     if event == "link-counters" and flags == 12:
         return (
             f"cpu-core={_name(CPU_CORES, value0)} blocks-compiled={value1} "

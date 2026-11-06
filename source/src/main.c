@@ -552,7 +552,7 @@ static void main_link_log_state(void)
 }
 
 /* The Exact renderer's counters since since, as LINK_COUNTERS records 9
-   to 11 and 13 to 16 (tools/decode_runtime_log.py names them): frames the Media
+   to 11 and 13 to 17 (tools/decode_runtime_log.py names them): frames the Media
    Engine drew, frames shown late and its busy time per frame; the main
    processor's time per frame in the log's hooks, log words per frame and
    full resends; whether it draws on the Media Engine (VideoMeState) and
@@ -563,7 +563,11 @@ static void main_link_log_state(void)
    answer; as record 15, the GE's frame presents and its time on each,
    and the frames the display showed straight from main memory; as
    record 16, the time from the end of a frame to the look that found it
-   finished, on half, 99% and all of the frames presented in time. */
+   finished, on half, 99% and all of the frames presented in time; as
+   record 17, the words of the mailbox in main memory the Media Engine
+   read while idle, per frame sent to it, the times it halted, and the
+   switches media_engine.cfg asked for (those not in record 14 were left
+   off). */
 static void main_log_video_counters(const VideoMeCounters *since)
 {
   VideoMeCounters now;
@@ -596,6 +600,9 @@ static void main_log_video_counters(const VideoMeCounters *since)
   video_me_delivery_times(since, &median_us, &p99_us, &max_us);
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 16,
    median_us, p99_us, max_us);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 17,
+   frames ? (now.idle_reads - since->idle_reads) / frames : 0,
+   now.sleeps - since->sleeps, video_me_switches_asked());
 }
 
 /* The CPU core running and, for the new one, its compiled blocks and code

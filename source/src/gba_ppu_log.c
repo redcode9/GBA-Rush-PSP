@@ -198,6 +198,8 @@ void gba_ppu_log_writer_init(GbaPpuLogWriter *writer,
   reader->sleeping = 0;
   for(i = 0; i < (int)GBA_PPU_LOG_TIME_BUCKETS; i++)
     reader->frame_time[i] = 0;
+  reader->idle_reads = 0;
+  reader->sleeps = 0;
   mailbox->writer.ring = ring;
   mailbox->writer.ring_words = RING_WORDS;
   mailbox->writer.targets[0] = frame;

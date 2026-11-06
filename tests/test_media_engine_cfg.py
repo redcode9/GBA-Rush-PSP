@@ -2,7 +2,6 @@
 
 import os
 from pathlib import Path
-import re
 import shlex
 import subprocess
 import tempfile
@@ -10,9 +9,6 @@ import unittest
 
 # Extracts a C function from a source file (see tests/test_startup.py).
 from tests.test_startup import function
-
-
-ROOT = Path(__file__).resolve().parents[1]
 
 # Host stand-ins for the file calls: the file holds cfg_text, or is missing
 # when it is NULL.
@@ -49,8 +45,8 @@ int main(void) {
   assert(switches_in("010") == 10);
   assert(switches_in("09\r\n") == 9);
   assert(switches_in("0x28") == 0x28);
-  assert(switches_in("0X3f\n") == (0x3F & VIDEO_ME_SWITCHES));
-  assert(switches_in("255") == (255 & VIDEO_ME_SWITCHES));
+  assert(switches_in("0X3f\n") == 0x3F);
+  assert(switches_in("255") == 255);
   puts("media_engine.cfg checks passed");
   return 0;
 }
@@ -59,9 +55,7 @@ int main(void) {
 
 class MediaEngineCfgTests(unittest.TestCase):
     def test_switches_are_decimal_or_hex(self):
-        header = (ROOT / "source/src/video_me.h").read_text()
-        source = STUBS + re.search(r"#define VIDEO_ME_SWITCHES .*\n", header).group(0)
-        source += function("source/src/video_me.c", "static u32 read_switches(void)")
+        source = STUBS + function("source/src/video_me.c", "static u32 read_switches(void)")
         source += CASES
         with tempfile.TemporaryDirectory(prefix="gbarush-me-cfg-") as directory:
             path = Path(directory)

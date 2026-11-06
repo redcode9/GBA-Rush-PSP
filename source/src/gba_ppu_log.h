@@ -145,6 +145,11 @@ typedef struct
   /* Frames finished, by working time (GBA_PPU_LOG_TIME_SHIFT); kept
      across the reader's starts. */
   volatile uint32_t frame_time[GBA_PPU_LOG_TIME_BUCKETS];
+  /* Words of the mailbox the reader read while it had nothing to do, and
+     the times it slept; set at each frame it finishes, kept across its
+     starts. */
+  volatile uint32_t idle_reads;
+  volatile uint32_t sleeps;
 } __attribute__((aligned(64))) GbaPpuLogReaderSide;
 
 typedef struct

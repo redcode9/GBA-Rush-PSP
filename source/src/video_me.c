@@ -67,6 +67,7 @@ static GbaPpuLogMailbox *mailbox;
 static GbaPpuLogWriter writer;
 static VideoMeState state;
 static u32 switches;
+static u32 switches_asked;
 static SceUID module = -1;
 static int drawing;
 static u32 present_frame;
@@ -161,8 +162,8 @@ static void give_up(VideoMeState reason)
     mailbox->writer.magic = 0;
 }
 
-/* The switches media_engine.cfg turns on (see video_me.h); none without
-   it. */
+/* The switches media_engine.cfg asks for (see video_me.h), unknown ones
+   included; none without it. */
 static u32 read_switches(void)
 {
   char path[MAX_PATH];
@@ -185,12 +186,13 @@ static u32 read_switches(void)
   value = strtoul(text, &end, 10);
   if(value == 0 && end != text && (*end == 'x' || *end == 'X'))
     value = strtoul(end + 1, NULL, 16);
-  return (u32)value & VIDEO_ME_SWITCHES;
+  return (u32)value;
 }
 
 static void start(void)
 {
-  switches = read_switches();
+  switches_asked = read_switches();
+  switches = switches_asked & VIDEO_ME_SWITCHES;
   /* The VFPU is only there for threads that ask for it. */
   if((switches & VIDEO_ME_COPY_QUADS) &&
      sceKernelChangeCurrentThreadAttr(0, PSP_THREAD_ATTR_VFPU) < 0)
@@ -488,6 +490,11 @@ u32 video_me_switches(void)
   return switches;
 }
 
+u32 video_me_switches_asked(void)
+{
+  return switches_asked;
+}
+
 void video_me_counters(VideoMeCounters *out)
 {
   u32 i;
@@ -498,6 +505,8 @@ void video_me_counters(VideoMeCounters *out)
     out->me_frames = mailbox->reader.frames_drawn;
     for(i = 0; i < GBA_PPU_LOG_TIME_BUCKETS; i++)
       out->frame_time[i] = mailbox->reader.frame_time[i];
+    out->idle_reads = mailbox->reader.idle_reads;
+    out->sleeps = mailbox->reader.sleeps;
   }
   out->log_words = writer.write;
   out->resends = writer.resends;

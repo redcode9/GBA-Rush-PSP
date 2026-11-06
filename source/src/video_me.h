@@ -45,7 +45,8 @@ typedef enum
    console, each off unless media_engine.cfg next to the EBOOT turns it on:
    that file holds one number (decimal, or hex after 0x), the sum of the
    switches wanted. It is read once, when the Media Engine starts, and the
-   runtime log records what was on. */
+   runtime log records what was asked for and what was on: a switch that
+   cannot work is left off. */
 /* Written video blocks go into the log with VFPU quadword copies. */
 #define VIDEO_ME_COPY_QUADS        0x01u
 /* A frame the Media Engine drew, following another, is presented without
@@ -108,6 +109,10 @@ typedef struct
   /* Frames presented in time, by the time from the end of the frame to
      the first look that found it finished, in steps of 32 us. */
   u32 delivery[GBA_PPU_LOG_TIME_BUCKETS];
+  /* Words of the mailbox in main memory the Media Engine read while it
+     had nothing to do, and the times it halted (VIDEO_ME_SLEEP). */
+  u32 idle_reads;
+  u32 sleeps;
 } VideoMeCounters;
 
 /* At the start of each frame: whether the Media Engine draws it, starting
@@ -131,8 +136,10 @@ void video_me_present_poll(void);
 void video_me_present_finish(void);
 
 VideoMeState video_me_state(void);
-/* The switches in use, VIDEO_ME_*. */
+/* The switches in use, VIDEO_ME_*, and those media_engine.cfg asked for,
+   unknown ones included. */
 u32 video_me_switches(void);
+u32 video_me_switches_asked(void);
 void video_me_counters(VideoMeCounters *counters);
 /* The Media Engine's working time on the frames it finished since since:
    what half of them, 99% of them and all of them stayed within, in us

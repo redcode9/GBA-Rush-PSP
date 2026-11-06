@@ -55,6 +55,9 @@ extern uint32_t me_bss_start[], me_bss_end[];
 /* In eDRAM, cleared by me_start. */
 static GbaPpuLogReader reader;
 static GbaPpuLogMailbox *fault_mailbox;
+/* The mailbox's idle_reads and sleeps, counted here and set there at each
+   frame finished. */
+static uint32_t idle_reads, sleeps;
 
 /* gba_ppu and the log need nothing else from a C library. */
 typedef uint32_t __attribute__((may_alias)) word_t;
@@ -146,8 +149,12 @@ static void sleep_for_words(GbaPpuLogMailbox *mailbox)
 
   side->sleeping = 1;
   __asm__ volatile("sync" ::: "memory");
+  idle_reads += 2;
   if(mailbox->writer.write == side->read)
+  {
+    sleeps++;
     halt();
+  }
   if(mailbox->writer.wait & GBA_PPU_LOG_WAIT_CLEAR)
   {
     INTERRUPT_FLAGS = 0xFFFFFFFFu;
@@ -185,25 +192,38 @@ static void __attribute__((noreturn)) run(GbaPpuLogMailbox *mailbox,
  const volatile uint32_t *written)
 {
   GbaPpuLogReaderSide *side = &mailbox->reader;
-  uint32_t busy = 0, spins = PAUSE_SHORTEST, pauses = 0;
+  uint32_t busy = 0, spins = PAUSE_SHORTEST, pauses = 0, frames;
 
   if(!(mailbox->writer.wait & GBA_PPU_LOG_WAIT_SRAM))
     written = NULL;
+  idle_reads = side->idle_reads;
+  sleeps = side->sleeps;
   gba_ppu_log_reader_start(&reader, mailbox);
+  frames = reader.frames_drawn;
   for(;;)
   {
     uint32_t started = clock_now();
 
-    if((!written || *written != reader.read) && gba_ppu_log_read(&reader))
+    if(!written || *written != reader.read)
     {
-      uint32_t now = clock_now();
+      if(gba_ppu_log_read(&reader))
+      {
+        uint32_t now = clock_now();
 
-      busy += now - started;
-      gba_ppu_log_reader_busy(&reader, now - started);
-      side->busy = busy;
-      side->clock = now;
-      spins = PAUSE_SHORTEST;
-      continue;
+        busy += now - started;
+        gba_ppu_log_reader_busy(&reader, now - started);
+        side->busy = busy;
+        side->clock = now;
+        if(reader.frames_drawn != frames)
+        {
+          frames = reader.frames_drawn;
+          side->idle_reads = idle_reads;
+          side->sleeps = sleeps;
+        }
+        spins = PAUSE_SHORTEST;
+        continue;
+      }
+      idle_reads++;
     }
     pause_for(spins);
     if(spins < PAUSE_LONGEST)
@@ -215,6 +235,7 @@ static void __attribute__((noreturn)) run(GbaPpuLogMailbox *mailbox,
       continue;
     /* Long idle: the emulator may have closed; then its memory is no
        longer ours to write. */
+    idle_reads += 2;
     if(mailbox->writer.magic != GBA_PPU_LOG_MAGIC)
       stop();
     if(mailbox->writer.wait & GBA_PPU_LOG_WAIT_SLEEP)
