@@ -34,7 +34,8 @@
  * (Panasonic 64 KiB, Sanyo 128 KiB), writes only clearing bits. The .sav
  * file gets the chip as GBA Rush would have last saved it: as it stood
  * once 10 frames had passed without a write, so stopping in the middle of
- * a write is a power cut that keeps the previous state.
+ * a write is a power cut that keeps the previous state. The ROM starts in
+ * system mode with the stacks the BIOS sets up, as GBA Rush starts it.
  *
  * Not modelled: sound, serial, keys (none held), the PPU, HBlank and
  * VCOUNT IRQs, DMA0-2, DMA start modes other than immediate and DMA
@@ -850,7 +851,12 @@ int main(int argc, char **argv)
   core.map[0x7] = (ArmRegion){ oam, oam, 0x3FF };
   for(i = 0x8; i <= 0xC; i++)
     core.map[i] = (ArmRegion){ rom, NULL, rom_size - 1 };
-  /* Started directly, as GBA Rush does unless "Boot from BIOS" is on. */
+  /* Started directly, as GBA Rush does unless "Boot from BIOS" is on:
+     system mode with the stacks the BIOS would have set up. */
+  *arm_core_register(&core, ARM_MODE_IRQ, 13) = 0x03007FA0;
+  *arm_core_register(&core, ARM_MODE_SUPERVISOR, 13) = 0x03007FE0;
+  arm_core_set_cpsr(&core, 0x1F);
+  core.v[13] = 0x03007F00;
   core.v[15] = 0x08000000;
 
   run((long long)frames * FRAME_CYCLES);
