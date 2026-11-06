@@ -2966,11 +2966,19 @@ int arm_mips_step(ArmMips *jit)
   ArmCore *core = &jit->core;
   int32_t before = core->cycles;
   ArmExitKind kind;
+  int thumb = (core->cpsr & ARM_CPSR_T) != 0;
+  /* Marked like a block of its own, so that a store over the two
+     instructions after it reaches C (keep_window). ponytail: the mark
+     stays until a block in those 32 bytes drops or a flush, sending stores
+     there to C meanwhile; fine for the test tools that step. */
+  ArmBlock one = { core->v[15] | (uint32_t)thumb, 0, 0, 1, 0, 0 };
 
   if(!arm_core_window(core, &kind))
-    run_once(jit, jit->step_ops, arm_translate(core, core->v[15],
-     (core->cpsr & ARM_CPSR_T) != 0, jit->step_ops, ARM_INSN_OPS, 1, NULL),
-     0, MODE_STEP);
+  {
+    protect(jit, &one, 1);
+    run_once(jit, jit->step_ops, arm_translate(core, core->v[15], thumb,
+     jit->step_ops, ARM_INSN_OPS, 1, NULL), 0, MODE_STEP);
+  }
   return core->cycles - before;
 }
 

@@ -633,7 +633,8 @@ static int slide_case(void)
    ARM stmia r12, {r1, r2} over add r0, r0, #1 and #2; in work RAM and in
    internal RAM. A second pass puts the code back and drops only what was
    translated after the store, so the store runs from its block compiled
-   the first time. */
+   the first time; a third one, after a reset, steps one instruction at a
+   time over code no block holds. */
 static const uint32_t window_arm[3] = { 0xE50F1004, 0xE3A00001, 0xEAFFFFFE };
 static const uint32_t window_thumb[2] = { 0x20018059, 0xE7FE };
 static const uint32_t window_stm[4] =
@@ -652,8 +653,9 @@ static int window_case(unsigned variant)
   uint32_t pc = (variant >= 3 ? 0x03002100u : 0x02002100u) - width;
   unsigned pass;
   unsigned w;
+  unsigned n;
 
-  for(pass = 0; pass < 2; pass++)
+  for(pass = 0; pass < 3; pass++)
   {
     for(w = 0; w < 2; w++)
     {
@@ -661,7 +663,7 @@ static int window_case(unsigned variant)
 
       memcpy((variant >= 3 ? worlds[w].iwram : worlds[w].ewram) +
        (pc & 0x7FFF), code, bytes);
-      if(pass == 0)
+      if(pass != 1)
       {
         arm_core_reset(core);
         arm_core_set_cpsr(core, ARM_MODE_SYSTEM |
@@ -679,7 +681,14 @@ static int window_case(unsigned variant)
       core->instructions = 0;
       worlds[w].log_count = 0;
     }
-    if(arm_core_run(&reference, 100) != arm_mips_run(jit, 100) ||
+    if(pass == 2)
+      for(n = 0; n < 4; n++)
+      {
+        if(arm_core_step(&reference) != arm_mips_step(jit) ||
+           !compare("window step", variant, n))
+          return 0;
+      }
+    else if(arm_core_run(&reference, 100) != arm_mips_run(jit, 100) ||
        !compare("window run", variant, pass))
       return 0;
     if(reference.v[0] != expected[kind])
