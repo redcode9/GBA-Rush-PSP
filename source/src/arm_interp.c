@@ -615,6 +615,13 @@ static NOINLINE void store_over_code(ArmCore *core, uint32_t address,
     invalidate_page(core, (unsigned)page, ram_offset(address), size);
 }
 
+void arm_core_dma_writing(ArmCore *core, uint32_t address, uint32_t size)
+{
+  if(over_window(core, address, size))
+    keep_window(core);
+  arm_core_invalidate(core, address, size);
+}
+
 /* A write to RAM holding translated code drops those translations, and
    one over the prefetch window keeps it. */
 static const ArmRegion *write_region(ArmCore *core, uint32_t address,

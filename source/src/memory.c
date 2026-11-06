@@ -2640,6 +2640,8 @@ CPU_ALERT_TYPE write_memory32(u32 address, u32 value)
 }                                                                             \
 
 #define DMA_TRANSFER_LOOP(type)                                               \
+  dma_writing(dest_ptr, dest_ptr + length * dest_increment, dest_increment,   \
+   type / 8);                                                                 \
   while (length--)                                                            \
   {                                                                           \
     read_value = (*dma_read##type[src_ptr >> 24])(src_ptr);                   \
@@ -2649,18 +2651,17 @@ CPU_ALERT_TYPE write_memory32(u32 address, u32 value)
     dest_ptr += dest_increment;                                               \
   }                                                                           \
 
-// The units a transfer stored from first until next (one step past the
-// last), in either direction: the new core drops code there, in work RAM
-// and in VRAM.
-static void dma_written(u32 first, u32 next, s32 increment, u32 unit)
+// The units a transfer is about to store from first until next (one step
+// past the last), in either direction: the new core drops code there, in
+// work RAM and in VRAM, and keeps the instructions it has fetched.
+static void dma_writing(u32 first, u32 next, s32 increment, u32 unit)
 {
   u32 last = next - increment;
 
-  first &= ~(unit - 1);
   if (first <= last)
-    arm_gba_dma_written(first, last - first + unit);
+    arm_gba_dma_writing(first, last - first + unit);
   else
-    arm_gba_dma_written(last, first - last + unit);
+    arm_gba_dma_writing(last, first - last + unit);
 }
 
 // Runs a whole DMA transfer at once, then reloads or stops the channel.
@@ -2719,10 +2720,6 @@ CPU_ALERT_TYPE dma_transfer(DmaTransferType *dma)
 
     reg[CPU_DMA_LAST] = read_value;
   }
-
-  dma_written(dma->dest_address, dest_ptr, dest_increment,
-   dma->length_type == DMA_16BIT ? 2 : 4);
-
 
   // Open-bus reads now return the last DMA value (see read8_open).
   reg[CPU_DMA_HACK] = 1;

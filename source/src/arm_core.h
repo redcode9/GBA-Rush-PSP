@@ -223,6 +223,11 @@ void arm_core_flush(ArmCore *core);
 /* Drops translations of RAM (work RAM, VRAM) written behind the core's
    back (DMA). */
 void arm_core_invalidate(ArmCore *core, uint32_t address, uint32_t size);
+/* The same before a DMA writes there. The two instructions after the last
+   one run, which the pipeline holds (after the store that starts the
+   transfer, for one that runs at once), stay as they were if the transfer
+   writes over them, as for a store (see window_pc). */
+void arm_core_dma_writing(ArmCore *core, uint32_t address, uint32_t size);
 
 /* Enters the IRQ exception if the CPSR allows it; returns its cycles. */
 int arm_core_irq(ArmCore *core);

@@ -119,13 +119,28 @@ static uint32_t read32(void *context, uint32_t address)
   return read_any(address, 4);
 }
 
-/* Stores reach VRAM; a word to I/O acknowledges the IRQ. */
+static uint8_t *ram_at(uint32_t address)
+{
+  return (address >> 24) == 6 ? vram + vram_offset(address) :
+   iwram + (address & 0x7FFF);
+}
+
+/* Stores reach VRAM; a word to I/O acknowledges the IRQ, and one to
+   DMA3CNT (40000DCh) with bit 31 set copies a word, mov r0, #2, to the
+   address in r12, at once and as memory.c does: the core hears first. */
 static void write_any(uint32_t address, unsigned size, uint32_t value)
 {
+  static const uint32_t mov_r0_2 = 0xe3a00002;
+
   if((address >> 24) == 6)
     memcpy(vram + vram_offset(address), &value, size);
   if((address >> 24) == 4 && size == 4)
     core.irq_line = 0;
+  if(address == 0x040000DC && (value >> 31))
+  {
+    arm_core_dma_writing(&core, core.v[12], 4);
+    memcpy(ram_at(core.v[12]), &mov_r0_2, 4);
+  }
 }
 
 static void write8(void *context, uint32_t address, uint32_t value)
@@ -461,6 +476,8 @@ static const WindowCase window_cases[] =
      block but fetches nothing again */
   { { 0xe58f1000, 0xe321f0df, 0xe3a00001, 0xeafffffe }, 0, 0xe3a00002, 0,
     1 },
+  /* str r1, [r2] starting DMA3 over the next instruction, mov r0, #1 */
+  { { 0xe5821000, 0xe3a00001, 0xeafffffe }, 0, 0x84000001, 0x040000dc, 1 },
 };
 
 /* Runs a case at pc: with arm_core_run (cold, then again once the code
@@ -475,8 +492,7 @@ static int check_window(const WindowCase *c, uint32_t pc)
 
   for(pass = 0; pass < 3; pass++)
   {
-    memcpy((pc >> 24) == 6 ? vram + vram_offset(pc) : iwram + (pc & 0x7FFF),
-     c->code, sizeof(c->code));
+    memcpy(ram_at(pc), c->code, sizeof(c->code));
     if(pass == 1)
       arm_core_invalidate(&core, pc, sizeof(c->code));
     else

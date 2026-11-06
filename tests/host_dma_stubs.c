@@ -193,7 +193,7 @@ void arm_gba_written(uint32_t address, uint32_t size)
   (void)size;
 }
 
-void arm_gba_dma_written(uint32_t address, uint32_t size)
+void arm_gba_dma_writing(uint32_t address, uint32_t size)
 {
   (void)address;
   (void)size;
