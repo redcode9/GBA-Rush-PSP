@@ -2817,6 +2817,7 @@ int32_t arm_mips_run(ArmMips *jit, int32_t cycles)
     uint32_t entry;
     uint32_t code;
     uint32_t arg;
+    ArmExitKind kind;
 
     if(check)
     {
@@ -2825,10 +2826,12 @@ int32_t arm_mips_run(ArmMips *jit, int32_t cycles)
       if(core->irq_line && !(core->cpsr & ARM_CPSR_I))
         core->cycles += arm_core_irq(core);
     }
-    entry = block_entry(jit);
-    core->exit_request = 0;
-    if(!entry)
+    /* The prefetch window's old instructions run in the interpreter. */
+    if(arm_core_window(core, &kind))
+      check = kind != ARM_EXIT_NEXT;
+    else if(!(entry = block_entry(jit)))
     {
+      core->exit_request = 0;
       set_phase(jit, ARM_MIPS_PHASE_INTERPRET);
       check = !arm_core_skip(core) &&
        arm_core_run_block(core) != ARM_EXIT_NEXT;
@@ -2836,6 +2839,7 @@ int32_t arm_mips_run(ArmMips *jit, int32_t cycles)
     }
     else
     {
+      core->exit_request = 0;
       set_base(jit);
       set_phase(jit, ARM_MIPS_PHASE_CODE);
       code = run_code(jit, entry);
@@ -2932,8 +2936,12 @@ static ArmExitKind run_once(ArmMips *jit, const ArmIrOp *ops, unsigned count,
 ArmExitKind arm_mips_run_block(ArmMips *jit)
 {
   ArmCore *core = &jit->core;
-  const ArmBlock *block = arm_core_block(core);
+  const ArmBlock *block;
+  ArmExitKind kind;
 
+  if(arm_core_window(core, &kind))
+    return kind;
+  block = arm_core_block(core);
   protect(jit, block, 1);
   return run_once(jit, &core->ops[block->first], block->count, block->first,
    MODE_ONCE);
@@ -2943,10 +2951,12 @@ int arm_mips_step(ArmMips *jit)
 {
   ArmCore *core = &jit->core;
   int32_t before = core->cycles;
-  unsigned count = arm_translate(core, core->v[15],
-   (core->cpsr & ARM_CPSR_T) != 0, jit->step_ops, 96, 1, NULL);
+  ArmExitKind kind;
 
-  run_once(jit, jit->step_ops, count, 0, MODE_STEP);
+  if(!arm_core_window(core, &kind))
+    run_once(jit, jit->step_ops, arm_translate(core, core->v[15],
+     (core->cpsr & ARM_CPSR_T) != 0, jit->step_ops, ARM_INSN_OPS, 1, NULL),
+     0, MODE_STEP);
   return core->cycles - before;
 }
 

@@ -287,6 +287,7 @@ int arm_core_irq(ArmCore *core)
   if(core->cpsr & ARM_CPSR_I)
     return 0;
   core->idle_target = ARM_NO_IDLE_PASS;
+  core->window_left = 0;
   /* lr points one instruction past the one to return to, so the handler
      returns with subs pc, lr, #4 in either state. */
   exception(core, ARM_MODE_IRQ, 0x18, core->v[15] + 4);
@@ -555,14 +556,55 @@ static uint32_t read8(ArmCore *core, uint32_t address)
   return core->bus.read8(core->bus.context, address);
 }
 
+/* The opcode of the instruction at pc as memory holds it now. */
+static uint32_t opcode_at(const ArmCore *core, uint32_t pc, unsigned thumb)
+{
+  uint32_t word = core->bus.code32(core->bus.context, pc & ~3u);
+
+  return thumb ? ((pc & 2) ? word >> 16 : word & 0xFFFF) : word;
+}
+
+/* A store about to write [address, address + size) over one of the two
+   instructions after the one running, which the pipeline holds already:
+   their opcodes are kept for arm_core_window, and the block is left
+   before them. */
+static void keep_window(ArmCore *core, uint32_t address, unsigned size)
+{
+  unsigned thumb = (core->cpsr & ARM_CPSR_T) ? 1 : 0;
+  uint32_t width = thumb ? 2 : 4;
+  uint32_t next = core->insn_pc + width;
+  uint32_t key = next | thumb;
+
+  /* ponytail: addresses as they are, so a store through another mirror
+     of the RAM is not seen as one over the window; fold both with
+     ram_offset if code ever does that. */
+  if(address + size - 1 - next >= 2 * width + size - 1)
+    return;
+  /* An earlier word of the same store kept them. */
+  if(core->window_pc == key && core->window_left == 2)
+    return;
+  /* The instruction running is the first of an older window: the next
+     one is that window's second, fetched before either store. */
+  core->window_word[0] = core->window_pc == key && core->window_left == 1 ?
+   core->window_word[1] : opcode_at(core, next, thumb);
+  core->window_word[1] = opcode_at(core, next + width, thumb);
+  core->window_pc = key;
+  core->window_left = 2;
+  core->exit_request |= ARM_EXIT_LEAVE_BLOCK;
+}
+
 /* A write to RAM holding translated code drops those translations. */
 static const ArmRegion *write_region(ArmCore *core, uint32_t address,
  unsigned size)
 {
   int page = code_page(core, address);
 
-  if(page >= 0 && core->page_blocks[page] != ARM_NO_BLOCK)
-    invalidate_page(core, (unsigned)page, ram_offset(address), size);
+  if(page >= 0)
+  {
+    keep_window(core, address, size);
+    if(core->page_blocks[page] != ARM_NO_BLOCK)
+      invalidate_page(core, (unsigned)page, ram_offset(address), size);
+  }
   return &core->map[region_of(address)];
 }
 
@@ -936,6 +978,7 @@ void arm_core_reset(ArmCore *core)
   core->flag_v = 0;
   core->exit_request = 0;
   core->irq_line = 0;
+  core->window_left = 0;
   core->waitcnt = 0;
   set_waits(core);
   arm_core_flush(core);
@@ -1033,6 +1076,34 @@ int arm_core_skip(ArmCore *core)
   return 1;
 }
 
+int arm_core_window(ArmCore *core, ArmExitKind *kind)
+{
+  unsigned thumb = (core->cpsr & ARM_CPSR_T) ? 1 : 0;
+  uint32_t word;
+
+  if(!core->window_left)
+    return 0;
+  if(core->window_pc != (core->v[15] | thumb))
+  {
+    core->window_left = 0;
+    return 0;
+  }
+  word = core->window_word[2 - core->window_left];
+  core->window_left--;
+  core->window_pc += thumb ? 2 : 4;
+  arm_translate_opcode(core, core->v[15], (int)thumb, word,
+   core->window_ops, ARM_INSN_OPS);
+  core->exit_request = 0;
+  if(core->hook && core->v[15] == (core->hook & ~1u) && core->hooked)
+    core->hooked(core);
+  *kind = arm_core_execute(core, core->window_ops);
+  /* A taken branch or an exception empties the pipeline: what follows is
+     fetched again. */
+  if(*kind != ARM_EXIT_NEXT)
+    core->window_left = 0;
+  return 1;
+}
+
 static ArmExitKind run_block(ArmCore *core, const ArmBlock *block)
 {
   /* Requests made between blocks (a DMA invalidating code) are about
@@ -1045,6 +1116,10 @@ static ArmExitKind run_block(ArmCore *core, const ArmBlock *block)
 
 ArmExitKind arm_core_run_block(ArmCore *core)
 {
+  ArmExitKind kind;
+
+  if(arm_core_window(core, &kind))
+    return kind;
   return run_block(core, arm_core_block(core));
 }
 
@@ -1067,8 +1142,9 @@ int32_t arm_core_run(ArmCore *core, int32_t cycles)
       if(core->irq_line && !(core->cpsr & ARM_CPSR_I))
         core->cycles += arm_core_irq(core);
     }
-    block = arm_core_cached(core);
-    if(block)
+    if(arm_core_window(core, &kind))
+      ;
+    else if((block = arm_core_cached(core)) != NULL)
       kind = run_block(core, block);
     else if(arm_core_skip(core))
       kind = ARM_EXIT_NEXT;
@@ -1088,12 +1164,16 @@ int32_t arm_core_run(ArmCore *core, int32_t cycles)
 
 int arm_core_step(ArmCore *core)
 {
-  ArmIrOp ops[96];
+  ArmIrOp ops[ARM_INSN_OPS];
   int32_t before = core->cycles;
+  ArmExitKind kind;
 
-  arm_translate(core, core->v[15], (core->cpsr & ARM_CPSR_T) != 0, ops, 96,
-   1, NULL);
-  core->exit_request = 0;
-  arm_core_execute(core, ops);
+  if(!arm_core_window(core, &kind))
+  {
+    arm_translate(core, core->v[15], (core->cpsr & ARM_CPSR_T) != 0, ops,
+     ARM_INSN_OPS, 1, NULL);
+    core->exit_request = 0;
+    arm_core_execute(core, ops);
+  }
   return core->cycles - before;
 }

@@ -1488,8 +1488,10 @@ static void tables_init(void)
   ready = 1;
 }
 
-unsigned arm_translate(ArmCore *core, uint32_t pc, int thumb,
- ArmIrOp *ops, unsigned max_ops, unsigned max_insns, ArmIrBlockInfo *info)
+/* arm_translate, or with opcode set arm_translate_opcode. */
+static unsigned translate(ArmCore *core, uint32_t pc, int thumb,
+ ArmIrOp *ops, unsigned max_ops, unsigned max_insns, ArmIrBlockInfo *info,
+ const uint32_t *opcode)
 {
   Builder b;
   uint32_t page_end = 0;
@@ -1520,10 +1522,12 @@ unsigned arm_translate(ArmCore *core, uint32_t pc, int thumb,
    (insns == 0 || ((page_end == 0 || b.pc != page_end) &&
     (core->hook == 0 || b.pc != (core->hook & ~1u)))))
   {
-    uint32_t word = core->bus.code32(core->bus.context, b.pc & ~3u);
+    uint32_t word = opcode ? *opcode :
+     core->bus.code32(core->bus.context, b.pc & ~3u);
 
     if(thumb)
-      thumb_instruction(&b, (b.pc & 2) ? word >> 16 : word & 0xFFFF);
+      thumb_instruction(&b, opcode ? word & 0xFFFF :
+       (b.pc & 2) ? word >> 16 : word & 0xFFFF);
     else
       arm_instruction(&b, word);
     insns++;
@@ -1541,6 +1545,18 @@ unsigned arm_translate(ArmCore *core, uint32_t pc, int thumb,
     info->ops = b.count;
   }
   return b.count;
+}
+
+unsigned arm_translate(ArmCore *core, uint32_t pc, int thumb,
+ ArmIrOp *ops, unsigned max_ops, unsigned max_insns, ArmIrBlockInfo *info)
+{
+  return translate(core, pc, thumb, ops, max_ops, max_insns, info, NULL);
+}
+
+unsigned arm_translate_opcode(ArmCore *core, uint32_t pc, int thumb,
+ uint32_t opcode, ArmIrOp *ops, unsigned max_ops)
+{
+  return translate(core, pc, thumb, ops, max_ops, 1, NULL, &opcode);
 }
 
 const char *arm_ir_name(unsigned code)

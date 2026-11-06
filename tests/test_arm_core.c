@@ -421,6 +421,99 @@ static void test_vram_code(void)
   CHECK(info.end == 0x06014100);
 }
 
+/* Stores over the instructions after them, which the pipeline has
+   fetched already: the two after the store run as they were, the third
+   runs as written. Each routine ends at a b . and returns in r0: */
+typedef struct
+{
+  uint32_t code[5];   /* Thumb: two halfwords a word */
+  int thumb;
+  uint32_t r1, r2;    /* what the stores write */
+  uint32_t r0;        /* expected */
+} WindowCase;
+
+static const WindowCase window_cases[] =
+{
+  /* str r1, [pc, #-4] over the next instruction, mov r0, #1 */
+  { { 0xe50f1004, 0xe3a00001, 0xeafffffe }, 0, 0xe3a00002, 0, 1 },
+  /* str r1, [pc] over the second one, then over the third */
+  { { 0xe58f1000, 0xe1a0c00c, 0xe3a00001, 0xeafffffe }, 0, 0xe3a00002, 0,
+    1 },
+  { { 0xe58f1004, 0xe1a0c00c, 0xe1a0c00c, 0xe3a00001, 0xeafffffe }, 0,
+    0xe3a00002, 0, 2 },
+  /* strh r1, [r3, #2], #4, #6 (r3 at the strh), movs r0, #1 */
+  { { 0x20018059, 0xe7fe }, 1, 0x2002, 0, 1 },
+  { { 0x46c08099, 0xe7fe2001 }, 1, 0x2002, 0, 1 },
+  { { 0x46c080d9, 0x200146c0, 0xe7fe }, 1, 0x2002, 0, 2 },
+  /* stmia r12, {r1, r2} over add r0, r0, #1 and #2 (r12 after it) */
+  { { 0xe88c0006, 0xe2800001, 0xe2800002, 0xeafffffe }, 0, 0xe2800010,
+    0xe2800020, 3 },
+  /* str r1, [pc] over mov r0, #1, then from the instruction after it
+     str r2, [pc] over add r0, r0, #10: both as fetched before either
+     store */
+  { { 0xe58f1000, 0xe58f2000, 0xe3a00001, 0xe280000a, 0xeafffffe }, 0,
+    0xe3a00002, 0xe2800014, 11 },
+  /* str r1, [pc] over mov r0, #1, then b to it: a taken branch fetches
+     again */
+  { { 0xe58f1000, 0xeaffffff, 0xe3a00001, 0xeafffffe }, 0, 0xe3a00002, 0,
+    2 },
+};
+
+/* Runs a case at pc: with arm_core_run (cold, then again once the code
+   is put back, which drops only its own blocks), then one instruction at a
+   time; returns 0 and says so if r0 is not what it should be. */
+static int check_window(const WindowCase *c, uint32_t pc)
+{
+  uint32_t cpsr = ARM_MODE_SYSTEM | (c->thumb ? ARM_CPSR_T : 0);
+  uint32_t end = pc + sizeof(c->code);
+  unsigned pass;
+  unsigned n;
+
+  for(pass = 0; pass < 3; pass++)
+  {
+    memcpy(iwram + (pc & 0x7FFF), c->code, sizeof(c->code));
+    if(pass == 1)
+      arm_core_invalidate(&core, pc, sizeof(c->code));
+    else
+      reset(pc, cpsr);
+    core.v[0] = 0;
+    core.v[1] = c->r1;
+    core.v[2] = c->r2;
+    core.v[3] = pc;
+    core.v[12] = pc + 4;
+    core.v[15] = pc;
+    if(pass < 2)
+      arm_core_run(&core, 200);
+    else
+      for(n = 0; n < 8 && core.v[15] < end; n++)
+        arm_core_step(&core);
+    if(core.v[0] != c->r0)
+    {
+      printf("test_arm_core: window case %u at %08x, %s: r0 %u, not %u\n",
+       (unsigned)(c - window_cases), (unsigned)pc,
+       pass == 0 ? "cold" : pass == 1 ? "warm" : "stepped",
+       (unsigned)core.v[0], (unsigned)c->r0);
+      failures++;
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static void test_window(void)
+{
+  unsigned i;
+
+  for(i = 0; i < sizeof(window_cases) / sizeof(window_cases[0]); i++)
+  {
+    /* Mid page, then with the store last in its page: the instructions it
+       writes are in the next one, where nothing is translated yet. */
+    check_window(&window_cases[i], 0x03001040);
+    check_window(&window_cases[i],
+     0x03001100 - (window_cases[i].thumb ? 2 : 4));
+  }
+}
+
 /* One run of check_idle_loop: after a reset to pc (0: on from the last
    run), with f raising an IRQ if irq. */
 typedef struct
@@ -570,6 +663,7 @@ int main(void)
   test_runaway();
   test_zeros();
   test_vram_code();
+  test_window();
   if(failures)
     return 1;
   printf("test_arm_core: all checks passed\n");

@@ -99,6 +99,9 @@ typedef struct
    the 96 KB of VRAM. */
 #define ARM_CODE_PAGE_SIZE 256u
 #define ARM_CODE_PAGES (1024u + 128u + 384u)
+/* Ops of one instruction translated alone (arm_core_step and the
+   prefetch window). */
+#define ARM_INSN_OPS 96u
 #define ARM_NO_BLOCK 0xFFFFu
 #define ARM_IDLE_LOOPS 16u
 #define ARM_NO_IDLE_PASS 0xFFFFFFFFu
@@ -180,6 +183,15 @@ typedef struct ArmCore
      to measure one pass; ARM_NO_IDLE_PASS when there is none. */
   uint32_t idle_target;
   int32_t idle_cycles;
+  /* The prefetch window. The ARM7TDMI has fetched the two instructions
+     after the one running when that one stores, so a store over either of
+     them leaves them as they were for this once. Their opcodes are kept
+     before the store, and they run next from here (arm_core_window):
+     window_left of them, the next one at window_pc (address | Thumb). */
+  uint32_t window_pc;
+  uint32_t window_left;
+  uint32_t window_word[2];
+  ArmIrOp window_ops[ARM_INSN_OPS];
   /* Set once code in VRAM is translated, until the next flush: until then
      a store to VRAM needs no look at its pages. */
   uint32_t vram_code;
@@ -232,6 +244,12 @@ int arm_core_zeros(const ArmCore *core);
    (ARM_EXIT_STOP), or up to the last two before the end of their 16 MB
    region. Returns whether it did. */
 int arm_core_skip(ArmCore *core);
+/* For a run loop, before it looks for the block at r15: when r15 is at
+   the next instruction of the prefetch window (see window_pc), runs that
+   one alone in its old version and returns 1, with its exit kind in
+   *kind; otherwise forgets any window and returns 0. arm_core_run,
+   arm_core_run_block and arm_core_step call it. */
+int arm_core_window(ArmCore *core, ArmExitKind *kind);
 /* The block at r15 if the cache holds it, else NULL. */
 const ArmBlock *arm_core_cached(ArmCore *core);
 /* Runs the block at r15 and returns its exit kind; no interrupt or budget

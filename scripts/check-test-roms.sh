@@ -25,17 +25,9 @@ set -eu
 # - timer_start_delay: rom_run times an access after its instruction's
 #   other cycles (a load's internal cycle comes first), so right after a
 #   start it reads 3 where mGBA reads 0.
-# - prefetch_*: the New core runs a store's new code at once instead of
-#   the two instructions already fetched.
 # - the save ROMs' odd and misaligned backup loads: the New core reads
 #   the aligned address on the 8-bit backup bus.
 core_allow=cpu_irq_latency,timer_start_delay
-core_allow=$core_allow,prefetch_arm_1_cold
-core_allow=$core_allow,prefetch_arm_1_warm,prefetch_arm_2_cold
-core_allow=$core_allow,prefetch_arm_2_warm,prefetch_thumb_1_cold
-core_allow=$core_allow,prefetch_thumb_1_warm,prefetch_thumb_2_cold
-core_allow=$core_allow,prefetch_thumb_2_warm,prefetch_stm,prefetch_push
-core_allow=$core_allow,prefetch_swp
 bus_allow=sram_ldrh_odd,sram_ldrsh_odd,sram_ldr_1,sram_ldr_2,sram_ldr_3
 bus_allow=$bus_allow,flash_ldrh_device
 

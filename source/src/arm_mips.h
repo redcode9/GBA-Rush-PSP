@@ -117,7 +117,7 @@ typedef struct ArmMips
   uint32_t dispatch[ARM_MIPS_DISPATCH][2];  /* key, refill entry */
   uint32_t code[ARM_CACHE_BLOCKS];   /* each block's entry, 0 when none,
                                         1 when it is interpreted */
-  ArmIrOp step_ops[96];
+  ArmIrOp step_ops[ARM_INSN_OPS];
   ArmMipsHost host;
   uint32_t *buffer;
   uint32_t words;           /* buffer size */

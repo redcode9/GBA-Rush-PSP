@@ -236,6 +236,12 @@ struct ArmCore;
 unsigned arm_translate(struct ArmCore *core, uint32_t pc, int thumb,
  ArmIrOp *ops, unsigned max_ops, unsigned max_insns, ArmIrBlockInfo *info);
 
+/* The same for the one instruction at pc whose opcode (Thumb: in the low
+   half) is given rather than read from memory: the prefetch window's old
+   instructions (arm_core_window). */
+unsigned arm_translate_opcode(struct ArmCore *core, uint32_t pc, int thumb,
+ uint32_t opcode, ArmIrOp *ops, unsigned max_ops);
+
 /* Name of an op code, for dumps and tests. */
 const char *arm_ir_name(unsigned code);
 
