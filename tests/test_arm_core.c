@@ -471,7 +471,8 @@ static int check_window(const WindowCase *c, uint32_t pc)
 
   for(pass = 0; pass < 3; pass++)
   {
-    memcpy(iwram + (pc & 0x7FFF), c->code, sizeof(c->code));
+    memcpy((pc >> 24) == 6 ? vram + vram_offset(pc) : iwram + (pc & 0x7FFF),
+     c->code, sizeof(c->code));
     if(pass == 1)
       arm_core_invalidate(&core, pc, sizeof(c->code));
     else
@@ -507,10 +508,12 @@ static void test_window(void)
   for(i = 0; i < sizeof(window_cases) / sizeof(window_cases[0]); i++)
   {
     /* Mid page, then with the store last in its page: the instructions it
-       writes are in the next one, where nothing is translated yet. */
+       writes are in the next one, where nothing is translated yet; then
+       in VRAM. */
     check_window(&window_cases[i], 0x03001040);
     check_window(&window_cases[i],
      0x03001100 - (window_cases[i].thumb ? 2 : 4));
+    check_window(&window_cases[i], 0x06014040);
   }
 }
 

@@ -1517,6 +1517,8 @@ static unsigned translate(ArmCore *core, uint32_t pc, int thumb,
      the zeros before it stops there and the code in it gets its own. */
   else if(region == 1)
     page_end = 0x02000000;
+  if(region == 6)
+    core->vram_code = 1;
 
   while(insns < max_insns && b.count + INSN_MAX_OPS <= max_ops &&
    (insns == 0 || ((page_end == 0 || b.pc != page_end) &&

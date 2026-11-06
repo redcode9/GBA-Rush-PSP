@@ -491,8 +491,6 @@ static ArmBlock *translate(ArmCore *core, uint32_t key)
   block->next_hash = core->hash[bucket];
   core->hash[bucket] = (uint16_t)index;
   block->next_page = ARM_NO_BLOCK;
-  if(region_of(key) == 6)
-    core->vram_code = 1;
   page = code_page(core, key);
   if(page >= 0)
   {
