@@ -33,6 +33,7 @@
 #define EWRAM_SIZE 0x40000u
 #define IWRAM_SIZE 0x8000u
 #define ROM_SIZE 0x100000u
+#define VRAM_SIZE 0x1000u
 #define LOG_SIZE 4096u
 #define CODE_BYTES (8u << 20)
 
@@ -50,6 +51,7 @@ typedef struct
   ArmCore *core;
   uint8_t *ewram;
   uint8_t *iwram;
+  uint8_t vram[VRAM_SIZE];  /* only for vram_case, through the bus */
   Access log[LOG_SIZE];
   unsigned log_count;
 } World;
@@ -60,6 +62,7 @@ static World worlds[2];
 static uint8_t *ewram_pages;  /* the backend's work RAM, placed by seed */
 static ArmCore reference;
 static ArmMips *jit;
+static int vram_on;
 static uint32_t rng_state;
 static int verbose;
 static unsigned long long guest_instructions;
@@ -102,13 +105,19 @@ static uint32_t read_raw(World *w, uint32_t address, unsigned size)
     case 3:
       memcpy(&value, w->iwram + (address & (IWRAM_SIZE - 1)), size);
       return value;
+    case 6:
+      if(!vram_on)
+        break;
+      memcpy(&value, w->vram + (address & (VRAM_SIZE - 1)), size);
+      return value;
     case 8: case 9: case 10: case 11: case 12: case 13:
       memcpy(&value, rom + (address & (ROM_SIZE - 1)), size);
       return value;
     default:
-      value = hash(address ^ size);
-      return size == 4 ? value : value & ((1u << (size * 8)) - 1);
+      break;
   }
+  value = hash(address ^ size);
+  return size == 4 ? value : value & ((1u << (size * 8)) - 1);
 }
 
 static void note(World *w, uint32_t kind, uint32_t address, uint32_t value)
@@ -138,6 +147,9 @@ static void bus_write(World *w, uint32_t address, unsigned size,
  uint32_t value)
 {
   note(w, 'w' << 8 | size, address, value);
+  if(vram_on && address >> 24 == 6)
+    memcpy(w->vram + (address & (VRAM_SIZE - 1) & ~(size - 1)), &value,
+     size);
   if(address >> 24 != 4)
     return;
   if((address & 0xFFFFFC) == 0x300)
@@ -417,6 +429,8 @@ static int compare(const char *what, uint32_t seed, unsigned step)
     DIFF(" work RAM differs");
   if(memcmp(worlds[0].iwram, worlds[1].iwram, IWRAM_SIZE))
     DIFF(" internal RAM differs");
+  if(memcmp(worlds[0].vram, worlds[1].vram, VRAM_SIZE))
+    DIFF(" VRAM differs");
   if(worlds[0].log_count != worlds[1].log_count)
     DIFF(" %u/%u bus accesses", worlds[0].log_count, worlds[1].log_count);
   for(i = 0; i < worlds[0].log_count && i < worlds[1].log_count &&
@@ -675,6 +689,64 @@ static int window_case(unsigned variant)
       return 0;
     }
   }
+  return 1;
+}
+
+/* Code in VRAM (mov r0, #n; b .), which goes through the bus: run, then
+   rewritten by a store from internal RAM (str r1, [r2]; b .) and behind
+   the cores' backs (DMA), and run again each time: the new version. */
+static int vram_case(void)
+{
+  static const uint32_t old[2] = { 0xE3A00001, 0xEAFFFFFE };
+  static const uint32_t store[2] = { 0xE5821000, 0xEAFFFFFE };
+  const uint32_t code = 0x06000100u;
+  unsigned n;
+  unsigned w;
+
+  vram_on = 1;
+  for(n = 1; n <= 3; n++)
+  {
+    for(w = 0; w < 2; w++)
+    {
+      ArmCore *core = w ? &jit->core : &reference;
+
+      if(n == 1)
+      {
+        memset(worlds[w].vram, 0, VRAM_SIZE);
+        memcpy(worlds[w].vram + (code & (VRAM_SIZE - 1)), old, sizeof(old));
+        memcpy(worlds[w].iwram + 0x3000, store, sizeof(store));
+        arm_core_reset(core);
+        arm_core_set_cpsr(core, ARM_MODE_SYSTEM);
+      }
+      if(n == 3)
+      {
+        worlds[w].vram[code & (VRAM_SIZE - 1)] = 3;
+        arm_core_invalidate(core, code, 4);
+      }
+      core->v[1] = 0xE3A00002u;
+      core->v[2] = code;
+      core->v[15] = n == 2 ? 0x03003000u : code;
+      core->prefetch = 0;
+      core->instructions = 0;
+      worlds[w].log_count = 0;
+    }
+    if(n == 2)
+    {
+      if(arm_core_run(&reference, 50) != arm_mips_run(jit, 50) ||
+         !compare("vram store", 0, n))
+        return 0;
+      reference.v[15] = jit->core.v[15] = code;
+    }
+    if(arm_core_run(&reference, 50) != arm_mips_run(jit, 50) ||
+       !compare("vram run", 0, n))
+      return 0;
+    if(reference.v[0] != n)
+    {
+      printf("vram case: version %u returned %u\n", n, reference.v[0]);
+      return 0;
+    }
+  }
+  vram_on = 0;
   return 1;
 }
 
@@ -979,7 +1051,10 @@ int main(int argc, char **argv)
   for(i = 0; i < 6; i++)
     if(!window_case(i))
       return 1;
-  printf("jit_fuzz: 6 stores over the prefetch window agree\n");
+  if(!vram_case())
+    return 1;
+  printf("jit_fuzz: 6 stores over the prefetch window and code in VRAM"
+   " agree\n");
   if(!slide_case())
     return 1;
   printf("jit_fuzz: a slide past the budget ends on the same cycle, zeros"
