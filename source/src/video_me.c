@@ -288,6 +288,11 @@ void video_me_present_poll(void)
   (*update_screen)();
 }
 
+int video_me_present_pending(void)
+{
+  return present_frame != 0;
+}
+
 void video_me_present_finish(void)
 {
   if(!present_frame)

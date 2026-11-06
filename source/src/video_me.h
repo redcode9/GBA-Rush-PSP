@@ -75,6 +75,8 @@ void video_me_stop(void);
 void video_me_present(void);
 void video_me_present_poll(void);
 void video_me_present_finish(void);
+/* A picture waits for the Media Engine, so the V-Blank lines poll. */
+int video_me_present_pending(void);
 
 VideoMeState video_me_state(void);
 void video_me_counters(VideoMeCounters *counters);
