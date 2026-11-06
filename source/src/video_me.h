@@ -105,6 +105,9 @@ typedef struct
   u64 ge_us;
   /* Frames the Media Engine finished, by its working time on each. */
   u32 frame_time[GBA_PPU_LOG_TIME_BUCKETS];
+  /* Frames presented in time, by the time from the end of the frame to
+     the first look that found it finished, in steps of 32 us. */
+  u32 delivery[GBA_PPU_LOG_TIME_BUCKETS];
 } VideoMeCounters;
 
 /* At the start of each frame: whether the Media Engine draws it, starting
@@ -135,6 +138,10 @@ void video_me_counters(VideoMeCounters *counters);
    what half of them, 99% of them and all of them stayed within, in us
    (0 while its clock rate is not known yet). */
 void video_me_frame_times(const VideoMeCounters *since, u32 *median_us,
+ u32 *p99_us, u32 *max_us);
+/* The same for the delivery of the frames presented in time since since
+   (VideoMeCounters.delivery), as the end of their 32 us step. */
+void video_me_delivery_times(const VideoMeCounters *since, u32 *median_us,
  u32 *p99_us, u32 *max_us);
 /* A processor exception on the Media Engine: cause and address, or 0. */
 void video_me_fault(u32 *cause, u32 *address);

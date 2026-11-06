@@ -170,6 +170,10 @@ class RuntimeLogDecoderTests(unittest.TestCase):
                               "values": [3550, 212, 0]}),
             "ge-presents/ge-us-per-present/direct-frames=3550/212/0")
         self.assertEqual(
+            decoder.describe({"event": "link-counters", "flags": 16,
+                              "values": [96, 448, 2048]}),
+            "delivery-us-median/p99/max=96/448/2048")
+        self.assertEqual(
             decoder.describe({"event": "link-counters", "flags": 11,
                               "values": [1, 0, 0]}),
             "exact-renderer=media-engine me-fault-cause=0x00000000 "

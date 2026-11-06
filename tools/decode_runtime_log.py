@@ -92,6 +92,7 @@ LINK_COUNTERS = {
     10: "log-us-per-frame/log-words-per-frame/full-resends",
     13: "me-frame-us-median/p99/max",
     15: "ge-presents/ge-us-per-present/direct-frames",
+    16: "delivery-us-median/p99/max",
 }
 # The CPU core a start or reset chose (CPU_CORE_* in source/src/main.h);
 # logs from before the option say classic.

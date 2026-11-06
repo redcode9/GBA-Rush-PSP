@@ -41,6 +41,8 @@
    measured, and the Media Engine's busy time converted to microseconds. */
 #define SAMPLE_FRAMES    16
 #define BUSY_FRAMES      60
+/* The delivery histogram's step, 32 us. */
+#define DELIVERY_SHIFT   5
 #define UNCACHED(pointer) ((void *)(0x40000000u | (u32)(pointer)))
 
 /* media_engine.prx, through media_engine_stub.S. */
@@ -68,6 +70,8 @@ static u32 switches;
 static SceUID module = -1;
 static int drawing;
 static u32 present_frame;
+/* When the frame waiting to be presented ended. */
+static u32 present_time;
 /* The write count last handed to media_engine_publish. */
 static u32 sram_written;
 static VideoMeCounters counters;
@@ -436,13 +440,19 @@ void video_me_present(void)
 {
   present_frame = gba_ppu_log_frame(&writer);
   present_target = frame_target;
+  present_time = sceKernelGetSystemTimeLow();
   video_me_present_poll();
 }
 
 void video_me_present_poll(void)
 {
+  u32 step;
+
   if(!present_frame || !gba_ppu_log_frame_done(&writer, present_frame))
     return;
+  step = (sceKernelGetSystemTimeLow() - present_time) >> DELIVERY_SHIFT;
+  counters.delivery[step < GBA_PPU_LOG_TIME_BUCKETS ? step :
+   GBA_PPU_LOG_TIME_BUCKETS - 1]++;
   present_frame = 0;
   late_in_a_row = 0;
   if(present_target)
@@ -494,25 +504,47 @@ void video_me_counters(VideoMeCounters *out)
   video_present_time(&out->ge_presents, &out->ge_us);
 }
 
+/* Of the frames counted in now but not in since, the step ends half, 99%
+   and all of them stayed within, in gba_ppu_log_time_within's ticks. */
+static void times_within(const u32 *now, const u32 *since, u32 within[3])
+{
+  static const u32 permille[3] = { 500, 990, 1000 };
+  u32 counts[GBA_PPU_LOG_TIME_BUCKETS];
+  u32 i;
+
+  for(i = 0; i < GBA_PPU_LOG_TIME_BUCKETS; i++)
+    counts[i] = now[i] - since[i];
+  for(i = 0; i < 3; i++)
+    within[i] = gba_ppu_log_time_within(counts, permille[i]);
+}
+
 void video_me_frame_times(const VideoMeCounters *since, u32 *median_us,
  u32 *p99_us, u32 *max_us)
 {
   VideoMeCounters now;
-  u32 frame_time[GBA_PPU_LOG_TIME_BUCKETS];
-  u32 i;
+  u32 within[3];
 
   video_me_counters(&now);
-  for(i = 0; i < GBA_PPU_LOG_TIME_BUCKETS; i++)
-    frame_time[i] = now.frame_time[i] - since->frame_time[i];
+  times_within(now.frame_time, since->frame_time, within);
   *median_us = *p99_us = *max_us = 0;
   if(!ticks_per_ms)
     return;
-  *median_us = (u32)((u64)gba_ppu_log_time_within(frame_time, 500) * 1000 /
-   ticks_per_ms);
-  *p99_us = (u32)((u64)gba_ppu_log_time_within(frame_time, 990) * 1000 /
-   ticks_per_ms);
-  *max_us = (u32)((u64)gba_ppu_log_time_within(frame_time, 1000) * 1000 /
-   ticks_per_ms);
+  *median_us = (u32)((u64)within[0] * 1000 / ticks_per_ms);
+  *p99_us = (u32)((u64)within[1] * 1000 / ticks_per_ms);
+  *max_us = (u32)((u64)within[2] * 1000 / ticks_per_ms);
+}
+
+void video_me_delivery_times(const VideoMeCounters *since, u32 *median_us,
+ u32 *p99_us, u32 *max_us)
+{
+  u32 within[3];
+
+  times_within(counters.delivery, since->delivery, within);
+  /* Its steps are 2^GBA_PPU_LOG_TIME_SHIFT ticks; these are
+     2^DELIVERY_SHIFT us. */
+  *median_us = within[0] >> (GBA_PPU_LOG_TIME_SHIFT - DELIVERY_SHIFT);
+  *p99_us = within[1] >> (GBA_PPU_LOG_TIME_SHIFT - DELIVERY_SHIFT);
+  *max_us = within[2] >> (GBA_PPU_LOG_TIME_SHIFT - DELIVERY_SHIFT);
 }
 
 void video_me_fault(u32 *cause, u32 *address)
