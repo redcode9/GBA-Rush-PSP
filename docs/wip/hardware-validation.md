@@ -89,6 +89,6 @@
 
 | Sessione | Branch | Console | Che cosa | Stato |
 |---|---|---|---|---|
-| ROM di prova | `wip/test-roms`, `wip/open-bios` (+ installazione di SOA-2.1) | PSP-1000, PSP-2000 | build di integrazione ff93a23 (EBOOT `a496fe9c6d5c`), core-rom col BIOS ufficiale (Classic sulla PSP-1000, New sulle due), ROM dei salvataggi | fatta il 2026-11-06, righe in `docs/HARDWARE-RESULTS.md`; restano la core-rom senza `gba_bios.bin`, `save-flash128` da rifare e i due EEPROM sulla PSP-2000 |
+| ROM di prova | `wip/test-roms`, `wip/open-bios` (+ installazione di SOA-2.1) | PSP-1000, PSP-2000 | build di integrazione ff93a23 (EBOOT `a496fe9c6d5c`), core-rom col BIOS ufficiale (Classic sulla PSP-1000, New sulle due), ROM dei salvataggi | fatta il 2026-11-06, righe in `docs/HARDWARE-RESULTS.md`; restano la core-rom senza `gba_bios.bin`, `save-flash128` da rifare e i due EEPROM sulla PSP-2000; anche `save-flash64` sulla PSP-2000 e `save-notag` sulla PSP-1000 hanno lasciato un'immagine parziale (con ogni probabilità l'utente è uscito durante una scrittura), quindi al prossimo avvio il loro `read_back` darà FAIL 0000DD4C e 00007000 senza che sia una regressione; torna PASS dall'avvio dopo, se si esce appena cambia GEN |
 | 1 | `wip/hardware-validation` (+ CMP-1.1 di `wip/open-bios`) | PSP-2000, PSP-1000 | SOA-2.1 installazione, SOA-2.2, CMP-1.1, FireRed e LeafGreen 10 minuti con salvataggio, 20 sospensioni con il ME | pronta, aspetta l'utente |
 | 2 | `wip/hardware-validation` | le due insieme | SOA-2.3 gare e scambi | dopo la 1 |
