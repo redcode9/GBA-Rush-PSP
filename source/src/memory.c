@@ -904,13 +904,23 @@ static u32 read_null(u32 address)
 
 #define THUMB_STATE (reg[REG_CPSR] & 0x20)
 
+// The last DMA value stays on the bus (CPU_DMA_HACK) until the next pass
+// of update_gba or LCD phase change; line_sync ends it at a change the
+// line event skipped.
+static u32 dma_value_on_bus(void)
+{
+  if (reg[CPU_DMA_HACK] != 0)
+    line_sync();
+  return reg[CPU_DMA_HACK];
+}
+
 // Open bus: the opcode being prefetched (PC + 2 in Thumb, PC + 4 in ARM),
-// or the last DMA value just after a DMA (CPU_DMA_HACK).
+// or the last DMA value just after a DMA (dma_value_on_bus).
 static u32 read8_open(u32 address)
 {
   u32 offset = 0;
 
-  if (reg[CPU_DMA_HACK] != 0)
+  if (dma_value_on_bus())
     return reg[CPU_DMA_LAST] & 0xFF;
 
   if (THUMB_STATE != 0)
@@ -926,7 +936,7 @@ static u32 read16_open(u32 address)
 {
   u32 offset = 0;
 
-  if (reg[CPU_DMA_HACK] != 0)
+  if (dma_value_on_bus())
     return reg[CPU_DMA_LAST] & 0xFFFF;
 
   if (THUMB_STATE != 0)
@@ -940,7 +950,7 @@ static u32 read16_open(u32 address)
 // In Thumb state the prefetched halfword fills both halves of the word.
 static u32 read32_open(u32 address)
 {
-  if (reg[CPU_DMA_HACK] != 0)
+  if (dma_value_on_bus())
     return reg[CPU_DMA_LAST];
 
   if (THUMB_STATE != 0)

@@ -415,10 +415,16 @@ static u32 main_cycle_now(void)
 
 /* Before the CPU reads DISPSTAT or VCOUNT, or a write that depends on
    them: they take the LCD phase changes passed by the cycle the CPU has
-   reached that update_gba left to them. */
+   reached that update_gba left to them. update_gba also used to run at
+   each of these changes and end the open bus value of a DMA
+   (CPU_DMA_HACK), so a change passed here ends it too. */
 void line_sync(void)
 {
+  u32 before = line_deadline;
+
   line_catch_up(main_cycle_now());
+  if (line_deadline != before)
+    reg[CPU_DMA_HACK] = 0;
 }
 
 /* After a write that can make a coming LCD phase change matter (an IRQ
