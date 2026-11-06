@@ -42,6 +42,10 @@ void event_queue_schedule(EventQueue *queue, uint32_t id, uint32_t deadline,
 
   if(id >= EVENT_QUEUE_CAPACITY)
     return;
+  /* Already there: ties go by id, so moving it would put it back in the
+     same place. */
+  if(event_queue_pending(queue, id) && queue->deadline[id] == deadline)
+    return;
 
   event_queue_cancel(queue, id);
 
