@@ -457,6 +457,10 @@ static const WindowCase window_cases[] =
      again */
   { { 0xe58f1000, 0xeaffffff, 0xe3a00001, 0xeafffffe }, 0, 0xe3a00002, 0,
     2 },
+  /* str r1, [pc] over mov r0, #1 after msr cpsr_c, #0xdf, which ends the
+     block but fetches nothing again */
+  { { 0xe58f1000, 0xe321f0df, 0xe3a00001, 0xeafffffe }, 0, 0xe3a00002, 0,
+    1 },
 };
 
 /* Runs a case at pc: with arm_core_run (cold, then again once the code

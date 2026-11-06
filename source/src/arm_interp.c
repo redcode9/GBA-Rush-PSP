@@ -1088,6 +1088,8 @@ int arm_core_window(ArmCore *core, ArmExitKind *kind)
 {
   unsigned thumb = (core->cpsr & ARM_CPSR_T) ? 1 : 0;
   uint32_t word;
+  unsigned count;
+  unsigned i;
 
   if(!core->window_left)
     return 0;
@@ -1099,14 +1101,21 @@ int arm_core_window(ArmCore *core, ArmExitKind *kind)
   word = core->window_word[2 - core->window_left];
   core->window_left--;
   core->window_pc += thumb ? 2 : 4;
-  arm_translate_opcode(core, core->v[15], (int)thumb, word,
+  count = arm_translate_opcode(core, core->v[15], (int)thumb, word,
    core->window_ops, ARM_INSN_OPS);
   core->exit_request = 0;
   if(core->hook && core->v[15] == (core->hook & ~1u) && core->hooked)
     core->hooked(core);
   *kind = arm_core_execute(core, core->window_ops);
   /* A taken branch or an exception empties the pipeline: what follows is
-     fetched again. */
+     fetched again. An MSR to the CPSR's control field leaves the block
+     through the decoder's only direct exit of kind SYSTEM, to the next
+     instruction, and fetches nothing again. */
+  if(*kind == ARM_EXIT_SYSTEM)
+    for(i = 0; i < count; i++)
+      if(core->window_ops[i].code == ARM_IR_EXIT &&
+         core->window_ops[i].d == ARM_EXIT_SYSTEM)
+        return 1;
   if(*kind != ARM_EXIT_NEXT)
     core->window_left = 0;
   return 1;
