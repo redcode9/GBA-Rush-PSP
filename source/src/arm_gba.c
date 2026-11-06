@@ -138,28 +138,34 @@ static void bus_write32(void *context, uint32_t address, uint32_t value)
   bus_stored(address, write_memory32(address, value));
 }
 
+/* Where code reads as nothing, from address to the end of its 16 MB: past
+   the BIOS, I/O and save memory (whose reads have side effects), and
+   everything unused. */
+static int bus_unmapped(void *context, uint32_t address)
+{
+  u32 region = address >> 24;
+
+  (void)context;
+  if(region == 0x00)
+    return address >= 0x4000;
+  return region == 0x01 || region == 0x04 || region > 0x0C;
+}
+
 /* Code and literals at translate time: the BIOS unprotected, memory that
-   can hold code, nothing elsewhere (I/O and save memory reads have side
-   effects). */
+   can hold code, 0 elsewhere. */
 static uint32_t bus_code32(void *context, uint32_t address)
 {
-  (void)context;
-  switch(address >> 24)
-  {
-    case 0x00:
-      return address < 0x4000 ? ADDRESS32(bios.rom, address & 0x3FFC) : 0;
-    case 0x02: case 0x03: case 0x05: case 0x06: case 0x07:
-    case 0x08: case 0x09: case 0x0A: case 0x0B: case 0x0C:
-      return read_memory32(address);
-    default:
-      return 0;
-  }
+  if(bus_unmapped(context, address))
+    return 0;
+  if(address < 0x4000)
+    return ADDRESS32(bios.rom, address & 0x3FFC);
+  return read_memory32(address);
 }
 
 static const ArmBus bus =
 {
   NULL, bus_read8, bus_read16, bus_read32, bus_write8, bus_write16,
-  bus_write32, bus_code32
+  bus_write32, bus_code32, bus_unmapped
 };
 
 /* New code must reach instruction fetch: out of the data cache, and out
