@@ -158,6 +158,13 @@ static uint32_t code32(void *c, uint32_t a)
   return read_raw(c, a & ~3u, 4);
 }
 
+/* Past the BIOS, region 0 holds nothing: code reads 0 there. */
+static int unmapped(void *c, uint32_t a)
+{
+  (void)c;
+  return (a >> 24) == 0 && a >= BIOS_SIZE;
+}
+
 static void map_world(World *w)
 {
   ArmCore *core = w->core;
@@ -534,7 +541,11 @@ static int smc_case(unsigned variant)
 /* A slide through zeroed work RAM (Thumb movs r0, r0, two blocks to a
    page) with no branch for far longer than ARM_RUNAWAY_SHIFT allows: both
    cores end the run at the same block. The second run goes through code
-   already linked, where only the backend's own check can stop it. */
+   already linked, where only the backend's own check can stop it. Then
+   zeros past the BIOS, where nothing is mapped, which neither core
+   translates: two ARM runs from 4000h, each ending on its budget at one
+   cycle a zero, and a Thumb run from the end of the region into the hash
+   words at 1000000h. */
 static int slide_case(void)
 {
   const int32_t budget = 1000;
@@ -568,6 +579,31 @@ static int slide_case(void)
        ran[0] - budget > (1 << ARM_RUNAWAY_SHIFT) + 512)
     {
       printf("slide run %u: ended %d/%d cycles past the budget\n", i,
+       ran[0] - budget, ran[1] - budget);
+      return 0;
+    }
+  }
+  for(i = 0; i < 3; i++)
+  {
+    for(w = 0; w < 2; w++)
+    {
+      ArmCore *core = w ? &jit->core : &reference;
+
+      if(i != 1)
+      {
+        arm_core_set_cpsr(core, ARM_MODE_SYSTEM | (i ? ARM_CPSR_T : 0));
+        core->v[15] = i ? 0x00FFFF00u : 0x00004000u;
+      }
+      core->instructions = 0;
+      worlds[w].log_count = 0;
+    }
+    ran[0] = arm_core_run(&reference, budget);
+    ran[1] = arm_mips_run(jit, budget);
+    if(!compare("zeros run", 0, i))
+      return 0;
+    if(i < 2 && (ran[0] != budget || ran[1] != budget))
+    {
+      printf("zeros run %u: ended %d/%d cycles past the budget\n", i,
        ran[0] - budget, ran[1] - budget);
       return 0;
     }
@@ -814,7 +850,7 @@ static uint32_t tick(void *context)
 int main(int argc, char **argv)
 {
   ArmBus bus = { NULL, read8, read16, read32, write8, write16, write32,
-   code32, NULL };
+   code32, unmapped };
   ArmMipsHost host;
   uint32_t *code;
   uint32_t seed = 1;
@@ -875,7 +911,8 @@ int main(int argc, char **argv)
    jit->stats.dropped);
   if(!slide_case())
     return 1;
-  printf("jit_fuzz: a slide past the budget ends on the same cycle\n");
+  printf("jit_fuzz: a slide past the budget ends on the same cycle, zeros"
+   " where nothing is mapped on the budget\n");
   /* Host instructions per guest instruction over the random cases, a
      before and after number for changes to the generated code. */
   mips_unicorn_count(NULL);
