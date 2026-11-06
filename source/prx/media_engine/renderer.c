@@ -21,7 +21,9 @@
  * batches of work it waits in a loop that touches no memory, and polls the
  * mailbox less and less often the longer nothing comes, up to about every
  * 25 us. When the emulator asks for it (GBA_PPU_LOG_WAIT_SLEEP) it then
- * goes further and halts until the emulator interrupts it.
+ * goes further and halts until the emulator interrupts it; with
+ * GBA_PPU_LOG_WAIT_SRAM it polls a copy of the mailbox's write count in
+ * the boot page instead, off the main memory bus.
  */
 
 #include <stddef.h>
@@ -33,6 +35,9 @@
    a handful of cycles. */
 #define PAUSE_SHORTEST 32u
 #define PAUSE_LONGEST  2048u
+/* With GBA_PPU_LOG_WAIT_SRAM, the longest pauses between two looks into
+   main memory for a closed log or for sleeping: about every 1.6 ms. */
+#define SRAM_PAUSES    64u
 
 /* The Media Engine's interrupt flags in its system registers, which its
    start-up code (boot.S) clears in the same way (GBA_PPU_LOG_WAIT_CLEAR:
@@ -42,7 +47,7 @@
 #define INTERRUPT_FLAGS     (*(volatile uint32_t *)0xBC100004u)
 #define STATUS_ALL_LINES    0xFC00u
 
-void me_start(GbaPpuLogMailbox *mailbox);
+void me_start(GbaPpuLogMailbox *mailbox, const volatile uint32_t *written);
 
 /* From renderer.ld. */
 extern uint32_t me_bss_start[], me_bss_end[];
@@ -172,17 +177,24 @@ static void __attribute__((noreturn)) fault(void)
   stop();
 }
 
-static void __attribute__((noreturn)) run(GbaPpuLogMailbox *mailbox)
+/* written: the copy of the mailbox's write count in the boot page, which
+   media_engine.prx moves on after the emulator publishes; polled instead
+   of write itself with GBA_PPU_LOG_WAIT_SRAM. A copy behind write only
+   sends the reader to main memory until it catches up. */
+static void __attribute__((noreturn)) run(GbaPpuLogMailbox *mailbox,
+ const volatile uint32_t *written)
 {
   GbaPpuLogReaderSide *side = &mailbox->reader;
-  uint32_t busy = 0, spins = PAUSE_SHORTEST;
+  uint32_t busy = 0, spins = PAUSE_SHORTEST, pauses = 0;
 
+  if(!(mailbox->writer.wait & GBA_PPU_LOG_WAIT_SRAM))
+    written = NULL;
   gba_ppu_log_reader_start(&reader, mailbox);
   for(;;)
   {
     uint32_t started = clock_now();
 
-    if(gba_ppu_log_read(&reader))
+    if((!written || *written != reader.read) && gba_ppu_log_read(&reader))
     {
       uint32_t now = clock_now();
 
@@ -195,20 +207,26 @@ static void __attribute__((noreturn)) run(GbaPpuLogMailbox *mailbox)
     }
     pause_for(spins);
     if(spins < PAUSE_LONGEST)
+    {
       spins <<= 1;
+      continue;
+    }
+    if(written && ++pauses % SRAM_PAUSES)
+      continue;
     /* Long idle: the emulator may have closed; then its memory is no
        longer ours to write. */
-    else if(mailbox->writer.magic != GBA_PPU_LOG_MAGIC)
+    if(mailbox->writer.magic != GBA_PPU_LOG_MAGIC)
       stop();
-    else if(mailbox->writer.wait & GBA_PPU_LOG_WAIT_SLEEP)
+    if(mailbox->writer.wait & GBA_PPU_LOG_WAIT_SLEEP)
       sleep_for_words(mailbox);
   }
 }
 
 /* boot.S jumps here, the first word of the program, with the mailbox's
-   uncached address and the stack at the top of eDRAM. */
+   uncached address, the address of the copy of its write count in the
+   boot page and the stack at the top of eDRAM. */
 void __attribute__((section(".text.start"), noreturn))
- me_start(GbaPpuLogMailbox *mailbox)
+ me_start(GbaPpuLogMailbox *mailbox, const volatile uint32_t *written)
 {
   uint32_t *word;
 
@@ -223,5 +241,5 @@ void __attribute__((section(".text.start"), noreturn))
     __asm__ volatile("mfc0 %0, $12" : "=r"(status));
     __asm__ volatile("mtc0 %0, $12" :: "r"(status | STATUS_ALL_LINES));
   }
-  run(mailbox);
+  run(mailbox, written);
 }

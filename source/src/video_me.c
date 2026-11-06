@@ -45,6 +45,7 @@
 
 /* media_engine.prx, through media_engine_stub.S. */
 void media_engine_wake(void);
+void media_engine_publish(u32 write);
 
 typedef char VideoMeDirtyMapCheck[
  sizeof(video_dirty) == GBA_PPU_LOG_BLOCKS &&
@@ -67,6 +68,8 @@ static u32 switches;
 static SceUID module = -1;
 static int drawing;
 static u32 present_frame;
+/* The write count last handed to media_engine_publish. */
+static u32 sram_written;
 static VideoMeCounters counters;
 
 /* VIDEO_ME_DIRECT_1X: three whole pictures, the GBA's in the middle of
@@ -205,6 +208,8 @@ static void start(void)
   if(switches & VIDEO_ME_SLEEP)
     mailbox->writer.wait = GBA_PPU_LOG_WAIT_SLEEP |
      (switches & VIDEO_ME_SLEEP_CLEAR ? GBA_PPU_LOG_WAIT_CLEAR : 0);
+  if(switches & VIDEO_ME_SRAM_FLAG)
+    mailbox->writer.wait |= GBA_PPU_LOG_WAIT_SRAM;
   state = load_module();
   if(state != VIDEO_ME_DRAWING)
     give_up(state);
@@ -319,10 +324,16 @@ static void sample_end(void)
     counters.log_us += sceKernelGetSystemTimeLow() - sample_start;
 }
 
-/* After publishing: a Media Engine that went to sleep with everything
-   read is woken (VIDEO_ME_SLEEP). */
-static void wake_if_sleeping(void)
+/* After publishing: the copy of the write count in the boot page moves
+   on (VIDEO_ME_SRAM_FLAG), and a Media Engine that went to sleep with
+   everything read is woken (VIDEO_ME_SLEEP). */
+static void tell_reader(void)
 {
+  if((switches & VIDEO_ME_SRAM_FLAG) && writer.published != sram_written)
+  {
+    sram_written = writer.published;
+    media_engine_publish(sram_written);
+  }
   if(!(switches & VIDEO_ME_SLEEP))
     return;
   /* Pairs with sleep_for_words on the Media Engine, which sets sleeping,
@@ -342,7 +353,7 @@ void video_me_line(u32 y)
 {
   sample_begin();
   gba_ppu_log_line(&writer, y);
-  wake_if_sleeping();
+  tell_reader();
   sample_end();
 }
 
@@ -405,7 +416,7 @@ void video_me_vblank(void)
     gba_ppu_log_target(&writer, target,
      target ? PSP_LINE_SIZE : GBA_PPU_LOG_FRAME_STRIDE);
   frame_target = target;
-  wake_if_sleeping();
+  tell_reader();
   sample_end();
 }
 

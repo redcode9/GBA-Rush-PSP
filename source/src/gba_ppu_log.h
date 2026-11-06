@@ -114,10 +114,14 @@ typedef struct
 
 /* The reader polls write when idle, less and less often; with SLEEP it
    then sleeps until the writer wakes it, the writer having seen sleeping
-   set, and with CLEAR also clears its interrupt flags after each wake. */
+   set, and with CLEAR also clears its interrupt flags after each wake.
+   With SRAM it polls a copy of write that the writer's platform keeps
+   outside main memory (on the PSP, media_engine.prx in the shared SRAM),
+   and reads write itself only once the copy moved. */
 #define GBA_PPU_LOG_WAIT_POLL  0u
 #define GBA_PPU_LOG_WAIT_SLEEP 1u
 #define GBA_PPU_LOG_WAIT_CLEAR 2u
+#define GBA_PPU_LOG_WAIT_SRAM  4u
 
 typedef struct
 {

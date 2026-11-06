@@ -12,6 +12,7 @@ PSP_EXPORT_END
 # Called by the emulator in user mode (source/src/media_engine_stub.S).
 PSP_EXPORT_START(GBARushMediaEngine, 0, 0x4001)
 PSP_EXPORT_FUNC(media_engine_wake)
+PSP_EXPORT_FUNC(media_engine_publish)
 PSP_EXPORT_END
 
 PSP_END_EXPORTS

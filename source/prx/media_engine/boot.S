@@ -4,7 +4,9 @@
  * the words at its end. It sets the Media Engine's own system registers as
  * Sony's start-up code does, empties both caches without writing anything
  * back (after a sleep they hold garbage), copies the program (renderer.c)
- * from main memory into eDRAM, writes it back there and jumps to it.
+ * from main memory into eDRAM, writes it back there and jumps to it, with
+ * the address of the last parameter word, which main.c keeps as a copy of
+ * the log's write count, as the program's second argument.
  * It runs uncached from the boot page and uses no memory but its own.
  */
 
@@ -21,6 +23,7 @@
 #define WORDS       3
 #define ENTRY       4
 #define ARGUMENT    5
+#define WRITTEN     6
 
 	.text
 	.globl	media_engine_boot
@@ -73,6 +76,7 @@ media_engine_boot:
 	sync
 
 	lw	$4, PARAMETER(ARGUMENT)($27)
+	addiu	$5, $27, PARAMETER(WRITTEN)
 	lw	$8, PARAMETER(ENTRY)($27)
 	lui	$29, 0x8020		/* stack at the top of eDRAM's first 2 MB */
 	jr	$8
@@ -80,7 +84,7 @@ media_engine_boot:
 
 	.org	media_engine_boot + PARAMETERS
 media_engine_boot_parameters:
-	.word	0, 0, 0, 0, 0, 0	/* filled in by main.c, in the order above */
+	.word	0, 0, 0, 0, 0, 0, 0	/* filled in by main.c, in the order above */
 media_engine_boot_end:
 
 /* The kernel's list of system event handlers, by a NID that is the same

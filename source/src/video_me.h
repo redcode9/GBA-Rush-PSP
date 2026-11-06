@@ -69,7 +69,14 @@ typedef enum
    interrupt flags, as its start-up code does; without it a wake that
    stays pending turns the halt back into a poll every 25 us. */
 #define VIDEO_ME_SLEEP_CLEAR       0x20u
-#define VIDEO_ME_SWITCHES          0x3Fu
+/* When idle, the Media Engine polls a copy of the log's write count that
+   media_engine.prx keeps in the boot page at 0xBFC00000, memory both
+   processors share outside main memory, instead of the mailbox in main
+   memory; the main processor makes a kernel call after each publish to
+   move the copy on. No switch puts that word in the Media Engine's own
+   eDRAM: the main processor has no address for it. */
+#define VIDEO_ME_SRAM_FLAG         0x40u
+#define VIDEO_ME_SWITCHES          0x7Fu
 
 typedef struct
 {

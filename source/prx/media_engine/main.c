@@ -32,7 +32,12 @@
  *
  * The emulator also calls media_engine_wake from user mode, through the
  * library this module exports (source/src/media_engine_stub.S), to end the
- * program's halt when it sleeps between batches of work.
+ * program's halt when it sleeps between batches of work, and
+ * media_engine_publish to move on the copy of the log's write count the
+ * program can poll in the boot page instead of the mailbox in main memory.
+ * The boot page is the one memory both processors reach outside main
+ * memory: the Media Engine's eDRAM has no address on the main processor,
+ * and the boot page has none in user mode (it is in kseg1).
  *
  * What is known of this hardware comes from Sony's own driver as uOFW
  * describes it and from mcidclan's Media Engine research.
@@ -68,13 +73,15 @@ enum
   PARAMETER_DESTINATION,
   PARAMETER_WORDS,
   PARAMETER_ENTRY,
-  PARAMETER_ARGUMENT
+  PARAMETER_ARGUMENT,
+  PARAMETER_WRITTEN
 };
 
 int module_start(SceSize args, void *argp);
 int module_stop(SceSize args, void *argp);
 int module_reboot_before(SceSize args, void *argp);
 void media_engine_wake(void);
+void media_engine_publish(u32 write);
 
 /* boot.S, and the program built from renderer.c (program.S). */
 extern const u32 media_engine_boot[];
@@ -87,6 +94,9 @@ extern const u8 media_engine_program_end[];
 static u32 saved_boot[64];
 static u32 boot_bytes;
 static u32 mailbox;
+/* What media_engine_publish last put in the boot page, put back after a
+   resume. */
+static u32 written;
 static PspSysEventHandler *driver;
 static int running;
 
@@ -129,6 +139,7 @@ static void boot(void)
   page[parameter + PARAMETER_WORDS] = (program_bytes + 3) / 4;
   page[parameter + PARAMETER_ENTRY] = PROGRAM_ADDRESS;
   page[parameter + PARAMETER_ARGUMENT] = mailbox;
+  page[parameter + PARAMETER_WRITTEN] = written;
   write_back_data_cache();
 
   interrupts = pspSdkDisableInterrupts();
@@ -237,6 +248,22 @@ void media_engine_wake(void)
   if(!running)
     return;
   SYSREG_INTERRUPT_OTHER = 1;
+  __asm__ volatile("sync");
+}
+
+/* The emulator published the log up to write: the copy in the boot page
+   follows, once the mailbox's own count, stored before this call, is in
+   memory. Nothing when the Media Engine is not running. */
+void media_engine_publish(u32 write)
+{
+  volatile u32 *page = (volatile u32 *)BOOT_ADDRESS;
+
+  if(!running)
+    return;
+  written = write;
+  __asm__ volatile("sync");
+  page[media_engine_boot_parameters - media_engine_boot +
+   PARAMETER_WRITTEN] = write;
   __asm__ volatile("sync");
 }
 
