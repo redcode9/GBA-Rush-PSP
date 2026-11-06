@@ -245,9 +245,14 @@ static volatile int quit_cleanup_complete = 0;
 /* Guest CPU cycles since reset; wraps. The guest clock for sound and link. */
 u32 cpu_ticks = 0;
 /* Cycles left in the current LCD phase: 960 of H-draw, then 272 of H-blank
-   per scanline. Set from the line event's deadline on each update_gba
-   pass. */
+   per scanline. Kept at line_deadline - cpu_ticks, the form the savestate
+   stores. */
 s32 video_count = 272;
+/* The cycle of the next LCD phase change, the start of an H-blank or of a
+   line. The line event waits for the next change that matters
+   (line_schedule); the ones before it only update DISPSTAT and VCOUNT,
+   when update_gba passes them or the CPU reads them (line_catch_up). */
+static u32 line_deadline;
 
 /* update_gba's events by deadline, in cpu_ticks. An id is also the order
    in which a pass serves the events due on it, the order the pass had
@@ -334,15 +339,58 @@ static int (*__scePowerSetClockFrequency)(int pllfreq, int cpufreq, int busfreq)
     reg[EXECUTE_CYCLES] = count_var;                                          \
   }                                                                           \
 
+/* Queues the line event at the next LCD phase change. */
+static void line_schedule(void)
+{
+  event_queue_schedule(&main_events, MAIN_EVENT_LINE, line_deadline,
+   cpu_ticks);
+}
+
+/* Runs the LCD phase changes due by cycle `now` that come before the
+   queued line event. line_schedule left only changes that update
+   DISPSTAT and VCOUNT there, and this does what the line code of
+   update_gba does to the two registers. */
+static void line_catch_up(u32 now)
+{
+  while ((s32)(main_events.deadline[MAIN_EVENT_LINE] - line_deadline) > 0 &&
+         (s32)(line_deadline - now) <= 0)
+  {
+    u16 dispstat = pIO_REG(REG_DISPSTAT);
+
+    if ((dispstat & 0x02) == 0)
+    {
+      dispstat |= 0x02;
+      line_deadline += 272;
+    }
+    else
+    {
+      u16 vcount = pIO_REG(REG_VCOUNT) + 1;
+
+      dispstat &= ~0x02;
+      line_deadline += 960;
+      if (vcount == (dispstat >> 8))
+        dispstat |= 0x04;
+      else
+        dispstat &= ~0x04;
+      pIO_REG(REG_VCOUNT) = vcount;
+    }
+    pIO_REG(REG_DISPSTAT) = dispstat;
+  }
+  video_count = (s32)(line_deadline - cpu_ticks);
+}
+
 /* Queues the events kept in the savestate from their counters, relative
-   to cpu_ticks: the line and the prescaled timers. */
+   to cpu_ticks: the line and the prescaled timers. The line event takes
+   the very next LCD phase change: a state load reads the registers
+   line_schedule looks at only after this, and a reset may change core. */
 static void main_events_rebuild(void)
 {
   u32 i;
 
   event_queue_clear(&main_events);
-  event_queue_schedule(&main_events, MAIN_EVENT_LINE,
-   cpu_ticks + (u32)video_count, cpu_ticks);
+  line_deadline = cpu_ticks + (u32)video_count;
+  event_queue_schedule(&main_events, MAIN_EVENT_LINE, line_deadline,
+   cpu_ticks);
   for (i = 0; i < 4; i++)
   {
     if (timer[i].status == TIMER_PRESCALE)
@@ -360,6 +408,30 @@ static void main_events_rebuild(void)
 static u32 main_cycle_now(void)
 {
   return cpu_ticks + arm_gba_cycles_run();
+}
+
+/* Before the CPU reads DISPSTAT or VCOUNT, or a write that depends on
+   them: they take the LCD phase changes passed by the cycle the CPU has
+   reached that update_gba left to them. */
+void line_sync(void)
+{
+  line_catch_up(main_cycle_now());
+}
+
+/* After a write that can make a coming LCD phase change matter (an IRQ
+   enable, the VCOUNT match line, an H-blank DMA) or that changes the
+   phase: the line event goes to the next change that matters from now.
+   When that is sooner than the slice the New core runs, the alert makes
+   it return to update_gba first; any alert but CPU_ALERT_SMC does. */
+CPU_ALERT_TYPE line_rearm(void)
+{
+  u32 before = main_events.deadline[MAIN_EVENT_LINE];
+
+  line_sync();
+  line_schedule();
+  if ((s32)(main_events.deadline[MAIN_EVENT_LINE] - before) < 0)
+    return CPU_ALERT_TIMER;
+  return CPU_ALERT_NONE;
 }
 
 /* How far running timer n's next overflow is from cycle `now`, which is
@@ -1219,7 +1291,7 @@ u32 update_gba(void)
       UPDATE_TIMER(i);
     }
 
-    video_count = (s32)(main_events.deadline[MAIN_EVENT_LINE] - cpu_ticks);
+    line_catch_up(cpu_ticks);
 
     if ((due & (1u << MAIN_EVENT_LINE)) != 0)
     {
@@ -1232,8 +1304,9 @@ u32 update_gba(void)
       {
         // Transition from hdraw to hblank (272 cycles)
         video_count += 272;
-        event_queue_schedule(&main_events, MAIN_EVENT_LINE,
-         cpu_ticks + (u32)video_count, cpu_ticks);
+        line_deadline = cpu_ticks + (u32)video_count;
+        event_queue_schedule(&main_events, MAIN_EVENT_LINE, line_deadline,
+         cpu_ticks);
         dispstat |= 0x02;
 
         if ((dispstat & 0x01) == 0)
@@ -1277,8 +1350,9 @@ u32 update_gba(void)
       {
         // Transition from hblank to next line (960 cycles of hdraw)
         video_count += 960;
-        event_queue_schedule(&main_events, MAIN_EVENT_LINE,
-         cpu_ticks + (u32)video_count, cpu_ticks);
+        line_deadline = cpu_ticks + (u32)video_count;
+        event_queue_schedule(&main_events, MAIN_EVENT_LINE, line_deadline,
+         cpu_ticks);
         dispstat &= ~0x02;
 
         vcount++;
@@ -1380,6 +1454,9 @@ u32 update_gba(void)
       }
 
       pIO_REG(REG_DISPSTAT) = dispstat;
+      // The next change is queued above for the menu's `continue`; with
+      // the line's work done, it moves to the next one that matters
+      line_schedule();
     }
 
     // Serve the link when the game starts a transfer, the cable asks for

@@ -132,6 +132,11 @@ CPU_ALERT_TYPE timer_control_high(u8 timer_number, u32 value);
 /* Called before a read of TM0CNT_L-TM3CNT_H: with the New core it sets
    the timer's TMxCNT_L to its count at the cycle the core has reached. */
 void timer_read(u32 timer_number);
+/* Before a read of DISPSTAT or VCOUNT, or a write that depends on them,
+   and after a write that can make a coming LCD phase change matter (see
+   main.c). */
+void line_sync(void);
+CPU_ALERT_TYPE line_rearm(void);
 
 extern u32 dma_cycle_count;
 

@@ -702,9 +702,13 @@ static u32 read32_bios(u32 address)
 
 // Timers count on between update_gba passes: before a read of
 // 0x4000100-0x400010F, timer_read brings that timer's TMxCNT_L up to date.
+// So does the LCD for the New core: line_sync does it for DISPSTAT and
+// VCOUNT.
 #define READ_TIMER(address)                                                   \
   if (((address) & 0xFFFFF0) == 0x100)                                        \
     timer_read(((address) >> 2) & 0x03);                                      \
+  else if (((address) & 0xFFFFFC) == 0x04)                                    \
+    line_sync();                                                              \
 
 // Registers live in the first 1 KiB; 0x4000800 (internal memory control)
 // repeats every 64 KiB. Unreadable offsets fall through to open bus.
@@ -1504,6 +1508,7 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
     {
       u16 bg_mode = value & 0x07;
       u16 dispcnt = pIO_REG(REG_DISPCNT);
+      u32 phase_changed = 0;
 
       if (bg_mode > 5)
         value &= 0x07;
@@ -1521,19 +1526,26 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       // status flag.
       if ((((dispcnt ^ value) & 0x80) != 0) && ((value & 0x80) == 0))
       {
+        line_sync();
         if ((pIO_REG(REG_DISPSTAT) & 0x01) == 0)
+        {
           pIO_REG(REG_DISPSTAT) &= 0xFFFC;
+          phase_changed = 1;
+        }
       }
 
       ADDRESS16(io_registers, 0x00) = value;
       video_io_written(0x00);
+      if (phase_changed)
+        return line_rearm();
       break;
     }
 
     // DISPSTAT (bits 0-2, the blank and VCount match flags, are read-only)
     case 0x04:  // DISPSTAT
+      line_sync();
       ADDRESS16(io_registers, 0x04) = (ADDRESS16(io_registers, 0x04) & 0x07) | (value & ~0x07);
-      break;
+      return line_rearm();
 
     // VCOUNT
     case 0x06:  // VCOUNT
@@ -1719,25 +1731,33 @@ CPU_ALERT_TYPE write_io_register16(u32 address, u32 value)
       ADDRESS16(io_registers, address) = value & 0x3FFF;
       break;
 
-    // DMA control
+    // DMA control; an H-blank DMA makes the coming H-blanks matter
     case 0xBA:  // DMA0CNT_H
       ADDRESS16(io_registers, 0xBA) = value;
       TRIGGER_DMA0();
+      if (dma[0].start_type == DMA_START_HBLANK)
+        return line_rearm();
       break;
 
     case 0xC6:  // DMA1CNT_H
       ADDRESS16(io_registers, 0xC6) = value;
       TRIGGER_DMA1();
+      if (dma[1].start_type == DMA_START_HBLANK)
+        return line_rearm();
       break;
 
     case 0xD2:  // DMA2CNT_H
       ADDRESS16(io_registers, 0xD2) = value;
       TRIGGER_DMA2();
+      if (dma[2].start_type == DMA_START_HBLANK)
+        return line_rearm();
       break;
 
     case 0xDE:  // DMA3CNT_H
       ADDRESS16(io_registers, 0xDE) = value;
       TRIGGER_DMA3();
+      if (dma[3].start_type == DMA_START_HBLANK)
+        return line_rearm();
       break;
 
     // Timer counts

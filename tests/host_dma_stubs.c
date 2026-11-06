@@ -218,6 +218,8 @@ void input_write_mem_savestate(void) {}
 void load_file_zip(void) {}
 void main_read_savestate(void) {}
 void main_write_mem_savestate(void) {}
+int line_rearm(void) { return 0; }
+void line_sync(void) {}
 void load_game_config_file(void) {}
 int main_link_active(void) { return 0; }
 void message(void) {}
