@@ -234,6 +234,7 @@ void sound_control_low(void) {}
 void sound_control_x(void) {}
 void sound_pause(void) {}
 void sound_read_savestate(void) {}
+void sound_status_read(void) {}
 void sound_timer_queue(void) {}
 void timer_control_high(void) {}
 void timer_control_low(void) {}

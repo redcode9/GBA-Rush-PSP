@@ -703,12 +703,14 @@ static u32 read32_bios(u32 address)
 // Timers count on between update_gba passes: before a read of
 // 0x4000100-0x400010F, timer_read brings that timer's TMxCNT_L up to date.
 // So does the LCD for the New core: line_sync does it for DISPSTAT and
-// VCOUNT.
+// VCOUNT; and sound_status_read for the channel bits of SOUNDCNT_X.
 #define READ_TIMER(address)                                                   \
   if (((address) & 0xFFFFF0) == 0x100)                                        \
     timer_read(((address) >> 2) & 0x03);                                      \
   else if (((address) & 0xFFFFFC) == 0x04)                                    \
     line_sync();                                                              \
+  else if (((address) & 0xFFFFFC) == 0x84)                                    \
+    sound_status_read();                                                      \
 
 // Registers live in the first 1 KiB; 0x4000800 (internal memory control)
 // repeats every 64 KiB. Unreadable offsets fall through to open bus.

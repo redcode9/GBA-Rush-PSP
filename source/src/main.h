@@ -137,6 +137,9 @@ void timer_read(u32 timer_number);
    main.c). */
 void line_sync(void);
 CPU_ALERT_TYPE line_rearm(void);
+/* Called before a read of SOUNDCNT_X: with the New core it brings the
+   channel bits up to date after a sound write. */
+void sound_status_read(void);
 
 extern u32 dma_cycle_count;
 

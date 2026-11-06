@@ -427,6 +427,19 @@ void line_sync(void)
     reg[CPU_DMA_HACK] = 0;
 }
 
+/* After a sound write, update_gbc_sound rebuilds the channel bits of
+   SOUNDCNT_X at the next pass of update_gba, which with the New core can
+   be most of a frame away now that skipped LCD changes run no pass. A
+   read runs it at the cycle the CPU has reached instead. */
+void sound_status_read(void)
+{
+  if (main_cpu_core == CPU_CORE_NEW && gbc_sound_update != 0)
+  {
+    update_gbc_sound(main_cycle_now());
+    gbc_sound_update = 0;
+  }
+}
+
 /* After a write that can make a coming LCD phase change matter (an IRQ
    enable, the VCOUNT match line, an H-blank DMA) or that changes the
    phase: the line event goes to the next change that matters from now.
