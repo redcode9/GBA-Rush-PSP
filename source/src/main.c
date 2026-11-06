@@ -31,6 +31,7 @@
 #include "common.h"
 #include "event_queue.h"
 #include "fast_forward_policy.h"
+#include "gba_line.h"
 #include "gba_timer.h"
 #include "perf_monitor.h"
 #include "perf_report.h"
@@ -340,89 +341,43 @@ static int (*__scePowerSetClockFrequency)(int pllfreq, int cpufreq, int busfreq)
   }                                                                           \
 
 /* Queues the line event at the next LCD phase change that does more than
-   update DISPSTAT and VCOUNT: one that raises an IRQ, runs H-blank DMA,
-   draws a line, polls the Media Engine for the picture, starts V-blank or
-   ends the frame, as the line code of update_gba decides. Only the New
-   core skips the others, since it reads the two registers through
-   memory.c (line_sync). The Classic core reads them in its own code, and
-   the link's 1 ms service rides on the passes, so with either every
-   change is served. */
+   update DISPSTAT and VCOUNT (gba_line_next_served), as the line code of
+   update_gba decides. Only the New core skips the others, since it reads
+   the two registers through memory.c (line_sync). The Classic core reads
+   them in its own code, and the link's 1 ms service rides on the passes,
+   so with either every change is served. */
 static void line_schedule(void)
 {
   u32 at = line_deadline;
 
   if (main_cpu_core == CPU_CORE_NEW && !gba_link_open)
   {
-    u16 dispstat = pIO_REG(REG_DISPSTAT);
-    u32 vcount = pIO_REG(REG_VCOUNT);
-    // Above any line when the VCOUNT IRQ is off
-    u32 irq_line = ((dispstat & 0x20) != 0) ? (u32)(dispstat >> 8) : 0x100;
-    u32 hblank_matters = (dispstat & 0x10) != 0;
-    u32 to_hblank = (dispstat & 0x02) == 0;
+    u32 hblank_dma = 0;
     u32 i;
 
-    // V-blank and the end of the frame stop the walk below, so the
-    // V-blank flag holds all along it
-    if ((dispstat & 0x01) == 0)
-    {
-      hblank_matters |= !skip_next_frame;
-      for (i = 0; i < 4; i++)
-        hblank_matters |= dma[i].start_type == DMA_START_HBLANK;
-    }
-    else
-      hblank_matters |= video_me_present_pending();
-
-    for (;;)
-    {
-      if (to_hblank)
-      {
-        if (hblank_matters)
-          break;
-        at += 272;
-      }
-      else
-      {
-        vcount++;
-        if (vcount == 160 || vcount > 227 || vcount == irq_line)
-          break;
-        at += 960;
-      }
-      to_hblank ^= 1;
-    }
+    for (i = 0; i < 4; i++)
+      hblank_dma |= dma[i].start_type == DMA_START_HBLANK;
+    at = gba_line_next_served(at, pIO_REG(REG_DISPSTAT), pIO_REG(REG_VCOUNT),
+     !skip_next_frame || hblank_dma, video_me_present_pending());
   }
 
   event_queue_schedule(&main_events, MAIN_EVENT_LINE, at, cpu_ticks);
 }
 
 /* Runs the LCD phase changes due by cycle `now` that come before the
-   queued line event. line_schedule left only changes that update
-   DISPSTAT and VCOUNT there, and this does what the line code of
-   update_gba does to the two registers. */
+   queued line event: line_schedule left there only changes that update
+   DISPSTAT and VCOUNT. */
 static void line_catch_up(u32 now)
 {
   while ((s32)(main_events.deadline[MAIN_EVENT_LINE] - line_deadline) > 0 &&
          (s32)(line_deadline - now) <= 0)
   {
     u16 dispstat = pIO_REG(REG_DISPSTAT);
+    u16 vcount = pIO_REG(REG_VCOUNT);
 
-    if ((dispstat & 0x02) == 0)
-    {
-      dispstat |= 0x02;
-      line_deadline += 272;
-    }
-    else
-    {
-      u16 vcount = pIO_REG(REG_VCOUNT) + 1;
-
-      dispstat &= ~0x02;
-      line_deadline += 960;
-      if (vcount == (dispstat >> 8))
-        dispstat |= 0x04;
-      else
-        dispstat &= ~0x04;
-      pIO_REG(REG_VCOUNT) = vcount;
-    }
+    line_deadline += gba_line_step(&dispstat, &vcount);
     pIO_REG(REG_DISPSTAT) = dispstat;
+    pIO_REG(REG_VCOUNT) = vcount;
   }
   video_count = (s32)(line_deadline - cpu_ticks);
 }
