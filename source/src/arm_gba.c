@@ -324,9 +324,19 @@ void arm_gba_written(u32 address, u32 size)
 {
   u32 region = address >> 24;
 
-  if(main_cpu_core == CPU_CORE_NEW &&
-     (region == 0x02 || region == 0x03 || region == 0x06))
+  if(main_cpu_core == CPU_CORE_NEW && (region == 0x02 || region == 0x03))
     arm_core_invalidate(&jit->core, address, size);
+}
+
+/* VRAM as well, once the core has translated code there; its own stores
+   to VRAM drop that code themselves, so they need not come here. */
+void arm_gba_dma_written(u32 address, u32 size)
+{
+  if(main_cpu_core == CPU_CORE_NEW && (address >> 24) == 0x06 &&
+     jit->core.vram_code)
+    arm_core_invalidate(&jit->core, address, size);
+  else
+    arm_gba_written(address, size);
 }
 
 void arm_gba_counters(u32 *blocks, u32 *flushes)

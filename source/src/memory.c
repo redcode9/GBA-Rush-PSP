@@ -2588,8 +2588,8 @@ u32 read_open_memory32(u32 address)
 
 // Stores for C code (cheats) and the new core's bus, aligned down to their
 // size; addresses of 0x10000000 and above are ignored. Returns the
-// handler's CPU_ALERT_* bits. A store to work RAM or VRAM drops the new
-// core's code there (arm_gba_written).
+// handler's CPU_ALERT_* bits. A store to work RAM drops the new core's
+// code there (arm_gba_written).
 CPU_ALERT_TYPE write_memory8(u32 address, u8 value)
 {
   u32 region = address >> 24;
@@ -2650,16 +2650,17 @@ CPU_ALERT_TYPE write_memory32(u32 address, u32 value)
   }                                                                           \
 
 // The units a transfer stored from first until next (one step past the
-// last), in either direction: the new core drops code there.
+// last), in either direction: the new core drops code there, in work RAM
+// and in VRAM.
 static void dma_written(u32 first, u32 next, s32 increment, u32 unit)
 {
   u32 last = next - increment;
 
   first &= ~(unit - 1);
   if (first <= last)
-    arm_gba_written(first, last - first + unit);
+    arm_gba_dma_written(first, last - first + unit);
   else
-    arm_gba_written(last, first - last + unit);
+    arm_gba_dma_written(last, first - last + unit);
 }
 
 // Runs a whole DMA transfer at once, then reloads or stops the channel.

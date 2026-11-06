@@ -21,6 +21,12 @@
 
 #define CPSR_FLAGS (ARM_CPSR_N | ARM_CPSR_Z | ARM_CPSR_C | ARM_CPSR_V)
 
+#ifdef __GNUC__
+#define NOINLINE __attribute__((noinline))
+#else
+#define NOINLINE
+#endif
+
 static uint32_t ror32(uint32_t value, unsigned amount)
 {
   amount &= 31;
@@ -360,7 +366,7 @@ static uint32_t ram_offset(uint32_t address)
 
 /* Index of the RAM page holding address, or -1: work RAM, and VRAM once
    code there has been translated. */
-static int code_page(const ArmCore *core, uint32_t address)
+static inline int code_page(const ArmCore *core, uint32_t address)
 {
   switch(region_of(address))
   {
@@ -565,21 +571,16 @@ static uint32_t opcode_at(const ArmCore *core, uint32_t pc, unsigned thumb)
 }
 
 /* A store about to write [address, address + size) over one of the two
-   instructions after the one running, which the pipeline holds already:
-   their opcodes are kept for arm_core_window, and the block is left
-   before them. */
-static void keep_window(ArmCore *core, uint32_t address, unsigned size)
+   instructions after the one running (at next), which the pipeline holds
+   already: their opcodes are kept for arm_core_window, and the block is
+   left before them. Out of line, as it reads memory through the bus, so
+   that other stores to RAM need no stack frame. */
+static NOINLINE void keep_window(ArmCore *core, uint32_t next,
+ unsigned thumb)
 {
-  unsigned thumb = (core->cpsr & ARM_CPSR_T) ? 1 : 0;
   uint32_t width = thumb ? 2 : 4;
-  uint32_t next = core->insn_pc + width;
   uint32_t key = next | thumb;
 
-  /* ponytail: addresses as they are, so a store through another mirror
-     of the RAM is not seen as one over the window; fold both with
-     ram_offset if code ever does that. */
-  if(address + size - 1 - next >= 2 * width + size - 1)
-    return;
   /* An earlier word of the same store kept them. */
   if(core->window_pc == key && core->window_left == 2)
     return;
@@ -593,7 +594,8 @@ static void keep_window(ArmCore *core, uint32_t address, unsigned size)
   core->exit_request |= ARM_EXIT_LEAVE_BLOCK;
 }
 
-/* A write to RAM holding translated code drops those translations. */
+/* A write to RAM holding translated code drops those translations, and
+   one over the prefetch window keeps it. */
 static const ArmRegion *write_region(ArmCore *core, uint32_t address,
  unsigned size)
 {
@@ -601,7 +603,15 @@ static const ArmRegion *write_region(ArmCore *core, uint32_t address,
 
   if(page >= 0)
   {
-    keep_window(core, address, size);
+    unsigned thumb = (core->cpsr & ARM_CPSR_T) ? 1 : 0;
+    uint32_t width = thumb ? 2 : 4;
+    uint32_t next = core->insn_pc + width;
+
+    /* ponytail: addresses as they are, so a store through another mirror
+       of the RAM is not seen as one over the window; fold both with
+       ram_offset if code ever does that. */
+    if(address + size - 1 - next < 2 * width + size - 1)
+      keep_window(core, next, thumb);
     if(core->page_blocks[page] != ARM_NO_BLOCK)
       invalidate_page(core, (unsigned)page, ram_offset(address), size);
   }

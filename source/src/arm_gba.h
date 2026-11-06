@@ -29,6 +29,8 @@ void arm_gba_save_registers(void);
 /* Work RAM written behind the core's back (DMA, cheats): drops the code
    translated from it. Does nothing while the Classic core runs. */
 void arm_gba_written(u32 address, u32 size);
+/* The same after a DMA transfer, which may also overwrite code in VRAM. */
+void arm_gba_dma_written(u32 address, u32 size);
 
 /* Blocks the new core compiled and times it threw all its code away (a
    full code buffer, a WAITCNT change, a reset or a loaded state) since it

@@ -185,9 +185,15 @@ int gba_sio_write32(void)
   return 0;
 }
 
-/* The new CPU core's code invalidation after a transfer: the Classic core
-   runs here, so there is nothing to drop. */
+/* The new CPU core's code invalidation after a store or a transfer: the
+   Classic core runs here, so there is nothing to drop. */
 void arm_gba_written(uint32_t address, uint32_t size)
+{
+  (void)address;
+  (void)size;
+}
+
+void arm_gba_dma_written(uint32_t address, uint32_t size)
 {
   (void)address;
   (void)size;
