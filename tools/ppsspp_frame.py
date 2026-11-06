@@ -23,6 +23,7 @@ PPSSPP_HEADLESS selects the runner (default ext/ppsspp/build).
 
 import argparse
 import base64
+import contextlib
 import json
 import os
 import shutil
@@ -157,6 +158,9 @@ def main():
     headless = os.environ.get("PPSSPP_HEADLESS",
                               f"{root}/ext/ppsspp/build/PPSSPPHeadless")
     work = args.out + ".d"
+    # A failed run must not leave an earlier frame there to be read.
+    with contextlib.suppress(FileNotFoundError):
+        os.remove(args.out)
     setup(args, root, work)
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
