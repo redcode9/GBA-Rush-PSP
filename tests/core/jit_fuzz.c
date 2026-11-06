@@ -611,6 +611,73 @@ static int slide_case(void)
   return 1;
 }
 
+/* Stores over the next two instructions, which run as the pipeline
+   fetched them before the store (arm_core_window), with the store last in
+   its page, so that they are in the next one, where nothing is translated
+   yet: the backend must take that store to C all the same. ARM str r1,
+   [pc, #-4] over mov r0, #1; Thumb strh r1, [r3, #2] over movs r0, #1;
+   ARM stmia r12, {r1, r2} over add r0, r0, #1 and #2; in work RAM and in
+   internal RAM. A second pass puts the code back and drops only what was
+   translated after the store, so the store runs from its block compiled
+   the first time. */
+static const uint32_t window_arm[3] = { 0xE50F1004, 0xE3A00001, 0xEAFFFFFE };
+static const uint32_t window_thumb[2] = { 0x20018059, 0xE7FE };
+static const uint32_t window_stm[4] =
+ { 0xE88C0006, 0xE2800001, 0xE2800002, 0xEAFFFFFE };
+
+static int window_case(unsigned variant)
+{
+  static const uint32_t expected[3] = { 1, 1, 3 };
+  unsigned kind = variant % 3;
+  int thumb = kind == 1;
+  const uint32_t *code = kind == 0 ? window_arm : thumb ? window_thumb :
+   window_stm;
+  size_t bytes = kind == 0 ? sizeof(window_arm) : thumb ?
+   sizeof(window_thumb) : sizeof(window_stm);
+  uint32_t width = thumb ? 2u : 4u;
+  uint32_t pc = (variant >= 3 ? 0x03002100u : 0x02002100u) - width;
+  unsigned pass;
+  unsigned w;
+
+  for(pass = 0; pass < 2; pass++)
+  {
+    for(w = 0; w < 2; w++)
+    {
+      ArmCore *core = w ? &jit->core : &reference;
+
+      memcpy((variant >= 3 ? worlds[w].iwram : worlds[w].ewram) +
+       (pc & 0x7FFF), code, bytes);
+      if(pass == 0)
+      {
+        arm_core_reset(core);
+        arm_core_set_cpsr(core, ARM_MODE_SYSTEM |
+         (thumb ? ARM_CPSR_T : 0));
+      }
+      else
+        arm_core_invalidate(core, pc + width, (uint32_t)bytes - width);
+      core->v[0] = 0;
+      core->v[1] = thumb ? 0x2002u : kind == 0 ? 0xE3A00002u : 0xE2800010u;
+      core->v[2] = 0xE2800020u;
+      core->v[3] = pc;
+      core->v[12] = pc + 4;
+      core->v[15] = pc;
+      core->prefetch = 0;
+      core->instructions = 0;
+      worlds[w].log_count = 0;
+    }
+    if(arm_core_run(&reference, 100) != arm_mips_run(jit, 100) ||
+       !compare("window run", variant, pass))
+      return 0;
+    if(reference.v[0] != expected[kind])
+    {
+      printf("window case %u, pass %u: r0 %u, not %u\n", variant, pass,
+       reference.v[0], expected[kind]);
+      return 0;
+    }
+  }
+  return 1;
+}
+
 /* Multiplies whose operands sit at the byte boundaries of the multiplier's
    early termination, both signs, run from internal RAM and from the ROM
    with the prefetch buffer on: the cycles must agree. */
@@ -909,6 +976,10 @@ int main(int argc, char **argv)
       return 1;
   printf("jit_fuzz: 9 self-modifying loops agree, %u blocks dropped\n",
    jit->stats.dropped);
+  for(i = 0; i < 6; i++)
+    if(!window_case(i))
+      return 1;
+  printf("jit_fuzz: 6 stores over the prefetch window agree\n");
   if(!slide_case())
     return 1;
   printf("jit_fuzz: a slide past the budget ends on the same cycle, zeros"

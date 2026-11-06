@@ -69,9 +69,11 @@
  * runs the block's address arithmetic on the registers as they are when
  * it compiles, and checks the guessed region at run time with three or four
  * instructions (rotr folds the alignment check into the region check);
- * stores also look up a map of the work RAM holding translated code, one
- * byte per 32 bytes. LDM and STM check once for all their words. Whatever
- * fails takes the slow path: first a small routine that handles any work
+ * stores also look up a map of the work RAM holding translated code and
+ * the two instructions after each block (the pipeline's prefetch window,
+ * which arm_core_window runs in the interpreter), one byte per 32 bytes.
+ * LDM and STM check once for all their words. Whatever fails takes the
+ * slow path: first a small routine that handles any work
  * RAM address (shared code such as the BIOS's copies sees buffers in
  * different places), then the interpreter's own access function for I/O,
  * unaligned addresses and stores over code. Exit requests (a store to
@@ -2540,12 +2542,17 @@ static void write_runtime(ArmMips *jit)
 /* ---- C side ------------------------------------------------------------- */
 
 /* Sets (or clears) the code map over the work RAM a block was translated
-   from. Blocks never cross a 256-byte page, so no mirror boundary either.
-   Returns the interpreter's page of the block, or -1 outside work RAM. */
+   from and the two instructions after it, so that a store from the block
+   over the pipeline's window (two instructions on) reaches C
+   (arm_core_access) wherever it ends. Blocks never cross a 256-byte page,
+   so no mirror boundary either; the two after a block may be in the next
+   page. Returns the interpreter's page of the block, or -1 outside work
+   RAM. */
 static int protect(ArmMips *jit, const ArmBlock *block, uint8_t mark)
 {
+  uint32_t width = (block->key & 1) ? 2u : 4u;
   uint32_t pc = block->key & ~1u;
-  uint32_t end = pc + block->insns * ((block->key & 1) ? 2u : 4u);
+  uint32_t end = pc + (block->insns + 2u) * width;
   uint32_t mask;
   unsigned base;
   int page;
@@ -2588,8 +2595,10 @@ static void reset_code(ArmMips *jit)
 
 /* The interpreter dropped a block (or all of them): its entry now leaves
    for C, and the code stays until the next flush. Its work RAM leaves the
-   code map, but for the blocks still in its page (the interpreter's list
-   still holds this one, which unmarks first). */
+   code map, but for the blocks still marking the same 32 bytes: those of
+   its page and, through the two instructions after them, of the pages
+   either side (the interpreter's list still holds this one, which unmarks
+   first). */
 static void dropped(ArmCore *core, unsigned block)
 {
   ArmMips *jit = jit_of(core);
@@ -2605,12 +2614,17 @@ static void dropped(ArmCore *core, unsigned block)
   page = protect(jit, &core->blocks[block], 0);
   if(page >= 0)
   {
+    unsigned first = page < 1024 ? 0 : 1024;
+    unsigned pages = page < 1024 ? 1024 : 128;
+    unsigned side;
     unsigned other;
 
-    for(other = core->page_blocks[page]; other != ARM_NO_BLOCK;
-        other = core->blocks[other].next_page)
-      if(other != block)
-        protect(jit, &core->blocks[other], 1);
+    for(side = 0; side < 3; side++)
+      for(other = core->page_blocks[first + ((unsigned)page - first +
+          pages - 1 + side) % pages]; other != ARM_NO_BLOCK;
+          other = core->blocks[other].next_page)
+        if(other != block)
+          protect(jit, &core->blocks[other], 1);
   }
   entry = jit->code[block];
   jit->code[block] = 0;
