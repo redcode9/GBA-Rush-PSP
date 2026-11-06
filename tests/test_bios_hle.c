@@ -131,9 +131,11 @@ static void ignore(void *context, uint32_t address, uint32_t value)
   (void)value;
 }
 
+/* Named fields: the hooks this test does not need stay NULL. */
 static const ArmBus bus =
 {
-  NULL, read8, read16, read32, ignore, ignore, ignore, read32
+  .read8 = read8, .read16 = read16, .read32 = read32,
+  .write8 = ignore, .write16 = ignore, .write32 = ignore, .code32 = read32
 };
 
 static uint32_t caller(unsigned swi, int thumb)
