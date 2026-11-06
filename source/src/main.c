@@ -339,11 +339,59 @@ static int (*__scePowerSetClockFrequency)(int pllfreq, int cpufreq, int busfreq)
     reg[EXECUTE_CYCLES] = count_var;                                          \
   }                                                                           \
 
-/* Queues the line event at the next LCD phase change. */
+/* Queues the line event at the next LCD phase change that does more than
+   update DISPSTAT and VCOUNT: one that raises an IRQ, runs H-blank DMA,
+   draws a line, polls the Media Engine for the picture, starts V-blank or
+   ends the frame, as the line code of update_gba decides. Only the New
+   core skips the others, since it reads the two registers through
+   memory.c (line_sync). The Classic core reads them in its own code, and
+   the link's 1 ms service rides on the passes, so with either every
+   change is served. */
 static void line_schedule(void)
 {
-  event_queue_schedule(&main_events, MAIN_EVENT_LINE, line_deadline,
-   cpu_ticks);
+  u32 at = line_deadline;
+
+  if (main_cpu_core == CPU_CORE_NEW && !gba_link_open)
+  {
+    u16 dispstat = pIO_REG(REG_DISPSTAT);
+    u32 vcount = pIO_REG(REG_VCOUNT);
+    // Above any line when the VCOUNT IRQ is off
+    u32 irq_line = ((dispstat & 0x20) != 0) ? (u32)(dispstat >> 8) : 0x100;
+    u32 hblank_matters = (dispstat & 0x10) != 0;
+    u32 to_hblank = (dispstat & 0x02) == 0;
+    u32 i;
+
+    // V-blank and the end of the frame stop the walk below, so the
+    // V-blank flag holds all along it
+    if ((dispstat & 0x01) == 0)
+    {
+      hblank_matters |= !skip_next_frame;
+      for (i = 0; i < 4; i++)
+        hblank_matters |= dma[i].start_type == DMA_START_HBLANK;
+    }
+    else
+      hblank_matters |= video_me_present_pending();
+
+    for (;;)
+    {
+      if (to_hblank)
+      {
+        if (hblank_matters)
+          break;
+        at += 272;
+      }
+      else
+      {
+        vcount++;
+        if (vcount == 160 || vcount > 227 || vcount == irq_line)
+          break;
+        at += 960;
+      }
+      to_hblank ^= 1;
+    }
+  }
+
+  event_queue_schedule(&main_events, MAIN_EVENT_LINE, at, cpu_ticks);
 }
 
 /* Runs the LCD phase changes due by cycle `now` that come before the
