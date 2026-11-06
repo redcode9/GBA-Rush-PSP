@@ -1511,6 +1511,10 @@ unsigned arm_translate(ArmCore *core, uint32_t pc, int thumb,
   b.prefetch = b.cartridge && (core->waitcnt & 0x4000);
   if(region == 2 || region == 3)
     page_end = (pc | (ARM_CODE_PAGE_SIZE - 1)) + 1;
+  /* Only blocks keyed in work RAM sit on its code pages, so a block from
+     the zeros before it stops there and the code in it gets its own. */
+  else if(region == 1)
+    page_end = 0x02000000;
 
   while(insns < max_insns && b.count + INSN_MAX_OPS <= max_ops &&
    (insns == 0 || ((page_end == 0 || b.pc != page_end) &&

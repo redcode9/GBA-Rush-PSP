@@ -311,7 +311,9 @@ static void test_runaway(void)
    instructions. ARM and Thumb (lsls r0, r0, #0 sets N from r0) through
    region 1, then ARM through region 2, where the fetches cost six cycles,
    into internal RAM at 3000000h (mov r0, #1; b .), where the last two
-   zeros' fetches cost one: the skip stops before them. */
+   zeros' fetches cost one: the skip stops before them. The block those
+   last two zeros of region 1 make stops at work RAM, whose code needs a
+   block of its own to be dropped when it is rewritten. */
 static void check_zeros(uint32_t pc, uint32_t cpsr, int32_t budget)
 {
   uint32_t v[16];
@@ -345,6 +347,8 @@ static void check_zeros(uint32_t pc, uint32_t cpsr, int32_t budget)
 static void test_zeros(void)
 {
   static const uint32_t ram[] = { 0xe3a00001, 0xeafffffe };
+  ArmIrOp ops[ARM_BLOCK_MAX_OPS];
+  ArmIrBlockInfo info;
 
   check_zeros(0x01000000, ARM_MODE_SYSTEM, 1000);
   check_zeros(0x01FFF000, ARM_MODE_SYSTEM, 70000);
@@ -352,6 +356,9 @@ static void test_zeros(void)
   memcpy(iwram, ram, sizeof(ram));
   check_zeros(0x02FFFF00, ARM_MODE_SYSTEM, 1000);
   CHECK(core.v[0] == 1 && core.v[15] == 0x03000004);
+  arm_translate(&core, 0x01FFFFF8, 0, ops, ARM_BLOCK_MAX_OPS,
+   ARM_BLOCK_MAX_INSNS, &info);
+  CHECK(info.insns == 2 && info.end == 0x02000000);
 }
 
 /* One run of check_idle_loop: after a reset to pc (0: on from the last
