@@ -493,16 +493,26 @@ static const uint16_t smc_thumb[2][6] =
 /* ROM code storing through a literal (an address the decoder knows) over
    a loop in internal RAM that jumps back:
      rom: ldr r2, =0x03001F00; str r1, [r2]; add r1, r1, #1; mov pc, r4
-     ram: mov r0, #0; add r3, r3, r0; mov pc, r5 */
+     ram: mov r0, #0; add r3, r3, r0; mov pc, r5
+   then the same with a cheat hook on the RAM loop, which the interpreter
+   runs: the compiled store must drop that block too. */
 static const uint32_t smc_rom[5] =
  { 0xE59F2008, 0xE5821000, 0xE2811001, 0xE1A0F004, 0x03001F00 };
 static const uint32_t smc_ram[3] = { 0xE3A00000, 0xE0833000, 0xE1A0F005 };
+
+static unsigned hook_calls;
+
+static void count_hook(ArmCore *core)
+{
+  (void)core;
+  hook_calls++;
+}
 
 static int smc_case(unsigned variant)
 {
   int thumb = variant < 8 && (variant & 1);
   int same_block = (variant >> 1) & 1;
-  int iwram = variant == 8 || ((variant >> 2) & 1);
+  int iwram = variant >= 8 || ((variant >> 2) & 1);
   uint32_t pc = (iwram ? 0x03000000u : 0x02000000u) + 0x1F00u;
   uint32_t target = pc + (thumb ? 2u : 4u) * (same_block ? 2u : 3u);
   uint32_t dropped = jit->stats.dropped;
@@ -514,7 +524,7 @@ static int smc_case(unsigned variant)
     uint8_t *ram = iwram ? worlds[w].iwram : worlds[w].ewram;
     ArmCore *core = w ? &jit->core : &reference;
 
-    if(variant == 8)
+    if(variant >= 8)
     {
       memcpy(rom + 0x1000, smc_rom, sizeof(smc_rom));
       memcpy(ram + 0x1F00, smc_ram, sizeof(smc_ram));
@@ -524,13 +534,15 @@ static int smc_case(unsigned variant)
     else
       memcpy(ram + 0x1F00, smc_arm[same_block], sizeof(smc_arm[0]));
     arm_core_reset(core);
+    core->hook = variant == 9 ? 0x03001F00u : 0;
+    core->hooked = count_hook;
     arm_core_set_cpsr(core, ARM_MODE_SYSTEM | (thumb ? ARM_CPSR_T : 0));
     core->v[1] = thumb ? 0x2000u : 0xE3A00000u;
     core->v[2] = target;
     core->v[3] = 0;
     core->v[4] = 0x03001F00u;
     core->v[5] = 0x08001000u;
-    core->v[15] = variant == 8 ? 0x08001000u : pc;
+    core->v[15] = variant >= 8 ? 0x08001000u : pc;
     core->prefetch = 0;
     core->instructions = 0;
     worlds[w].log_count = 0;
@@ -544,11 +556,13 @@ static int smc_case(unsigned variant)
     if(arm_mips_run(jit, 250) != ran || !compare("smc run", variant, i))
       return 0;
   }
-  if(jit->stats.dropped == dropped || reference.v[3] == 0)
+  if(reference.v[3] == 0 || (variant == 9 ? hook_calls == 0 :
+     jit->stats.dropped == dropped))
   {
     printf("smc case %u: no code was dropped\n", variant);
     return 0;
   }
+  reference.hook = jit->core.hook = 0;
   return 1;
 }
 
@@ -1052,10 +1066,10 @@ int main(int argc, char **argv)
   printf("jit_fuzz: multiplies agree on %u operand pairs\n",
    (unsigned)(4 * sizeof(multiply_values) / sizeof(multiply_values[0]) *
    sizeof(multiply_values) / sizeof(multiply_values[0])));
-  for(i = 0; i < 9; i++)
+  for(i = 0; i < 10; i++)
     if(!smc_case(i))
       return 1;
-  printf("jit_fuzz: 9 self-modifying loops agree, %u blocks dropped\n",
+  printf("jit_fuzz: 10 self-modifying loops agree, %u blocks dropped\n",
    jit->stats.dropped);
   for(i = 0; i < 6; i++)
     if(!window_case(i))

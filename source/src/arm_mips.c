@@ -2752,9 +2752,11 @@ static uint32_t block_entry(ArmMips *jit)
   if(entry)
     return entry > 1 ? entry : 0;
   /* The hook's block runs in the interpreter, which calls the hook: never
-     compiled, nothing links to it or caches it. */
+     compiled, nothing links to it or caches it. Marked all the same, so
+     that compiled stores over it reach C and drop it. */
   if(core->hook && (block->key & ~1u) == (core->hook & ~1u))
   {
+    protect(jit, block, 1);
     jit->code[index] = 1;
     return 0;
   }
