@@ -56,6 +56,8 @@ class InstallTestBuildTest(unittest.TestCase):
             "0.0.0", ("EBOOT.PBP", "exception.prx", "media_engine.prx"))
         # Like the 1.4.2 and 1.4.3 releases: no Media Engine module.
         self.release = self.make_zip("1.4.2", ("EBOOT.PBP", "exception.prx"))
+        self.rom = self.root / "core rom.gba"
+        self.rom.write_bytes(b"test rom")
         self.volumes = self.root / "Volumes"
         for name, data in CARD_FILES.items():
             path = self.volumes / CARD / name
@@ -135,16 +137,18 @@ class InstallTestBuildTest(unittest.TestCase):
         self.assertIn(f"would run: mkdir -p {main.resolve()}/artifacts/hardware/",
                       result.stdout)
 
-    def test_a_release_goes_into_a_new_folder_with_bios_and_layout(self):
-        result, folder = self.run_in_folder()
+    def test_a_release_goes_into_a_new_folder_with_bios_layout_and_rom(self):
+        result, folder = self.run_in_folder("--rom", str(self.rom))
         actions = self.actions(result)
         default = f"{self.volumes}/{CARD}"
         for name in ("gba_bios.bin", "dir.ini"):
             self.assertIn(f"cp -X {default}/{name} {folder}/{name}", actions)
         for directory in ("GBA/ROM", "GBA/SAV", "GBA/CFG"):
             self.assertIn(f"mkdir -p {folder}/{directory}", actions)
+        self.assertTrue(any(action.endswith(f"/rom/{self.rom.name} {folder}/GBA/ROM/")
+                            for action in actions))
         installed = {action.rsplit("/", 1)[1] for action in actions
-                     if action.startswith("cp -X ") and "/gba-rush-install." in action}
+                     if action.startswith("cp -X ") and "/zip/" in action}
         self.assertEqual(installed, {"EBOOT.PBP", "exception.prx"})
         self.assertFalse([a for a in actions if a.startswith("rm ")])
         self.assertTrue(re.search(
@@ -172,9 +176,9 @@ class InstallTestBuildTest(unittest.TestCase):
         self.assertTrue([a for a in actions if a.startswith(
             f"cp -R {folder}/GBA/SAV/. ")])
 
-    def test_a_bad_folder_or_a_full_card_stops(self):
+    def test_a_bad_folder_or_rom_or_a_full_card_stops(self):
         for arguments in (("--folder", "gpsp"), ("--folder", "a/b"),
-                          ("--folder",)):
+                          ("--folder",), ("--rom", "missing.gba")):
             result = self.run_script(*arguments, zip_path=self.release)
             self.assertNotEqual(result.returncode, 0, arguments)
             self.assertNotIn("would run", result.stdout)

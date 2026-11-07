@@ -15,7 +15,7 @@ set -eu
 # or changed.
 #
 # Usage: sh scripts/install-test-build.sh [--dry-run] [--no-media-engine]
-#          [--folder NAME] ZIP
+#          [--folder NAME] [--rom FILE]... ZIP
 #   ZIP                 a zip from make package; ZIP.sha256 must match it
 #   --dry-run           print what would change; write nothing
 #   --no-media-engine   leave media_engine.prx off the card (it is archived
@@ -29,6 +29,9 @@ set -eu
 #                       have none). gba_bios.bin and dir.ini, if NAME lacks
 #                       them, are copied from the test build's folder on the
 #                       card, and the folders dir.ini names are created.
+#   --rom FILE          copy FILE into the ROM folder dir.ini names (the app
+#                       folder without one), over a ROM of the same name;
+#                       repeatable. ROMs are never removed.
 # PSP_VOLUMES (default /Volumes) is where the cards are mounted, and
 # PSP_MIN_FREE_KB (default 2048) the space each card keeps free afterwards
 # for savestates and logs.
@@ -36,7 +39,7 @@ set -eu
 usage()
 {
   echo "Usage: $0 [--dry-run] [--no-media-engine] [--folder NAME]" \
-    "dist/GBA-Rush-PSP-VERSION.zip" >&2
+    "[--rom FILE]... dist/GBA-Rush-PSP-VERSION.zip" >&2
   exit 1
 }
 
@@ -44,12 +47,23 @@ dry_run=0
 media_engine=1
 folder=
 zip=
+work=$(mktemp -d "${TMPDIR:-/tmp}/gba-rush-install.XXXXXX")
+trap 'rm -rf "$work"' EXIT HUP INT TERM
+# The ROMs wait here, so their names may hold spaces.
+mkdir "$work/rom"
 while [ $# -gt 0 ]
 do
   case "$1" in
     --dry-run) dry_run=1 ;;
     --no-media-engine) media_engine=0 ;;
     --folder) [ -n "${2-}" ] || usage; folder=$2; shift ;;
+    --rom)
+      if [ ! -f "${2-}" ]; then
+        echo "No ROM file: ${2-}" >&2
+        exit 1
+      fi
+      cp "$2" "$work/rom/"
+      shift ;;
     -*) echo "Unknown option: $1" >&2; exit 1 ;;
     *) zip=$1 ;;
   esac
@@ -105,10 +119,8 @@ ini_value()
 }
 
 (cd "$(dirname "$zip")" && sha256 -c "$(basename "$zip").sha256")
-work=$(mktemp -d "${TMPDIR:-/tmp}/gba-rush-install.XXXXXX")
-trap 'rm -rf "$work"' EXIT HUP INT TERM
-unzip -q "$zip" -d "$work"
-set -- "$work"/*/GBARushPSP
+unzip -q "$zip" -d "$work/zip"
+set -- "$work"/zip/*/GBARushPSP
 build=$1
 if [ -n "$folder" ] && [ ! -f "$build/media_engine.prx" ]; then
   media_engine=0
@@ -149,9 +161,18 @@ install_on()
     ini="$default/dir.ini"
   fi
   dirs=
+  rom_dir=
   if [ -f "$ini" ]; then
     dirs=$(ini_value "$ini" '[A-Za-z_]*')
+    rom_dir=$(ini_value "$ini" rom_directory)
   fi
+  rom_dir=${rom_dir:-.}
+  case "$rom_dir" in
+    *:*)
+      echo "$volume: dir.ini puts the ROMs outside the app folder" \
+        "($rom_dir); nothing installed" >&2
+      exit 1 ;;
+  esac
 
   # Everything is copied off the card, and compared, before anything on it
   # changes.
@@ -189,6 +210,15 @@ install_on()
   do
     needed=$((needed + $(wc -c < "$default/$file")))
   done
+  for rom in "$work"/rom/*
+  do
+    if [ -f "$rom" ]; then
+      needed=$((needed + $(wc -c < "$rom")))
+      if [ -f "$card/$rom_dir/${rom##*/}" ]; then
+        needed=$((needed - $(wc -c < "$card/$rom_dir/${rom##*/}")))
+      fi
+    fi
+  done
   # The test build's folder: NAME may not exist yet.
   free_kb=$(df -Pk "$default" | awk 'NR == 2 { print $4 }')
   if [ $((needed / 1024 + min_free_kb)) -gt "$free_kb" ]; then
@@ -224,6 +254,15 @@ install_on()
 $dirs
 EOF
   fi
+  for rom in "$work"/rom/*
+  do
+    if [ -f "$rom" ]; then
+      if [ ! -d "$card/$rom_dir" ]; then
+        run mkdir -p "$card/$rom_dir"
+      fi
+      run cp -X "$rom" "$card/$rom_dir/"
+    fi
+  done
   if [ "$media_engine" = 0 ] && [ -f "$card/media_engine.prx" ]; then
     run rm -f "$card/media_engine.prx"
   fi
@@ -234,7 +273,7 @@ EOF
   run diskutil unmount "$volumes/$volume"
   run diskutil mount "$device"
   if [ "$dry_run" = 1 ]; then
-    echo "  would check the SHA-256 of $files$extras on the card"
+    echo "  would check the SHA-256 of $files$extras and the ROMs on the card"
   else
     for file in $files
     do
@@ -249,6 +288,14 @@ EOF
     for file in $extras
     do
       cmp "$default/$file" "$card/$file"
+    done
+    for rom in "$work"/rom/*
+    do
+      if [ -f "$rom" ]; then
+        cmp "$rom" "$card/$rom_dir/${rom##*/}"
+        (cd "$card" && sha256 "$rom_dir/${rom##*/}") |
+          tee -a "$archive/installed.sha256"
+      fi
     done
   fi
 
