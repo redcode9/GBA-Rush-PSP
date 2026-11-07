@@ -23,6 +23,7 @@
 - **Pacchetto:** `make package VERSION=test-700de75` → `dist/GBA-Rush-PSP-test-700de75.zip`, `check-package.sh` verde. Il nome dice il commit di main da cui viene la build, non una versione: le versioni sono solo `X.Y.Z` e questa build si presenta come 1.4.3. Lo sha256 dello zip cambia con la data dell'ultimo commit (le date dei file nello zip), quello dell'EBOOT no.
 - **La build si presenta come 1.4.3** (`GBA_RUSH_VERSION` non è ancora cambiato): nei report della Diagnostica `version=1.4.3`. Il legame con la build lo danno lo sha256 e la cartella di `artifacts/hardware/` in cui l'installer li ha raccolti.
 - **Installer:** `sh scripts/install-test-build.sh [--dry-run] [--no-media-engine] dist/GBA-Rush-PSP-test-700de75.zip`. Per ogni PSP montata (PSP_2004 → `PSP/GAME/CAT_Emulators/gpSP`, PSP_1004 → `PSP/GAME/gpSP`): copia e confronta `logs/`, `benchmarks/`, `traces/`, `GBA/SAV/`, `tempgba_crash.log` e la build che sostituisce in `artifacts/hardware/<data>-<ora>/<volume>/` del checkout principale anche se lanciato da un worktree (`git worktree remove` cancellerebbe senza avvisi la cartella ignorata, unica copia dei log tolti dalla scheda); controlla lo spazio (lascia 2 MB liberi, `PSP_MIN_FREE_KB`); copia i tre file; smonta e rimonta la scheda per rileggerli e confrontare lo sha256 (`installed.sha256` nella cartella); toglie dalla scheda solo log, report e crash log già archiviati; espelle. Non tocca mai salvataggi, savestate, ROM, BIOS, trucchi e impostazioni. `--no-media-engine` archivia e toglie `media_engine.prx`, così Exact disegna sulla CPU; rilanciato senza l'opzione lo rimette. Provato solo con `--dry-run` su un albero finto (`tests/test_install_test_build.py` in `make check`).
+- **Pacchetti del 2026-11-07** (in `dist/` del checkout principale, fuori da Git; `check-package.sh` verde su tutti e tre): `GBA-Rush-PSP-test-main-b5cffbf.zip` (EBOOT `7c4d7b06ec22`, costruito da main b5cffbf: serve solo all'accettazione di questa storia), `GBA-Rush-PSP-test-7908ef0.zip` (EBOOT `e70bc5f8d432`, integrazione locale: main b5cffbf con `wip/new-core` 5b5de54, `wip/event-scheduler` 44fbf6d, `wip/test-roms` da776c2, `wip/open-bios` f7608cb e `wip/media-engine` 6770e3b; è la build delle sessioni) e `GBA-Rush-PSP-test-7908ef0-noskip.zip` (EBOOT `d17bb2a56293`, la stessa senza il salto degli eventi di riga: solo per l'A/B di SOA-5.4). Tre build pulite dello stesso commit in cartelle diverse danno gli stessi byte (`docs/wip/dev-environment.md`, 2026-11-07).
 - **Ogni collegamento USB durante le sessioni passa dall'installer:** archivia i log del blocco appena finito e riparte con log puliti. Il runtime log tiene solo le ultime 4 sessioni (`logs/session-1..4.gbrlog`, una per avvio dell'EBOOT): mai più di 4 avvii tra due collegamenti.
 
 ## Piano della sessione da soli (SOA-2.2, con CMP-1.1, la prova di sospensione e i 10 minuti con salvataggio)
@@ -45,7 +46,7 @@
 5. Esci da GBA Rush PSP (menu Esci; non spegnere): solo all'uscita il runtime log scrive i contatori del ME (record 9-11, cumulati dall'avvio) e del core (record 12).
 
 **PSP-2000** (scheda SD, tutte le ROM insieme):
-1. USB: `sh scripts/install-test-build.sh dist/GBA-Rush-PSP-test-700de75.zip` (archivia i log della 1.4.3). Annotare lo sha256 stampato.
+1. USB: `sh scripts/install-test-build.sh dist/GBA-Rush-PSP-test-7908ef0.zip` (archivia i log della build precedente). Annotare lo sha256 stampato.
 2. Blocco ME: MKSC, FireRed, LeafGreen, Golden Sun (4 avvii), con i 10 minuti e il salvataggio per FireRed e LeafGreen. Il contatore deve finire in ME.
 3. Prova di sospensione con il ME acceso, nello stesso avvio di Golden Sun dopo le sue prove (così il blocco resta di 4 avvii): 20 cicli con l'interruttore (5 s spenta, poi riaccesa). Ogni volta: il gioco riparte, l'immagine si muove, il suono c'è, il contatore resta in ME. Se diventa CPU annotare il ciclo; se la console si blocca, tenere l'interruttore 10 s, annotare il ciclo e non cancellare niente. Poi Esci.
 4. USB: `... --no-media-engine ...` (archivia il blocco ME).
@@ -84,6 +85,16 @@
 6. USB su entrambe: installer senza opzioni. Archivia i log e i `.sav` dopo gli scambi, per il controllo di `tools/gen3_sav_check.py`.
 
 **Lettura:** `python3 tools/decode_runtime_log.py --summary .../logs`: gruppo 0 (RTT, massimo, rinvii), 6 (RTT minimo), 3 (attese), 8 (frame, frame disegnati, attesa del V-Blank), 9-11 (ME), 12 (core). Gli fps di un ruolo sono i frame del gruppo 8 divisi per il tempo tra `link-state ... status=connected` e `link-error`. `tools/analyze_link_benchmark.py`, citato dal ticket, è stato tolto con la pila del protocollo v3 (84e2616): il decoder basta per questi numeri. `tools/gen3_sav_check.py` arriva con ENG-10.1 (`wip/link-diagnostics`), non ancora in main.
+
+## Prossima sessione (piano del 2026-11-07)
+
+In ordine; ogni blocco si può fare in un giorno diverso, purché ogni collegamento USB passi dall'installer.
+0. **SOA-2.1, le due PSP, 5 minuti.** USB: `sh scripts/install-test-build.sh dist/GBA-Rush-PSP-test-main-b5cffbf.zip`, poi subito `sh scripts/install-test-build.sh dist/GBA-Rush-PSP-test-7908ef0.zip`. Basta che il primo `installed.sha256` sia `7c4d7b06ec22…` su tutte e due: è l'accettazione, e la storia si spunta con la PR di questo branch.
+1. **Core-rom col New, le due PSP, 10 minuti.** BIOS ufficiale, «Avvio dal BIOS: No», «Core CPU: Nuovo», `core-new.gba` due avvii (la ROM sulle schede è la stessa di 7908ef0). In PPSSPP: 148 PASS, 1 FAIL (`timer_start_delay`), `pc_high` HUNG; sulle PSP deve venire uguale. Chiude la parte PSP dei 16 casi di prefetch e VRAM (`wip/new-core`).
+2. **SOA-2.2**, il piano «sessione da soli» sopra, con il pacchetto 7908ef0.
+3. **A/B di SOA-5.4, PSP-2000, 30 minuti.** Impostazioni del piano «sessione da soli», MKSC col New: 3 prove di Diagnostica con 7908ef0; USB, `install-test-build.sh dist/GBA-Rush-PSP-test-7908ef0-noskip.zip`; 3 prove; USB, di nuovo 7908ef0. Poi `scripts/compare-benchmarks.py` sui 3+3 report (`wip/event-scheduler`).
+4. **Sessione 2 (SOA-2.3, link)**, insieme alle varianti di `media_engine.cfg` di SOA-6.2 (piano in `docs/wip/media-engine.md`), che si misurano in link.
+5. **Facoltativo:** le foto delle suite di terzi (`docs/wip/test-roms.md`, «Suite di terzi»), `save-flash128` e i due EEPROM sulla PSP-2000.
 
 ## Calendario delle sessioni hardware
 
