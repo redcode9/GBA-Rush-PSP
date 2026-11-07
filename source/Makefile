@@ -103,6 +103,11 @@ C_ONLY_OBJS = $(filter-out video_cc_wrap.o mips_stub.o video_blend_mips.o ku_bri
 $(C_ONLY_OBJS): CFLAGS += -Wbad-function-cast -Wmissing-prototypes
 $(OBJZ) $(OBJG): CFLAGS += -Wno-old-style-definition
 $(MAINOBJS): $(COMMON_FILE)
+# The compiler also writes each object's own header list (foo.o -> foo.d),
+# so a header missing from COMMON_FILE still rebuilds what includes it.
+$(OBJS): CPPFLAGS += -MMD -MP
+-include $(OBJS:.o=.d)
+EXTRA_CLEAN += $(OBJS:.o=.d)
 # The translations are written in UTF-8 and stored as GBK, the encoding the
 # menu font code reads.
 message.o: $(MESSAGE_FILE)
