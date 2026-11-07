@@ -14,32 +14,56 @@ set -eu
 # card. Saves, savestates, ROMs, cheats, BIOS and settings are never removed
 # or changed.
 #
-# Usage: sh scripts/install-test-build.sh [--dry-run] [--no-media-engine] ZIP
+# Usage: sh scripts/install-test-build.sh [--dry-run] [--no-media-engine]
+#          [--folder NAME] ZIP
 #   ZIP                 a zip from make package; ZIP.sha256 must match it
 #   --dry-run           print what would change; write nothing
 #   --no-media-engine   leave media_engine.prx off the card (it is archived
 #                       first), so the Exact renderer draws on the main
 #                       processor; run again without it to put it back
+#   --folder NAME       install into PSP/GAME/NAME instead, next to the test
+#                       build, whose folder is only read: everything above
+#                       (archive into artifacts/.../<volume>/NAME/, check,
+#                       clean-up) applies to NAME alone. media_engine.prx
+#                       goes there only if the zip has one (1.4.2 and 1.4.3
+#                       have none). gba_bios.bin and dir.ini, if NAME lacks
+#                       them, are copied from the test build's folder on the
+#                       card, and the folders dir.ini names are created.
 # PSP_VOLUMES (default /Volumes) is where the cards are mounted, and
 # PSP_MIN_FREE_KB (default 2048) the space each card keeps free afterwards
 # for savestates and logs.
 
+usage()
+{
+  echo "Usage: $0 [--dry-run] [--no-media-engine] [--folder NAME]" \
+    "dist/GBA-Rush-PSP-VERSION.zip" >&2
+  exit 1
+}
+
 dry_run=0
 media_engine=1
+folder=
 zip=
-for argument
+while [ $# -gt 0 ]
 do
-  case "$argument" in
+  case "$1" in
     --dry-run) dry_run=1 ;;
     --no-media-engine) media_engine=0 ;;
-    -*) echo "Unknown option: $argument" >&2; exit 1 ;;
-    *) zip=$argument ;;
+    --folder) [ -n "${2-}" ] || usage; folder=$2; shift ;;
+    -*) echo "Unknown option: $1" >&2; exit 1 ;;
+    *) zip=$1 ;;
   esac
+  shift
 done
 if [ -z "$zip" ] || [ ! -f "$zip" ]; then
-  echo "Usage: $0 [--dry-run] [--no-media-engine] dist/GBA-Rush-PSP-VERSION.zip" >&2
-  exit 1
+  usage
 fi
+# FAT ignores case: gpSP is the test build's folder on the PSP-1000.
+case "$folder" in
+  */*|.|..|[Gg][Pp][Ss][Pp])
+    echo "--folder takes a new folder name in PSP/GAME, not $folder" >&2
+    exit 1 ;;
+esac
 
 volumes=${PSP_VOLUMES:-/Volumes}
 min_free_kb=${PSP_MIN_FREE_KB:-2048}
@@ -73,12 +97,22 @@ run()
   fi
 }
 
+# The value of the dir.ini key (a pattern) in FILE, one per line.
+ini_value()
+{
+  tr -d '\r' < "$1" | sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*//p" |
+    sed 's/[[:space:]]*$//'
+}
+
 (cd "$(dirname "$zip")" && sha256 -c "$(basename "$zip").sha256")
 work=$(mktemp -d "${TMPDIR:-/tmp}/gba-rush-install.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 unzip -q "$zip" -d "$work"
 set -- "$work"/*/GBARushPSP
 build=$1
+if [ -n "$folder" ] && [ ! -f "$build/media_engine.prx" ]; then
+  media_engine=0
+fi
 files="EBOOT.PBP exception.prx"
 if [ "$media_engine" = 1 ]; then
   files="$files media_engine.prx"
@@ -94,9 +128,30 @@ done
 install_on()
 {
   volume=$1
-  card=$2
-  archive="$artifacts/$volume"
+  default=$2
+  card=$3
+  archive="$artifacts/$volume${folder:+/$folder}"
   echo "$volume: $card"
+
+  # A new folder takes the test build's BIOS and folder layout, copied on
+  # the card.
+  extras=
+  if [ -n "$folder" ]; then
+    for file in gba_bios.bin dir.ini
+    do
+      if [ -f "$default/$file" ] && [ ! -f "$card/$file" ]; then
+        extras="$extras $file"
+      fi
+    done
+  fi
+  ini="$card/dir.ini"
+  if [ ! -f "$ini" ]; then
+    ini="$default/dir.ini"
+  fi
+  dirs=
+  if [ -f "$ini" ]; then
+    dirs=$(ini_value "$ini" '[A-Za-z_]*')
+  fi
 
   # Everything is copied off the card, and compared, before anything on it
   # changes.
@@ -130,29 +185,56 @@ install_on()
       needed=$((needed - $(wc -c < "$card/$file")))
     fi
   done
-  free_kb=$(df -Pk "$card" | awk 'NR == 2 { print $4 }')
+  for file in $extras
+  do
+    needed=$((needed + $(wc -c < "$default/$file")))
+  done
+  # The test build's folder: NAME may not exist yet.
+  free_kb=$(df -Pk "$default" | awk 'NR == 2 { print $4 }')
   if [ $((needed / 1024 + min_free_kb)) -gt "$free_kb" ]; then
     echo "$volume: $free_kb KB free, $((needed / 1024)) KB more needed" \
       "plus $min_free_kb KB to keep free; nothing installed" >&2
     exit 1
   fi
 
+  if [ ! -d "$card" ]; then
+    run mkdir -p "$card"
+  fi
   for file in $files
   do
     # -X: no extended attributes, so no ._ files on the card.
     run cp -X "$build/$file" "$card/$file"
   done
+  for file in $extras
+  do
+    run cp -X "$default/$file" "$card/$file"
+  done
+  # Without them the emulator stops on a message at start. Paths with a
+  # drive (ms0:/...) are the test build's folders already.
+  if [ -n "$folder" ]; then
+    while IFS= read -r directory
+    do
+      case "$directory" in
+        ''|*:*) ;;
+        *) if [ ! -d "$card/$directory" ]; then
+             run mkdir -p "$card/$directory"
+           fi ;;
+      esac
+    done <<EOF
+$dirs
+EOF
+  fi
   if [ "$media_engine" = 0 ] && [ -f "$card/media_engine.prx" ]; then
     run rm -f "$card/media_engine.prx"
   fi
   run sync
 
   # Remounting drops the Mac's cache, so the check reads the card itself.
-  device=$(df "$card" | awk 'NR == 2 { print $1 }')
+  device=$(df "$default" | awk 'NR == 2 { print $1 }')
   run diskutil unmount "$volumes/$volume"
   run diskutil mount "$device"
   if [ "$dry_run" = 1 ]; then
-    echo "  would check the SHA-256 of $files on the card"
+    echo "  would check the SHA-256 of $files$extras on the card"
   else
     for file in $files
     do
@@ -164,6 +246,10 @@ install_on()
       fi
     done
     (cd "$card" && sha256 $files) | tee "$archive/installed.sha256"
+    for file in $extras
+    do
+      cmp "$default/$file" "$card/$file"
+    done
   fi
 
   # Only what was archived and compared above.
@@ -184,9 +270,13 @@ found=0
 for entry in PSP_2004:PSP/GAME/CAT_Emulators/gpSP PSP_1004:PSP/GAME/gpSP
 do
   volume=${entry%%:*}
-  card="$volumes/$volume/${entry#*:}"
-  if [ -d "$card" ]; then
-    install_on "$volume" "$card"
+  default="$volumes/$volume/${entry#*:}"
+  card=$default
+  if [ -n "$folder" ]; then
+    card="$volumes/$volume/PSP/GAME/$folder"
+  fi
+  if [ -d "$default" ]; then
+    install_on "$volume" "$default" "$card"
     found=1
   else
     echo "$volume: not mounted, skipped"
