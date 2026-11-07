@@ -502,7 +502,7 @@ void video_me_counters(VideoMeCounters *out)
   *out = counters;
   if(mailbox)
   {
-    out->me_frames = mailbox->reader.frames_drawn;
+    out->me_frames = gba_ppu_log_frames_drawn(&writer);
     for(i = 0; i < GBA_PPU_LOG_TIME_BUCKETS; i++)
       out->frame_time[i] = mailbox->reader.frame_time[i];
     out->idle_reads = mailbox->reader.idle_reads;

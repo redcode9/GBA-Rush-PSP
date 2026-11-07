@@ -173,6 +173,10 @@ typedef struct
   uint32_t frame;
   /* The reader's boots last seen. */
   uint32_t boots;
+  /* Frames drawn by the reader's starts before the last one, and the
+     mailbox's count at the last V-Blank (gba_ppu_log_frames_drawn). */
+  uint32_t frames_before;
+  uint32_t frames_seen;
   /* The picture the lines go to and its row stride (gba_ppu_log_target);
      sent again with everything else. */
   uint32_t target;
@@ -256,6 +260,11 @@ uint32_t gba_ppu_log_frame(const GbaPpuLogWriter *writer);
 
 /* Whether the reader finished drawing all of that frame. */
 int gba_ppu_log_frame_done(const GbaPpuLogWriter *writer, uint32_t frame);
+
+/* The frames the reader drew whole over all its starts; the mailbox
+   counts them from 0 at each start (the Media Engine boots again after a
+   resume). */
+uint32_t gba_ppu_log_frames_drawn(const GbaPpuLogWriter *writer);
 
 /* The reader side. reader_start reads the ring and frame from the mailbox
    and starts reading at the writer's last published word. */

@@ -36,6 +36,9 @@ static uint32_t ring[GBA_PPU_LOG_RING_WORDS] __attribute__((aligned(64)));
 static uint16_t frame[STRIDE * HEIGHT] __attribute__((aligned(64)));
 static GbaPpuLogWriter writer;
 static GbaPpuLogReader reader;
+/* The reader catches up before V-Blank, as a Media Engine that keeps up
+   does. */
+static int read_before_vblank;
 
 /* Like assert, but also under NDEBUG: most checks below run the log. */
 #define check(condition) \
@@ -165,6 +168,8 @@ static uint32_t run_frame(int draw)
   }
   number = gba_ppu_log_frame(&writer);
   gba_ppu_start_frame(&direct);
+  while(read_before_vblank && gba_ppu_log_read(&reader) > 0)
+    ;
   gba_ppu_log_vblank(&writer);
   for(y = 0; y < 40; y++)
     store_vram((next_random() % 0x18000) & ~1u, (uint16_t)next_random());
@@ -241,19 +246,37 @@ static void test_frame_with_missing_lines_is_not_done(void)
 }
 
 /* The reader starts over with empty memory (the Media Engine woke from
-   sleep): the writer notices at V-Blank and the frame after is right. */
+   sleep): the writer notices at V-Blank and the frame after is right. The
+   frames drawn go on from those of the starts before, also when the new
+   reader drew one before the writer noticed (everything was sent again
+   meanwhile, as when the menu closes). */
 static void test_reader_start_over(void)
 {
+  int i;
+
   start();
   scene();
   check(caught_up(run_frame(1)));
   /* This one begins with the resend for the reader's first start. */
   check(caught_up(run_frame(1)));
-  memset(&reader.memory, 0, sizeof(reader.memory));
+  memset(&reader, 0, sizeof(reader));
   gba_ppu_log_reader_start(&reader, &mailbox);
   check(!caught_up(run_frame(1)));
+  check(gba_ppu_log_frames_drawn(&writer) == 2);
   check(caught_up(run_frame(1)));
   check(mailbox.reader.boots == 2);
+  check(mailbox.reader.frames_drawn == 1);
+  check(gba_ppu_log_frames_drawn(&writer) == 3);
+  read_before_vblank = 1;
+  for(i = 0; i < 3; i++)
+    check(caught_up(run_frame(1)));
+  memset(&reader, 0, sizeof(reader));
+  gba_ppu_log_reader_start(&reader, &mailbox);
+  gba_ppu_log_resend(&writer);
+  check(caught_up(run_frame(1)));
+  check(caught_up(run_frame(1)));
+  read_before_vblank = 0;
+  check(gba_ppu_log_frames_drawn(&writer) == 8);
 }
 
 static void test_unknown_word_is_refused(void)

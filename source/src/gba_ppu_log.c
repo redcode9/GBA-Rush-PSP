@@ -418,14 +418,30 @@ void gba_ppu_log_line(GbaPpuLogWriter *writer, uint32_t y)
 
 void gba_ppu_log_vblank(GbaPpuLogWriter *writer)
 {
-  uint32_t boots = load(&writer->mailbox->reader.boots);
+  GbaPpuLogReaderSide *side = &writer->mailbox->reader;
+  uint32_t boots = load(&side->boots);
+  uint32_t drawn = load(&side->frames_drawn);
 
-  /* A reader that started again knows nothing. */
+  /* A reader that started again knows nothing, and counts its frames from
+     0. After the first start, the count of the start before goes into
+     frames_before and the mailbox's back to 0. That count is the one the
+     mailbox still holds, or, should the new reader have stored its own
+     already (it read a resend written after it started), the one seen at
+     the last V-Blank, short of a frame the old reader finished after
+     it. */
   if(boots != writer->boots)
   {
+    if(writer->boots)
+    {
+      writer->frames_before += drawn > writer->frames_seen ? drawn :
+       writer->frames_seen;
+      store(&side->frames_drawn, 0);
+      drawn = 0;
+    }
     writer->boots = boots;
     writer->lost = 1;
   }
+  writer->frames_seen = drawn;
   writer->frame = (writer->frame + 1) & FRAME_MASK;
   if(!writer->frame)
     writer->frame = 1;
@@ -456,6 +472,12 @@ uint32_t gba_ppu_log_frame(const GbaPpuLogWriter *writer)
 int gba_ppu_log_frame_done(const GbaPpuLogWriter *writer, uint32_t frame)
 {
   return load(&writer->mailbox->reader.completed) == frame;
+}
+
+uint32_t gba_ppu_log_frames_drawn(const GbaPpuLogWriter *writer)
+{
+  return writer->frames_before +
+   load(&writer->mailbox->reader.frames_drawn);
 }
 
 /* ---- Reader ----------------------------------------------------------- */
