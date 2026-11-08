@@ -987,6 +987,9 @@
   // MSG_LINK_REASON_ROM_CHANGE
   "ゲームが変更されました",
 
+  // MSG_LINK_REASON_SAVE_FAILED
+  "セーブデータを書き込めませんでした",
+
 
   // MSG_CATEGORY_CONTINUE
   "Continue",

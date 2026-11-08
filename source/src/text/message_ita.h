@@ -987,6 +987,9 @@
   // MSG_LINK_REASON_ROM_CHANGE
   "Gioco cambiato",
 
+  // MSG_LINK_REASON_SAVE_FAILED
+  "Salvataggio non scritto",
+
   // MSG_CATEGORY_CONTINUE
   "Continua",
   // MSG_CATEGORY_SAVE_LOAD

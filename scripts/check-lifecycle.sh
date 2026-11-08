@@ -44,6 +44,24 @@ if [ -z "$clock_line" ] || [ -z "$adhoc_line" ] || \
 then
   fail "Link clock is not pinned before ad-hoc startup"
 fi
+
+# No link session starts with a .sav write pending: main_link_start()
+# writes it and keeps the pre-link copy, returning on failure, before the
+# clock is pinned and ad-hoc starts.
+if ! printf '%s\n' "$link_start_body" | awk '
+  /!update_backup_immediately\(\) \|\| !backup_push_link_copy\(\)\)/ {
+    copy = 1; next
+  }
+  copy && /return 0;/ { checked = 1 }
+  /set_cpu_clock\(PSP_CLOCK_333\)|psp_adhoc_start\(/ {
+    if (!checked) bad = 1
+    starts++
+  }
+  END { exit !(checked && starts >= 2 && !bad) }
+'
+then
+  fail "A link session can start before the .sav is written and copied"
+fi
 if ! body '/^static void main_link_close/,/^}/p' source/src/main.c | \
   rg -q 'set_cpu_clock\(option_clock_speed\)'
 then

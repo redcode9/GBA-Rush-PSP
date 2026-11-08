@@ -987,6 +987,9 @@
   // MSG_LINK_REASON_ROM_CHANGE
   "游戏已更改",
 
+  // MSG_LINK_REASON_SAVE_FAILED
+  "无法写入游戏存档",
+
 
   // MSG_CATEGORY_CONTINUE
   "Continue",

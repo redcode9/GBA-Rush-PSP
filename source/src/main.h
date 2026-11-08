@@ -142,7 +142,9 @@ typedef enum
   MAIN_LINK_END_PEER_LEFT,
   MAIN_LINK_END_LOST,
   MAIN_LINK_END_INCOMPATIBLE,
-  MAIN_LINK_END_NETWORK
+  MAIN_LINK_END_NETWORK,
+  /* The .sav could not be flushed or copied: the session did not start. */
+  MAIN_LINK_END_SAVE_FAILED
 } MainLinkEnd;
 
 extern LinkCable gba_link;

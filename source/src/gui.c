@@ -5085,6 +5085,9 @@ u32 menu(void)
         case MAIN_LINK_END_ROM_CHANGE:
           reason = MSG[MSG_LINK_REASON_ROM_CHANGE];
           break;
+        case MAIN_LINK_END_SAVE_FAILED:
+          reason = MSG[MSG_LINK_REASON_SAVE_FAILED];
+          break;
         case MAIN_LINK_END_NETWORK:
           status = MSG[MSG_LINK_STATUS_ERROR];
           reason = MSG[MSG_LINK_REASON_TRANSPORT];

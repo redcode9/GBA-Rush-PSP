@@ -743,7 +743,8 @@ static int main_link_service(IRQ_TYPE *irq_raised)
 }
 
 /* Hosts or joins after stopping fast-forward and any earlier session.
-   0 if WLAN is off or the SIO or the network could not be started. */
+   0 if WLAN is off, the .sav could not be written and copied, or the SIO
+   or the network could not be started. */
 static int main_link_start(int host)
 {
   char game[4] = { 0, 0, 0, 0 };
@@ -767,6 +768,17 @@ static int main_link_start(int host)
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COMMAND, cpu_ticks,
    (u8)(host != 0), ((u32)(u8)game[0] << 24) | ((u32)(u8)game[1] << 16) |
    ((u32)(u8)game[2] << 8) | (u8)game[3], 0, 0);
+
+  /* No session starts with a .sav write pending: write it, then keep it as
+     the newest pre-link copy. With no save, or with writes blocked ('play
+     without saving'), neither writes anything and the link starts. */
+  if(!update_backup_immediately() || !backup_push_link_copy())
+  {
+    gba_link_end = MAIN_LINK_END_SAVE_FAILED;
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_ERROR, cpu_ticks,
+     (u8)MAIN_LINK_END_SAVE_FAILED, 0, 0, 0);
+    return 0;
+  }
 
   /* Pin the clock before the network starts; changing it later can
      disturb the WLAN. */

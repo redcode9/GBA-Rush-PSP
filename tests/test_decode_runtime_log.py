@@ -188,6 +188,14 @@ class RuntimeLogDecoderTests(unittest.TestCase):
             self.assertIn(f"LINK_CABLE_{name}", header)
         self.assertEqual(len(decoder.LINK_STATUS), 6)
         self.assertEqual(decoder.LINK_MODES, ["none", "lockstep", "pokemon"])
+        main = (Path(__file__).parents[1] / "source" / "src" /
+                "main.h").read_text()
+        ends = main[main.rindex("typedef enum", 0, main.index("} MainLinkEnd;")):
+                    main.index("} MainLinkEnd;")]
+        self.assertEqual(
+            decoder.LINK_ENDS,
+            [name.lower().replace("_", "-") for name in
+             re.findall(r"^\s+MAIN_LINK_END_([A-Z_]+)", ends, re.M)])
 
     def test_rom_open_names_the_cpu_core(self):
         header = (Path(__file__).parents[1] / "source" / "src" /

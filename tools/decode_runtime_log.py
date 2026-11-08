@@ -70,7 +70,7 @@ LINK_STATUS = ["off", "waiting", "connected", "incompatible", "peer-left", "lost
 LINK_MODES = ["none", "lockstep", "pokemon"]
 LINK_ENDS = [
     "none", "user", "suspend", "rom-change", "peer-left", "lost",
-    "incompatible", "network",
+    "incompatible", "network", "save-failed",
 ]
 ADHOC_STATES = [
     "stopped", "starting", "hosting", "searching", "connecting", "connected",
