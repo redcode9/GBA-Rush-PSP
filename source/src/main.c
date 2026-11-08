@@ -870,11 +870,15 @@ void main_link_pump(void)
 }
 
 /* menu() reports leaving (0) and resuming (1) the game. Each change is
-   logged, and the runtime log is flushed when the menu opens. */
+   logged, the runtime log is flushed when the menu opens, and the core
+   profile of diagnostic builds skips the menu. */
 void main_link_set_gameplay_active(int active)
 {
   u8 value = active != 0;
 
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+  arm_gba_profile_pause(!value);
+#endif
   if(gba_link_gameplay_active == value)
     return;
   gba_link_gameplay_active = value;
@@ -1845,6 +1849,11 @@ int user_main(int argc, char *argv[])
 
     sound_pause = 0;
 
+    /* Save the log again now that it names the ROM and the CPU core, so a
+       game that hangs from its first frame still leaves them on the
+       Memory Stick; scripts/check-eboot.sh looks for them there. */
+    runtime_log_psp_flush(RUNTIME_LOG_FLUSH_START);
+
     // We'll never actually return from here.
     main_run_cpu();
   }
@@ -1931,6 +1940,9 @@ void reset_gba(void)
 
   main_fast_forward_stop();
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+  arm_gba_profile_stop();
+#endif
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
   input_diagnostic_trace_cancel();
 #endif
@@ -2011,6 +2023,9 @@ static void psp_sleep_loop(void)
    (u32)gba_link.status, main_adhoc_state_value(), sleep_flag);
   main_fast_forward_stop();
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+  arm_gba_profile_stop();
+#endif
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
   input_diagnostic_trace_cancel();
 #endif
@@ -2243,6 +2258,9 @@ int main_perf_start(void)
 
   perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
   video_reset_frame_timing();
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+  arm_gba_profile_start();
+#endif
   return 1;
 }
 
@@ -2252,6 +2270,9 @@ int main_perf_stop(void)
     return 0;
 
   perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+  arm_gba_profile_stop();
+#endif
   return perf_monitor_stop(sceKernelGetSystemTimeWide());
 }
 
@@ -2277,6 +2298,34 @@ static int main_perf_write_all(SceUID file, const char *data, u32 length)
 
   return 1;
 }
+
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+/* The new core's profile of the capture, beside its report as
+   perf-<local time>-core.txt; nothing when the Classic core ran. */
+static void main_perf_write_core_profile(const char *report_path)
+{
+  char path[MAX_PATH];
+  char profile[CORE_PROFILE_CAPACITY];
+  size_t stem = strlen(report_path) - 4;
+  int length = arm_gba_profile_format(profile, sizeof(profile));
+  SceUID file;
+
+  if(length <= 0 || stem + sizeof("-core.txt") > sizeof(path))
+    return;
+  memcpy(path, report_path, stem);
+  strcpy(path + stem, "-core.txt");
+  FILE_OPEN(file, path, WRITE);
+  if(!FILE_CHECK_VALID(file))
+    return;
+  if(!main_perf_write_all(file, profile, (u32)length))
+  {
+    FILE_CLOSE(file);
+    sceIoRemove(path);
+    return;
+  }
+  FILE_CLOSE(file);
+}
+#endif
 
 /* Writes a finished capture to benchmarks/perf-<local time>.txt beside the
    EBOOT and returns its path. 0 on success, -1 on failure or while idle or
@@ -2380,6 +2429,9 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
     return -1;
   }
   FILE_CLOSE(file);
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+  main_perf_write_core_profile(filename);
+#endif
 
   if(output_path != NULL && output_path_size != 0)
   {

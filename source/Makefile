@@ -51,6 +51,13 @@ COMMON_FILE += input_trace.h
 MAINOBJS += input_trace.o
 endif
 
+# make DIAGNOSTIC_CORE_PROFILE=1 samples where the new core spends its time
+# during a benchmark capture and writes it beside the report (arm_gba.c).
+ifneq ($(DIAGNOSTIC_CORE_PROFILE),)
+COMMON_FILE += core_profile.h
+MAINOBJS += core_profile.o
+endif
+
 # The bundled zlib in src/zlib (VPATH finds its sources).
 OBJZ = adler32.o crc32.o deflate.o infback.o inffast.o inflate.o inftrees.o trees.o zutil.o
 OBJG = compress.o uncompr.o gzclose.o gzlib.o gzread.o gzwrite.o
@@ -81,6 +88,9 @@ CFLAGS += -DARM_CACHE_OPS=0x20000u
 
 ifneq ($(DIAGNOSTIC_INPUT_TRACE),)
 CFLAGS += -DENABLE_DIAGNOSTIC_INPUT_TRACE
+endif
+ifneq ($(DIAGNOSTIC_CORE_PROFILE),)
+CFLAGS += -DENABLE_DIAGNOSTIC_CORE_PROFILE
 endif
 
 CXXFLAGS =
