@@ -72,7 +72,8 @@ run()
   if [ -f source/media_engine.prx ]; then
     cp source/media_engine.prx "$dir/"
   fi
-  # Without dir.ini the emulator stops at an error message for a key.
+  # dir.ini points the emulator at these folders; without it the save
+  # would be looked for beside the EBOOT, not in save/.
   printf '%s = %s\n' rom_directory roms save_directory save \
     save_state_directory state game_config_directory cfg \
     snapshot_directory snap cheat_directory cheat boxart_directory boxart \
