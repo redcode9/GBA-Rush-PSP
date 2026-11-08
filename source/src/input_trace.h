@@ -26,7 +26,8 @@
 #define INPUT_TRACE_HEADER_SIZE 44U
 /* Version 1 files have no companion savestate and stay readable. */
 #define INPUT_TRACE_V1_HEADER_SIZE 32U
-/* Largest companion .svs a v2 trace may name: today's is 601096 bytes. */
+/* Largest companion .svs a v2 trace may name: today's is SAVESTATE_SIZE
+   (memory.c), 0x80000 = 524288 bytes, screen and timestamp included. */
 #define INPUT_TRACE_MAX_STATE_SIZE 0x200000U
 #define INPUT_TRACE_EVENT_SIZE 8U
 #define INPUT_TRACE_GAME_CODE_SIZE 4U

@@ -16,10 +16,10 @@
 static const uint8_t game_code[INPUT_TRACE_GAME_CODE_SIZE] =
  { 'B', 'P', 'R', 'E' };
 
-/* The companion .svs make_trace() names: today's savestate size is the
-   76800-byte screen, an 8-byte timestamp and the 0x80000-byte body. */
+/* The companion .svs make_trace() names: a savestate is SAVESTATE_SIZE
+   (memory.c), 0x80000 bytes with the screen and timestamp inside. */
 #define TEST_STATE_CRC32 0xDEADBEEFU
-#define TEST_STATE_SIZE 601096U
+#define TEST_STATE_SIZE 524288U
 #define TEST_RTC_BASE 1700000000U
 
 static uint32_t read_u32(const uint8_t *input)
