@@ -141,12 +141,14 @@ C_ONLY_OBJS = $(filter-out video_cc_wrap.o mips_stub.o video_blend_mips.o ku_bri
 $(C_ONLY_OBJS): CFLAGS += -Wbad-function-cast -Wmissing-prototypes
 $(OBJZ) $(OBJG): CFLAGS += -Wno-old-style-definition
 $(MAINOBJS): $(COMMON_FILE)
-# A new build id or profile rebuilds the objects: the stamp is rewritten only
-# when the configuration it records changes.
+# A new build id, profile or core profile setting rebuilds the objects: the
+# stamp is rewritten only when the configuration it records changes.
+BUILD_CONFIG = $(strip $(BUILD_ID) $(PROFILE) \
+ $(if $(DIAGNOSTIC_CORE_PROFILE),core-profile))
 $(MAINOBJS): build-config.stamp
 build-config.stamp: FORCE
-	@if [ "$$(cat $@ 2>/dev/null)" != '$(BUILD_ID) $(PROFILE)' ]; then \
-	 printf '%s\n' '$(BUILD_ID) $(PROFILE)' > $@; fi
+	@if [ "$$(cat $@ 2>/dev/null)" != '$(BUILD_CONFIG)' ]; then \
+	 printf '%s\n' '$(BUILD_CONFIG)' > $@; fi
 .PHONY: FORCE
 FORCE:
 # The translations are written in UTF-8 and stored as GBK, the encoding the
@@ -189,4 +191,10 @@ print-flags:
 # The build id alone, for the release manifest.
 print-build-id:
 	$(info $(BUILD_ID))
+	@:
+
+# What build-config.stamp holds after a build with these settings, so that
+# scripts/package-release.sh can tell whether the EBOOT was built with them.
+print-config:
+	$(info $(BUILD_CONFIG))
 	@:

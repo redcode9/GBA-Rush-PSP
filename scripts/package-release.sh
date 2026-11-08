@@ -67,12 +67,15 @@ do
   fi
 done
 
-# The built EBOOT must be this tree's, in this profile: source/Makefile
-# records both in build-config.stamp when it builds the objects.
+# The built EBOOT must be this tree's, in this profile, with the same core
+# profile setting as the flags below: source/Makefile records them in
+# build-config.stamp when it builds the objects.
 build_id=$(${MAKE:-make} -s --no-print-directory -C source print-build-id)
-if [ "$(cat source/build-config.stamp 2>/dev/null)" != "$build_id $profile" ]
+build_config=$(${MAKE:-make} -s --no-print-directory -C source \
+  PROFILE="$profile" print-config)
+if [ "$(cat source/build-config.stamp 2>/dev/null)" != "$build_config" ]
 then
-  echo "source/EBOOT.PBP was not built as $build_id $profile:" \
+  echo "source/EBOOT.PBP was not built as $build_config:" \
     "run make package VERSION=$version PROFILE=$profile" >&2
   exit 1
 fi
