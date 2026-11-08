@@ -258,7 +258,7 @@ u8 *load_gamepak_page(u32 physical_index);
 
 s32 load_bios(char *name);
 s32 load_gamepak(char *name);
-SaveStoreResult load_backup(char *name, SaveTag tag);
+SaveStoreResult load_backup(char *name, SaveTag tag, u32 retry);
 
 // load_gamepak() result when the player refused to retry an unreadable
 // .sav and to play without saving. Load errors are -1, or -2 from

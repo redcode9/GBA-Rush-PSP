@@ -3206,8 +3206,9 @@ static SaveTag load_backup_id(void)
 // 128 KB loads its first 128 KB), then sets the save type and sizes from
 // the ROM's tag and the file's size. A file that exists but does not read
 // blocks every .sav write until the next load_backup(), so the blank image
-// can never replace it.
-SaveStoreResult load_backup(char *name, SaveTag tag)
+// can never replace it. retry is nonzero when the player retries such a
+// file.
+SaveStoreResult load_backup(char *name, SaveTag tag, u32 retry)
 {
   SaveStoreResult result;
   SaveLayout layout;
@@ -3222,6 +3223,10 @@ SaveStoreResult load_backup(char *name, SaveTag tag)
   if (result == SAVE_STORE_OK)
     result = save_store_load(backup_io, dir_save, name, gamepak_backup,
      sizeof(gamepak_backup), &file_size);
+  // The file was there a moment ago: not finding it now means the Memory
+  // Stick is not back yet, not a blank cartridge.
+  if (retry && (result == SAVE_STORE_NOT_FOUND))
+    result = SAVE_STORE_FAILED;
   backup_write_blocked = (result == SAVE_STORE_FAILED);
 
   layout = save_format_resolve(tag, (u32)file_size);
@@ -3693,7 +3698,7 @@ s32 load_gamepak(char *name)
 
     tag = load_backup_id();
     change_ext(gamepak_filename, backup_filename, ".sav");
-    backup_result = load_backup(backup_filename, tag);
+    backup_result = load_backup(backup_filename, tag, 0);
 
     /* Cheat lists are selected explicitly from the cheat menu. */
     clear_cheats();
@@ -3717,16 +3722,8 @@ s32 load_gamepak(char *name)
       if (yesno_dialog(MSG[MSG_SAVE_READ_RETRY]) == 0)
       {
         scePowerLock(0);
-        backup_result = load_backup(backup_filename, tag);
+        backup_result = load_backup(backup_filename, tag, 1);
         scePowerUnlock(0);
-
-        // The file was there a moment ago: not finding it now means the
-        // Memory Stick is not back yet, not a blank cartridge.
-        if (backup_result == SAVE_STORE_NOT_FOUND)
-        {
-          backup_result = SAVE_STORE_FAILED;
-          backup_write_blocked = 1;
-        }
       }
       else if (yesno_dialog(MSG[MSG_SAVE_PLAY_UNSAVED]) == 0)
         break;

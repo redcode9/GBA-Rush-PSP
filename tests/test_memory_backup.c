@@ -185,11 +185,14 @@ static void test_retry_reads_the_save_again(void)
 }
 
 /* A retry that no longer finds the file (the Memory Stick is not back
-   yet) is not a blank cartridge: it asks again, and playing on without
-   saving still leaves the file alone. */
+   yet) is not a blank cartridge: it asks again, the runtime log shows it
+   failed, and playing on without saving still leaves the file alone. */
 static void test_retry_without_the_file_stays_blocked(void)
 {
   static const unsigned answers[] = { YES, NO, YES };
+  uint8_t flags;
+  uint32_t values[3];
+  int loads = host_stub_save_load(&flags, values);
 
   fresh_store();
   fake_store_seed(&store, 32 * KIB, 8);
@@ -197,6 +200,8 @@ static void test_retry_without_the_file_stays_blocked(void)
   store.hide_after_reads = 1;
 
   assert(load("SRAM_V113", answers, 3) == ROM_SIZE);
+  assert(host_stub_save_load(&flags, values) == loads + 2);
+  assert(flags == SAVE_STORE_FAILED && values[0] == 0);
   assert(host_stub_yesno_asked() == 3);
   assert(!host_stub_yesno_saw_rom());
   assert(strcmp(gamepak_filename, "game.gba") == 0);
