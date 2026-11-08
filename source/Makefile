@@ -101,6 +101,13 @@ ifneq ($(PROFILE),diagnostic)
 $(error DIAGNOSTIC_INPUT_TRACE=1 asks for PROFILE=diagnostic, not PROFILE=$(PROFILE))
 endif
 endif
+# The new core's profile is a diagnostic feature too.
+ifneq ($(DIAGNOSTIC_CORE_PROFILE),)
+PROFILE ?= diagnostic
+ifneq ($(PROFILE),diagnostic)
+$(error DIAGNOSTIC_CORE_PROFILE=1 asks for PROFILE=diagnostic, not PROFILE=$(PROFILE))
+endif
+endif
 PROFILE ?= release
 
 ifeq ($(PROFILE),release)
@@ -118,6 +125,8 @@ MAINOBJS += input_trace.o
 else
 $(error PROFILE must be release or diagnostic, not '$(PROFILE)')
 endif
+# Defined here, not in build_profile.h: arm_mips.c, a pure module, cannot
+# include it (scripts/check-profiles.sh allows this one line).
 ifneq ($(DIAGNOSTIC_CORE_PROFILE),)
 CFLAGS += -DENABLE_DIAGNOSTIC_CORE_PROFILE
 endif
