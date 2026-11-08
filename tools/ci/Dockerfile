@@ -8,7 +8,7 @@
 # The workspace is mounted from the runner, owned by another user than the
 # container's root, so Git is told to trust it.
 FROM pspdev/pspdev@sha256:ee385df3aa783189d5a033af5eb1d4a9cdd93718fb8bf652ec7bb48e54038a8b AS psp
-RUN apk add --no-cache gcc musl-dev zlib-dev python3 py3-yaml ripgrep zip \
+RUN apk add --no-cache gcc musl-dev zlib-dev python3 py3-yaml zip \
   unzip coreutils diffutils findutils \
  && git config --system --add safe.directory '*'
 
