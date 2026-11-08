@@ -73,6 +73,9 @@ typedef struct
   uint32_t handled_save_sequence;
   uint32_t handled_resume_sequence;
   uint32_t taken_callbacks;
+  /* The switch-only timeout's clock: its start, and resume_sequence then. */
+  uint64_t switch_clock_us;
+  uint32_t switch_clock_sequence;
 } PowerLifecycle;
 
 void power_lifecycle_init(PowerLifecycle *lifecycle);
@@ -89,10 +92,14 @@ PowerLifecycleState power_lifecycle_state(const PowerLifecycle *lifecycle);
 int power_lifecycle_take_save(PowerLifecycle *lifecycle);
 int power_lifecycle_take_resume(PowerLifecycle *lifecycle,
  int *audio_result);
-/* Ends a switch-only entry once the timeout has passed since entered_us,
-   as a resume with POWER_LIFECYCLE_AUDIO_NOT_RESERVED. Returns 1 if it did. */
-int power_lifecycle_expire_switch(PowerLifecycle *lifecycle,
- uint64_t entered_us, uint64_t now_us);
+/* Starts the switch-only timeout at now_us, when a park begins. */
+void power_lifecycle_start_switch_clock(PowerLifecycle *lifecycle,
+ uint64_t now_us);
+/* Ends a switch-only entry once the timeout has passed on that clock, as a
+   resume with POWER_LIFECYCLE_AUDIO_NOT_RESERVED. Returns 1 if it did. If an
+   entry ended since the clock started, it restarts the clock instead, so a
+   switch entry that lands later in the same park gets its own timeout. */
+int power_lifecycle_expire_switch(PowerLifecycle *lifecycle, uint64_t now_us);
 /* Takes the oldest callback not taken yet: stores its raw bits and its
    number (the first callback is 1) and returns 1, or returns 0 if there is
    none. Callbacks overwritten before they were taken leave a gap in the

@@ -237,17 +237,18 @@ static void test_switch_entry_times_out(void)
   power_lifecycle_init(&lifecycle);
   power_lifecycle_suspend(&lifecycle, SWITCH, 1);
   assert(power_lifecycle_take_save(&lifecycle));
+  power_lifecycle_start_switch_clock(&lifecycle, entered);
 
-  assert(!power_lifecycle_expire_switch(&lifecycle, entered, entered - 1u));
-  assert(!power_lifecycle_expire_switch(&lifecycle, entered,
+  assert(!power_lifecycle_expire_switch(&lifecycle, entered - 1u));
+  assert(!power_lifecycle_expire_switch(&lifecycle,
    entered + POWER_LIFECYCLE_SWITCH_TIMEOUT_US - 1u));
   assert(power_lifecycle_state(&lifecycle) == POWER_LIFECYCLE_SUSPENDED);
 
-  assert(power_lifecycle_expire_switch(&lifecycle, entered,
+  assert(power_lifecycle_expire_switch(&lifecycle,
    entered + POWER_LIFECYCLE_SWITCH_TIMEOUT_US));
   assert(power_lifecycle_state(&lifecycle) ==
    POWER_LIFECYCLE_RESUME_PENDING);
-  assert(!power_lifecycle_expire_switch(&lifecycle, entered,
+  assert(!power_lifecycle_expire_switch(&lifecycle,
    entered + 2u * POWER_LIFECYCLE_SWITCH_TIMEOUT_US));
 
   /* A late RESUME_COMPLETE finds nothing to resume. */
@@ -271,15 +272,52 @@ static void test_suspending_entry_never_times_out(void)
   power_lifecycle_init(&lifecycle);
   power_lifecycle_suspend(&lifecycle, SWITCH, 1);
   power_lifecycle_suspend(&lifecycle, SUSPENDING, 1);
-  assert(!power_lifecycle_expire_switch(&lifecycle, 0u,
+  power_lifecycle_start_switch_clock(&lifecycle, 0u);
+  assert(!power_lifecycle_expire_switch(&lifecycle,
    10u * POWER_LIFECYCLE_SWITCH_TIMEOUT_US));
   assert(power_lifecycle_state(&lifecycle) == POWER_LIFECYCLE_SUSPENDED);
   assert(!power_lifecycle_take_resume(&lifecycle, &result));
 
   power_lifecycle_init(&lifecycle);
-  assert(!power_lifecycle_expire_switch(&lifecycle, 0u,
+  assert(!power_lifecycle_expire_switch(&lifecycle,
    10u * POWER_LIFECYCLE_SWITCH_TIMEOUT_US));
   assert(!power_lifecycle_take_resume(&lifecycle, &result));
+}
+
+/* psp_sleep_loop starts the clock once per park. A switch entry that lands
+   in the same park after the last entry ended, before the loop rereads the
+   state, still gets its full 2 s. */
+static void test_later_switch_entry_in_park_gets_own_timeout(void)
+{
+  PowerLifecycle lifecycle;
+  const uint64_t parked = 5000000u;
+  const uint64_t timeout = POWER_LIFECYCLE_SWITCH_TIMEOUT_US;
+  const uint64_t poll = 100000u;
+  uint64_t now = parked + timeout;
+
+  power_lifecycle_init(&lifecycle);
+  power_lifecycle_suspend(&lifecycle, SWITCH, 1);
+  power_lifecycle_start_switch_clock(&lifecycle, parked);
+
+  /* After a timeout. */
+  assert(power_lifecycle_expire_switch(&lifecycle, now));
+  power_lifecycle_suspend(&lifecycle, SWITCH, 1);
+  now += poll;
+  assert(!power_lifecycle_expire_switch(&lifecycle, now));
+  assert(!power_lifecycle_expire_switch(&lifecycle, now + timeout - 1u));
+  assert(power_lifecycle_state(&lifecycle) == POWER_LIFECYCLE_SUSPENDED);
+  now += timeout;
+  assert(power_lifecycle_expire_switch(&lifecycle, now));
+
+  /* After a long suspend that RESUME_COMPLETE ended. */
+  power_lifecycle_suspend(&lifecycle, SUSPENDING, 1);
+  power_lifecycle_resume(&lifecycle, 0);
+  power_lifecycle_suspend(&lifecycle, SWITCH, 1);
+  now += 10u * timeout;
+  assert(!power_lifecycle_expire_switch(&lifecycle, now));
+  assert(!power_lifecycle_expire_switch(&lifecycle, now + timeout - 1u));
+  assert(power_lifecycle_state(&lifecycle) == POWER_LIFECYCLE_SUSPENDED);
+  assert(power_lifecycle_expire_switch(&lifecycle, now + timeout));
 }
 
 /* Each callback's bits come back on their own, in order, once. */
@@ -366,6 +404,8 @@ typedef struct
 {
   uint32_t entry; /* 0, SWITCH or SUSPENDING, like lifecycle.suspended */
   uint64_t entered_us; /* clock when that entry began */
+  uint64_t timer_us; /* when the switch timeout's clock started */
+  int timer_stale; /* an entry ended since then */
   int save_owed;
   int resume_owed;
   int audio_result; /* what the owed resume hands over */
@@ -386,6 +426,7 @@ enum
   COVER_SWITCH_WITH_RESUME_BITS,
   COVER_SWITCH_BEFORE_TIMEOUT,
   COVER_SWITCH_TIMEOUT,
+  COVER_SWITCH_LATER_IN_PARK,
   COVER_BITS_OVERRUN,
   COVER_COUNT
 };
@@ -463,6 +504,7 @@ static void property_callback(PowerLifecycle *lifecycle, PowerModel *model,
   int audio_result = (int)property_random(64) - 32;
   uint32_t action = power_lifecycle_classify(bits);
   uint32_t entry = 0;
+  int began = 0;
 
   power_lifecycle_note_bits(lifecycle, bits);
   if((action & POWER_LIFECYCLE_ENTRY_MASK) != 0)
@@ -491,6 +533,7 @@ static void property_callback(PowerLifecycle *lifecycle, PowerModel *model,
     model->entry = entry;
     model->entered_us = now;
     model->save_owed |= game;
+    began = 1;
     if(entry == SWITCH)
       property_cover[COVER_SWITCH_ENTRY]++;
     else if(bits & BIT_SWITCH)
@@ -515,9 +558,20 @@ static void property_callback(PowerLifecycle *lifecycle, PowerModel *model,
       if(model->entry == SWITCH)
         property_cover[COVER_RESUME_AFTER_SWITCH_ENTRY]++;
       model->entry = 0;
+      model->timer_stale = 1;
       model->resume_owed = 1;
       model->audio_result = audio_result;
     }
+  }
+
+  /* The park a new entry begins starts the clock after the callback. An
+     entry may instead land in a park the last entry left running, before
+     the loop rereads the state: only then is the clock stale. */
+  if(began && (!model->timer_stale || property_random(2)))
+  {
+    power_lifecycle_start_switch_clock(lifecycle, now);
+    model->timer_us = now;
+    model->timer_stale = 0;
   }
 }
 
@@ -565,7 +619,8 @@ static void property_take_bits(PowerLifecycle *lifecycle, PowerModel *model)
 }
 
 /* Clock steps of 0-3 s, half of them on the edges of the 2 s timeout. Only
-   a switch-only entry expires, and only 2 s or more after it entered. */
+   a switch-only entry expires, 2 s after its park's clock started and never
+   sooner than 2 s after it entered; a stale clock restarts first. */
 static void property_clock(PowerLifecycle *lifecycle, PowerModel *model,
  uint64_t *now)
 {
@@ -578,11 +633,21 @@ static void property_clock(PowerLifecycle *lifecycle, PowerModel *model,
 
   *now += property_random(2) ? edges[property_random(8)] :
    property_random(3000001u);
-  due = *now >= model->entered_us + POWER_LIFECYCLE_SWITCH_TIMEOUT_US;
-  expired = power_lifecycle_expire_switch(lifecycle, model->entered_us,
-   *now);
+  expired = power_lifecycle_expire_switch(lifecycle, *now);
+  if(model->timer_stale)
+  {
+    PROPERTY_CHECK(!expired);
+    model->timer_us = *now;
+    model->timer_stale = 0;
+    if(model->entry == SWITCH)
+      property_cover[COVER_SWITCH_LATER_IN_PARK]++;
+    return;
+  }
 
+  due = *now >= model->timer_us + POWER_LIFECYCLE_SWITCH_TIMEOUT_US;
   PROPERTY_CHECK(expired == (model->entry == SWITCH && due));
+  PROPERTY_CHECK(!expired ||
+   *now >= model->entered_us + POWER_LIFECYCLE_SWITCH_TIMEOUT_US);
   if(model->entry != SWITCH)
     return;
 
@@ -593,6 +658,7 @@ static void property_clock(PowerLifecycle *lifecycle, PowerModel *model,
   }
   property_cover[COVER_SWITCH_TIMEOUT]++;
   model->entry = 0;
+  model->timer_stale = 1;
   model->resume_owed = 1;
   model->audio_result = POWER_LIFECYCLE_AUDIO_NOT_RESERVED;
 }
@@ -625,6 +691,8 @@ static void property_run_sequence(void)
   power_lifecycle_init(&lifecycle);
   memset(&model, 0, sizeof(model));
   model.entered_us = now;
+  model.timer_us = now;
+  power_lifecycle_start_switch_clock(&lifecycle, now);
   for(property_step = 0; property_step < steps; property_step++)
   {
     op = property_random(20);
@@ -696,6 +764,7 @@ int main(int argc, char **argv)
   test_entry_with_resume_complete_does_both();
   test_switch_entry_times_out();
   test_suspending_entry_never_times_out();
+  test_later_switch_entry_in_park_gets_own_timeout();
   test_raw_bits_are_kept_per_callback();
   test_raw_bits_overrun_leaves_a_gap();
   if(argc > 1)

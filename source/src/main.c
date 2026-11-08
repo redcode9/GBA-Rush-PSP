@@ -2028,8 +2028,6 @@ static void main_power_reopen_gamepak(void)
    or until a switch-only entry times out. */
 static void psp_sleep_loop(void)
 {
-  u64 entered;
-
   runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_SUSPEND, cpu_ticks, 0,
    (u32)gba_link.status, main_adhoc_state_value(), sleep_flag);
   main_fast_forward_stop();
@@ -2053,13 +2051,15 @@ static void psp_sleep_loop(void)
   runtime_log_psp_flush(RUNTIME_LOG_FLUSH_SUSPEND);
 
   /* A switch-only entry gets its 2 s after the park work, however long the
-     save and the link teardown took. The state test keeps parking if a
-     SUSPENDING lands between the timeout and the sleep_flag store below. */
-  entered = sceKernelGetSystemTimeWide();
+     save and the link teardown took, and one that lands later in this park
+     gets its own 2 s. The state test keeps parking if an entry lands between
+     the timeout and the sleep_flag store below. */
+  power_lifecycle_start_switch_clock(&psp_power_lifecycle,
+   sceKernelGetSystemTimeWide());
   do
   {
     sceKernelDelayThread(100 * 1000);
-    if(power_lifecycle_expire_switch(&psp_power_lifecycle, entered,
+    if(power_lifecycle_expire_switch(&psp_power_lifecycle,
      sceKernelGetSystemTimeWide()))
       sleep_flag = 0;
   }

@@ -147,13 +147,33 @@ int power_lifecycle_take_resume(PowerLifecycle *lifecycle,
   return 1;
 }
 
-/* The compare-and-swap loses to a SUSPENDING or RESUME_COMPLETE that the
-   callback handled first; a SUSPENDING after it is a fresh suspend. */
-int power_lifecycle_expire_switch(PowerLifecycle *lifecycle,
- uint64_t entered_us, uint64_t now_us)
+void power_lifecycle_start_switch_clock(PowerLifecycle *lifecycle,
+ uint64_t now_us)
 {
-  if(lifecycle == NULL ||
-     now_us < entered_us + POWER_LIFECYCLE_SWITCH_TIMEOUT_US ||
+  if(lifecycle == NULL)
+    return;
+
+  power_lifecycle_memory_barrier();
+  lifecycle->switch_clock_us = now_us;
+  lifecycle->switch_clock_sequence = lifecycle->resume_sequence;
+}
+
+/* Every entry ends with a resume_sequence step (a resume or an expiry), so
+   a changed count means any switch entry now began after the clock started.
+   The compare-and-swap loses to a SUSPENDING or RESUME_COMPLETE that the
+   callback handled first; a SUSPENDING after it is a fresh suspend. */
+int power_lifecycle_expire_switch(PowerLifecycle *lifecycle, uint64_t now_us)
+{
+  if(lifecycle == NULL)
+    return 0;
+
+  power_lifecycle_memory_barrier();
+  if(lifecycle->switch_clock_sequence != lifecycle->resume_sequence)
+  {
+    power_lifecycle_start_switch_clock(lifecycle, now_us);
+    return 0;
+  }
+  if(now_us < lifecycle->switch_clock_us + POWER_LIFECYCLE_SWITCH_TIMEOUT_US ||
      !__sync_bool_compare_and_swap(&lifecycle->suspended,
       POWER_LIFECYCLE_ENTRY_SWITCH, 0u))
     return 0;
