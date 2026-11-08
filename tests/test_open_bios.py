@@ -37,7 +37,8 @@ def savestate_layout():
 
 # Host stand-ins for what the BIOS and savestate functions use. The open file
 # is file_data[0, file_size); file_size < 0 means it does not exist. The
-# message popup must never appear while the power lock is held.
+# message popup must never appear while the power lock is held. Every state
+# load recovers the slot under the power lock before it opens the file.
 STUBS = r'''
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
@@ -78,7 +79,7 @@ const u8 *file_data;
 s32 file_size;
 size_t file_pos;
 const char *shown;
-int closes, power_locked, blocks_read;
+int closes, power_locked, blocks_read, recovers, state_opens;
 static SaveStoreIo stub_io;
 const SaveStoreIo *backup_io = &stub_io;
 #define TICKS 0x0123456789ABCDEFull
@@ -105,7 +106,14 @@ static void clear_metadata_area(int area, int reason) { (void)area; (void)reason
 static void read_gba_sio_snapshot(SceUID f) { (void)f; }
 static SceUID stub_open(const char *name) {
   assert(!strcmp(name, "gba_bios.bin") || !strcmp(name, "states/s.svs"));
+  if (!strcmp(name, "states/s.svs")) { state_opens++; assert(recovers == state_opens); }
   file_pos = 0; return file_size < 0 ? -1 : 3;
+}
+SaveStoreResult save_store_recover(const SaveStoreIo *io, const char *dir,
+ const char *name) {
+  assert(power_locked && io == backup_io && !strcmp(dir, "states/"));
+  assert(!strcmp(name, "s.svs"));
+  recovers++; return SAVE_STORE_OK;
 }
 static s32 stub_read(void *buffer, size_t size) {
   size_t left = (file_size > (s32)file_pos) ? (size_t)file_size - file_pos : 0;
@@ -274,6 +282,7 @@ int main(void) {
   assert(shown == NULL && !power_locked);
   file_size = -1; closes = 0;
   assert(load_state_silent("s.svs") == 0 && closes == 0 && shown == NULL);
+  assert(recovers == 3);
 
   puts("BIOS fallback and savestate BIOS regressions passed");
   return 0;

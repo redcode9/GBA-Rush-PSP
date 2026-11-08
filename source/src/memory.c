@@ -4016,6 +4016,10 @@ u32 load_state_silent(char *savestate_filename)
 
   scePowerLock(0);
 
+  // A save cut between the store's two renames left no file, only its .tmp
+  // and .bak: the newest whole state comes back first.
+  save_store_recover(backup_io, dir_state, savestate_filename);
+
   FILE_OPEN(savestate_file, savestate_path, READ);
   bios_matches = !FILE_CHECK_VALID(savestate_file) ||
    savestate_bios_matches(savestate_file);
