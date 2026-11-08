@@ -114,7 +114,7 @@ def summarize(reports):
 def collect(root):
     """The summarized groups of the archive, keyed (model, game, version).
 
-    Every file but root/README.md must be a .txt report three directories
+    Every file but the .md notes must be a .txt report three directories
     down, and a group's reports must match the game and version directories
     they are in.
     """
@@ -125,7 +125,7 @@ def collect(root):
                    for path in root.rglob("*") if path.is_file())
     groups = {}
     for name, path in files:
-        if name == "README.md":
+        if name.endswith(".md"):
             continue
         parts = name.split("/")
         if len(parts) != 4 or not name.endswith(".txt"):

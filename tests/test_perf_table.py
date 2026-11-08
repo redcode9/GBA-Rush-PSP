@@ -152,7 +152,7 @@ class PerfTableTests(unittest.TestCase):
         cases = {
             "file that is not a report": [
                 (FIRE_RED.format(1000, 1), report()),
-                ("psp-1000/BPRE-r0/1.4.3/notes.md", report())],
+                ("psp-1000/BPRE-r0/1.4.3/notes.json", report())],
             "report outside a version directory": [
                 ("psp-1000/BPRE-r0/run-1.txt", report())],
             "game directory of another revision": [
@@ -166,7 +166,11 @@ class PerfTableTests(unittest.TestCase):
                     MODULE.collect(archive(pathlib.Path(root), runs))
 
     def test_empty_archive(self):
-        (self.directory / "README.md").write_text("notes", encoding="utf-8")
+        # benchmarks/README.md allows .md notes anywhere in the archive.
+        notes = self.directory / "psp-1000" / "BPRE-r0" / "1.4.3"
+        notes.mkdir(parents=True)
+        for path in (self.directory / "README.md", notes / "notes.md"):
+            path.write_text("notes", encoding="utf-8")
 
         self.assertEqual(MODULE.render(MODULE.collect(self.directory)),
                          "No reports archived yet.")
