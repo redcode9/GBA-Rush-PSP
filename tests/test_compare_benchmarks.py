@@ -483,6 +483,13 @@ class BenchmarkComparisonTests(unittest.TestCase):
                     MODULE.main(arguments)
                 self.assertEqual(stop.exception.code, 2, arguments)
 
+            # A stray non-UTF-8 file, such as ._run-0.txt, is named.
+            stray = pathlib.Path(baseline) / "._run-0.txt"
+            stray.write_bytes(b"\xff\xfe\0")
+            with self.assertRaisesRegex(ValueError,
+                                        r"\._run-0\.txt: not a UTF-8 report"):
+                MODULE.read_report(stray.as_posix())
+
     def test_legacy_v6_fixtures_same_pass_fail(self):
         passing = MODULE.compare(
             [report(), report(frame_p95=17100), report(frame_p95=16900)],

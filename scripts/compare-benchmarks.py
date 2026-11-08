@@ -71,17 +71,20 @@ OPTIONAL_MATCH_FIELDS = (
 def read_report(path):
     """Parse a report into a dict; only finished (stopped) sessions count."""
     values = {}
-    with open(path, "r", encoding="utf-8") as report:
-        for line_number, line in enumerate(report, 1):
-            line = line.rstrip("\n")
-            if not line:
-                continue
-            if "=" not in line:
-                raise ValueError(f"{path}:{line_number}: invalid report line")
-            key, value = line.split("=", 1)
-            if not key or key in values:
-                raise ValueError(f"{path}:{line_number}: invalid report key")
-            values[key] = value
+    try:
+        with open(path, "r", encoding="utf-8") as report:
+            lines = report.read().split("\n")
+    except UnicodeDecodeError:
+        raise ValueError(f"{path}: not a UTF-8 report") from None
+    for line_number, line in enumerate(lines, 1):
+        if not line:
+            continue
+        if "=" not in line:
+            raise ValueError(f"{path}:{line_number}: invalid report line")
+        key, value = line.split("=", 1)
+        if not key or key in values:
+            raise ValueError(f"{path}:{line_number}: invalid report key")
+        values[key] = value
 
     if values.get("state") != "stopped":
         raise ValueError(f"{path}: benchmark is not stopped")
