@@ -189,11 +189,13 @@ untested console build must be published as a prerelease.
 [hardware tests](docs/hardware-tests.md) it requires, whether it fixes lost
 data (`hotfix-data`), its known limits and, when the link code changed, the
 link status. `docs/releases/link-compat.txt` holds the link facts that the
-protocol constants of each tag do not show. Package an rc with its final
-version, `make package VERSION=1.4.4 CHANNEL=prerelease`: the gate reads
-`dist/GBA-Rush-PSP-<version>.manifest.json`, and the stable release checks
-that same package rather than a new build. Then check the candidate and
-write `dist/RELEASE-NOTES-<version>.md`:
+protocol constants of each tag do not show. An rc already carries the final
+version in `source/`: tag it with `git tag -a 1.4.4-rc.1` and package that
+tag, `make package VERSION=1.4.4-rc.1`. The stable release republishes that
+package rather than a new build, so both gates read the manifest of the
+newest `<version>-rc.N` tag, here `dist/GBA-Rush-PSP-1.4.4-rc.1.manifest.json`,
+and the hardware results must name its `EBOOT.PBP`. Then check the candidate
+and write `dist/RELEASE-NOTES-<version>.md`:
 
 ```sh
 make release-gate VERSION=1.4.4 CHANNEL=prerelease

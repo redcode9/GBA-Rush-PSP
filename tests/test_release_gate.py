@@ -124,7 +124,7 @@ class Repo:
         self.write("docs/HARDWARE-RESULTS.md",
                    "# Results\n\n" + RESULTS_HEADER + "".join(rows))
 
-    def manifest(self, version="1.4.4", digest=DIGEST):
+    def manifest(self, version="1.4.4-rc.1", digest=DIGEST):
         self.dist.mkdir(exist_ok=True)
         (self.dist / f"GBA-Rush-PSP-{version}.manifest.json").write_text(
          json.dumps({"format": release_gate.release_manifest.MANIFEST_FORMAT,
@@ -207,9 +207,28 @@ class StableGateTest(ScratchRepoTest):
         self.assertIn("save-a: no pass row", stderr.getvalue())
         self.assertIn("link-a: no pass row", stderr.getvalue())
 
+    def test_the_stable_gate_reads_the_newest_rc_manifest(self):
+        self.rc()
+        self.rc(when=RC + DAY, tag="1.4.4-rc.2")
+        # The rc.1 manifest of setUp and a package of the final version do
+        # not stand in for rc.2's; without it every test is still named.
+        self.repo.manifest("1.4.4")
+        manifest = self.repo.dist / "GBA-Rush-PSP-1.4.4-rc.2.manifest.json"
+        self.assertEqual(self.repo.gate(), [
+         f"{manifest} not found: package the rc with make package "
+         "VERSION=1.4.4-rc.2",
+         "save-a: no pass row on PSP-1000, second model"])
+        self.repo.manifest("1.4.4-rc.2", digest=OTHER_DIGEST)
+        self.assertEqual(self.repo.gate(), [
+         "save-a: no pass row for EBOOT ba9876543210 on PSP-1000, "
+         "second model"])
+        self.repo.manifest("1.4.4-rc.2")
+        self.assertEqual(self.repo.gate(), [])
+
     def test_the_soak_counts_from_the_newest_rc_tag(self):
         self.rc()
         self.rc(when=RC + DAY, tag="1.4.4-rc.2")
+        self.repo.manifest("1.4.4-rc.2")
         self.assertEqual(self.repo.gate(now=RC + 7 * DAY + 12 * HOUR), [
          "soak: 156 h since 1.4.4-rc.2, 168 h needed"])
         self.assertEqual(self.repo.gate(now=RC + 8 * DAY), [])
@@ -247,8 +266,10 @@ class StableGateTest(ScratchRepoTest):
         self.repo.touch("source/src/main.c")
         self.repo.commit(RC, "1.4.4-rc.x")
         problems = self.repo.gate()
-        self.assertEqual(len(problems), 1)
-        self.assertTrue(problems[0].startswith("no 1.4.4-rc.N tag"), problems)
+        self.assertEqual(len(problems), 2, problems)
+        self.assertEqual(problems[0],
+                         "save-a: no pass row on PSP-1000, second model")
+        self.assertTrue(problems[1].startswith("no 1.4.4-rc.N tag"), problems)
 
     def test_link_code_changed_without_a_declaration_fails(self):
         self.rc("source/src/link_cable.c")
@@ -270,7 +291,7 @@ class RebuiltReleasesTest(ScratchRepoTest):
         self.repo.release(version, extra=extra)
         self.repo.results(row("save-a", "PSP-1000"), row("save-a", "PSP-3000"),
                           *rows)
-        self.repo.manifest(version)
+        self.repo.manifest(f"{version}-rc.1")
         return self.repo.gate(version)
 
     def test_1_4_3_extended_the_wire_without_a_version_change(self):
@@ -334,6 +355,8 @@ class PrereleaseAndLinksTest(ScratchRepoTest):
 
     def test_a_prerelease_lists_what_its_eboot_already_passed(self):
         self.history((1, 1))
+        self.repo.git("tag", "-a", "-m", "rc", "1.4.4-rc.1",
+                      when=START + 5 * HOUR)
         self.repo.release(tests="save-a, link-a")
         self.repo.manifest()
         self.repo.results(row("save-a", "PSP-1000"), row("save-a", "PSP-3000"),

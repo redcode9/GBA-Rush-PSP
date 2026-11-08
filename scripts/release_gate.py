@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Check a release candidate and write its release notes (make release-gate).
 
-docs/releases/<version>.txt says what the release needs. The stable channel
-passes only when, for the EBOOT.PBP of the candidate's manifest:
+docs/releases/<version>.txt says what the release needs. The candidate is
+the newest <version>-rc.N tag: the stable release republishes that rc's
+package, so both channels read its manifest,
+dist/GBA-Rush-PSP-<version>-rc.N.manifest.json. The stable channel passes
+only when, for the EBOOT.PBP of that manifest:
 - every required test has a pass row in docs/HARDWARE-RESULTS.md on every
   model class the test catalog asks for;
 - the newest <version>-rc.N tag is at least 7 days old, or 72 hours for a
@@ -181,11 +184,13 @@ def missing_classes(test_id, catalog, passed):
 
 
 def required_test_problems(tests, catalog, passed, digest):
+    """digest is None without a manifest: then every test is missing."""
+    eboot = f" for EBOOT {digest[:12]}" if digest else ""
     problems = []
     for test_id in tests:
         missing = missing_classes(test_id, catalog, passed)
         if missing:
-            problems.append(f"{test_id}: no pass row for EBOOT {digest} on "
+            problems.append(f"{test_id}: no pass row{eboot} on "
                             f"{', '.join(missing)}")
     return problems
 
@@ -361,23 +366,25 @@ def gate(version, channel, repo, dist, now):
             raise ValueError(f"{name}: unknown test id '{test_id}'")
     facts = parse_compat((docs / "releases" / "link-compat.txt")
                          .read_text(encoding="utf-8"))
-    manifest = dist / f"GBA-Rush-PSP-{version}.manifest.json"
+    problems = name_problems(repo, version)
+    tags = rc_tags(repo, version)
     digest = None
-    if manifest.is_file():
-        try:
-            digest = release_manifest.read_manifest(manifest)["files"][
-             "EBOOT.PBP"]["sha256"]
-        except (KeyError, TypeError):
-            raise ValueError(f"{manifest} has no EBOOT.PBP sha256") from None
-    elif channel == "stable":
-        raise ValueError(f"{manifest} not found: the stable gate checks the "
-                         f"rc's package, made with make package "
-                         f"VERSION={version} CHANNEL=prerelease")
+    if tags:
+        manifest = dist / f"GBA-Rush-PSP-{tags[0][0]}.manifest.json"
+        if manifest.is_file():
+            try:
+                digest = release_manifest.read_manifest(manifest)["files"][
+                 "EBOOT.PBP"]["sha256"]
+            except (KeyError, TypeError):
+                raise ValueError(f"{manifest} has no EBOOT.PBP sha256") \
+                 from None
+        elif channel == "stable":
+            problems.append(f"{manifest} not found: package the rc with "
+                            f"make package VERSION={tags[0][0]}")
     passed = [row for row in rows if digest and row["Result"] == "pass"
               and row["EBOOT sha256"] == digest[:12]]
-    problems = name_problems(repo, version)
     if channel == "stable":
-        problems += required_test_problems(tests, catalog, passed, digest[:12])
+        problems += required_test_problems(tests, catalog, passed, digest)
         problems += candidate_problems(repo, version, release, now)
         problems += link_problems(repo, version, release, passed)
     if not problems:
