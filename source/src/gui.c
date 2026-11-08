@@ -2994,7 +2994,9 @@ void auto_savestate_sleep(void)
 }
 
 /* Nonzero if the slot's .svs is in dir_state; the slot menu backs up to the
-   auto slot only when there is a state to load. */
+   auto slot only when there is a state to load. A save cut between the
+   store's two renames left only a .bak and .tmp: recovered first, as the
+   load will. */
 static u32 savestate_file_exists(u32 slot)
 {
     char savestate_filename[MAX_FILE];
@@ -3002,6 +3004,7 @@ static u32 savestate_file_exists(u32 slot)
     SceIoStat stat;
 
     get_savestate_filename(slot, savestate_filename);
+    save_store_recover(backup_io, dir_state, savestate_filename);
     snprintf(savestate_path, sizeof(savestate_path), "%s%s", dir_state, savestate_filename);
     return (sceIoGetstat(savestate_path, &stat) >= 0);
 }
@@ -3065,7 +3068,8 @@ static u32 action_loadstate_slot(u32 slot)
 }
 
 /* Nonzero if the auto-slot .svs can be opened; maybe_load_auto_savestate()
-   offers a resume only then. */
+   offers a resume only then. A cut save is recovered first, as the load
+   would. */
 static u32 auto_savestate_exists(void)
 {
   char savestate_filename[MAX_FILE];
@@ -3075,6 +3079,7 @@ static u32 auto_savestate_exists(void)
 
   savestate_slot = AUTO_SAVESTATE_SLOT;
   get_savestate_filename(AUTO_SAVESTATE_SLOT, savestate_filename);
+  save_store_recover(backup_io, dir_state, savestate_filename);
   snprintf(savestate_path, sizeof(savestate_path), "%s%s", dir_state, savestate_filename);
   FILE_OPEN(fd, savestate_path, READ);
   savestate_slot = old_slot;
