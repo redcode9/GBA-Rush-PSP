@@ -27,6 +27,28 @@
   Where the Media Engine cannot be used, as on official firmware or in an
   emulator, Exact draws on the main processor and is slower than New. With
   Show FPS on, the counter ends in ME or CPU to tell which.
+- Shortcuts: SELECT+L saves to the current savestate slot and SELECT+R loads
+  it, as the quick save and load buttons do, and holding START+SELECT for
+  half a second opens the menu, also where HOME does not reach the emulator.
+  The hold never quits the game and does not count while A or B is held, so
+  A+B+START+SELECT still resets the game; START and SELECT reach the game
+  during the hold. A shortcut acts on the press that completes it, and the L
+  or R that completes it is kept from the game while it stays held.
+  Shortcuts are saved with the settings and with each game's settings;
+  settings from 1.4.x start with these defaults. Single-button mappings work
+  as before.
+- Controls > Turbo config sets, for each rapid-fire button (A, B, L and R),
+  the speed (30, 15 or 10 presses per second) and the mode. Hold fires while
+  the button is held; Toggle starts firing on one press and stops on the
+  next, with a "Turbo A: on" or "Turbo A: off" notice. The settings are
+  saved globally and with each game's settings. Settings from 1.4.x start at
+  30 presses per second in Hold mode, as before.
+- A ROM folder with no games and no subfolders shows "No games found" and
+  the folder to copy .gba or .zip files to, in the list and in the carousel.
+- On a fresh install the first game shows, for 6 seconds, a notice naming
+  both ways into the menu: "HOME: menu, or hold START+SELECT". It comes back
+  at each start until the emulator has been closed once from the Exit menu,
+  which saves the settings file.
 
 ### Changed
 
@@ -39,6 +61,45 @@
   so it never overwrites the `<rom>_auto.svs` made with `gba_bios.bin`.
 - The `bios_rom_hack_39` and `bios_rom_hack_2C` options of `game_config.txt`
   apply only to `gba_bios.bin`.
+- The release ZIP extracts at the root of the Memory Stick (`ms0:`, or
+  `ef0:` on a PSP Go): it installs or upgrades `PSP/GAME/GBARushPSP/` in one
+  step, with the documentation in its `docs/` folder. The ZIP never contains
+  saves, savestates, settings, `dir.ini`, ROMs or a BIOS, so an upgrade keeps
+  them.
+- The ROM browser reopens in the view last chosen with SELECT, list or
+  carousel, also after a restart; the choice is saved with the other
+  settings when the emulator exits. The savestate and cheat browsers still
+  open in the list, and settings from 1.4.x start in the list.
+- With the analog stick as d-pad, a direction is released a little nearer
+  the centre than where it is pressed, so a stick resting near the
+  sensitivity threshold no longer flickers. Tilt games are unchanged.
+- A game with no settings of its own starts in the display mode last chosen
+  in the Video menu, no longer in the one of the game played before it.
+
+### Fixed
+
+- The emulator no longer shows an error at startup when `dir.ini` is
+  missing: `dir.ini` is optional. Without it, ROMs are listed from the
+  `roms/` folder next to `EBOOT.PBP` when that folder exists, otherwise from
+  the emulator's folder; saves, savestates, cheats and the other files stay
+  in the emulator's folder as before, so existing saves are still found. A
+  `dir.ini` that names a folder that does not exist still shows its warning.
+- Custom menu colours chosen with the colour picker are kept when the
+  emulator restarts, with or without `dir.ini`; every start used to reset
+  them to the selected preset. Choosing a preset or Default theme in the
+  menu still discards them.
+- `gba_bios.bin` is no longer listed as a game in the ROM browser.
+- Two rapid-fire buttons held together now both fire; before, one stayed
+  held and the other never pressed. Rapid fire follows the game's frames, so
+  it no longer speeds up during link-cable waits. Opening the menu, loading
+  a state or putting the PSP to sleep stops rapid fire; a button still held
+  fires again after it is pressed again.
+
+### Known issues
+
+- Settings saved by this version cannot be read by 1.4.x: going back to
+  1.4.x resets every setting to its default, and 1.4.x overwrites the
+  settings file when it exits.
 
 ## 1.4.3 - 2026-11-02
 
