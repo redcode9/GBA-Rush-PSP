@@ -7,10 +7,10 @@ not regress against the baseline runs. Each metric also gets the spread of its
 runs and an exact one-sided permutation verdict. The reports are the key=value
 files written by source/src/perf_report.c.
 
-With --baseline-dir and --candidate-dir, every report under each directory is
-grouped by PSP model, game and ROM revision, and every baseline group is
-compared with the candidate group of the same title and model; a baseline
-group without candidate reports fails the check.
+With --baseline-dir and --candidate-dir, every report under the directories
+given on each side is grouped by PSP model, game and ROM revision, and every
+baseline group is compared with the candidate group of the same title and
+model; a baseline group without candidate reports fails the check.
 """
 
 import argparse
@@ -398,33 +398,37 @@ def group_name(key):
     return "{}/{}-r{}".format(*key)
 
 
-def collect_groups(directory):
-    """The reports anywhere under directory, keyed by GROUP_FIELDS.
+def collect_groups(*directories):
+    """The reports anywhere under the directories, keyed by GROUP_FIELDS.
 
-    Every file but the .md notes must be a stopped .txt report, and the
-    runs of one group must all come from the same version.
+    Every file but the .md notes must be a stopped .txt report, every
+    directory must hold at least one, and the runs of one group must all
+    come from the same version.
     """
-    directory = pathlib.Path(directory)
     groups = {}
-    for path in sorted(directory.rglob("*")):
-        if not path.is_file() or path.name.endswith(".md"):
-            continue
-        name = path.as_posix()
-        if path.suffix != ".txt":
-            raise ValueError(f"{name}: not a .txt report")
-        report = read_report(name)
-        for field in GROUP_FIELDS:
-            if field not in report:
-                raise ValueError(f"{name}: missing field: {field}")
-        groups.setdefault(tuple(report[field] for field in GROUP_FIELDS),
-                          []).append(report)
-    if not groups:
-        raise ValueError(f"no reports in {directory.as_posix()}")
+    for directory in map(pathlib.Path, directories):
+        count = 0
+        for path in sorted(directory.rglob("*")):
+            if not path.is_file() or path.name.endswith(".md"):
+                continue
+            name = path.as_posix()
+            if path.suffix != ".txt":
+                raise ValueError(f"{name}: not a .txt report")
+            report = read_report(name)
+            for field in GROUP_FIELDS:
+                if field not in report:
+                    raise ValueError(f"{name}: missing field: {field}")
+            groups.setdefault(tuple(report[field] for field in GROUP_FIELDS),
+                              []).append(report)
+            count += 1
+        # A mistyped directory must not drop its groups from the check.
+        if not count:
+            raise ValueError(f"no reports in {directory.as_posix()}")
     for key, reports in groups.items():
-        # A whole model directory of the archive would mix releases.
+        # A whole model directory of the archive would mix releases: give
+        # its <game-code>-r<revision>/<version> directories instead.
         if len({report.get("version") for report in reports}) > 1:
-            raise ValueError(f"{directory.as_posix()}: group "
-                             f"{group_name(key)} mixes versions")
+            raise ValueError(f"group {group_name(key)} mixes versions")
     return groups
 
 
@@ -483,10 +487,12 @@ def main(argv=None):
     )
     parser.add_argument("--baseline", nargs="+", metavar="REPORT")
     parser.add_argument("--candidate", nargs="+", metavar="REPORT")
-    parser.add_argument("--baseline-dir", metavar="DIR",
+    parser.add_argument("--baseline-dir", nargs="+", metavar="DIR",
                         help="compare every title x model group of the "
-                        "reports under DIR (with --candidate-dir)")
-    parser.add_argument("--candidate-dir", metavar="DIR")
+                        "reports under the DIRs (with --candidate-dir), "
+                        "such as benchmarks/psp-1000/*/1.4.3 for one "
+                        "release of the archive")
+    parser.add_argument("--candidate-dir", nargs="+", metavar="DIR")
     arguments = parser.parse_args(argv)
     files = (arguments.baseline, arguments.candidate)
     directories = (arguments.baseline_dir, arguments.candidate_dir)
@@ -497,8 +503,8 @@ def main(argv=None):
 
     try:
         if all(directories):
-            outcome = compare_groups(collect_groups(arguments.baseline_dir),
-                                     collect_groups(arguments.candidate_dir))
+            outcome = compare_groups(collect_groups(*arguments.baseline_dir),
+                                     collect_groups(*arguments.candidate_dir))
             print(format_groups(outcome))
             return 0 if outcome["passed"] else 1
         baseline = [read_report(path) for path in arguments.baseline]

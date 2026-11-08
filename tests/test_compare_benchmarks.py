@@ -65,22 +65,26 @@ def write_report(path, values):
                     encoding="utf-8")
 
 
-def write_group(directory, game_code, frames, version="1.4.3"):
-    """Write one run per frames value of game_code under directory/game_code."""
-    folder = pathlib.Path(directory) / game_code
+def write_group(directory, game_code, frames, version="1.4.3", revision="0"):
+    """Write one run per frames value of game_code under directory as the
+    archive lays it out: <game-code>-r<revision>/<version>/run-N.txt."""
+    folder = pathlib.Path(directory) / f"{game_code}-r{revision}" / version
     folder.mkdir(parents=True, exist_ok=True)
     for index, count in enumerate(frames):
         values = report(frames=count)
         values["game-code"] = game_code
+        values["rom-revision"] = revision
         values["version"] = version
         write_report(folder / f"run-{index}.txt", values)
 
 
-def run_groups(baseline_dir, candidate_dir):
+def run_groups(baseline_dirs, candidate_dir):
     """main() in directory mode: (exit status, stdout)."""
+    if isinstance(baseline_dirs, str):
+        baseline_dirs = [baseline_dirs]
     output = io.StringIO()
     with contextlib.redirect_stdout(output):
-        status = MODULE.main(["--baseline-dir", baseline_dir,
+        status = MODULE.main(["--baseline-dir", *baseline_dirs,
                               "--candidate-dir", candidate_dir])
     return status, output.getvalue()
 
@@ -363,6 +367,9 @@ class BenchmarkComparisonTests(unittest.TestCase):
             for game in ("BPRE", "BPEE"):
                 write_group(baseline, game, (600, 601, 602))
                 write_group(candidate, game, (605, 606, 604), "1.5")
+            # A second ROM revision of a title is a group of its own.
+            write_group(baseline, "BPRE", (600, 601, 602), revision="1")
+            write_group(candidate, "BPRE", (605, 606, 604), "1.5", "1")
             # A title only the candidate has is listed but decides nothing.
             write_group(candidate, "AXVE", (600, 600, 600), "1.5")
 
@@ -371,7 +378,32 @@ class BenchmarkComparisonTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertIn("group=1/BPEE-r0 PASS\nthroughput=60.50 fps", output)
         self.assertIn("group=1/BPRE-r0 PASS\n", output)
+        self.assertIn("group=1/BPRE-r1 PASS\n", output)
         self.assertIn("group=1/AXVE-r0 not in baseline", output)
+        self.assertTrue(output.endswith("PASS groups=3 failed=0 missing=0\n"))
+
+    def test_group_mode_selects_one_release_of_the_archive(self):
+        with tempfile.TemporaryDirectory() as archive, \
+                tempfile.TemporaryDirectory() as candidate:
+            model = pathlib.Path(archive) / "psp-1000"
+            for game in ("BPRE", "BPEE"):
+                # The candidate is 5% slower than 1.4.3 but not than 1.5.
+                write_group(model, game, (640, 641, 642))
+                write_group(model, game, (600, 601, 602), "1.5")
+                write_group(candidate, game, (605, 606, 604), "1.6")
+
+            # The whole model directory pools both releases.
+            errors = io.StringIO()
+            with contextlib.redirect_stderr(errors):
+                self.assertEqual(run_groups(str(model), candidate)[0], 2)
+            self.assertIn("group 1/BPEE-r0 mixes versions", errors.getvalue())
+
+            releases = sorted(path.as_posix() for path in model.glob("*/1.5"))
+            self.assertEqual(len(releases), 2)
+            status, output = run_groups(releases, candidate)
+
+        self.assertEqual(status, 0)
+        self.assertIn("group=1/BPRE-r0 PASS\nthroughput=60.50 fps", output)
         self.assertTrue(output.endswith("PASS groups=2 failed=0 missing=0\n"))
 
     def test_group_mode_fails_on_any_group(self):
@@ -425,7 +457,8 @@ class BenchmarkComparisonTests(unittest.TestCase):
 
             values = report()
             del values["rom-revision"]
-            write_report(pathlib.Path(candidate) / "BPRE" / "run-3.txt", values)
+            write_report(pathlib.Path(candidate) / "BPRE-r0" / "1.5.1" /
+                         "run-3.txt", values)
             with self.assertRaisesRegex(ValueError,
                                         "run-3.txt: missing field: rom-revision"):
                 MODULE.collect_groups(candidate)
@@ -435,12 +468,20 @@ class BenchmarkComparisonTests(unittest.TestCase):
                 MODULE.collect_groups(baseline)
             with self.assertRaisesRegex(ValueError, "no reports in"):
                 MODULE.collect_groups(pathlib.Path(baseline) / "absent")
+            # One empty directory among several is an error too.
+            with self.assertRaisesRegex(ValueError, "no reports in .*absent"):
+                MODULE.collect_groups(pathlib.Path(baseline) / "absent", candidate)
 
-            # Files and directories do not mix.
-            with contextlib.redirect_stderr(io.StringIO()), \
-                    self.assertRaises(SystemExit) as stop:
-                MODULE.main(["--baseline", "a.txt", "--candidate-dir", candidate])
-            self.assertEqual(stop.exception.code, 2)
+            # Files and directories do not mix, and each mode needs both sides.
+            for arguments in (["--baseline", "a.txt", "--candidate-dir", candidate],
+                              ["--baseline-dir", baseline],
+                              ["--baseline", "a.txt", "--candidate", "b.txt",
+                               "--baseline-dir", baseline,
+                               "--candidate-dir", candidate]):
+                with contextlib.redirect_stderr(io.StringIO()), \
+                        self.assertRaises(SystemExit) as stop:
+                    MODULE.main(arguments)
+                self.assertEqual(stop.exception.code, 2, arguments)
 
     def test_legacy_v6_fixtures_same_pass_fail(self):
         passing = MODULE.compare(
