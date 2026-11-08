@@ -84,6 +84,10 @@ void menu_cycle_video_mode(void) { video_cycles++; }
 static u32 toast_ids[8];
 static int toast_letters[8];
 static int toasts;
+/* Toasts in the ring since the last toast_clear. */
+int toasts_queued;
+void toast_clear(void);
+void toast_clear(void) { toasts_queued = 0; }
 void toast_show(u32 msg_id, ...);
 void toast_show(u32 msg_id, ...)
 {
@@ -96,6 +100,7 @@ void toast_show(u32 msg_id, ...)
     toast_letters[toasts] = va_arg(args, int);
   }
   toasts++;
+  toasts_queued++;
   va_end(args);
 }
 '''.replace("@SRC@", SRC)
@@ -553,13 +558,14 @@ int main(void)
 
   /* Toggle on R and L: a press starts or stops the train and shows
      "Turbo R" or "Turbo L" on or off once; holding, letting go or a
-     link wait's read shows nothing. */
+     link wait's read shows nothing. Each notice replaces those still
+     queued, so the ring never shows a state that has changed since. */
   option_turbo_mode[3] = 1;
   option_turbo_mode[2] = 1;
   rebuild_fast_forward_button_mask();
   frame(0);
   frame(TURBO_R);
-  assert(toasts == 1 && toast_ids[0] == MSG_TURBO_ON);
+  assert(toasts == 1 && toast_ids[0] == MSG_TURBO_ON && toasts_queued == 1);
   assert(toast_letters[0] == 'R' && game_has(GBA_R));
   frame(TURBO_R);
   wait_read(TURBO_R);
@@ -569,7 +575,7 @@ int main(void)
   frame(0);
   assert(toasts == 1 && !game_has(GBA_R));
   frame(TURBO_R);
-  assert(toasts == 2 && toast_ids[1] == MSG_TURBO_OFF);
+  assert(toasts == 2 && toast_ids[1] == MSG_TURBO_OFF && toasts_queued == 1);
   assert(toast_letters[1] == 'R');
   for(i = 0; i < 4; i++)
   {
@@ -577,11 +583,11 @@ int main(void)
     assert(!game_has(GBA_R));
   }
   frame(LT);
-  assert(toasts == 3 && toast_ids[2] == MSG_TURBO_ON);
+  assert(toasts == 3 && toast_ids[2] == MSG_TURBO_ON && toasts_queued == 1);
   assert(toast_letters[2] == 'L' && game_has(GBA_L));
   frame(0);
   frame(LT);
-  assert(toasts == 4 && toast_ids[3] == MSG_TURBO_OFF);
+  assert(toasts == 4 && toast_ids[3] == MSG_TURBO_OFF && toasts_queued == 1);
   assert(toast_letters[3] == 'L');
   frame(0);
 

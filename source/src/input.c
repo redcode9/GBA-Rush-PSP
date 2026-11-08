@@ -27,6 +27,7 @@
 #include "config_model.h"
 #include "input_chord.h"
 #include "input_model.h"
+#include "toast.h"
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 #include "input_trace.h"
@@ -608,7 +609,11 @@ u32 update_input(void)
   new_key = input_model_turbo(&turbo_state, inputs & ~hidden_inputs,
    turbo_frame, turbo_inputs, new_key, &turbo_flips);
 
-  // Each press of a Toggle turbo says whether it is now on or off
+  // Each press of a Toggle turbo says whether it is now on or off; the
+  // newest notice drops those still queued, which may name an old state
+  if (turbo_flips != 0)
+    toast_clear();
+
   for (i = 0; turbo_flips != 0; i++, turbo_flips >>= 1)
   {
     if ((turbo_flips & 1) != 0)
