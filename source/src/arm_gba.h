@@ -39,4 +39,18 @@ void arm_gba_counters(u32 *blocks, u32 *flushes);
    the code there runs process_cheats_at_hook() first. */
 void arm_gba_set_cheat_hook(u32 address);
 
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+#include "core_profile.h"
+
+/* Diagnostic builds: a sampling profile of the new core over a benchmark
+   capture (core_profile.h). start clears it and starts sampling, stop
+   ends it, and format writes its report: -1 if it does not fit or the new
+   core was not running. pause(1) skips the samples until pause(0), so the
+   time the menu is open does not count. */
+void arm_gba_profile_start(void);
+void arm_gba_profile_stop(void);
+void arm_gba_profile_pause(int pause);
+int arm_gba_profile_format(char *out, u32 size);
+#endif
+
 #endif /* ARM_GBA_H */

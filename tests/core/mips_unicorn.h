@@ -1,9 +1,9 @@
 /*
  * Runs the code arm_mips.c generates in Unicorn (unicorn-engine.org), a
- * MIPS32 emulator, so the backend can be tested on any host. Unicorn must
- * be built with the Allegrex's clz, clo, max and min (SPECIAL functions
- * 0x16, 0x17, 0x2C and 0x2D): stock Unicorn raises a reserved instruction
- * there and loses the pc. scripts/check-core.sh says how.
+ * MIPS32 emulator, so the backend can be tested on any host. Stock Unicorn
+ * lacks the Allegrex's clz, clo, max and min (SPECIAL functions 0x16, 0x17,
+ * 0x2C and 0x2D), so a hook runs them unless scripts/build-unicorn.sh
+ * patched them in. scripts/check-core.sh says how to build the tests.
  */
 
 #ifndef MIPS_UNICORN_H
