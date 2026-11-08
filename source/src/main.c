@@ -1713,7 +1713,8 @@ static void find_main_path(const char *eboot_path)
 /* One-time startup: platform services, settings, BIOS, sound and the
    power callbacks. The power lock keeps the PSP from suspending meanwhile.
    Returns 1 when tempgba.cfg did not load, which only a regular quit
-   writes: a first run. */
+   writes: a first run. tests/test_startup.py extracts this function by
+   its exact signature. */
 static u32 setup_main(const char *eboot_path)
 {
   FastForwardSettings fast_forward_settings;

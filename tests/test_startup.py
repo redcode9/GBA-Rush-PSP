@@ -179,6 +179,59 @@ int main(void) {
 '''
 
 
+# Host stand-ins for what setup_main() calls. Only load_config_file()
+# matters here (config_result plays its 0 or -1), so the other calls
+# compile to nothing.
+SETUP_STUBS = r'''
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+typedef unsigned u32;
+typedef int s32;
+typedef int FastForwardSettings;
+typedef void hook(void);
+FastForwardSettings fast_forward_policy;
+hook *__scePowerSetClockFrequency, *__draw_volume_status;
+void scePowerSetClockFrequency(void) {}
+void scePowerSetClockFrequency371(void) {}
+void draw_volume_status_null(void) {}
+u32 enable_home_menu, sound_pause;
+s32 config_result;
+int config_calls;
+void fast_forward_settings_defaults(FastForwardSettings *s) { *s = 0; }
+void fast_forward_policy_init(FastForwardSettings *p,
+ const FastForwardSettings *s) { *p = *s; }
+int sceKernelDevkitVersion(void) { return 0x06060010; }
+void find_main_path(const char *p) { assert(strcmp(p, "EBOOT.PBP") == 0); }
+s32 load_config_file(void) { config_calls++; return config_result; }
+''' + "".join("#define %s(...) ((void)0)\n" % name for name in """
+ scePowerLock initExceptionHandler init_input perf_monitor_init init_video
+ video_resolution_large runtime_log_psp_init sceKernelRegisterSubIntrHandler
+ sceKernelEnableSubIntr sceUtilityGetSystemParamInt
+ rebuild_fast_forward_button_mask load_theme_config load_recent_roms
+ sceImposeSetHomePopup load_setting_cfg load_bios_file init_gamepak_buffer
+ set_sound_volume init_sound setup_callbacks scePowerUnlock""".split())
+
+
+# Only a regular quit writes tempgba.cfg, so a config that does not load
+# (-1) is a first run and one that loads (0) is not.
+SETUP_SCENARIOS = r'''
+static u32 run(s32 result) {
+  u32 first_run;
+  config_result = result; config_calls = 0;
+  first_run = setup_main("EBOOT.PBP");
+  assert(config_calls == 1);
+  return first_run;
+}
+int main(void) {
+  u32 missing = run(-1), present = run(0);
+  assert(missing == 1 && present == 0);
+  puts("first-run regressions passed");
+  return 0;
+}
+'''
+
+
 # Host stand-ins for load_setting_cfg() and set_default_directories().
 # load_dir_cfg() is not spliced (its nested functions do not build on the
 # host); dir_ini_result plays its return value. sceIoDopen() opens only the
@@ -261,6 +314,12 @@ class StartupTests(unittest.TestCase):
         source += function("source/src/main.c", "int user_main(int argc, char *argv[])")
         source += SCENARIOS
         build_and_run(source, "startup")
+
+    def test_missing_config_is_first_run(self):
+        source = SETUP_STUBS + function("source/src/main.c",
+                                       "static u32 setup_main(const char *eboot_path)")
+        source += SETUP_SCENARIOS
+        build_and_run(source, "first_run")
 
     def test_missing_dir_ini_needs_no_dialog(self):
         source = DIR_STUBS + function("source/src/gui.c",
