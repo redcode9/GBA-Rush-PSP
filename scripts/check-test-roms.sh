@@ -74,7 +74,8 @@ else
     $OUT/core-rom.sav
 fi
 
-for chip in sram32 sram64 flash64 flash128 eeprom512 eeprom8k notag
+for chip in sram32 sram64 flash64 flash128 eeprom512 eeprom8k \
+  eeprom8k_wfirst notag
 do
   rom=$OUT/save-$chip.gba
   save=$OUT/save-$chip.sav
@@ -146,7 +147,8 @@ fi
 $PYTHON tools/decode_test_rom.py --allow-fail $mgba_allow \
   --allow-hang pc_high $OUT/mgba/core-rom.sav
 
-for chip in sram32 sram64 flash64 flash128 eeprom512 eeprom8k notag
+for chip in sram32 sram64 flash64 flash128 eeprom512 eeprom8k \
+  eeprom8k_wfirst notag
 do
   rom=$OUT/save-$chip.gba
   save=$OUT/mgba/save-$chip.sav
