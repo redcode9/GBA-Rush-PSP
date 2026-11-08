@@ -4296,7 +4296,6 @@ u32 menu(void)
   void menu_delete_state(void)
   {
     char savestate_filename[MAX_FILE];
-    char savestate_path[MAX_PATH];
     char confirm_msg[80];
 
     if (first_load || current_option_num >= SAVESTATE_SLOT_COUNT)
@@ -4309,8 +4308,8 @@ u32 menu(void)
     /* yesno_dialog: returns 0 = confirmed (O), 1 = cancel (X) */
     if (yesno_dialog(confirm_msg) == 0)
     {
-      snprintf(savestate_path, sizeof(savestate_path), "%s%s", dir_state, savestate_filename);
-      sceIoRemove(savestate_path);
+      /* With its .bak and .tmp, which a load would otherwise recover. */
+      save_store_remove(backup_io, dir_state, savestate_filename);
 
       /* Refresh timestamp to empty */
       if (savestate_slot == AUTO_SAVESTATE_SLOT)

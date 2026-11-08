@@ -135,6 +135,12 @@ SaveStoreResult save_store_load(const SaveStoreIo *io, const char *dir,
    FAILED if a step fails. */
 SaveStoreResult save_store_recover(const SaveStoreIo *io, const char *dir,
  const char *name);
+/* Deletes dir followed by name with the .tmp and .bak its writes leave, so
+   save_store_recover() cannot bring the file back; a .orig stays, as no
+   write deletes it. The file goes last: a cut or a failure part-way leaves
+   it in place. OK, or FAILED if a name does not fit or a removal fails. */
+SaveStoreResult save_store_remove(const SaveStoreIo *io, const char *dir,
+ const char *name);
 /* Recovers, then opens dir followed by name plus ".tmp" for writing. Call
    save_store_commit() even when a step fails: it closes the .tmp. */
 SaveStoreResult save_store_begin(SaveStoreWrite *transaction,

@@ -107,6 +107,19 @@ SaveStoreResult save_store_recover(const SaveStoreIo *io, const char *dir,
   return SAVE_STORE_OK;
 }
 
+SaveStoreResult save_store_remove(const SaveStoreIo *io, const char *dir,
+ const char *name)
+{
+  static SaveStoreWrite paths;
+
+  if(!set_paths(&paths, dir, name) ||
+     !io->remove(io->context, paths.temporary) ||
+     !io->remove(io->context, paths.backup) ||
+     !io->remove(io->context, paths.primary))
+    return SAVE_STORE_FAILED;
+  return SAVE_STORE_OK;
+}
+
 SaveStoreResult save_store_begin(SaveStoreWrite *transaction,
  const SaveStoreIo *io, const char *dir, const char *name)
 {

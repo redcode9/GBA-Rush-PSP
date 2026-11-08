@@ -249,6 +249,17 @@ then
   fail "A savestate save allocates or truncates the old state"
 fi
 
+# Deleting a state takes the .bak and .tmp its saves leave, which the next
+# load would otherwise recover as the deleted state.
+if ! body '/^  void menu_delete_state(void)/,/^  }/p' source/src/gui.c | awk '
+  /save_store_remove\(backup_io, dir_state, / { removes++ }
+  /sceIoRemove\(/ { bad = 1 }
+  END { exit !(removes == 1 && !bad) }
+'
+then
+  fail "Deleting a savestate leaves a .bak or .tmp that brings it back"
+fi
+
 # The sceIo binding of the .sav and the settings file allocates nothing,
 # so a save is still written when memory has run out.
 if ! awk '

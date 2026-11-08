@@ -8,7 +8,9 @@
  * and each fault gives its own result with the old or new image left.
  * Each fault switch of the fake file system (fake_store_io.c) is shown to
  * take effect. A write over a file of another size keeps that file once
- * as the .orig, through any cut or fault. The pre-link copies keep three
+ * as the .orig, through any cut or fault. A removal deletes the .tmp and
+ * .bak with the file, so recovery never brings it back. The pre-link
+ * copies keep three
  * generations, the newest in .link1; a power cut or a failed rename loses
  * at most the oldest, and never leaves a partial .link1.
  */
@@ -292,6 +294,7 @@ static void test_long_path_fails_without_io(void)
          SAVE_STORE_FAILED);
   assert(file_size == 0);
   assert(save_store_recover(&io, "ms0:/", name) == SAVE_STORE_FAILED);
+  assert(save_store_remove(&io, "ms0:/", name) == SAVE_STORE_FAILED);
   assert(save_store_write(&io, "ms0:/", name, data, sizeof(data)) ==
          SAVE_STORE_FAILED);
   assert(store.calls == 0);
@@ -442,6 +445,78 @@ static void test_recovery(void)
   assert(save_store_recover(&io, SAVE_DIR, NAME) == SAVE_STORE_FAILED);
   assert(store.remove_calls == 1);
   assert(restart() == OLD);
+}
+
+/* The file with a .bak, a .tmp a failed write left, and a .orig. */
+static void seed_generation(void)
+{
+  reset();
+  fake_store_seed(&store, OLD_SIZE, OLD);
+  fake_store_seed_file(&store, BAK, ANCIENT_SIZE, ANCIENT);
+  fake_store_seed_file(&store, TMP, NEW_SIZE, NEW);
+  fake_store_seed_file(&store, ORIG_PATH, ORIG_SIZE, ORIG);
+}
+
+/* After a removal, whole or stopped part-way, recovery gives back the file
+   itself or nothing, never its .bak or .tmp; the .orig is untouched.
+   Returns 1 if the file is gone. */
+static int removed_after_recovery(void)
+{
+  size_t file_size = 0;
+  SaveStoreResult result;
+
+  assert(save_store_recover(&io, SAVE_DIR, NAME) == SAVE_STORE_OK);
+  assert(fake_store_file_size(&store, TMP) < 0);
+  assert(fake_store_file_is(&store, ORIG_PATH, ORIG_SIZE, ORIG));
+  result = load(&file_size);
+  if(result == SAVE_STORE_NOT_FOUND)
+    return 1;
+  assert(result == SAVE_STORE_OK && loaded(file_size, OLD_SIZE, OLD));
+  return 0;
+}
+
+/* A removal takes the .tmp and the .bak with the file, so a deleted file
+   never comes back; a power cut or a failed removal at any step leaves the
+   file in place or gone. */
+static void test_remove_takes_the_generation(void)
+{
+  int cut;
+  int call;
+  int gone = 0;
+
+  seed_generation();
+  assert(save_store_remove(&io, SAVE_DIR, NAME) == SAVE_STORE_OK);
+  assert(fake_store_file_size(&store, PRIMARY) < 0);
+  assert(fake_store_file_size(&store, BAK) < 0);
+  assert(removed_after_recovery());
+
+  for(cut = 1; ; cut++)
+  {
+    seed_generation();
+    store.cut_after = cut;
+    save_store_remove(&io, SAVE_DIR, NAME);
+    if(!store.power_off)
+      break;
+    fake_store_restart(&store);
+    gone += removed_after_recovery();
+  }
+  assert(cut == 4 && gone == 1);
+
+  for(call = 1; call <= 3; call++)
+  {
+    seed_generation();
+    store.fail_remove = call;
+    assert(save_store_remove(&io, SAVE_DIR, NAME) == SAVE_STORE_FAILED);
+    assert(store.remove_calls == call);
+    assert(fake_store_file_is(&store, PRIMARY, OLD_SIZE, OLD));
+    assert(!removed_after_recovery());
+  }
+
+  /* Only a .orig: nothing to remove. */
+  reset();
+  fake_store_seed_file(&store, ORIG_PATH, ORIG_SIZE, ORIG);
+  assert(save_store_remove(&io, SAVE_DIR, NAME) == SAVE_STORE_OK);
+  assert(removed_after_recovery());
 }
 
 /* Once state's ORIG file is the .orig, a write of its size, as after a
@@ -962,6 +1037,7 @@ int main(void)
   test_load_never_writes();
   test_write_keeps_the_old_image_as_backup();
   test_recovery();
+  test_remove_takes_the_generation();
   test_power_cut_at_every_step();
   test_each_fault_gives_its_result();
   test_short_writes();
