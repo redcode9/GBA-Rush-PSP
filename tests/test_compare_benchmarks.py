@@ -449,6 +449,14 @@ class BenchmarkComparisonTests(unittest.TestCase):
             with contextlib.redirect_stderr(errors):
                 self.assertEqual(run_groups(baseline, candidate)[0], 2)
             self.assertIn("group 1/BPRE-r0: at least 3 reports", errors.getvalue())
+            # Overlapping directories count each report once, so they do
+            # not get the short group past MIN_RUNS.
+            errors = io.StringIO()
+            with contextlib.redirect_stderr(errors):
+                self.assertEqual(run_groups([candidate,
+                                             f"{candidate}/BPRE-r0"],
+                                            baseline)[0], 2)
+            self.assertIn("group 1/BPRE-r0: at least 3 reports", errors.getvalue())
 
             write_group(candidate, "BPRE", (605, 606, 604, 607), "1.5.1")
             write_group(candidate, "BPRE", (605, 606, 604), "1.5")

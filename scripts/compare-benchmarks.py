@@ -409,6 +409,7 @@ def collect_groups(*directories):
     come from the same version.
     """
     groups = {}
+    seen = set()
     for directory in map(pathlib.Path, directories):
         count = 0
         for path in sorted(directory.rglob("*")):
@@ -417,13 +418,17 @@ def collect_groups(*directories):
             name = path.as_posix()
             if path.suffix != ".txt":
                 raise ValueError(f"{name}: not a .txt report")
+            count += 1
+            # Overlapping directories must not count a run twice.
+            if path.resolve() in seen:
+                continue
+            seen.add(path.resolve())
             report = read_report(name)
             for field in GROUP_FIELDS:
                 if field not in report:
                     raise ValueError(f"{name}: missing field: {field}")
             groups.setdefault(tuple(report[field] for field in GROUP_FIELDS),
                               []).append(report)
-            count += 1
         # A mistyped directory must not drop its groups from the check.
         if not count:
             raise ValueError(f"no reports in {directory.as_posix()}")
