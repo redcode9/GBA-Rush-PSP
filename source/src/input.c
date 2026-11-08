@@ -589,7 +589,7 @@ u32 update_input(void)
   // Turbo follows emulated frames, so the reads of a link wait repeat the
   // same keys
   new_key = input_model_turbo(&turbo_state, inputs & ~hidden_inputs,
-   turbo_frame, turbo_inputs, new_key);
+   turbo_frame, turbo_inputs, new_key, NULL);
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
   new_key = input_trace_apply(&diagnostic_trace, diagnostic_trace_frame,

@@ -57,7 +57,8 @@ static uint32_t count_presses(InputModelTurboState *state, uint32_t pad,
 
   for(i = 0; i < count; i++)
   {
-    uint32_t down = input_model_turbo(state, pad, first + i, turbo, 0) & key;
+    uint32_t down = input_model_turbo(state, pad, first + i, turbo, 0,
+     NULL) & key;
 
     if(down != 0 && was_down == 0)
       presses++;
@@ -80,13 +81,13 @@ static void test_two_turbo_inputs_both_pulse(void)
 
   /* Pressed one frame apart, each train keeps its own phase. */
   memset(&state, 0, sizeof(state));
-  assert(input_model_turbo(&state, IN_CIRCLE, 100, turbo, 0) == GBA_A);
-  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 101, turbo, 0) ==
-   GBA_B);
-  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 102, turbo, 0) ==
-   GBA_A);
-  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 103, turbo, 0) ==
-   GBA_B);
+  assert(input_model_turbo(&state, IN_CIRCLE, 100, turbo, 0, NULL) == GBA_A);
+  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 101, turbo, 0,
+   NULL) == GBA_B);
+  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 102, turbo, 0,
+   NULL) == GBA_A);
+  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 103, turbo, 0,
+   NULL) == GBA_B);
 }
 
 /* A press lasting one read still reaches the game, at every speed, in
@@ -109,14 +110,15 @@ static void test_tap_gives_a_press(void)
         reset_turbo();
         set_turbo(1, GBA_A, (uint8_t)speed, (uint8_t)toggle);
         memset(&state, 0, sizeof(state));
-        assert(input_model_turbo(&state, 0, frames[f] - 1, turbo, 0) == 0);
-        assert(input_model_turbo(&state, IN_CIRCLE, frames[f], turbo, 0) ==
-         GBA_A);
+        assert(input_model_turbo(&state, 0, frames[f] - 1, turbo, 0,
+         NULL) == 0);
+        assert(input_model_turbo(&state, IN_CIRCLE, frames[f], turbo, 0,
+         NULL) == GBA_A);
         /* Hold stops on the release, Toggle keeps pulsing. */
-        assert((input_model_turbo(&state, 0, frames[f] + 1, turbo, 0) ==
+        assert((input_model_turbo(&state, 0, frames[f] + 1, turbo, 0, NULL) ==
          0) == (toggle == 0 || speed == INPUT_MODEL_TURBO_30));
         assert(input_model_turbo(&state, 0, frames[f] + 2 * (speed + 1),
-         turbo, 0) == (toggle != 0 ? GBA_A : 0));
+         turbo, 0, NULL) == (toggle != 0 ? GBA_A : 0));
       }
     }
   }
@@ -142,7 +144,7 @@ static void test_toggle_inverts_on_each_press(void)
     for(i = 0; i < 23; i++, frame++)
     {
       uint32_t pad = i < 3 ? IN_CIRCLE : 0;
-      uint32_t keys = input_model_turbo(&state, pad, frame, turbo, 0);
+      uint32_t keys = input_model_turbo(&state, pad, frame, turbo, 0, NULL);
 
       if(round % 2 == 0)
         assert(keys == (((i / 2) % 2 == 0) ? GBA_A : 0));
@@ -156,6 +158,46 @@ static void test_toggle_inverts_on_each_press(void)
   assert(count_presses(&state, IN_CIRCLE, 0, 60, GBA_A) == 15);
 }
 
+/* Only a press of a Toggle input is reported, once, with the train it
+   started or stopped in state.active: not the reads it stays held, a link
+   wait's repeated read, a Hold input or an input still held after stop. */
+static void test_toggle_reports_flips(void)
+{
+  InputModelTurboState state;
+  uint32_t flipped = 0xDEADu;
+
+  reset_turbo();
+  set_turbo(1, GBA_A, INPUT_MODEL_TURBO_30, 1);
+  memset(&state, 0, sizeof(state));
+
+  assert(input_model_turbo(&state, IN_CIRCLE, 0, turbo, 0, &flipped) ==
+   GBA_A);
+  assert(flipped == IN_CIRCLE && (state.active & IN_CIRCLE) != 0);
+  input_model_turbo(&state, IN_CIRCLE, 0, turbo, 0, &flipped);
+  assert(flipped == 0);
+  input_model_turbo(&state, IN_CIRCLE, 1, turbo, 0, &flipped);
+  assert(flipped == 0);
+  input_model_turbo(&state, 0, 2, turbo, 0, &flipped);
+  assert(flipped == 0 && (state.active & IN_CIRCLE) != 0);
+
+  /* The next press stops the train; Cross, a Hold input, never flips. */
+  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 3, turbo, 0,
+   &flipped) == GBA_B);
+  assert(flipped == IN_CIRCLE && (state.active & IN_CIRCLE) == 0);
+  input_model_turbo(&state, IN_CROSS, 4, turbo, 0, &flipped);
+  assert(flipped == 0);
+
+  /* Started again, then stopped by input_model_turbo_stop while held. */
+  input_model_turbo(&state, IN_CIRCLE, 5, turbo, 0, &flipped);
+  assert(flipped == IN_CIRCLE && (state.active & IN_CIRCLE) != 0);
+  input_model_turbo_stop(&state);
+  input_model_turbo(&state, IN_CIRCLE, 6, turbo, 0, &flipped);
+  assert(flipped == 0 && state.active == 0);
+  input_model_turbo(&state, 0, 7, turbo, 0, &flipped);
+  input_model_turbo(&state, IN_CIRCLE, 8, turbo, 0, &flipped);
+  assert(flipped == IN_CIRCLE && (state.active & IN_CIRCLE) != 0);
+}
+
 /* Stop ends every train; an input still held starts again only on a
    new press. */
 static void test_stop(void)
@@ -166,18 +208,18 @@ static void test_stop(void)
   reset_turbo();
   set_turbo(2, GBA_B, INPUT_MODEL_TURBO_30, 1);
   memset(&state, 0, sizeof(state));
-  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 0, turbo, 0) ==
+  assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, 0, turbo, 0, NULL) ==
    (GBA_A | GBA_B));
   input_model_turbo_stop(&state);
 
   for(frame = 1; frame < 40; frame++)
-    assert(input_model_turbo(&state, IN_CIRCLE, frame, turbo, 0) == 0);
+    assert(input_model_turbo(&state, IN_CIRCLE, frame, turbo, 0, NULL) == 0);
 
-  assert(input_model_turbo(&state, 0, 40, turbo, 0) == 0);
-  assert(input_model_turbo(&state, IN_CIRCLE, 41, turbo, 0) == GBA_A);
-  assert(input_model_turbo(&state, IN_CROSS, 42, turbo, 0) == GBA_B);
-  assert(input_model_turbo(&state, 0, 43, turbo, 0) == 0);
-  assert(input_model_turbo(&state, 0, 44, turbo, 0) == GBA_B);
+  assert(input_model_turbo(&state, 0, 40, turbo, 0, NULL) == 0);
+  assert(input_model_turbo(&state, IN_CIRCLE, 41, turbo, 0, NULL) == GBA_A);
+  assert(input_model_turbo(&state, IN_CROSS, 42, turbo, 0, NULL) == GBA_B);
+  assert(input_model_turbo(&state, 0, 43, turbo, 0, NULL) == 0);
+  assert(input_model_turbo(&state, 0, 44, turbo, 0, NULL) == GBA_B);
 }
 
 /* Turbo A plus a normal input on A give a held A: the old rapid-fire
@@ -195,12 +237,12 @@ static void test_turbo_and_normal_key_hold(void)
   memset(&state, 0, sizeof(state));
   for(frame = 0; frame < 60; frame++)
     assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, frame, turbo,
-     GBA_A) == GBA_A);
+     GBA_A, NULL) == GBA_A);
 
   memset(&state, 0, sizeof(state));
   for(frame = 0; frame < 60; frame++)
     assert(input_model_turbo(&state, IN_CIRCLE | IN_CROSS, frame, turbo,
-     GBA_B) == (GBA_B | (frame % 2 == 0 ? GBA_A : 0)));
+     GBA_B, NULL) == (GBA_B | (frame % 2 == 0 ? GBA_A : 0)));
 }
 
 /* Speeds 30, 15 and 10 give 30, 15 and 10 presses over 60 frames, with
@@ -232,7 +274,7 @@ static void test_speeds(void)
 
       memset(&state, 0, sizeof(state));
       for(i = 0; i < 12; i++)
-        assert(input_model_turbo(&state, IN_CIRCLE, 500 + i, turbo, 0) ==
+        assert(input_model_turbo(&state, IN_CIRCLE, 500 + i, turbo, 0, NULL) ==
          (((i / (speed + 1)) % 2 == 0) ? GBA_A : 0));
     }
   }
@@ -263,12 +305,12 @@ static void test_same_inputs_same_keys(void)
   {
     uint32_t pad = lcg_next() & 0xFFFFu;
     uint32_t reads = 1 + lcg_next() % 3;
-    uint32_t keys = input_model_turbo(&once, pad, frame, turbo, 0);
+    uint32_t keys = input_model_turbo(&once, pad, frame, turbo, 0, NULL);
     InputModelTurboState copy = repeated;
 
-    assert(input_model_turbo(&copy, pad, frame, turbo, 0) == keys);
+    assert(input_model_turbo(&copy, pad, frame, turbo, 0, NULL) == keys);
     while(reads-- > 0)
-      assert(input_model_turbo(&repeated, pad, frame, turbo, 0) == keys);
+      assert(input_model_turbo(&repeated, pad, frame, turbo, 0, NULL) == keys);
     assert(memcmp(&copy, &repeated, sizeof(copy)) == 0);
     assert(memcmp(&once, &repeated, sizeof(once)) == 0);
   }
@@ -396,6 +438,7 @@ int main(void)
   test_two_turbo_inputs_both_pulse();
   test_tap_gives_a_press();
   test_toggle_inverts_on_each_press();
+  test_toggle_reports_flips();
   test_stop();
   test_turbo_and_normal_key_hold();
   test_speeds();

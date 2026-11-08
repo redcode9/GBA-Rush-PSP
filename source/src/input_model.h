@@ -19,6 +19,7 @@
 #ifndef INPUT_MODEL_H
 #define INPUT_MODEL_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #define INPUT_MODEL_INPUTS 16
@@ -53,9 +54,13 @@ typedef struct
  * clears a key a normal input holds. pad holds the 16 inputs held now;
  * frame is the emulated frame counter, which may wrap. Calling again
  * with the same frame and pad gives the same keys. A train is on in the
- * frame of its press. turbo has INPUT_MODEL_INPUTS entries. */
+ * frame of its press. turbo has INPUT_MODEL_INPUTS entries. Unless it
+ * is NULL, *flipped gets the Toggle inputs this read pressed: each one
+ * started or stopped its train, and state->active says which. A read
+ * repeated with the same pad flips nothing. */
 uint32_t input_model_turbo(InputModelTurboState *state, uint32_t pad,
- uint32_t frame, const InputModelTurbo *turbo, uint32_t normal_keys);
+ uint32_t frame, const InputModelTurbo *turbo, uint32_t normal_keys,
+ uint32_t *flipped);
 /* Stops every train, for the menu, state loads and sleep; an input
  * still held starts again only on a new press. */
 void input_model_turbo_stop(InputModelTurboState *state);

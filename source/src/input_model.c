@@ -12,10 +12,12 @@
 #include "input_model.h"
 
 uint32_t input_model_turbo(InputModelTurboState *state, uint32_t pad,
- uint32_t frame, const InputModelTurbo *turbo, uint32_t normal_keys)
+ uint32_t frame, const InputModelTurbo *turbo, uint32_t normal_keys,
+ uint32_t *flipped)
 {
   uint32_t pressed = pad & ~state->prev_pad;
   uint32_t keys = normal_keys;
+  uint32_t flips = 0;
   uint32_t i;
 
   state->prev_pad = pad;
@@ -28,6 +30,8 @@ uint32_t input_model_turbo(InputModelTurboState *state, uint32_t pad,
 
     if((pressed & bit) != 0)
     {
+      if(turbo[i].toggle != 0)
+        flips |= bit;
       if(turbo[i].toggle != 0 && (state->active & bit) != 0)
       {
         state->active &= ~bit;
@@ -46,6 +50,8 @@ uint32_t input_model_turbo(InputModelTurboState *state, uint32_t pad,
      ((frame - state->start_frame[i]) / (turbo[i].speed + 1u)) % 2 == 0)
       keys |= turbo[i].key;
   }
+  if(flipped != NULL)
+    *flipped = flips;
   return keys;
 }
 
