@@ -4,8 +4,9 @@
  * test sets the registers, runs one instruction and lists the expected
  * registers and memory transactions.
  *
- * Usage: single_step [-v] FILE.json.bin...
- * Prints passed/total per file; -v prints the first failures in detail.
+ * Usage: single_step [-v] [-n COUNT] FILE.json.bin...
+ * Prints passed/total per file; -v prints the first failures in detail,
+ * -n runs only the first COUNT tests of each file.
  * Built with SINGLE_STEP_JIT (and Unicorn, see mips_unicorn.h), the MIPS
  * backend runs every test as well and must end as the interpreter does.
  */
@@ -602,6 +603,7 @@ int main(int argc, char **argv)
   ArmBus bus = { NULL, read8, read16, read32, write8, write16, write32,
    code32 };
   int verbose = 0;
+  unsigned limit = 0;
   int arg;
   unsigned long all_passed = 0;
   unsigned long all_known = 0;
@@ -635,6 +637,11 @@ int main(int argc, char **argv)
 #endif
       continue;
     }
+    if(!strcmp(argv[arg], "-n") && arg + 1 < argc)
+    {
+      limit = (unsigned)strtoul(argv[++arg], NULL, 10);
+      continue;
+    }
     data = read_file(argv[arg], &size);
     if(!data || size < 8 || get32(data) != 0xD33DBAE0u)
     {
@@ -642,6 +649,8 @@ int main(int argc, char **argv)
       return 1;
     }
     count = get32(data + 4);
+    if(limit && count > limit)
+      count = limit;
     for(i = 0; i < count && offset < size; i++)
     {
       State got;
@@ -656,6 +665,7 @@ int main(int argc, char **argv)
       bus_error = 0;
       load_state(&test.initial);
       cycles = arm_core_step(core);
+      (void)cycles;   /* read only by the backend check */
       save_state(&got);
 #ifdef SINGLE_STEP_JIT
       if(!backend_agrees(&test, &got, cycles) && verbose && shown_backend < 8)
