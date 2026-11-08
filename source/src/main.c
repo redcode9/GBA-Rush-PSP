@@ -2598,7 +2598,7 @@ void *safe_malloc(size_t size)
 
 // main.c's savestate block: guest clock, LCD phase, IRQ entry delay and
 // timers. READ loads it from savestate_file; WRITE_MEM appends it to the
-// in-memory savestate at write_mem_ptr and ignores savestate_file.
+// savestate being written (savestate_write_mem) and ignores savestate_file.
 #define MAIN_SAVESTATE_BODY(type)                                             \
 {                                                                             \
   FILE_##type##_VARIABLE(savestate_file, cpu_ticks);                          \

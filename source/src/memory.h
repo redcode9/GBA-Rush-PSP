@@ -265,7 +265,8 @@ SaveStoreResult load_backup(char *name, SaveTag tag, u32 retry);
 // load_file_zip() for a ROM larger than the ROM buffer.
 #define LOAD_GAMEPAK_CANCELLED (-3)
 
-// The .sav file I/O: gui.c's sceIo binding on the PSP, a fake in tests.
+// The .sav and savestate file I/O: gui.c's sceIo binding on the PSP, a
+// fake in tests.
 extern const SaveStoreIo *backup_io;
 
 u32 read_eeprom(void);
@@ -288,15 +289,16 @@ u32 update_backup_immediately(void);
    the warning and clears it. */
 extern u32 backup_write_warning;
 
-extern u8 *write_mem_ptr;
+/* FILE_WRITE_MEM: appends to the savestate save_state() is writing. */
+void savestate_write_mem(const void *data, size_t size);
 
 /* Ask, then load or save savestate_filename in dir_state; the prompt names
    savestate_slot (10 is gui.c's AUTO_SAVESTATE_SLOT). Both refuse while
    the link cable is active, and load_state also refuses a savestate made
    with the other BIOS (gba_bios.bin or the built-in one), saying which one
    it needs. The file starts with screen_capture and a ticker() timestamp,
-   which load_state skips. Returns 1 if the user confirmed and the operation
-   completed, else 0. */
+   which load_state skips; save_state keeps the previous file as <name>.bak.
+   Returns 1 if the user confirmed and the operation completed, else 0. */
 u32 load_state(char *savestate_filename);
 u32 save_state(char *savestate_filename, u16 *screen_capture);
 

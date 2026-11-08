@@ -27,10 +27,12 @@ def open_bios_bytes():
 
 
 def savestate_layout():
-    """memory.c's one-line SAVESTATE_* macros: the savestate offsets."""
+    """memory.c's one-line SAVESTATE_* macros (the savestate offsets) and
+    the savestate writer's static variables."""
     lines = (ROOT / MEMORY).read_text().splitlines()
     return "".join(line + "\n" for line in lines
-                   if line.startswith("#define SAVESTATE_") and not line.endswith("\\"))
+                   if (line.startswith("#define SAVESTATE_") and not line.endswith("\\"))
+                   or re.match(r"static [^(]*savestate_\w+(\[\w+\])?;$", line))
 
 
 # Host stand-ins for what the BIOS and savestate functions use. The open file
@@ -52,6 +54,7 @@ typedef int32_t s32;
 typedef uint64_t u64;
 typedef int SceUID;
 #include "open_bios.h"
+#include "save_store.h"
 #define MAX_IDLE_LOOPS 8
 #define MAX_FILE 512
 #define MAX_PATH 512
@@ -69,14 +72,19 @@ enum { CLEAR_REASON_LOADING_STATE };
 #define FILE_SEEK(f, offset, type) ((void)(f), file_pos = (offset))
 #define FILE_READ(f, buffer, size) ((void)(f), stub_read(buffer, size))
 #define FILE_CLOSE(f) ((void)(f), closes++)
-#define SAVESTATE_BLOCK(type) blocks_##type++;
+#define SAVESTATE_BLOCK(type) stub_block_##type(savestate_file);
 struct BiosData { u8 rom[0x4000]; u16 metadata[0x4000]; } bios;
 const u8 *file_data;
 s32 file_size;
 size_t file_pos;
 const char *shown;
 int closes, power_locked, blocks_read;
-u8 *write_mem_ptr;
+static SaveStoreIo stub_io;
+const SaveStoreIo *backup_io = &stub_io;
+#define TICKS 0x0123456789ABCDEFull
+static u64 ticker(void) { return TICKS; }
+static void stub_block_read(SceUID f) { (void)f; blocks_read++; }
+static void stub_block_write_mem(SceUID f);
 GbaSio gba_sio;
 u32 idle_loop_targets, idle_loop_target_pc[MAX_IDLE_LOOPS];
 u32 smc_gate_targets, iwram_stack_optimize, bios_builtin;
@@ -115,9 +123,77 @@ static s32 stub_read(void *buffer, size_t size) {
 # the word before the link snapshot, and load_state_silent refuses one made
 # with the other BIOS: it closes the file unread and reports it after the
 # power lock is released. Zero padding (older savestates) means gba_bios.bin.
+# A savestate streams through the store in 16 KiB blocks and is refused,
+# the old file kept, when the module data reaches the BIOS word.
 SCENARIOS = r'''
 static u8 image[0x5000];
 static u8 state[SAVESTATE_SIZE];
+static u8 store_tmp[SAVESTATE_SIZE];
+static u16 screen[GBA_SCREEN_SIZE / 2];
+static u8 piece[0x40000];
+static size_t modules;
+static int begins, commits;
+#define MODULES_FULL (SAVESTATE_BIOS_OFFSET - GBA_SCREEN_SIZE - sizeof(u64))
+/* The store as save_state_file uses it: the appends gather in a .tmp that a
+   commit without a failure makes the file (state); else the file stays. */
+SaveStoreResult save_store_begin(SaveStoreWrite *transaction,
+ const SaveStoreIo *io, const char *dir, const char *name) {
+  assert(power_locked && io == backup_io && !strcmp(dir, "states/"));
+  assert(!strcmp(name, "s.svs") && begins == commits);
+  begins++; transaction->size = 0; transaction->result = SAVE_STORE_OK;
+  return SAVE_STORE_OK;
+}
+SaveStoreResult save_store_append(SaveStoreWrite *transaction,
+ const uint8_t *data, size_t size) {
+  assert(begins == commits + 1 && size <= SAVESTATE_CHUNK);
+  if (transaction->result == SAVE_STORE_OK) {
+    assert(transaction->size + size <= sizeof(store_tmp));
+    memcpy(store_tmp + transaction->size, data, size);
+    transaction->size += size;
+  }
+  return transaction->result;
+}
+SaveStoreResult save_store_commit(SaveStoreWrite *transaction) {
+  commits++; assert(power_locked && commits == begins);
+  if (transaction->result == SAVE_STORE_OK) {
+    assert(transaction->size == SAVESTATE_SIZE);
+    memcpy(state, store_tmp, SAVESTATE_SIZE);
+  }
+  return transaction->result;
+}
+/* The modules' data: a counting pattern, in pieces (one as large as EWRAM)
+   that straddle the 16 KiB blocks. */
+static void stub_block_write_mem(SceUID f) {
+  static const size_t sizes[] = {1, 0x40000, 7, 0x4001};
+  size_t done = 0, n, i, k = 0;
+  (void)f;
+  while (done < modules) {
+    n = sizes[k++ % 4];
+    if (n > modules - done) n = modules - done;
+    for (i = 0; i < n; i++) piece[i] = (u8)((done + i) % 251);
+    savestate_write_mem(piece, n);
+    done += n;
+  }
+}
+/* A state save_state_file wrote: screenshot, timestamp, module data, zeros
+   up to the BIOS word, the word, then the link snapshot to the end. */
+static void check_state(u32 word) {
+  u64 time;
+  u32 found;
+  size_t i;
+  assert(!power_locked && begins == commits);
+  assert(memcmp(state, screen, GBA_SCREEN_SIZE) == 0);
+  memcpy(&time, state + GBA_SCREEN_SIZE, sizeof(time));
+  assert(time == TICKS);
+  for (i = 0; i < modules; i++)
+    assert(state[GBA_SCREEN_SIZE + sizeof(u64) + i] == (u8)(i % 251));
+  for (i += GBA_SCREEN_SIZE + sizeof(u64); i < SAVESTATE_BIOS_OFFSET; i++)
+    assert(state[i] == 0);
+  memcpy(&found, state + SAVESTATE_BIOS_OFFSET, sizeof(found));
+  assert(found == word);
+  for (i = SAVESTATE_SIO_OFFSET; i < SAVESTATE_SIZE; i++)
+    assert(state[i] == 0xA5);
+}
 static void bios_file(s32 size, const char *vector) {
   memset(image, 0x5A, sizeof(image));
   memcpy(image, vector, 4);
@@ -125,6 +201,7 @@ static void bios_file(s32 size, const char *vector) {
 }
 int main(void) {
   u32 word;
+  size_t i;
 
   bios_file(0x4000, "\x18\x00\x00\xea");
   assert(load_bios("gba_bios.bin") == 0 && bios_builtin == 0);
@@ -159,16 +236,20 @@ int main(void) {
   apply_game_config_option("bios_rom_hack_2C", "yes");
   assert(memcmp(bios.rom, open_bios_rom, sizeof(bios.rom)) == 0);
 
+  for (i = 0; i < GBA_SCREEN_SIZE / 2; i++) screen[i] = (u16)(i * 3 + 1);
   file_data = state; file_size = SAVESTATE_SIZE;
-  write_mem_ptr = state + SAVESTATE_BIOS_OFFSET;
-  bios_builtin = 1; assert(write_savestate_tail(state) == 1);
+  modules = MODULES_FULL;
+  bios_builtin = 1; assert(save_state_file("s.svs", screen) == 1);
+  check_state(SAVESTATE_BIOS_BUILTIN);
   memcpy(&word, state + SAVESTATE_BIOS_OFFSET, sizeof(word));
   assert(word == SAVESTATE_BIOS_BUILTIN && state[SAVESTATE_SIO_OFFSET] == 0xA5);
   assert(savestate_bios_matches(3) == 1);
   bios_builtin = 0; assert(savestate_bios_matches(3) == 0);
   show_savestate_bios_error();
   assert(shown == MSG[MSG_ERR_STATE_NEEDS_BUILTIN_BIOS]);
-  assert(write_savestate_tail(state) == 1 && savestate_bios_matches(3) == 1);
+  modules = MODULES_FULL - 1;
+  assert(save_state_file("s.svs", screen) == 1 && savestate_bios_matches(3) == 1);
+  check_state(0);
   memset(state, 0, sizeof(state));
   assert(savestate_bios_matches(3) == 1);
   bios_builtin = 1; assert(savestate_bios_matches(3) == 0);
@@ -177,11 +258,14 @@ int main(void) {
   memset(state + SAVESTATE_BIOS_OFFSET, 0xFF, 4);
   assert(savestate_bios_matches(3) == 0);
   bios_builtin = 0; assert(savestate_bios_matches(3) == 1);
-  write_mem_ptr = state + SAVESTATE_BIOS_OFFSET + 1;
-  assert(write_savestate_tail(state) == 0);
+  modules = MODULES_FULL + 1;
+  assert(save_state_file("s.svs", screen) == 0 && !power_locked);
+  assert(begins == commits && state[0] == 0);
+  assert(state[SAVESTATE_BIOS_OFFSET] == 0xFF && state[SAVESTATE_SIO_OFFSET] == 0);
 
-  write_mem_ptr = state; bios_builtin = 1;
-  assert(write_savestate_tail(state) == 1);
+  modules = 1000; bios_builtin = 1;
+  assert(save_state_file("s.svs", screen) == 1);
+  check_state(SAVESTATE_BIOS_BUILTIN);
   bios_builtin = 0; shown = NULL; closes = 0; blocks_read = 0;
   assert(load_state_silent("s.svs") == 0 && blocks_read == 0 && closes == 1);
   assert(shown == MSG[MSG_ERR_STATE_NEEDS_BUILTIN_BIOS] && !power_locked);
@@ -213,7 +297,9 @@ class OpenBiosTests(unittest.TestCase):
                 "const char *current_value)",
                 "static u32 savestate_bios_matches(SceUID savestate_file)",
                 "static void show_savestate_bios_error(void)",
-                "static int write_savestate_tail(u8 *savestate_buffer)",
+                "void savestate_write_mem(const void *data, size_t size)",
+                "static int write_savestate_tail(void)",
+                "static u32 save_state_file(char *savestate_filename, u16 *screen_capture)",
                 "u32 load_state_silent(char *savestate_filename)"):
             source += function(MEMORY, signature) + "\n"
         source += function("source/src/main.c", "static void load_bios_file(void)") + "\n"

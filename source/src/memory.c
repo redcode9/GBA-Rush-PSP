@@ -226,7 +226,8 @@ u32 backup_write_warning = 0;
 // Failed .sav writes since the last good one, for the SAVE_WRITE log.
 static u32 backup_write_failures = 0;
 
-// How the .sav is read and written; main.c sets it at startup.
+// How the .sav and the savestates are read and written; main.c sets it at
+// startup.
 const SaveStoreIo *backup_io;
 
 // Set when the .sav exists but did not read: no write may replace it.
@@ -345,21 +346,30 @@ static u32 encode_bcd(u8 value);
 // before it says which BIOS made the savestate: SAVESTATE_BIOS_BUILTIN, or
 // anything else for gba_bios.bin (older savestates have zero padding there).
 // tests/test_open_bios.py reads these one-line defines and compiles load_bios,
-// the game_config option functions, the savestate BIOS helpers and
-// load_state_silent alone, by their exact signatures.
+// the game_config option functions, the savestate BIOS helpers, the
+// savestate writer and load_state_silent alone, by their exact signatures.
 #define SAVESTATE_SIO_OFFSET (SAVESTATE_SIZE - sizeof(GbaSioSnapshot))
 #define SAVESTATE_BIOS_OFFSET (SAVESTATE_SIO_OFFSET - sizeof(u32))
 #define SAVESTATE_BIOS_BUILTIN 0x4E45504F // "OPEN"
-u8 *write_mem_ptr;
+#define SAVESTATE_CHUNK 0x4000 // savestates reach the store in 16 KiB blocks
+// The savestate being written goes through one static block, not a 512 KiB
+// buffer that a full heap could refuse (SaveStoreWrite must be static too).
+static SaveStoreWrite savestate_write;
+static u8 savestate_chunk[SAVESTATE_CHUNK];
+static size_t savestate_chunk_used;
+static size_t savestate_written;
 static void memory_write_mem_savestate(SceUID savestate_file);
 static void memory_read_savestate(SceUID savestate_file);
 static void read_gba_sio_snapshot(SceUID savestate_file);
 static u32 savestate_bios_matches(SceUID savestate_file);
 static void show_savestate_bios_error(void);
-static int write_savestate_tail(u8 *savestate_buffer);
+static int write_savestate_tail(void);
 
 typedef char GbaSioSnapshotMustFit[
  sizeof(GbaSioSnapshot) < SAVESTATE_SIZE ? 1 : -1];
+// A whole savestate fills its last block, so no partial block is left over.
+typedef char SavestateFillsItsBlocks[
+ (SAVESTATE_SIZE % SAVESTATE_CHUNK) == 0 ? 1 : -1];
 
 
 // Last page looked up by the ROM and RAM read handlers (one-entry cache).
@@ -3880,23 +3890,85 @@ static void show_savestate_bios_error(void)
    MSG_ERR_STATE_NEEDS_BUILTIN_BIOS], CONFIRMATION_CONT);
 }
 
-// Stores the BIOS word and the link snapshot at their fixed offsets at the
-// end of the savestate buffer. Returns 0 if the module data reaches them.
-static int write_savestate_tail(u8 *savestate_buffer)
+// FILE_WRITE_MEM: appends size bytes to the savestate being written. Each
+// full block goes to the store; a failed append stays in savestate_write
+// and fails the commit.
+void savestate_write_mem(const void *data, size_t size)
 {
+  const u8 *bytes = (const u8 *)data;
+  size_t count;
+
+  savestate_written += size;
+  while(size != 0)
+  {
+    count = SAVESTATE_CHUNK - savestate_chunk_used;
+    if(count > size)
+      count = size;
+    memcpy(savestate_chunk + savestate_chunk_used, bytes, count);
+    savestate_chunk_used += count;
+    bytes += count;
+    size -= count;
+    if(savestate_chunk_used == SAVESTATE_CHUNK)
+    {
+      save_store_append(&savestate_write, savestate_chunk, SAVESTATE_CHUNK);
+      savestate_chunk_used = 0;
+    }
+  }
+}
+
+// Pads the savestate with zeros to SAVESTATE_BIOS_OFFSET, then appends the
+// BIOS word and the link snapshot, which end the file at SAVESTATE_SIZE.
+// Returns 0 if the module data reaches them.
+static int write_savestate_tail(void)
+{
+  static const u8 zeros[1024] = {0};
   GbaSioSnapshot snapshot;
   u32 bios_word = bios_builtin ? SAVESTATE_BIOS_BUILTIN : 0;
-  size_t used = (size_t)(write_mem_ptr - savestate_buffer);
+  size_t padding;
 
-  if(used > SAVESTATE_BIOS_OFFSET)
+  if(savestate_written > SAVESTATE_BIOS_OFFSET)
     return 0;
 
-  memcpy(savestate_buffer + SAVESTATE_BIOS_OFFSET, &bios_word,
-   sizeof(bios_word));
+  while(savestate_written < SAVESTATE_BIOS_OFFSET)
+  {
+    padding = SAVESTATE_BIOS_OFFSET - savestate_written;
+    savestate_write_mem(zeros,
+     (padding < sizeof(zeros)) ? padding : sizeof(zeros));
+  }
+  savestate_write_mem(&bios_word, sizeof(bios_word));
   gba_sio_save_snapshot(&gba_sio, &snapshot);
-  memcpy(savestate_buffer + SAVESTATE_SIO_OFFSET, &snapshot,
-   sizeof(snapshot));
+  savestate_write_mem(&snapshot, sizeof(snapshot));
   return 1;
+}
+
+// Writes the savestate under a power lock, so a suspend can't cut it. It
+// streams to <name>.tmp in dir_state, is read back, and only then takes
+// the file's name, the previous state staying as <name>.bak: a cut at any
+// point leaves the old state or the new one. Returns 1 if the new one is
+// in place.
+static u32 save_state_file(char *savestate_filename, u16 *screen_capture)
+{
+  SceUID savestate_file = -1; // the WRITE_MEM writers ignore it
+  u64 current_time;
+  SaveStoreResult result;
+
+  scePowerLock(0);
+
+  savestate_chunk_used = 0;
+  savestate_written = 0;
+  save_store_begin(&savestate_write, backup_io, dir_state,
+   savestate_filename);
+  savestate_write_mem(screen_capture, GBA_SCREEN_SIZE);
+  current_time = ticker();
+  savestate_write_mem(&current_time, sizeof(current_time));
+  SAVESTATE_BLOCK(write_mem);
+  // A refused state fails the commit, which then only closes the .tmp.
+  if(!write_savestate_tail())
+    savestate_write.result = SAVE_STORE_WRITE_FAILED;
+  result = save_store_commit(&savestate_write);
+
+  scePowerUnlock(0);
+  return (result == SAVE_STORE_OK);
 }
 
 u32 load_state(char *savestate_filename)
@@ -3977,12 +4049,8 @@ u32 load_state_silent(char *savestate_filename)
 
 u32 save_state(char *savestate_filename, u16 *screen_capture)
 {
-  SceUID savestate_file;
-  char savestate_path[MAX_PATH];
   char confirm_text[64];
   u32 prev_sound_pause = sound_pause;
-  u32 result = 0;
-  u8 *savestate_write_buffer;
 
   if(main_link_active())
   {
@@ -4002,83 +4070,20 @@ u32 save_state(char *savestate_filename, u16 *screen_capture)
   }
   sound_pause = prev_sound_pause;
 
-  sprintf(savestate_path, "%s%s", dir_state, savestate_filename);
-
-  savestate_write_buffer = (u8 *)safe_malloc(SAVESTATE_SIZE);
-  memset(savestate_write_buffer, 0, SAVESTATE_SIZE);
-
-  write_mem_ptr = savestate_write_buffer;
-
-  scePowerLock(0);
-
-  FILE_OPEN(savestate_file, savestate_path, WRITE);
-
-  if (FILE_CHECK_VALID(savestate_file))
-  {
-    FILE_WRITE_MEM(savestate_file, screen_capture, GBA_SCREEN_SIZE);
-
-    u64 current_time = ticker();
-    FILE_WRITE_MEM_VARIABLE(savestate_file, current_time);
-
-    SAVESTATE_BLOCK(write_mem);
-    if(write_savestate_tail(savestate_write_buffer))
-    {
-      FILE_WRITE(savestate_file, savestate_write_buffer, SAVESTATE_SIZE);
-      result = 1;
-    }
-    FILE_CLOSE(savestate_file);
-  }
-
-  scePowerUnlock(0);
-
-  free(savestate_write_buffer);
-  return result;
+  return save_state_file(savestate_filename, screen_capture);
 }
 
 // save_state() without the confirmation dialog.
 u32 save_state_silent(char *savestate_filename, u16 *screen_capture)
 {
-  SceUID savestate_file;
-  char savestate_path[MAX_PATH];
   u32 prev_sound_pause = sound_pause;
-  u32 result = 0;
-  u8 *savestate_write_buffer;
+  u32 result;
 
   if(main_link_active())
     return 0;
 
   sound_pause = 1;
-
-  sprintf(savestate_path, "%s%s", dir_state, savestate_filename);
-
-  savestate_write_buffer = (u8 *)safe_malloc(SAVESTATE_SIZE);
-  memset(savestate_write_buffer, 0, SAVESTATE_SIZE);
-
-  write_mem_ptr = savestate_write_buffer;
-
-  scePowerLock(0);
-
-  FILE_OPEN(savestate_file, savestate_path, WRITE);
-
-  if (FILE_CHECK_VALID(savestate_file))
-  {
-    FILE_WRITE_MEM(savestate_file, screen_capture, GBA_SCREEN_SIZE);
-
-    u64 current_time = ticker();
-    FILE_WRITE_MEM_VARIABLE(savestate_file, current_time);
-
-    SAVESTATE_BLOCK(write_mem);
-    if(write_savestate_tail(savestate_write_buffer))
-    {
-      FILE_WRITE(savestate_file, savestate_write_buffer, SAVESTATE_SIZE);
-      result = 1;
-    }
-    FILE_CLOSE(savestate_file);
-  }
-
-  scePowerUnlock(0);
-
-  free(savestate_write_buffer);
+  result = save_state_file(savestate_filename, screen_capture);
   sound_pause = prev_sound_pause;
   return result;
 }

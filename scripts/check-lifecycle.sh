@@ -235,6 +235,20 @@ then
   fail "A failed .sav write can be dropped as if it had been written"
 fi
 
+# Savestates stream through the store's transaction from a static block:
+# saving one allocates nothing, so it cannot quit on a full heap, and never
+# opens the slot's file for writing, which would truncate the old state.
+if ! awk '
+  /^(static )?u32 save_state[a-z_]*\([^;]*$/ { inside = 1; functions++ }
+  inside && /malloc\(|FILE_OPEN\(.*WRITE/ { bad = 1 }
+  inside && /save_store_commit\(/ { commits++ }
+  inside && /^}/ { inside = 0 }
+  END { exit !(functions >= 3 && commits == 1 && !bad) }
+' source/src/memory.c
+then
+  fail "A savestate save allocates or truncates the old state"
+fi
+
 # The sceIo binding of the .sav and the settings file allocates nothing,
 # so a save is still written when memory has run out.
 if ! awk '
