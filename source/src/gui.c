@@ -3019,6 +3019,18 @@ u32 action_loadstate(void)
   return load_state(savestate_filename);
 }
 
+/* The current screen for a state's preview, or NULL with the heap
+   exhausted: the state then gets a blank one instead of the emulator
+   quitting. */
+static u16 *copy_state_preview(void)
+{
+  u16 *screen = (u16 *)malloc(GBA_SCREEN_SIZE);
+
+  if (screen != NULL)
+    copy_screen(screen);
+  return screen;
+}
+
 /* Hotkey save to savestate_slot after a confirmation; the current screen is
    stored in the state as its preview. */
 u32 action_savestate(void)
@@ -3027,7 +3039,7 @@ u32 action_savestate(void)
   u16 *current_screen;
   u32 result;
 
-  current_screen = copy_screen();
+  current_screen = copy_state_preview();
 
   get_savestate_filename(savestate_slot, savestate_filename);
   result = save_state(savestate_filename, current_screen);
@@ -3045,7 +3057,7 @@ static u32 action_savestate_slot(u32 slot)
   u32 old_slot = savestate_slot;
 
   savestate_slot = slot;
-  current_screen = copy_screen();
+  current_screen = copy_state_preview();
   get_savestate_filename(savestate_slot, savestate_filename);
   result = save_state_silent(savestate_filename, current_screen);
   free(current_screen);
@@ -5512,7 +5524,8 @@ u32 menu(void)
   sound_pause = 1;
 
 
-  current_screen = copy_screen();
+  current_screen = (u16 *)safe_malloc(GBA_SCREEN_SIZE);
+  copy_screen(current_screen);
   savestate_screen = (u16 *)safe_malloc(GBA_SCREEN_SIZE);
 
   if (gamepak_filename[0] == 0)

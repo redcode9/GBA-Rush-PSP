@@ -249,6 +249,25 @@ then
   fail "A savestate save allocates or truncates the old state"
 fi
 
+# Its preview is copied into plain malloc memory, or left blank, so a full
+# heap cannot quit a save either.
+if ! awk '
+  /^(static )?u(16 \*|32 )(copy_state_preview|action_savestate[a-z_]*)\([^;]*$/ {
+    inside = 1; functions++
+  }
+  inside && /safe_malloc\(/ { bad = 1 }
+  inside && /^}/ { inside = 0 }
+  END { exit !(functions == 3 && !bad) }
+' source/src/gui.c ||
+  ! body '/^void copy_screen(u16 \*copy)/,/^}/p' source/src/psp_video.c | awk '
+  /^void copy_screen/ { found = 1 }
+  /malloc\(/ { bad = 1 }
+  END { exit !(found && !bad) }
+'
+then
+  fail "A savestate's preview can quit on a full heap"
+fi
+
 # Deleting a state takes the .bak and .tmp its saves leave, which the next
 # load would otherwise recover as the deleted state.
 if ! body '/^  void menu_delete_state(void)/,/^  }/p' source/src/gui.c | awk '

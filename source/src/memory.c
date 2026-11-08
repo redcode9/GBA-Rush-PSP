@@ -3916,25 +3916,32 @@ void savestate_write_mem(const void *data, size_t size)
   }
 }
 
+// Appends size zero bytes to the savestate being written.
+static void savestate_write_zeros(size_t size)
+{
+  static const u8 zeros[1024] = {0};
+  size_t count;
+
+  while(size != 0)
+  {
+    count = (size < sizeof(zeros)) ? size : sizeof(zeros);
+    savestate_write_mem(zeros, count);
+    size -= count;
+  }
+}
+
 // Pads the savestate with zeros to SAVESTATE_BIOS_OFFSET, then appends the
 // BIOS word and the link snapshot, which end the file at SAVESTATE_SIZE.
 // Returns 0 if the module data reaches them.
 static int write_savestate_tail(void)
 {
-  static const u8 zeros[1024] = {0};
   GbaSioSnapshot snapshot;
   u32 bios_word = bios_builtin ? SAVESTATE_BIOS_BUILTIN : 0;
-  size_t padding;
 
   if(savestate_written > SAVESTATE_BIOS_OFFSET)
     return 0;
 
-  while(savestate_written < SAVESTATE_BIOS_OFFSET)
-  {
-    padding = SAVESTATE_BIOS_OFFSET - savestate_written;
-    savestate_write_mem(zeros,
-     (padding < sizeof(zeros)) ? padding : sizeof(zeros));
-  }
+  savestate_write_zeros(SAVESTATE_BIOS_OFFSET - savestate_written);
   savestate_write_mem(&bios_word, sizeof(bios_word));
   gba_sio_save_snapshot(&gba_sio, &snapshot);
   savestate_write_mem(&snapshot, sizeof(snapshot));
@@ -3944,7 +3951,8 @@ static int write_savestate_tail(void)
 // Writes the savestate under a power lock, so a suspend can't cut it. It
 // streams to <name>.tmp in dir_state, is read back, and only then takes
 // the file's name, the previous state staying as <name>.bak: a cut at any
-// point leaves the old state or the new one. Returns 1 if the new one is
+// point leaves the old state or the new one. A NULL screen_capture (no
+// memory for the copy) stores a blank preview. Returns 1 if the new one is
 // in place.
 static u32 save_state_file(char *savestate_filename, u16 *screen_capture)
 {
@@ -3958,7 +3966,10 @@ static u32 save_state_file(char *savestate_filename, u16 *screen_capture)
   savestate_written = 0;
   save_store_begin(&savestate_write, backup_io, dir_state,
    savestate_filename);
-  savestate_write_mem(screen_capture, GBA_SCREEN_SIZE);
+  if(screen_capture != NULL)
+    savestate_write_mem(screen_capture, GBA_SCREEN_SIZE);
+  else
+    savestate_write_zeros(GBA_SCREEN_SIZE);
   current_time = ticker();
   savestate_write_mem(&current_time, sizeof(current_time));
   SAVESTATE_BLOCK(write_mem);

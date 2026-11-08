@@ -900,12 +900,12 @@ void clear_texture(u16 color)
   }
 }
 
-/* Returns a malloc'd 240x160 copy of the last GBA frame for the menu
- * background; the caller frees it. */
-u16 *copy_screen(void)
+/* Copies the last GBA frame, 240x160, into copy (GBA_SCREEN_SIZE bytes):
+ * the menu background and a savestate's preview. The caller allocates
+ * it, so a save can go on without one. */
+void copy_screen(u16 *copy)
 {
   u32 x, y;
-  u16 *copy;
   u16 *p_src, *p_src0;
   u16 *p_dest;
 
@@ -916,8 +916,6 @@ u16 *copy_screen(void)
   video_ge_sync_direct();
   video_dcache_writeback();
   forget_texture_rows();
-
-  copy = (u16 *)safe_malloc(GBA_SCREEN_SIZE);
 
   p_src0 = screen_texture;
   p_dest = copy;
@@ -931,8 +929,6 @@ u16 *copy_screen(void)
 
     p_src0 += GBA_LINE_SIZE;
   }
-
-  return copy;
 }
 
 /* CPU copy of a packed w x h 16-bit image (box art, the menu's game

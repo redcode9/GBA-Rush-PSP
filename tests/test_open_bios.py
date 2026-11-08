@@ -133,7 +133,8 @@ static s32 stub_read(void *buffer, size_t size) {
 # power lock is released. Zero padding (older savestates) means gba_bios.bin.
 # A savestate streams through the store in 16 KiB blocks and is refused,
 # the old file kept, when the module data reaches the BIOS word; any store
-# failure fails the save the same way.
+# failure fails the save the same way. With no screen copy (no memory for
+# one) the state stores a blank preview.
 SCENARIOS = r'''
 static u8 image[0x5000];
 static u8 state[SAVESTATE_SIZE];
@@ -292,6 +293,10 @@ int main(void) {
   assert(save_state_file("s.svs", screen) == 0);
   commit_result = SAVE_STORE_OK; modules = 1000;
   check_state(SAVESTATE_BIOS_BUILTIN);
+  modules = MODULES_FULL - 1025;
+  assert(save_state_file("s.svs", NULL) == 1);
+  memset(screen, 0, sizeof(screen));
+  check_state(SAVESTATE_BIOS_BUILTIN);
 
   puts("BIOS fallback and savestate BIOS regressions passed");
   return 0;
@@ -316,6 +321,7 @@ class OpenBiosTests(unittest.TestCase):
                 "static u32 savestate_bios_matches(SceUID savestate_file)",
                 "static void show_savestate_bios_error(void)",
                 "void savestate_write_mem(const void *data, size_t size)",
+                "static void savestate_write_zeros(size_t size)",
                 "static int write_savestate_tail(void)",
                 "static u32 save_state_file(char *savestate_filename, u16 *screen_capture)",
                 "u32 load_state_silent(char *savestate_filename)"):
