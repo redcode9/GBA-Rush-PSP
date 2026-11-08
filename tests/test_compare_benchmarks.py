@@ -65,6 +65,26 @@ def write_report(path, values):
                     encoding="utf-8")
 
 
+def write_group(directory, game_code, frames, version="1.4.3"):
+    """Write one run per frames value of game_code under directory/game_code."""
+    folder = pathlib.Path(directory) / game_code
+    folder.mkdir(parents=True, exist_ok=True)
+    for index, count in enumerate(frames):
+        values = report(frames=count)
+        values["game-code"] = game_code
+        values["version"] = version
+        write_report(folder / f"run-{index}.txt", values)
+
+
+def run_groups(baseline_dir, candidate_dir):
+    """main() in directory mode: (exit status, stdout)."""
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        status = MODULE.main(["--baseline-dir", baseline_dir,
+                              "--candidate-dir", candidate_dir])
+    return status, output.getvalue()
+
+
 class BenchmarkComparisonTests(unittest.TestCase):
     def test_median_candidate_passes(self):
         baseline = [report(), report(frame_p95=17100), report(frame_p95=16900)]
@@ -336,6 +356,91 @@ class BenchmarkComparisonTests(unittest.TestCase):
 
         self.assertEqual(status, 0)
         self.assertTrue(output.getvalue().startswith("PASS\n"))
+
+    def test_group_mode_pass(self):
+        with tempfile.TemporaryDirectory() as baseline, \
+                tempfile.TemporaryDirectory() as candidate:
+            for game in ("BPRE", "BPEE"):
+                write_group(baseline, game, (600, 601, 602))
+                write_group(candidate, game, (605, 606, 604), "1.5")
+            # A title only the candidate has is listed but decides nothing.
+            write_group(candidate, "AXVE", (600, 600, 600), "1.5")
+
+            status, output = run_groups(baseline, candidate)
+
+        self.assertEqual(status, 0)
+        self.assertIn("group=1/BPEE-r0 PASS\nthroughput=60.50 fps", output)
+        self.assertIn("group=1/BPRE-r0 PASS\n", output)
+        self.assertIn("group=1/AXVE-r0 not in baseline", output)
+        self.assertTrue(output.endswith("PASS groups=2 failed=0 missing=0\n"))
+
+    def test_group_mode_fails_on_any_group(self):
+        with tempfile.TemporaryDirectory() as baseline, \
+                tempfile.TemporaryDirectory() as candidate:
+            for game in ("BPRE", "BPEE"):
+                write_group(baseline, game, (600, 601, 602))
+            write_group(candidate, "BPRE", (605, 606, 604))
+            # BPEE loses 5% throughput.
+            write_group(candidate, "BPEE", (570, 571, 572))
+
+            status, output = run_groups(baseline, candidate)
+
+        self.assertEqual(status, 1)
+        self.assertIn("group=1/BPEE-r0 FAIL\n", output)
+        self.assertIn("reason=throughput regression exceeds 2%", output)
+        self.assertIn("group=1/BPRE-r0 PASS\n", output)
+        self.assertTrue(output.endswith("FAIL groups=2 failed=1 missing=0\n"))
+
+    def test_missing_group_fails(self):
+        with tempfile.TemporaryDirectory() as baseline, \
+                tempfile.TemporaryDirectory() as candidate:
+            for game in ("BPRE", "BPEE"):
+                write_group(baseline, game, (600, 601, 602))
+            write_group(candidate, "BPRE", (605, 606, 604))
+
+            status, output = run_groups(baseline, candidate)
+
+        self.assertEqual(status, 1)
+        self.assertIn("group=1/BPEE-r0 MISSING\n", output)
+        self.assertIn("group=1/BPRE-r0 PASS\n", output)
+        self.assertTrue(output.endswith("FAIL groups=2 failed=0 missing=1\n"))
+
+    def test_group_mode_rejects_bad_input(self):
+        with tempfile.TemporaryDirectory() as baseline, \
+                tempfile.TemporaryDirectory() as candidate:
+            write_group(baseline, "BPRE", (600, 601, 602))
+            write_group(candidate, "BPRE", (605, 606))
+            (pathlib.Path(baseline) / "notes.md").write_text("ok\n")
+
+            # A group short of MIN_RUNS is invalid input, named by group.
+            errors = io.StringIO()
+            with contextlib.redirect_stderr(errors):
+                self.assertEqual(run_groups(baseline, candidate)[0], 2)
+            self.assertIn("group 1/BPRE-r0: at least 3 reports", errors.getvalue())
+
+            write_group(candidate, "BPRE", (605, 606, 604, 607), "1.5.1")
+            write_group(candidate, "BPRE", (605, 606, 604), "1.5")
+            with self.assertRaisesRegex(ValueError, "1/BPRE-r0 mixes versions"):
+                MODULE.collect_groups(candidate)
+
+            values = report()
+            del values["rom-revision"]
+            write_report(pathlib.Path(candidate) / "BPRE" / "run-3.txt", values)
+            with self.assertRaisesRegex(ValueError,
+                                        "run-3.txt: missing field: rom-revision"):
+                MODULE.collect_groups(candidate)
+
+            (pathlib.Path(baseline) / "state.bin").write_bytes(b"\0")
+            with self.assertRaisesRegex(ValueError, "state.bin: not a .txt"):
+                MODULE.collect_groups(baseline)
+            with self.assertRaisesRegex(ValueError, "no reports in"):
+                MODULE.collect_groups(pathlib.Path(baseline) / "absent")
+
+            # Files and directories do not mix.
+            with contextlib.redirect_stderr(io.StringIO()), \
+                    self.assertRaises(SystemExit) as stop:
+                MODULE.main(["--baseline", "a.txt", "--candidate-dir", candidate])
+            self.assertEqual(stop.exception.code, 2)
 
     def test_legacy_v6_fixtures_same_pass_fail(self):
         passing = MODULE.compare(

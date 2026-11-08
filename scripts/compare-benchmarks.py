@@ -6,11 +6,17 @@ builds may have different run counts); the medians of the candidate runs must
 not regress against the baseline runs. Each metric also gets the spread of its
 runs and an exact one-sided permutation verdict. The reports are the key=value
 files written by source/src/perf_report.c.
+
+With --baseline-dir and --candidate-dir, every report under each directory is
+grouped by PSP model, game and ROM revision, and every baseline group is
+compared with the candidate group of the same title and model; a baseline
+group without candidate reports fails the check.
 """
 
 import argparse
 import itertools
 import math
+import pathlib
 import random
 import statistics
 import sys
@@ -383,19 +389,118 @@ def format_result(result):
     return "\n".join(lines)
 
 
+# The report fields that make a group (title x model) in directory mode.
+GROUP_FIELDS = ("psp-model", "game-code", "rom-revision")
+
+
+def group_name(key):
+    """A group's name as the output prints it, such as 0/BPRE-r0."""
+    return "{}/{}-r{}".format(*key)
+
+
+def collect_groups(directory):
+    """The reports anywhere under directory, keyed by GROUP_FIELDS.
+
+    Every file but the .md notes must be a stopped .txt report, and the
+    runs of one group must all come from the same version.
+    """
+    directory = pathlib.Path(directory)
+    groups = {}
+    for path in sorted(directory.rglob("*")):
+        if not path.is_file() or path.name.endswith(".md"):
+            continue
+        name = path.as_posix()
+        if path.suffix != ".txt":
+            raise ValueError(f"{name}: not a .txt report")
+        report = read_report(name)
+        for field in GROUP_FIELDS:
+            if field not in report:
+                raise ValueError(f"{name}: missing field: {field}")
+        groups.setdefault(tuple(report[field] for field in GROUP_FIELDS),
+                          []).append(report)
+    if not groups:
+        raise ValueError(f"no reports in {directory.as_posix()}")
+    for key, reports in groups.items():
+        # A whole model directory of the archive would mix releases.
+        if len({report.get("version") for report in reports}) > 1:
+            raise ValueError(f"{directory.as_posix()}: group "
+                             f"{group_name(key)} mixes versions")
+    return groups
+
+
+def compare_groups(baseline_groups, candidate_groups):
+    """Compare every baseline group with the candidate group of its key.
+
+    Every group is compared before the verdict, so the output lists them
+    all. A baseline group the candidate lacks is MISSING (result None) and
+    fails; candidate groups the baseline lacks are only listed.
+    """
+    groups = []
+    for key in sorted(baseline_groups):
+        result = None
+        if key in candidate_groups:
+            try:
+                result = compare(baseline_groups[key], candidate_groups[key])
+            except ValueError as error:
+                raise ValueError(f"group {group_name(key)}: {error}") from None
+        groups.append((group_name(key), result))
+    return {
+        "passed": all(result is not None and result["passed"]
+                      for _, result in groups),
+        "groups": groups,
+        "extra": [group_name(key) for key in sorted(candidate_groups)
+                  if key not in baseline_groups],
+    }
+
+
+def format_groups(outcome):
+    """The per-group blocks and the overall line main() prints."""
+    blocks = []
+    for name, result in outcome["groups"]:
+        if result is None:
+            blocks.append(f"group={name} MISSING\n"
+                          "reason=no candidate reports for this group")
+        else:
+            blocks.append(f"group={name} {format_result(result)}")
+    blocks.extend(f"group={name} not in baseline"
+                  for name in outcome["extra"])
+    missing = sum(result is None for _, result in outcome["groups"])
+    failed = sum(result is not None and not result["passed"]
+                 for _, result in outcome["groups"])
+    blocks.append(f"{'PASS' if outcome['passed'] else 'FAIL'} "
+                  f"groups={len(outcome['groups'])} failed={failed} "
+                  f"missing={missing}")
+    return "\n\n".join(blocks)
+
+
 def main(argv=None):
-    """Exit status: 0 on PASS, 1 on a regression, 2 on unreadable input or
-    fewer than MIN_RUNS reports per build."""
+    """Exit status: 0 on PASS, 1 on a regression or a missing group, 2 on
+    unreadable input or fewer than MIN_RUNS reports per build."""
     parser = argparse.ArgumentParser(
         description=f"Compare PSP benchmark reports, at least {MIN_RUNS} "
         "per build (the counts may differ), on medians and on an exact "
         "one-sided permutation test."
     )
-    parser.add_argument("--baseline", nargs="+", required=True, metavar="REPORT")
-    parser.add_argument("--candidate", nargs="+", required=True, metavar="REPORT")
+    parser.add_argument("--baseline", nargs="+", metavar="REPORT")
+    parser.add_argument("--candidate", nargs="+", metavar="REPORT")
+    parser.add_argument("--baseline-dir", metavar="DIR",
+                        help="compare every title x model group of the "
+                        "reports under DIR (with --candidate-dir)")
+    parser.add_argument("--candidate-dir", metavar="DIR")
     arguments = parser.parse_args(argv)
+    files = (arguments.baseline, arguments.candidate)
+    directories = (arguments.baseline_dir, arguments.candidate_dir)
+    if not (all(files) and not any(directories) or
+            all(directories) and not any(files)):
+        parser.error("give --baseline and --candidate, or --baseline-dir "
+                     "and --candidate-dir")
 
     try:
+        if all(directories):
+            outcome = compare_groups(collect_groups(arguments.baseline_dir),
+                                     collect_groups(arguments.candidate_dir))
+            print(format_groups(outcome))
+            return 0 if outcome["passed"] else 1
         baseline = [read_report(path) for path in arguments.baseline]
         candidate = [read_report(path) for path in arguments.candidate]
         result = compare(baseline, candidate)
