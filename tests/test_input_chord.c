@@ -28,6 +28,7 @@
 #define KEY_R INPUT_CHORD_KEY_R
 #define KEY_SELECT INPUT_CHORD_KEY_SELECT
 #define KEY_START INPUT_CHORD_KEY_START
+#define KEY_LEFT (1u << 7)
 /* Circle and Cross carry GBA A and B in the default button map. */
 #define KEY_A_B (KEY_CIRCLE | KEY_CROSS)
 #define MENU_KEYS (KEY_START | KEY_SELECT)
@@ -192,6 +193,7 @@ static void test_defaults(void)
     assert((uint32_t)input_chord_defaults[i].action == i);
   assert(input_chord_defaults[INPUT_CHORD_FASTFORWARD].mask == 0);
   assert(input_chord_defaults[INPUT_CHORD_FPS].mask == 0);
+  assert(input_chord_defaults[INPUT_CHORD_VIDEO_CYCLE].mask == 0);
   assert(input_chord_defaults[0].action == INPUT_CHORD_SAVESTATE);
   assert(input_chord_defaults[0].mask == (KEY_SELECT | KEY_L));
   assert(input_chord_defaults[0].hold_ms == 0);
@@ -403,6 +405,45 @@ static void test_hold_rearms_after_release(void)
    &hide) == BIT(INPUT_CHORD_MENU));
 }
 
+/* The video cycle has no chord by default, so no pad state fires it; a
+   chord the user binds to it fires once per press and hides its key. */
+static void test_video_cycle_binding(void)
+{
+  InputChord table[INPUT_CHORD_DEFAULT_COUNT];
+  InputChordState state;
+  uint32_t hide;
+  uint32_t pad;
+  uint32_t i;
+
+  input_chord_init(&state, input_chord_defaults, INPUT_CHORD_DEFAULT_COUNT);
+  for(pad = 0; pad <= 0xFFFF; pad++)
+  {
+    assert((input_chord_eval(&state, pad, 0, pad, 0, &hide) &
+     BIT(INPUT_CHORD_VIDEO_CYCLE)) == 0);
+    input_chord_eval(&state, 0, pad, pad, 0, &hide);
+  }
+
+  for(i = 0; i < INPUT_CHORD_DEFAULT_COUNT; i++)
+    table[i] = input_chord_defaults[i];
+  table[INPUT_CHORD_VIDEO_CYCLE].mask = KEY_SELECT | KEY_LEFT;
+  assert(input_chord_validate(table, INPUT_CHORD_DEFAULT_COUNT));
+  input_chord_init(&state, table, INPUT_CHORD_DEFAULT_COUNT);
+  assert(input_chord_eval(&state, KEY_SELECT, 0, 0, KEY_A_B, &hide) == 0);
+  assert(input_chord_eval(&state, KEY_SELECT | KEY_LEFT, KEY_SELECT, 1,
+   KEY_A_B, &hide) == BIT(INPUT_CHORD_VIDEO_CYCLE));
+  assert(hide == KEY_LEFT);
+  assert(input_chord_eval(&state, KEY_SELECT | KEY_LEFT,
+   KEY_SELECT | KEY_LEFT, 2, KEY_A_B, &hide) == 0);
+  assert(input_chord_eval(&state, KEY_SELECT, KEY_SELECT | KEY_LEFT, 3,
+   KEY_A_B, &hide) == 0);
+  assert(input_chord_eval(&state, KEY_SELECT | KEY_LEFT, KEY_SELECT, 4,
+   KEY_A_B, &hide) == BIT(INPUT_CHORD_VIDEO_CYCLE));
+
+  /* The same keys as another action's chord are a conflict. */
+  table[INPUT_CHORD_VIDEO_CYCLE].mask = KEY_SELECT | KEY_L;
+  assert(!input_chord_validate(table, INPUT_CHORD_DEFAULT_COUNT));
+}
+
 static void test_validate(void)
 {
   InputChord table[INPUT_CHORD_MAX + 1] =
@@ -441,6 +482,7 @@ int main(void)
   test_hold_never_with_a_or_b();
   test_soft_reset_keys_never_open_menu();
   test_hold_rearms_after_release();
+  test_video_cycle_binding();
   test_all_pad_states();
   puts("Input chord tests passed");
   return 0;

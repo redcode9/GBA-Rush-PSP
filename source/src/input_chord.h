@@ -43,6 +43,7 @@ enum
   INPUT_CHORD_MENU,
   INPUT_CHORD_FASTFORWARD,
   INPUT_CHORD_FPS,
+  INPUT_CHORD_VIDEO_CYCLE,
   INPUT_CHORD_ACTION_COUNT
 };
 
@@ -69,9 +70,9 @@ typedef struct
 } InputChordState;
 
 /* SELECT+L saves, SELECT+R loads, START+SELECT held 500 ms opens the
- * menu; fast-forward and the FPS overlay have no chord. Entry n is
- * action n; its hold_ms is that action's fixed hold, also for a chord
- * the user sets. */
+ * menu; fast-forward, the FPS overlay and the video cycle have no
+ * chord. Entry n is action n; its hold_ms is that action's fixed hold,
+ * also for a chord the user sets. */
 extern const InputChord input_chord_defaults[INPUT_CHORD_DEFAULT_COUNT];
 
 /* Non-zero when count fits, every action exists, every chord has 0
