@@ -18,7 +18,7 @@
 - [ ] **PRF-4.4** — Memoria trattenuta e traccia delle allocazioni (solo build diagnostica) · S, 1 gg · dipende da: PRF-4.1, F-137 · PSP: no
 - [ ] **PRF-5.1** — Modulo puro mem_budget · S, 1 gg · dipende da: PRF-4.1 · PSP: no
 - [ ] **PRF-5.2** — Buffer ROM a passi di 1 MiB con riserva misurata · M, 2 gg · dipende da: PRF-5.1, PRF-4.2, PRF-1.1, CMP-1.4 · PSP: sì · aspetta: PRF-1.1 (`wip/perf-method`), CMP-1.4 (`wip/open-bios`)
-- [ ] **SOA-8.1** — Sonda su console: scratchpad, D-cache, RAM e geometria delle cache · S, 1,5 gg · dipende da: SOA-1.1 · PSP: sì · aspetta: SOA-1.1 (`wip/dev-environment`)
+- [ ] **SOA-8.1** — Sonda su console: scratchpad, D-cache, RAM e geometria delle cache · S, 1,5 gg · dipende da: SOA-1.1 · PSP: sì · aspetta: SOA-1.1 (`wip/dev-environment`) · _codice pronto (6351a39), manca la prova su PSP: `make -C source DIAGNOSTIC_HW_PROBE=1`, 3 avvii a 333/166 su PSP-1000 e su uno slim, tabella in `docs/DESIGN-DECISIONS.md`, poi ENG-14.4 chiusa con gli stessi numeri. Non compilato con psp-gcc qui. Se la curva delle vie dell'I-cache sembra sbagliata, leggere i valori `icache-ways-<k>` di `hw-probe.txt` invece del ginocchio calcolato. File caldo di altri branch da scrivere nella PR: `setup_main` in `main.c` (due blocchi `#ifdef ENABLE_DIAGNOSTIC_HW_PROBE`, 6 righe)._
 - [ ] **SOA-8.2** — Copie di blocco con lv.q/sv.q per savestate, snapshot e rewind · S, 1,5 gg · dipende da: SOA-8.1 · PSP: sì
 - [ ] **SOA-8.3** — Pagine ROM della PSP-1000 lette con sceDmacMemcpy da un thread ausiliario · M, 2 gg · dipende da: SOA-8.1, PRF-5.2 · PSP: sì
 - [ ] **SOA-8.4** — Modelli 2000+: ROM residente, partizione volatile e VRAM da 4 MiB · M, 2,5 gg · dipende da: PRF-6.1 · PSP: sì
@@ -27,7 +27,7 @@
 
 ## dopo gate
 
-- [ ] **ENG-14.4** — Sonda della geometria delle cache su PSP · S, 1 gg · dipende da: ENG-2.2 · PSP: sì · aspetta: ENG-2.2 (`wip/release-and-ci`)
+- [ ] **ENG-14.4** — Sonda della geometria delle cache su PSP · S, 1 gg · dipende da: ENG-2.2 · PSP: sì · aspetta: ENG-2.2 (`wip/release-and-ci`) · _in parte: la sonda c'è già, è `hw_probe` di SOA-8.1 (6351a39), da riusare invece di aggiungere `cache_measure.c`; mancano il profilo diagnostic di ENG-2.2, le 3 esecuzioni per modello su PSP e `docs/HARDWARE-RESULTS.md`_
 - [ ] **PRF-5.3** — Cache JIT allocate all'avvio e dimensionate per modello (con gate) · M, 2,5 gg · dipende da: PRF-5.1, PRF-1.5, F-120 · PSP: sì · aspetta: PRF-1.5 (`wip/perf-method`)
 - [ ] **PRF-5.4** — Sostituzione delle pagine ROM second chance con soft-fault (con gate) · M, 2,5 gg · dipende da: PRF-5.2 · PSP: sì
 - [ ] **PRF-6.1** — Spike: partizione volatile su ogni modello · S, 1,5 gg · dipende da: PRF-4.1, F-137 · PSP: sì
