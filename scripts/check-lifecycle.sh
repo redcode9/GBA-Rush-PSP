@@ -60,12 +60,12 @@ fi
 # Game, menu, browser and resume run at the configured clock; only a link
 # session and ROM loading pin 333 MHz, and only quit() lowers it, after
 # the last log flush.
-other_clocks=$(rg -o --no-filename 'set_cpu_clock\([^)]*\)' source/src | \
-  rg -v '\((option_clock_speed|u32 psp_clock)\)$' | sort | tr '\n' ' ')
+other_clocks=$(git grep -ohE --untracked 'set_cpu_clock\([^)]*\)' -- source/src | \
+  grep -Ev '\((option_clock_speed|u32 psp_clock)\)$' | sort | tr '\n' ' ')
 if [ "$other_clocks" != "set_cpu_clock(PSP_CLOCK_222) \
 set_cpu_clock(PSP_CLOCK_333) set_cpu_clock(PSP_CLOCK_333) " ] || \
    ! body '/^void quit(void)/,/^}/p' source/src/main.c | \
-  rg -q 'set_cpu_clock\(PSP_CLOCK_222\)'
+  grep -Eq 'set_cpu_clock\(PSP_CLOCK_222\)'
 then
   fail "A path runs at a clock other than the configured one"
 fi
