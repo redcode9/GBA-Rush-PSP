@@ -27,6 +27,18 @@
   Where the Media Engine cannot be used, as on official firmware or in an
   emulator, Exact draws on the main processor and is slower than New. With
   Show FPS on, the counter ends in ME or CPU to tell which.
+- Before a link session starts, the game's save is written and a copy of it
+  is kept as `<rom>.sav.link1`; the two copies before it move to `.link2`
+  and `.link3`. If the save cannot be written or copied, the session does
+  not start and the Link menu says why.
+- Link > Restore pre-link save puts one of those copies back, chosen by its
+  date and time. The current save is kept as `<rom>.sav.bak`, and the game
+  restarts on the restored save. The item is not available during a
+  session.
+- The runtime log records how every `.sav` was read (its size, the save
+  chip chosen and whether they disagree), how long every save write took,
+  whether it worked and how many tries it needed, and which save fields of
+  a damaged savestate were repaired on load.
 
 ### Changed
 
@@ -41,7 +53,8 @@
   apply only to `gba_bios.bin`.
 - A `.sav` whose size does not match its save chip is written back at the
   chip's size the next time the game saves: SRAM 32 or 64 KB, Flash 64 or
-  128 KB, EEPROM 512 bytes or 8 KB.
+  128 KB, EEPROM 512 bytes or 8 KB. The file as it was is kept once, as
+  `<rom>.sav.orig`.
 
 ### Fixed
 
@@ -61,6 +74,21 @@
   outside its buffer.
 - Load State File on the running game's `<rom>_auto.svs` loads that state
   instead of first overwriting it with the game in progress.
+- Putting the PSP to sleep while the resume question is open no longer
+  replaces the AUTO state.
+- Games with an 8 KB EEPROM that save before ever reading it no longer lose
+  the save.
+- A power cut while the `.sav` is being written no longer loses the save:
+  the previous one is kept as `<rom>.sav.bak` and restored at the next
+  start.
+- A save that cannot be written, for example on a full Memory Stick, is no
+  longer lost: the game keeps it in memory and tries again, the menu opens
+  once to say so, and before exiting, suspending or changing game the menu
+  asks whether to try again.
+- Saving a state no longer needs 512 KB of free memory: when memory runs
+  out, the state is saved without its preview picture instead of quitting.
+  A power cut while a state is being saved keeps the previous state, as a
+  `.svs.bak` file.
 
 ## 1.4.3 - 2026-11-02
 
