@@ -18,7 +18,7 @@
 
 - [ ] **EXT-4.1** — Campo browser_view nel ConfigModel e vista ripristinata · S, 0,5 gg · dipende da: — · PSP: sì · **subito** · _codice pronto (7bf076e), manca la prova su PSP_
 - [ ] **UI-1.3** — Libreria vuota spiegata e gba_bios.bin nascosto · S, 1 gg · dipende da: — · PSP: sì · **subito** · _codice pronto (fae1ddc), manca la prova su PSP_
-- [ ] **UI-1.4** — Suggerimento al primo avvio sui tasti del menu · S, 0,5 gg · dipende da: UI-2.2, UI-4.4, CMP-1.1 · PSP: sì · aspetta: CMP-1.1 (`wip/open-bios`) · _codice pronto (3d0af02), manca la prova su PSP_
+- [ ] **UI-1.4** — Suggerimento al primo avvio sui tasti del menu · S, 0,5 gg · dipende da: UI-2.2, UI-4.4, CMP-1.1 · PSP: sì · _codice pronto (3d0af02), manca la prova su PSP_
 - [x] **UI-2.1** — Modulo puro dei toast · S, 1 gg · dipende da: — · PSP: no · **subito**
 - [ ] **UI-2.2** — Disegno dei toast in gioco · M, 1,5 gg · dipende da: UI-2.1 · PSP: sì · _codice pronto (afe224f), manca la prova su PSP_
 - [ ] **UI-3.1** — Tasti stato senza dialogo, con toast · M, 2 gg · dipende da: LNK-3.2 · PSP: sì · aspetta: LNK-3.2 (`wip/link-diagnostics`)
