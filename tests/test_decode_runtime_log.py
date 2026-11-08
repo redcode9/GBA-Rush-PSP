@@ -227,6 +227,28 @@ class RuntimeLogDecoderTests(unittest.TestCase):
             "result=failed file-size=0 write-size=0 type=none tag=none "
             "mismatch=False")
 
+    def test_decodes_save_write(self):
+        # A Flash 128 KiB flush on a full Memory Stick, its retry that
+        # writes, and a result this decoder lacks (event 28).
+        snapshot = decoder.parse_snapshot(fixture_v5(
+            struct.pack(">QIIHBBIII", 110, 0, 1, 28, 1, 3,
+                        41250, 131072, 1),
+            struct.pack(">QIIHBBIII", 111, 0, 2, 28, 1, 0,
+                        187003, 131072, 2),
+            struct.pack(">QIIHBBIII", 112, 0, 3, 28, 1, 9, 5, 512, 1),
+        ))
+        failed, written, unknown = snapshot["records"]
+
+        self.assertEqual(failed["event"], "save-write")
+        self.assertEqual(
+            decoder.describe(failed),
+            "result=write-failed duration-us=41250 bytes=131072 attempt=1")
+        self.assertEqual(
+            decoder.describe(written),
+            "result=ok duration-us=187003 bytes=131072 attempt=2")
+        self.assertEqual(decoder.describe(unknown),
+                         "result=9 duration-us=5 bytes=512 attempt=1")
+
     def test_save_load_names_match_the_c_enums(self):
         source = Path(__file__).parents[1] / "source" / "src"
         store = (source / "save_store.h").read_text()
@@ -236,8 +258,9 @@ class RuntimeLogDecoderTests(unittest.TestCase):
             return [name.lower().replace("_", "-") for name in
                     re.findall(rf"^\s+{prefix}([A-Z0-9_]+)", text, re.M)]
 
-        self.assertEqual(names("SAVE_STORE_", store)[:3],
-                         decoder.SAVE_LOAD_RESULTS)
+        results = store[store.index("typedef enum"):
+                        store.index("} SaveStoreResult;")]
+        self.assertEqual(names("SAVE_STORE_", results), decoder.SAVE_RESULTS)
         self.assertEqual(names("SAVE_TYPE_", formats), decoder.SAVE_TYPES)
         self.assertEqual(names("SAVE_TAG_", formats), decoder.SAVE_TAGS)
 

@@ -53,6 +53,7 @@ EVENTS = {
     25: "link-benchmark",
     26: "save-load",
     27: "savestate-repair",
+    28: "save-write",
 }
 FLUSH_REASONS = {
     1: "start",
@@ -105,8 +106,12 @@ EXACT_RENDERER = [
 ]
 # save-load, from memory.c's load_backup(): the load's SaveStoreResult
 # (source/src/save_store.h), then SaveType and SaveTag
-# (source/src/save_format.h).
-SAVE_LOAD_RESULTS = ["ok", "not-found", "failed"]
+# (source/src/save_format.h). save-write, from memory.c's save_backup():
+# the write's SaveStoreResult, microseconds, bytes and try number.
+SAVE_RESULTS = [
+    "ok", "not-found", "failed", "write-failed", "verify-failed",
+    "backup-failed", "promote-failed", "restore-failed",
+]
 SAVE_TYPES = ["sram", "flash", "eeprom", "none"]
 SAVE_TAGS = ["none", "eeprom", "sram", "flash64", "flash128"]
 # savestate-repair, from memory.c's memory_read_savestate(): the fields
@@ -228,10 +233,15 @@ def describe(record: dict[str, Any]) -> str:
         return f"reason={FLUSH_REASONS.get(value0, value0)} main={value1} network={value2}"
     if event == "save-load":
         return (
-            f"result={_name(SAVE_LOAD_RESULTS, flags)} file-size={value0} "
+            f"result={_name(SAVE_RESULTS, flags)} file-size={value0} "
             f"write-size={value1} type={_name(SAVE_TYPES, value2 & 0xFF)} "
             f"tag={_name(SAVE_TAGS, value2 >> 8 & 0xFF)} "
             f"mismatch={bool(value2 >> 16 & 1)}"
+        )
+    if event == "save-write":
+        return (
+            f"result={_name(SAVE_RESULTS, flags)} duration-us={value0} "
+            f"bytes={value1} attempt={value2}"
         )
     if event == "savestate-repair":
         fixed = [name for bit, name in enumerate(SAVE_FIXES) if value0 >> bit & 1]
