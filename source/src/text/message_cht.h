@@ -935,6 +935,9 @@
   // MSG_BROWSER_EMPTY_HINT
   "請將 .gba 或 .zip 檔案複製到:",
 
+  // MSG_FIRST_RUN_MENU_HINT
+  "HOME: 選單，或長按 START+SELECT",
+
   // MSG_MAIN_MENU_LINK
   "連線線纜",
 

@@ -30,7 +30,9 @@ def function(source, signature):
 
 # Host stand-ins for everything user_main() and maybe_load_auto_savestate()
 # call. Counters record what ran, and quit() longjmps back to the scenario
-# instead of exiting.
+# instead of exiting. first_run plays setup_main()'s result (tempgba.cfg did
+# not load); queued counts toasts in the ring, which reset_gba() and a ROM
+# loaded from menu() empty.
 STUBS = r'''
 #include <assert.h>
 #include <setjmp.h>
@@ -44,7 +46,8 @@ typedef uint32_t u32;
 #define CONFIRMATION_CONT 2
 #define MSG_ERR_LOAD_GAMEPACK 0
 #define MSG_AUTO_SAVESTATE_LOAD_PROMPT 1
-const char *messages[] = {"load error", "restore state"};
+#define MSG_FIRST_RUN_MENU_HINT 2
+const char *messages[] = {"load error", "restore state", "menu hint"};
 #define MSG messages
 char gamepak_filename[512];
 char dir_roms[] = "roms/";
@@ -53,8 +56,14 @@ u32 enable_home_menu;
 int regular_file, browser_result, load_result, menu_result;
 int reset_calls, prompt_calls, execute_calls, quit_calls, recent_calls;
 int popup_value, active_link, state_exists, dialog_result, restored_slot;
+int first_run, toast_calls, queued, queued_at_run;
 jmp_buf stopped;
-void setup_main(const char *p) { (void)p; }
+u32 setup_main(const char *p) { (void)p; return first_run; }
+u32 sceKernelGetSystemTimeLow(void) { return 77; }
+void toast_push(const char *text, uint32_t duration_us, int sjis, uint32_t now) {
+  assert(strcmp(text, "menu hint") == 0 && duration_us == 6000000);
+  assert(sjis == 0 && now == 77); toast_calls++; queued++;
+}
 int path_is_regular_file(const char *p) { (void)p; return regular_file; }
 int load_gamepak(char *p) {
   if(load_result < 0) return -1;
@@ -66,7 +75,7 @@ void quit(void) { quit_calls++; longjmp(stopped, 1); }
 u32 menu(void) {
   if(menu_result) {
     strcpy(gamepak_filename, "menu.gba"); gamepak_file_size = 1024;
-    reg[0] = 0xFEED;
+    reg[0] = 0xFEED; queued = 0;
   }
   return menu_result;
 }
@@ -74,7 +83,7 @@ int load_file(const char **e, char *p, char *d, u32 r) {
   (void)e; (void)d; (void)r; strcpy(p, "browser.gba"); return browser_result;
 }
 void add_recent_rom(const char *p) { (void)p; recent_calls++; }
-void reset_gba(void) { reset_calls++; reg[0] = 0xCAFE; }
+void reset_gba(void) { reset_calls++; reg[0] = 0xCAFE; queued = 0; }
 void maybe_load_auto_savestate(void);
 int sceImposeSetHomePopup(u32 p) { popup_value = p; return 0; }
 void set_cpu_clock(u32 c) { (void)c; }
@@ -82,10 +91,13 @@ void sceDisplayWaitVblankStart(void) {}
 void video_resolution_small(void) {}
 void main_run_cpu(void) {
   assert(reg[0] == (menu_result ? 0xFEEDU : 0xCAFEU)); execute_calls++;
+  queued_at_run = queued;
 }
 int main_link_active(void) { return active_link; }
 u32 auto_savestate_exists(void) { return state_exists; }
-u32 yesno_dialog(const char *p) { (void)p; prompt_calls++; return dialog_result; }
+u32 yesno_dialog(const char *p) {
+  (void)p; assert(queued == 0); prompt_calls++; return dialog_result;
+}
 u32 action_loadstate_slot(u32 slot) { restored_slot = slot; return 1; }
 '''
 
@@ -95,7 +107,9 @@ u32 action_loadstate_slot(u32 slot) { restored_slot = slot; return 1; }
 # picked in the menu runs without reset_gba() or the auto-state prompt; any
 # other loaded ROM is reset and offers the auto state (slot 10). The last
 # lines check that the prompt is skipped with no ROM, during a link session
-# and without a saved state.
+# and without a saved state. With first_run set, every path that runs a
+# game queues the 6 s menu hint once, after the reset and the auto-state
+# prompt; the quit path and a loaded tempgba.cfg queue nothing.
 SCENARIOS = r'''
 static void clear_test(void) {
   regular_file = menu_result = active_link = 0;
@@ -103,6 +117,7 @@ static void clear_test(void) {
   reset_calls = prompt_calls = execute_calls = quit_calls = recent_calls = 0;
   state_exists = 1; dialog_result = 0; restored_slot = -1; popup_value = -1;
   gamepak_filename[0] = 0; sound_pause = 1;
+  first_run = toast_calls = queued = 0; queued_at_run = -1;
 }
 static void start(int argc) {
   char *argv[] = {"EBOOT.PBP", "direct.gba"};
@@ -136,6 +151,20 @@ int main(void) {
   maybe_load_auto_savestate(); assert(prompt_calls == 0);
   state_exists = 1; dialog_result = 1;
   maybe_load_auto_savestate(); assert(prompt_calls == 1 && restored_slot == -1);
+  clear_test(); first_run = 1; start(2);
+  assert(execute_calls == 1 && prompt_calls == 1 && queued_at_run == 1);
+  clear_test(); first_run = 1; regular_file = 1; start(1);
+  assert(execute_calls == 1 && queued_at_run == 1);
+  clear_test(); first_run = 1; browser_result = 0; start(1);
+  assert(execute_calls == 1 && queued_at_run == 1);
+  clear_test(); first_run = 1; menu_result = 1; start(1);
+  assert(execute_calls == 1 && queued_at_run == 1 && toast_calls == 1);
+  clear_test(); first_run = 1; start(1);
+  assert(execute_calls == 0 && quit_calls == 1 && toast_calls == 0);
+  clear_test(); first_run = 1; load_result = -1; start(2);
+  assert(execute_calls == 0 && toast_calls == 0);
+  clear_test(); browser_result = 0; start(1);
+  assert(execute_calls == 1 && queued_at_run == 0 && toast_calls == 0);
   puts("startup and auto-state regressions passed");
   return 0;
 }

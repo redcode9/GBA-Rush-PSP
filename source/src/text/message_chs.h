@@ -934,6 +934,9 @@
   // MSG_BROWSER_EMPTY_HINT
   "请将 .gba 或 .zip 文件复制到:",
 
+  // MSG_FIRST_RUN_MENU_HINT
+  "HOME: 菜单，或长按 START+SELECT",
+
   // MSG_MAIN_MENU_LINK
   "联机线",
 

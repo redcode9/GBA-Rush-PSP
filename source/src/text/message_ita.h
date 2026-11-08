@@ -934,6 +934,9 @@
   // MSG_BROWSER_EMPTY_HINT
   "Copia i file .gba o .zip in:",
 
+  // MSG_FIRST_RUN_MENU_HINT
+  "HOME: menu, oppure tieni START+SELECT",
+
   // MSG_MAIN_MENU_LINK
   "Cavo link",
 

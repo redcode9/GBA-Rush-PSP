@@ -934,6 +934,9 @@
   // MSG_BROWSER_EMPTY_HINT
   "Copy .gba or .zip files to:",
 
+  // MSG_FIRST_RUN_MENU_HINT
+  "HOME: menu, or hold START+SELECT",
+
   // MSG_MAIN_MENU_LINK
   "Link cable",
 

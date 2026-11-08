@@ -278,7 +278,7 @@ int main(int argc, char *argv[]);
 int user_main(int argc, char *argv[]);
 
 static void init_main(void);
-static void setup_main(const char *eboot_path);
+static u32 setup_main(const char *eboot_path);
 static void load_setting_cfg(void);
 static void load_bios_file(void);
 
@@ -1707,10 +1707,13 @@ static void find_main_path(const char *eboot_path)
 }
 
 /* One-time startup: platform services, settings, BIOS, sound and the
-   power callbacks. The power lock keeps the PSP from suspending meanwhile. */
-static void setup_main(const char *eboot_path)
+   power callbacks. The power lock keeps the PSP from suspending meanwhile.
+   Returns 1 when tempgba.cfg did not load, which only a regular quit
+   writes: a first run. */
+static u32 setup_main(const char *eboot_path)
 {
   FastForwardSettings fast_forward_settings;
+  u32 first_run;
 
   scePowerLock(0);
 
@@ -1745,7 +1748,7 @@ static void setup_main(const char *eboot_path)
   /* Kernel-mode controls are disabled for PPSSPP compatibility. */
   enable_home_menu = 1;
 
-  load_config_file();
+  first_run = load_config_file() < 0;
   rebuild_fast_forward_button_mask();
   load_theme_config();
   load_recent_roms();
@@ -1765,6 +1768,7 @@ static void setup_main(const char *eboot_path)
   setup_callbacks();
 
   scePowerUnlock(0);
+  return first_run;
 }
 
 /* True when path exists and is a regular file (not a directory). */
@@ -1787,8 +1791,9 @@ int user_main(int argc, char *argv[])
   const char *file_ext[] = { ".zip", ".gba", ".bin", ".agb", ".gbz", NULL };
   u32 rom_loaded = 0;
   u32 prepared_by_menu = 0;
+  u32 first_run;
 
-  setup_main((argc > 0 && argv[0] != NULL) ? argv[0] : NULL);
+  first_run = setup_main((argc > 0 && argv[0] != NULL) ? argv[0] : NULL);
 
   gamepak_filename[0] = 0;
   gamepak_file_size = 0;
@@ -1851,6 +1856,12 @@ int user_main(int argc, char *argv[])
       reset_gba();
       maybe_load_auto_savestate();
     }
+
+    /* Queued after reset_gba() empties the ring and after the auto-state
+       prompt, so the game shows the whole 6 s. */
+    if (first_run)
+      toast_push(MSG[MSG_FIRST_RUN_MENU_HINT], 6000000, 0,
+       sceKernelGetSystemTimeLow());
 
     sceImposeSetHomePopup(enable_home_menu ^ 1);
 

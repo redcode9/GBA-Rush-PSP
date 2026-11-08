@@ -419,6 +419,8 @@ enum MESSAGE_ITEM
   MSG_BROWSER_ALL_GAMES,
   MSG_BROWSER_EMPTY_TITLE,
   MSG_BROWSER_EMPTY_HINT,
+  /* Toast at the first game while tempgba.cfg is missing */
+  MSG_FIRST_RUN_MENU_HINT,
 
   MSG_MAIN_MENU_LINK,
   MSG_MAIN_MENU_HELP_LINK,
