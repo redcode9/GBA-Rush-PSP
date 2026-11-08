@@ -51,7 +51,8 @@ static u32 present_pending;
 /* Set during sleep and shutdown so blit_gu/blit_sharp queue nothing. */
 static u32 present_blocked;
 /* Set while video_present_paused_frame() runs the presenter, so the menu's
-   backdrop is not counted as a presented gameplay frame. */
+   backdrop adds nothing to a perf capture: no presented frame, no dcache
+   writeback or GE sync sample. */
 static u32 presenting_paused_frame;
 /* One-shot: wait for the next present right away (set after resume). */
 static u32 synchronous_present;
@@ -200,7 +201,7 @@ void draw_popup_frame_auto(int x, int y, int w, int h)
 /* Waits for a GU_DIRECT list to finish, timed when perf capture is on. */
 static void video_ge_sync_direct(void)
 {
-  int measuring = perf_monitor_active();
+  int measuring = perf_monitor_active() && !presenting_paused_frame;
   u32 sync_start;
 
   if(measuring)
@@ -216,7 +217,7 @@ static void video_ge_sync_direct(void)
 /* Flushes CPU-drawn pixels (screen_texture) so the GE reads fresh data. */
 static void video_dcache_writeback(void)
 {
-  int measuring = perf_monitor_active();
+  int measuring = perf_monitor_active() && !presenting_paused_frame;
   u32 writeback_start;
 
   if(measuring)

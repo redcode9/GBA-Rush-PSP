@@ -12,7 +12,10 @@
  * Scenarios:
  *   A baseline (no wrap): seeds, then records exactly one frame time;
  *   B wrap 0xFFFFFFFF -> 0 -> 1000: both samples survive;
- *   C first sample exactly at clock 0: the second sample is recorded.
+ *   C first sample exactly at clock 0: the second sample is recorded;
+ *   D the menu backdrop (video_present_paused_frame) runs the gameplay
+ *     presenter but adds no sample to an open capture; a gameplay
+ *     present does.
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -23,6 +26,7 @@
 
 void host_video_time_reset(void);
 void host_video_time_push(u32 value);
+extern void (*update_screen)(void);
 
 static int failures = 0;
 
@@ -103,6 +107,24 @@ int main(void)
   check(snapshot.frame_time_total_us == 50000,
    "C frame_time_total_us==50000");
   perf_monitor_stop(50000);
+
+  /* D: Diagnostics > Start measurement runs with the menu open, so the
+   * backdrop's presents must stay out of the capture. */
+  video_power_resume(); /* picks blit_gu: option_screen_scale is 0 */
+  begin_session();
+  check(video_present_paused_frame() == 1, "D backdrop drawn");
+  snapshot = take_snapshot();
+  check(snapshot.dcache_writeback_count == 0,
+   "D backdrop adds no dcache writeback sample");
+  check(snapshot.crisp_presented_frames == 0,
+   "D backdrop adds no presented frame");
+  update_screen(); /* a gameplay present */
+  snapshot = take_snapshot();
+  check(snapshot.dcache_writeback_count == 1,
+   "D gameplay present adds one dcache writeback sample");
+  check(snapshot.crisp_presented_frames == 1,
+   "D gameplay present adds one presented frame");
+  perf_monitor_stop(0);
 
   if(failures)
   {
