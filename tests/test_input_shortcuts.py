@@ -613,6 +613,26 @@ class InputShortcutTests(unittest.TestCase):
             self.assertLess(body.index("option_shortcut[i] = model->shortcut[i];"),
                             body.index("rebuild_shortcut_chords();"))
 
+    def test_settings_carry_the_turbo(self):
+        # Per game and globally: both captures store the turbo speed and
+        # mode, and both applies load them before the turbo inputs are
+        # rebuilt from them.
+        speed = "model->turbo_speed[i] = option_turbo_speed[i];"
+        mode = "model->turbo_mode[i] = option_turbo_mode[i];"
+        for name in ("capture_global_config", "capture_game_config"):
+            body = function("source/src/gui.c",
+                            "static void %s(ConfigModel *model)" % name)
+            self.assertIn(speed, body)
+            self.assertIn(mode, body)
+        for name in ("apply_global_config", "apply_game_config"):
+            body = function("source/src/gui.c",
+                            "static void %s(const ConfigModel *model)" % name)
+            rebuild = body.index("rebuild_fast_forward_button_mask();")
+            self.assertLess(body.index("option_turbo_speed[i] = model->turbo_speed[i];"),
+                            rebuild)
+            self.assertLess(body.index("option_turbo_mode[i] = model->turbo_mode[i];"),
+                            rebuild)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -213,6 +213,8 @@ static const char *fast_forward_speed_options[FAST_FORWARD_SPEED_COUNT];
 static const char *fast_forward_presentation_options[
  FAST_FORWARD_PRESENTATION_COUNT];
 static const char *fast_forward_audio_options[FAST_FORWARD_AUDIO_COUNT];
+static const char *turbo_speed_options[3];
+static const char *turbo_mode_options[2];
 
 /* Point the option value labels at the current language's MSG strings; run
    on every menu() entry and again after a language change. */
@@ -288,6 +290,13 @@ static void init_choice_arrays(void)
      MSG[MSG_FF_AUDIO_SILENT];
     fast_forward_audio_options[FAST_FORWARD_AUDIO_ACCELERATED] =
      MSG[MSG_FF_AUDIO_ACCELERATED];
+
+    // In the order of input_model.h's INPUT_MODEL_TURBO_*
+    turbo_speed_options[0] = MSG[MSG_TURBO_SPEED_30];
+    turbo_speed_options[1] = MSG[MSG_TURBO_SPEED_15];
+    turbo_speed_options[2] = MSG[MSG_TURBO_SPEED_10];
+    turbo_mode_options[0] = MSG[MSG_FF_HOLD];
+    turbo_mode_options[1] = MSG[MSG_FF_TOGGLE];
 
     image_format_options[0] = MSG[MSG_FMT_PNG];
     image_format_options[1] = MSG[MSG_FMT_BMP];
@@ -3271,7 +3280,7 @@ static void reload_cheats_page(void)
 /* Global array of all menus — filled on each menu() call (the tables live
    in its stack frame, so it is only valid while menu() runs), then used by
    file-scope refresh to avoid nested functions. */
-#define MAX_MENUS 16
+#define MAX_MENUS 17
 static MenuType *all_menus[MAX_MENUS];
 static u32 num_all_menus = 0;
 static char diagnostics_status_line[96];
@@ -5332,6 +5341,24 @@ u32 menu(void)
 
   MAKE_MENU(analog_config, NULL, NULL);
 
+  /* Speed and mode of turbo A, B, L and R; rebuild_fast_forward_button_mask
+     hands each change to the turbo inputs. */
+  MenuOptionType turbo_options[] =
+  {
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_A_SPEED], turbo_speed_options, &option_turbo_speed[0], 3, MSG_PAD_MENU_HELP_0, 0, MSG_TURBO_A_SPEED),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_A_MODE], turbo_mode_options, &option_turbo_mode[0], 2, MSG_PAD_MENU_HELP_0, 1, MSG_TURBO_A_MODE),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_B_SPEED], turbo_speed_options, &option_turbo_speed[1], 3, MSG_PAD_MENU_HELP_0, 3, MSG_TURBO_B_SPEED),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_B_MODE], turbo_mode_options, &option_turbo_mode[1], 2, MSG_PAD_MENU_HELP_0, 4, MSG_TURBO_B_MODE),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_L_SPEED], turbo_speed_options, &option_turbo_speed[2], 3, MSG_PAD_MENU_HELP_0, 6, MSG_TURBO_L_SPEED),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_L_MODE], turbo_mode_options, &option_turbo_mode[2], 2, MSG_PAD_MENU_HELP_0, 7, MSG_TURBO_L_MODE),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_R_SPEED], turbo_speed_options, &option_turbo_speed[3], 3, MSG_PAD_MENU_HELP_0, 9, MSG_TURBO_R_SPEED),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_R_MODE], turbo_mode_options, &option_turbo_mode[3], 2, MSG_PAD_MENU_HELP_0, 10, MSG_TURBO_R_MODE),
+
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_PAD_MENU_12], MSG_PAD_MENU_HELP_1, 12, MSG_PAD_MENU_12)
+  };
+
+  MAKE_MENU(turbo, NULL, NULL);
+
   MenuOptionType link_options[] =
   {
     ACTION_OPTION(NULL, NULL, link_status_line, MSG_LINK_MENU_HELP_STATUS, 0, 0),
@@ -5374,7 +5401,8 @@ u32 menu(void)
   {
     SUBMENU_OPTION(&gamepad_config_menu, MSG[MSG_MAIN_MENU_5], MSG_MAIN_MENU_HELP_5, 0, MSG_MAIN_MENU_5),
     SUBMENU_OPTION(&analog_config_menu, MSG[MSG_MAIN_MENU_6], MSG_MAIN_MENU_HELP_6, 1, MSG_MAIN_MENU_6),
-    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 3, MSG_OPTION_MENU_11)
+    SUBMENU_OPTION(&turbo_menu, MSG[MSG_TURBO_MENU], MSG_MAIN_MENU_HELP_5, 2, MSG_TURBO_MENU),
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 4, MSG_OPTION_MENU_11)
   };
 
   MAKE_MENU(controls, NULL, NULL);
@@ -5474,6 +5502,7 @@ u32 menu(void)
   all_menus[13] = &diagnostics_menu;
   all_menus[14] = &exit_menu;
   all_menus[15] = &performance_advanced_menu;
+  all_menus[16] = &turbo_menu;
   num_all_menus = MAX_MENUS;
 
   savestate_menu.parent = &main_menu;
@@ -5489,6 +5518,7 @@ u32 menu(void)
   cheats_misc_menu.parent = &game_menu;
   gamepad_config_menu.parent = &controls_menu;
   analog_config_menu.parent = &controls_menu;
+  turbo_menu.parent = &controls_menu;
   custom_colors_menu.parent = &theme_menu;
   performance_advanced_menu.parent = &emulator_menu;
 
@@ -5625,6 +5655,10 @@ u32 menu(void)
       submenu_gamepad();
     if (current_menu == &analog_config_menu)
       submenu_analog();
+    if (current_menu == &turbo_menu)
+    {
+      DRAW_TITLE_PAD_GBK(MSG_TURBO_MENU);
+    }
     if (current_menu == &cheats_misc_menu)
       submenu_cheats_misc();
     if (current_menu == &link_menu)
@@ -6312,11 +6346,16 @@ static void capture_global_config(ConfigModel *model)
     model->gamepad[i] = gamepad_config_map[i];
   for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
     model->shortcut[i] = option_shortcut[i];
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    model->turbo_speed[i] = option_turbo_speed[i];
+    model->turbo_mode[i] = option_turbo_mode[i];
+  }
 }
 
-/* Inverse of capture_global_config(), then the side effects: button mask,
-   shortcut chords, preset theme (apply_theme()) and fast forward
-   settings. */
+/* Inverse of capture_global_config(), then the side effects: button mask
+   and turbo inputs, shortcut chords, preset theme (apply_theme()) and
+   fast forward settings. */
 static void apply_global_config(const ConfigModel *model)
 {
   u32 i;
@@ -6361,6 +6400,11 @@ static void apply_global_config(const ConfigModel *model)
   /* Without HOME there must be a way into the menu: put it on Triangle. */
   if(!enable_home_menu && !has_menu_button)
     gamepad_config_map[0] = BUTTON_ID_MENU;
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    option_turbo_speed[i] = model->turbo_speed[i];
+    option_turbo_mode[i] = model->turbo_mode[i];
+  }
   rebuild_fast_forward_button_mask();
   for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
     option_shortcut[i] = model->shortcut[i];
@@ -6435,9 +6479,9 @@ static int config_companion_paths(const char *primary, char *temporary,
 }
 
 /* Per-game files (<dir_cfg>/<rom>.cfg) use the same format but only carry
-   video, frameskip, clock, volume, fast forward, button and shortcut
-   settings; the remaining fields are written as defaults and ignored on
-   load. */
+   video, frameskip, clock, volume, fast forward, button, shortcut and
+   turbo settings; the remaining fields are written as defaults and
+   ignored on load. */
 static void capture_game_config(ConfigModel *model)
 {
   u32 i;
@@ -6460,6 +6504,11 @@ static void capture_game_config(ConfigModel *model)
     model->gamepad[i] = gamepad_config_map[i];
   for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
     model->shortcut[i] = option_shortcut[i];
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    model->turbo_speed[i] = option_turbo_speed[i];
+    model->turbo_mode[i] = option_turbo_mode[i];
+  }
 }
 
 /* Per-game counterpart of apply_global_config(). */
@@ -6489,6 +6538,11 @@ static void apply_game_config(const ConfigModel *model)
   }
   if(!enable_home_menu && !has_menu_button)
     gamepad_config_map[0] = BUTTON_ID_MENU;
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    option_turbo_speed[i] = model->turbo_speed[i];
+    option_turbo_mode[i] = model->turbo_mode[i];
+  }
   rebuild_fast_forward_button_mask();
   for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
     option_shortcut[i] = model->shortcut[i];
