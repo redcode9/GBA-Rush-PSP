@@ -171,12 +171,22 @@ static void test_seed_determinism(void)
   assert(run_seed(21) != run_seed(9));
 }
 
+/* The generator of the former model, stepped calls times from state. */
+static uint32_t old_model_state(uint32_t state, uint32_t calls)
+{
+  for(; calls != 0; calls--)
+    state = state * 1664525u + 1013904223u;
+  return state;
+}
+
 /* A full queue refuses copies and counts them, writing nothing past its
-   capacity; an oversized datagram is refused the same way. */
+   capacity; an oversized datagram is refused the same way. As in the
+   former model, a refused copy draws no jitter: each send draws loss and
+   duplicate, then one jitter per queued copy. */
 static void test_queue_full(void)
 {
   static const NetFaultProfile twice =
-   { "twice", 100u, 0u, 0u, 100u, 0u, 0u, 0u, 0u };
+   { "twice", 100u, 1000u, 0u, 100u, 0u, 0u, 0u, 0u };
   static NetFaultFlight guarded[5];
   uint8_t data[NET_FAULT_MAX_DATAGRAM + 1u];
   uint32_t i;
@@ -187,11 +197,15 @@ static void test_queue_full(void)
   for(i = 0; i < 3u; i++)
     net_fault_send(&fault, 0, data, NET_FAULT_MAX_DATAGRAM, i);
   assert(fault.count == 4u && fault.duplicated == 3u && fault.overflow == 2u);
+  assert(fault.rng_state == old_model_state(1u, 3u * 2u + 4u));
   net_fault_send(&fault, 0, data, NET_FAULT_MAX_DATAGRAM + 1u, 3u);
   assert(fault.sent == 4u && fault.overflow == 3u && fault.count == 4u);
+  assert(fault.rng_state == old_model_state(1u, 3u * 2u + 4u));
   for(i = 0; i < sizeof(guarded[4]); i++)
     assert(((const uint8_t *)&guarded[4])[i] == 0xA5u);
-  assert(guarded[3].size == NET_FAULT_MAX_DATAGRAM && guarded[3].arrival == 101u);
+  /* The second copy of the send at 1 us drew the eighth number. */
+  assert(guarded[3].size == NET_FAULT_MAX_DATAGRAM && guarded[3].arrival ==
+   1u + 100u + (old_model_state(1u, 8u) >> 8) % 1000u);
 }
 
 /* Nothing sent inside a blackout arrives, and the blackout uses no
