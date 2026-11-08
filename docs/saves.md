@@ -24,25 +24,35 @@ it names cannot be opened, they go to the folder that holds the EBOOT.
 ## The save
 
 The `.sav` has the size of the game's save chip: 32 or 64 KB for SRAM, 64 or
-128 KB for Flash, 512 bytes or 8 KB for EEPROM. The chip comes from the save
-library string inside the ROM, not from the size of the file; only a ROM
-without that string goes by the file's size. A file of another size still
-loads, read from its start: a larger one, such as a 128 KB file from libretro
-gpSP, loads its first part. The next time the game saves, the file is written
-back at the chip's size.
+128 KB for Flash, 512 bytes or 8 KB for EEPROM. The chip type comes from the
+save library string inside the ROM, not from the file; only a ROM without that
+string goes by the file's size. Within SRAM and EEPROM the file sets the size:
+an SRAM file larger than 32 KB keeps 64 KB, and an EEPROM save is 8 KB when
+its file is 8 KB or when the game uses the larger chip. A file of another size
+still loads, read from its start: a larger one, such as a 128 KB file from
+libretro gpSP, loads its first part. The next time the game saves, the file is
+written back at the chip's size, so that 128 KB file becomes 64 KB for an SRAM
+game.
 
 ## How a save is written
 
 Every write goes first to `<rom>.sav.tmp`. The emulator syncs it to the Memory
 Stick and reads it back. Only when it matches does the old `.sav` become
 `<rom>.sav.bak`, replacing the previous `.bak`, and the `.tmp` take the name
-`<rom>.sav`. So the `.bak` always holds the save from before the last write.
+`<rom>.sav`. So the `.bak` holds the save from before the last write (or the
+`.orig` does, the first time the size changes; see below).
 
 A write needs free space for one more copy of the save. When a write fails,
 for example on a full Memory Stick, the `.sav` stays as it was, and the game
 keeps the new save in memory and tries again. The menu opens once to tell
 you, and when you quit, suspend or load another game from the menu it asks
 whether to try again. Free some space and the next try writes it.
+
+This is the default, Update backup set to AUTO, which writes the `.sav` soon
+after the game saves. With Exit Only, the `.sav` is written only when you
+quit, suspend or load another game from the menu, or start a link session:
+nothing tries again in the background, and a power cut loses the progress
+made since the last of those writes.
 
 ## After a power cut
 
@@ -57,7 +67,8 @@ that a power cut stopped:
 - With neither, a `.orig` beside a `.tmp` becomes the `.sav` again, and a
   `.tmp` alone is deleted.
 
-At most the save being written when the power went is lost.
+With Update backup on AUTO, at most the save being written when the power
+went is lost.
 
 ## `<rom>.sav.orig`
 
@@ -81,10 +92,11 @@ deletes it.
 To put a copy back on the PSP, open Link cable > Restore pre-link save with
 the game running and no session open. Each copy is offered in turn, newest
 first, with the date and time it was made: confirm to restore it, or decline
-to see the next one. The current save is kept as `<rom>.sav.bak` and the game
-restarts on the restored save. To undo the restore, put the `.bak` back by
-hand (see below) before the game saves again, since its next write replaces
-the `.bak`.
+to see the next one. The current save is kept as `<rom>.sav.bak` (or as
+`<rom>.sav.orig` if it had another size and no `.orig` exists yet; see above)
+and the game restarts on the restored save. To undo the restore, put that
+file back by hand (see below, step 5 included) before the game saves again,
+since its next write replaces the `.bak`.
 
 ## Savestates
 
@@ -116,7 +128,11 @@ itself is never written over.
 3. Move the current `<rom>.sav` somewhere else on the PC, to keep it.
 4. Rename the file you want back, `<rom>.sav.bak`, `<rom>.sav.orig` or
    `<rom>.sav.link1` to `.link3`, to `<rom>.sav`.
-5. Start the game.
+5. Start the game and answer No to "Load auto-savestate?". Quitting from the
+   menu saved an automatic savestate of the game as it was, and a savestate
+   does not hold the save: resuming it carries on from the progress you are
+   undoing, and the game's next save writes that progress over the file you
+   put back. A restored save takes effect only when the game starts fresh.
 
 A savestate goes back the same way: rename `<rom>_0.svs.bak` to
 `<rom>_0.svs` in the savestates folder.
