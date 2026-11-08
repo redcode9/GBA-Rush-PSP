@@ -10,15 +10,23 @@ set -eu
 # encodes elsewhere: clz and clo as SPECIAL functions 0x16 and 0x17, max
 # and min as 0x2C and 0x2D (PPSSPP's MIPSTables.cpp lists them). Unicorn
 # treats those as reserved instructions and loses the pc, so this teaches
-# its decoder them.
+# its decoder them. Optional: on a stock Unicorn mips_unicorn.c runs them
+# from a hook, which is slower.
 
 dir=${1:?usage: build-unicorn.sh DIR}
 version=2.1.4
+sum=ea8863f095a0136388694e5a6063afd9bb7650e30243dd6251af59c5ce5601f4
 mkdir -p "$dir"
 cd "$dir"
 if [ ! -d "unicorn-$version" ]; then
-  curl -sL -o unicorn.tar.gz \
+  curl -fsSL -o unicorn.tar.gz \
     "https://github.com/unicorn-engine/unicorn/archive/refs/tags/$version.tar.gz"
+  got=$( (sha256sum unicorn.tar.gz 2>/dev/null || shasum -a 256 unicorn.tar.gz) |
+    cut -d' ' -f1)
+  if [ "$got" != "$sum" ]; then
+    echo "unicorn.tar.gz: sha256 $got, expected $sum" >&2
+    exit 1
+  fi
   tar xzf unicorn.tar.gz
 fi
 cd "unicorn-$version"
