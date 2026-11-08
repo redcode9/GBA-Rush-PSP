@@ -4099,17 +4099,23 @@ static void set_backup_state(const SaveState *state)
 }
 
 // A damaged or foreign state must not make the save handlers index outside
-// gamepak_backup, so its save fields are brought back in range.
+// gamepak_backup, so its save fields are brought back in range, and the
+// runtime log records which ones were.
 static void memory_read_savestate(SceUID savestate_file)
 {
   SaveState before;
   SaveState state;
+  u32 fixed;
 
   get_backup_state(&before);
   MEMORY_SAVESTATE_BODY(READ);
   get_backup_state(&state);
-  save_format_sanitize(&state, &before);
+  fixed = save_format_sanitize(&state, &before);
   set_backup_state(&state);
+
+  if (fixed != 0)
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_SAVESTATE_REPAIR, 0, 0, fixed,
+     state.type, 0);
 }
 
 static void memory_write_mem_savestate(SceUID savestate_file)

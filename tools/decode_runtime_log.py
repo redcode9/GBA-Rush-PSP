@@ -52,6 +52,7 @@ EVENTS = {
     24: "link-timeout",
     25: "link-benchmark",
     26: "save-load",
+    27: "savestate-repair",
 }
 FLUSH_REASONS = {
     1: "start",
@@ -108,6 +109,14 @@ EXACT_RENDERER = [
 SAVE_LOAD_RESULTS = ["ok", "not-found", "failed"]
 SAVE_TYPES = ["sram", "flash", "eeprom", "none"]
 SAVE_TAGS = ["none", "eeprom", "sram", "flash64", "flash128"]
+# savestate-repair, from memory.c's memory_read_savestate(): the fields
+# save_format_sanitize() brought back in range, by SAVE_FIX_* bit
+# (source/src/save_format.h), then the SaveType after the repair.
+SAVE_FIXES = [
+    "type", "sram-size", "flash-size", "flash-bank", "eeprom-size",
+    "eeprom-mode", "eeprom-address-length", "eeprom-address",
+    "eeprom-counter",
+]
 LINK_EVENTS = {
     "link-command", "link-state", "link-pause-end", "link-error",
     "link-counters", "menu-presence", "power-suspend", "power-resume",
@@ -224,6 +233,12 @@ def describe(record: dict[str, Any]) -> str:
             f"tag={_name(SAVE_TAGS, value2 >> 8 & 0xFF)} "
             f"mismatch={bool(value2 >> 16 & 1)}"
         )
+    if event == "savestate-repair":
+        fixed = [name for bit, name in enumerate(SAVE_FIXES) if value0 >> bit & 1]
+        unknown = value0 >> len(SAVE_FIXES) << len(SAVE_FIXES)
+        if unknown:
+            fixed.append(f"0x{unknown:X}")
+        return f"fixed={','.join(fixed)} type={_name(SAVE_TYPES, value1)}"
     # Earlier versions belong to a retired link design; show raw values.
     if event not in LINK_EVENTS or record.get("version", 5) < 5:
         return f"flags=0x{flags:02X} values={value0}/{value1}/{value2}"

@@ -241,6 +241,35 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         self.assertEqual(names("SAVE_TYPE_", formats), decoder.SAVE_TYPES)
         self.assertEqual(names("SAVE_TAG_", formats), decoder.SAVE_TAGS)
 
+    def test_decodes_savestate_repair(self):
+        # A state with a bad Flash bank and EEPROM counter, then one whose
+        # type went back to the one in use, plus a bit this decoder lacks
+        # (event 27).
+        snapshot = decoder.parse_snapshot(fixture_v5(
+            struct.pack(">QIIHBBIII", 110, 0, 1, 27, 1, 0,
+                        0x108, 1, 0),
+            struct.pack(">QIIHBBIII", 111, 0, 2, 27, 1, 0,
+                        0x201, 2, 0),
+        ))
+        flash, eeprom = snapshot["records"]
+
+        self.assertEqual(flash["event"], "savestate-repair")
+        self.assertEqual(decoder.describe(flash),
+                         "fixed=flash-bank,eeprom-counter type=flash")
+        self.assertEqual(decoder.describe(eeprom),
+                         "fixed=type,0x200 type=eeprom")
+
+    def test_savestate_repair_names_match_the_c_bits(self):
+        formats = (Path(__file__).parents[1] / "source" / "src" /
+                   "save_format.h").read_text()
+        bits = re.findall(r"^#define SAVE_FIX_([A-Z_]+)\s+0x([0-9A-Fa-f]+)u",
+                          formats, re.M)
+
+        self.assertEqual(
+            [(name.lower().replace("_", "-"), int(value, 16))
+             for name, value in bits],
+            [(name, 1 << bit) for bit, name in enumerate(decoder.SAVE_FIXES)])
+
     # Events added at the end of the C enum keep the format version, so the
     # decoder's table must follow the enum exactly.
     def test_event_names_match_the_c_enum(self):
