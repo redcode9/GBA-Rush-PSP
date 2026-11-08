@@ -43,8 +43,9 @@
   next, with a "Turbo A: on" or "Turbo A: off" notice. The settings are
   saved globally and with each game's settings. Settings from 1.4.x start at
   30 presses per second in Hold mode, as before.
-- A ROM folder with no games and no subfolders shows "No games found" and
-  the folder to copy .gba or .zip files to, in the list and in the carousel.
+- A ROM folder with no games shows "No games found" and the folder to copy
+  .gba or .zip files to, in the list and in the carousel; its subfolders
+  stay listed.
 - On a fresh install the first game shows, for 6 seconds, a notice naming
   both ways into the menu: "HOME: menu, or hold START+SELECT". It comes back
   at each start until the emulator has been closed once from the Exit menu,
