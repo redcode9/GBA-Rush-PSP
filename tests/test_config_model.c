@@ -27,6 +27,24 @@ static void assert_default_shortcuts(const ConfigModel *model)
    sizeof(default_shortcut)) == 0);
 }
 
+/* The turbo default: 30 presses per second (speed 0), Hold (mode 0). */
+static void set_default_turbo(ConfigModel *model)
+{
+  memset(model->turbo_speed, 0, sizeof(model->turbo_speed));
+  memset(model->turbo_mode, 0, sizeof(model->turbo_mode));
+}
+
+/* Gives every turbo field a valid value that is not its default. */
+static void set_custom_turbo(ConfigModel *model)
+{
+  model->turbo_speed[0] = 2;
+  model->turbo_speed[1] = 1;
+  model->turbo_speed[3] = 2;
+  model->turbo_mode[0] = 1;
+  model->turbo_mode[2] = 1;
+  model->turbo_mode[3] = 1;
+}
+
 static void write_u32(uint8_t *output, uint32_t value)
 {
   output[0] = (uint8_t)value;
@@ -108,6 +126,7 @@ static void test_defaults_and_versioned_round_trip(void)
   ConfigModel decoded;
   uint8_t encoded[CONFIG_MODEL_ENCODED_SIZE];
   size_t written = 0;
+  size_t i;
 
   config_model_defaults(&original);
   assert(original.screen_scale == 6);
@@ -128,6 +147,8 @@ static void test_defaults_and_versioned_round_trip(void)
   assert(original.browser_view == 0);
   assert(original.gamepad[0] == 11);
   assert_default_shortcuts(&original);
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+    assert(original.turbo_speed[i] == 0 && original.turbo_mode[i] == 0);
 
   original.screen_filter = 0;
   original.video_renderer = 2;
@@ -145,6 +166,7 @@ static void test_defaults_and_versioned_round_trip(void)
   original.shortcut[0] = (1u << 11) | (1u << 0);
   original.shortcut[2] = 0;
   original.shortcut[7] = 0xF000;
+  set_custom_turbo(&original);
 
   assert(config_model_encode(&original, encoded, sizeof(encoded), &written));
   assert(written == CONFIG_MODEL_ENCODED_SIZE);
@@ -186,8 +208,9 @@ static void test_previous_versioned_migration(void)
 }
 
 /* A version 2 file (1.4.x) carries 45 values: the CPU core, the browser
-   view and the shortcuts that version 3 added decode as Classic, the list
-   and the default shortcuts; every value the file has is kept. */
+   view, the shortcuts and the turbo settings that version 3 added decode
+   as Classic, the list, the default shortcuts and 30 per second Hold;
+   every value the file has is kept. */
 static void test_version_2_migration(void)
 {
   uint8_t encoded[CONFIG_MODEL_ENCODED_SIZE];
@@ -205,6 +228,7 @@ static void test_version_2_migration(void)
   model.browser_view = 1;
   model.shortcut[0] = 0x0003;
   model.shortcut[3] = 0x0003;
+  set_custom_turbo(&model);
   size = forge_versioned(encoded, 2, 45, &model);
 
   assert(config_model_decode(encoded, size, &decoded) ==
@@ -213,12 +237,13 @@ static void test_version_2_migration(void)
   expected.cpu_core = 0;
   expected.browser_view = 0;
   memcpy(expected.shortcut, default_shortcut, sizeof(default_shortcut));
+  set_default_turbo(&expected);
   assert_models_equal(&expected, &decoded);
 }
 
 /* Earlier builds of version 3 wrote 46 values, ending at the CPU core: the
-   browser view decodes as the list and the shortcuts as their defaults,
-   the rest is kept. */
+   browser view decodes as the list, the shortcuts as their defaults and
+   the turbo settings as 30 per second Hold; the rest is kept. */
 static void test_version_3_without_browser_view(void)
 {
   uint8_t encoded[CONFIG_MODEL_ENCODED_SIZE];
@@ -233,6 +258,7 @@ static void test_version_3_without_browser_view(void)
   model.cpu_core = 1;
   model.browser_view = 1;
   model.shortcut[1] = 0x0003;
+  set_custom_turbo(&model);
   size = forge_versioned(encoded, 3, 46, &model);
 
   assert(config_model_decode(encoded, size, &decoded) ==
@@ -240,6 +266,7 @@ static void test_version_3_without_browser_view(void)
   expected = model;
   expected.browser_view = 0;
   memcpy(expected.shortcut, default_shortcut, sizeof(default_shortcut));
+  set_default_turbo(&expected);
   assert_models_equal(&expected, &decoded);
 }
 
@@ -263,6 +290,70 @@ static void test_version_3_without_shortcuts(void)
   expected = model;
   memcpy(expected.shortcut, default_shortcut, sizeof(default_shortcut));
   assert_models_equal(&expected, &decoded);
+}
+
+/* Builds of version 3 with the shortcuts wrote 55 values: they are kept
+   and the turbo settings decode as 30 per second Hold. */
+static void test_version_3_without_turbo(void)
+{
+  uint8_t encoded[CONFIG_MODEL_ENCODED_SIZE];
+  ConfigModel model;
+  ConfigModel expected;
+  ConfigModel decoded;
+  size_t size;
+
+  config_model_defaults(&model);
+  model.browser_view = 1;
+  model.shortcut[2] = 0x0003;
+  set_custom_turbo(&model);
+  size = forge_versioned(encoded, 3, 55, &model);
+
+  assert(config_model_decode(encoded, size, &decoded) ==
+   CONFIG_MODEL_DECODE_VERSIONED);
+  expected = model;
+  set_default_turbo(&expected);
+  assert_models_equal(&expected, &decoded);
+}
+
+/* A turbo speed is 0-2 and a mode 0-1, per button; any other stored value
+   reads back as 30 per second or Hold and leaves the other fields alone. */
+static void test_turbo_values(void)
+{
+  static const uint32_t stored[] = { 0, 1, 2, 3, 99, 0xFFFFFFFFU };
+  static const uint32_t speed[] = { 0, 1, 2, 0, 0, 0 };
+  static const uint32_t mode[] = { 0, 1, 0, 0, 0, 0 };
+  uint8_t encoded[CONFIG_MODEL_ENCODED_SIZE];
+  ConfigModel model;
+  ConfigModel expected;
+  ConfigModel decoded;
+  size_t written;
+  size_t button;
+  size_t i;
+
+  for(button = 0; button < CONFIG_MODEL_TURBO_COUNT; button++)
+  {
+    for(i = 0; i < sizeof(stored) / sizeof(stored[0]); i++)
+    {
+      config_model_defaults(&model);
+      set_custom_turbo(&model);
+      model.shortcut[7] = 0x0003;
+      expected = model;
+      model.turbo_speed[button] = stored[i];
+      expected.turbo_speed[button] = speed[i];
+      assert(config_model_encode(&model, encoded, sizeof(encoded), &written));
+      assert(config_model_decode(encoded, written, &decoded) ==
+       CONFIG_MODEL_DECODE_VERSIONED);
+      assert_models_equal(&expected, &decoded);
+
+      model = expected;
+      model.turbo_mode[button] = stored[i];
+      expected.turbo_mode[button] = mode[i];
+      assert(config_model_encode(&model, encoded, sizeof(encoded), &written));
+      assert(config_model_decode(encoded, written, &decoded) ==
+       CONFIG_MODEL_DECODE_VERSIONED);
+      assert_models_equal(&expected, &decoded);
+    }
+  }
 }
 
 /* A stored shortcut is kept when it is 0 or 1-4 of the 16 inputs; a mask
@@ -547,8 +638,10 @@ int main(void)
   test_version_2_migration();
   test_version_3_without_browser_view();
   test_version_3_without_shortcuts();
+  test_version_3_without_turbo();
   test_browser_view_values();
   test_shortcut_values();
+  test_turbo_values();
   test_fast_forward_fields_fall_back_independently();
   test_current_binary_migration_and_field_validation();
   test_older_binary_layouts();

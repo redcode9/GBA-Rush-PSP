@@ -8,7 +8,8 @@
    config_model.c for the byte layout. */
 #define CONFIG_MODEL_GAMEPAD_COUNT 16U
 #define CONFIG_MODEL_SHORTCUT_COUNT 8U
-#define CONFIG_MODEL_VALUE_COUNT 55U
+#define CONFIG_MODEL_TURBO_COUNT 4U
+#define CONFIG_MODEL_VALUE_COUNT 63U
 #define CONFIG_MODEL_LEGACY_CURRENT_WORDS 39U   // largest headerless layout
 #define CONFIG_MODEL_HEADER_SIZE 16U
 #define CONFIG_MODEL_ENCODED_SIZE \
@@ -59,6 +60,10 @@ typedef struct
   /* Slot n is the chord of input_chord.h action n: a mask of 0 (none) or
      1-4 of the 16 inputs, bit k being gamepad index k. */
   uint32_t shortcut[CONFIG_MODEL_SHORTCUT_COUNT];
+  /* Turbo A, B, L and R: speed 0, 1 or 2 is 30, 15 or 10 presses per
+     second (INPUT_MODEL_TURBO_*); mode 0 is Hold, 1 Toggle. */
+  uint32_t turbo_speed[CONFIG_MODEL_TURBO_COUNT];
+  uint32_t turbo_mode[CONFIG_MODEL_TURBO_COUNT];
 } ConfigModel;
 
 void config_model_defaults(ConfigModel *model);

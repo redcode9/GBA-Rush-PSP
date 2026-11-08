@@ -155,6 +155,7 @@ void config_model_defaults(ConfigModel *model)
   model->browser_view = 0;              /* list */
   memcpy(model->gamepad, default_gamepad, sizeof(model->gamepad));
   memcpy(model->shortcut, default_shortcut, sizeof(model->shortcut));
+  /* turbo_speed and turbo_mode stay 0: 30 presses per second, Hold. */
 }
 
 /* The value index is the on-disk position: append new settings, never
@@ -198,6 +199,11 @@ static void model_to_values(const ConfigModel *model, uint32_t *values)
   values[46] = model->browser_view;
   for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
     values[47 + i] = model->shortcut[i];
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    values[55 + i] = model->turbo_speed[i];
+    values[59 + i] = model->turbo_mode[i];
+  }
 }
 
 /* Inverse of model_to_values(). A value outside [0, limit) takes its
@@ -243,6 +249,11 @@ static void values_to_model(const uint32_t *values, ConfigModel *model)
   for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
     model->shortcut[i] = valid_shortcut_or_default(values[47 + i],
                                                    default_shortcut[i]);
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    model->turbo_speed[i] = valid_or_default(values[55 + i], 3, 0);
+    model->turbo_mode[i] = valid_or_default(values[59 + i], 2, 0);
+  }
 }
 
 /* Writes the current versioned format; output needs at least
