@@ -16,7 +16,9 @@
 
 #include "link_net.h"
 
-/* The 40-byte header plus 12 bytes: room for several short records. */
+/* The 40-byte header plus 12 bytes: room for up to 6 records. The unwind
+   bound in scripts/check-cbmc.sh follows from it: if the datagram grows and
+   the bound does not, the proof fails on an unwinding assertion. */
 #define PROOF_DATAGRAM 52u
 
 /* Left undefined on purpose: CBMC lets each call return any value. */

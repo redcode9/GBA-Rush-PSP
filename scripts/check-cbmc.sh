@@ -33,7 +33,13 @@ run_proof()
 }
 
 # The proof assumes queues of 4 messages, so link_net.c is built with them.
-run_proof link-net 14 -DLINK_NET_QUEUE=4u \
+# Unwind 7 is one more than the most rounds any loop can make: the proof's
+# 52-byte datagram holds at most 6 messages after its 40-byte header, which
+# bounds both loops of link_net_receive, and every other loop walks at most
+# a queue of 4. CBMC unrolls each loop to the full bound however few rounds
+# it can make, so a larger bound proves nothing more and only costs memory
+# (14 ran out of the 16 GB of CI's runner).
+run_proof link-net 7 -DLINK_NET_QUEUE=4u \
   "$repo_root/proofs/cbmc/prove_link_net.c" \
   "$repo_root/source/src/link_net.c"
 
