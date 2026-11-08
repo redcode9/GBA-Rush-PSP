@@ -168,15 +168,14 @@ def permutation_p(baseline_values, candidate_values, higher):
     return (extreme + 1) / (SAMPLED_PICKS + 1), False
 
 
-def runs_needed(baseline_values, candidate_values):
+def runs_needed(baseline_values, candidate_values, difference):
     """Runs per build that would likely decide the observed difference.
 
     Normal approximation of a one-sided test at ALPHA with 80% power, with
-    Cohen's d from the median difference and the pooled spread; None when
-    the medians or the runs do not differ at all.
+    Cohen's d from difference and the pooled spread; None when the
+    difference is 0 or the runs do not differ at all.
     """
-    difference = abs(statistics.median(candidate_values) -
-                     statistics.median(baseline_values))
+    difference = abs(difference)
     spread = math.sqrt((statistics.variance(baseline_values) +
                         statistics.variance(candidate_values)) / 2.0)
     if difference == 0 or spread == 0:
@@ -190,12 +189,18 @@ def runs_needed(baseline_values, candidate_values):
 def verdict(baseline_values, candidate_values):
     """Exact verdict on the per-run values: (p, text, runs needed).
 
-    The side tested is the one the medians point to. A difference is
-    claimed only at p <= ALPHA; otherwise the text says the result is
-    undecided and about how many runs per build would decide it.
+    The side tested is the one the medians point to, or the means when the
+    medians tie. A difference is claimed only at p <= ALPHA; otherwise the
+    text says the result is undecided and about how many runs per build
+    would decide it.
     """
     difference = (statistics.median(candidate_values) -
                   statistics.median(baseline_values))
+    if difference == 0:
+        # Sparse metrics such as underruns often tie on the median; the
+        # summed test statistic follows the means.
+        difference = (statistics.mean(candidate_values) -
+                      statistics.mean(baseline_values))
     higher = difference >= 0
     p, exact = permutation_p(baseline_values, candidate_values, higher)
     # "p~" marks a p estimated from sampled picks.
@@ -204,11 +209,13 @@ def verdict(baseline_values, candidate_values):
     if difference != 0 and p <= ALPHA:
         side = "higher" if higher else "lower"
         return p, f"candidate {side} ({runs})", None
-    needed = runs_needed(baseline_values, candidate_values)
-    if needed is None:
+    needed = runs_needed(baseline_values, candidate_values, difference)
+    if needed is not None:
+        return p, (f"undecided ({runs}), about {needed} runs per build "
+                   "needed"), needed
+    if len(set(baseline_values) | set(candidate_values)) == 1:
         return p, f"undecided ({runs}), no difference observed", None
-    return p, (f"undecided ({runs}), about {needed} runs per build "
-               "needed"), needed
+    return p, f"undecided ({runs}), medians and means equal", None
 
 
 # The per-run metrics whose spread and verdict the report prints, with

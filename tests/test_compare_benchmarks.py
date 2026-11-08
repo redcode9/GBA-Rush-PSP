@@ -214,6 +214,29 @@ class BenchmarkComparisonTests(unittest.TestCase):
         self.assertIn("no difference observed", text)
         self.assertIsNone(needed)
 
+    def test_tied_medians_take_the_side_of_the_means(self):
+        # Sparse underruns tie on a median of 0; the summed test statistic
+        # follows the means, which put the candidate higher.
+        p, text, needed = MODULE.verdict([0] * 10, [0] * 6 + [3, 4, 5, 6])
+        self.assertAlmostEqual(p, 14 / 323)
+        self.assertEqual(text, "candidate higher (p=0.043, 10+10 runs)")
+        self.assertIsNone(needed)
+        # Short of ALPHA, the runs estimate comes from the mean difference.
+        _, text, needed = MODULE.verdict([0] * 10, [0] * 8 + [3, 4])
+        self.assertEqual(text, "undecided (p=0.237, 10+10 runs), about 29 "
+                         "runs per build needed")
+        self.assertEqual(needed, 29)
+        # Equal medians and means give nothing to estimate from, and no
+        # claim even at a low p.
+        p, text, needed = MODULE.verdict([1, 2, 3], [0, 2, 4])
+        self.assertEqual(text, f"undecided (p={p:.3f}, 3+3 runs), medians "
+                         "and means equal")
+        self.assertIsNone(needed)
+        with unittest.mock.patch.object(MODULE, "permutation_p",
+                                        return_value=(0.01, True)):
+            _, text, _ = MODULE.verdict([1, 2, 3], [0, 2, 4])
+        self.assertTrue(text.startswith("undecided (p=0.010"))
+
     def test_unequal_run_counts_4v3(self):
         baseline = [report(frames=frames) for frames in (600, 601, 602, 603)]
         candidate = [report(frames=frames) for frames in (610, 611, 612)]
