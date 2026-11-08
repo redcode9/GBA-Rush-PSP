@@ -21,11 +21,22 @@
  * cut at any step leaves the old image or the new one, which
  * save_store_recover() puts back under the file's own name.
  *
- * A save keeps its size from write to write, so a .bak of another size
- * than the image being written is the file from before a load of the
- * wrong size. While there is no <name>.orig, such a .bak is renamed to
- * .orig instead of being deleted: the first file of another size is kept
- * once, and no write ever replaces it.
+ * A save keeps its size from write to write, so an old file of another
+ * size than the image being written is the file from before a load of the
+ * wrong size. While there is no <name>.orig, the write renames it to
+ * .orig instead of .bak: the first file of another size is kept once, and
+ * no write ever deletes or replaces it, so it is always the file or the
+ * .orig. An empty file holds nothing to keep. A size the game itself
+ * changes (SRAM growing to 64 KiB, a Flash bank switch to 128 KiB, the
+ * EEPROM's 8 KiB promotion) keeps the smaller file the same way.
+ *
+ * Limits. The rule sees sizes only: a file of the wrong size that the next
+ * write matches (a savestate brought that chip size back before any keep)
+ * is not kept. A device that answers exists() with yes because it cannot
+ * tell makes the old file the .bak instead. A failed promotion whose
+ * restore also fails, or is cut, after deleting the new file leaves only
+ * the .orig: the next start is a blank cartridge, the old file still in
+ * .orig.
  */
 
 #ifndef SAVE_STORE_H
@@ -84,18 +95,14 @@ typedef enum
   SAVE_STORE_WRITE_FAILED,  /* the .tmp would not open, take every byte,
                                close or sync */
   SAVE_STORE_VERIFY_FAILED, /* the .tmp read back wrong */
-  SAVE_STORE_BACKUP_FAILED, /* the old file would not become the .bak, or
-                               a .bak to keep would not become the .orig;
-                               if the old file moved, it is back */
+  SAVE_STORE_BACKUP_FAILED, /* the old file's size would not read, or it
+                               would not become the .bak or the .orig; if
+                               it moved, it is back */
   SAVE_STORE_PROMOTE_FAILED, /* the .tmp would not take the file's name;
                                 the old file is back */
-  SAVE_STORE_RESTORE_FAILED, /* a step failed after the old file became
-                                the .bak, and it would not go back either;
-                                save_store_recover() retries */
-  SAVE_STORE_ORIGINAL_FAILED /* the new file is in place, but the old one,
-                                of another size, would not become the
-                                .orig: it stays the .bak, and the next
-                                write fails BACKUP_FAILED until it moves */
+  SAVE_STORE_RESTORE_FAILED  /* a step failed after the old file became
+                                the .bak or the .orig, and it would not go
+                                back either; save_store_recover() retries */
 } SaveStoreResult;
 
 /* One write in progress, from save_store_begin() to save_store_commit().
@@ -121,8 +128,10 @@ SaveStoreResult save_store_load(const SaveStoreIo *io, const char *dir,
  const char *name, uint8_t *data, size_t capacity, size_t *file_size);
 /* Finishes a write a power cut stopped. With the file there, a .tmp is
    deleted. Without it, a .tmp is promoted if there is a .bak (the file
-   moves to .bak only once the .tmp is verified), else the .bak comes back;
-   a .tmp alone is an unverified first write, and is deleted. OK, or
+   moves to .bak only once the .tmp is verified), else the .bak comes back.
+   With neither, a .orig beside a .tmp comes back and the .tmp is deleted:
+   the cut fell after the old file became the .orig, or in a first write.
+   A .tmp alone is an unverified first write, and is deleted. OK, or
    FAILED if a step fails. */
 SaveStoreResult save_store_recover(const SaveStoreIo *io, const char *dir,
  const char *name);
@@ -135,8 +144,8 @@ SaveStoreResult save_store_begin(SaveStoreWrite *transaction,
 SaveStoreResult save_store_append(SaveStoreWrite *transaction,
  const uint8_t *data, size_t size);
 /* Closes, syncs and checks the .tmp, then makes it the file, the old file
-   becoming the .bak; a .bak to keep becomes the .orig (see the top of
-   this file). Returns the first failure of the whole write. */
+   becoming the .bak, or the .orig if it is to be kept (see the top of this
+   file). Returns the first failure of the whole write. */
 SaveStoreResult save_store_commit(SaveStoreWrite *transaction);
 /* save_store_begin(), one save_store_append() of size bytes of data, and
    save_store_commit(). */

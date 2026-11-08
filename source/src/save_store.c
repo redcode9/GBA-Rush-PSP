@@ -14,7 +14,8 @@
  * follows config_store.c: a checked temporary file, the old file kept as
  * the backup, then a rename into place. Here the temporary file is
  * checked by its CRC32, every rename is checked on both names, and the
- * backup always holds the previous verified image.
+ * backup always holds the previous verified image, unless that image is
+ * kept as the .orig.
  */
 
 #include <stdio.h>
@@ -62,6 +63,13 @@ static int recover(const SaveStoreIo *io, const SaveStoreWrite *paths)
       return moved(io, paths->temporary, paths->primary);
     return moved(io, paths->backup, paths->primary);
   }
+  /* A cut after the old file became the .orig; the .tmp may also be a
+     first write's, never verified, so the .orig, the old file, comes
+     back. */
+  if(io->exists(io->context, paths->original) &&
+     io->exists(io->context, paths->temporary))
+    return moved(io, paths->original, paths->primary) &&
+           io->remove(io->context, paths->temporary);
   return io->remove(io->context, paths->temporary);
 }
 
@@ -139,69 +147,64 @@ SaveStoreResult save_store_append(SaveStoreWrite *transaction,
   return transaction->result;
 }
 
-/* Puts the .bak, the old file, back under the file's name, deleting what
-   a failed promotion left there. */
+/* Puts the old file back under the file's name from old, its .bak or its
+   .orig, deleting what a failed promotion left there. */
 static SaveStoreResult restore_backup(const SaveStoreWrite *transaction,
- SaveStoreResult result)
+ const char *old, SaveStoreResult result)
 {
   const SaveStoreIo *io = transaction->io;
 
   if(io->remove(io->context, transaction->primary) &&
-     moved(io, transaction->backup, transaction->primary))
+     moved(io, old, transaction->primary))
     return result;
   return SAVE_STORE_RESTORE_FAILED;
 }
 
-/* While there is no .orig, a .bak of another size than the image being
-   written becomes the .orig (see save_store.h). 0 if it would not, or its
-   size will not read: then it stays, and no write deletes it. */
-static int keep_original(const SaveStoreWrite *transaction)
+/* 1 if the old file is to be kept as the .orig: not empty, of another
+   size than the image being written, and no .orig yet (see save_store.h).
+   -1 if its size will not read. The size goes first, so a routine write
+   asks nothing more. */
+static int keeps_original(const SaveStoreWrite *transaction)
 {
   const SaveStoreIo *io = transaction->io;
   uint8_t none;
   size_t size = 0;
   size_t length = 0;
 
-  if(!io->exists(io->context, transaction->backup) ||
-     io->exists(io->context, transaction->original))
-    return 1;
   /* Capacity 0 reads the length only. */
-  if(!io->read(io->context, transaction->backup, &none, 0, &size, &length))
-    return 0;
-  return length == transaction->size ||
-         (moved(io, transaction->backup, transaction->original) &&
-          io->flush(io->context, transaction->original));
+  if(!io->read(io->context, transaction->primary, &none, 0, &size, &length))
+    return -1;
+  return length != 0 && length != transaction->size &&
+         !io->exists(io->context, transaction->original);
 }
 
 /* Once the .tmp checks out: the old file becomes the .bak, replacing the
-   one before it, and the .tmp takes the file's name. */
+   one before it, or the .orig if it is to be kept, and the .tmp takes the
+   file's name. */
 static SaveStoreResult promote(const SaveStoreWrite *transaction)
 {
   const SaveStoreIo *io = transaction->io;
-  int had_primary = io->exists(io->context, transaction->primary);
+  const char *old = NULL;
+  int keep;
 
-  if(had_primary)
+  if(io->exists(io->context, transaction->primary))
   {
-    if(!keep_original(transaction) ||
-       !io->remove(io->context, transaction->backup))
+    keep = keeps_original(transaction);
+    if(keep < 0 || !io->remove(io->context, transaction->backup))
       return SAVE_STORE_BACKUP_FAILED;
-    if(!moved(io, transaction->primary, transaction->backup))
+    old = keep ? transaction->original : transaction->backup;
+    if(!moved(io, transaction->primary, old))
     {
       if(io->exists(io->context, transaction->primary))
         return SAVE_STORE_BACKUP_FAILED;
-      return restore_backup(transaction, SAVE_STORE_BACKUP_FAILED);
+      return restore_backup(transaction, old, SAVE_STORE_BACKUP_FAILED);
     }
   }
   if(moved(io, transaction->temporary, transaction->primary) &&
      io->flush(io->context, transaction->primary))
-  {
-    /* Only now: a failed promotion must still find the .bak to restore. */
-    if(had_primary && !keep_original(transaction))
-      return SAVE_STORE_ORIGINAL_FAILED;
     return SAVE_STORE_OK;
-  }
-  if(had_primary)
-    return restore_backup(transaction, SAVE_STORE_PROMOTE_FAILED);
+  if(old != NULL)
+    return restore_backup(transaction, old, SAVE_STORE_PROMOTE_FAILED);
   return SAVE_STORE_PROMOTE_FAILED;
 }
 
