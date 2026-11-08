@@ -362,4 +362,16 @@ then
   fail "The resume question is open with the ROM name set"
 fi
 
+# Restoring a pre-link save restarts the game, so never during a link
+# session: the Link menu checks main_link_active() before the one call
+# that restores.
+if ! body '/^static u32 menu_link_restore(void)/,/^}/p' source/src/gui.c | awk '
+  /main_link_active\(\)/ && !restored { guarded = 1 }
+  /restore_backup_link_copy\(/ { restored = 1 }
+  END { exit !(guarded && restored) }
+' || [ "$(rg -c 'restore_backup_link_copy\(' source/src/gui.c || true)" != 1 ]
+then
+  fail "A pre-link save can be restored during a link session"
+fi
+
 echo "Runtime lifecycle checks passed"

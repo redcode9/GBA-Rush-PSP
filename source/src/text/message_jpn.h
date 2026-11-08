@@ -918,6 +918,9 @@
   // MSG_LINK_MENU_DISCONNECT
   "切断",
 
+  // MSG_LINK_MENU_RESTORE
+  "通信前のセーブに戻す",
+
   // MSG_LINK_MENU_HELP_STATUS
   "現在の通信状態",
 
@@ -929,6 +932,18 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "現在の通信を終了します",
+
+  // MSG_LINK_MENU_HELP_RESTORE
+  "通信の前にコピーしたセーブに戻します",
+
+  // MSG_LINK_RESTORE_CONFIRM
+  "%sに戻す? ゲームを再起動します",
+
+  // MSG_LINK_RESTORE_NONE
+  "通信前にコピーしたセーブはありません",
+
+  // MSG_LINK_RESTORE_FAILED
+  "セーブデータを復元できませんでした",
 
   // MSG_LINK_STATUS_NO_GAME
   "ゲームが読み込まれていません",

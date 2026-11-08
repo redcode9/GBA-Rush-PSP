@@ -918,6 +918,9 @@
   // MSG_LINK_MENU_DISCONNECT
   "断开连接",
 
+  // MSG_LINK_MENU_RESTORE
+  "恢复联机前的存档",
+
   // MSG_LINK_MENU_HELP_STATUS
   "当前联机状态",
 
@@ -929,6 +932,18 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "关闭当前联机会话",
+
+  // MSG_LINK_MENU_HELP_RESTORE
+  "恢复联机前复制的游戏存档",
+
+  // MSG_LINK_RESTORE_CONFIRM
+  "恢复%s的存档? 游戏将重新启动",
+
+  // MSG_LINK_RESTORE_NONE
+  "没有联机前复制的存档",
+
+  // MSG_LINK_RESTORE_FAILED
+  "无法恢复游戏存档",
 
   // MSG_LINK_STATUS_NO_GAME
   "未加载游戏",

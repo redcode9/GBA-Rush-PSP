@@ -3636,6 +3636,65 @@ static void menu_link_disconnect_action(void)
     set_cpu_clock(PSP_CLOCK_222);
 }
 
+static int menu_link_restore_available(void)
+{
+    return menu_game_available() && !main_link_active();
+}
+
+/* SceIoStat's leading fields, as boxart.c mirrors them: newlib's
+   <sys/stat.h> makes st_mtime a macro, so that field cannot be named. */
+typedef struct
+{
+    SceMode mode;
+    unsigned int attr;
+    SceOff size;
+    ScePspDateTime ctime;
+    ScePspDateTime atime;
+    ScePspDateTime mtime;
+} MenuIoStat;
+
+/* Offers each pre-link save of this game (<rom>.sav.link1 to .link3),
+   newest first, with the time it was copied: O restores that one, X
+   offers the next. Returns 1 once a copy is the .sav and the save in RAM,
+   for the menu to restart the game, which no write of the old save can
+   then undo. Never during a link session, which the restart would end. */
+static u32 menu_link_restore(void)
+{
+    char path[MAX_PATH];
+    char when[40];
+    char text[128];
+    SceIoStat stat;
+    MenuIoStat *times = (MenuIoStat *)&stat;
+    u32 generation;
+    u32 offered = 0;
+
+    if(main_link_active() || !menu_game_available())
+        return 0;
+
+    for(generation = 1; generation <= 3; generation++)
+    {
+        snprintf(path, sizeof(path), "%s%s.link%u", dir_save,
+         backup_filename, (unsigned int)generation);
+        if(sceIoGetstat(path, &stat) < 0)
+            continue;
+        offered = 1;
+        get_timestamp_string(when, MSG_STATE_MENU_DATE_FMT_0, &times->mtime,
+         sceRtcGetDayOfWeek(times->mtime.year, times->mtime.month,
+          times->mtime.day));
+        snprintf(text, sizeof(text), MSG[MSG_LINK_RESTORE_CONFIRM], when);
+        if(yesno_dialog(text) != 0)
+            continue;
+        if(restore_backup_link_copy(generation))
+            return 1;
+        error_msg(MSG[MSG_LINK_RESTORE_FAILED], CONFIRMATION_CONT);
+        return 0;
+    }
+
+    if(!offered)
+        error_msg(MSG[MSG_LINK_RESTORE_NONE], CONFIRMATION_CONT);
+    return 0;
+}
+
 /* The other console's four-letter game code, safe to print. */
 static void menu_link_peer_code(char code[5])
 {
@@ -5351,6 +5410,7 @@ u32 menu(void)
     ACTION_OPTION(menu_link_host_action, NULL, MSG[MSG_LINK_MENU_CREATE], MSG_LINK_MENU_HELP_CREATE, 4, MSG_LINK_MENU_CREATE),
     ACTION_OPTION(menu_link_join_action, NULL, MSG[MSG_LINK_MENU_JOIN], MSG_LINK_MENU_HELP_JOIN, 5, MSG_LINK_MENU_JOIN),
     ACTION_OPTION(menu_link_disconnect_action, NULL, MSG[MSG_LINK_MENU_DISCONNECT], MSG_LINK_MENU_HELP_DISCONNECT, 7, MSG_LINK_MENU_DISCONNECT),
+    ACTION_OPTION(NULL, NULL, MSG[MSG_LINK_MENU_RESTORE], MSG_LINK_MENU_HELP_RESTORE, 9, MSG_LINK_MENU_RESTORE),
 
     ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 11, MSG_OPTION_MENU_11)
   };
@@ -5358,6 +5418,8 @@ u32 menu(void)
   link_options[0].behavior_flags = MENU_OPTION_PASSIVE_ROW;
   link_options[1].behavior_flags = MENU_OPTION_PASSIVE_ROW;
   link_options[2].behavior_flags = MENU_OPTION_PASSIVE_ROW;
+  link_options[6].available_function = menu_link_restore_available;
+  link_options[6].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
 
   MAKE_MENU(link, NULL, NULL);
 
@@ -5928,6 +5990,12 @@ u32 menu(void)
               {
                 if(current_option->line_number == 0)
                   menu_suspend();
+              }
+              else if(current_menu == &link_menu)
+              {
+                /* The restored save is in RAM: the game restarts on it. */
+                if(current_option->line_number == 9 && menu_link_restore())
+                  menu_reset();
               }
               else if (current_menu == &savestate_menu)
               {

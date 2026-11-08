@@ -918,6 +918,9 @@
   // MSG_LINK_MENU_DISCONNECT
   "Disconnetti",
 
+  // MSG_LINK_MENU_RESTORE
+  "Ripristina salvataggio pre-link",
+
   // MSG_LINK_MENU_HELP_STATUS
   "Stato attuale del cavo link",
 
@@ -929,6 +932,18 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "Chiudi la sessione link attuale",
+
+  // MSG_LINK_MENU_HELP_RESTORE
+  "Torna a un salvataggio di prima del link",
+
+  // MSG_LINK_RESTORE_CONFIRM
+  "Tornare al %s? Il gioco riparte.",
+
+  // MSG_LINK_RESTORE_NONE
+  "Nessun salvataggio copiato prima di un link.",
+
+  // MSG_LINK_RESTORE_FAILED
+  "Impossibile ripristinare il salvataggio.",
 
   // MSG_LINK_STATUS_NO_GAME
   "Nessun gioco caricato",

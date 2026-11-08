@@ -919,6 +919,9 @@
   // MSG_LINK_MENU_DISCONNECT
   "中斷連線",
 
+  // MSG_LINK_MENU_RESTORE
+  "恢復連線前的存檔",
+
   // MSG_LINK_MENU_HELP_STATUS
   "目前的連線狀態",
 
@@ -930,6 +933,18 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "關閉目前的連線",
+
+  // MSG_LINK_MENU_HELP_RESTORE
+  "恢復連線前複製的遊戲存檔",
+
+  // MSG_LINK_RESTORE_CONFIRM
+  "恢復%s的存檔? 遊戲將重新啟動",
+
+  // MSG_LINK_RESTORE_NONE
+  "沒有連線前複製的存檔",
+
+  // MSG_LINK_RESTORE_FAILED
+  "無法恢復遊戲存檔",
 
   // MSG_LINK_STATUS_NO_GAME
   "尚未載入遊戲",

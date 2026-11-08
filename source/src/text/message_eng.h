@@ -918,6 +918,9 @@
   // MSG_LINK_MENU_DISCONNECT
   "Disconnect",
 
+  // MSG_LINK_MENU_RESTORE
+  "Restore pre-link save",
+
   // MSG_LINK_MENU_HELP_STATUS
   "Current link cable state",
 
@@ -929,6 +932,18 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "Close the current link session",
+
+  // MSG_LINK_MENU_HELP_RESTORE
+  "Put back a save copied before a link",
+
+  // MSG_LINK_RESTORE_CONFIRM
+  "Restore save of %s? Game restarts.",
+
+  // MSG_LINK_RESTORE_NONE
+  "No save was copied before a link session.",
+
+  // MSG_LINK_RESTORE_FAILED
+  "The save could not be restored.",
 
   // MSG_LINK_STATUS_NO_GAME
   "No game loaded",
