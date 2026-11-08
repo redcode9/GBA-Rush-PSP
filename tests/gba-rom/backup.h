@@ -60,6 +60,12 @@ void backup_read(u32 offset, void *buffer, u32 size);
 __attribute__((long_call))
 int backup_write(u32 offset, const void *data, u32 size);
 
+/* EEPROM only: writes whole 8-byte blocks without reading the chip
+   first, as a game's first save does; returns 1 once the chip reports
+   every write done. */
+__attribute__((long_call))
+int backup_write_unread(u32 offset, const void *data, u32 size);
+
 /* Flash only: the chip's ID, device << 8 | manufacturer. */
 __attribute__((long_call))
 u32 backup_flash_id(void);

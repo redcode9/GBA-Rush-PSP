@@ -274,6 +274,17 @@ IWRAM_CODE int backup_write(u32 offset, const void *data, u32 size)
   return 1;
 }
 
+IWRAM_CODE int backup_write_unread(u32 offset, const void *data, u32 size)
+{
+  const u8 *in = data;
+  u32 i;
+
+  for(i = 0; i < size; i += EEPROM_BLOCK)
+    if(!eeprom_write_block((offset + i) / EEPROM_BLOCK, in + i))
+      return 0;
+  return 1;
+}
+
 IWRAM_CODE u32 backup_flash_id(void)
 {
   return 0;
