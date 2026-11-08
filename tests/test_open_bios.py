@@ -132,7 +132,8 @@ static s32 stub_read(void *buffer, size_t size) {
 # with the other BIOS: it closes the file unread and reports it after the
 # power lock is released. Zero padding (older savestates) means gba_bios.bin.
 # A savestate streams through the store in 16 KiB blocks and is refused,
-# the old file kept, when the module data reaches the BIOS word.
+# the old file kept, when the module data reaches the BIOS word; any store
+# failure fails the save the same way.
 SCENARIOS = r'''
 static u8 image[0x5000];
 static u8 state[SAVESTATE_SIZE];
@@ -161,12 +162,15 @@ SaveStoreResult save_store_append(SaveStoreWrite *transaction,
   }
   return transaction->result;
 }
+static SaveStoreResult commit_result; /* a failure after the appends */
 SaveStoreResult save_store_commit(SaveStoreWrite *transaction) {
   commits++; assert(power_locked && commits == begins);
   if (transaction->result == SAVE_STORE_OK) {
     assert(transaction->size == SAVESTATE_SIZE);
-    memcpy(state, store_tmp, SAVESTATE_SIZE);
+    transaction->result = commit_result;
   }
+  if (transaction->result == SAVE_STORE_OK)
+    memcpy(state, store_tmp, SAVESTATE_SIZE);
   return transaction->result;
 }
 /* The modules' data: a counting pattern, in pieces (one as large as EWRAM)
@@ -283,6 +287,11 @@ int main(void) {
   file_size = -1; closes = 0;
   assert(load_state_silent("s.svs") == 0 && closes == 0 && shown == NULL);
   assert(recovers == 3);
+
+  commit_result = SAVE_STORE_VERIFY_FAILED; modules = 2000;
+  assert(save_state_file("s.svs", screen) == 0);
+  commit_result = SAVE_STORE_OK; modules = 1000;
+  check_state(SAVESTATE_BIOS_BUILTIN);
 
   puts("BIOS fallback and savestate BIOS regressions passed");
   return 0;
