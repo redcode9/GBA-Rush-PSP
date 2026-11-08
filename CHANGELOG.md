@@ -31,6 +31,11 @@
   holds a table of measured baselines for each PSP model and game, generated
   by `scripts/perf-table.py` from the reports archived under `benchmarks/`.
   No baselines are archived yet.
+- `scripts/compare-benchmarks.py --baseline-dir DIR --candidate-dir DIR`
+  compares folders of reports: the reports of each game, revision and PSP
+  model are compared as a group of their own, and the result shows PASS or
+  FAIL for every group. A group the baseline has but the candidate lacks is
+  reported as missing and fails the comparison.
 
 ### Changed
 
