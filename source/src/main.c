@@ -1153,9 +1153,11 @@ u32 update_gba(void)
           dispstat |= 0x01;
 
           // The menu or a state load replaced the machine; drop this pass.
-          // A failed .sav write opens the menu, which shows its warning.
+          // A failed .sav write opens the menu, which shows its warning;
+          // not during a link session, which the warning would hold up.
           if ((update_input() != 0) ||
-              (backup_write_warning && (menu() != 0)))
+              (backup_write_warning && !main_link_active() &&
+               (menu() != 0)))
           {
             main_follow_cpu_core();
             continue;
@@ -2430,8 +2432,9 @@ void change_ext(char *src, char *buffer, const char *extension)
   }
 }
 
-/* Shows text in a popup until any button is pressed. confirm only adds
-   the continue or quit hint; callers do the quitting themselves. */
+/* Shows text in a popup until any button is pressed, keeping an open link
+   session alive meanwhile. confirm only adds the continue or quit hint;
+   callers do the quitting themselves. */
 void error_msg(const char *text, u8 confirm)
 {
   char text_buff[512];
@@ -2463,6 +2466,7 @@ void error_msg(const char *text, u8 confirm)
   while (gui_action == CURSOR_NONE)
   {
     gui_action = get_gui_input();
+    main_link_pump();
   }
 }
 
