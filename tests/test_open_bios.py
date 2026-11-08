@@ -69,13 +69,19 @@ enum { CLEAR_REASON_LOADING_STATE };
 #define FILE_SEEK(f, offset, type) ((void)(f), file_pos = (offset))
 #define FILE_READ(f, buffer, size) ((void)(f), stub_read(buffer, size))
 #define FILE_CLOSE(f) ((void)(f), closes++)
+#define FILE_WRITE(f, buffer, size) ((void)(f), stub_write(buffer, size))
+#define FILE_WRITE_MEM(f, buffer, size) \
+ { memcpy(write_mem_ptr, buffer, size); write_mem_ptr += (size); }
+#define FILE_WRITE_MEM_VARIABLE(f, variable) \
+ FILE_WRITE_MEM(f, &variable, sizeof(variable))
 #define SAVESTATE_BLOCK(type) blocks_##type++;
 struct BiosData { u8 rom[0x4000]; u16 metadata[0x4000]; } bios;
 const u8 *file_data;
 s32 file_size;
 size_t file_pos;
 const char *shown;
-int closes, power_locked, blocks_read;
+int closes, power_locked, blocks_read, blocks_write_mem;
+size_t write_room;
 u8 *write_mem_ptr;
 GbaSio gba_sio;
 u32 idle_loop_targets, idle_loop_target_pc[MAX_IDLE_LOOPS];
@@ -105,6 +111,14 @@ static s32 stub_read(void *buffer, size_t size) {
   memcpy(buffer, file_data + file_pos, n); file_pos += n;
   return (s32)n;
 }
+/* Takes at most write_room bytes, as a nearly full Memory Stick does. */
+static s32 stub_write(const void *buffer, size_t size) {
+  (void)buffer; return (s32)(size < write_room ? size : write_room);
+}
+static u64 ticker(void) { return 0; }
+static void *safe_malloc(size_t size) {
+  void *buffer = malloc(size); assert(buffer != NULL); return buffer;
+}
 '''
 
 # A 16 KB (or longer) file that starts with the GBA reset vector is used as
@@ -115,9 +129,11 @@ static s32 stub_read(void *buffer, size_t size) {
 # the word before the link snapshot, and load_state_silent refuses one made
 # with the other BIOS: it closes the file unread and reports it after the
 # power lock is released. Zero padding (older savestates) means gba_bios.bin.
+# save_state_silent fails when the file takes less than the whole savestate.
 SCENARIOS = r'''
 static u8 image[0x5000];
 static u8 state[SAVESTATE_SIZE];
+static u16 screen[GBA_SCREEN_SIZE / 2];
 static void bios_file(s32 size, const char *vector) {
   memset(image, 0x5A, sizeof(image));
   memcpy(image, vector, 4);
@@ -191,6 +207,12 @@ int main(void) {
   file_size = -1; closes = 0;
   assert(load_state_silent("s.svs") == 0 && closes == 0 && shown == NULL);
 
+  file_size = 0; closes = 0; write_room = SAVESTATE_SIZE;
+  assert(save_state_silent("s.svs", screen) == 1 && blocks_write_mem == 1);
+  assert(closes == 1 && !power_locked);
+  write_room = SAVESTATE_SIZE - 1;
+  assert(save_state_silent("s.svs", screen) == 0 && closes == 2 && !power_locked);
+
   puts("BIOS fallback and savestate BIOS regressions passed");
   return 0;
 }
@@ -214,7 +236,8 @@ class OpenBiosTests(unittest.TestCase):
                 "static u32 savestate_bios_matches(SceUID savestate_file)",
                 "static void show_savestate_bios_error(void)",
                 "static int write_savestate_tail(u8 *savestate_buffer)",
-                "u32 load_state_silent(char *savestate_filename)"):
+                "u32 load_state_silent(char *savestate_filename)",
+                "u32 save_state_silent(char *savestate_filename, u16 *screen_capture)"):
             source += function(MEMORY, signature) + "\n"
         source += function("source/src/main.c", "static void load_bios_file(void)") + "\n"
         source += SCENARIOS

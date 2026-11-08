@@ -4012,7 +4012,8 @@ u32 save_state(char *savestate_filename, u16 *screen_capture)
   return result;
 }
 
-// save_state() without the confirmation dialog.
+// save_state() without the confirmation dialog. Fails on a short write (a
+// full Memory Stick), so a truncated file never counts as a savestate.
 u32 save_state_silent(char *savestate_filename, u16 *screen_capture)
 {
   SceUID savestate_file;
@@ -4045,11 +4046,10 @@ u32 save_state_silent(char *savestate_filename, u16 *screen_capture)
     FILE_WRITE_MEM_VARIABLE(savestate_file, current_time);
 
     SAVESTATE_BLOCK(write_mem);
-    if(write_savestate_tail(savestate_write_buffer))
-    {
-      FILE_WRITE(savestate_file, savestate_write_buffer, SAVESTATE_SIZE);
+    if(write_savestate_tail(savestate_write_buffer) &&
+       FILE_WRITE(savestate_file, savestate_write_buffer, SAVESTATE_SIZE) ==
+       SAVESTATE_SIZE)
       result = 1;
-    }
     FILE_CLOSE(savestate_file);
   }
 
