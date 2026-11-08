@@ -113,8 +113,37 @@ jobs:
           test "$built" = "$manifest"
           docker exec ci python3 scripts/check-elf.py --build-id "$manifest" \
             source/TempGBA.elf
-      # A tag without a suffix (1.4.4, not 1.4.4-rc1) is a stable release:
-      # without its hardware results this job fails in public.
+      # A tag without a suffix (1.4.4, not 1.4.4-rc.1) is a stable release.
+      # It republishes the package of its newest rc, so the gate reads that
+      # rc's manifest, taken from its GitHub prerelease: without it, or
+      # without the hardware results of its EBOOT, this job fails in public.
+      # The rebuild above only measures reproducibility: a difference from
+      # the rc's EBOOT is reported, not failed, and its cause goes in
+      # docs/DESIGN-DECISIONS.md.
+      - name: Fetch the newest rc's manifest and compare its EBOOT
+        if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rc=$(docker exec ci git for-each-ref --sort=-creatordate --count=1 \
+            --format='%(refname:lstrip=2)' "refs/tags/$VERSION-rc.*")
+          file=GBA-Rush-PSP-$rc.manifest.json
+          if [ -z "$rc" ] || ! gh release download "$rc" \
+            --repo "$GITHUB_REPOSITORY" --pattern "$file" --dir "$RUNNER_TEMP"
+          then
+            echo "::warning::No manifest of a $VERSION-rc.N prerelease"
+            exit 0
+          fi
+          docker cp "$RUNNER_TEMP/$file" "ci:/workspace/dist/$file"
+          expected=$(docker exec ci python3 -c \
+            'import json, sys; print(json.load(open(sys.argv[1]))["files"]["EBOOT.PBP"]["sha256"])' \
+            "dist/$file")
+          rebuilt=$(docker exec ci sha256sum source/EBOOT.PBP | cut -d ' ' -f 1)
+          printf '### EBOOT.PBP of %s and of the rebuild at %s\n\n    %s  %s\n    %s  rebuild\n' \
+            "$rc" "$VERSION" "$expected" "$rc" "$rebuilt" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$expected" != "$rebuilt" ]; then
+            echo "::warning::The rebuild at $VERSION did not give the EBOOT.PBP of $rc"
+          fi
       - name: make release-gate CHANNEL=stable
         if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-')
         run: docker exec ci make release-gate VERSION="$VERSION" CHANNEL=stable

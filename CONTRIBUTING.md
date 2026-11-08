@@ -30,8 +30,10 @@ in the images of `tools/ci/Dockerfile`, pinned by digest: `make check`,
 `make package` under a local `ci-<sha>` tag, keeping the EBOOT and its
 manifest as artifacts. A tag also runs `make artifact-smoke` and checks that
 a rebuild gives the manifest's build id; a tag without a suffix must pass
-`make release-gate CHANNEL=stable`. The job summary shows whether two
-consecutive release builds gave the same EBOOT. To run a step as CI does:
+`make release-gate CHANNEL=stable` on the manifest of its newest rc,
+downloaded from that rc's GitHub prerelease. The job summary shows whether
+two consecutive release builds gave the same EBOOT and, on a stable tag,
+whether the rebuild gave the rc's. To run a step as CI does:
 
 ```sh
 docker build --target psp -t gba-rush-ci tools/ci
