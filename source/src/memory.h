@@ -162,6 +162,8 @@ typedef enum
 
 extern char gamepak_filename[MAX_FILE];
 extern char gamepak_filename_raw[MAX_FILE];
+/* The ROM's .sav name in dir_save. */
+extern char backup_filename[MAX_FILE];
 
 /* Handle of a ROM streamed from storage (too big for its buffer), or: */
 #define GAMEPAK_FILE_NONE        (-1)  /* no ROM file open */
@@ -287,6 +289,9 @@ void update_backup(void);
 u32 update_backup_immediately(void);
 /* Copies the backup as the newest pre-link generation; 0 if that failed. */
 u32 backup_push_link_copy(void);
+/* Restores pre-link generation 1 to 3 as the .sav and the save in RAM,
+   the old .sav kept as the .bak; 0 if that failed. Reset the game after. */
+u32 restore_backup_link_copy(u32 generation);
 /* Set by the first failed periodic .sav write of a game: the menu shows
    the warning and clears it. */
 extern u32 backup_write_warning;

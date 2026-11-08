@@ -1057,6 +1057,33 @@ static void test_ring_stops_at_a_failed_rename(void)
   check_next_push();
 }
 
+/* Restoring a generation from the Link menu loads it and writes it as the
+   .sav: the .sav then holds .link2's image and the .bak the .sav it
+   replaced, so putting the .bak back undoes the restore. Every generation
+   stays as it was. */
+static void test_restore_from_a_generation(void)
+{
+  size_t file_size = 0;
+  int i;
+
+  seed_state(ONLY_FILE);
+  for(i = 0; i < 3; i++)
+    fake_store_seed_file(&store, links[i], OLD_SIZE, (uint8_t)(PUSHED + i));
+
+  assert(save_store_load(&io, SAVE_DIR, NAME ".link2", buffer, CAPACITY,
+   &file_size) == SAVE_STORE_OK);
+  assert(save_store_write(&io, SAVE_DIR, NAME, buffer, file_size) ==
+         SAVE_STORE_OK);
+
+  assert(fake_store_file_is(&store, PRIMARY, OLD_SIZE, PUSHED + 1));
+  assert(fake_store_file_is(&store, BAK, OLD_SIZE, OLD));
+  for(i = 0; i < 3; i++)
+    assert(fake_store_file_is(&store, links[i], OLD_SIZE,
+     (uint8_t)(PUSHED + i)));
+  assert(fake_store_file_size(&store, TMP) < 0);
+  assert(fake_store_file_size(&store, ORIG_PATH) < 0);
+}
+
 int main(void)
 {
   test_missing_and_empty_files_are_blank();
@@ -1077,6 +1104,7 @@ int main(void)
   test_ring_keeps_three_generations();
   test_ring_power_cut_at_every_step();
   test_ring_stops_at_a_failed_rename();
+  test_restore_from_a_generation();
   puts("save store tests passed");
   return 0;
 }

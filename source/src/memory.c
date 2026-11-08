@@ -233,6 +233,9 @@ const SaveStoreIo *backup_io;
 // Set when the .sav exists but did not read: no write may replace it.
 static u32 backup_write_blocked = 0;
 
+// The ROM's save tag at the last load_backup(), to load the .sav again.
+static SaveTag backup_tag = SAVE_TAG_NONE;
+
 typedef enum
 {
   BACKUP_SRAM   = SAVE_TYPE_SRAM,
@@ -3241,6 +3244,7 @@ SaveStoreResult load_backup(char *name, SaveTag tag, u32 retry)
   size_t file_size = 0;
 
   memset(gamepak_backup, 0xFF, sizeof(gamepak_backup));
+  backup_tag = tag;
 
   // A write cut between its two renames leaves no .sav, only the .tmp and
   // .bak: recovery first, or a blank cartridge would load and its writes
@@ -3381,6 +3385,44 @@ u32 backup_push_link_copy(void)
   scePowerUnlock(0);
 
   return (result == SAVE_STORE_OK);
+}
+
+// Puts the pre-link copy <name>.link<generation> (1 newest, to 3) back as
+// the .sav and the save in RAM. A pending write goes out first, so the
+// .bak the store makes is the save the copy replaces, and putting it back
+// undoes the restore. The caller must reset the game right after, or its
+// next write would flush its old progress over the copy. Returns 0 if
+// nothing was restored: the .sav and the save in RAM stay as they were.
+// Nothing is restored while the type is unknown or after load_backup()
+// blocked writes, where save_backup() would only pretend to write.
+u32 restore_backup_link_copy(u32 generation)
+{
+  u32 backup_size = save_format_write_size(backup_type, sram_size,
+   flash_size, eeprom_size);
+  char name[MAX_FILE + 8];
+  size_t file_size;
+  SaveStoreResult result;
+
+  if (backup_write_blocked || (backup_size == 0) ||
+      !update_backup_immediately())
+    return 0;
+
+  snprintf(name, sizeof(name), "%s.link%u", backup_filename,
+   (unsigned int)generation);
+  memset(gamepak_backup, 0xFF, sizeof(gamepak_backup));
+  scePowerLock(0);
+  result = save_store_load(backup_io, dir_save, name, gamepak_backup,
+   sizeof(gamepak_backup), &file_size);
+  scePowerUnlock(0);
+
+  if ((result == SAVE_STORE_OK) && save_backup(backup_filename))
+    return 1;
+
+  // The store left the old .sav in place: the save in RAM goes back to it.
+  scePowerLock(0);
+  load_backup(backup_filename, backup_tag, 0);
+  scePowerUnlock(0);
+  return 0;
 }
 
 

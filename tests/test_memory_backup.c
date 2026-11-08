@@ -474,6 +474,63 @@ static void test_cut_write_leaves_old_or_new(void)
   assert(olds > 0 && news > 0);
 }
 
+/* Restoring the pre-link copy .link2: the game's pending write goes out
+   first, then the .sav and the save in RAM are the copy, nothing pending,
+   and putting the .bak back brings the replaced save back, that write
+   included. A copy that does not load or write leaves the .sav and the
+   save in RAM as they were, and nothing is restored while writes are
+   blocked. */
+static void test_restore_link_copy(void)
+{
+  static const unsigned answers[] = { NO, YES };
+  uint8_t flags;
+  uint32_t values[3];
+  int loads;
+  u32 i;
+
+  fresh_store();
+  fake_store_seed(&store, 32 * KIB, 14);
+  fake_store_seed_file(&store, "game.sav.link2", 32 * KIB, 15);
+  assert(load("SRAM_V113", NULL, 0) == ROM_SIZE);
+  sram_write(0x10, 0x42);
+
+  assert(restore_backup_link_copy(2));
+  assert(fake_store_file_is(&store, "game.sav", 32 * KIB, 15));
+  assert(fake_store_file_is(&store, "game.sav.link2", 32 * KIB, 15));
+  for(i = 0; i < 32 * KIB; i++)
+    assert(read_backup(i) == (u32)fake_store_pattern(i, 15));
+  assert(frames_to_next_write(FLUSH_FRAMES) < 0);
+
+  /* No .link3, then a .link1 whose write fails. */
+  assert(!restore_backup_link_copy(3));
+  fake_store_seed_file(&store, "game.sav.link1", 32 * KIB, 16);
+  store.fail_open_write = store.open_write_calls + 1;
+  loads = host_stub_save_load(&flags, values);
+  assert(!restore_backup_link_copy(1));
+  /* The .sav loaded again, with the ROM's tag. */
+  assert(host_stub_save_load(&flags, values) == loads + 1);
+  assert(((values[2] >> 8) & 0xFF) == SAVE_TAG_SRAM);
+  assert(fake_store_file_is(&store, "game.sav", 32 * KIB, 15));
+  for(i = 0; i < 32 * KIB; i++)
+    assert(read_backup(i) == (u32)fake_store_pattern(i, 15));
+
+  assert(io.remove(io.context, "game.sav"));
+  assert(io.move(io.context, "game.sav.bak", "game.sav"));
+  assert(load("SRAM_V113", NULL, 0) == ROM_SIZE);
+  assert(read_backup(0x10) == 0x42);
+  assert(read_backup(0x11) == (u32)fake_store_pattern(0x11, 14));
+
+  fresh_store();
+  fake_store_seed(&store, 32 * KIB, 3);
+  fake_store_seed_file(&store, "game.sav.link1", 32 * KIB, 16);
+  store.fail_open = 1;
+  assert(load("SRAM_V113", answers, 2) == ROM_SIZE);
+  store.fail_open = 0;
+  assert(!restore_backup_link_copy(1));
+  assert(store.open_write_calls == 0);
+  assert(fake_store_file_is(&store, "game.sav", 32 * KIB, 3));
+}
+
 int main(void)
 {
   /* Callers tell a cancel from a load error, which is -1 or -2. */
@@ -496,6 +553,7 @@ int main(void)
   test_warning_once_per_game();
   test_final_write_reports_failure();
   test_cut_write_leaves_old_or_new();
+  test_restore_link_copy();
   puts("memory backup tests passed");
   return 0;
 }
