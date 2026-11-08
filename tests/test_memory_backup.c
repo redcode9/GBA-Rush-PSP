@@ -395,6 +395,17 @@ static void test_final_write_reports_failure(void)
   assert(update_backup_immediately());
   assert(store.size == 32 * KIB && store.data[0x10] == 0x42);
   assert(update_backup_immediately() && store.open_write_calls == 2);
+
+  /* A failed periodic write, then a menu write that succeeds: the next
+     game write goes out after the usual delay, not the retry wait. */
+  store.fail_move = store.move_calls + 1;
+  sram_write(0x10, 0x43);
+  assert(frames_to_next_write(FLUSH_FRAMES) > 0);
+  assert(store.data[0x10] == 0x42);
+  assert(update_backup_immediately() && store.data[0x10] == 0x43);
+  sram_write(0x10, 0x44);
+  assert(frames_to_next_write(FLUSH_FRAMES) > 0);
+  assert(store.data[0x10] == 0x44);
 }
 
 /* The power goes off at each step of a periodic write in turn: after the

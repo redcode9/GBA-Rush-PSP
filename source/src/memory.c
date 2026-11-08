@@ -3331,6 +3331,7 @@ u32 update_backup_immediately(void)
     return 0;
 
   backup_update = WRITE_BACKUP_DELAY + 1;
+  backup_retry_wait = 0;
   return 1;
 }
 
