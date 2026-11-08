@@ -215,8 +215,8 @@ fi
 # load_backup(), save_backup() and backup_push_link_copy()'s pre-link copy,
 # which checks the same block, or names the copy restore_backup_link_copy()
 # loads, which checks it too.
-if rg -q 'FILE_(OPEN|WRITE)\([^)]*backup|backup_io->' source/src/memory.c || \
-   rg 'backup_filename' source/src/memory.c | rg -v -q \
+if grep -Eq 'FILE_(OPEN|WRITE)\([^)]*backup|backup_io->' source/src/memory.c || \
+   grep -E 'backup_filename' source/src/memory.c | grep -Evq \
     'char backup_filename\[|change_ext\(gamepak_filename, backup_filename|load_backup\(backup_filename|save_backup\(backup_filename|save_store_ring_push\(backup_io, dir_save, backup_filename,|snprintf\(name, sizeof\(name\), "%s\.link%u", backup_filename,'
 then
   fail "memory.c reaches the .sav outside load_backup and save_backup"
@@ -230,8 +230,8 @@ blocked_first='
   }
   END { exit !(checked && io && !bad) }
 '
-if [ "$(rg -c 'save_store_write\(' source/src/memory.c || true)" != 1 ] || \
-   [ "$(rg -c 'save_store_ring_push\(' source/src/memory.c || true)" != 1 ] || \
+if [ "$(grep -Ec 'save_store_write\(' source/src/memory.c || true)" != 1 ] || \
+   [ "$(grep -Ec 'save_store_ring_push\(' source/src/memory.c || true)" != 1 ] || \
    ! printf '%s\n' "$save_backup_body" | awk "$blocked_first" || \
    ! body '/^u32 backup_push_link_copy(void)/,/^}/p' source/src/memory.c | \
     awk "$blocked_first" || \
@@ -245,13 +245,13 @@ fi
 # while the game runs: save_backup() opens no file itself and reports the
 # store's result, and backup_update is set back to "nothing pending" only
 # after save_backup() succeeded, or by load_backup() for a new game.
-if printf '%s\n' "$save_backup_body" | rg -q 'FILE_[A-Z]+\(' || \
+if printf '%s\n' "$save_backup_body" | grep -Eq 'FILE_[A-Z]+\(' || \
    ! printf '%s\n' "$save_backup_body" | \
-    rg -q 'return \(result == SAVE_STORE_OK\);' || \
-   [ "$(rg -c '^[[:space:]]+backup_update = WRITE_BACKUP_DELAY \+ 1;' \
+    grep -Eq 'return \(result == SAVE_STORE_OK\);' || \
+   [ "$(grep -Ec '^[[:space:]]+backup_update = WRITE_BACKUP_DELAY \+ 1;' \
     source/src/memory.c || true)" != 2 ] || \
    ! body '/^SaveStoreResult load_backup(/,/^}/p' source/src/memory.c | \
-    rg -q 'backup_update = WRITE_BACKUP_DELAY \+ 1;' || \
+    grep -Eq 'backup_update = WRITE_BACKUP_DELAY \+ 1;' || \
    ! body '/^u32 update_backup_immediately(void)/,/^}/p' source/src/memory.c | \
     awk '
   /!save_backup\(backup_filename\)\)/ { checked = 1 }
@@ -369,7 +369,7 @@ if ! body '/^static u32 menu_link_restore(void)/,/^}/p' source/src/gui.c | awk '
   /main_link_active\(\)/ && !restored { guarded = 1 }
   /restore_backup_link_copy\(/ { restored = 1 }
   END { exit !(guarded && restored) }
-' || [ "$(rg -c 'restore_backup_link_copy\(' source/src/gui.c || true)" != 1 ]
+' || [ "$(grep -Ec 'restore_backup_link_copy\(' source/src/gui.c || true)" != 1 ]
 then
   fail "A pre-link save can be restored during a link session"
 fi
