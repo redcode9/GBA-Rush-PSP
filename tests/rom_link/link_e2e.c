@@ -68,6 +68,9 @@
 #include "net_fault.h"
 #undef GBA_SIO_H
 
+/* Before mGBA's other headers: the build's options change the layout of
+   struct mCore, and savedataClone comes after the debugger fields. */
+#include <mgba/flags.h>
 #include <mgba/core/core.h>
 #include <mgba/core/log.h>
 #include <mgba/core/config.h>
@@ -462,7 +465,8 @@ static void side_init(Side *side, int index, const char *rom,
   side->core = GBACoreCreate();
   side->core->init(side->core);
   mCoreInitConfig(side->core, NULL);
-  mCoreConfigSetValue(&side->core->config, "skipBios", "1");
+  /* The BIOS intro runs: mGBA reads skipBios from core->opts, which
+     loadConfig never fills, and the scripts' frame counts include it. */
   side->core->loadConfig(side->core, &side->core->config);
   side->core->setVideoBuffer(side->core, side->video, 256);
   if(!side->core->loadROM(side->core, VFileOpen(rom, O_RDONLY)))
