@@ -32,8 +32,8 @@
 ## 1.5
 
 - [x] **SAV-3.1** — save_store_ring_push: rotazione verificata delle generazioni · S, 0,5 gg · dipende da: SAV-2.1 · PSP: no
-- [x] **SAV-3.2** — Flush e copia in main_link_start · S, 0,5 gg · dipende da: SAV-3.1, SAV-2.3 · PSP: no
-- [x] **SAV-3.3** — Ripristina salvataggio pre-link nel menu Link · M, 1 gg · dipende da: SAV-3.2 · PSP: no
+- [ ] **SAV-3.2** — Flush e copia in main_link_start · S, 0,5 gg · dipende da: SAV-3.1, SAV-2.3 · PSP: no · _in parte: codice pronto (420176f), manca l'esecuzione di test_memory_backup sul vero memory.c e la compilazione di main.c (header PSPSDK, `make check`); SAV-2.3 è ancora in parte_
+- [ ] **SAV-3.3** — Ripristina salvataggio pre-link nel menu Link · M, 1 gg · dipende da: SAV-3.2 · PSP: no · _in parte: codice pronto (20de4e9), manca l'esecuzione di test_memory_backup sul vero memory.c e la compilazione di gui.c (header PSPSDK, `make check`)_
 - [ ] **SAV-3.4** — Validazione con uno scambio reale · S, 0,5 gg · dipende da: SAV-3.3 · PSP: sì
 
 ## dopo gate
