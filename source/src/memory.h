@@ -285,6 +285,8 @@ void memory_term(void);
 
 void update_backup(void);
 u32 update_backup_immediately(void);
+/* Copies the backup as the newest pre-link generation; 0 if that failed. */
+u32 backup_push_link_copy(void);
 /* Set by the first failed periodic .sav write of a game: the menu shows
    the warning and clears it. */
 extern u32 backup_write_warning;

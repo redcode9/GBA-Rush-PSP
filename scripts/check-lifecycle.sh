@@ -194,21 +194,28 @@ fi
 # checking that the file did not fail to read: else a blank image would
 # replace the save. So memory.c opens no file on the save buffer or name,
 # never calls backup_io itself, and hands backup_filename only to
-# load_backup() and save_backup().
+# load_backup(), save_backup() and backup_push_link_copy()'s pre-link copy,
+# which checks the same block.
 if rg -q 'FILE_(OPEN|WRITE)\([^)]*backup|backup_io->' source/src/memory.c || \
    rg 'backup_filename' source/src/memory.c | rg -v -q \
-    'char backup_filename\[|change_ext\(gamepak_filename, backup_filename|load_backup\(backup_filename|save_backup\(backup_filename'
+    'char backup_filename\[|change_ext\(gamepak_filename, backup_filename|load_backup\(backup_filename|save_backup\(backup_filename|save_store_ring_push\(backup_io, dir_save, backup_filename,'
 then
   fail "memory.c reaches the .sav outside load_backup and save_backup"
 fi
 save_backup_body=$(body '/^static u32 save_backup(char \*name)[^;]*$/,/^}/p' \
   source/src/memory.c)
-if [ "$(rg -c 'save_store_write\(' source/src/memory.c || true)" != 1 ] || \
-   ! printf '%s\n' "$save_backup_body" | awk '
+blocked_first='
   /backup_write_blocked/ && !io { checked = 1 }
-  /scePowerLock|save_store_write\(/ { io = 1; if (!checked) bad = 1 }
+  /scePowerLock|save_store_write\(|save_store_ring_push\(/ {
+    io = 1; if (!checked) bad = 1
+  }
   END { exit !(checked && io && !bad) }
 '
+if [ "$(rg -c 'save_store_write\(' source/src/memory.c || true)" != 1 ] || \
+   [ "$(rg -c 'save_store_ring_push\(' source/src/memory.c || true)" != 1 ] || \
+   ! printf '%s\n' "$save_backup_body" | awk "$blocked_first" || \
+   ! body '/^u32 backup_push_link_copy(void)/,/^}/p' source/src/memory.c | \
+    awk "$blocked_first"
 then
   fail "A .sav write can bypass the unreadable-save block"
 fi

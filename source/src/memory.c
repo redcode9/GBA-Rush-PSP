@@ -3361,6 +3361,28 @@ u32 update_backup_immediately(void)
   return 1;
 }
 
+// Keeps the backup image as the newest of three pre-link generations
+// (<name>.link1), for main.c to call before a link session once
+// update_backup_immediately() wrote it. Returns 0 if the copy failed.
+// Like save_backup(), it writes nothing while the type is unknown or after
+// load_backup() blocked writes ('play without saving'): that counts as done.
+u32 backup_push_link_copy(void)
+{
+  u32 backup_size = save_format_write_size(backup_type, sram_size,
+   flash_size, eeprom_size);
+  SaveStoreResult result;
+
+  if (backup_write_blocked || (backup_size == 0))
+    return 1;
+
+  scePowerLock(0);
+  result = save_store_ring_push(backup_io, dir_save, backup_filename,
+   gamepak_backup, backup_size);
+  scePowerUnlock(0);
+
+  return (result == SAVE_STORE_OK);
+}
+
 
 // Case-insensitive substring test for filename_match; an empty value
 // matches any name.
