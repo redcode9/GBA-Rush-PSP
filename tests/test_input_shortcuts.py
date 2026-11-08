@@ -593,8 +593,9 @@ int main(void)
 
 # The real menu_cycle_video_mode() with the real toast ring, the SCALED_
 # values of main.h and the English mode names keyed by their MSG ids; the
-# stand-ins record the scale that video_resolution_small and the per-game
-# save saw.
+# stand-ins record the scale that video_apply_screen_scale and the per-game
+# save saw. video_resolution_small must not run: a link wait can call the
+# cycle after the frame was presented, and its clear would show black.
 CYCLE_STUBS = r'''
 #include <assert.h>
 #include <stdint.h>
@@ -625,8 +626,9 @@ static u32 presented_scale = 99;
 static u32 saved_scale = 99;
 static int presents, saves;
 u32 sceKernelGetSystemTimeLow(void) { return now_us; }
-void video_resolution_small(void)
+void video_apply_screen_scale(void)
 { presents++; presented_scale = option_screen_scale; }
+void video_resolution_small(void) { assert(!"clears the presented frame"); }
 static s32 save_game_config_file(void)
 { saves++; saved_scale = option_screen_scale; return 0; }
 void menu_cycle_video_mode(void);
@@ -677,6 +679,58 @@ int main(void)
 }
 '''
 
+# psp_video.c's scale functions with stand-ins for the GU: both pick the
+# presenter, restart the governor and set the filter in one direct list,
+# but only video_resolution_small clears the draw buffer.
+SCALE_STUBS = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include "@SRC@/video_adaptive.h"
+typedef uint32_t u32;
+@SCALED@
+#define GU_DIRECT 0
+#define GU_NEAREST 0
+#define GU_COLOR_BUFFER_BIT 1
+#define GU_FAST_CLEAR_BIT 16
+u32 option_screen_scale = SCALED_NONE;
+u32 option_screen_filter = 1;
+static u32 display_list[4];
+static u32 adaptive_last_frame_time = 7;
+static int adaptive_has_last_frame_time = 1;
+static VideoAdaptiveState adaptive_video;
+static int syncs, presenters, clears, filters, list_open;
+static void video_sync_present(void) { syncs++; }
+void video_adaptive_set_enabled(VideoAdaptiveState *state, int enabled,
+ VideoAdaptiveQuality manual_quality)
+{ (void)enabled; state->quality = manual_quality; }
+static VideoAdaptiveQuality selected_manual_quality(void)
+{ return VIDEO_ADAPTIVE_QUALITY_SMOOTH; }
+static void set_gba_resolution(void) { presenters++; }
+static void sceGuStart(int type, void *list)
+{ assert(type == GU_DIRECT && list == display_list && !list_open); list_open = 1; }
+static void sceGuClearColor(u32 color) { assert(list_open && color == 0); }
+static void sceGuClear(int flags)
+{ assert(list_open && flags == (GU_COLOR_BUFFER_BIT | GU_FAST_CLEAR_BIT)); clears++; }
+static void sceGuTexFilter(int min, int mag)
+{ assert(list_open && min == 1 && mag == 1); filters++; }
+static void sceGuFinish(void) { assert(list_open); list_open = 0; }
+static void video_ge_sync_direct(void) { assert(!list_open); }
+'''
+
+SCALE_SCENARIOS = r'''
+int main(void)
+{
+  video_apply_screen_scale();
+  assert(syncs == 1 && presenters == 1 && filters == 1 && clears == 0);
+  assert(adaptive_has_last_frame_time == 0 && adaptive_last_frame_time == 0);
+  video_resolution_small();
+  assert(syncs == 2 && presenters == 2 && filters == 2 && clears == 1);
+  puts("screen scale functions passed");
+  return 0;
+}
+'''
+
 
 def scaled_defines():
     """main.h's SCALED_ values, so the test uses the real ones."""
@@ -713,6 +767,15 @@ class InputShortcutTests(unittest.TestCase):
         self.assertIn("option_screen_scale = model->screen_scale;",
                       function("source/src/gui.c",
                                "static void apply_game_config(const ConfigModel *model)"))
+
+    def test_video_cycle_keeps_the_presented_frame(self):
+        source = SCALE_STUBS.replace("@SRC@", SRC).replace("@SCALED@",
+                                                            scaled_defines())
+        for signature in ("static void apply_screen_scale(int clear)",
+                          "void video_resolution_small(void)",
+                          "void video_apply_screen_scale(void)"):
+            source += function("source/src/psp_video.c", signature)
+        build_and_run(source + SCALE_SCENARIOS, "screen_scale")
 
     def test_update_gba_ticks_turbo_outside_link_waits(self):
         # main.c cannot be built on the host: the V-blank read ticks the

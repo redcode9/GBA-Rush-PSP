@@ -6642,7 +6642,7 @@ void menu_cycle_video_mode(void)
   }
 
   option_screen_scale = next;
-  video_resolution_small();
+  video_apply_screen_scale();
 
   /* The names hold '%' ("100% GU"), so they are not a format; they follow
      the SCALED_ order, as in scale_options. The newest name drops what is
