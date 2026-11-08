@@ -14,7 +14,7 @@
 - [ ] **SAV-7.2** — Batteria in sospeso scritta per prima alla sospensione · S, 0,5 gg · dipende da: SAV-2.3 · PSP: sì · aspetta: SAV-2.3 (`wip/save-store`)
 - [ ] **SAV-7.3** — POWER tenuto durante l'avvio e la chiusura del link · S, 0,5 gg · dipende da: SAV-3.2 · PSP: sì · aspetta: SAV-3.2 (`wip/save-store`)
 - [ ] **SAV-7.5** — Matrice hardware di sospensione e ripresa · M, 2,5 gg · dipende da: SAV-7.1, SAV-7.2, SAV-7.3, SAV-7.6, SAV-2.6 · PSP: sì · aspetta: SAV-2.6 (`wip/test-roms`)
-- [ ] **SAV-7.6** — Ingresso in standby con ogni combinazione di bit e chiusura del menu senza attese · S, 1 gg · dipende da: — · PSP: sì · **subito** · _codice pronto (2d3e212), manca la prova su PSP_
+- [ ] **SAV-7.6** — Ingresso in standby con ogni combinazione di bit e chiusura del menu senza attese · S, 1 gg · dipende da: — · PSP: sì · **subito** · _codice pronto (ec220c4), manca la prova su PSP_
 - [ ] **SAV-8.1** — Esperimento: il POWER aspetta l'unlock? · S, 1 gg · dipende da: SAV-7.5 · PSP: sì
 
 ## 2.0
