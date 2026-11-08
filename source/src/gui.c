@@ -3376,14 +3376,21 @@ static void menu_quit_action(void)
 /* Bytes menu_trace_file_crc32() reads at a time. */
 #define MENU_TRACE_CRC_CHUNK 0x8000U
 
+/* A new recording's .svs. It replaces the trace's .svs only once the new
+   .gbit is written, so a cancelled or failed recording keeps the saved
+   pair. A reset or suspend while recording may leave it behind; the next
+   start overwrites it. */
+#define MENU_TRACE_PENDING_STATE ".new.svs"
+
 /* Set when a trace start saved, or a replay loaded, the machine at this
    frame: menu() then reports a resume, as after a state load, so both
    runs continue from the .svs the same way. */
 static int menu_trace_resume;
 
-/* <main_path>traces/input-<game code>-r<version><extension> (".gbit" or
-   ".svs"), named from the GBA cartridge header: game code at 0xAC, software
-   version at 0xBC; the header is 0xC0 bytes long. */
+/* <main_path>traces/input-<game code>-r<version><extension> (".gbit",
+   ".svs" or MENU_TRACE_PENDING_STATE), named from the GBA cartridge header:
+   game code at 0xAC, software version at 0xBC; the header is 0xC0 bytes
+   long. */
 static int menu_trace_path(char *path, size_t path_size, int create_directory,
  const char *extension)
 {
@@ -3515,6 +3522,15 @@ static int menu_trace_read_all(SceUID file, u8 *data, size_t size)
     return 1;
 }
 
+/* Deletes the pending .svs of a recording that will not be saved. */
+static void menu_trace_discard_pending(void)
+{
+    char path[MAX_PATH];
+
+    if(menu_trace_path(path, sizeof(path), 0, MENU_TRACE_PENDING_STATE))
+        sceIoRemove(path);
+}
+
 static int menu_trace_start_available(void)
 {
     InputTraceState state = input_diagnostic_trace_state();
@@ -3543,8 +3559,8 @@ static int menu_trace_cancel_available(void)
     return input_diagnostic_trace_state() != INPUT_TRACE_IDLE;
 }
 
-/* Saves the machine to traces/<name>.svs, then records from this frame
-   with the .svs named in the trace. Savestates are off during a link
+/* Saves the machine to the pending .svs, then records from this frame
+   with that .svs named in the trace. Savestates are off during a link
    session, so recording is too. */
 static void menu_trace_start(void)
 {
@@ -3561,7 +3577,7 @@ static void menu_trace_start(void)
         message = MSG_LINK_SAVESTATE_BLOCKED;
         goto finish;
     }
-    if(!menu_trace_path(path, sizeof(path), 1, ".svs"))
+    if(!menu_trace_path(path, sizeof(path), 1, MENU_TRACE_PENDING_STATE))
         goto finish;
 
     screen = copy_screen();
@@ -3584,14 +3600,16 @@ finish:
          "%s", MSG[message]);
 }
 
-/* Stop recording and save the trace to menu_trace_path(); the status row
-   reports saved or failed. */
+/* Stop recording and save the trace to menu_trace_path(). Once the .gbit
+   is written the pending .svs replaces the old one; on a failure it is
+   deleted instead. The status row reports saved or failed. */
 static void menu_trace_finish_save(void)
 {
     u8 *encoded;
     size_t capacity;
     size_t written;
     char path[MAX_PATH];
+    char state_path[MAX_PATH];
     SceUID file;
     int success = 0;
 
@@ -3617,7 +3635,21 @@ static void menu_trace_finish_save(void)
     }
     free(encoded);
 
+    if(success)
+    {
+        success = menu_trace_path(path, sizeof(path), 0,
+         MENU_TRACE_PENDING_STATE) &&
+         menu_trace_path(state_path, sizeof(state_path), 0, ".svs");
+        if(success)
+        {
+            sceIoRemove(state_path);
+            success = sceIoRename(path, state_path) >= 0;
+        }
+    }
+
 finish:
+    if(!success)
+        menu_trace_discard_pending();
     snprintf(diagnostics_report_line, sizeof(diagnostics_report_line), "%s",
      MSG[success ? MSG_TRACE_SAVED : MSG_TRACE_FAILED]);
 }
@@ -3687,6 +3719,7 @@ finish:
 static void menu_trace_cancel(void)
 {
     input_diagnostic_trace_cancel();
+    menu_trace_discard_pending();
     diagnostics_report_line[0] = '\0';
 }
 #endif
