@@ -136,6 +136,11 @@ def summary(values):
     return float(statistics.median(values)), min(values), max(values)
 
 
+def rounding_slack(scale):
+    """Gap below which two floats of about scale are equal up to rounding."""
+    return 1e-9 * max(1.0, abs(scale))
+
+
 def permutation_p(baseline_values, candidate_values, higher):
     """One-sided permutation p of the candidate runs' sum: (p, exact).
 
@@ -154,7 +159,7 @@ def permutation_p(baseline_values, candidate_values, higher):
         return 1.0, True
     observed = sum(pooled[len(baseline_values):])
     # Float sums that are equal up to rounding are ties, and ties count.
-    floor = observed - 1e-9 * max(1.0, abs(observed))
+    floor = observed - rounding_slack(observed)
     picks = math.comb(len(pooled), size)
     if picks <= EXACT_PICKS:
         extreme = sum(1 for pick in itertools.combinations(pooled, size)
@@ -194,13 +199,18 @@ def verdict(baseline_values, candidate_values):
     text says the result is undecided and about how many runs per build
     would decide it.
     """
+    # Per-run values are rounded floats: a gap within rounding is a tie.
+    slack = rounding_slack(max(map(abs, [*baseline_values,
+                                         *candidate_values])))
     difference = (statistics.median(candidate_values) -
                   statistics.median(baseline_values))
-    if difference == 0:
+    if abs(difference) <= slack:
         # Sparse metrics such as underruns often tie on the median; the
         # summed test statistic follows the means.
         difference = (statistics.mean(candidate_values) -
                       statistics.mean(baseline_values))
+        if abs(difference) <= slack:
+            difference = 0
     higher = difference >= 0
     p, exact = permutation_p(baseline_values, candidate_values, higher)
     # "p~" marks a p estimated from sampled picks.

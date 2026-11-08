@@ -308,6 +308,18 @@ class BenchmarkComparisonTests(unittest.TestCase):
         # lower in floats; ties count, so 9 of the 20 picks do, not 8.
         p, _, _ = MODULE.verdict([60.0, 60.3, 60.8], [60.3, 60.4, 60.7])
         self.assertAlmostEqual(p, 9 / 20)
+        # Same frame totals give throughput means (5+5, odd counts) or
+        # medians (4+4, averaged middle runs) a few ulps apart: a tie, not
+        # an effect with an astronomic runs estimate.
+        for frames in (((590, 595, 595, 595, 592), (590, 595, 595, 599, 588)),
+                       ((587, 589, 593, 595), (587, 587, 595, 595))):
+            baseline, candidate = ([report(frames=value) for value in runs]
+                                   for runs in frames)
+            *_, text, needed = MODULE.compare(
+                baseline, candidate)["metrics"][0]
+            self.assertTrue(text.endswith("runs), medians and means equal"),
+                            text)
+            self.assertIsNone(needed)
 
     def test_cli_compares_three_runs_per_build(self):
         with tempfile.TemporaryDirectory() as directory:
