@@ -46,6 +46,7 @@ typedef int32_t s32;
 #define MSG_ERR_LOAD_GAMEPACK 0
 #define LOAD_GAMEPAK_CANCELLED (-3)
 #define MSG_AUTO_SAVESTATE_LOAD_PROMPT 1
+#define RUNTIME_LOG_FLUSH_START 1
 const char *messages[] = {"load error", "restore state"};
 #define MSG messages
 char gamepak_filename[512];
@@ -54,7 +55,7 @@ u32 gamepak_file_size, reg[1], option_clock_speed, sound_pause;
 u32 enable_home_menu;
 int regular_file, browser_result, load_result, menu_result;
 int reset_calls, prompt_calls, execute_calls, quit_calls, recent_calls;
-int error_calls;
+int error_calls, flush_calls;
 int popup_value, active_link, state_exists, dialog_result, restored_slot;
 int prompt_name, restored_name_length;
 jmp_buf stopped;
@@ -84,8 +85,12 @@ int sceImposeSetHomePopup(u32 p) { popup_value = p; return 0; }
 void set_cpu_clock(u32 c) { (void)c; }
 void sceDisplayWaitVblankStart(void) {}
 void video_resolution_small(void) {}
+int runtime_log_psp_flush(int r) {
+  assert(r == RUNTIME_LOG_FLUSH_START); flush_calls++; return 1;
+}
 void main_run_cpu(void) {
   assert(reg[0] == (menu_result ? 0xFEEDU : 0xCAFEU)); execute_calls++;
+  assert(flush_calls == 1);
 }
 int main_link_active(void) { return active_link; }
 u32 auto_savestate_exists(void) { return state_exists; }
@@ -102,19 +107,20 @@ u32 action_loadstate_slot(u32 slot) {
 # Launch orders in user_main(): a ROM path argument (argc 2), else
 # roms/game.gba (regular_file), else the file browser, else the menu. A ROM
 # picked in the menu runs without reset_gba() or the auto-state prompt; any
-# other loaded ROM is reset and offers the auto state (slot 10). A failed
-# load (-1, or -2 for a zip too big for the ROM buffer) shows the load
-# error; one the player cancelled at the unreadable-save prompt goes on the
-# same way without it. The last lines check that the prompt is skipped with
-# no ROM, during a link session and without a saved state, and that the ROM
-# name is blank while the prompt is open (a suspend then must not write the
-# AUTO state) and back after either answer, before the state loads.
+# other loaded ROM is reset and offers the auto state (slot 10). Every
+# game saves the runtime log once before it runs. A failed load (-1, or
+# -2 for a zip too big for the ROM buffer) shows the load error; one the
+# player cancelled at the unreadable-save prompt goes on the same way
+# without it. The last lines check that the prompt is skipped with no
+# ROM, during a link session and without a saved state, and that the ROM
+# name is blank while the prompt is open (a suspend then must not write
+# the AUTO state) and back after either answer, before the state loads.
 SCENARIOS = r'''
 static void clear_test(void) {
   regular_file = menu_result = active_link = 0;
   browser_result = -1; load_result = 0;
   reset_calls = prompt_calls = execute_calls = quit_calls = recent_calls = 0;
-  error_calls = 0;
+  error_calls = flush_calls = 0;
   state_exists = 1; dialog_result = 0; restored_slot = -1; popup_value = -1;
   prompt_name = restored_name_length = -1;
   gamepak_filename[0] = 0; sound_pause = 1;

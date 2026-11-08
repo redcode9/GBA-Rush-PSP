@@ -3,7 +3,7 @@ set -eu
 
 # Source-level guards for PSP-only lifecycle rules that host tests cannot
 # exercise: callbacks, thread priorities, bounded waits and link wiring.
-# Run from the repository root by check-tree.sh; uses ripgrep (rg).
+# Run from the repository root by check-tree.sh; needs only POSIX tools and Git.
 
 fail()
 {
@@ -36,9 +36,9 @@ fi
 # A link session runs at 333 MHz from before ad-hoc startup until it
 # closes, and the menu must not change the clock meanwhile.
 clock_line=$(printf '%s\n' "$link_start_body" | \
-  rg -n 'set_cpu_clock\(PSP_CLOCK_333\)' | head -n 1 | cut -d: -f1 || true)
+  grep -En 'set_cpu_clock\(PSP_CLOCK_333\)' | head -n 1 | cut -d: -f1 || true)
 adhoc_line=$(printf '%s\n' "$link_start_body" | \
-  rg -n 'psp_adhoc_start\(' | head -n 1 | cut -d: -f1 || true)
+  grep -En 'psp_adhoc_start\(' | head -n 1 | cut -d: -f1 || true)
 if [ -z "$clock_line" ] || [ -z "$adhoc_line" ] || \
    [ "$clock_line" -ge "$adhoc_line" ]
 then
@@ -63,13 +63,13 @@ then
   fail "A link session can start before the .sav is written and copied"
 fi
 if ! body '/^static void main_link_close/,/^}/p' source/src/main.c | \
-  rg -q 'set_cpu_clock\(option_clock_speed\)'
+  grep -Eq 'set_cpu_clock\(option_clock_speed\)'
 then
   fail "Link clock is not restored after the session ends"
 fi
 
 menu_clock_guards=$(body '/^u32 menu(void)/,/^static void update_status_string/p' \
-  source/src/gui.c | rg -c 'if\(!main_link_active\(\)\)' || true)
+  source/src/gui.c | grep -Ec 'if\(!main_link_active\(\)\)' || true)
 if [ "$menu_clock_guards" -lt 2 ]
 then
   fail "Menu clock transitions are not guarded by link state"
@@ -87,13 +87,13 @@ do
     fail "$name must outrank the emulator thread"
   fi
 done
-if ! rg -q '#define PRIORITY[[:space:]]+\(32\)' source/src/main.c
+if ! grep -Eq '#define PRIORITY[[:space:]]+\(32\)' source/src/main.c
 then
   fail "Emulator thread priority changed; recheck the network priorities"
 fi
 
 # Only the worker touches the network; the emulator thread never blocks on it.
-if rg -q 'sceNetAdhoc|sceNetInit|sceUtilityLoadNetModule' \
+if grep -Eq 'sceNetAdhoc|sceNetInit|sceUtilityLoadNetModule' \
   source/src/main.c source/src/gui.c source/src/link_cable.c \
   source/src/link_net.c
 then
@@ -102,17 +102,17 @@ fi
 for function_name in ring_push ring_pop
 do
   if ! body "/^static .*$function_name(/,/^}/p" source/src/psp_adhoc.c | \
-    rg -q '__sync_synchronize'
+    grep -Eq '__sync_synchronize'
   then
     fail "Ad-hoc queue function lacks publication barriers: $function_name"
   fi
 done
-if ! rg -q 'sceKernelTerminateDeleteThread' source/src/psp_adhoc.c || \
-   ! rg -q 'psp_adhoc_stop_for_exit' source/src/main.c
+if ! grep -Eq 'sceKernelTerminateDeleteThread' source/src/psp_adhoc.c || \
+   ! grep -Eq 'psp_adhoc_stop_for_exit' source/src/main.c
 then
   fail "Exit path cannot bound a stalled ad-hoc worker"
 fi
-if rg -q 'sceNetAdhocPtp|PSP_ADHOC_PTP' source/src tests Makefile \
+if git grep -qE --untracked 'sceNetAdhocPtp|PSP_ADHOC_PTP' -- source/src tests Makefile \
   source/Makefile
 then
   fail "Obsolete PTP transport is still present"
@@ -123,12 +123,12 @@ fi
 callback_body=$(body \
   '/^static int power_callback/,/^static int callback_thread/p' \
   source/src/main.c)
-if printf '%s\n' "$callback_body" | rg -q \
+if printf '%s\n' "$callback_body" | grep -Eq \
   'psp_sound_frequency|auto_savestate_sleep|main_link_disconnect|psp_adhoc_stop|sceKernel|sceIo|sceNet|FILE_|error_msg|quit\('
 then
   fail "Power callback contains a blocking lifecycle operation"
 fi
-if ! printf '%s\n' "$callback_body" | rg -q 'sound_power_resume'
+if ! printf '%s\n' "$callback_body" | grep -Eq 'sound_power_resume'
 then
   fail "Power callback does not use the suspend-safe audio resume path"
 fi
@@ -136,74 +136,74 @@ fi
 exit_callback_body=$(body \
   '/^static int exit_callback/,/^static int power_callback/p' \
   source/src/main.c)
-if printf '%s\n' "$exit_callback_body" | rg -q '^[[:space:]]*quit\(\)' || \
-   ! printf '%s\n' "$exit_callback_body" | rg -q 'exit_requested = 1' || \
+if printf '%s\n' "$exit_callback_body" | grep -Eq '^[[:space:]]*quit\(\)' || \
+   ! printf '%s\n' "$exit_callback_body" | grep -Eq 'exit_requested = 1' || \
    ! printf '%s\n' "$exit_callback_body" | \
-    rg -q 'MAIN_EXIT_CALLBACK_TIMEOUT_US'
+    grep -Eq 'MAIN_EXIT_CALLBACK_TIMEOUT_US'
 then
   fail "Exit callback bypasses the bounded main-thread shutdown path"
 fi
 if ! body '/^void quit(void)/,/^}/p' source/src/main.c | \
-  rg -q '__sync_bool_compare_and_swap'
+  grep -Eq '__sync_bool_compare_and_swap'
 then
   fail "Emulator shutdown is not guarded against concurrent callbacks"
 fi
 
-if rg -q 'sceKernelWaitThreadEnd\([^,]+, NULL\)' \
+if grep -Eq 'sceKernelWaitThreadEnd\([^,]+, NULL\)' \
   source/src/psp_adhoc.c source/src/sound.c
 then
   fail "Lifecycle worker uses an unlimited thread join"
 fi
-if rg -q 'sceKernelWaitSema\([^,]+,[^,]+,[[:space:]]*(0|NULL)\)' \
+if grep -Eq 'sceKernelWaitSema\([^,]+,[^,]+,[[:space:]]*(0|NULL)\)' \
   source/src/sound.c
 then
   fail "Sound lifecycle uses an unlimited semaphore wait"
 fi
-if rg -q 'sceAudioOutput2' source/src/sound.c
+if grep -Eq 'sceAudioOutput2' source/src/sound.c
 then
   fail "SRC audio lifecycle calls the Output2 API family"
 fi
 audio_power_body=$(body \
   '/^void sound_power_suspend/,/^void sound_power_resume_finish/p' \
   source/src/sound.c)
-if ! printf '%s\n' "$audio_power_body" | rg -q 'SOUND_OPERATION_TIMEOUT' || \
-   ! printf '%s\n' "$audio_power_body" | rg -q 'sceKernelWaitSema'
+if ! printf '%s\n' "$audio_power_body" | grep -Eq 'SOUND_OPERATION_TIMEOUT' || \
+   ! printf '%s\n' "$audio_power_body" | grep -Eq 'sceKernelWaitSema'
 then
   fail "Audio suspend and resume are not serialized with a deadline"
 fi
 if ! body '/^void synchronize_sound/,/^void update_gbc_sound/p' \
-  source/src/sound.c | rg -q 'SOUND_OPERATION_TIMEOUT'
+  source/src/sound.c | grep -Eq 'SOUND_OPERATION_TIMEOUT'
 then
   fail "Sound synchronization has no recovery deadline"
 fi
 
 # With a paged ROM the header page can be evicted, so title, game code and
 # revision must come from the gamepak_header copy taken at load time.
-if rg -q 'gamepak_rom[[:space:]]*\+[[:space:]]*0x(A0|AC)|gamepak_rom\[0xBC\]' \
+if grep -Eq 'gamepak_rom[[:space:]]*\+[[:space:]]*0x(A0|AC)|gamepak_rom\[0xBC]' \
   source/src/main.c || \
-   ! rg -q 'gamepak_header\[GAMEPAK_HEADER_SIZE\]' source/src/memory.c || \
-   ! rg -q 'memcpy\(gamepak_header, gamepak_rom' source/src/memory.c
+   ! grep -Eq 'gamepak_header\[GAMEPAK_HEADER_SIZE]' source/src/memory.c || \
+   ! grep -Eq 'memcpy\(gamepak_header, gamepak_rom' source/src/memory.c
 then
   fail "Paged ROM metadata is not backed by a stable header copy"
 fi
 
 # Logging must never block the emulator thread or the link wait loop.
 if body '/^void runtime_log_ring_emit/,/^size_t runtime_log_ring_snapshot/p' \
-  source/src/runtime_log.c | rg -q \
+  source/src/runtime_log.c | grep -Eq \
   'sceIo|FILE_|printf|malloc|calloc|realloc|sceKernelWait|sceKernelDelay'
 then
   fail "Runtime event recording performs a blocking operation"
 fi
 if body '/^static int main_link_service/,/^}/p' source/src/main.c | \
-  rg -q 'runtime_log_psp_flush'
+  grep -Eq 'runtime_log_psp_flush'
 then
   fail "Link wait path writes diagnostics to storage"
 fi
-if ! rg -q 'test_runtime_log' Makefile || \
-   ! rg -q 'test_decode_runtime_log' Makefile || \
-   ! rg -q 'test_link_cable' Makefile || \
-   ! rg -q 'RUNTIME_LOG_RING_CAPACITY' source/src/runtime_log.c || \
-   ! rg -q 'runtime_log_store_rotate' source/src/runtime_log_psp.c
+if ! grep -Eq 'test_runtime_log' Makefile || \
+   ! grep -Eq 'test_decode_runtime_log' Makefile || \
+   ! grep -Eq 'test_link_cable' Makefile || \
+   ! grep -Eq 'RUNTIME_LOG_RING_CAPACITY' source/src/runtime_log.c || \
+   ! grep -Eq 'runtime_log_store_rotate' source/src/runtime_log_psp.c
 then
   fail "Runtime and link diagnostics are not covered by the validation gate"
 fi

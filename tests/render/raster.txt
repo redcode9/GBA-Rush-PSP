@@ -1,0 +1,4 @@
+# The raster test ROM (tests/raster-rom), for render_check through
+# RENDER_ROMS: its cases and their results, then its picture for about
+# five seconds.
+run 600
