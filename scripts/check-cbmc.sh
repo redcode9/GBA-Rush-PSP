@@ -37,9 +37,27 @@ run_proof()
 # 52-byte datagram holds at most 6 messages after its 40-byte header, which
 # bounds both loops of link_net_receive, and every other loop walks at most
 # a queue of 4. CBMC unrolls each loop to the full bound however few rounds
-# it can make, so a larger bound proves nothing more and only costs memory
-# (14 ran out of the 16 GB of CI's runner).
-run_proof link-net 7 -DLINK_NET_QUEUE=4u \
+# it can make, so a larger bound proves nothing more and only costs memory.
+#
+# The proof defines memcpy itself. CBMC's own copies through an array of the
+# symbolic size n, which its solver encodes with array theory: the proof ran
+# out of CI's 16 GB with it, and out of 1.5 GB even with every loop cut to
+# one round, while with the byte loop the whole proof peaks near 1.1 GB.
+# It proves the same:
+# - the preconditions are those of CBMC 6.11's memcpy, so every call is
+#   still checked for overlap and for n readable and n writable bytes;
+# - the loop stores src[i] in dst[i] for each i below n, the bytes and
+#   values CBMC's copy writes, and --pointer-check and --bounds-check also
+#   check each access;
+# - its unwind bound 11 is one more than the largest copy: 10 bytes, what a
+#   52-byte datagram leaves for a record's data after the header and the
+#   record's 2-byte prefix, while the proof queues at most 9 bytes per
+#   message. The unwinding assertion fails the proof if a copy is larger,
+#   so no copy is cut short.
+# Every other property of the proof is unchanged. The only checks dropped
+# are two conversions of n to signed and back inside CBMC's memcpy, for its
+# temporary array's size; w_ok(dst, n) already rules out such an n.
+run_proof link-net 7 --unwindset memcpy.0:11 -DLINK_NET_QUEUE=4u \
   "$repo_root/proofs/cbmc/prove_link_net.c" \
   "$repo_root/source/src/link_net.c"
 
