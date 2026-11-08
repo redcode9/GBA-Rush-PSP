@@ -29,7 +29,9 @@
   Show FPS on, the counter ends in ME or CPU to tell which.
 - While a ROM loads, the loading popup shows the file name, whether it is
   reading the ROM or unpacking the ZIP, the KiB read so far and a bar that
-  follows the whole read, for loose ROMs and `.zip` archives alike.
+  follows the whole read, for `.zip` archives and for loose ROMs that fit in
+  memory. A loose ROM too large to load whole, which is read in pages while
+  the game runs, still shows only "Now Loading...".
 
 ### Changed
 
