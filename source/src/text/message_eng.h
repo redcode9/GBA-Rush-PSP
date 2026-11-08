@@ -571,6 +571,10 @@
   "The save file cannot be read. Try again?",
   // MSG_SAVE_PLAY_UNSAVED
   "Play without saving? The file stays as it is.",
+  // MSG_SAVE_WRITE_FAILED
+  "The save file could not be written.\nThe game keeps it and tries again.",
+  // MSG_SAVE_WRITE_RETRY
+  "Save not written: try again?",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "Could not start the callback thread.",

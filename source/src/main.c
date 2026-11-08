@@ -1152,8 +1152,10 @@ u32 update_gba(void)
           // Transition from vrefresh to vblank (lines 160-227)
           dispstat |= 0x01;
 
-          // The menu or a state load replaced the machine; drop this pass
-          if (update_input() != 0)
+          // The menu or a state load replaced the machine; drop this pass.
+          // A failed .sav write opens the menu, which shows its warning.
+          if ((update_input() != 0) ||
+              (backup_write_warning && (menu() != 0)))
           {
             main_follow_cpu_core();
             continue;
@@ -1905,6 +1907,8 @@ void quit(void)
   main_fast_forward_stop();
   main_link_disconnect(MAIN_LINK_END_USER);
 
+  // One last try, never a dialog: HOME's exit callback waits only 2 s. The
+  // menu's Exit has already asked about a failed write.
   update_backup_immediately();
   save_config_file();
   {

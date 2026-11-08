@@ -571,6 +571,10 @@
   "Il salvataggio non si legge. Riprovare?",
   // MSG_SAVE_PLAY_UNSAVED
   "Giocare senza salvare? Il file resta com'e`.",
+  // MSG_SAVE_WRITE_FAILED
+  "Impossibile scrivere il salvataggio.\nIl gioco lo conserva e riprova tra poco.",
+  // MSG_SAVE_WRITE_RETRY
+  "Salvataggio non scritto: riprovare?",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "Impossibile avviare il thread di callback.",

@@ -571,6 +571,10 @@
   "セーブデータを読み込めません. 再試行する?",
   // MSG_SAVE_PLAY_UNSAVED
   "セーブせずにプレイする? ファイルはそのままです.",
+  // MSG_SAVE_WRITE_FAILED
+  "セーブデータを書き込めませんでした.\nデータは保持され, 後で再試行します.",
+  // MSG_SAVE_WRITE_RETRY
+  "セーブデータを書き込めません. 再試行する?",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "コールバックスレッドを起動できませんでした.",

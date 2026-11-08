@@ -571,6 +571,10 @@
   "無法讀取遊戲存檔. 重試?",
   // MSG_SAVE_PLAY_UNSAVED
   "不儲存繼續遊戲? 存檔檔案保持不變.",
+  // MSG_SAVE_WRITE_FAILED
+  "無法寫入遊戲存檔.\n存檔仍然保留, 稍後將再次嘗試.",
+  // MSG_SAVE_WRITE_RETRY
+  "存檔未寫入: 重試?",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "無法啟動回調執行緒.",

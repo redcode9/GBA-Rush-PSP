@@ -571,6 +571,10 @@
   "无法读取游戏存档. 重试?",
   // MSG_SAVE_PLAY_UNSAVED
   "不保存继续游戏? 存档文件保持不变.",
+  // MSG_SAVE_WRITE_FAILED
+  "无法写入游戏存档.\n存档仍然保留, 稍后将再次尝试.",
+  // MSG_SAVE_WRITE_RETRY
+  "存档未写入: 重试?",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "无法启动回调线程.",

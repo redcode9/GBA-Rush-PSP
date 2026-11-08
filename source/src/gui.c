@@ -3375,10 +3375,43 @@ static void menu_diagnostics_write_report(void)
      "%s: %.56s", MSG[MSG_DIAGNOSTICS_REPORT_SAVED], filename);
 }
 
+/* The menu's last .sav write before the game goes away (exit, suspend,
+   another ROM). While it fails, the player may try again or go on
+   without it. */
+static void menu_flush_backup(void)
+{
+    while(!update_backup_immediately())
+    {
+        if(yesno_dialog(MSG[MSG_SAVE_WRITE_RETRY]) != 0)
+            break;
+    }
+}
+
+/* The warning of the game's first failed periodic .sav write, shown once
+   the menu is up. It waits for the buttons held in the game to be released
+   so they cannot dismiss it unseen. shortcut: a stick held with analog
+   input on still can; F-045's toast will replace this popup. */
+static void menu_backup_warning(void)
+{
+    if(!backup_write_warning)
+        return;
+    backup_write_warning = 0;
+
+    while(get_pad_input(0x0001FFFF) != 0)
+    {
+        main_power_service();
+        main_link_pump();
+        sceKernelDelayThread(5000);
+    }
+    clear_screen(COLOR32_BLACK);
+    error_msg(MSG[MSG_SAVE_WRITE_FAILED], CONFIRMATION_CONT);
+}
+
 static void menu_quit_action(void)
 {
     if(menu_game_available())
         action_savestate_slot(AUTO_SAVESTATE_SLOT);
+    menu_flush_backup();
     quit();
 }
 
@@ -3958,7 +3991,7 @@ u32 menu(void)
     if (!first_load)
     {
       main_link_disconnect(MAIN_LINK_END_SUSPEND);
-      update_backup_immediately();
+      menu_flush_backup();
       auto_savestate_sleep();
       sleep_auto_saved = 1;
     }
@@ -3976,7 +4009,7 @@ u32 menu(void)
     if (!first_load)
     {
       main_link_disconnect(MAIN_LINK_END_ROM_CHANGE);
-      update_backup_immediately();
+      menu_flush_backup();
       /* Auto-save current game to the auto slot before loading new ROM */
       action_savestate_slot(AUTO_SAVESTATE_SLOT);
     }
@@ -4177,7 +4210,7 @@ u32 menu(void)
                 if (!first_load)
                 {
                     save_game_config_file();
-                    update_backup_immediately();
+                    menu_flush_backup();
                     action_savestate_slot(AUTO_SAVESTATE_SLOT);
                 }
 
@@ -5503,6 +5536,7 @@ u32 menu(void)
   if(!main_link_active())
     set_cpu_clock(PSP_CLOCK_222);
   choose_menu(&main_menu);
+  menu_backup_warning();
 
   /* One iteration per frame: draw the screen, then handle one input. */
   while (repeat)
