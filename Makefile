@@ -496,7 +496,7 @@ $(HOST_TEST_MEMORY_BACKUP): tests/test_memory_backup.c \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
- tests/host_shim/psptypes.h
+ tests/host_shim/psptypes.h | psp-sdk-headers
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -O1 -w -include tests/host_shim/host_builtins.h \
 	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
@@ -519,7 +519,7 @@ $(HOST_TEST_EEPROM): tests/test_eeprom.c \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
- tests/host_shim/psptypes.h
+ tests/host_shim/psptypes.h | psp-sdk-headers
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -O1 -w -include tests/host_shim/host_builtins.h \
 	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
@@ -792,7 +792,7 @@ $(HOST_SANITIZE_DIR)/test_memory_backup: tests/test_memory_backup.c \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
- tests/host_shim/psptypes.h
+ tests/host_shim/psptypes.h | psp-sdk-headers
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
 	 -include tests/host_shim/host_builtins.h \
@@ -814,7 +814,7 @@ $(HOST_SANITIZE_DIR)/test_eeprom: tests/test_eeprom.c \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
- tests/host_shim/psptypes.h
+ tests/host_shim/psptypes.h | psp-sdk-headers
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
 	 -include tests/host_shim/host_builtins.h \
