@@ -17,14 +17,17 @@ SPEC.loader.exec_module(MODULE)
 FIRE_RED = "psp-{}/BPRE-r0/1.4.3/run-{}.txt"
 RUBY = "psp-{}/AXVE-r1/1.4.3/run-{}.txt"
 
+# The psp-model (kuKernelGetModel()) of the consoles behind the fixtures.
+PSP_MODEL = {"psp-1000": "0", "psp-2000": "1"}
+
 
 def report(frames=600, clock=333, game="BPRE", revision=0,
            title="POKEMON FIRE", version="1.4.3", extra=None):
-    """A finished 10-second report with the fields the table reads."""
+    """A finished 10-second report with the fields the table reads; archive()
+    adds the psp-model of its directory unless extra sets one."""
     values = {
         "gba-rush-performance-report": "6",
         "version": version,
-        "psp-model": "1",
         "clock-mhz": str(clock),
         "renderer": "1",
         "scale": "6",
@@ -52,6 +55,8 @@ def ruby(frames=600):
 def archive(root, runs):
     """Write the (relative path, report) pairs under root, in order."""
     for name, values in runs:
+        if "psp-model" not in values:
+            values = {"psp-model": PSP_MODEL[name.split("/")[0]], **values}
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("".join(f"{key}={value}\n"
@@ -159,6 +164,11 @@ class PerfTableTests(unittest.TestCase):
                 ("psp-1000/BPRE-r1/1.4.3/run-1.txt", report())],
             "version directory of another release": [
                 (FIRE_RED.format(1000, 1), report(version="1.4.2"))],
+            "PSP-2000 reports under psp-1000": [
+                (FIRE_RED.format(1000, 1), report(extra={"psp-model": "1"}))],
+            "model directory that is not a PSP model": [
+                ("psp-e1000/BPRE-r0/1.4.3/run-1.txt",
+                 report(extra={"psp-model": "10"}))],
         }
         for name, runs in cases.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as root:

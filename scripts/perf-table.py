@@ -41,6 +41,15 @@ MISSING = "—"
 NOT_MEASURED = "not measured"
 EMPTY = "No reports archived yet."
 
+# The psp-model values (kuKernelGetModel()) of each model directory; the
+# PSP-3000 shipped with four motherboard generations.
+MODELS = {
+    "psp-1000": ("0",),
+    "psp-2000": ("1",),
+    "psp-3000": ("2", "3", "6", "8"),
+    "psp-go": ("4",),
+}
+
 # Report keys that later stories add. PRF-2.1 (report v7) must use these
 # work-time and over-budget names; the table shows the over-budget count
 # per minute of capture, count * 60e6 / duration-us.
@@ -115,8 +124,8 @@ def collect(root):
     """The summarized groups of the archive, keyed (model, game, version).
 
     Every file but the .md notes must be a .txt report three directories
-    down, and a group's reports must match the game and version directories
-    they are in.
+    down, and a group's reports must match the model, game and version
+    directories they are in.
     """
     root = pathlib.Path(root)
     if not root.is_dir():
@@ -139,6 +148,9 @@ def collect(root):
         try:
             compare_benchmarks.validate_matching_runs(reports, [])
             version_key(version)
+            if reports[0].get("psp-model") not in MODELS.get(model, ()):
+                raise ValueError("reports are from psp-model "
+                                 f"{reports[0].get('psp-model')}")
             reported = "{}-r{}".format(reports[0].get("game-code"),
                                        reports[0].get("rom-revision"))
             if game != reported:

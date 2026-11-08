@@ -7,7 +7,10 @@ per console model, game and release:
 benchmarks/<model>/<game-code>-r<revision>/<version>/<run>.txt
 ```
 
-- `<model>` is `psp-1000`, `psp-2000`, `psp-3000` or `psp-go`.
+- `<model>` is `psp-1000`, `psp-2000`, `psp-3000` or `psp-go`, and must
+  match the reports' `psp-model` (the `kuKernelGetModel()` value): 0 for
+  `psp-1000`, 1 for `psp-2000`, 2, 3, 6 or 8 for `psp-3000`, 4 for
+  `psp-go`.
 - `<game-code>-r<revision>` is the report's `game-code` and `rom-revision`,
   for example `BPRE-r0`.
 - `<version>` is the report's `version`, for example `1.4.3`.
