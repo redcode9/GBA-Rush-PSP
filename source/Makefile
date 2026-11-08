@@ -58,6 +58,13 @@ COMMON_FILE += core_profile.h
 MAINOBJS += core_profile.o
 endif
 
+# make DIAGNOSTIC_HW_PROBE=1 times scratchpad, caches and RAM at startup and
+# writes hw-probe.txt beside the EBOOT.
+ifneq ($(DIAGNOSTIC_HW_PROBE),)
+COMMON_FILE += hw_probe.h
+MAINOBJS += hw_probe.o hw_probe_psp.o
+endif
+
 # The bundled zlib in src/zlib (VPATH finds its sources).
 OBJZ = adler32.o crc32.o deflate.o infback.o inffast.o inflate.o inftrees.o trees.o zutil.o
 OBJG = compress.o uncompr.o gzclose.o gzlib.o gzread.o gzwrite.o
@@ -91,6 +98,9 @@ CFLAGS += -DENABLE_DIAGNOSTIC_INPUT_TRACE
 endif
 ifneq ($(DIAGNOSTIC_CORE_PROFILE),)
 CFLAGS += -DENABLE_DIAGNOSTIC_CORE_PROFILE
+endif
+ifneq ($(DIAGNOSTIC_HW_PROBE),)
+CFLAGS += -DENABLE_DIAGNOSTIC_HW_PROBE
 endif
 
 CXXFLAGS =

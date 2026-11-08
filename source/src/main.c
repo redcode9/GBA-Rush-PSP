@@ -37,6 +37,9 @@
 #include "runtime_log_psp.h"
 #include "sound_math.h"
 #include "video_me.h"
+#ifdef ENABLE_DIAGNOSTIC_HW_PROBE
+#include "hw_probe.h"
+#endif
 
 // Main thread params; on the PSP a lower priority number runs first.
 // 32 is 0x20, so MAIN_LINK_LOCKSTEP_PRIORITY (0x77) is lower.
@@ -1752,6 +1755,9 @@ static void setup_main(const char *eboot_path)
   load_setting_cfg();
   load_bios_file();
 
+#ifdef ENABLE_DIAGNOSTIC_HW_PROBE
+  hw_probe_psp_run(main_path);
+#endif
   init_gamepak_buffer();
 
   sound_pause = 1;
