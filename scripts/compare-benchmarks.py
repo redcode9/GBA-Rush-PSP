@@ -404,7 +404,8 @@ def group_name(key):
 def collect_groups(*directories):
     """The reports anywhere under the directories, keyed by GROUP_FIELDS.
 
-    Every file but the .md notes must be a stopped .txt report, every
+    Every file but the .md notes and the -core.txt profiles of a
+    DIAGNOSTIC_CORE_PROFILE build must be a stopped .txt report, every
     directory must hold at least one, and the runs of one group must all
     come from the same version.
     """
@@ -413,7 +414,7 @@ def collect_groups(*directories):
     for directory in map(pathlib.Path, directories):
         count = 0
         for path in sorted(directory.rglob("*")):
-            if not path.is_file() or path.name.endswith(".md"):
+            if not path.is_file() or path.name.endswith((".md", "-core.txt")):
                 continue
             name = path.as_posix()
             if path.suffix != ".txt":

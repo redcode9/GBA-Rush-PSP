@@ -458,6 +458,13 @@ class BenchmarkComparisonTests(unittest.TestCase):
                                             baseline)[0], 2)
             self.assertIn("group 1/BPRE-r0: at least 3 reports", errors.getvalue())
 
+            # The core profile a DIAGNOSTIC_CORE_PROFILE build writes next
+            # to each report is not a report.
+            (pathlib.Path(baseline) / "BPRE-r0" / "1.4.3" /
+             "run-0-core.txt").write_text("profile\n")
+            self.assertEqual(len(MODULE.collect_groups(baseline)[
+                ("1", "BPRE", "0")]), 3)
+
             write_group(candidate, "BPRE", (605, 606, 604, 607), "1.5.1")
             write_group(candidate, "BPRE", (605, 606, 604), "1.5")
             with self.assertRaisesRegex(ValueError, "1/BPRE-r0 mixes versions"):
