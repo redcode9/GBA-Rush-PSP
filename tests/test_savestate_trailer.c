@@ -190,6 +190,18 @@ static void test_altered_fields(void)
    &t.rom, &out) == SAVESTATE_TRAILER_NEWER);
   CHECK(out.version == 0xFFFFu);
 
+  /* A 6- or 7-byte tail is corrupt, whatever version it holds. */
+  for(i = 6; i < 8; i++)
+  {
+    trailer[4] = 3;
+    trailer[5] = 0;
+    CHECK(decode_at_end(PAYLOAD + i, trailer, i, t.payload_crc, &t.rom,
+     &out) == SAVESTATE_TRAILER_CORRUPT);
+    trailer[4] = 2;
+    CHECK(decode_at_end(PAYLOAD + i, trailer, i, t.payload_crc, &t.rom,
+     &out) == SAVESTATE_TRAILER_CORRUPT);
+  }
+
   memcpy(trailer, good, sizeof(trailer));
   trailer[4] = 1;
   refresh_crc(trailer);
