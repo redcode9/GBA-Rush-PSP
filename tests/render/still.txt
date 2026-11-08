@@ -1,0 +1,2 @@
+# A test ROM that needs no keys, for render_check: ten seconds of it.
+run 600
