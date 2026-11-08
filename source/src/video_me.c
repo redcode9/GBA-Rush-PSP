@@ -168,6 +168,10 @@ static void convert_busy_time(void)
   u32 ticks = mailbox->reader.busy;
   u32 boots = mailbox->reader.boots;
 
+  /* After a clock change, wait until it has finished some work: its clock
+     from before then (the menu was open) would add the gap to a stretch. */
+  if(!busy_known && clock == busy_clock)
+    return;
   if(busy_known && boots == busy_boots && clock != busy_clock &&
      now - busy_time < 5000000u)
   {
@@ -186,6 +190,8 @@ static void convert_busy_time(void)
 void video_me_clock_changed(void)
 {
   busy_known = 0;
+  if(mailbox)
+    busy_clock = mailbox->reader.clock;
 }
 
 /* Whether the Media Engine is still drawing; gives up on it if not. */
