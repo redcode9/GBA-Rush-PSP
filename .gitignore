@@ -58,3 +58,6 @@ htmlcov/
 *.swp
 *.swo
 *~
+
+# Tools and test data from scripts/setup-dev.sh
+/ext/

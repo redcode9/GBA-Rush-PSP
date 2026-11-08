@@ -75,7 +75,7 @@ then
 fi
 
 unzip -q "$archive" -d "$temporary_root/extracted"
-if find "$temporary_root/extracted" -type l | rg -q .
+if find "$temporary_root/extracted" -type l | grep -q .
 then
   echo "Release archive contains a symbolic link" >&2
   exit 1

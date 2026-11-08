@@ -36,6 +36,9 @@
 #include <string.h>
 #include <time.h>
 
+/* Before mGBA's other headers: the build's options change the layout of
+   struct mCore, so the fields after the debugger ones move. */
+#include <mgba/flags.h>
 #include <mgba/core/core.h>
 #include <mgba/core/config.h>
 #include <mgba/core/log.h>
@@ -491,7 +494,8 @@ int main(int argc, char **argv)
   core = GBACoreCreate();
   core->init(core);
   mCoreInitConfig(core, NULL);
-  mCoreConfigSetValue(&core->config, "skipBios", "1");
+  /* The BIOS intro runs: mGBA reads skipBios from core->opts, which
+     loadConfig never fills, and the scripts' frame counts include it. */
   core->loadConfig(core, &core->config);
   core->setVideoBuffer(core, mgba_frame, 256);
   if(!core->loadROM(core, VFileOpen(argv[1], O_RDONLY)))
