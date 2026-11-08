@@ -45,7 +45,8 @@ make artifact-smoke VERSION=1.4.3
 ```
 
 CI (`.github/workflows/check.yml`) runs on every push, tag and pull request
-in the images of `tools/ci/Dockerfile`, pinned by digest: `make check`,
+in the images of `tools/ci/Dockerfile` (Ubuntu pinned by digest, with the
+pspdev that `scripts/setup-dev.sh` pins): `make check`,
 `make test-sanitize`, `make check-cbmc`, both build profiles and
 `make package` under a local `ci-<sha>` tag, keeping the EBOOT and its
 manifest as artifacts. A tag also runs `make artifact-smoke` and checks that
@@ -56,7 +57,7 @@ two consecutive release builds gave the same EBOOT and, on a stable tag,
 whether the rebuild gave the rc's. To run a step as CI does:
 
 ```sh
-docker build --target psp -t gba-rush-ci tools/ci
+docker build --build-context scripts=scripts --target psp -t gba-rush-ci tools/ci
 docker run --rm -v "$PWD:/workspace" -w /workspace gba-rush-ci make check
 ```
 

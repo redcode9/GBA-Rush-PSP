@@ -1,7 +1,7 @@
 # Every push (tags too) and pull request runs the host tests, the CBMC proof,
 # both PSP profiles and make package inside the images of tools/ci/Dockerfile,
-# which are pinned by digest. Third-party actions are pinned by commit SHA;
-# the comment after each SHA names its tag.
+# built from inputs pinned by digest or SHA-256. Third-party actions are
+# pinned by commit SHA; the comment after each SHA names its tag.
 name: check
 
 on: [push, pull_request]
@@ -22,7 +22,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Build the CI image
-        run: docker build --target psp -t gba-rush-ci tools/ci
+        run: >-
+          docker build --build-context scripts=scripts --target psp
+          -t gba-rush-ci tools/ci
       - name: make ${{ matrix.target }}
         run: >-
           docker run --rm -v "$PWD:/workspace" -w /workspace gba-rush-ci
@@ -53,7 +55,8 @@ jobs:
           persist-credentials: false
       - name: Start the CI container
         run: |
-          docker build --target psp -t gba-rush-ci tools/ci
+          docker build --build-context scripts=scripts --target psp \
+            -t gba-rush-ci tools/ci
           docker run -d --name ci -v "$PWD:/workspace" -w /workspace \
             gba-rush-ci sleep infinity
       - name: make psp-build PROFILE=release

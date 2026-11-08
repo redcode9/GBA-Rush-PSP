@@ -1,21 +1,35 @@
 # The images .github/workflows/check.yml runs in (CONTRIBUTING.md, Build).
-# Base images are pinned by digest and CBMC by version and SHA-256: to update
-# one, read the new digest or checksum and change it here, never use a tag.
+# The base image is pinned by digest, CBMC by version and SHA-256 and pspdev
+# by the release and SHA-256 in scripts/setup-dev.sh: to update one, read the
+# new digest or checksum and change it there, never use a tag. The psp image
+# reads setup-dev.sh from a second build context:
+#   docker build --build-context scripts=scripts --target psp tools/ci
 
-# The PSP toolchain (pspdev, on Alpine) plus what the host tests, the source
-# checks and packaging need. The GNU tools stand in for BusyBox's, so the
-# scripts run with the same date, touch, diff and find as on a Linux desktop.
-# The workspace is mounted from the runner, owned by another user than the
-# container's root, so Git is told to trust it.
-FROM pspdev/pspdev@sha256:ee385df3aa783189d5a033af5eb1d4a9cdd93718fb8bf652ec7bb48e54038a8b AS psp
-RUN apk add --no-cache gcc musl-dev zlib-dev python3 py3-yaml zip \
-  unzip coreutils diffutils findutils \
+# Ubuntu 24.04, the base of both images.
+ARG UBUNTU=ubuntu@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+
+# The PSP toolchain that setup-dev.sh installs for developers plus what the
+# host tests, the source checks and packaging need. Its GCC converts the
+# message tables to GBK with the C library's iconv, which glibc can do and
+# musl cannot. cc is GCC 14, which rejects implicit declarations even under
+# -w. The workspace is mounted from the runner, owned by another user than
+# the container's root, so Git is told to trust it.
+FROM $UBUNTU AS psp
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl gcc-14 \
+  libc6-dev make zlib1g-dev python3 python3-yaml git zip unzip \
+ && rm -rf /var/lib/apt/lists/* \
+ && ln -sf gcc-14 /usr/bin/cc \
  && git config --system --add safe.directory '*'
+ENV PSPDEV=/opt/gba-rush/ext/pspdev
+ENV PATH=$PSPDEV/bin:$PATH
+WORKDIR /opt/gba-rush
+COPY --from=scripts setup-dev.sh scripts/
+RUN sh scripts/setup-dev.sh pspdev && rm -rf ext/downloads
 
-# CBMC for make check-cbmc. Its releases ship only glibc packages, which do
-# not run on Alpine, so it has an Ubuntu image of its own. gcc is the
+# CBMC for make check-cbmc, from its Ubuntu 24.04 package. gcc is the
 # preprocessor CBMC calls.
-FROM ubuntu@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852 AS cbmc
+FROM $UBUNTU AS cbmc
 ARG CBMC_VERSION=6.11.0
 ARG CBMC_SHA256=b3721aa541038384d7801ea3aeabbcddc3e8845ac8f1cbff637cf8dec7481ac8
 RUN apt-get update \
