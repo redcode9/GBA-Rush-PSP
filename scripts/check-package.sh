@@ -115,7 +115,7 @@ fi
 for required in LICENSE NOTICE source/Makefile source/bios/Makefile \
   source/bios/README.md
 do
-  if ! rg -qxF "$source_prefix$required" "$actual_manifest"; then
+  if ! grep -qxF "$source_prefix$required" "$actual_manifest"; then
     echo "Source archive is missing $required" >&2
     exit 1
   fi
