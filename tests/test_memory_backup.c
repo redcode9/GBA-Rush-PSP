@@ -531,6 +531,41 @@ static void test_restore_link_copy(void)
   assert(fake_store_file_is(&store, "game.sav", 32 * KIB, 3));
 }
 
+/* A restore that fails and then cannot read the .sav back asks, as at
+   load, instead of dropping every later save unseen: retry reads it back
+   and saving works; refusing plays on without writing the file. */
+static void test_failed_restore_asks_when_the_save_will_not_read(void)
+{
+  static const unsigned retry[] = { YES };
+  u32 i;
+
+  fresh_store();
+  fake_store_seed(&store, 32 * KIB, 14);
+  fake_store_seed_file(&store, "game.sav.link1", 32 * KIB, 16);
+  assert(load("SRAM_V113", retry, 1) == ROM_SIZE);
+  /* The copy's read, then the .sav's. */
+  store.fail_reads = 2;
+  assert(!restore_backup_link_copy(1));
+  assert(host_stub_yesno_asked() == 1);
+  for(i = 0; i < 32 * KIB; i++)
+    assert(read_backup(i) == (u32)fake_store_pattern(i, 14));
+  sram_write(0x10, 0x42);
+  assert(update_backup_immediately());
+  assert(store.write_calls == 1 && store.data[0x10] == 0x42);
+
+  fresh_store();
+  fake_store_seed(&store, 32 * KIB, 14);
+  fake_store_seed_file(&store, "game.sav.link1", 32 * KIB, 16);
+  assert(load("SRAM_V113", NULL, 0) == ROM_SIZE);
+  store.fail_reads = 2;
+  assert(!restore_backup_link_copy(1));
+  assert(host_stub_yesno_asked() == 1);
+  sram_write(0x10, 0x42);
+  assert(update_backup_immediately());
+  assert(store.write_calls == 0);
+  assert(fake_store_file_is(&store, "game.sav", 32 * KIB, 14));
+}
+
 int main(void)
 {
   /* Callers tell a cancel from a load error, which is -1 or -2. */
@@ -554,6 +589,7 @@ int main(void)
   test_final_write_reports_failure();
   test_cut_write_leaves_old_or_new();
   test_restore_link_copy();
+  test_failed_restore_asks_when_the_save_will_not_read();
   puts("memory backup tests passed");
   return 0;
 }

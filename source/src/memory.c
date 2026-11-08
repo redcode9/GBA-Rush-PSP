@@ -3392,7 +3392,8 @@ u32 backup_push_link_copy(void)
 // .bak the store makes is the save the copy replaces, and putting it back
 // undoes the restore. The caller must reset the game right after, or its
 // next write would flush its old progress over the copy. Returns 0 if
-// nothing was restored: the .sav and the save in RAM stay as they were.
+// nothing was restored: the .sav stays as it was and is read back into
+// RAM; if that read fails, writes stay blocked unless a retry reads it.
 // Nothing is restored while the type is unknown or after load_backup()
 // blocked writes, where save_backup() would only pretend to write.
 u32 restore_backup_link_copy(u32 generation)
@@ -3419,9 +3420,19 @@ u32 restore_backup_link_copy(u32 generation)
     return 1;
 
   // The store left the old .sav in place: the save in RAM goes back to it.
+  // A .sav that no longer reads blocks writes, so the player is asked to
+  // retry, as at load_gamepak(), instead of every later save being dropped
+  // unseen. The dialog waits outside the power lock.
   scePowerLock(0);
-  load_backup(backup_filename, backup_tag, 0);
+  result = load_backup(backup_filename, backup_tag, 0);
   scePowerUnlock(0);
+  while ((result == SAVE_STORE_FAILED) &&
+         (yesno_dialog(MSG[MSG_SAVE_READ_RETRY]) == 0))
+  {
+    scePowerLock(0);
+    result = load_backup(backup_filename, backup_tag, 1);
+    scePowerUnlock(0);
+  }
   return 0;
 }
 
