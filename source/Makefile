@@ -41,6 +41,13 @@ MAINOBJS = \
  ku_bridge.o exception.o cheats.o codebreaker.o ch_print.o \
  adhoc_peer.o boxart.o dynarec_worklist.o fast_forward_audio.o fast_forward_policy.o gba_sio.o link_audio_wait.o link_cable.o link_net.o power_lifecycle.o runtime_log.o runtime_log_psp.o runtime_log_store.o sound_math.o video_adaptive.o perf_metrics.o perf_monitor.o perf_report.o menu_model.o menu_layout.o menu_catalog.o config_model.o config_store.o psp_adhoc.o
 
+# make DIAGNOSTIC_CORE_PROFILE=1 samples where the new core spends its time
+# during a benchmark capture and writes it beside the report (arm_gba.c).
+ifneq ($(DIAGNOSTIC_CORE_PROFILE),)
+COMMON_FILE += core_profile.h
+MAINOBJS += core_profile.o
+endif
+
 # The bundled zlib in src/zlib (VPATH finds its sources).
 OBJZ = adler32.o crc32.o deflate.o infback.o inffast.o inflate.o inftrees.o trees.o zutil.o
 OBJG = compress.o uncompr.o gzclose.o gzlib.o gzread.o gzwrite.o
@@ -110,6 +117,9 @@ COMMON_FILE += input_trace.h
 MAINOBJS += input_trace.o
 else
 $(error PROFILE must be release or diagnostic, not '$(PROFILE)')
+endif
+ifneq ($(DIAGNOSTIC_CORE_PROFILE),)
+CFLAGS += -DENABLE_DIAGNOSTIC_CORE_PROFILE
 endif
 
 CXXFLAGS =
