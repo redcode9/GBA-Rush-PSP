@@ -4786,9 +4786,10 @@ u32 menu(void)
      "%s", MSG[status_message]);
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
     {
+      InputTraceState trace_state = input_diagnostic_trace_state();
       u32 trace_state_message;
 
-      switch(input_diagnostic_trace_state())
+      switch(trace_state)
       {
         case INPUT_TRACE_RECORDING:
           trace_state_message = MSG_TRACE_STATE_RECORDING;
@@ -4813,6 +4814,14 @@ u32 menu(void)
        sizeof(diagnostics_trace_status_line), MSG[MSG_TRACE_STATUS_FORMAT],
        MSG[trace_state_message],
        (unsigned long)input_diagnostic_trace_event_count());
+
+      /* A game may first use the RTC after its replay started, past the
+         check in menu_trace_replay(). */
+      if((trace_state == INPUT_TRACE_REPLAYING ||
+          trace_state == INPUT_TRACE_FINISHED) &&
+         diagnostics_report_line[0] == '\0' && memory_rtc_active())
+        snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+         "%s", MSG[MSG_TRACE_RTC_WARNING]);
     }
 #endif
   }
