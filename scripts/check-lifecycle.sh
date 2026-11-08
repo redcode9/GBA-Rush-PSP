@@ -213,6 +213,28 @@ then
   fail "A .sav write can bypass the unreadable-save block"
 fi
 
+# A failed .sav write stays pending, so the save in RAM is never dropped
+# while the game runs: save_backup() opens no file itself and reports the
+# store's result, and backup_update is set back to "nothing pending" only
+# after save_backup() succeeded, or by load_backup() for a new game.
+if printf '%s\n' "$save_backup_body" | rg -q 'FILE_[A-Z]+\(' || \
+   ! printf '%s\n' "$save_backup_body" | \
+    rg -q 'return \(result == SAVE_STORE_OK\);' || \
+   [ "$(rg -c '^[[:space:]]+backup_update = WRITE_BACKUP_DELAY \+ 1;' \
+    source/src/memory.c || true)" != 2 ] || \
+   ! body '/^SaveStoreResult load_backup(/,/^}/p' source/src/memory.c | \
+    rg -q 'backup_update = WRITE_BACKUP_DELAY \+ 1;' || \
+   ! body '/^u32 update_backup_immediately(void)/,/^}/p' source/src/memory.c | \
+    awk '
+  /!save_backup\(backup_filename\)\)/ { checked = 1 }
+  checked && /return 0;/ { failed = 1 }
+  /backup_update = WRITE_BACKUP_DELAY \+ 1;/ { reset = 1; if (!failed) bad = 1 }
+  END { exit !(failed && reset && !bad) }
+'
+then
+  fail "A failed .sav write can be dropped as if it had been written"
+fi
+
 # The sceIo binding of the .sav and the settings file allocates nothing,
 # so a save is still written when memory has run out.
 if ! awk '

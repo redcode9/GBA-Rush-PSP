@@ -197,7 +197,8 @@ s32 rtc_bit_count;
 //    .sav WRITE_BACKUP_DELAY frames later when auto-save is on, and
 //    update_backup_immediately() on quit, ROM change or a suspend from the
 //    menu (a power-button suspend writes only a savestate). Nothing is
-//    written after a .sav that exists failed to read.
+//    written after a .sav that exists failed to read. A write that fails
+//    stays pending: the RAM copy is kept until a write succeeds.
 
 // Up to 128kb, store SRAM, flash ROM, or EEPROM here.
 static u8 ALIGN_DATA gamepak_backup[1024 * 128];
@@ -206,9 +207,21 @@ static u8 ALIGN_DATA gamepak_backup[1024 * 128];
 // backup write (update_backup() runs once per VBlank).
 #define WRITE_BACKUP_DELAY  (10)
 
+// After a failed write, update_backup() waits this many frames (about 5 s)
+// before the next try, however often the game writes meanwhile.
+#define WRITE_BACKUP_RETRY_DELAY  (300)
+
 // Frames until a pending backup write is saved (only update once this hits
 // 0); WRITE_BACKUP_DELAY + 1 means nothing is pending.
 s32 backup_update = WRITE_BACKUP_DELAY + 1;
+
+// Frames left before update_backup() may try a failed write again.
+static u32 backup_retry_wait = 0;
+
+// The first failed periodic write of a game sets backup_write_warning once,
+// for the menu to show (main.c opens it); load_backup() re-allows it.
+static u32 backup_write_warned = 0;
+u32 backup_write_warning = 0;
 
 // How the .sav is read and written; main.c sets it at startup.
 const SaveStoreIo *backup_io;
@@ -3229,6 +3242,13 @@ SaveStoreResult load_backup(char *name, SaveTag tag, u32 retry)
     result = SAVE_STORE_FAILED;
   backup_write_blocked = (result == SAVE_STORE_FAILED);
 
+  // The buffer now holds this game's save: a write still pending from the
+  // last game is gone with it, and this game may warn again.
+  backup_update = WRITE_BACKUP_DELAY + 1;
+  backup_retry_wait = 0;
+  backup_write_warned = 0;
+  backup_write_warning = 0;
+
   layout = save_format_resolve(tag, (u32)file_size);
   backup_type = (BACKUP_TYPE_TYPE)layout.type;
   sram_size   = (SRAM_SIZE_TYPE)layout.sram_size;
@@ -3258,45 +3278,60 @@ SaveStoreResult load_backup(char *name, SaveTag tag, u32 retry)
 }
 
 // Writes the backup at the save type's size, under a power lock so a
-// suspend can't cut the write. Nothing is written while the type is
-// unknown, or after load_backup() found the file unreadable.
+// suspend can't cut the write. Returns 0 if the write failed, the old file
+// still in place. Nothing is written while the type is unknown, or after
+// load_backup() found the file unreadable: that counts as done.
 static u32 save_backup(char *name)
 {
   u32 backup_size = save_format_write_size(backup_type, sram_size,
    flash_size, eeprom_size);
+  SaveStoreResult result;
 
   if (backup_write_blocked || (backup_size == 0))
-    return 0;
+    return 1;
 
   scePowerLock(0);
-  save_store_write(backup_io, dir_save, name, gamepak_backup, backup_size);
+  result = save_store_write(backup_io, dir_save, name, gamepak_backup,
+   backup_size);
   scePowerUnlock(0);
 
-  return backup_size;
+  return (result == SAVE_STORE_OK);
 }
 
 // Called each frame by main.c when auto-save (option_update_backup) is on:
-// saves once WRITE_BACKUP_DELAY frames pass without a new backup write.
+// saves once WRITE_BACKUP_DELAY frames pass without a new backup write,
+// and no sooner than WRITE_BACKUP_RETRY_DELAY frames after a failed one.
 void update_backup(void)
 {
-  if (backup_update != (WRITE_BACKUP_DELAY + 1))
+  if (backup_retry_wait != 0)
+    backup_retry_wait--;
+
+  if ((backup_update != 0) && (backup_update != (WRITE_BACKUP_DELAY + 1)))
     backup_update--;
 
-  if (backup_update == 0)
+  if ((backup_update == 0) && (backup_retry_wait == 0) &&
+      !update_backup_immediately())
   {
-    save_backup(backup_filename);
-    backup_update = WRITE_BACKUP_DELAY + 1;
+    backup_retry_wait = WRITE_BACKUP_RETRY_DELAY;
+
+    if (!backup_write_warned)
+    {
+      backup_write_warned = 1;
+      backup_write_warning = 1;
+    }
   }
 }
 
-// Saves a pending backup write now instead of after the delay.
-void update_backup_immediately(void)
+// Saves a pending backup write now instead of after the delay. Returns 0
+// if the write failed: it stays pending, and the old file stays on disk.
+u32 update_backup_immediately(void)
 {
-  if (backup_update != (WRITE_BACKUP_DELAY + 1))
-  {
-    save_backup(backup_filename);
-    backup_update = WRITE_BACKUP_DELAY + 1;
-  }
+  if ((backup_update != (WRITE_BACKUP_DELAY + 1)) &&
+      !save_backup(backup_filename))
+    return 0;
+
+  backup_update = WRITE_BACKUP_DELAY + 1;
+  return 1;
 }
 
 

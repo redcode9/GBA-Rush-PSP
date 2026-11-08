@@ -283,7 +283,10 @@ void init_gamepak_buffer(void);
 void memory_term(void);
 
 void update_backup(void);
-void update_backup_immediately(void);
+u32 update_backup_immediately(void);
+/* Set by the first failed periodic .sav write of a game: the menu shows
+   the warning and clears it. */
+extern u32 backup_write_warning;
 
 extern u8 *write_mem_ptr;
 

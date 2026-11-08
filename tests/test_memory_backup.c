@@ -7,7 +7,8 @@
  *
  * Regressions it guards: a 64 KiB .sav of an SRAM game was written back as
  * one byte; a .sav that failed to read was replaced by a blank image on the
- * first flush; a .sav over 128 KiB overran the save buffer.
+ * first flush; a .sav over 128 KiB overran the save buffer; a write that
+ * failed was dropped as if it had been written.
  */
 #include <assert.h>
 #include <stdint.h>
@@ -33,6 +34,9 @@ int host_stub_save_load(uint8_t *flags, uint32_t values[3]);
 /* Frames update_backup() waits after the last game write; one more than
    memory.c's WRITE_BACKUP_DELAY so the periodic flush is due. */
 #define FLUSH_FRAMES 11
+/* Frames between a failed periodic write and the next try: memory.c's
+   WRITE_BACKUP_RETRY_DELAY. */
+#define RETRY_FRAMES 300
 
 static FakeStore store;
 static SaveStoreIo io;
@@ -73,6 +77,22 @@ static void flash_write(u32 address, u8 value)
   write_backup(0x2AAA, 0x55);
   write_backup(0x5555, 0xA0);
   write_backup(address, value);
+}
+
+/* Calls update_backup() once a frame until a write of the .sav starts;
+   returns the frames that took, or -1 if none started within limit. */
+static int frames_to_next_write(int limit)
+{
+  int before = store.open_write_calls;
+  int frame;
+
+  for(frame = 1; frame <= limit; frame++)
+  {
+    update_backup();
+    if(store.open_write_calls != before)
+      return frame;
+  }
+  return -1;
 }
 
 /* The bug: SRAM tag and a 64 KiB file. The game writes below 0x8000 and
@@ -148,7 +168,8 @@ static void test_unreadable_save_blocks_every_write(void)
   for(frame = 0; frame < FLUSH_FRAMES; frame++)
     update_backup();
   sram_write(0x11, 0x43);
-  update_backup_immediately();
+  /* A write the load blocked counts as done: quit and the menu go on. */
+  assert(update_backup_immediately());
 
   assert(store.write_calls == 0);
   assert(store.size == 32 * KIB);
@@ -291,6 +312,131 @@ static void test_tag_beats_file_size(void)
   assert(fake_store_file_is(&store, "game.sav.orig", 128 * KIB, 7));
 }
 
+/* A full Memory Stick: the periodic write fails, the old file stays and
+   the write stays pending. The next try comes RETRY_FRAMES later however
+   often the game writes meanwhile, and once there is room it writes
+   everything the game wrote. */
+static void test_failed_write_stays_pending(void)
+{
+  int frame;
+
+  fresh_store();
+  fake_store_seed(&store, 32 * KIB, 10);
+  assert(load("SRAM_V113", NULL, 0) == ROM_SIZE);
+
+  store.space = 1;
+  sram_write(0x10, 0x42);
+  assert(frames_to_next_write(FLUSH_FRAMES) > 0);
+  assert(fake_store_file_is(&store, "game.sav", 32 * KIB, 10));
+
+  for(frame = 1; frame < RETRY_FRAMES; frame++)
+  {
+    if((frame % 50) == 0)
+      sram_write(0x11, (u8)frame);
+    update_backup();
+  }
+  assert(store.open_write_calls == 1);
+  update_backup();
+  assert(store.open_write_calls == 2);
+  assert(fake_store_file_is(&store, "game.sav", 32 * KIB, 10));
+
+  store.space = 0;
+  assert(frames_to_next_write(RETRY_FRAMES) == RETRY_FRAMES);
+  assert(store.size == 32 * KIB);
+  assert(store.data[0x10] == 0x42 && store.data[0x11] == 250);
+  assert(store.data[0x12] == fake_store_pattern(0x12, 10));
+  /* Written: nothing is pending any more. */
+  assert(frames_to_next_write(2 * RETRY_FRAMES) < 0);
+}
+
+/* Only a game's first failed periodic write raises the warning. A game
+   loaded again may warn again, and the write still pending from before
+   is dropped with the old buffer. */
+static void test_warning_once_per_game(void)
+{
+  fresh_store();
+  fake_store_seed(&store, 32 * KIB, 11);
+  assert(load("SRAM_V113", NULL, 0) == ROM_SIZE);
+  assert(!backup_write_warning);
+
+  store.space = 1;
+  sram_write(0x10, 0x42);
+  assert(frames_to_next_write(FLUSH_FRAMES) > 0);
+  assert(backup_write_warning);
+  backup_write_warning = 0; /* the menu showed it */
+  assert(frames_to_next_write(RETRY_FRAMES) == RETRY_FRAMES);
+  assert(!backup_write_warning);
+
+  assert(load("SRAM_V113", NULL, 0) == ROM_SIZE);
+  assert(frames_to_next_write(2 * RETRY_FRAMES) < 0);
+  assert(store.open_write_calls == 2);
+  sram_write(0x10, 0x43);
+  assert(frames_to_next_write(FLUSH_FRAMES) > 0);
+  assert(backup_write_warning);
+}
+
+/* The last tries before the game goes away (quit, menu suspend, ROM
+   change) report a failed write and leave it pending, with no warning:
+   the menu asks about it instead. */
+static void test_final_write_reports_failure(void)
+{
+  fresh_store();
+  fake_store_seed(&store, 32 * KIB, 12);
+  assert(load("SRAM_V113", NULL, 0) == ROM_SIZE);
+  assert(update_backup_immediately());
+  assert(store.open_write_calls == 0);
+
+  store.fail_move = 1;
+  sram_write(0x10, 0x42);
+  assert(!update_backup_immediately());
+  assert(fake_store_file_is(&store, "game.sav", 32 * KIB, 12));
+  assert(!backup_write_warning);
+
+  assert(update_backup_immediately());
+  assert(store.size == 32 * KIB && store.data[0x10] == 0x42);
+  assert(update_backup_immediately() && store.open_write_calls == 2);
+}
+
+/* The power goes off at each step of a periodic write in turn: after the
+   next start the .sav is the old image or the new one, never another. */
+static void test_cut_write_leaves_old_or_new(void)
+{
+  int cut;
+  int olds = 0;
+  int news = 0;
+  int finished = 0;
+
+  for(cut = 1; !finished; cut++)
+  {
+    int frame;
+    size_t i;
+
+    assert(cut < 100);
+    fresh_store();
+    fake_store_seed(&store, 32 * KIB, 13);
+    assert(load("SRAM_V113", NULL, 0) == ROM_SIZE);
+    store.cut_after = store.calls + cut;
+    sram_write(0x10, 0x42);
+    for(frame = 0; frame < FLUSH_FRAMES; frame++)
+      update_backup();
+    finished = !store.power_off;
+
+    fake_store_restart(&store);
+    assert(load("SRAM_V113", NULL, 0) == ROM_SIZE);
+    assert(store.present && store.size == 32 * KIB);
+    for(i = 0; i < 32 * KIB; i++)
+      assert(i == 0x10 || store.data[i] == fake_store_pattern(i, 13));
+    if(store.data[0x10] == 0x42)
+      news++;
+    else
+    {
+      assert(store.data[0x10] == fake_store_pattern(0x10, 13));
+      olds++;
+    }
+  }
+  assert(olds > 0 && news > 0);
+}
+
 int main(void)
 {
   /* Callers tell a cancel from a load error, which is -1 or -2. */
@@ -309,6 +455,10 @@ int main(void)
   test_refusing_both_prompts_cancels();
   test_oversized_save_loads_a_prefix();
   test_tag_beats_file_size();
+  test_failed_write_stays_pending();
+  test_warning_once_per_game();
+  test_final_write_reports_failure();
+  test_cut_write_leaves_old_or_new();
   puts("memory backup tests passed");
   return 0;
 }
