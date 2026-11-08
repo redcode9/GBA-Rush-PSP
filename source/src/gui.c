@@ -4325,7 +4325,7 @@ u32 menu(void)
     /* yesno_dialog: returns 0 = confirmed (O), 1 = cancel (X) */
     if (yesno_dialog(confirm_msg) == 0)
     {
-      /* With its .bak and .tmp, which a load would otherwise recover. */
+      /* With its .bak, .tmp and .orig, which a load would otherwise recover. */
       save_store_remove(backup_io, dir_state, savestate_filename);
 
       /* Refresh timestamp to empty */

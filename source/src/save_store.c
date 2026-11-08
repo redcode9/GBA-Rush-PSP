@@ -113,6 +113,7 @@ SaveStoreResult save_store_remove(const SaveStoreIo *io, const char *dir,
   static SaveStoreWrite paths;
 
   if(!set_paths(&paths, dir, name) ||
+     !io->remove(io->context, paths.original) ||
      !io->remove(io->context, paths.temporary) ||
      !io->remove(io->context, paths.backup) ||
      !io->remove(io->context, paths.primary))
