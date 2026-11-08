@@ -223,6 +223,9 @@ static u32 backup_retry_wait = 0;
 static u32 backup_write_warned = 0;
 u32 backup_write_warning = 0;
 
+// Failed .sav writes since the last good one, for the SAVE_WRITE log.
+static u32 backup_write_failures = 0;
+
 // How the .sav is read and written; main.c sets it at startup.
 const SaveStoreIo *backup_io;
 
@@ -3248,6 +3251,7 @@ SaveStoreResult load_backup(char *name, SaveTag tag, u32 retry)
   backup_retry_wait = 0;
   backup_write_warned = 0;
   backup_write_warning = 0;
+  backup_write_failures = 0;
 
   layout = save_format_resolve(tag, (u32)file_size);
   backup_type = (BACKUP_TYPE_TYPE)layout.type;
@@ -3280,20 +3284,32 @@ SaveStoreResult load_backup(char *name, SaveTag tag, u32 retry)
 // Writes the backup at the save type's size, under a power lock so a
 // suspend can't cut the write. Returns 0 if the write failed, the old file
 // still in place. Nothing is written while the type is unknown, or after
-// load_backup() found the file unreadable: that counts as done.
+// load_backup() found the file unreadable: that counts as done. Every
+// write logs a SAVE_WRITE event: its result, how many microseconds the
+// emulator stood still for it, its size and its try number.
 static u32 save_backup(char *name)
 {
   u32 backup_size = save_format_write_size(backup_type, sram_size,
    flash_size, eeprom_size);
   SaveStoreResult result;
+  u32 start;
 
   if (backup_write_blocked || (backup_size == 0))
     return 1;
 
+  start = sceKernelGetSystemTimeLow();
   scePowerLock(0);
   result = save_store_write(backup_io, dir_save, name, gamepak_backup,
    backup_size);
   scePowerUnlock(0);
+
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_SAVE_WRITE, 0, (u8)result,
+   sceKernelGetSystemTimeLow() - start, backup_size,
+   backup_write_failures + 1);
+  if (result == SAVE_STORE_OK)
+    backup_write_failures = 0;
+  else
+    backup_write_failures++;
 
   return (result == SAVE_STORE_OK);
 }

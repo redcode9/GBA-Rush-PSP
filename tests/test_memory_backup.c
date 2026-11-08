@@ -25,6 +25,8 @@ void host_stub_yesno(const unsigned *answers, int count);
 int host_stub_yesno_asked(void);
 int host_stub_yesno_saw_rom(void);
 int host_stub_save_load(uint8_t *flags, uint32_t values[3]);
+int host_stub_save_write(uint8_t *flags, uint32_t values[3]);
+void host_stub_set_time(uint64_t t0, uint64_t t1);
 
 #define KIB 1024u
 #define ROM_SIZE 0x8000
@@ -315,19 +317,28 @@ static void test_tag_beats_file_size(void)
 /* A full Memory Stick: the periodic write fails, the old file stays and
    the write stays pending. The next try comes RETRY_FRAMES later however
    often the game writes meanwhile, and once there is room it writes
-   everything the game wrote. */
+   everything the game wrote. Each write logs its result, duration, size
+   and try number. */
 static void test_failed_write_stays_pending(void)
 {
   int frame;
+  int writes;
+  uint8_t flags;
+  uint32_t values[3];
 
   fresh_store();
   fake_store_seed(&store, 32 * KIB, 10);
   assert(load("SRAM_V113", NULL, 0) == ROM_SIZE);
+  writes = host_stub_save_write(&flags, values);
 
   store.space = 1;
   sram_write(0x10, 0x42);
+  host_stub_set_time(1000, 1250);
   assert(frames_to_next_write(FLUSH_FRAMES) > 0);
   assert(fake_store_file_is(&store, "game.sav", 32 * KIB, 10));
+  assert(host_stub_save_write(&flags, values) == writes + 1);
+  assert(flags == SAVE_STORE_WRITE_FAILED && values[0] == 250);
+  assert(values[1] == 32 * KIB && values[2] == 1);
 
   for(frame = 1; frame < RETRY_FRAMES; frame++)
   {
@@ -339,21 +350,34 @@ static void test_failed_write_stays_pending(void)
   update_backup();
   assert(store.open_write_calls == 2);
   assert(fake_store_file_is(&store, "game.sav", 32 * KIB, 10));
+  assert(host_stub_save_write(&flags, values) == writes + 2);
+  assert(values[2] == 2);
 
   store.space = 0;
   assert(frames_to_next_write(RETRY_FRAMES) == RETRY_FRAMES);
   assert(store.size == 32 * KIB);
   assert(store.data[0x10] == 0x42 && store.data[0x11] == 250);
   assert(store.data[0x12] == fake_store_pattern(0x12, 10));
+  assert(host_stub_save_write(&flags, values) == writes + 3);
+  assert(flags == SAVE_STORE_OK && values[2] == 3);
   /* Written: nothing is pending any more. */
   assert(frames_to_next_write(2 * RETRY_FRAMES) < 0);
+  assert(host_stub_save_write(&flags, values) == writes + 3);
+  /* The next write is a first try again. */
+  sram_write(0x12, 0x43);
+  assert(frames_to_next_write(FLUSH_FRAMES) > 0);
+  assert(host_stub_save_write(&flags, values) == writes + 4);
+  assert(flags == SAVE_STORE_OK && values[2] == 1);
 }
 
 /* Only a game's first failed periodic write raises the warning. A game
    loaded again may warn again, and the write still pending from before
-   is dropped with the old buffer. */
+   is dropped with the old buffer; its next write is a first try. */
 static void test_warning_once_per_game(void)
 {
+  uint8_t flags;
+  uint32_t values[3];
+
   fresh_store();
   fake_store_seed(&store, 32 * KIB, 11);
   assert(load("SRAM_V113", NULL, 0) == ROM_SIZE);
@@ -373,6 +397,8 @@ static void test_warning_once_per_game(void)
   sram_write(0x10, 0x43);
   assert(frames_to_next_write(FLUSH_FRAMES) > 0);
   assert(backup_write_warning);
+  host_stub_save_write(&flags, values);
+  assert(flags != SAVE_STORE_OK && values[2] == 1);
 }
 
 /* The last tries before the game goes away (quit, menu suspend, ROM
