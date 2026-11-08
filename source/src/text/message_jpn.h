@@ -388,6 +388,48 @@
   // MSG_A_PAD_MENU_HELP_2
   FONT_BTN_CIRCLE_GBK ":メインメニュー   " FONT_BTN_CROSS_GBK ":終了",
 
+  // MSG_TURBO_MENU
+  "連射の設定",
+
+  // MSG_TURBO_A_SPEED
+  "連射 A の速度   : %s",
+
+  // MSG_TURBO_A_MODE
+  "連射 A のモード : %s",
+
+  // MSG_TURBO_B_SPEED
+  "連射 B の速度   : %s",
+
+  // MSG_TURBO_B_MODE
+  "連射 B のモード : %s",
+
+  // MSG_TURBO_L_SPEED
+  "連射 L の速度   : %s",
+
+  // MSG_TURBO_L_MODE
+  "連射 L のモード : %s",
+
+  // MSG_TURBO_R_SPEED
+  "連射 R の速度   : %s",
+
+  // MSG_TURBO_R_MODE
+  "連射 R のモード : %s",
+
+  // MSG_TURBO_SPEED_30
+  "30回/秒",
+
+  // MSG_TURBO_SPEED_15
+  "15回/秒",
+
+  // MSG_TURBO_SPEED_10
+  "10回/秒",
+
+  // MSG_TURBO_ON
+  "連射 %c: オン",
+
+  // MSG_TURBO_OFF
+  "連射 %c: オフ",
+
   // MSG_CHEAT_MENU_TITLE
   "チート設定",
 

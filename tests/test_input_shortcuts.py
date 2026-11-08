@@ -1,5 +1,5 @@
-"""Check input.c's update_input on the host: the shortcut chords, turbo and
-the stick."""
+"""Check input.c's update_input on the host: the shortcut chords, turbo with
+its settings and toasts, and the stick."""
 
 from pathlib import Path
 import unittest
@@ -11,9 +11,11 @@ from tests.test_startup import ROOT, build_and_run, function
 SRC = (Path(__file__).resolve().parents[1] / "source/src").as_posix()
 
 # Stand-ins for the PSP SDK and for what update_input calls, with the real
-# chord and input model modules. Counters record the actions that ran.
+# chord and input model modules. Counters record the actions that ran, and
+# the toasts shown.
 STUBS = r'''
 #include <assert.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -21,6 +23,7 @@ STUBS = r'''
 #include "@SRC@/input_chord.c"
 #include "@SRC@/input_model.c"
 #include "@SRC@/config_model.h"
+#include "@SRC@/message.h"
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
@@ -75,6 +78,23 @@ void main_fast_forward_input(u32 pressed, u32 held)
 u32 menu(void) { menus++; return 7; }
 u32 action_loadstate(void) { loads++; return 0; }
 u32 action_savestate(void) { saves++; return 0; }
+static u32 toast_ids[8];
+static int toast_letters[8];
+static int toasts;
+void toast_show(u32 msg_id, ...);
+void toast_show(u32 msg_id, ...)
+{
+  va_list args;
+
+  va_start(args, msg_id);
+  if(toasts < 8)
+  {
+    toast_ids[toasts] = msg_id;
+    toast_letters[toasts] = va_arg(args, int);
+  }
+  toasts++;
+  va_end(args);
+}
 '''.replace("@SRC@", SRC)
 
 # GBA keys (KEYINPUT bits, active low in REG_P1) and the shortcut masks.
@@ -348,6 +368,26 @@ static u32 sleep_stop(void)
   return 0;
 }
 
+/* Presses of key the game sees over 60 frames with buttons held, from a
+   new press; the buttons are let go after. */
+static int presses(u32 buttons, u32 key)
+{
+  int i, count = 0, was_down = 0;
+
+  frame(0);
+  for(i = 0; i < 60; i++)
+  {
+    int down;
+
+    frame(buttons);
+    down = game_has(key);
+    count += down && !was_down;
+    was_down = down;
+  }
+  frame(0);
+  return count;
+}
+
 /* Turbo R runs, then action opens the menu, loads a state or sleeps:
    Square, still held, pulses again only after a new press. */
 static void check_stop(u32 (*action)(void), u32 expected)
@@ -473,6 +513,55 @@ int main(void)
   stick_y = 70;
   frame(0);
   assert(!game_has(GBA_UP));
+  option_enable_analog = 0;
+  stick_y = 128;
+
+  /* The speed of each turbo comes from the settings: A at 15 and B at 10
+     presses per second, also held together. Hold mode shows no toast. */
+  option_turbo_speed[0] = INPUT_MODEL_TURBO_15;
+  option_turbo_speed[1] = INPUT_MODEL_TURBO_10;
+  rebuild_fast_forward_button_mask();
+  toasts = 0;
+  assert(presses(PSP_CTRL_CIRCLE, GBA_A) == 15);
+  assert(presses(PSP_CTRL_CROSS, GBA_B) == 10);
+  assert(presses(PSP_CTRL_CIRCLE | PSP_CTRL_CROSS, GBA_A) == 15);
+  assert(presses(PSP_CTRL_CIRCLE | PSP_CTRL_CROSS, GBA_B) == 10);
+  assert(presses(TURBO_R, GBA_R) == 30);
+  assert(toasts == 0);
+
+  /* Toggle on R and L: a press starts or stops the train and shows
+     "Turbo R" or "Turbo L" on or off once; holding, letting go or a
+     link wait's read shows nothing. */
+  option_turbo_mode[3] = 1;
+  option_turbo_mode[2] = 1;
+  rebuild_fast_forward_button_mask();
+  frame(0);
+  frame(TURBO_R);
+  assert(toasts == 1 && toast_ids[0] == MSG_TURBO_ON);
+  assert(toast_letters[0] == 'R' && game_has(GBA_R));
+  frame(TURBO_R);
+  wait_read(TURBO_R);
+  frame(0);
+  assert(game_has(GBA_R));
+  wait_read(0);
+  frame(0);
+  assert(toasts == 1 && !game_has(GBA_R));
+  frame(TURBO_R);
+  assert(toasts == 2 && toast_ids[1] == MSG_TURBO_OFF);
+  assert(toast_letters[1] == 'R');
+  for(i = 0; i < 4; i++)
+  {
+    frame(0);
+    assert(!game_has(GBA_R));
+  }
+  frame(LT);
+  assert(toasts == 3 && toast_ids[2] == MSG_TURBO_ON);
+  assert(toast_letters[2] == 'L' && game_has(GBA_L));
+  frame(0);
+  frame(LT);
+  assert(toasts == 4 && toast_ids[3] == MSG_TURBO_OFF);
+  assert(toast_letters[3] == 'L');
+  frame(0);
 
   puts("update_input turbo and stick passed");
   return 0;

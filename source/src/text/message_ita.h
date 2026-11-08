@@ -388,6 +388,48 @@
   // MSG_A_PAD_MENU_HELP_2
   FONT_BTN_CIRCLE_GBK ":Menu principale   " FONT_BTN_CROSS_GBK ":Esci",
 
+  // MSG_TURBO_MENU
+  "Configurazione turbo",
+
+  // MSG_TURBO_A_SPEED
+  "Velocita` turbo A : %s",
+
+  // MSG_TURBO_A_MODE
+  "Modalita` turbo A : %s",
+
+  // MSG_TURBO_B_SPEED
+  "Velocita` turbo B : %s",
+
+  // MSG_TURBO_B_MODE
+  "Modalita` turbo B : %s",
+
+  // MSG_TURBO_L_SPEED
+  "Velocita` turbo L : %s",
+
+  // MSG_TURBO_L_MODE
+  "Modalita` turbo L : %s",
+
+  // MSG_TURBO_R_SPEED
+  "Velocita` turbo R : %s",
+
+  // MSG_TURBO_R_MODE
+  "Modalita` turbo R : %s",
+
+  // MSG_TURBO_SPEED_30
+  "30/s",
+
+  // MSG_TURBO_SPEED_15
+  "15/s",
+
+  // MSG_TURBO_SPEED_10
+  "10/s",
+
+  // MSG_TURBO_ON
+  "Turbo %c: attivo",
+
+  // MSG_TURBO_OFF
+  "Turbo %c: spento",
+
   // MSG_CHEAT_MENU_TITLE
   "Opzioni trucchi",
 

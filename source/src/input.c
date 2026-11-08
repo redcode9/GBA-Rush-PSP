@@ -141,8 +141,13 @@ static u32 shortcut_fast_forward_held = 0;
    of them is held, so A+B+START+SELECT still resets the game. */
 static u32 shortcut_block_inputs = 0;
 
+/* Turbo A, B, L and R, in BUTTON_ID_RAPIDFIRE_* order, as stored in the
+   settings: speed INPUT_MODEL_TURBO_*, mode 0 Hold or 1 Toggle. */
+u32 option_turbo_speed[CONFIG_MODEL_TURBO_COUNT];
+u32 option_turbo_mode[CONFIG_MODEL_TURBO_COUNT];
+
 /* The inputs mapped to BUTTON_ID_RAPIDFIRE_* pulse their GBA key, each
-   with its own train; the zeroed speed and mode is 30 per second, held. */
+   with its own train, at the speed and in the mode of that turbo. */
 static InputModelTurbo turbo_inputs[INPUT_MODEL_INPUTS];
 static InputModelTurboState turbo_state;
 /* Emulated frames, counted by input_frame_tick. */
@@ -151,8 +156,8 @@ static u32 turbo_frame = 0;
 static u32 stick_held = 0;
 
 /* Collects the PSP buttons mapped to fast-forward, the inputs that block
-   held chords and the turbo inputs; call after gamepad_config_map
-   changes. */
+   held chords and the turbo inputs; call after gamepad_config_map or the
+   turbo options change. */
 void rebuild_fast_forward_button_mask(void)
 {
   u32 i;
@@ -172,8 +177,13 @@ void rebuild_fast_forward_button_mask(void)
     turbo_inputs[i].key = 0;
     if((gamepad_config_map[i] >= BUTTON_ID_RAPIDFIRE_A) &&
        (gamepad_config_map[i] <= BUTTON_ID_RAPIDFIRE_R))
-      turbo_inputs[i].key = button_id_to_gba_mask[gamepad_config_map[i] -
-       BUTTON_ID_RAPIDFIRE_A + BUTTON_ID_A];
+    {
+      u32 turbo = gamepad_config_map[i] - BUTTON_ID_RAPIDFIRE_A;
+
+      turbo_inputs[i].key = button_id_to_gba_mask[turbo + BUTTON_ID_A];
+      turbo_inputs[i].speed = option_turbo_speed[turbo];
+      turbo_inputs[i].toggle = option_turbo_mode[turbo];
+    }
   }
 }
 
@@ -434,6 +444,7 @@ u32 update_input(void)
   u32 shortcut_actions;
   u32 fast_forward_chord;
   uint32_t hidden_inputs;
+  uint32_t turbo_flips;
   u32 button_id = 0;
   u32 i;
   u32 new_key = 0;
@@ -589,7 +600,15 @@ u32 update_input(void)
   // Turbo follows emulated frames, so the reads of a link wait repeat the
   // same keys
   new_key = input_model_turbo(&turbo_state, inputs & ~hidden_inputs,
-   turbo_frame, turbo_inputs, new_key, NULL);
+   turbo_frame, turbo_inputs, new_key, &turbo_flips);
+
+  // Each press of a Toggle turbo says whether it is now on or off
+  for (i = 0; turbo_flips != 0; i++, turbo_flips >>= 1)
+  {
+    if ((turbo_flips & 1) != 0)
+      toast_show(((turbo_state.active >> i) & 1) != 0 ? MSG_TURBO_ON :
+       MSG_TURBO_OFF, "ABLR"[gamepad_config_map[i] - BUTTON_ID_RAPIDFIRE_A]);
+  }
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
   new_key = input_trace_apply(&diagnostic_trace, diagnostic_trace_frame,

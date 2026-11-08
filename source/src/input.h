@@ -87,6 +87,9 @@ typedef enum
 extern u32 gamepad_config_map[16];
 /* CONFIG_MODEL_SHORTCUT_COUNT chord masks; see input.c. */
 extern u32 option_shortcut[];
+/* Speed and mode of turbo A, B, L and R; see input.c. */
+extern u32 option_turbo_speed[];
+extern u32 option_turbo_mode[];
 
 extern u32 enable_tilt_sensor;
 extern u32 tilt_sensorX;

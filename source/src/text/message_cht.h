@@ -388,6 +388,48 @@
   // MSG_A_PAD_MENU_HELP_2
   FONT_BTN_CIRCLE_GBK ":主選單   " FONT_BTN_CROSS_GBK ":退出",
 
+  // MSG_TURBO_MENU
+  "連發設定",
+
+  // MSG_TURBO_A_SPEED
+  "連發 A 速度 : %s",
+
+  // MSG_TURBO_A_MODE
+  "連發 A 模式 : %s",
+
+  // MSG_TURBO_B_SPEED
+  "連發 B 速度 : %s",
+
+  // MSG_TURBO_B_MODE
+  "連發 B 模式 : %s",
+
+  // MSG_TURBO_L_SPEED
+  "連發 L 速度 : %s",
+
+  // MSG_TURBO_L_MODE
+  "連發 L 模式 : %s",
+
+  // MSG_TURBO_R_SPEED
+  "連發 R 速度 : %s",
+
+  // MSG_TURBO_R_MODE
+  "連發 R 模式 : %s",
+
+  // MSG_TURBO_SPEED_30
+  "30次/秒",
+
+  // MSG_TURBO_SPEED_15
+  "15次/秒",
+
+  // MSG_TURBO_SPEED_10
+  "10次/秒",
+
+  // MSG_TURBO_ON
+  "連發 %c: 開",
+
+  // MSG_TURBO_OFF
+  "連發 %c: 關",
+
   // MSG_CHEAT_MENU_TITLE
   "作弊選項",
 
