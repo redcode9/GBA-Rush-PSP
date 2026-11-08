@@ -29,9 +29,8 @@ def have(command):
         stderr=subprocess.DEVNULL).returncode == 0
 
 
-@unittest.skipUnless(have("unzip") and have("rg")
-                     and (have("sha256sum") or have("shasum")),
-                     "needs sh, unzip, rg and sha256sum or shasum")
+@unittest.skipUnless(have("unzip") and (have("sha256sum") or have("shasum")),
+                     "needs sh, unzip and sha256sum or shasum")
 class CheckPackageTest(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()

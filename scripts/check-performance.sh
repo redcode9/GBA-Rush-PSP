@@ -33,7 +33,7 @@ fi
 
 # The screenshot encoder fills the caller's buffer with memory from the
 # caller's allocator: it opens no file and allocates nothing itself.
-if rg -q 'FILE_|sceIo|\bmalloc\(|\bcalloc\(|\brealloc\(|\bfree\(' \
+if grep -Eq 'FILE_|sceIo|(^|[^[:alnum:]_])(malloc|calloc|realloc|free)\(' \
   source/src/png_write.c
 then
   echo "The PNG writer opens files or allocates memory itself" >&2
