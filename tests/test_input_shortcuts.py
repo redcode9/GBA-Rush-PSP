@@ -1,5 +1,6 @@
 """Check input.c's update_input on the host: the shortcut chords, turbo with
-its settings and toasts, and the stick."""
+its settings and toasts, and the stick; and gui.c's video cycle, which a
+chord runs."""
 
 from pathlib import Path
 import unittest
@@ -78,6 +79,8 @@ void main_fast_forward_input(u32 pressed, u32 held)
 u32 menu(void) { menus++; return 7; }
 u32 action_loadstate(void) { loads++; return 0; }
 u32 action_savestate(void) { saves++; return 0; }
+int video_cycles;
+void menu_cycle_video_mode(void) { video_cycles++; }
 static u32 toast_ids[8];
 static int toast_letters[8];
 static int toasts;
@@ -102,6 +105,7 @@ SCENARIOS = r'''
 #define GBA_A 0x01
 #define GBA_SELECT 0x04
 #define GBA_START 0x08
+#define GBA_LEFT 0x20
 #define GBA_UP 0x40
 #define GBA_DOWN 0x80
 #define GBA_L 0x200
@@ -275,6 +279,24 @@ int main(void)
   stick_y = 128;
   read_pad(0, 16);
   option_enable_analog = 0;
+
+  /* The video cycle has no chord until one is set; SELECT+Left then
+     runs it once per press, and the game never gets that Left. */
+  set_shortcuts(0x0410, 0x0420, 0x0C00, 0, 0);
+  read_pad(SEL, 16);
+  read_pad(SEL | PSP_CTRL_LEFT, 16);
+  assert(video_cycles == 0 && game_has(GBA_LEFT));
+  read_pad(0, 16);
+  option_shortcut[INPUT_CHORD_VIDEO_CYCLE] = 0x0480;
+  rebuild_shortcut_chords();
+  read_pad(SEL, 16);
+  assert(read_pad(SEL | PSP_CTRL_LEFT, 16) == 0 && video_cycles == 1);
+  read_pad(SEL | PSP_CTRL_LEFT, 16);
+  assert(video_cycles == 1 && !game_has(GBA_LEFT));
+  read_pad(SEL, 16);
+  assert(read_pad(SEL | PSP_CTRL_LEFT, 16) == 0 && video_cycles == 2);
+  read_pad(0, 16);
+  assert(saves == 0 && loads == 0 && menus == 0);
 
   /* Two slots with the same chord: the default chords apply instead. */
   set_shortcuts(0x0003, 0x0003, 0, 0, 0);
@@ -569,6 +591,99 @@ int main(void)
 '''
 
 
+# The real menu_cycle_video_mode() with the real toast ring, the SCALED_
+# values of main.h and the English mode names keyed by their MSG ids; the
+# stand-ins record the scale that video_resolution_small and the per-game
+# save saw.
+CYCLE_STUBS = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include "@SRC@/menu_layout.c"
+#include "@SRC@/toast.c"
+#include "@SRC@/message.h"
+typedef uint8_t u8;
+typedef uint32_t u32;
+typedef int32_t s32;
+@SCALED@
+#undef MSG
+static const char *messages[MSG_END] =
+{
+  [MSG_SCN_SCALED_NONE] = "100% GU",
+  [MSG_SCN_SCALED_X15_GU] = "150% GU",
+  [MSG_SCN_SCALED_X15_SW] = "150% SW",
+  [MSG_SCN_SCALED_USER] = "USER GU",
+  [MSG_SCN_SCALED_16X9_GU] = "16:9 GU",
+  [MSG_SCN_SCALED_16X9_SHARP] = "16:9 Sharp",
+  [MSG_SCN_SCALED_16X9_AUTO] = "16:9 Auto"
+};
+#define MSG messages
+u32 option_screen_scale = SCALED_16X9_AUTO;
+static u32 now_us = 5000;
+static u32 presented_scale = 99;
+static u32 saved_scale = 99;
+static int presents, saves;
+u32 sceKernelGetSystemTimeLow(void) { return now_us; }
+void video_resolution_small(void)
+{ presents++; presented_scale = option_screen_scale; }
+static s32 save_game_config_file(void)
+{ saves++; saved_scale = option_screen_scale; return 0; }
+void menu_cycle_video_mode(void);
+'''
+
+# 16:9 Auto, 100%, 150% GU, 16:9 Sharp and around again; the other modes
+# go to 16:9 Auto. Each step presents, names and saves the new mode, and
+# the newest name replaces a toast still queued.
+CYCLE_SCENARIOS = r'''
+static void check_step(u32 scale, const char *name, int step)
+{
+  const Toast *toast = toast_current(now_us);
+
+  assert(option_screen_scale == scale && presented_scale == scale);
+  assert(saved_scale == scale && presents == step && saves == step);
+  assert(toast != NULL && strcmp(toast->text, name) == 0);
+  assert(toast->duration_us == 3000000u && toast->sjis == 0);
+}
+
+int main(void)
+{
+  static const u32 others[] = { SCALED_X15_SW, SCALED_USER, SCALED_16X9_GU };
+  int i;
+
+  toast_push("Turbo A: on", 3000000u, 0, now_us);
+  menu_cycle_video_mode();
+  check_step(SCALED_NONE, "100% GU", 1);
+  menu_cycle_video_mode();
+  check_step(SCALED_X15_GU, "150% GU", 2);
+  menu_cycle_video_mode();
+  check_step(SCALED_16X9_SHARP, "16:9 Sharp", 3);
+  menu_cycle_video_mode();
+  check_step(SCALED_16X9_AUTO, "16:9 Auto", 4);
+  menu_cycle_video_mode();
+  check_step(SCALED_NONE, "100% GU", 5);
+  now_us += 3000000u;
+  assert(toast_current(now_us) == NULL);
+
+  for(i = 0; i < 3; i++)
+  {
+    option_screen_scale = others[i];
+    menu_cycle_video_mode();
+    check_step(SCALED_16X9_AUTO, "16:9 Auto", 6 + i);
+  }
+
+  puts("menu_cycle_video_mode passed");
+  return 0;
+}
+'''
+
+
+def scaled_defines():
+    """main.h's SCALED_ values, so the test uses the real ones."""
+    lines = (ROOT / "source/src/main.h").read_text().splitlines()
+    return "\n".join(l for l in lines if l.startswith("#define SCALED_"))
+
+
 def input_region():
     """input.c from its PSP button masks to the end of update_input."""
     text = (ROOT / "source/src/input.c").read_text()
@@ -584,6 +699,20 @@ class InputShortcutTests(unittest.TestCase):
     def test_update_input_runs_turbo_and_stick_model(self):
         source = STUBS + input_region() + TURBO_SCENARIOS
         build_and_run(source, "input_turbo")
+
+    def test_video_cycle_steps_presents_names_and_saves(self):
+        stubs = CYCLE_STUBS.replace("@SRC@", SRC).replace("@SCALED@",
+                                                           scaled_defines())
+        source = stubs + function("source/src/gui.c",
+                                  "void menu_cycle_video_mode(void)")
+        build_and_run(source + CYCLE_SCENARIOS, "video_cycle")
+        # The game's .cfg holds the scale, which a per-game load restores.
+        self.assertIn("model->screen_scale = option_screen_scale;",
+                      function("source/src/gui.c",
+                               "static void capture_game_config(ConfigModel *model)"))
+        self.assertIn("option_screen_scale = model->screen_scale;",
+                      function("source/src/gui.c",
+                               "static void apply_game_config(const ConfigModel *model)"))
 
     def test_update_gba_ticks_turbo_outside_link_waits(self):
         # main.c cannot be built on the host: the V-blank read ticks the

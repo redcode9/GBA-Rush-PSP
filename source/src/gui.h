@@ -58,6 +58,8 @@ void add_recent_rom(const char *filename);
 
 /* Shows MSG[msg_id], formatted with printf arguments, as a 3 s toast. */
 void toast_show(u32 msg_id, ...);
+/* Steps the screen scale through the Video cycle shortcut's modes. */
+void menu_cycle_video_mode(void);
 
 /* Theme colors — defined in gui.c, accessible everywhere via common.h */
 extern u16 color_bg;

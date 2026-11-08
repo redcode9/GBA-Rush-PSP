@@ -6624,6 +6624,35 @@ s32 save_config_file(void)
   return return_value;
 }
 
+/* The Video cycle shortcut: 16:9 Auto, 100% GU, 150% GU, 16:9 Sharp and
+   back to 16:9 Auto, where any other mode also goes. The new presenter
+   takes the next frame, a toast names the mode and the game's .cfg keeps
+   it; quit() also stores it in tempgba.cfg, as with the Video menu. */
+void menu_cycle_video_mode(void)
+{
+  static const u8 cycle[] = { SCALED_16X9_AUTO, SCALED_NONE, SCALED_X15_GU,
+   SCALED_16X9_SHARP };
+  u32 next = SCALED_16X9_AUTO;
+  u32 i;
+
+  for(i = 0; i + 1 < sizeof(cycle); i++)
+  {
+    if(option_screen_scale == cycle[i])
+      next = cycle[i + 1];
+  }
+
+  option_screen_scale = next;
+  video_resolution_small();
+
+  /* The names hold '%' ("100% GU"), so they are not a format; they follow
+     the SCALED_ order, as in scale_options. The newest name drops what is
+     still queued, so the toast always names the mode on screen. */
+  toast_clear();
+  toast_push(MSG[MSG_SCN_SCALED_NONE + next], 3000000, 0,
+   sceKernelGetSystemTimeLow());
+  save_game_config_file();
+}
+
 
 /*-----------------------------------------------------------------------------
   Load Config Files

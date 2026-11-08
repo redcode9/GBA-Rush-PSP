@@ -558,6 +558,12 @@ u32 update_input(void)
     return 0;
   }
 
+  if ((shortcut_actions & (1u << INPUT_CHORD_VIDEO_CYCLE)) != 0)
+  {
+    menu_cycle_video_mode();
+    return 0;
+  }
+
   for (i = 0; i < 16; i++)
   {
     if ((non_repeat_buttons & button_psp_mask_to_config[i]) != 0)
