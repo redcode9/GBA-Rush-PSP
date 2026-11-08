@@ -168,12 +168,19 @@ static void convert_busy_time(void)
   u32 ticks = mailbox->reader.busy;
   u32 boots = mailbox->reader.boots;
 
-  /* After a clock change, wait until it has finished some work: its clock
-     from before then (the menu was open) would add the gap to a stretch. */
+  /* After a clock change or a skipped stretch, wait until it has finished
+     some work: its clock from before then (the menu was open) would add the
+     gap to a stretch. */
   if(!busy_known && clock == busy_clock)
     return;
-  if(busy_known && boots == busy_boots && clock != busy_clock &&
-     now - busy_time < 5000000u)
+  if(busy_known && (boots != busy_boots || clock == busy_clock ||
+     now - busy_time >= 5000000u))
+  {
+    busy_known = 0;
+    busy_clock = clock;
+    return;
+  }
+  if(busy_known)
   {
     counters.me_busy_us += (u64)(ticks - busy_ticks) *
      (now - busy_time) / (clock - busy_clock);
