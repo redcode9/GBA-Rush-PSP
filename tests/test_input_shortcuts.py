@@ -632,6 +632,25 @@ void video_resolution_small(void) { assert(!"clears the presented frame"); }
 static s32 save_game_config_file(void)
 { saves++; saved_scale = option_screen_scale; return 0; }
 void menu_cycle_video_mode(void);
+/* For load_game_config_file: a game's .cfg holds SCALED_X15_GU when
+   game_cfg is set. */
+#define MAX_PATH 512
+#define FRAMESKIP_AUTO 0
+#define PSP_CLOCK_333 3
+static u32 global_screen_scale = SCALED_16X9_AUTO;
+u32 option_frameskip_type, option_frameskip_value, option_clock_speed;
+static int game_cfg, fast_forward_resets;
+static int build_game_config_path(char *path) { path[0] = '\0'; return 1; }
+static s32 load_game_config_atomic(const char *path)
+{
+  (void)path;
+  if(!game_cfg)
+    return -1;
+  option_screen_scale = SCALED_X15_GU;
+  return 0;
+}
+void main_fast_forward_reset_game_settings(void) { fast_forward_resets++; }
+s32 load_game_config_file(void);
 '''
 
 # 16:9 Auto, 100%, 150% GU, 16:9 Sharp and around again; the other modes
@@ -673,6 +692,25 @@ int main(void)
     menu_cycle_video_mode();
     check_step(SCALED_16X9_AUTO, "16:9 Auto", 6 + i);
   }
+
+  /* Only the game keeps the cycled scale: a game with no .cfg starts at
+     the global one, which only the Video menu sets. */
+  menu_cycle_video_mode();
+  check_step(SCALED_NONE, "100% GU", 9);
+  assert(global_screen_scale == SCALED_16X9_AUTO);
+  assert(load_game_config_file() == -1 && fast_forward_resets == 1);
+  assert(option_screen_scale == SCALED_16X9_AUTO);
+  option_screen_scale = SCALED_16X9_SHARP;
+  menu_screen_scale_changed();
+  menu_cycle_video_mode();
+  check_step(SCALED_16X9_AUTO, "16:9 Auto", 10);
+  assert(global_screen_scale == SCALED_16X9_SHARP);
+  assert(load_game_config_file() == -1);
+  assert(option_screen_scale == SCALED_16X9_SHARP);
+  game_cfg = 1;
+  assert(load_game_config_file() == 0 && fast_forward_resets == 2);
+  assert(option_screen_scale == SCALED_X15_GU);
+  assert(global_screen_scale == SCALED_16X9_SHARP);
 
   puts("menu_cycle_video_mode passed");
   return 0;
@@ -757,9 +795,27 @@ class InputShortcutTests(unittest.TestCase):
     def test_video_cycle_steps_presents_names_and_saves(self):
         stubs = CYCLE_STUBS.replace("@SRC@", SRC).replace("@SCALED@",
                                                            scaled_defines())
-        source = stubs + function("source/src/gui.c",
-                                  "void menu_cycle_video_mode(void)")
+        source = stubs
+        for signature in ("void menu_cycle_video_mode(void)",
+                          "static void menu_screen_scale_changed(void)",
+                          "s32 load_game_config_file(void)"):
+            source += function("source/src/gui.c", signature)
         build_and_run(source + CYCLE_SCENARIOS, "video_cycle")
+        # tempgba.cfg takes the global scale, and the Video menu, its
+        # Default entry and a global load set it.
+        gui = (ROOT / "source/src/gui.c").read_text()
+        capture = function("source/src/gui.c",
+                           "static void capture_global_config(ConfigModel *model)")
+        self.assertIn("model->screen_scale = global_screen_scale;", capture)
+        self.assertNotIn("option_screen_scale", capture)
+        self.assertIn("global_screen_scale = model->screen_scale;",
+                      function("source/src/gui.c",
+                               "static void apply_global_config(const ConfigModel *model)"))
+        self.assertIn("STRING_SELECTION_OPTION(menu_screen_scale_changed, "
+                      "MSG[MSG_OPTION_MENU_0], scale_options", gui)
+        default = gui[gui.index("void menu_graphics_default(void)"):
+                      gui.index("void menu_emulator_default(void)")]
+        self.assertIn("global_screen_scale = SCALED_16X9_AUTO;", default)
         # The game's .cfg holds the scale, which a per-game load restores.
         self.assertIn("model->screen_scale = option_screen_scale;",
                       function("source/src/gui.c",

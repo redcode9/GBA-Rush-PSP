@@ -3345,6 +3345,16 @@ static void menu_fast_forward_changed(void)
   main_fast_forward_apply_settings();
 }
 
+/* The screen scale tempgba.cfg keeps, which a game with no .cfg starts
+   with. The Video menu sets it along with option_screen_scale; the Video
+   cycle shortcut changes only the running game's scale. */
+static u32 global_screen_scale = SCALED_16X9_AUTO;
+
+static void menu_screen_scale_changed(void)
+{
+  global_screen_scale = option_screen_scale;
+}
+
 static void menu_fast_forward_override_changed(void)
 {
   if(option_fast_forward_game_override)
@@ -4351,6 +4361,7 @@ u32 menu(void)
   void menu_graphics_default(void)
   {
     option_screen_scale = SCALED_16X9_AUTO;
+    global_screen_scale = SCALED_16X9_AUTO;
     option_screen_mag = 170;
     option_screen_filter = FILTER_BILINEAR;
     option_video_renderer = VIDEO_RENDERER_NEW;
@@ -5189,7 +5200,7 @@ u32 menu(void)
      Magnification takes 201 values (0-200 %). */
   MenuOptionType graphics_options[] =
   {
-    STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_0], scale_options, &option_screen_scale, SCREEN_SCALE_COUNT, MSG_OPTION_MENU_HELP_0, 0, MSG_OPTION_MENU_0),
+    STRING_SELECTION_OPTION(menu_screen_scale_changed, MSG[MSG_OPTION_MENU_0], scale_options, &option_screen_scale, SCREEN_SCALE_COUNT, MSG_OPTION_MENU_HELP_0, 0, MSG_OPTION_MENU_0),
     NUMERIC_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_1], &option_screen_mag, 201, MSG_OPTION_MENU_HELP_1, 1,MSG_TOOLTIP_MAGNIFICATION, MSG_OPTION_MENU_1),
     STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_2], on_off_options, &option_screen_filter, 2, MSG_OPTION_MENU_HELP_2, 2, MSG_OPTION_MENU_2),
 
@@ -6305,13 +6316,13 @@ static int config_paths(char *primary, char *temporary, char *recovery)
   return result >= 0 && result < MAX_PATH;
 }
 
-/* Global settings <-> ConfigModel. The per-game fast forward override is
-   never stored globally. */
+/* Global settings <-> ConfigModel. The per-game fast forward override and
+   the scale the Video cycle shortcut picks are never stored globally. */
 static void capture_global_config(ConfigModel *model)
 {
   u32 i;
 
-  model->screen_scale = option_screen_scale;
+  model->screen_scale = global_screen_scale;
   model->screen_magnification = option_screen_mag;
   model->screen_filter = option_screen_filter;
   model->show_fps = psp_fps_debug;
@@ -6362,6 +6373,7 @@ static void apply_global_config(const ConfigModel *model)
   int has_menu_button = 0;
 
   option_screen_scale = model->screen_scale;
+  global_screen_scale = model->screen_scale;
   option_screen_mag = model->screen_magnification;
   option_screen_filter = model->screen_filter;
   psp_fps_debug = model->show_fps;
@@ -6626,8 +6638,8 @@ s32 save_config_file(void)
 
 /* The Video cycle shortcut: 16:9 Auto, 100% GU, 150% GU, 16:9 Sharp and
    back to 16:9 Auto, where any other mode also goes. The new presenter
-   takes the next frame, a toast names the mode and the game's .cfg keeps
-   it; quit() also stores it in tempgba.cfg, as with the Video menu. */
+   takes the next frame, a toast names the mode and only the game's .cfg
+   keeps it: global_screen_scale stays as the Video menu left it. */
 void menu_cycle_video_mode(void)
 {
   static const u8 cycle[] = { SCALED_16X9_AUTO, SCALED_NONE, SCALED_X15_GU,
@@ -6668,6 +6680,7 @@ s32 load_game_config_file(void)
   if(load_game_config_atomic(game_config_path) == 0)
     return 0;
 
+  option_screen_scale = global_screen_scale;
   option_frameskip_type = FRAMESKIP_AUTO;
   option_frameskip_value = 9;
   option_clock_speed = PSP_CLOCK_333;
