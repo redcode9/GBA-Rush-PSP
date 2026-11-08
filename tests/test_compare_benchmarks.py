@@ -295,6 +295,19 @@ class BenchmarkComparisonTests(unittest.TestCase):
             p, text, _ = MODULE.verdict(*values)
         self.assertAlmostEqual(p, 0.25, delta=0.01)
         self.assertIn("undecided (p~0.2", text)
+        # Seeded: the same overlapping 11+10 runs always give the same p.
+        baseline = [60.0 + 0.1 * index for index in range(11)]
+        candidate = [60.3 + 0.1 * index for index in range(10)]
+        first = MODULE.verdict(baseline, candidate)
+        self.assertIn("p~", first[1])
+        self.assertGreater(first[0], 10 / (MODULE.SAMPLED_PICKS + 1))
+        self.assertEqual(MODULE.verdict(baseline, candidate), first)
+
+    def test_float_rounding_ties_count(self):
+        # 60.3 + 60.8 + 60.3 ties the candidate's 181.4 but sums a little
+        # lower in floats; ties count, so 9 of the 20 picks do, not 8.
+        p, _, _ = MODULE.verdict([60.0, 60.3, 60.8], [60.3, 60.4, 60.7])
+        self.assertAlmostEqual(p, 9 / 20)
 
     def test_cli_compares_three_runs_per_build(self):
         with tempfile.TemporaryDirectory() as directory:
