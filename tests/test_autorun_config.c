@@ -130,6 +130,9 @@ static void test_values(void)
   refused(HEAD "rom=a.gba\nframes=+5\n", AUTORUN_ERROR_BAD_VALUE, 4);
   refused(HEAD "rom=a.gba\nframes=-5\n", AUTORUN_ERROR_BAD_VALUE, 4);
   refused(HEAD "rom=a.gba\nframes=5x\n", AUTORUN_ERROR_BAD_VALUE, 4);
+  /* The characters just past each end of '0'-'9'. */
+  refused(HEAD "rom=a.gba\nframes=6:\n", AUTORUN_ERROR_BAD_VALUE, 4);
+  refused(HEAD "rom=a.gba\nframes=6/\n", AUTORUN_ERROR_BAD_VALUE, 4);
   refused(HEAD "rom=a.gba\nframes= 5\n", AUTORUN_ERROR_BAD_VALUE, 4);
   refused(HEAD "rom=a.gba\nframes=\n", AUTORUN_ERROR_BAD_VALUE, 4);
   refused(HEAD "rom=a.gba\nframes=9\nexit=2\n", AUTORUN_ERROR_BAD_VALUE, 5);
