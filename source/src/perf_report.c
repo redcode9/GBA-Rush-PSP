@@ -254,6 +254,11 @@ int perf_report_format(char *output, size_t output_size,
    metrics->memory_low_water);
   perf_report_append(&writer, "memory-sampled=%d\n",
    metrics->has_memory_sample != 0);
+  perf_report_append(&writer, "heap-free-low=%u\n", metadata->heap_free_low);
+  perf_report_append(&writer, "heap-largest-low=%u\n",
+   metadata->heap_largest_low);
+  perf_report_append(&writer, "kernel-free-low=%u\n",
+   metadata->kernel_free_low);
   perf_report_append_u64(&writer, "frame-time-samples",
    metrics->frame_time_samples);
   perf_report_append_u64(&writer, "frame-time-total-us",

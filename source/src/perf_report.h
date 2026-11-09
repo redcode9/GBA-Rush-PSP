@@ -26,7 +26,7 @@
 #define PERF_REPORT_VERSION 7U
 
 /* Worst-case report length in bytes, including the terminating NUL. */
-#define PERF_REPORT_CAPACITY 3369U
+#define PERF_REPORT_CAPACITY 3449U
 /* The longest build-id value written; a longer id is cut. */
 #define PERF_REPORT_BUILD_ID_MAX 23U
 
@@ -63,6 +63,14 @@ typedef struct
   uint32_t gamepak_file_size;
   uint32_t gamepak_ram_buffer_size;
   uint32_t gamepak_ram_pages;
+  /* Bytes, the lower of the capture's start and stop measurements
+     (mem_stats.h): the heap's free space and largest block, and the
+     largest kernel block outside the heap (sceKernelMaxFreeMemSize), which
+     the network modules need. memory-low-water stays the lowest
+     sceKernelTotalFreeMemSize. */
+  uint32_t heap_free_low;
+  uint32_t heap_largest_low;
+  uint32_t kernel_free_low;
 } PerfReportMetadata;
 
 /* Returns the report length, or -1 (and an empty string) if it does not

@@ -71,6 +71,9 @@ static void test_golden_report(void)
    "dynarec-writable-high-water=16384\n"
    "memory-low-water=4194304\n"
    "memory-sampled=1\n"
+   "heap-free-low=1048576\n"
+   "heap-largest-low=8388608\n"
+   "kernel-free-low=3145728\n"
    "frame-time-samples=180\n"
    "frame-time-total-us=3000000\n"
    "frame-time-max-us=22000\n"
@@ -150,6 +153,9 @@ static void test_golden_report(void)
   metadata.gamepak_file_size = 67108864;
   metadata.gamepak_ram_buffer_size = 33554432;
   metadata.gamepak_ram_pages = 1024;
+  metadata.heap_free_low = 1048576;
+  metadata.heap_largest_low = 8388608;
+  metadata.kernel_free_low = 3145728;
 
   memset(&metrics, 0, sizeof(metrics));
   metrics.state = PERF_METRICS_STOPPED;
@@ -328,6 +334,9 @@ static void test_worst_case_capacity(void)
   metadata.gamepak_file_size = UINT32_MAX;
   metadata.gamepak_ram_buffer_size = UINT32_MAX;
   metadata.gamepak_ram_pages = UINT32_MAX;
+  metadata.heap_free_low = UINT32_MAX;
+  metadata.heap_largest_low = UINT32_MAX;
+  metadata.kernel_free_low = UINT32_MAX;
 
   memset(&metrics, 0, sizeof(metrics));
   metrics.state = PERF_METRICS_INVALIDATED;

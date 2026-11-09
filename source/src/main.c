@@ -2457,6 +2457,9 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
   metadata.gamepak_file_size = identity.gamepak_file_size;
   metadata.gamepak_ram_buffer_size = identity.gamepak_ram_buffer_size;
   metadata.gamepak_ram_pages = identity.gamepak_ram_pages;
+  metadata.heap_free_low = main_perf_memory.heap_free;
+  metadata.heap_largest_low = main_perf_memory.heap_largest;
+  metadata.kernel_free_low = main_perf_memory.kernel_largest;
   if(identity.gamepak_file_size >= 0xC0U)
   {
     metadata.rom_title = identity.rom_title;
