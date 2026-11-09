@@ -21,8 +21,9 @@ static void test_golden_report(void)
   };
   static const uint8_t game_code[] = { 'B', 'P', 'R', 'E' };
   static const char expected[] =
-   "gba-rush-performance-report=6\n"
+   "gba-rush-performance-report=7\n"
    "version=1.3.0\n"
+   "build-id=0123456789ab-dirty\n"
    "psp-model=1\n"
    "clock-mhz=333\n"
    "psp-fw-version=600\n"
@@ -121,6 +122,7 @@ static void test_golden_report(void)
 
   memset(&metadata, 0, sizeof(metadata));
   metadata.emulator_version = "1.3.0";
+  metadata.build_id = "0123456789ab-dirty";
   metadata.psp_model = 1;
   metadata.clock_mhz = 333;
   metadata.psp_sdk_fw_macro = 600;
@@ -236,6 +238,7 @@ static void test_states_and_empty_identity(void)
   assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
   assert(strstr(report, "state=idle\n") != NULL);
   assert(strstr(report, "version=\n") != NULL);
+  assert(strstr(report, "build-id=\n") != NULL);
   assert(strstr(report, "rom-title=\n") != NULL);
 
   metrics.state = PERF_METRICS_ACTIVE;
@@ -271,20 +274,25 @@ static void test_invalid_arguments_and_small_buffer(void)
 }
 
 /* Every field at its longest fills PERF_REPORT_CAPACITY exactly, so the
-   capacity is proven sufficient and one byte less is refused cleanly. */
+   capacity is proven sufficient and one byte less is refused cleanly.
+   The build id is one character too long and comes out cut. */
 static void test_worst_case_capacity(void)
 {
   static char version[64];
+  static char build_id[PERF_REPORT_BUILD_ID_MAX + 2U];
   static uint8_t rom_title[13];
   static uint8_t game_code[5];
   PerfReportMetadata metadata;
   PerfMetricsSnapshot metrics;
   char report[PERF_REPORT_CAPACITY];
+  const char *line;
   size_t i;
   int length;
 
   for(i = 0; i + 1U < sizeof(version); i++)
     version[i] = 'A';
+  for(i = 0; i + 1U < sizeof(build_id); i++)
+    build_id[i] = 'D';
   for(i = 0; i + 1U < sizeof(rom_title); i++)
     rom_title[i] = 'B';
   for(i = 0; i + 1U < sizeof(game_code); i++)
@@ -292,6 +300,7 @@ static void test_worst_case_capacity(void)
 
   memset(&metadata, 0, sizeof(metadata));
   metadata.emulator_version = version;
+  metadata.build_id = build_id;
   metadata.psp_model = UINT32_MAX;
   metadata.clock_mhz = UINT32_MAX;
   metadata.psp_sdk_fw_macro = UINT32_MAX;
@@ -390,6 +399,11 @@ static void test_worst_case_capacity(void)
 
   length = perf_report_format(report, sizeof(report), &metadata, &metrics);
   assert(length == (int)sizeof(report) - 1);
+  line = strstr(report, "\nbuild-id=");
+  assert(line != NULL);
+  for(i = 0; i < PERF_REPORT_BUILD_ID_MAX; i++)
+    assert(line[10 + i] == 'D');
+  assert(line[10 + PERF_REPORT_BUILD_ID_MAX] == '\n');
 
   memset(report, 'X', sizeof(report));
   assert(perf_report_format(report, sizeof(report) - 1U, &metadata,
