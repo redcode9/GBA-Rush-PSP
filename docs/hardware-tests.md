@@ -134,6 +134,82 @@ Each test has four fields:
   record that run as a `fail` row of the 1.4.2 EBOOT (`5e6e02004b2c`),
   which shows that the test catches the bug.
 
+### save-powerloss-100x
+
+- Models: PSP-1000, second model
+- Minutes: 300
+- Pass: on each model, every start after one of the 100 cuts finds a whole
+  generation: its screen shows SKIP 0 and does not list read_back as FAIL
+  or HUNG, and the first GEN it shows is at least the last GEN seen before
+  the cut, so at most the generation being written at the cut is lost. At
+  the end the `.sav` is 131072 bytes and `tools/decode_test_rom.py` prints
+  read_back PASS for it.
+- Steps: build the save test ROM with `make test-roms`, which needs an ARM
+  compiler (`tests/gba-rom.mk`), and install the candidate with
+  `sh scripts/install-test-build.sh --rom
+  build/test-roms/save-flash128.gba` and its zip. That target has the
+  largest chip, so the longest write, and writes a new generation every
+  second, which GBA Rush PSP writes to the `.sav` with Update backup on
+  AUTO. Before the first start delete `save-flash128.sav` and every file
+  whose name starts with it from the saves folder; that start shows
+  read_back SKIP and does not count. Start the ROM, wait for GEN to change
+  at least once, so the cases of the start are done, then cut the power at
+  a random moment and note the last GEN seen: on the PSP-1000 take the
+  battery out with no charger plugged in, on a PSP Go (the preferred
+  second model) hold POWER, on other models take the battery out. Put the
+  power back, start GBA Rush PSP and the ROM, answer No if "Load
+  auto-savestate?" appears, and note the first GEN shown, the SKIP count
+  and any case listed: each start reads the last generation saved and
+  shows the next one, which it writes. Repeat 100 times on each model. At
+  the end exit GBA Rush PSP from the menu once GEN has changed and run the
+  same install command again: it archives the `.sav` and `logs/` into
+  `artifacts/hardware/`, where you check the size of the `.sav` and decode
+  it with `tools/decode_test_rom.py`. `logs/` keeps only the last 4 runs,
+  and a run cut by the power holds what was logged up to the game's start,
+  its save-load event included.
+
+### save-card-full
+
+- Models: PSP-1000
+- Minutes: 20
+- Pass: with the Memory Stick full, a save in the game opens the menu with
+  "The save file could not be written. The game keeps it and tries again."
+  once, and no later failed try shows it again. Once space is freed, the
+  next try writes the save: afterwards `<rom>.sav.bak` has the size and
+  CRC the `.sav` had before the card was filled, and the `.sav` has the
+  same size and the new save. The decoded log shows save-write events with
+  a result other than ok, then one with result=ok.
+- Steps: a game that saves from its own menu, with Update backup on AUTO,
+  as `docs/saves.md` describes under "How a save is written". Start it,
+  save two savestates from the Savestate menu, save in the game and exit
+  GBA Rush PSP. On a PC note the size and CRC of `<rom>.sav`, then copy a
+  filler file to the Memory Stick that leaves less free space than the
+  size of the `.sav`. Start GBA Rush PSP and the game, answer Yes if "Load
+  auto-savestate?" appears, move a step and save in the game: the menu
+  opens with the warning. Close it, go back to the game and play for half
+  a minute: the game tries again about every 5 seconds, and the warning
+  must not come back. Open the Savestate menu, delete both savestates with
+  Triangle, go back to the game and wait 10 seconds, then exit GBA Rush
+  PSP from the menu: "Save not written: try again?" must not appear. On a
+  PC check `<rom>.sav` and `<rom>.sav.bak`, then delete the filler file.
+
+### save-trade-fr-emerald
+
+- Models: PSP-1000, second model
+- Minutes: 40
+- Pass: the trade completes without a communication error, so the link
+  does not drop while a game saves; both games reload with the Pokemon
+  they received, both `.sav` files are 131072 bytes, and each decoded log
+  shows save-write events with result=ok for the save made during the
+  session and no link-error event.
+- Steps: FireRed on one PSP, with the Network Machine on One Island
+  already repaired in its save, and Emerald on the other, both with
+  Update backup on AUTO. Enter the Cable Club and trade once: both games
+  save while the link session is still open, where a save stalls the link
+  the longest. Leave the Cable Club, save in the game on both PSPs and
+  exit GBA Rush PSP. Start each game again, check that it has the Pokemon
+  it received, and check the size of both `.sav` files.
+
 ## Link
 
 ### link-frlg-both-roles
