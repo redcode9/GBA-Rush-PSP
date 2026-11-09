@@ -61,6 +61,15 @@ typedef struct
   uint8_t rom_title[12];
   uint8_t game_code[4];
   uint32_t rom_revision;
+  /* Local wall time (RTC) the capture started, set when has_capture_time.
+     It only orders runs: the RTC can jump, so never use it for a duration. */
+  uint32_t has_capture_time;
+  uint32_t capture_year;
+  uint32_t capture_month;
+  uint32_t capture_day;
+  uint32_t capture_hour;
+  uint32_t capture_minute;
+  uint32_t capture_second;
 } PerfMonitorIdentity;
 
 void perf_monitor_set_identity(const PerfMonitorIdentity *identity);

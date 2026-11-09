@@ -124,7 +124,8 @@ static void test_golden_report(void)
    "frames-work-over-budget=2\n"
    "frames-over-1-5x-budget=0\n"
    "frames-late=7\n"
-   "link-lockstep-frames=0\n";
+   "link-lockstep-frames=0\n"
+   "capture-local-time=2026-03-07T09:05:01\n";
   PerfReportMetadata metadata;
   PerfMetricsSnapshot metrics;
   char report[PERF_REPORT_CAPACITY];
@@ -160,6 +161,13 @@ static void test_golden_report(void)
   metadata.gamepak_file_size = 67108864;
   metadata.gamepak_ram_buffer_size = 33554432;
   metadata.gamepak_ram_pages = 1024;
+  metadata.has_capture_time = 1;
+  metadata.capture_year = 2026;
+  metadata.capture_month = 3;
+  metadata.capture_day = 7;
+  metadata.capture_hour = 9;
+  metadata.capture_minute = 5;
+  metadata.capture_second = 1;
 
   memset(&metrics, 0, sizeof(metrics));
   metrics.state = PERF_METRICS_STOPPED;
@@ -260,6 +268,11 @@ static void test_states_and_empty_identity(void)
   assert(strstr(report, "version=\n") != NULL);
   assert(strstr(report, "build-id=\n") != NULL);
   assert(strstr(report, "rom-title=\n") != NULL);
+  /* No RTC read: the key stays, with an empty value. */
+  assert(strstr(report, "\ncapture-local-time=\n") != NULL);
+  metadata.capture_year = 2026;
+  assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
+  assert(strstr(report, "\ncapture-local-time=\n") != NULL);
 
   metrics.state = PERF_METRICS_ACTIVE;
   assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
@@ -348,6 +361,13 @@ static void test_worst_case_capacity(void)
   metadata.gamepak_file_size = UINT32_MAX;
   metadata.gamepak_ram_buffer_size = UINT32_MAX;
   metadata.gamepak_ram_pages = UINT32_MAX;
+  metadata.has_capture_time = 1;
+  metadata.capture_year = UINT32_MAX;
+  metadata.capture_month = UINT32_MAX;
+  metadata.capture_day = UINT32_MAX;
+  metadata.capture_hour = UINT32_MAX;
+  metadata.capture_minute = UINT32_MAX;
+  metadata.capture_second = UINT32_MAX;
 
   memset(&metrics, 0, sizeof(metrics));
   metrics.state = PERF_METRICS_INVALIDATED;

@@ -353,6 +353,15 @@ int perf_report_format(char *output, size_t output_size,
   perf_report_append_u64(&writer, "frames-late", metrics->frames_late);
   perf_report_append_u64(&writer, "link-lockstep-frames",
    metrics->link_lockstep_frames);
+  /* Zero-padded so that the values sort as text in time order. */
+  if(metadata->has_capture_time)
+    perf_report_append(&writer,
+     "capture-local-time=%04u-%02u-%02uT%02u:%02u:%02u\n",
+     metadata->capture_year, metadata->capture_month, metadata->capture_day,
+     metadata->capture_hour, metadata->capture_minute,
+     metadata->capture_second);
+  else
+    perf_report_append(&writer, "capture-local-time=\n");
 
   if(writer.failed)
   {

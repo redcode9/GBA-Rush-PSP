@@ -2223,6 +2223,7 @@ int main_perf_start(void)
 {
   FastForwardSettings fast_forward_settings;
   PerfMonitorIdentity identity;
+  ScePspDateTime date = { 0 };
 
   if(!perf_monitor_start(sceKernelGetSystemTimeWide()))
     return 0;
@@ -2254,6 +2255,18 @@ int main_perf_start(void)
     memcpy(identity.game_code, gamepak_header + 0xAC,
      sizeof(identity.game_code));
     identity.rom_revision = gamepak_header[0xBC];
+  }
+  /* Wall time only orders the runs (compare-benchmarks --order-check): the
+     RTC can jump, so it never times anything. */
+  if(sceRtcGetCurrentClockLocalTime(&date) >= 0)
+  {
+    identity.has_capture_time = 1;
+    identity.capture_year = date.year;
+    identity.capture_month = date.month;
+    identity.capture_day = date.day;
+    identity.capture_hour = date.hour;
+    identity.capture_minute = date.minute;
+    identity.capture_second = date.second;
   }
   perf_monitor_set_identity(&identity);
 
@@ -2390,6 +2403,13 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
     metadata.game_code_length = 4;
     metadata.rom_revision = identity.rom_revision;
   }
+  metadata.has_capture_time = identity.has_capture_time;
+  metadata.capture_year = identity.capture_year;
+  metadata.capture_month = identity.capture_month;
+  metadata.capture_day = identity.capture_day;
+  metadata.capture_hour = identity.capture_hour;
+  metadata.capture_minute = identity.capture_minute;
+  metadata.capture_second = identity.capture_second;
   metadata.duration_us = perf_monitor_duration_us();
 
   report_length = perf_report_format(report, sizeof(report), &metadata,
