@@ -22,10 +22,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 MAIN_HEADER = ROOT / "source" / "src" / "main.h"
 CHECK_LAYOUT = ROOT / "scripts" / "check-layout.py"
 # Strings only the diagnostic profile may hold: the autorun control files
-# (diag-autorun.txt and .result), input trace files and their magic, and
+# (diag-autorun.txt and .result), input trace files and their magic,
 # [DIAG] in case code ever prints the diagnostic title tag (the title itself
-# is in PARAM.SFO, which the build-config.stamp check covers).
-FORBIDDEN = (b"diag-autorun", b".gbit", b"GBIT", b"[DIAG]")
+# is in PARAM.SFO, which the build-config.stamp check covers), and the
+# memory system probe's hw-probe.txt and its hw-probe=1 report line.
+FORBIDDEN = (b"diag-autorun", b".gbit", b"GBIT", b"[DIAG]", b"hw-probe")
 
 
 def source_version(path=MAIN_HEADER):
