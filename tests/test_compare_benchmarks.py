@@ -406,12 +406,12 @@ class BenchmarkComparisonTests(unittest.TestCase):
                 tempfile.TemporaryDirectory() as candidate:
             for game in ("BPRE", "BPEE"):
                 write_group(baseline, game, (600, 601, 602))
-                write_group(candidate, game, (605, 606, 604), "1.5")
+                write_group(candidate, game, (605, 606, 604), "1.5.0")
             # A second ROM revision of a title is a group of its own.
             write_group(baseline, "BPRE", (600, 601, 602), revision="1")
-            write_group(candidate, "BPRE", (605, 606, 604), "1.5", "1")
+            write_group(candidate, "BPRE", (605, 606, 604), "1.5.0", "1")
             # A title only the candidate has is listed but decides nothing.
-            write_group(candidate, "AXVE", (600, 600, 600), "1.5")
+            write_group(candidate, "AXVE", (600, 600, 600), "1.5.0")
 
             status, output = run_groups(baseline, candidate)
 
@@ -429,8 +429,8 @@ class BenchmarkComparisonTests(unittest.TestCase):
             for game in ("BPRE", "BPEE"):
                 # The candidate is 5% slower than 1.4.3 but not than 1.5.
                 write_group(model, game, (640, 641, 642))
-                write_group(model, game, (600, 601, 602), "1.5")
-                write_group(candidate, game, (605, 606, 604), "1.6")
+                write_group(model, game, (600, 601, 602), "1.5.0")
+                write_group(candidate, game, (605, 606, 604), "1.6.0")
 
             # The whole model directory pools both releases.
             errors = io.StringIO()
@@ -438,7 +438,7 @@ class BenchmarkComparisonTests(unittest.TestCase):
                 self.assertEqual(run_groups(str(model), candidate)[0], 2)
             self.assertIn("group 1/BPEE-r0 mixes versions", errors.getvalue())
 
-            releases = sorted(path.as_posix() for path in model.glob("*/1.5"))
+            releases = sorted(path.as_posix() for path in model.glob("*/1.5.0"))
             self.assertEqual(len(releases), 2)
             status, output = run_groups(releases, candidate)
 
@@ -506,7 +506,7 @@ class BenchmarkComparisonTests(unittest.TestCase):
                 ("1", "BPRE", "0")]), 3)
 
             write_group(candidate, "BPRE", (605, 606, 604, 607), "1.5.1")
-            write_group(candidate, "BPRE", (605, 606, 604), "1.5")
+            write_group(candidate, "BPRE", (605, 606, 604), "1.5.0")
             with self.assertRaisesRegex(ValueError, "1/BPRE-r0 mixes versions"):
                 MODULE.collect_groups(candidate)
 
