@@ -579,12 +579,14 @@ class BenchmarkComparisonTests(unittest.TestCase):
         candidate = [linked(605), linked(606), linked(604)]
         self.assertTrue(MODULE.compare(baseline, candidate,
                                        allow_link=True)["passed"])
-        # A run without the field, as format 6 writes it, is not in lockstep.
-        for mixed in ([report(frames=605)] + candidate[1:],
-                      [report(), report(), report()]):
-            with self.subTest(mixed=mixed), self.assertRaisesRegex(
+        # A run without the field, as format 6 writes it, is not in lockstep;
+        # either arm out of lockstep fails.
+        unlinked = [report(), report(), report()]
+        for arms in ((baseline, [report(frames=605)] + candidate[1:]),
+                     (baseline, unlinked), (unlinked, candidate)):
+            with self.subTest(arms=arms), self.assertRaisesRegex(
                     ValueError, "lockstep link.*in only some runs"):
-                MODULE.compare(baseline, mixed, allow_link=True)
+                MODULE.compare(*arms, allow_link=True)
 
         key = ("1", "BPRE", "0")
         outcome = MODULE.compare_groups({key: baseline}, {key: candidate},
