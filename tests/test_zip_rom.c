@@ -373,10 +373,10 @@ static void test_read_errors_stop_the_load(void)
   assert(load(len, SMALL_CHUNK, OUT_CAP, 0, &size) == ZIP_ROM_IO_ERROR);
 }
 
-/* A 1.5 MiB ROM whose last 1 MiB is 0xFF: the padding packs into a small
-   part of one read, and must still move the bar once per inflate step. */
+/* A 1.5 MiB ROM: game bytes, then 0xFF to the end. The padding packs into a
+   small part of one read, and must still move the bar once per inflate
+   step. */
 #define PAD_ROM_SIZE (6u * ZIP_ROM_INFLATE_STEP)
-#define PAD_GAME_SIZE (2u * ZIP_ROM_INFLATE_STEP)
 #define PAD_CHUNK (64u * 1024u) /* zip.c's read size */
 #define PAD_DATA_OFFSET 38u     /* the header and "game.gba", no extra */
 
@@ -403,26 +403,25 @@ static void padding_progress(void *ctx, uint32_t done, uint32_t total)
   assert(scan_high_water() <= ZIP_ROM_INFLATE_STEP);
 }
 
-static void test_padding_reports_every_step(void)
+/* Fills pad_rom with game bytes of the fixture's pattern and 0xFF after
+   them, and pad_archive with its entry: method 8, CRC and sizes in the
+   header, nothing after the stream. Returns the archive's length. */
+static uint32_t build_padded(uint32_t game)
 {
   uint32_t seed = 1;
-  uint32_t i, len, size = 0;
+  uint32_t i, len;
   z_stream stream;
-  FakeArchive fake;
-  ZipRomIo io;
 
   for(i = 0; i < PAD_ROM_SIZE; i++)
   {
     seed = seed * 1103515245u + 12345u;
-    if(i >= PAD_GAME_SIZE)
+    if(i >= game)
       pad_rom[i] = 0xFFu;
     else
       pad_rom[i] = (i & 0x1000u) != 0 ? (uint8_t)(seed >> 24) :
        (uint8_t)(i * 7u / 13u);
-    pad_out[i] = (uint8_t)(pad_rom[i] ^ 0x5Au); /* unwritten never matches */
   }
 
-  /* Method 8 with CRC and sizes in the header, nothing after the stream. */
   memset(&stream, 0, sizeof(stream));
   assert(deflateInit2(&stream, 6, Z_DEFLATED, -MAX_WBITS, 8,
    Z_DEFAULT_STRATEGY) == Z_OK);
@@ -442,7 +441,20 @@ static void test_padding_reports_every_step(void)
   put32(pad_archive + 22, PAD_ROM_SIZE);
   put16(pad_archive + 26, 8u);
   memcpy(pad_archive + 30, "game.gba", 8);
+  return len;
+}
 
+/* Loads pad_archive through PAD_CHUNK reads into a pad_out where no byte
+   matches pad_rom until written. */
+static int load_padded(uint32_t len, uint32_t out_cap, uint32_t *size)
+{
+  FakeArchive fake;
+  ZipRomIo io;
+  uint32_t i;
+  int result;
+
+  for(i = 0; i < PAD_ROM_SIZE; i++)
+    pad_out[i] = (uint8_t)(pad_rom[i] ^ 0x5Au);
   memset(&fake, 0, sizeof(fake));
   fake.data = pad_archive;
   fake.len = len;
@@ -455,14 +467,37 @@ static void test_padding_reports_every_step(void)
   io.in_cap = PAD_CHUNK;
   io.total = len;
   high_water = 0;
+  result = zip_rom_load(&io, pad_out, out_cap, size);
+  assert(fake.calls <= (len + PAD_CHUNK - 1) / PAD_CHUNK + 2);
+  return result;
+}
+
+static void expect_padded(uint32_t len)
+{
+  uint32_t size = 0;
+
   /* out_cap is the ROM size, so the stream ends with no room left. */
-  assert(zip_rom_load(&io, pad_out, PAD_ROM_SIZE, &size) == ZIP_ROM_OK);
+  assert(load_padded(len, PAD_ROM_SIZE, &size) == ZIP_ROM_OK);
   assert(size == PAD_ROM_SIZE);
   assert(memcmp(pad_out, pad_rom, PAD_ROM_SIZE) == 0);
-  assert(fake.calls <= (len + PAD_CHUNK - 1) / PAD_CHUNK + 2);
   /* zip.c's closing call to progress draws the rest. */
   assert(scan_high_water() <= ZIP_ROM_INFLATE_STEP);
   assert(high_water == PAD_ROM_SIZE);
+}
+
+static void test_padding_reports_every_step(void)
+{
+  /* With 512 KiB of game the padding starts a few reads in; with 32 KiB
+     the whole archive comes in the first read. */
+  static const uint32_t game[] = { 2u * ZIP_ROM_INFLATE_STEP, 32u * 1024u };
+  uint32_t i, len = 0;
+
+  for(i = 0; i < sizeof(game) / sizeof(game[0]); i++)
+  {
+    len = build_padded(game[i]);
+    expect_padded(len);
+  }
+  assert(len <= PAD_CHUNK);
 }
 
 int main(void)

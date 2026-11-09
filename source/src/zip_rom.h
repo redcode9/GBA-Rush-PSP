@@ -42,9 +42,10 @@ typedef struct
   /* Reads up to len bytes into buf: the count read, 0 at end of file, or a
      negative value on error. */
   int32_t (*read)(void *ctx, uint8_t *buf, uint32_t len);
-  /* Optional (may be NULL): archive bytes read so far, against total; while
-     inflating, the archive bytes inflate has used. Each call's done is
-     larger than the one before. */
+  /* Optional (may be NULL): archive bytes used so far, against total, after
+     each read of a stored ROM and each inflate step; bytes read ahead into
+     in_buf count once they are used. Each call's done is larger than the
+     one before. */
   void (*progress)(void *ctx, uint32_t done, uint32_t total);
   uint8_t *in_buf;   /* caller-owned input buffer of in_cap bytes */
   uint32_t in_cap;
