@@ -144,6 +144,32 @@ Each test has four fields:
   option at least once, then do the same from the file browser without a
   game.
 
+### browser-carousel-500
+
+- Models: PSP-1000
+- Minutes: 40
+- Pass: the ROM browser opens in the last view used, both after leaving the
+  menu and opening it again and after a restart; the savestate and cheat
+  browsers open in the list; switching view writes no file to the Memory
+  Stick; with 500 ROMs the candidate's carousel open is not slower than
+  1.4.3's.
+- Steps: put 500 ROMs in the ROM folder (copying them is not in the
+  minutes). On 1.4.3 open the ROM browser and press SELECT for the
+  carousel; on the candidate, after choosing the carousel once, open the
+  browser straight into it. Open it 3 times on each build, alternating the
+  two, and time each open with a stopwatch or a 60 fps video, from the
+  press that opens the browser to the carousel with every visible cover
+  drawn, leaving out on 1.4.3 the pause between the list and SELECT. Write
+  both sets of 3 times in the row's notes. On the candidate, choose the
+  carousel, leave the menu and open the browser again, then quit from the
+  menu, start the emulator again and open it: it must be in carousel both
+  times. Load a game and open the savestate and cheat browsers: they must
+  start in the list. For the Memory Stick, start the candidate with no
+  game, wait for the browser's clock to change minute, note it and switch
+  view several times, then turn the PSP off with the POWER switch, not with
+  the menu's exit, which writes the config. Over USB, no file outside
+  `logs/` may have a modification time at or after the noted minute.
+
 ## Performance
 
 ### perf-baseline-5
