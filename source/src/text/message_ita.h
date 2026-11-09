@@ -1044,6 +1044,8 @@
   "Stato: registrazione terminata",
   // MSG_DIAGNOSTICS_STATUS_INVALID
   "Stato: interrotta",
+  // MSG_DIAGNOSTICS_VERSION_FORMAT
+  "Versione: %s (%s)",
   // MSG_DIAGNOSTICS_START
   "Avvia registrazione",
   // MSG_DIAGNOSTICS_STOP
