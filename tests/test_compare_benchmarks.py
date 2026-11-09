@@ -20,11 +20,13 @@ SPEC.loader.exec_module(MODULE)
 def report(frame_p95=17000, frames=600, duration=10_000_000,
            underruns=0, skipped=0, clock=333, fast_forward_time=None,
            fast_forward_frames=0, psp_fw_version="600", vsync="0",
-           audio_sample_rate="48000", audio_samples="800"):
+           audio_sample_rate="48000", audio_samples="800", frame_p99=18000,
+           frame_max=20000, work_p95=None, over_budget=None):
     """A parsed report as read_report() returns it.
 
     Passing None for an optional field leaves it out, as in reports from
-    older builds.
+    older builds; work_p95 and over_budget (format 7) are left out unless
+    given.
     """
     result = {
         "state": "stopped",
@@ -43,8 +45,14 @@ def report(frame_p95=17000, frames=600, duration=10_000_000,
         "skipped-frames": str(skipped),
         "audio-underruns": str(underruns),
         "frame-time-p95-us": str(frame_p95),
+        "frame-time-p99-us": str(frame_p99),
+        "frame-time-max-us": str(frame_max),
         "ge-wait-p95-us": "500",
     }
+    if work_p95 is not None:
+        result["work-time-p95-us"] = str(work_p95)
+    if over_budget is not None:
+        result["frames-over-1-5x-budget"] = str(over_budget)
     if psp_fw_version is not None:
         result["psp-fw-version"] = psp_fw_version
     if vsync is not None:
@@ -57,6 +65,15 @@ def report(frame_p95=17000, frames=600, duration=10_000_000,
         result["fast-forward-time-us"] = str(fast_forward_time)
         result["fast-forward-frames"] = str(fast_forward_frames)
     return result
+
+
+def v7(**changed):
+    """A two-minute report with the format 7 work fields: 12 ms work p95
+    and no frame over 1.5x the budget unless changed."""
+    values = {"frames": 7200, "duration": 120_000_000, "work_p95": 12000,
+              "over_budget": 0}
+    values.update(changed)
+    return report(**values)
 
 
 def write_report(path, values):
@@ -124,6 +141,145 @@ class BenchmarkComparisonTests(unittest.TestCase):
         self.assertEqual(failures(frame_p95=17850), [])
         self.assertEqual(failures(frame_p95=17851),
                          ["frame-time p95 regression exceeds 5%"])
+        self.assertEqual(failures(frame_p99=18900), [])
+        self.assertEqual(failures(frame_p99=18901),
+                         ["frame-time p99 regression exceeds 5%"])
+        # The max limit is 1.5x the baseline median of 20000 us.
+        self.assertEqual(failures(frame_max=30000), [])
+        self.assertEqual(failures(frame_max=30001),
+                         ["frame-time max above 1.5x the baseline in 3 runs"])
+
+        def spikes(*maxima):
+            return MODULE.compare(baseline, [report(frame_max=value)
+                                             for value in maxima])["failures"]
+
+        self.assertEqual(spikes(30001, 20000, 20000), [])
+        self.assertEqual(spikes(30001, 30001, 20000),
+                         ["frame-time max above 1.5x the baseline in 2 runs"])
+
+        # Two-minute runs: 2 frames over budget make 1 per minute.
+        def work_failures(baseline_changes, **changed):
+            return MODULE.compare(
+                [v7(**baseline_changes) for _ in range(3)],
+                [v7(**changed) for _ in range(3)])["failures"]
+
+        self.assertEqual(work_failures({}, work_p95=12600), [])
+        self.assertEqual(work_failures({}, work_p95=12601),
+                         ["work-time p95 regression exceeds 5%"])
+        over_budget = ["frames over 1.5x budget per minute increased by "
+                       "more than max(1, 20%)"]
+        # From 0 per minute the allowance is +1 per minute...
+        self.assertEqual(work_failures({}, over_budget=2), [])
+        self.assertEqual(work_failures({}, over_budget=3), over_budget)
+        # ...and from 10 per minute it is +20%, 2 per minute.
+        self.assertEqual(work_failures({"over_budget": 20}, over_budget=24),
+                         [])
+        self.assertEqual(work_failures({"over_budget": 20}, over_budget=25),
+                         over_budget)
+
+    def test_p99_regression_fails_on_v6(self):
+        baseline = [report(), report(frame_p99=18100), report(frame_p99=17900)]
+        candidate = [report(frame_p99=19000) for _ in range(3)]
+
+        result = MODULE.compare(baseline, candidate)
+
+        self.assertEqual(result["failures"],
+                         ["frame-time p99 regression exceeds 5%"])
+        output = MODULE.format_result(result)
+        self.assertIn("\nframe-p99=19000 us (+5.56%)\n", output)
+        self.assertIn("\nreason=frame-time p99 regression exceeds 5%", output)
+
+    def test_single_max_spike_ignored(self):
+        baseline = [report(), report(), report()]
+        candidate = [report(frame_max=60000), report(), report()]
+
+        result = MODULE.compare(baseline, candidate)
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["frame_max_spikes"], 1)
+        self.assertIn("\nframe-max=20000 us (runs above 30000 us: 1)\n",
+                      MODULE.format_result(result))
+
+    def test_repeated_max_spike_fails(self):
+        # A spike in one baseline run does not raise the median reference.
+        baseline = [report(), report(frame_max=50000), report()]
+        candidate = [report(frame_max=60000), report(frame_max=31000),
+                     report()]
+
+        result = MODULE.compare(baseline, candidate)
+
+        self.assertEqual(result["failures"],
+                         ["frame-time max above 1.5x the baseline in 2 runs"])
+        self.assertEqual(result["frame_max_limit"], 30000)
+
+    def test_work_p95_regression_fails(self):
+        baseline = [v7(), v7(work_p95=12100), v7(work_p95=11900)]
+        candidate = [v7(work_p95=13000) for _ in range(3)]
+
+        result = MODULE.compare(baseline, candidate)
+
+        self.assertEqual(result["failures"],
+                         ["work-time p95 regression exceeds 5%"])
+        self.assertIn("\nwork-p95=13000 us (+8.33%)\n",
+                      MODULE.format_result(result))
+
+    def test_over_budget_per_minute_increase_fails(self):
+        baseline = [v7(over_budget=20) for _ in range(3)]
+        candidate = [v7(over_budget=30) for _ in range(3)]
+
+        result = MODULE.compare(baseline, candidate)
+
+        self.assertEqual(result["failures"], [
+            "frames over 1.5x budget per minute increased by more than "
+            "max(1, 20%)"])
+        self.assertIn("\nover-budget=15.0/min (baseline 10.0/min)\n",
+                      MODULE.format_result(result))
+
+    def test_v6_reports_skip_v7_gates_with_note(self):
+        note = ("\nnote=work-p95 and over-budget gates skipped: a run lacks "
+                "the format 7 fields\n")
+        worse = [v7(work_p95=20000, over_budget=200) for _ in range(3)]
+        # An early format 7 report without the fields counts as format 6.
+        early = report(frames=7200, duration=120_000_000)
+        early["gba-rush-performance-report"] = "7"
+        for baseline, candidate in (
+                ([report() for _ in range(3)], [report() for _ in range(3)]),
+                ([v7(), v7(), early], worse),
+                ([v7(), v7(), v7(over_budget=None)], worse),
+                ([v7(), v7(), v7()], [v7(work_p95=None)] + worse[1:])):
+            with self.subTest(baseline=baseline, candidate=candidate):
+                result = MODULE.compare(baseline, candidate)
+                self.assertTrue(result["passed"])
+                self.assertIsNone(result["work_p95"])
+                output = MODULE.format_result(result)
+                self.assertIn(note, output)
+                self.assertNotIn("work-p95=", output)
+
+    def test_synthetic_stutter_fails_with_p95_and_p99_unchanged(self):
+        # One 40 ms frame every 3 s: 40 frames over 1.5x budget in each
+        # two-minute run, far too few to move p95 or p99.
+        baseline = [v7() for _ in range(3)]
+        stutter = [v7(frame_max=40000, over_budget=40) for _ in range(3)]
+
+        result = MODULE.compare(baseline, stutter)
+
+        self.assertEqual(result["failures"], [
+            "frame-time max above 1.5x the baseline in 3 runs",
+            "frames over 1.5x budget per minute increased by more than "
+            "max(1, 20%)"])
+        self.assertEqual(result["frame_p95_change"], 0)
+        self.assertEqual(result["frame_p99_change"], 0)
+        self.assertEqual(result["over_budget"], 20)
+        # Format 6 reports still catch it on the max alone.
+        for run in baseline + stutter:
+            for field in MODULE.WORK_FIELDS:
+                del run[field]
+        self.assertEqual(MODULE.compare(baseline, stutter)["failures"],
+                         ["frame-time max above 1.5x the baseline in 3 runs"])
+        # The same stutter in one run only passes.
+        self.assertTrue(MODULE.compare(
+            [v7() for _ in range(3)],
+            [v7(frame_max=40000, over_budget=40), v7(), v7()])["passed"])
 
     def test_mismatched_configuration_is_rejected(self):
         baseline = [report(), report(), report()]
@@ -644,6 +800,10 @@ class BenchmarkComparisonTests(unittest.TestCase):
             ["PASS",
              "throughput=60.50 fps (+0.83%)",
              "frame-p95=17000 us (+0.00%)",
+             "frame-p99=18000 us (+0.00%)",
+             "frame-max=20000 us (runs above 30000 us: 0)",
+             "note=work-p95 and over-budget gates skipped: a run lacks the "
+             "format 7 fields",
              "ge-p95=500 us (+0.00%)",
              "audio-underruns=0",
              "skipped-frames=0.00%"],

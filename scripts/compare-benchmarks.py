@@ -308,12 +308,28 @@ def validate_link_runs(baseline, candidate, allow_link):
         raise ValueError(LINK_REASON)
 
 
+def over_budget_per_minute(report):
+    """Frames over 1.5x the frame budget per minute of wall time."""
+    # compare() runs throughput() first, which rejects a duration <= 0.
+    return (number(report, "frames-over-1-5x-budget") * 60_000_000.0 /
+            number(report, "duration-us"))
+
+
+# The format 7 fields of the work-time and over-budget gates. Early format 7
+# reports lack them, so their presence decides, not the format number.
+WORK_FIELDS = ("work-time-p95-us", "frames-over-1-5x-budget")
+
+
 def compare(baseline, candidate, allow_link=False):
     """Compare run medians and list every regression past its threshold.
 
-    Fails on throughput down more than 2%, frame-time p95 up more than 5%,
-    more audio underruns, a skipped-frame ratio up more than 0.5 points, or
-    fast-forward speed down more than 2% (when all runs measured it).
+    Fails on throughput down more than 2%, frame-time p95 or p99 up more
+    than 5%, a frame-time max above 1.5x the baseline median in at least
+    2 candidate runs (one spike passes), more audio underruns, a
+    skipped-frame ratio up more than 0.5 points, or fast-forward speed
+    down more than 2% (when all runs measured it). When every run has the
+    WORK_FIELDS, it also fails on work-time p95 up more than 5% or on
+    frames over 1.5x budget per minute up more than max(1, 20%).
     """
     if min(len(baseline), len(candidate)) < MIN_RUNS:
         raise ValueError(f"at least {MIN_RUNS} reports per build are needed")
@@ -328,6 +344,20 @@ def compare(baseline, candidate, allow_link=False):
     candidate_frame_p95 = median_metric(
         candidate, lambda report: number(report, "frame-time-p95-us")
     )
+    baseline_frame_p99 = median_metric(
+        baseline, lambda report: number(report, "frame-time-p99-us")
+    )
+    candidate_frame_p99 = median_metric(
+        candidate, lambda report: number(report, "frame-time-p99-us")
+    )
+    frame_max_limit = 1.5 * median_metric(
+        baseline, lambda report: number(report, "frame-time-max-us")
+    )
+    candidate_frame_max = median_metric(
+        candidate, lambda report: number(report, "frame-time-max-us")
+    )
+    frame_max_spikes = sum(number(report, "frame-time-max-us") >
+                           frame_max_limit for report in candidate)
     baseline_ge_p95 = median_metric(
         baseline, lambda report: number(report, "ge-wait-p95-us")
     )
@@ -363,6 +393,11 @@ def compare(baseline, candidate, allow_link=False):
         failures.append("throughput regression exceeds 2%")
     if rise_exceeds(baseline_frame_p95, candidate_frame_p95, 5):
         failures.append("frame-time p95 regression exceeds 5%")
+    if rise_exceeds(baseline_frame_p99, candidate_frame_p99, 5):
+        failures.append("frame-time p99 regression exceeds 5%")
+    if frame_max_spikes >= 2:
+        failures.append("frame-time max above 1.5x the baseline in "
+                        f"{frame_max_spikes} runs")
     if candidate_underruns > baseline_underruns:
         failures.append("audio underruns increased")
     if candidate_skips > baseline_skips + 0.005:
@@ -374,6 +409,27 @@ def compare(baseline, candidate, allow_link=False):
         )
         if fast_forward_change < -2.0:
             failures.append("fast-forward speed regression exceeds 2%")
+    candidate_work_p95 = work_p95_change = None
+    baseline_over_budget = candidate_over_budget = None
+    if all(field in report for field in WORK_FIELDS
+           for report in baseline + candidate):
+        baseline_work_p95 = median_metric(
+            baseline, lambda report: number(report, "work-time-p95-us")
+        )
+        candidate_work_p95 = median_metric(
+            candidate, lambda report: number(report, "work-time-p95-us")
+        )
+        work_p95_change = percent_change(baseline_work_p95,
+                                         candidate_work_p95)
+        if rise_exceeds(baseline_work_p95, candidate_work_p95, 5):
+            failures.append("work-time p95 regression exceeds 5%")
+        baseline_over_budget = median_metric(baseline, over_budget_per_minute)
+        candidate_over_budget = median_metric(candidate,
+                                              over_budget_per_minute)
+        if candidate_over_budget > baseline_over_budget + max(
+                1.0, baseline_over_budget / 5.0):
+            failures.append("frames over 1.5x budget per minute increased "
+                            "by more than max(1, 20%)")
 
     metrics = []
     for name, metric, _ in RUN_METRICS:
@@ -392,6 +448,16 @@ def compare(baseline, candidate, allow_link=False):
         "throughput_change": throughput_change,
         "frame_p95": candidate_frame_p95,
         "frame_p95_change": frame_p95_change,
+        "frame_p99": candidate_frame_p99,
+        "frame_p99_change": percent_change(baseline_frame_p99,
+                                           candidate_frame_p99),
+        "frame_max": candidate_frame_max,
+        "frame_max_limit": frame_max_limit,
+        "frame_max_spikes": frame_max_spikes,
+        "work_p95": candidate_work_p95,
+        "work_p95_change": work_p95_change,
+        "over_budget": candidate_over_budget,
+        "over_budget_baseline": baseline_over_budget,
         "ge_p95": candidate_ge_p95,
         "ge_p95_change": ge_p95_change,
         "audio_underruns": candidate_underruns,
@@ -413,6 +479,27 @@ def format_result(result):
         f"frame-p95={result['frame_p95']:.0f} us "
         f"({result['frame_p95_change']:+.2f}%)"
     )
+    lines.append(
+        f"frame-p99={result['frame_p99']:.0f} us "
+        f"({result['frame_p99_change']:+.2f}%)"
+    )
+    lines.append(
+        f"frame-max={result['frame_max']:.0f} us "
+        f"(runs above {result['frame_max_limit']:.0f} us: "
+        f"{result['frame_max_spikes']})"
+    )
+    if result["work_p95"] is None:
+        lines.append("note=work-p95 and over-budget gates skipped: a run "
+                     "lacks the format 7 fields")
+    else:
+        lines.append(
+            f"work-p95={result['work_p95']:.0f} us "
+            f"({result['work_p95_change']:+.2f}%)"
+        )
+        lines.append(
+            f"over-budget={result['over_budget']:.1f}/min "
+            f"(baseline {result['over_budget_baseline']:.1f}/min)"
+        )
     lines.append(
         f"ge-p95={result['ge_p95']:.0f} us "
         f"({result['ge_p95_change']:+.2f}%)"
@@ -535,8 +622,10 @@ def main(argv=None):
     unreadable input or fewer than MIN_RUNS reports per build."""
     parser = argparse.ArgumentParser(
         description=f"Compare PSP benchmark reports, at least {MIN_RUNS} "
-        "per build (the counts may differ), on medians and on an exact "
-        "one-sided permutation test."
+        "per build (the counts may differ), on medians, on frame-time max "
+        "spikes repeated in 2 or more runs and on an exact one-sided "
+        "permutation test. The work-time p95 and over-budget-per-minute "
+        "gates need the format 7 fields in every run."
     )
     parser.add_argument("--baseline", nargs="+", metavar="REPORT")
     parser.add_argument("--candidate", nargs="+", metavar="REPORT")
