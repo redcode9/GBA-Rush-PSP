@@ -164,13 +164,18 @@ Each test has four fields:
 
 - Models: PSP-1000, second model
 - Minutes: 20
-- Pass: on each model the decoded log of every path shows a cpu-clock record
-  without MISMATCH, and after the Exact renderer has drawn, an me-clock
-  record without MISMATCH.
+- Pass: on each model every cpu-clock record of the session reads
+  `requested=333MHz` without MISMATCH, so the CPU read back 333 MHz and the
+  bus 166 MHz, within 1 MHz, and there is at least one for each path of the
+  steps: start, menu, ROM load, resume, link start and link end. After the
+  Exact minute there is an me-clock record that reads `requested=333MHz`
+  with a measured `me=` clock of 332 to 334 MHz and no MISMATCH;
+  `me=unmeasured` does not count.
 - Steps: with the clock option at 333, play, open and close the menu, go to
   the file browser, load another ROM, suspend and resume, host or join a link
-  session and end it, then play a minute with the Exact renderer. Decode
-  `logs/` with `tools/decode_runtime_log.py`. Repeat on the other model.
+  session and end it, then play a minute with the Exact renderer and exit
+  the emulator, which writes the last records to `logs/`. Decode `logs/`
+  with `tools/decode_runtime_log.py`. Repeat on the other model.
 
 ## Core
 
