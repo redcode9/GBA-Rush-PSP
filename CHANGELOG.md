@@ -75,7 +75,9 @@
   ZIP file is damaged or incomplete. An encrypted `.zip`, or one whose first
   file is not a `.gba`, `.agb` or `.bin` ROM, gets the same message.
 - A `.zip` written in streaming mode, with its sizes after the data, now
-  loads.
+  loads when its ROM is compressed (deflated). An uncompressed (stored) ROM
+  in such a `.zip` gets the damaged or incomplete message, like an encrypted
+  one.
 - A `.gba` file that cannot be read in full now fails to load instead of
   starting the game from part of the ROM.
 
