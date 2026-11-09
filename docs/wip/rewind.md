@@ -3,7 +3,7 @@
 - **Branch:** `features/state-of-the-art-development/wip/rewind`, staccato da `features/state-of-the-art-development/main`.
 - **Ticket:** GIO-1, GIO-2 (13 storie, circa 41,5 gg).
 - **File principali:** passo dell'ospite e hook di frame in `source/src/main.c`, rewind (nuovo).
-- **Dipende da:** `wip/savestate-v2`, `wip/perf-method`, `wip/replay-oracle`, `wip/platform`.
+- **Dipende da:** `wip/savestate-v2`, `wip/perf-method`, `wip/replay-oracle`, `wip/platform` (tabella dell'epica); le storie qui sotto aspettano anche `wip/ui-foundation`, `wip/link-diagnostics`, `wip/suspend-resume`, `wip/game-compat` e `wip/classic-core`.
 - **Regole:** quelle di «Branch di lavoro dell'epica» in `docs/BACKLOG.md`. Il testo completo di ogni ticket (cosa, file, test, accettazione, licenza) è in `docs/BACKLOG.md` sotto il suo ID. Si spunta un ticket quando la sua accettazione è verificata; questo file si cancella nella PR che chiude il branch.
 - **Legenda:** «subito» = nessuna dipendenza, si può iniziare oggi; «aspetta» = dipendenze in altri branch, si parte quando sono in main.
 
