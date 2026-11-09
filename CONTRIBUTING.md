@@ -191,7 +191,9 @@ what larger sets are for. Above 10+10 runs the p is estimated from 20000
 seeded random picks and printed as `p~`. The side tested is the one the
 medians point to (the means when the medians tie), chosen after the runs, so
 a stated difference is only an indication until its side is declared before
-the runs. Never claim a difference that the verdict does not state.
+the runs with `--claim`, following the measurement protocol in
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md#measurement-protocol). Never claim
+a difference that the verdict does not state.
 
 Record the PSP model, firmware, storage, ROM hash and actual ROM-cache capacity.
 Test menu transitions, suspend, resume and exit when changing threads, audio,

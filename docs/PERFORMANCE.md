@@ -18,6 +18,40 @@ python3 scripts/compare-benchmarks.py \
 FAIL thresholds and the verdict printed for each metric. Never claim a
 difference that the verdict does not state.
 
+## Measurement protocol
+
+A speed claim needs runs captured this way:
+
+1. Write the claim down before the first run, in the form `--claim` takes:
+   for example `throughput>=+3` (the candidate at least 3% faster) or
+   `frame-p95<=-2`.
+2. Set the CPU clock to 333 MHz and keep the link off. Use the same BIOS for
+   both builds (`gba_bios.bin` or the built-in one) and write down which;
+   the reports do not record it yet. Write down the battery level, or that
+   the PSP ran on its charger.
+3. Start every run from the same save state slot.
+4. Make one warm-up run first and discard its report.
+5. Alternate the builds (ABAB or ABBA), never all the runs of one build and
+   then the other's. Each report records the PSP's local time when its
+   capture started as `capture-local-time`; do not change the PSP's clock
+   during a session, since that time only orders the runs.
+
+Then compare with the order check and the claim:
+
+```sh
+python3 scripts/compare-benchmarks.py --order-check --strict \
+  --claim 'throughput>=+3' \
+  --baseline old-1.txt old-2.txt old-3.txt \
+  --candidate new-1.txt new-2.txt new-3.txt
+```
+
+`order=` reports `alternated`, `blocked` (one build has three or more runs
+in a row) or `unknown` (a report lacks `capture-local-time` or two share
+it); with `--strict` anything but `alternated` fails. `claim=` says
+`holds` only when the candidate runs, divided by 1 + percent/100, still
+differ on the claimed side at p <= 0.05; otherwise it says
+`not demonstrated`. The claim never changes PASS or FAIL.
+
 ## Baselines per model
 
 The reports of each published release are archived under
