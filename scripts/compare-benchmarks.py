@@ -491,7 +491,9 @@ def format_result(result):
     )
     lines.append(
         f"frame-max={result['frame_max']:.0f} us "
-        f"(runs above {result['frame_max_limit']:.0f} us: "
+        # Floored, not rounded: a whole-us max is above the limit exactly
+        # when it is above the limit's floor.
+        f"(runs above {math.floor(result['frame_max_limit'])} us: "
         f"{result['frame_max_spikes']})"
     )
     if result["work_p95"] is None:

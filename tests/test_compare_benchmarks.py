@@ -218,6 +218,13 @@ class BenchmarkComparisonTests(unittest.TestCase):
         self.assertEqual(result["failures"],
                          ["frame-time max above 1.5x the baseline in 2 runs"])
         self.assertEqual(result["frame_max_limit"], 30000)
+        # A limit of 30001.5 us prints as its floor, which the 30002 us
+        # runs are above.
+        result = MODULE.compare([report(frame_max=20001) for _ in range(3)],
+                                [report(frame_max=30002),
+                                 report(frame_max=30002), report()])
+        self.assertIn("\nframe-max=30002 us (runs above 30001 us: 2)\n",
+                      MODULE.format_result(result))
 
     def test_work_p95_regression_fails(self):
         baseline = [v7(), v7(work_p95=12100), v7(work_p95=11900)]
