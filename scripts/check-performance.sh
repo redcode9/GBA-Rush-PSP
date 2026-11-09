@@ -30,6 +30,27 @@ then
   exit 1
 fi
 
+# The PSP's C library prints no 64-bit integers: perf_report_append_u64
+# writes them out. git grep --untracked leaves out ignored build output.
+if git grep -qIE --untracked '%ll|PRIu64|PRId64' -- source/src
+then
+  echo "A 64-bit printf format is used in source/src" >&2
+  exit 1
+fi
+
+# Work time per frame reuses the clock reads already taken, so capturing
+# costs no more than before. A story that adds a read on purpose updates
+# these counts.
+main_reads=$(grep -c sceKernelGetSystemTimeLow source/src/main.c || true)
+video_reads=$(grep -c sceKernelGetSystemTimeLow source/src/psp_video.c || true)
+if [ "$main_reads" != 5 ] || [ "$video_reads" != 9 ]
+then
+  echo "sceKernelGetSystemTimeLow lines changed (main.c $main_reads," \
+    "psp_video.c $video_reads; pinned at 5 and 9 in" \
+    "scripts/check-performance.sh)" >&2
+  exit 1
+fi
+
 # Benchmarks compare at least MIN_RUNS runs per build with matching settings.
 if ! grep -Eq 'MIN_RUNS = 3' scripts/compare-benchmarks.py || \
    ! grep -Eq 'MATCH_FIELDS' scripts/compare-benchmarks.py
