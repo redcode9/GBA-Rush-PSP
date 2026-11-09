@@ -1,11 +1,14 @@
 """Tests for tools/decode_runtime_log.py on hand-built .gbrlog files.
 
 The fixtures pack the header and records the way runtime_log.c does; the
-payload CRC goes at byte 56 and the header CRC (over bytes 0-59) at 60.
+payload CRC and the header CRC (over the header bytes before it) are the
+last 8 header bytes: 56 and 60 up to version 5, 88 and 92 from version 6.
 """
 
 import binascii
+import contextlib
 import importlib.util
+import io
 import re
 import struct
 import unittest
@@ -86,6 +89,22 @@ def fixture_v3() -> bytes:
     return bytes(header) + payload
 
 
+def fixture_v6(build_id: bytes = b"0123456789ab-dirty") -> bytes:
+    """Version 6 log: the 96-byte header with a build id, one record."""
+    record = struct.pack(
+        ">QIIHBBIII", 110, 7, 1, 18, 1, 0, 2, 1, 0
+    )
+    header = bytearray(96)
+    struct.pack_into(
+        ">4sHHHHHHIIIIIIQQ", header, 0, b"GBRL", 6, 96, 32, 0, 1, 0,
+        0x12345678, 2, 1, 0x06060110, 333, 0x42505249, 100, 120,
+    )
+    header[56:56 + len(build_id)] = build_id
+    struct.pack_into(">I", header, 88, binascii.crc32(record) & 0xFFFFFFFF)
+    struct.pack_into(">I", header, 92, binascii.crc32(header[:92]) & 0xFFFFFFFF)
+    return bytes(header) + record
+
+
 class RuntimeLogDecoderTests(unittest.TestCase):
     def test_decodes_header_and_record(self):
         snapshot = decoder.parse_snapshot(fixture())
@@ -123,6 +142,37 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         struct.pack_into(">I", data, 60, binascii.crc32(data[:60]) & 0xFFFFFFFF)
         snapshot = decoder.parse_snapshot(data)
         self.assertEqual(snapshot["version"], 5)
+        self.assertEqual(snapshot["build_id"], "")
+        self.assertEqual(len(snapshot["records"]), 4)
+
+    def test_decodes_version_six_header_and_build_id(self):
+        snapshot = decoder.parse_snapshot(fixture_v6())
+
+        self.assertEqual(snapshot["version"], 6)
+        self.assertEqual(snapshot["build_id"], "0123456789ab-dirty")
+        self.assertEqual(snapshot["session_id"], 0x12345678)
+        self.assertEqual(snapshot["records"][0]["event"], "log-flush")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            decoder.print_snapshot(snapshot)
+        self.assertIn(" build=0123456789ab-dirty\n", output.getvalue())
+
+    def test_build_id_may_fill_its_field(self):
+        snapshot = decoder.parse_snapshot(fixture_v6(b"B" * 24))
+
+        self.assertEqual(snapshot["build_id"], "B" * 24)
+
+    def test_rejects_version_six_with_the_old_header_size(self):
+        data = bytearray(fixture_v6())
+        struct.pack_into(">H", data, 6, 64)
+        with self.assertRaisesRegex(ValueError, "incompatible record layout"):
+            decoder.parse_snapshot(bytes(data))
+
+    def test_rejects_corrupt_version_six_header(self):
+        data = bytearray(fixture_v6())
+        data[60] ^= 1
+        with self.assertRaisesRegex(ValueError, "header checksum"):
+            decoder.parse_snapshot(bytes(data))
 
     def test_describes_link_session_events(self):
         state = decoder.describe({
