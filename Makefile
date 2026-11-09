@@ -67,6 +67,7 @@ HOST_TEST_RUNTIME_LOG = $(HOST_BUILD_DIR)/test_runtime_log
 HOST_TEST_ARM_CORE = $(HOST_BUILD_DIR)/test_arm_core
 HOST_TEST_CORE_PROFILE = $(HOST_BUILD_DIR)/test_core_profile
 HOST_TEST_HW_PROBE = $(HOST_BUILD_DIR)/test_hw_probe
+HOST_TEST_MEM_STATS = $(HOST_BUILD_DIR)/test_mem_stats
 # arm_mips.c is only compiled here (its tests need Unicorn: make check-core).
 ARM_CORE_SOURCES = source/src/arm_decode.c source/src/arm_interp.c \
  source/src/arm_mips.c
@@ -98,7 +99,7 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
  $(HOST_TEST_EVENT_QUEUE) \
  $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_CORE_PROFILE) \
- $(HOST_TEST_HW_PROBE) \
+ $(HOST_TEST_HW_PROBE) $(HOST_TEST_MEM_STATS) \
  $(HOST_TEST_ROM_RUN) \
  $(HOST_TEST_GBA_PPU) $(HOST_TEST_GBA_PPU_LOG) $(HOST_TEST_UPSTREAM_AW_RELAY)
 # The same C tests built with HOST_SANITIZE_FLAGS for make test-sanitize.
@@ -130,6 +131,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_arm_core \
  $(HOST_SANITIZE_DIR)/test_core_profile \
  $(HOST_SANITIZE_DIR)/test_hw_probe \
+ $(HOST_SANITIZE_DIR)/test_mem_stats \
  $(HOST_SANITIZE_DIR)/test_rom_run \
  $(HOST_SANITIZE_DIR)/test_gba_ppu \
  $(HOST_SANITIZE_DIR)/test_gba_ppu_log \
@@ -174,6 +176,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_ARM_CORE)
 	$(HOST_TEST_CORE_PROFILE)
 	$(HOST_TEST_HW_PROBE)
+	$(HOST_TEST_MEM_STATS)
 	$(HOST_TEST_ROM_RUN)
 	$(HOST_TEST_GBA_PPU)
 	$(HOST_TEST_GBA_PPU_LOG)
@@ -230,6 +233,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_arm_core
 	$(HOST_SANITIZE_DIR)/test_core_profile
 	$(HOST_SANITIZE_DIR)/test_hw_probe
+	$(HOST_SANITIZE_DIR)/test_mem_stats
 	$(HOST_SANITIZE_DIR)/test_rom_run
 	$(HOST_SANITIZE_DIR)/test_gba_ppu
 	$(HOST_SANITIZE_DIR)/test_gba_ppu_log
@@ -459,6 +463,12 @@ $(HOST_TEST_HW_PROBE): tests/test_hw_probe.c source/src/hw_probe.c \
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_hw_probe.c source/src/hw_probe.c -o $@
+
+$(HOST_TEST_MEM_STATS): tests/test_mem_stats.c source/src/mem_stats.c \
+ source/src/mem_stats.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_mem_stats.c source/src/mem_stats.c -o $@
 
 $(HOST_ROM_RUN): $(ROM_RUN_DEPS)
 	mkdir -p $(HOST_BUILD_DIR)
@@ -716,6 +726,12 @@ $(HOST_SANITIZE_DIR)/test_hw_probe: tests/test_hw_probe.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_hw_probe.c source/src/hw_probe.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_mem_stats: tests/test_mem_stats.c \
+ source/src/mem_stats.c source/src/mem_stats.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_mem_stats.c source/src/mem_stats.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_rom_run: tests/test_rom_run.c $(ROM_RUN_DEPS)
 	mkdir -p $(HOST_SANITIZE_DIR)
