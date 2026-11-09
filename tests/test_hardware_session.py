@@ -164,6 +164,14 @@ class SessionSheetTest(unittest.TestCase):
         self.assertIn("Steps: trade once.", sheet)
         self.assertIn("Pass: the save loads.", sheet)
 
+    def test_a_path_is_not_split_at_its_hyphens(self):
+        text = CATALOG.replace(
+            "- Steps: trade once.",
+            "- Steps: trade once and keep the save "
+            "build/test-roms/save-eeprom8k_wfirst.gba.")
+        sheet = MODULE.session_sheet(["link-b"], MODULE.parse_catalog(text))
+        self.assertIn("build/test-roms/save-eeprom8k_wfirst.gba.", sheet)
+
     def test_an_unknown_test_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "unknown test id 'nope'"):
             MODULE.session_sheet(["nope"], MODULE.parse_catalog(CATALOG))
