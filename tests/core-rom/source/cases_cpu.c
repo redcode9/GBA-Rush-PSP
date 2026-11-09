@@ -15,11 +15,12 @@
  * the ARM Architecture Reference Manual, the ARM7TDMI data sheet and
  * GBATEK. Where the manual says UNPREDICTABLE (Rn = PC with a shift by
  * register, ARM state at an address with bit 1 set) the cases expect what
- * the ARM7TDMI does. mGBA 0.10.3 passes every case but cpu_irq_unmask,
- * because it looks for a pending IRQ 7 cycles after the write that
- * unmasks it instead of at the end of that instruction: the MSR cases
- * enter one instruction late and the one-instruction window is missed.
- * The expected values stay the data sheet's. To confirm on hardware.
+ * the ARM7TDMI does. mGBA 0.10.3 passes every case but cpu_irq_unmask
+ * (cpu_irq_cycles is newer and has not run there yet): it looks for a
+ * pending IRQ 7 cycles after the write that unmasks it instead of at the
+ * end of that instruction, so the MSR cases enter one instruction late
+ * and the one-instruction window is missed. The expected values stay the
+ * data sheet's. To confirm on hardware.
  *
  * The IRQ cases get their IRQ from a one-word DMA3 copy that requests one
  * when it ends: it is pending as soon as the copy is done, with no timer
@@ -65,6 +66,13 @@
  * it, after the latency of the IRQ line (a few cycles; GBA Rush counts
  * 9). Detail: the instructions that ran first in bits 0-7, the handler's
  * calls in bits 16-23.
+ *
+ * cpu_irq_cycles, the same control counted in cycles: timer 0 at F/1
+ * overflows during a run of one-cycle instructions in IWRAM with IRQs
+ * unmasked, and irq_cycles_handler reads the counter with its first
+ * instruction. The count from the overflow to that read is IRQ_CYCLES:
+ * the 9 cycles of IRQ latency plus the path through the BIOS dispatcher.
+ * Detail: the count in bits 0-15, the handler's calls in bits 16-23.
  *
  * cpu_mode_pairs: every ordered pair of IRQ, SVC, ABT, UND and System,
  * switched by MSR CPSR_c immediate and register and, from a mode with an
@@ -113,6 +121,7 @@
 extern const u8 mode_bits[MODES];
 extern volatile u32 irq_log[9];
 void cpu_irq_handler(void);
+void irq_cycles_handler(void);
 
 void shift_run(u32 variant, u32 *io);
 u32 pc12_rn(void);
@@ -121,6 +130,7 @@ u32 msr_flags_xs(void);
 u32 msr_flags_user(void);
 void irq_after_msr(u32 which, u32 *out);
 u32 irq_unmask(u32 which);
+__attribute__((long_call)) u32 irq_cycles(void);
 void mode_switch(const u32 *bank, u32 *out, u32 from, u32 to_method);
 void fiq_irq(const u32 *bank, u32 *out);
 void fiq_svc_fiq(const u32 *bank, u32 *out);
@@ -280,6 +290,38 @@ static int cpu_irq_latency(u32 *detail)
   ran = (irq_log[2] - 4 - first) >> 2;
   *detail = (ran > 0xFF ? 0xFF : ran) | (irq_log[0] & 0xFF) << 16;
   return irq_log[0] == 1 && ran < 16 ? RESULT_PASS : RESULT_FAIL;
+}
+
+/* cpu_irq_cycles counts the whole cycles from timer 0's overflow (counter
+   reloaded and IF set at once: GBATEK gives no delay) to the handler's
+   read, which sees the counter as it was when its cycle began, as
+   cases_timer.c counts from GBATEK (a load right after a timer start
+   reads 1). Every access takes 1 cycle: BIOS, IWRAM (the code, the IRQ
+   stack, 03FFFFFCh), I/O. The latency is 9 cycles, the figure GBA Rush
+   takes from the ARM7TDMI data sheet (irq_ticks in source/src/main.c):
+   9 cycles after the IRQ rises the CPU starts the b at 18h, the
+   exception entry included. Then
+   GBATEK's ARM timings, the same for the official BIOS dispatcher and
+   the built-in one (source/bios/source/core.s):
+     latency, up to the b at 18h                          9
+     b to the dispatcher                 2S+1N            3
+     stmdb sp!, {r0-r3, r12, lr}         5S+2N            7
+     mov r0, #04000000h                  1S               1
+     add lr, pc, #0 (or mov lr, pc)      1S               1
+     ldr pc, [r0, #-4]                   2S+2N+1I         5
+     the handler's ldr, opcode fetch     1S               1
+                                                         27 */
+#define IRQ_CYCLES 27
+
+static int cpu_irq_cycles(u32 *detail)
+{
+  u32 count;
+
+  IRQ_VECTOR = irq_cycles_handler;
+  /* The reload is 0 after the overflow, so the count is the counter. */
+  count = irq_cycles() & 0xFFFF;
+  *detail = count | (irq_log[0] & 0xFF) << 16;
+  return irq_log[0] == 1 && count == IRQ_CYCLES ? RESULT_PASS : RESULT_FAIL;
 }
 
 /* ---- cpu_mode_pairs, cpu_fiq_bank ---------------------------------------- */
@@ -478,6 +520,7 @@ const TestCase cases_cpu[] =
   { "cpu_irq_after_msr", cpu_irq_after_msr },
   { "cpu_irq_unmask", cpu_irq_unmask },
   { "cpu_irq_latency", cpu_irq_latency },
+  { "cpu_irq_cycles", cpu_irq_cycles },
   { "cpu_mode_pairs", cpu_mode_pairs },
   { "cpu_fiq_bank", cpu_fiq_bank },
   { "cpu_user_bank", cpu_user_bank },

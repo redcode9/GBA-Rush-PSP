@@ -20,8 +20,8 @@ set -eu
 # fail there: it only has to boot, run them and leave its signature.
 #
 # Cases rom_run fails for known reasons, which are not ROM bugs:
-# - cpu_irq_latency: the New core takes an IRQ at the end of a block,
-#   not within a few cycles of the line rising.
+# - cpu_irq_latency, cpu_irq_cycles: the New core takes an IRQ at the
+#   end of a block, not within a few cycles of the line rising.
 # - timer_start_delay: rom_run times an access after its instruction's
 #   other cycles (a load's internal cycle comes first), so right after a
 #   start it reads 3 where mGBA reads 0.
@@ -41,6 +41,7 @@ core_allow=$core_allow,prefetch_swp,vram_arm_cpu,vram_arm_dma
 core_allow=$core_allow,vram_thumb_cpu,vram_thumb_dma,stm_vram
 bus_allow=sram_ldrh_odd,sram_ldrsh_odd,sram_ldr_1,sram_ldr_2,sram_ldr_3
 bus_allow=$bus_allow,flash_ldrh_device
+core_allow=$core_allow,cpu_irq_cycles
 
 PYTHON=${PYTHON:-python3}
 MAKE=${MAKE:-make}

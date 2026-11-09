@@ -987,3 +987,80 @@ dma_word:
 	.space	4
 mode_saved:
 	.space	11 * 4
+
+@ ---- cpu_irq_cycles -------------------------------------------------------
+
+@ Timed code, in work RAM like cases_timer_asm.s: there the cycle counts
+@ do not depend on the GamePak prefetch buffer.
+	.section .iwram, "ax", %progbits
+	.arm
+	.align	2
+
+@ u32 irq_cycles(void): with IRQs unmasked and IE = timer 0, starts timer
+@ 0 at F/1 from FFF0h, so it overflows and raises its IRQ 16 cycles after
+@ the start, and sets the reload to 0 before then, so the count after the
+@ overflow does not wrap. The overflow and the IRQ come in a run of
+@ one-cycle instructions, so the entry always ends one of them. Waits a
+@ bounded time for irq_cycles_handler, the IRQ vector, then turns timer 0
+@ and the IRQs off on every path. Returns what the handler read: TM0CNT_L,
+@ and TM0CNT_H in bits 16-31; 0 if it did not run.
+	.global irq_cycles
+	.type irq_cycles, %function
+irq_cycles:
+	irq_off				@ r0 = 04000200h
+	ldr	r2, =irq_log
+	mov	r1, #0
+	str	r1, [r2]		@ handler calls
+	str	r1, [r2, #8]		@ what it read
+	sub	r2, r0, #0x100		@ TM0CNT_L
+	strh	r1, [r2, #2]		@ timer 0 stopped: the start reloads
+	mvn	r3, #0x0F
+	strh	r3, [r2]		@ reload FFF0h
+	mov	r3, #8
+	strh	r3, [r0]		@ IE = timer 0
+	mov	r3, #1
+	strh	r3, [r0, #8]		@ IME = 1
+	mov	r3, #0xC0
+	strh	r3, [r2, #2]		@ start, IRQ, F/1
+	@ A few cycles pass before the new reload, should the start take a
+	@ cycle or two to load FFF0h.
+	.rept	4
+	mov	r2, r2
+	.endr
+	strh	r1, [r2]		@ reload 0, 10 cycles before the overflow
+	.rept	48
+	mov	r2, r2
+	.endr
+	wait_irq
+	mov	r0, #0x04000000
+	add	r0, r0, #0x100
+	mov	r1, #0
+	strh	r1, [r0, #2]		@ timer 0 stopped
+	irq_off
+	ldr	r1, =irq_log
+	ldr	r0, [r1, #8]
+	bx	lr
+
+@ The IRQ vector of cpu_irq_cycles; ARM, as the BIOS calls it with
+@ ldr pc. Its first instruction reads timer 0 through r0 = 04000000h,
+@ which the BIOS dispatcher leaves (GBATEK; source/bios/source/core.s).
+@ Then it stops timer 0, acknowledges its IRQ and logs the read in
+@ irq_log[2] and the call in irq_log[0]. Uses only r0-r3, which the BIOS
+@ saved.
+	.global irq_cycles_handler
+	.type irq_cycles_handler, %function
+irq_cycles_handler:
+	ldr	r1, [r0, #0x100]	@ TM0CNT_L, TM0CNT_H in bits 16-31
+	add	r2, r0, #0x100
+	mov	r3, #0
+	strh	r3, [r2, #2]		@ timer 0 stopped
+	add	r2, r0, #0x200
+	mov	r3, #8
+	strh	r3, [r2, #2]		@ IF: timer 0 acknowledged
+	ldr	r2, =irq_log
+	str	r1, [r2, #8]
+	ldr	r3, [r2]
+	add	r3, r3, #1
+	str	r3, [r2]
+	bx	lr
+	.pool
