@@ -1088,6 +1088,14 @@
   "Rapporto salvato",
   // MSG_DIAGNOSTICS_REPORT_FAILED
   "Impossibile salvare il rapporto",
+  // MSG_DIAGNOSTICS_NAME_PROBE
+  "Registra la codifica dei nomi",
+  // MSG_DIAGNOSTICS_HELP_NAME_PROBE
+  "Registra i nomi di name-probe accanto all'EBOOT",
+  // MSG_DIAGNOSTICS_NAME_PROBE_DONE
+  "%lu nomi su %lu registrati",
+  // MSG_DIAGNOSTICS_NAME_PROBE_FAILED
+  "Sonda non riuscita: cartella name-probe o log",
   // MSG_UNAVAILABLE_CURRENT_STATE
   "Non disponibile nello stato attuale",
 

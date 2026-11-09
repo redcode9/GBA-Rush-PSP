@@ -32,6 +32,7 @@
 #include "menu_layout.h"
 #include "menu_model.h"
 #include "psp_adhoc.h"
+#include "runtime_log_psp.h"
 
 extern u32 option_swap_confirm_buttons;
 
@@ -3466,6 +3467,119 @@ static void menu_diagnostics_write_report(void)
      "%s: %.56s", MSG[MSG_DIAGNOSTICS_REPORT_SAVED], filename);
 }
 
+/* File-name encoding probe: the private FAT record the firmware fills for
+   each entry, 4-byte aligned and large enough for both layouts (a size
+   word, 16-byte alias and 1024-byte long name is the larger). */
+static u32 name_probe_fat_record[1044 / 4];
+/* Records one probe may use: the main ring holds 128, and the end record
+   and the flush record must not push its first ones out. */
+#define NAME_PROBE_RECORD_BUDGET 112u
+
+/* sceIoOpen result for <directory>/<name>, where name is a field of
+   name_size bytes that may lack its NUL: the fd, closed at once, or the PSP
+   error; RUNTIME_LOG_NAME_PROBE_NOT_TRIED for an empty name or a path that
+   does not fit. */
+static int32_t menu_name_probe_open(const char *directory, const void *name,
+ size_t name_size)
+{
+  char path[MAX_PATH];
+  const char *end = memchr(name, '\0', name_size);
+  size_t name_length = end != NULL ?
+   (size_t)(end - (const char *)name) : name_size;
+  SceUID file;
+  int length;
+
+  if(name_length == 0)
+    return RUNTIME_LOG_NAME_PROBE_NOT_TRIED;
+  length = snprintf(path, sizeof(path), "%s/%.*s", directory,
+   (int)name_length, (const char *)name);
+  if(length < 0 || (size_t)length >= sizeof(path))
+    return RUNTIME_LOG_NAME_PROBE_NOT_TRIED;
+  file = sceIoOpen(path, PSP_O_RDONLY, 0);
+  if(file >= 0)
+    sceIoClose(file);
+  return (int32_t)file;
+}
+
+/* Logs every entry of <main_path>name-probe to the runtime log (see
+   RUNTIME_LOG_EVENT_NAME_PROBE in runtime_log.h) and writes the log at once,
+   so the raw names each firmware returns can be compared. Entries past the
+   record budget are counted but not logged. */
+static void menu_diagnostics_name_probe(void)
+{
+  SceIoDirent entry;
+  char directory[MAX_PATH];
+  const u8 *fat_record = (const u8 *)name_probe_fat_record;
+  int32_t opened[3];
+  size_t budget = NAME_PROBE_RECORD_BUDGET;
+  size_t written;
+  SceUID dir;
+  u32 seen = 0;
+  u32 logged = 0;
+  int saved;
+  int length;
+
+  length = snprintf(directory, sizeof(directory), "%sname-probe",
+   main_path);
+  if(length < 0 || (size_t)length >= sizeof(directory))
+  {
+    snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+     "%s", MSG[MSG_DIAGNOSTICS_NAME_PROBE_FAILED]);
+    return;
+  }
+
+  scePowerLock(0);
+  dir = sceIoDopen(directory);
+  if(dir >= 0)
+  {
+    while(1)
+    {
+      memset(&entry, 0, sizeof(entry));
+      memset(name_probe_fat_record, 0, sizeof(name_probe_fat_record));
+      name_probe_fat_record[0] = sizeof(name_probe_fat_record);
+      entry.d_private = name_probe_fat_record;
+      if(sceIoDread(dir, &entry) <= 0)
+        break;
+      if(strcmp(entry.d_name, ".") == 0 || strcmp(entry.d_name, "..") == 0)
+        continue;
+
+      if(budget != 0)
+      {
+        /* d_name, then the 8.3 alias of each layout. */
+        opened[0] = menu_name_probe_open(directory, entry.d_name,
+         sizeof(entry.d_name));
+        opened[1] = menu_name_probe_open(directory, fat_record, 13);
+        opened[2] = menu_name_probe_open(directory, fat_record + 4, 16);
+        written = runtime_log_psp_name_probe_entry(seen,
+         (const uint8_t *)entry.d_name, sizeof(entry.d_name), fat_record,
+         sizeof(name_probe_fat_record), opened, budget);
+        if(written == 0)
+          budget = 0;
+        else
+        {
+          budget -= written;
+          logged++;
+        }
+      }
+      seen++;
+    }
+    sceIoDclose(dir);
+  }
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_NAME_PROBE, 0,
+   RUNTIME_LOG_NAME_PROBE_FLAGS(RUNTIME_LOG_NAME_PROBE_HEADER,
+    RUNTIME_LOG_NAME_PROBE_END), (u32)dir, seen, logged);
+  saved = runtime_log_psp_flush(RUNTIME_LOG_FLUSH_MENU);
+  scePowerUnlock(0);
+
+  if(dir < 0 || !saved)
+    snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+     "%s", MSG[MSG_DIAGNOSTICS_NAME_PROBE_FAILED]);
+  else
+    snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+     MSG[MSG_DIAGNOSTICS_NAME_PROBE_DONE], (unsigned long)logged,
+     (unsigned long)seen);
+}
+
 static void menu_quit_action(void)
 {
     if(menu_game_available())
@@ -5474,6 +5588,7 @@ u32 menu(void)
     ACTION_OPTION(menu_diagnostics_start, NULL, MSG[MSG_DIAGNOSTICS_START], MSG_DIAGNOSTICS_HELP_START, 3, MSG_DIAGNOSTICS_START),
     ACTION_OPTION(menu_diagnostics_stop, NULL, MSG[MSG_DIAGNOSTICS_STOP], MSG_DIAGNOSTICS_HELP_STOP, 4, MSG_DIAGNOSTICS_STOP),
     ACTION_OPTION(menu_diagnostics_write_report, NULL, MSG[MSG_DIAGNOSTICS_SAVE_REPORT], MSG_DIAGNOSTICS_HELP_SAVE_REPORT, 5, MSG_DIAGNOSTICS_SAVE_REPORT),
+    ACTION_OPTION(menu_diagnostics_name_probe, NULL, MSG[MSG_DIAGNOSTICS_NAME_PROBE], MSG_DIAGNOSTICS_HELP_NAME_PROBE, 6, MSG_DIAGNOSTICS_NAME_PROBE),
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
     ACTION_OPTION(NULL, NULL, diagnostics_trace_status_line, MSG_DIAGNOSTICS_HELP_STATUS, 8, 0),
     ACTION_OPTION(menu_trace_start, NULL, MSG[MSG_TRACE_START], MSG_TRACE_HELP_START, 10, MSG_TRACE_START),
@@ -5482,7 +5597,7 @@ u32 menu(void)
     ACTION_OPTION(menu_trace_cancel, NULL, MSG[MSG_TRACE_CANCEL], MSG_TRACE_HELP_CANCEL, 13, MSG_TRACE_CANCEL),
     ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 15, MSG_OPTION_MENU_11)
 #else
-    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 7, MSG_OPTION_MENU_11)
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 8, MSG_OPTION_MENU_11)
 #endif
   };
 
@@ -5497,15 +5612,15 @@ u32 menu(void)
   diagnostics_options[4].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[5].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
-  diagnostics_options[6].behavior_flags = MENU_OPTION_PASSIVE_ROW;
-  diagnostics_options[7].available_function = menu_trace_start_available;
-  diagnostics_options[8].available_function = menu_trace_finish_available;
-  diagnostics_options[9].available_function = menu_trace_replay_available;
-  diagnostics_options[10].available_function = menu_trace_cancel_available;
-  diagnostics_options[7].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[7].behavior_flags = MENU_OPTION_PASSIVE_ROW;
+  diagnostics_options[8].available_function = menu_trace_start_available;
+  diagnostics_options[9].available_function = menu_trace_finish_available;
+  diagnostics_options[10].available_function = menu_trace_replay_available;
+  diagnostics_options[11].available_function = menu_trace_cancel_available;
   diagnostics_options[8].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[9].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[10].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[11].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
 #endif
 
   MAKE_MENU(diagnostics, NULL, NULL);
