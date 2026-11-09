@@ -59,6 +59,9 @@ void add_recent_rom(const char *filename);
 /* Replays a .gbit from the current frame: 2 when it also loaded its .svs,
    1 without one, 0 on a failure, -1 when the .svs is missing or another. */
 int gui_trace_replay_file(const char *gbit_path);
+/* Writes the replay's state hashes (.gbsh text) to path and frees them;
+   0 when there are none or the write failed. */
+int gui_trace_write_hashes(const char *path);
 #endif
 
 /* Theme colors — defined in gui.c, accessible everywhere via common.h */

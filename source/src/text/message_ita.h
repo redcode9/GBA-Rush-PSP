@@ -1109,6 +1109,10 @@
   "Stato della traccia mancante o diverso",
   // MSG_TRACE_RTC_WARNING
   "Gioco con RTC: gli hash possono divergere",
+  // MSG_TRACE_NO_HASHES
+  "Riproduzione senza hash dello stato",
+  // MSG_TRACE_HASHES_SAVED
+  "Hash dello stato salvati",
 
   // MSG_FF_PROFILE_LABEL
   "Profilo avanti veloce: %s",

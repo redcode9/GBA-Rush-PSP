@@ -3667,7 +3667,9 @@ int gui_trace_replay_file(const char *gbit_path)
     SceIoStat stat;
     SceUID file;
     u8 *encoded;
+    StateHashRecord *records = NULL;
     size_t size;
+    u32 capacity;
     u32 crc = 0;
     u32 state_size = 0;
     int success = 0;
@@ -3690,6 +3692,16 @@ int gui_trace_replay_file(const char *gbit_path)
     free(encoded);
     if(!success)
         return 0;
+
+    /* One state hash record per replayed frame. Plain malloc: without
+       the memory the replay runs on, without hashes. */
+    capacity = input_diagnostic_trace_duration() + 1;
+    if(capacity != 0 && capacity <= SIZE_MAX / sizeof(StateHashRecord))
+        records = (StateHashRecord *)malloc(capacity *
+         sizeof(StateHashRecord));
+    if(records != NULL)
+        input_diagnostic_trace_hashes_attach(records, capacity);
+
     if(input_diagnostic_trace_version() < 2)
         return 1;
 
@@ -3709,9 +3721,9 @@ int gui_trace_replay_file(const char *gbit_path)
     return 2;
 }
 
-/* Start replaying this ROM's saved trace (gui_trace_replay_file()); on a
-   game that uses the RTC the status row warns that the replay may
-   diverge. */
+/* Start replaying this ROM's saved trace (gui_trace_replay_file()); the
+   status row says when the state hashes did not fit in memory, or on a
+   game that uses the RTC warns that the replay may diverge. */
 static void menu_trace_replay(void)
 {
     char path[MAX_PATH];
@@ -3725,6 +3737,9 @@ static void menu_trace_replay(void)
     if(result <= 0)
         snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
          "%s", MSG[result < 0 ? MSG_TRACE_STATE_MISMATCH : MSG_TRACE_FAILED]);
+    else if(input_diagnostic_trace_hashes() == NULL)
+        snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+         "%s", MSG[MSG_TRACE_NO_HASHES]);
     else if(memory_rtc_active())
         snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
          "%s", MSG[MSG_TRACE_RTC_WARNING]);
@@ -3737,6 +3752,58 @@ static void menu_trace_cancel(void)
     input_diagnostic_trace_cancel();
     menu_trace_discard_pending();
     diagnostics_report_line[0] = '\0';
+}
+
+/* Writes the replay's state hashes to path as GBSH text (state_hash.h),
+   then frees them, written or not. 0 when there are none or on an error.
+   shortcut: whole text in one buffer (~90 B/frame), fails cleanly on very
+   long traces; add chunked export if a corpus trace needs it. */
+int gui_trace_write_hashes(const char *path)
+{
+    const StateHashLog *hashes = input_diagnostic_trace_hashes();
+    char *text = NULL;
+    size_t size = 0;
+    size_t written = 0;
+    SceUID file;
+    int success = 0;
+
+    if(hashes != NULL)
+        size = state_hash_text_size(hashes, NULL, 0);
+    if(size != 0)
+        text = (char *)malloc(size);
+    if(text != NULL &&
+       state_hash_export(hashes, NULL, 0, text, size, &written))
+    {
+        FILE_OPEN(file, path, WRITE);
+        if(FILE_CHECK_VALID(file))
+        {
+            success = menu_trace_write_all(file, (const u8 *)text, written);
+            FILE_CLOSE(file);
+            if(!success)
+                sceIoRemove(path);
+        }
+    }
+    free(text);
+    input_diagnostic_trace_hashes_free();
+    return success;
+}
+
+/* At menu entry: a finished replay's hashes go to the .gbsh beside this
+   ROM's trace, and the status row says whether they were saved. */
+static void menu_trace_save_hashes(void)
+{
+    char path[MAX_PATH];
+    int saved;
+
+    if(input_diagnostic_trace_state() != INPUT_TRACE_FINISHED ||
+       input_diagnostic_trace_hashes() == NULL)
+        return;
+    saved = menu_trace_path(path, sizeof(path), 1, ".gbsh") &&
+     gui_trace_write_hashes(path);
+    /* No path: drop them too, so the failure shows once. */
+    input_diagnostic_trace_hashes_free();
+    snprintf(diagnostics_report_line, sizeof(diagnostics_report_line), "%s",
+     MSG[saved ? MSG_TRACE_HASHES_SAVED : MSG_TRACE_FAILED]);
 }
 #endif
 
@@ -4005,6 +4072,9 @@ u32 menu(void)
 
   main_fast_forward_stop();
   fast_forward_profile_option = NULL;
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  menu_trace_save_hashes();
+#endif
 
   init_choice_arrays();
   u32 i;

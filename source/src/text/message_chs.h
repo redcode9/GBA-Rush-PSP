@@ -1111,6 +1111,10 @@
   "Trace savestate missing or changed",
   // MSG_TRACE_RTC_WARNING
   "RTC game: replay hashes may diverge",
+  // MSG_TRACE_NO_HASHES
+  "Replay runs without state hashes",
+  // MSG_TRACE_HASHES_SAVED
+  "Replay state hashes saved",
 
   // MSG_FF_PROFILE_LABEL
   "Fast-forward profile : %s",
