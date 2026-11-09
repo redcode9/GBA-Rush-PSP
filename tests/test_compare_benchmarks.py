@@ -171,6 +171,15 @@ class BenchmarkComparisonTests(unittest.TestCase):
 
         self.assertTrue(MODULE.compare(baseline, candidate)["passed"])
 
+    def test_format_seven_reports_of_different_builds_compare(self):
+        # build-id differs between the two builds by design: it is no match field.
+        baseline = [{"gba-rush-performance-report": "7", "build-id": "0123456789ab",
+                     **report()} for _ in range(3)]
+        candidate = [{"gba-rush-performance-report": "7", "build-id": "ba9876543210",
+                      **report(frames=605)} for _ in range(3)]
+
+        self.assertTrue(MODULE.compare(baseline, candidate)["passed"])
+
     def test_versions_before_1_4_3_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             for version in ("1.4.2", "0.9.9", "1.3.10"):
