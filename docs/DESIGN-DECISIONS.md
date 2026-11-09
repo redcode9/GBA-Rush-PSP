@@ -45,3 +45,14 @@ that it is right: either one only starts a hardware run.
 | Real GBA | core-rom from this repository | not run yet | |
 | New core interpreter, `tests/core/rom_run.c` (`make test-roms`) | — | PASS | 3 (it models reading 1, so this checks only the case's code) |
 | mGBA 0.10.3, `tests/core/mgba_run.c` (`make test-roms`) | — | hangs | none (it models reading 2, so this shows only that the case cannot pass on open bus) |
+| PPSSPP headless, Classic core | published 1.4.2 (`EBOOT.PBP` sha256 `ff991715…`), official BIOS | ends the emulator | none: bad jump, the runtime log ends the session there; the next boot marks the case HUNG |
+| PSP-1000, Classic core | test build ff93a23 (`EBOOT.PBP` `a496fe9c6d5c`), official BIOS | ends the emulator | none: back to the XMB; the next boot marks the case HUNG |
+| PSP-1000 and PSP-2000, New core | test build ff93a23 (`a496fe9c6d5c`), official BIOS | RUNNING | none: the PSP stopped responding while the core slid through unmapped memory; the next row's build fixes that |
+| PSP-1000 and PSP-2000, New core | test build e7ff176 (`58cd5edb20bb`), built-in BIOS | HUNG on boot 2 | none: most likely the slide wraps from FFFFFFFFh to 0 and the BIOS restarts the cartridge |
+
+The PPSSPP and PSP rows record what GBA Rush does with the jump, not what
+a GBA does, so they settle nothing: the Classic core ends the emulator,
+as the case expects of 1.4.2, and the New core slides through unmapped
+memory. The PSP sessions are in `docs/HARDWARE-RESULTS.md` (Test
+ROM session and Built-in BIOS session). Still to run: the published 1.4.2
+on a PSP-1000, and a real GBA.
