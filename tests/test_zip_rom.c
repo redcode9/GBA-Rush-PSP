@@ -219,6 +219,9 @@ static void test_valid_entries_load_byte_for_byte(void)
   len = build(0, 0, "Game.GBA", ROM_SIZE, DESC_NONE);
   expect_rom(len, SMALL_CHUNK, OUT_CAP);
   expect_rom(len, LARGE_CHUNK, ROM_SIZE);
+
+  len = build(0, 8, "Game v1.1.gba", ROM_SIZE, DESC_NONE);
+  expect_rom(len, SMALL_CHUNK, OUT_CAP);
 }
 
 /* Flag bit 3: CRC and sizes come from the descriptor after the stream. */
