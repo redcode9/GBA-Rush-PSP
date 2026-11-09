@@ -45,8 +45,9 @@ make artifact-smoke VERSION=1.4.3
 ```
 
 CI (`.github/workflows/check.yml`) runs on every push, tag and pull request
-in the images of `tools/ci/Dockerfile` (Ubuntu pinned by digest, with the
-pspdev that `scripts/setup-dev.sh` pins): `make check`,
+in the images of `tools/ci/Dockerfile` (Ubuntu pinned by digest and its
+packages by an archive snapshot, with the pspdev that `scripts/setup-dev.sh`
+pins): `make check`,
 `make test-sanitize`, `make check-cbmc`, both build profiles and
 `make package` under a local `ci-<sha>` tag, keeping the EBOOT and its
 manifest as artifacts. A tag also runs `make artifact-smoke` and checks that

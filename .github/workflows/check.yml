@@ -1,7 +1,7 @@
 # Every push (tags too) and pull request runs the host tests, the CBMC proof,
 # both PSP profiles and make package inside the images of tools/ci/Dockerfile,
-# built from inputs pinned by digest or SHA-256. Third-party actions are
-# pinned by commit SHA; the comment after each SHA names its tag.
+# built from inputs pinned by digest, SHA-256 or snapshot date. Third-party
+# actions are pinned by commit SHA; the comment after each SHA names its tag.
 name: check
 
 on: [push, pull_request]
