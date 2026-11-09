@@ -16,12 +16,17 @@
 
 #include "zlib/zlib.h"
 
-/* Snapshot layout, all big-endian. Header (64 bytes):
+/* Snapshot layout, all big-endian. Header (96 bytes; 64 up to version 5):
  *   0 "GBRL"  4 version  6 header size  8 record size  10 critical count
  *   12 main count  14 network count  16 session id  20 flush reason
  *   24 PSP model  28 firmware  32 CPU MHz  36 ROM game code
- *   40 start time  48 flush time  56 payload CRC-32  60 header CRC-32
+ *   40 start time  48 flush time
+ *   from version 6: 56 build id (24 bytes)  80 reserved, zero
+ *   last 8 bytes: payload CRC-32, then the CRC-32 of the header before it
+ *   (56 and 60 up to version 5, 88 and 92 from version 6)
  * Then the main, network and critical records, 32 bytes each.
+ * Readers find the CRCs from the header size at offset 6. Fields that the
+ * other 1.5 stories add to version 6 go into the reserved bytes.
  */
 
 static void runtime_log_barrier(void)
@@ -236,6 +241,9 @@ int runtime_log_encode(const RuntimeLogRing *main_ring,
   runtime_log_write_u32(output + 36, metadata->rom_identity);
   runtime_log_write_u64(output + 40, metadata->started_us);
   runtime_log_write_u64(output + 48, metadata->flushed_us);
+  for(index = 0; index + 1u < RUNTIME_LOG_BUILD_ID_SIZE &&
+   metadata->build_id[index] != '\0'; index++)
+    output[56 + index] = (uint8_t)metadata->build_id[index];
 
   cursor = output + RUNTIME_LOG_HEADER_SIZE;
   for(index = 0; index < main_count; index++)
@@ -254,14 +262,17 @@ int runtime_log_encode(const RuntimeLogRing *main_ring,
     cursor += RUNTIME_LOG_RECORD_SIZE;
   }
 
-  /* The header CRC covers bytes 0-59, payload CRC included. */
+  /* The header CRC covers every header byte before it, payload CRC
+     included. */
   crc = crc32(0L, Z_NULL, 0);
   crc = crc32(crc, output + RUNTIME_LOG_HEADER_SIZE,
    (uInt)payload_size);
-  runtime_log_write_u32(output + 56, (uint32_t)crc);
+  runtime_log_write_u32(output + RUNTIME_LOG_HEADER_SIZE - 8u,
+   (uint32_t)crc);
   crc = crc32(0L, Z_NULL, 0);
-  crc = crc32(crc, output, 60);
-  runtime_log_write_u32(output + 60, (uint32_t)crc);
+  crc = crc32(crc, output, RUNTIME_LOG_HEADER_SIZE - 4u);
+  runtime_log_write_u32(output + RUNTIME_LOG_HEADER_SIZE - 4u,
+   (uint32_t)crc);
   *written = total_size;
   return 1;
 }
@@ -274,17 +285,22 @@ int runtime_log_validate(const uint8_t *input, size_t size,
   uint16_t decoded_main;
   uint16_t decoded_network;
   uint16_t decoded_critical;
+  size_t header_size;
   size_t expected_size;
   uLong crc;
 
-  if(input == NULL || size < RUNTIME_LOG_HEADER_SIZE ||
-     memcmp(input, "GBRL", 4) != 0 ||
-     runtime_log_read_u16(input + 6) != RUNTIME_LOG_HEADER_SIZE ||
-     runtime_log_read_u16(input + 8) != RUNTIME_LOG_RECORD_SIZE)
+  if(input == NULL || size < RUNTIME_LOG_V5_HEADER_SIZE ||
+     memcmp(input, "GBRL", 4) != 0)
     return 0;
 
   decoded_version = runtime_log_read_u16(input + 4);
   if(decoded_version < 1u || decoded_version > RUNTIME_LOG_VERSION)
+    return 0;
+  header_size = decoded_version >= 6u ? RUNTIME_LOG_HEADER_SIZE :
+   RUNTIME_LOG_V5_HEADER_SIZE;
+  if(size < header_size ||
+     runtime_log_read_u16(input + 6) != header_size ||
+     runtime_log_read_u16(input + 8) != RUNTIME_LOG_RECORD_SIZE)
     return 0;
   /* Version 1 had no critical ring. */
   decoded_critical = decoded_version >= 2u ?
@@ -295,20 +311,19 @@ int runtime_log_validate(const uint8_t *input, size_t size,
      decoded_network > RUNTIME_LOG_RING_CAPACITY ||
      decoded_critical > RUNTIME_LOG_CRITICAL_CAPACITY)
     return 0;
-  expected_size = RUNTIME_LOG_HEADER_SIZE +
+  expected_size = header_size +
    ((size_t)decoded_main + decoded_network + decoded_critical) *
    RUNTIME_LOG_RECORD_SIZE;
   if(size != expected_size)
     return 0;
 
   crc = crc32(0L, Z_NULL, 0);
-  crc = crc32(crc, input, 60);
-  if((uint32_t)crc != runtime_log_read_u32(input + 60))
+  crc = crc32(crc, input, (uInt)(header_size - 4u));
+  if((uint32_t)crc != runtime_log_read_u32(input + header_size - 4u))
     return 0;
   crc = crc32(0L, Z_NULL, 0);
-  crc = crc32(crc, input + RUNTIME_LOG_HEADER_SIZE,
-   (uInt)(size - RUNTIME_LOG_HEADER_SIZE));
-  if((uint32_t)crc != runtime_log_read_u32(input + 56))
+  crc = crc32(crc, input + header_size, (uInt)(size - header_size));
+  if((uint32_t)crc != runtime_log_read_u32(input + header_size - 8u))
     return 0;
 
   if(metadata != NULL)
@@ -322,6 +337,9 @@ int runtime_log_validate(const uint8_t *input, size_t size,
     metadata->rom_identity = runtime_log_read_u32(input + 36);
     metadata->started_us = runtime_log_read_u64(input + 40);
     metadata->flushed_us = runtime_log_read_u64(input + 48);
+    if(header_size == RUNTIME_LOG_HEADER_SIZE)
+      memcpy(metadata->build_id, input + 56,
+       RUNTIME_LOG_BUILD_ID_SIZE - 1u);
   }
   if(main_count != NULL)
     *main_count = decoded_main;

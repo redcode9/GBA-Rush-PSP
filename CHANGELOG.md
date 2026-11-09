@@ -35,6 +35,23 @@
   Link Cable (the other console's game code, or waiting).
 - The Save and Load page shows thumbnails of all 11 slots (0-9 and AUTO)
   with the selected slot framed. They appear one per frame as the page opens.
+- The Diagnostics page shows the version and the build id, an id of the
+  exact source the EBOOT was built from, ending in `-dirty` when that source
+  had uncommitted changes. Performance reports, runtime logs and the
+  release's build manifest record the same id, so every report can be
+  traced to its build.
+- Every release comes with a build manifest (the commit, build id, compiler,
+  flags and the SHA-256 of each built file), a `SHA256SUMS` file and the
+  corresponding source code, `GBA-Rush-PSP-<version>-source.zip`, made from
+  the release tag.
+- A diagnostic build for reproducing bugs, packaged as
+  `GBA-Rush-PSP-<version>-diag.zip`: it shows as "GBA Rush PSP [DIAG]" with
+  its own icons and installs in `PSP/GAME/GBARushPSP-DIAG`, so it keeps its
+  own settings, saves and logs and never touches the regular install. The
+  regular build contains none of its diagnostic code.
+- On GitHub, bug, game and link reports open as forms that ask for the
+  version, the PSP model and firmware, the steps and the `logs/` folder, and
+  warn not to attach ROMs, BIOS files or saves that are not your own.
 
 ### Changed
 
@@ -42,7 +59,6 @@
   under a veil of the theme's background colour.
 - The Italian menu writes accented letters (è, più, modalità) instead of a
   backtick after the vowel or no accent at all.
-
 - A savestate loads only with the BIOS it was saved with, `gba_bios.bin` or
   the built-in one; otherwise a message says which one it needs, instead of
   loading a game that would crash. Savestates from earlier versions count as
@@ -52,6 +68,12 @@
   so it never overwrites the `<rom>_auto.svs` made with `gba_bios.bin`.
 - The `bios_rom_hack_39` and `bios_rom_hack_2C` options of `game_config.txt`
   apply only to `gba_bios.bin`.
+- A stable release is published only after the hardware tests it requires
+  have passed, with the EBOOT being released, on a PSP-1000 and on a second
+  model, and after at least 7 days as a prerelease (3 days for a fix of
+  lost data). Its release notes list what was validated, on which consoles,
+  and its known limits; a build not yet tested on hardware is published as
+  a prerelease.
 
 ### Fixed
 

@@ -1,0 +1,104 @@
+name: Game report
+description: One game does not start, crashes, saves wrongly, looks or sounds wrong, or runs slowly.
+labels: ["game"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        **Do not attach or link ROMs, BIOS files (`gba_bios.bin`), or saves
+        and savestates that are not your own.**
+  - type: input
+    id: game
+    attributes:
+      label: Game, region and revision
+      placeholder: Pokemon FireRed (Europe) (Rev 1)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: >-
+        The version and build id shown on the Diagnostics page. If the page
+        does not show them, the name of the zip you installed.
+      placeholder: GBA-Rush-PSP-1.4.3.zip
+    validations:
+      required: true
+  - type: dropdown
+    id: model
+    attributes:
+      label: PSP model
+      options:
+        - PSP-1000
+        - PSP-2000
+        - PSP-3000
+        - PSP Go (N1000)
+        - PSP Street (E1000)
+        - PPSSPP
+        - Other or not sure
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware or custom firmware
+      description: The firmware version and the custom firmware with its version. For PPSSPP, its version.
+      placeholder: 6.61 PRO-C2
+  - type: textarea
+    id: plugins
+    attributes:
+      label: Plugins
+      description: The plugins enabled for games, or none.
+  - type: textarea
+    id: settings
+    attributes:
+      label: Changed settings
+      description: >-
+        Settings changed from their defaults, for example the renderer, the
+        CPU core, frame skip or the clock, and whether `gba_bios.bin` is
+        present.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: >-
+        Where in the game it happens, what you did, what happened and what you
+        expected. Say whether it happens every time.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        Zip the `logs` folder beside the EBOOT (`PSP/GAME/GBARushPSP/logs`)
+        and drag the zip into this box, or paste a link to it. If there is no
+        `logs` folder, write that here.
+    validations:
+      required: true
+  - type: textarea
+    id: savestate
+    attributes:
+      label: Savestate (optional)
+      description: >-
+        A savestate you made yourself shortly before the problem, zipped and
+        dragged into this box.
+  - type: textarea
+    id: trace
+    attributes:
+      label: Input trace (optional)
+      description: >-
+        With a diagnostic build, the input trace from the `traces` folder
+        (`input-<game code>-r<version>.gbit`), zipped and dragged into this
+        box.
+  - type: checkboxes
+    id: own-files
+    attributes:
+      label: Attachments
+      options:
+        - label: This report attaches and links no ROM, no BIOS, and no save or savestate that I did not make myself.
+          required: true
