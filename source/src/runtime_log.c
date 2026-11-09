@@ -257,7 +257,8 @@ static size_t runtime_log_name_probe_chunk_count(size_t length)
 size_t runtime_log_name_probe_entry(RuntimeLogRing *ring,
  uint64_t timestamp_us, uint32_t index, const uint8_t *name,
  size_t name_size, const uint8_t *fat_record, size_t fat_capacity,
- const int32_t open_result[3], size_t record_budget)
+ const int32_t open_result[RUNTIME_LOG_NAME_PROBE_OPENS],
+ size_t record_budget)
 {
   size_t name_length;
   size_t fat_length;
@@ -269,7 +270,7 @@ size_t runtime_log_name_probe_entry(RuntimeLogRing *ring,
    name_size < RUNTIME_LOG_NAME_PROBE_MAX_NAME ? name_size :
    RUNTIME_LOG_NAME_PROBE_MAX_NAME);
   fat_length = runtime_log_name_probe_fat_length(fat_record, fat_capacity);
-  count = 2u + runtime_log_name_probe_chunk_count(name_length) +
+  count = 3u + runtime_log_name_probe_chunk_count(name_length) +
    runtime_log_name_probe_chunk_count(fat_length);
   if(count > record_budget)
     return 0;
@@ -286,6 +287,9 @@ size_t runtime_log_name_probe_entry(RuntimeLogRing *ring,
    RUNTIME_LOG_NAME_PROBE_FLAGS(RUNTIME_LOG_NAME_PROBE_OPEN, 0u),
    (uint32_t)open_result[0], (uint32_t)open_result[1],
    (uint32_t)open_result[2]);
+  runtime_log_ring_emit(ring, timestamp_us, 0, RUNTIME_LOG_EVENT_NAME_PROBE,
+   RUNTIME_LOG_NAME_PROBE_FLAGS(RUNTIME_LOG_NAME_PROBE_OPEN, 1u),
+   (uint32_t)open_result[3], (uint32_t)open_result[4], 0u);
   return count;
 }
 

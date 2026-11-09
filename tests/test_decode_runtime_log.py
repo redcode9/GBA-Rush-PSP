@@ -145,7 +145,9 @@ def probe_records(entries) -> list[bytes]:
         add(0, index, len(name), len(fat))
         chunks(1, name)
         chunks(2, fat)
-        add(0xC0, *(value & 0xFFFFFFFF for value in opened))
+        opened = [value & 0xFFFFFFFF for value in opened]
+        add(0xC0, *opened[:3])
+        add(0xC1, *opened[3:], 0)
     add(0x01, 0x00ABCDEF, len(entries), len(entries))
     return records
 
@@ -157,15 +159,15 @@ PSP_ERROR = 0x80010002 - 0x100000000
 PROBE_ENTRIES = [
     ("ポケモン.gba".encode("utf-8"),
      b"POKEMO~1.GBA\0" + "ポケモン.gba".encode("utf-8"),
-     (3, 4, PSP_ERROR)),
+     (3, 4, PSP_ERROR, 8, PSP_ERROR)),
     ("宝可梦.gba".encode("gbk"),
      (1044).to_bytes(4, "little") + b"BAOKEM~1.GBA".ljust(16, b"\0")
      + "宝可梦.gba".encode("utf-8"),
-     (PSP_ERROR, NOT_TRIED, 5)),
+     (PSP_ERROR, NOT_TRIED, 5, PSP_ERROR, 9)),
     ("Pokémon Smeraldo.gba".encode("utf-8"),
      (1044).to_bytes(4, "little") + b"POKMON~1.GBA".ljust(16, b"\0")
      + "Pokémon Smeraldo.gba".encode("utf-8"),
-     (6, NOT_TRIED, 7)),
+     (6, NOT_TRIED, 7, PSP_ERROR, 10)),
 ]
 
 
@@ -349,7 +351,8 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         self.assertEqual(japanese["layout_a"]["long_name"]["utf-8"],
                          "ポケモン.gba")
         self.assertEqual(japanese["open"],
-                         {"name": 3, "alias-a": 4, "alias-b": -2147418110})
+                         {"name": 3, "alias-a": 4, "alias-b": -2147418110,
+                          "long-a": 8, "long-b": -2147418110})
         self.assertEqual(chinese["name"]["gbk"], "宝可梦.gba")
         self.assertEqual(chinese["layout_b"]["size"], 1044)
         self.assertEqual(chinese["layout_b"]["alias"]["utf-8"], "BAOKEM~1.GBA")
@@ -357,7 +360,9 @@ class RuntimeLogDecoderTests(unittest.TestCase):
                          "宝可梦.gba")
         self.assertEqual(chinese["open"], {"name": -2147418110,
                                            "alias-a": "not-tried",
-                                           "alias-b": 5})
+                                           "alias-b": 5,
+                                           "long-a": -2147418110,
+                                           "long-b": 9})
         self.assertEqual(accented["name"]["utf-8"], "Pokémon Smeraldo.gba")
         self.assertEqual(accented["layout_b"]["long_name"]["utf-8"],
                          "Pokémon Smeraldo.gba")
@@ -383,9 +388,25 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         self.assertIsNone(entries[0]["index"])
         self.assertFalse(entries[0]["complete"])
         self.assertTrue(entries[1]["complete"])
+        def without(flags):
+            """records without the first entry's (ordinals 1-8) of flags."""
+            return [record for record in records
+                    if record[19] not in flags
+                    or struct.unpack_from(">I", record, 12)[0] > 8]
+
+        # Open results lost: one record, then both.
+        entries = decoder.name_probe_entries(
+            decoder.parse_snapshot(pack_snapshot(without({0xC1}), 6)))
+        self.assertFalse(entries[0]["complete"])
+        self.assertEqual(entries[0]["open"],
+                         {"name": 3, "alias-a": 4, "alias-b": -2147418110})
+        entries = decoder.name_probe_entries(
+            decoder.parse_snapshot(pack_snapshot(without({0xC0, 0xC1}), 6)))
+        self.assertFalse(entries[0]["complete"])
+        self.assertIsNone(entries[0]["open"])
+        self.assertTrue(entries[1]["complete"])
         # A chunk missing in the middle of an entry.
-        missing = [record for record in records
-                   if record[19] != 0x41 or struct.unpack_from(">I", record, 12)[0] > 8]
+        missing = without({0x41})
         entries = decoder.name_probe_entries(
             decoder.parse_snapshot(pack_snapshot(missing, 6)))
         self.assertFalse(entries[0]["complete"])
@@ -410,6 +431,8 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         self.assertEqual(describe(0xC0, 3, 0x80010002, 0xFFFFFFFF),
                          "open name=fd 3 alias-a=error 0x80010002 "
                          "alias-b=not-tried")
+        self.assertEqual(describe(0xC1, 4, 0x80010002, 0),
+                         "open long-a=fd 4 long-b=error 0x80010002")
         self.assertEqual(describe(0x01, 0x80010002, 4, 3),
                          "end dopen=-2147418110/0x80010002 seen=4 logged=3")
 

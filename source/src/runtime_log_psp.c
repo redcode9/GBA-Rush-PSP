@@ -261,7 +261,8 @@ void runtime_log_psp_critical(RuntimeLogEventType type,
 
 size_t runtime_log_psp_name_probe_entry(uint32_t index, const uint8_t *name,
  size_t name_size, const uint8_t *fat_record, size_t fat_capacity,
- const int32_t open_result[3], size_t record_budget)
+ const int32_t open_result[RUNTIME_LOG_NAME_PROBE_OPENS],
+ size_t record_budget)
 {
   if(!runtime_log_psp.initialized)
     return 0;

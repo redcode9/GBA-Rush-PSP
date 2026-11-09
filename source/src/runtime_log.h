@@ -93,8 +93,9 @@ typedef enum
    - FAT chunks: the raw private record, which the firmware fills in one of
      two layouts (8.3 alias at 0 and long name at 13, or a size word, the
      alias at 4 and the long name at 20), so both are covered;
-   - OPEN: the sceIoOpen result with d_name, the alias at 0 and the alias
-     at 4: an fd (closed at once), a PSP error or NOT_TRIED;
+   - OPEN, index 0: the sceIoOpen result with d_name, the alias at 0 and
+     the alias at 4; index 1: with the long name at 13, the long name at 20,
+     then 0. Each is an fd (closed at once), a PSP error or NOT_TRIED;
    - header, kind END: sceIoDopen result, entries seen, entries logged. */
 #define RUNTIME_LOG_NAME_PROBE_HEADER 0u
 #define RUNTIME_LOG_NAME_PROBE_NAME 1u
@@ -111,6 +112,8 @@ typedef enum
 /* Not a PSP error (those are 0x80xxxxxx) nor an fd: the open was skipped
    because the name was empty or the path did not fit. */
 #define RUNTIME_LOG_NAME_PROBE_NOT_TRIED (-1)
+/* sceIoOpen results per entry, in the OPEN order above. */
+#define RUNTIME_LOG_NAME_PROBE_OPENS 5u
 
 typedef enum
 {
@@ -184,7 +187,8 @@ uint32_t runtime_log_ring_dropped(const RuntimeLogRing *ring);
 size_t runtime_log_name_probe_entry(RuntimeLogRing *ring,
  uint64_t timestamp_us, uint32_t index, const uint8_t *name,
  size_t name_size, const uint8_t *fat_record, size_t fat_capacity,
- const int32_t open_result[3], size_t record_budget);
+ const int32_t open_result[RUNTIME_LOG_NAME_PROBE_OPENS],
+ size_t record_budget);
 int runtime_log_encode(const RuntimeLogRing *main_ring,
  const RuntimeLogRing *network_ring, const RuntimeLogRing *critical_ring,
  const RuntimeLogMetadata *metadata, uint8_t *output, size_t capacity,

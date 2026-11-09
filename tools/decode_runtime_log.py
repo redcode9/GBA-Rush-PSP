@@ -117,7 +117,9 @@ LINK_EVENTS = {
 # part, the kind (0 an entry, 1 the end of the probe). A chunk is the 12
 # bytes of the three values, big-endian.
 NAME_PROBE_PARTS = ["header", "name", "fat", "open"]
-NAME_PROBE_OPENS = ["name", "alias-a", "alias-b"]
+# Open record i holds the results labelled [3 * i, 3 * i + 3); record 1's
+# third value is unused.
+NAME_PROBE_OPENS = ["name", "alias-a", "alias-b", "long-a", "long-b"]
 NAME_PROBE_NOT_TRIED = 0xFFFFFFFF
 NAME_PROBE_ENCODINGS = ("utf-8", "shift_jis", "gbk")
 # The FAT private record: layout A has the 8.3 alias at 0 and the long name
@@ -165,6 +167,16 @@ def _open_text(value: int | str) -> str:
     if isinstance(value, str):
         return value
     return f"fd {value}" if value >= 0 else f"error 0x{value & 0xFFFFFFFF:08X}"
+
+
+def _open_results(records: dict[int, list[int]]) -> dict[str, int | str]:
+    """The labelled results of an entry's open records, keyed by index."""
+    return {
+        label: _open_result(value)
+        for index in sorted(records)
+        for label, value in zip(NAME_PROBE_OPENS[3 * index:3 * index + 3],
+                                records[index])
+    }
 
 
 def _name_views(raw: bytes) -> dict[str, str]:
@@ -274,8 +286,8 @@ def describe(record: dict[str, Any]) -> str:
             )
         if part == 3:
             return "open " + " ".join(
-                f"{label}={_open_text(_open_result(value))}"
-                for label, value in zip(NAME_PROBE_OPENS, record["values"])
+                f"{label}={_open_text(value)}"
+                for label, value in _open_results({index: record["values"]}).items()
             )
         return f"{NAME_PROBE_PARTS[part]} chunk={index} bytes={_chunk(record['values']).hex()}"
     # Earlier versions belong to a retired link design; show raw values.
@@ -360,15 +372,15 @@ def name_probe_entries(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             if index == 0:
                 current = {"index": values[0], "name_length": values[1],
                            "fat_length": values[2], "name": {}, "fat": {},
-                           "open": None}
+                           "open": {}}
                 raw_entries.append(current)
             continue
         if current is None:
             current = {"index": None, "name_length": None, "fat_length": None,
-                       "name": {}, "fat": {}, "open": None}
+                       "name": {}, "fat": {}, "open": {}}
             raw_entries.append(current)
         if part == 3:
-            current["open"] = values
+            current["open"][index] = values
         else:
             current[NAME_PROBE_PARTS[part]][index] = _chunk(values)
 
@@ -380,7 +392,7 @@ def name_probe_entries(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
         entries.append({
             "index": raw["index"],
             "complete": (raw["index"] is not None and name_complete
-                         and fat_complete and opened is not None),
+                         and fat_complete and {0, 1} <= opened.keys()),
             "name": _name_views(name),
             "fat_hex": fat.hex(),
             "layout_a": {
@@ -394,8 +406,7 @@ def name_probe_entries(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
                     _field(fat, FAT_LAYOUT_B_ALIAS, FAT_LAYOUT_B_LONG_NAME)),
                 "long_name": _name_views(_field(fat, FAT_LAYOUT_B_LONG_NAME)),
             },
-            "open": (None if opened is None else
-                     dict(zip(NAME_PROBE_OPENS, map(_open_result, opened)))),
+            "open": _open_results(opened) if opened else None,
         })
     return entries
 

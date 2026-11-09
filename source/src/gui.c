@@ -3510,7 +3510,7 @@ static void menu_diagnostics_name_probe(void)
   SceIoDirent entry;
   char directory[MAX_PATH];
   const u8 *fat_record = (const u8 *)name_probe_fat_record;
-  int32_t opened[3];
+  int32_t opened[RUNTIME_LOG_NAME_PROBE_OPENS];
   size_t budget = NAME_PROBE_RECORD_BUDGET;
   size_t written;
   SceUID dir;
@@ -3545,11 +3545,16 @@ static void menu_diagnostics_name_probe(void)
 
       if(budget != 0)
       {
-        /* d_name, then the 8.3 alias of each layout. */
+        /* d_name, the 8.3 alias of each layout, then each layout's long
+           name, which may differ from d_name. */
         opened[0] = menu_name_probe_open(directory, entry.d_name,
          sizeof(entry.d_name));
         opened[1] = menu_name_probe_open(directory, fat_record, 13);
         opened[2] = menu_name_probe_open(directory, fat_record + 4, 16);
+        opened[3] = menu_name_probe_open(directory, fat_record + 13,
+         sizeof(name_probe_fat_record) - 13);
+        opened[4] = menu_name_probe_open(directory, fat_record + 20,
+         sizeof(name_probe_fat_record) - 20);
         written = runtime_log_psp_name_probe_entry(seen,
          (const uint8_t *)entry.d_name, sizeof(entry.d_name), fat_record,
          sizeof(name_probe_fat_record), opened, budget);

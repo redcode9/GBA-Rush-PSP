@@ -451,8 +451,9 @@ static void probe_chunk_bytes(const RuntimeLogRecord *record, uint8_t *bytes)
 static uint32_t check_probe_entry(const uint8_t *name, size_t name_size,
  size_t name_length, const uint8_t *fat, size_t fat_capacity)
 {
-  static const int32_t opened[3] = {
-   3, (int32_t)0x80010002u, RUNTIME_LOG_NAME_PROBE_NOT_TRIED };
+  static const int32_t opened[RUNTIME_LOG_NAME_PROBE_OPENS] = {
+   3, (int32_t)0x80010002u, RUNTIME_LOG_NAME_PROBE_NOT_TRIED, 4,
+   (int32_t)0x80020001u };
   RuntimeLogRecord records[RUNTIME_LOG_RING_CAPACITY];
   RuntimeLogRing ring;
   uint8_t bytes[12];
@@ -479,7 +480,7 @@ static uint32_t check_probe_entry(const uint8_t *name, size_t name_size,
   assert(records[0].value[1] == name_length);
   fat_length = records[0].value[2];
   fat_chunks = (fat_length + 11u) / 12u;
-  assert(count == 2u + name_chunks + fat_chunks);
+  assert(count == 3u + name_chunks + fat_chunks);
 
   for(chunk = 0; chunk < name_chunks; chunk++)
   {
@@ -501,10 +502,14 @@ static uint32_t check_probe_entry(const uint8_t *name, size_t name_size,
       assert(bytes[index] == (offset < fat_length ? fat[offset] : 0u));
     }
   }
-  assert(records[count - 1u].flags == 0xC0u);
-  assert(records[count - 1u].value[0] == 3u);
-  assert(records[count - 1u].value[1] == 0x80010002u);
-  assert(records[count - 1u].value[2] == 0xFFFFFFFFu);
+  assert(records[count - 2u].flags == 0xC0u);
+  assert(records[count - 2u].value[0] == 3u);
+  assert(records[count - 2u].value[1] == 0x80010002u);
+  assert(records[count - 2u].value[2] == 0xFFFFFFFFu);
+  assert(records[count - 1u].flags == 0xC1u);
+  assert(records[count - 1u].value[0] == 4u);
+  assert(records[count - 1u].value[1] == 0x80020001u);
+  assert(records[count - 1u].value[2] == 0u);
   return fat_length;
 }
 
@@ -570,7 +575,7 @@ static void test_name_probe_fat_layouts(void)
    exactly is logged whole. */
 static void test_name_probe_budget(void)
 {
-  static const int32_t opened[3] = { 0, 0, 0 };
+  static const int32_t opened[RUNTIME_LOG_NAME_PROBE_OPENS] = { 0 };
   RuntimeLogRing ring;
   uint8_t name[256];
   uint8_t fat[1044];
@@ -580,21 +585,21 @@ static void test_name_probe_budget(void)
   memset(fat, 0, sizeof(fat));
   runtime_log_ring_init(&ring, RUNTIME_LOG_SOURCE_MAIN);
   runtime_log_ring_emit(&ring, 1, 0, RUNTIME_LOG_EVENT_LOG_FLUSH, 0, 0, 0, 0);
-  /* Header, 2 name chunks, 2 FAT chunks, open results. */
+  /* Header, 2 name chunks, 2 FAT chunks, 2 open records. */
   assert(runtime_log_name_probe_entry(&ring, 2, 0, name, sizeof(name), fat,
-   sizeof(fat), opened, 5) == 0u);
+   sizeof(fat), opened, 6) == 0u);
   assert(ring.next_ordinal == 1u);
   assert(runtime_log_name_probe_entry(&ring, 2, 0, name, sizeof(name), fat,
-   sizeof(fat), opened, 6) == 6u);
-  assert(ring.next_ordinal == 7u);
+   sizeof(fat), opened, 7) == 7u);
+  assert(ring.next_ordinal == 8u);
   assert(runtime_log_name_probe_entry(NULL, 2, 0, name, sizeof(name), fat,
-   sizeof(fat), opened, 6) == 0u);
+   sizeof(fat), opened, 7) == 0u);
 }
 
 /* The snapshot file holds a chunk's bytes in their original order. */
 static void test_name_probe_bytes_in_file_order(void)
 {
-  static const int32_t opened[3] = { 0, 0, 0 };
+  static const int32_t opened[RUNTIME_LOG_NAME_PROBE_OPENS] = { 0 };
   /* 12 bytes: one chunk. */
   static const uint8_t name[] = "\xE6\x97\xA5\xE6\x9C\xAC-ABCDE";
   uint8_t encoded[RUNTIME_LOG_MAX_FILE_SIZE];
@@ -609,7 +614,7 @@ static void test_name_probe_bytes_in_file_order(void)
   runtime_log_ring_init(&network_ring, RUNTIME_LOG_SOURCE_NETWORK);
   runtime_log_ring_init(&critical_ring, RUNTIME_LOG_SOURCE_CRITICAL);
   assert(runtime_log_name_probe_entry(&main_ring, 2, 0, name, sizeof(name),
-   NULL, 0, opened, 8) == 3u);
+   NULL, 0, opened, 8) == 4u);
   assert(runtime_log_encode(&main_ring, &network_ring, &critical_ring,
    &metadata, encoded, sizeof(encoded), &written));
   /* The second record is the d_name chunk; its values start at 20. */
