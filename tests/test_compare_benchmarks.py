@@ -95,6 +95,29 @@ def write_group(directory, game_code, frames, version="1.4.3", revision="0"):
         write_report(folder / f"run-{index}.txt", values)
 
 
+def runs_at(*minutes):
+    """One report per minute given, captured at 10:<minute> on one day."""
+    return [dict(report(), **{"capture-local-time":
+                              f"2026-11-09T10:{minute:02d}:00"})
+            for minute in minutes]
+
+
+def run_files(baseline, candidate, *flags):
+    """main() on the reports written as files: (exit status, stdout)."""
+    with tempfile.TemporaryDirectory() as directory:
+        paths = []
+        for index, values in enumerate(baseline + candidate):
+            path = pathlib.Path(directory) / f"run-{index}.txt"
+            write_report(path, values)
+            paths.append(str(path))
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            status = MODULE.main(["--baseline", *paths[:len(baseline)],
+                                  "--candidate", *paths[len(baseline):],
+                                  *flags])
+    return status, output.getvalue()
+
+
 def run_groups(baseline_dirs, candidate_dir):
     """main() in directory mode: (exit status, stdout)."""
     if isinstance(baseline_dirs, str):
@@ -806,6 +829,132 @@ class BenchmarkComparisonTests(unittest.TestCase):
                                 [unlinked, unlinked, unlinked])
 
         self.assertTrue(result["passed"])
+
+    def test_order_check_blocked_arms_warns(self):
+        # A is a baseline run and B a candidate run, in capture order.
+        cases = {
+            "blocked (AAABBB)": (runs_at(2, 0, 1), runs_at(5, 3, 4)),
+            "blocked (BBBAAA)": (runs_at(3, 4, 5), runs_at(0, 1, 2)),
+            "blocked (ABBBAA)": (runs_at(0, 4, 5), runs_at(1, 2, 3)),
+            "alternated (ABABAB)": (runs_at(0, 2, 4), runs_at(1, 3, 5)),
+            "alternated (ABBAAB)": (runs_at(0, 3, 4), runs_at(1, 2, 5)),
+            "alternated (ABABABA)": (runs_at(0, 2, 4, 6), runs_at(1, 3, 5)),
+        }
+        for order, arms in cases.items():
+            with self.subTest(order):
+                result = MODULE.compare(*arms, order_check=True)
+                # Without --strict the order is only reported.
+                self.assertTrue(result["passed"])
+                self.assertEqual(result["order"], order)
+                self.assertIn(f"\norder={order}\n",
+                              MODULE.format_result(result) + "\n")
+
+        unchecked = MODULE.compare(*cases["blocked (AAABBB)"])
+        self.assertIsNone(unchecked["order"])
+        self.assertNotIn("order=", MODULE.format_result(unchecked))
+        status, output = run_files(*cases["blocked (AAABBB)"], "--order-check")
+        self.assertEqual(status, 0)
+        self.assertTrue(output.startswith("PASS\n"))
+        self.assertIn("\norder=blocked (AAABBB)\n", output)
+
+    def test_order_check_strict_fails(self):
+        baseline, candidate = runs_at(0, 1, 2), runs_at(3, 4, 5)
+
+        result = MODULE.compare(baseline, candidate, order_check=True,
+                                strict=True)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["failures"],
+                         ["run order is blocked (AAABBB)"])
+        self.assertTrue(MODULE.compare(runs_at(0, 2, 4), runs_at(1, 3, 5),
+                                       order_check=True, strict=True)["passed"])
+        status, output = run_files(baseline, candidate, "--order-check",
+                                   "--strict")
+        self.assertEqual(status, 1)
+        self.assertTrue(output.startswith("FAIL\n"))
+        self.assertIn("\nreason=run order is blocked (AAABBB)\n", output)
+        # Directory mode checks the order of every group.
+        key = ("1", "BPRE", "0")
+        outcome = MODULE.compare_groups({key: baseline}, {key: candidate},
+                                        order_check=True, strict=True)
+        self.assertFalse(outcome["passed"])
+        self.assertIn("group=1/BPRE-r0 FAIL\n", MODULE.format_groups(outcome))
+        # --strict alone is a usage error.
+        with contextlib.redirect_stderr(io.StringIO()), \
+                self.assertRaises(SystemExit) as error:
+            run_files(baseline, candidate, "--strict")
+        self.assertEqual(error.exception.code, 2)
+
+    def test_order_check_unknown_without_times(self):
+        lacking = runs_at(0, 2, 4)
+        del lacking[1]["capture-local-time"]
+        # A capture whose RTC read failed writes the key with no value.
+        empty = runs_at(0, 2, 4)
+        empty[1]["capture-local-time"] = ""
+        for baseline in (lacking, empty, [report(), report(), report()]):
+            with self.subTest(baseline=baseline):
+                result = MODULE.compare(baseline, runs_at(1, 3, 5),
+                                        order_check=True, strict=True)
+                self.assertEqual(result["failures"], [
+                    "run order is unknown (a run lacks capture-local-time)"])
+
+        tied = MODULE.compare(runs_at(0, 2, 4), runs_at(1, 2, 5),
+                              order_check=True)
+        self.assertTrue(tied["passed"])
+        self.assertEqual(tied["order"], "unknown (two runs have the same "
+                         "capture-local-time)")
+
+    def test_claim_holds_only_when_significant(self):
+        def claim(text, baseline, candidate):
+            return MODULE.compare(baseline, candidate,
+                                  claim=MODULE.parse_claim(text))["claim"]
+
+        fps = [report(frames=frames) for frames in (600, 601, 602)]
+        # 62.5-62.7 fps divided by 1.03 is still above all of 60.0-60.2 fps.
+        faster = [report(frames=frames) for frames in (625, 626, 627)]
+        self.assertEqual(claim("throughput>=+3", fps, faster),
+                         "throughput>=+3% holds (p=0.050)")
+        # The median is up 3%, but the shifted runs overlap the baseline.
+        mixed = [report(frames=frames) for frames in (612, 619, 625)]
+        self.assertEqual(claim("throughput>=3%", fps, mixed),
+                         "throughput>=+3% not demonstrated (p=0.650)")
+        # 2% up: a higher candidate, but not by the 3% claimed.
+        closer = [report(frames=frames) for frames in (612, 613, 614)]
+        result = MODULE.compare(fps, closer,
+                                claim=MODULE.parse_claim("throughput>=+3"))
+        self.assertTrue(result["metrics"][0][4].startswith("candidate higher"))
+        self.assertEqual(result["claim"],
+                         "throughput>=+3% not demonstrated (p=1.000)")
+
+        # <= declares the lower side: 16.0-16.1 ms divided by 0.97 is below
+        # 16.9-17.1 ms, but 1% lower is not 3% lower.
+        p95 = [report(frame_p95=value) for value in (16900, 17000, 17100)]
+        lower = [report(frame_p95=value) for value in (16000, 16050, 16100)]
+        slightly = [report(frame_p95=value) for value in (16700, 16800, 16850)]
+        self.assertEqual(claim("frame-p95<=-3", p95, lower),
+                         "frame-p95<=-3% holds (p=0.050)")
+        self.assertEqual(claim("frame-p95<=-3", p95, slightly),
+                         "frame-p95<=-3% not demonstrated (p=1.000)")
+
+        # The claim never changes the exit status.
+        status, output = run_files(fps, mixed, "--claim", "throughput>=+3")
+        self.assertEqual(status, 0)
+        self.assertIn("\nclaim=throughput>=+3% not demonstrated (p=", output)
+        underruns = [report(frames=frames, underruns=1)
+                     for frames in (625, 626, 627)]
+        status, output = run_files(fps, underruns, "--claim", "throughput>=+3")
+        self.assertEqual(status, 1)
+        self.assertIn("\nclaim=throughput>=+3% holds (p=0.050)\n", output)
+
+        for text in ("fps>=+3", "throughput>+3", "throughput>=-100",
+                     "throughput>=3x", "throughput>=+3 "):
+            with self.subTest(text), self.assertRaises(
+                    MODULE.argparse.ArgumentTypeError):
+                MODULE.parse_claim(text)
+        with contextlib.redirect_stderr(io.StringIO()), \
+                self.assertRaises(SystemExit) as error:
+            run_files(fps, faster, "--claim", "fps>=+3")
+        self.assertEqual(error.exception.code, 2)
 
     def test_legacy_v6_fixtures_same_pass_fail(self):
         passing = MODULE.compare(

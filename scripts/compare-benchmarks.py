@@ -11,6 +11,10 @@ With --baseline-dir and --candidate-dir, every report under the directories
 given on each side is grouped by PSP model, game and ROM revision, and every
 baseline group is compared with the candidate group of the same title and
 model; a baseline group without candidate reports fails the check.
+
+--order-check prints whether the runs were captured alternating between the
+builds (from each report's capture-local-time) and --claim whether a claim
+written before the runs, such as 'throughput>=+3', holds significantly.
 """
 
 import argparse
@@ -282,6 +286,62 @@ RUN_METRICS = (
 )
 
 
+def run_order(baseline, candidate):
+    """The capture order of the runs, as order= prints it.
+
+    A is a baseline run and B a candidate run, sorted by capture-local-time
+    (zero-padded, so text order is time order): blocked when either build
+    has 3 or more runs in a row (AAABBB), alternated otherwise (ABAB, ABBA),
+    and unknown when a run lacks the time or two runs share it.
+    """
+    times = [report.get("capture-local-time") for report in
+             baseline + candidate]
+    if not all(times):
+        return "unknown (a run lacks capture-local-time)"
+    if len(set(times)) < len(times):
+        return "unknown (two runs have the same capture-local-time)"
+    labels = "A" * len(baseline) + "B" * len(candidate)
+    sequence = "".join(label for _, label in sorted(zip(times, labels)))
+    if "AAA" in sequence or "BBB" in sequence:
+        return f"blocked ({sequence})"
+    return f"alternated ({sequence})"
+
+
+# --claim METRIC>=PERCENT or METRIC<=PERCENT, such as throughput>=+3.
+CLAIM = re.compile(r"([a-z0-9-]+)(>=|<=)([+-]?\d+(?:\.\d+)?)%?")
+
+
+def parse_claim(text):
+    """A --claim argument as (metric, operator, percent)."""
+    names = [name for name, _, _ in RUN_METRICS]
+    match = CLAIM.fullmatch(text)
+    if match is None or match[1] not in names or float(match[3]) <= -100:
+        raise argparse.ArgumentTypeError(
+            f"invalid claim {text!r}: give METRIC>=PERCENT or "
+            f"METRIC<=PERCENT, PERCENT above -100, METRIC one of "
+            f"{', '.join(names)}")
+    return match[1], match[2], float(match[3])
+
+
+def claim_verdict(baseline, candidate, claim):
+    """Whether a claim written before the runs holds, as claim= prints it.
+
+    The candidate runs are divided by 1 + percent / 100, and the exact
+    one-sided test on the side the claim declares (higher for >=, lower
+    for <=) must then give p <= ALPHA.
+    """
+    name, operator, percent = claim
+    metric = next(metric for metric_name, metric, _ in RUN_METRICS
+                  if metric_name == name)
+    factor = 1.0 + percent / 100.0
+    p, exact = permutation_p([metric(report) for report in baseline],
+                             [metric(report) / factor for report in candidate],
+                             operator == ">=")
+    state = "holds" if p <= ALPHA else "not demonstrated"
+    return (f"{name}{operator}{percent:+g}% {state} "
+            f"(p{'=' if exact else '~'}{p:.3f})")
+
+
 def validate_matching_runs(baseline, candidate):
     """All runs must share the settings in MATCH_FIELDS, and the
     OPTIONAL_MATCH_FIELDS the first run reports, or the numbers are not
@@ -323,7 +383,8 @@ def over_budget_per_minute(report):
 WORK_FIELDS = ("work-time-p95-us", "frames-over-1-5x-budget")
 
 
-def compare(baseline, candidate, allow_link=False):
+def compare(baseline, candidate, allow_link=False, order_check=False,
+            strict=False, claim=None):
     """Compare run medians and list every regression past its threshold.
 
     Fails on throughput down more than 2%, frame-time p95 or p99 up more
@@ -333,6 +394,9 @@ def compare(baseline, candidate, allow_link=False):
     down more than 2% (when all runs measured it). When every run has the
     WORK_FIELDS, it also fails on work-time p95 up more than 5% or on
     frames over 1.5x budget per minute up more than max(1, 20%).
+    order_check adds the run_order(), which with strict fails unless it is
+    alternated; claim (from parse_claim) adds its claim_verdict() and never
+    fails.
     """
     if min(len(baseline), len(candidate)) < MIN_RUNS:
         raise ValueError(f"at least {MIN_RUNS} reports per build are needed")
@@ -436,6 +500,9 @@ def compare(baseline, candidate, allow_link=False):
                             "by more than max(1, 20%)")
         baseline_over_budget = float(baseline_over_budget)
         candidate_over_budget = float(candidate_over_budget)
+    order = run_order(baseline, candidate) if order_check else None
+    if strict and order is not None and not order.startswith("alternated"):
+        failures.append(f"run order is {order}")
 
     metrics = []
     for name, metric, _ in RUN_METRICS:
@@ -471,6 +538,9 @@ def compare(baseline, candidate, allow_link=False):
         "fast_forward": candidate_fast_forward,
         "fast_forward_change": fast_forward_change,
         "metrics": metrics,
+        "order": order,
+        "claim": (claim_verdict(baseline, candidate, claim)
+                  if claim is not None else None),
     }
 
 
@@ -526,6 +596,8 @@ def format_result(result):
         candidate_text = "{} [{}..{}]".format(*map(show, candidate_runs))
         lines.append(f"{name}-runs=baseline {baseline_text}, "
                      f"candidate {candidate_text}; {text}")
+    lines.extend(f"{key}={result[key]}" for key in ("order", "claim")
+                 if result[key] is not None)
     lines.extend(f"reason={failure}" for failure in result["failures"])
     return "\n".join(lines)
 
@@ -579,12 +651,13 @@ def collect_groups(*directories):
     return groups
 
 
-def compare_groups(baseline_groups, candidate_groups, allow_link=False):
+def compare_groups(baseline_groups, candidate_groups, **options):
     """Compare every baseline group with the candidate group of its key.
 
     Every group is compared before the verdict, so the output lists them
     all. A baseline group the candidate lacks is MISSING (result None) and
-    fails; candidate groups the baseline lacks are only listed.
+    fails; candidate groups the baseline lacks are only listed. options
+    are those of compare(), applied to every group.
     """
     groups = []
     for key in sorted(baseline_groups):
@@ -592,7 +665,7 @@ def compare_groups(baseline_groups, candidate_groups, allow_link=False):
         if key in candidate_groups:
             try:
                 result = compare(baseline_groups[key], candidate_groups[key],
-                                 allow_link)
+                                 **options)
             except ValueError as error:
                 raise ValueError(f"group {group_name(key)}: {error}") from None
         groups.append((group_name(key), result))
@@ -626,8 +699,9 @@ def format_groups(outcome):
 
 
 def main(argv=None):
-    """Exit status: 0 on PASS, 1 on a regression or a missing group, 2 on
-    unreadable input or fewer than MIN_RUNS reports per build."""
+    """Exit status: 0 on PASS, 1 on a regression, a missing group or, with
+    --strict, a run order not shown to alternate, 2 on unreadable input or
+    fewer than MIN_RUNS reports per build."""
     parser = argparse.ArgumentParser(
         description=f"Compare PSP benchmark reports, at least {MIN_RUNS} "
         "per build (the counts may differ), on medians, on frame-time max "
@@ -646,6 +720,24 @@ def main(argv=None):
     parser.add_argument("--allow-link", action="store_true",
                         help="accept runs captured during a lockstep link "
                         "when every run of both builds was")
+    parser.add_argument("--order-check", action="store_true",
+                        help="sort the runs of both builds (A baseline, B "
+                        "candidate) by capture-local-time and print "
+                        "order=blocked when one build has 3 or more runs "
+                        "in a row (AAABBB), order=alternated for ABAB or "
+                        "ABBA, order=unknown when a run lacks the time or "
+                        "two runs share it; per group in directory mode")
+    parser.add_argument("--strict", action="store_true",
+                        help="with --order-check, FAIL unless the order is "
+                        "alternated")
+    parser.add_argument("--claim", type=parse_claim, metavar="CLAIM",
+                        help="a claim written before the runs, such as "
+                        "'throughput>=+3' (candidate at least 3%% higher) "
+                        "or 'frame-p95<=-2', on a metric of the -runs= "
+                        "lines; it holds when the candidate runs divided by "
+                        "1 + PERCENT/100 are higher (>=) or lower (<=) at "
+                        f"p <= {ALPHA}, otherwise it is not demonstrated. "
+                        "The claim never changes the exit status")
     arguments = parser.parse_args(argv)
     files = (arguments.baseline, arguments.candidate)
     directories = (arguments.baseline_dir, arguments.candidate_dir)
@@ -653,17 +745,22 @@ def main(argv=None):
             all(directories) and not any(files)):
         parser.error("give --baseline and --candidate, or --baseline-dir "
                      "and --candidate-dir")
+    if arguments.strict and not arguments.order_check:
+        parser.error("--strict needs --order-check")
+    options = {"allow_link": arguments.allow_link,
+               "order_check": arguments.order_check,
+               "strict": arguments.strict, "claim": arguments.claim}
 
     try:
         if all(directories):
             outcome = compare_groups(collect_groups(*arguments.baseline_dir),
                                      collect_groups(*arguments.candidate_dir),
-                                     arguments.allow_link)
+                                     **options)
             print(format_groups(outcome))
             return 0 if outcome["passed"] else 1
         baseline = [read_report(path) for path in arguments.baseline]
         candidate = [read_report(path) for path in arguments.candidate]
-        result = compare(baseline, candidate, arguments.allow_link)
+        result = compare(baseline, candidate, **options)
     except (OSError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 2
