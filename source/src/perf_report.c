@@ -105,8 +105,9 @@ static void perf_report_append(PerfReportWriter *writer,
   writer->length += (size_t)written;
 }
 
-/* Appends name=value for a 64-bit counter. The PSP's C library does not
-   print 64-bit integers with %llu, so the digits are written out here. */
+/* Appends name=value for a 64-bit counter. The PSP's C library has no
+   printf format for 64-bit integers, so the digits are written out here
+   (scripts/check-performance.sh rejects such formats in source/src). */
 static void perf_report_append_u64(PerfReportWriter *writer,
  const char *name, uint64_t value)
 {
@@ -333,6 +334,25 @@ int perf_report_format(char *output, size_t output_size,
    metrics->gamepak_rom_seek_total_us);
   perf_report_append_u64(&writer, "gamepak-rom-read-total-us",
    metrics->gamepak_rom_read_total_us);
+  perf_report_append_u64(&writer, "work-time-samples",
+   metrics->work_time_samples);
+  perf_report_append_u64(&writer, "work-time-total-us",
+   metrics->work_time_total_us);
+  perf_report_append(&writer, "work-time-max-us=%u\n",
+   metrics->work_time_max_us);
+  perf_report_append(&writer, "work-time-p50-us=%u\n",
+   metrics->work_time_p50_us);
+  perf_report_append(&writer, "work-time-p95-us=%u\n",
+   metrics->work_time_p95_us);
+  perf_report_append(&writer, "work-time-p99-us=%u\n",
+   metrics->work_time_p99_us);
+  perf_report_append_u64(&writer, "frames-work-over-budget",
+   metrics->frames_work_over_budget);
+  perf_report_append_u64(&writer, "frames-over-1-5x-budget",
+   metrics->frames_over_1_5x_budget);
+  perf_report_append_u64(&writer, "frames-late", metrics->frames_late);
+  perf_report_append_u64(&writer, "link-lockstep-frames",
+   metrics->link_lockstep_frames);
 
   if(writer.failed)
   {

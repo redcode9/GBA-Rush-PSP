@@ -114,7 +114,17 @@ static void test_golden_report(void)
    "gamepak-miss-bytes=2097152\n"
    "gamepak-read-errors=1\n"
    "gamepak-rom-seek-total-us=3200\n"
-   "gamepak-rom-read-total-us=96000\n";
+   "gamepak-rom-read-total-us=96000\n"
+   "work-time-samples=180\n"
+   "work-time-total-us=1800000\n"
+   "work-time-max-us=21000\n"
+   "work-time-p50-us=10000\n"
+   "work-time-p95-us=15250\n"
+   "work-time-p99-us=17000\n"
+   "frames-work-over-budget=2\n"
+   "frames-over-1-5x-budget=0\n"
+   "frames-late=7\n"
+   "link-lockstep-frames=0\n";
   PerfReportMetadata metadata;
   PerfMetricsSnapshot metrics;
   char report[PERF_REPORT_CAPACITY];
@@ -218,6 +228,16 @@ static void test_golden_report(void)
   metrics.gamepak_read_errors = 1;
   metrics.gamepak_rom_seek_total_us = 3200;
   metrics.gamepak_rom_read_total_us = 96000;
+  metrics.work_time_samples = 180;
+  metrics.work_time_total_us = 1800000;
+  metrics.work_time_max_us = 21000;
+  metrics.work_time_p50_us = 10000;
+  metrics.work_time_p95_us = 15250;
+  metrics.work_time_p99_us = 17000;
+  metrics.frames_work_over_budget = 2;
+  metrics.frames_over_1_5x_budget = 0;
+  metrics.frames_late = 7;
+  metrics.link_lockstep_frames = 0;
 
   length = perf_report_format(report, sizeof(report), &metadata, &metrics);
   assert(length == (int)strlen(expected));
@@ -396,6 +416,16 @@ static void test_worst_case_capacity(void)
   metrics.gamepak_read_errors = UINT64_MAX;
   metrics.gamepak_rom_seek_total_us = UINT64_MAX;
   metrics.gamepak_rom_read_total_us = UINT64_MAX;
+  metrics.work_time_samples = UINT64_MAX;
+  metrics.work_time_total_us = UINT64_MAX;
+  metrics.work_time_max_us = UINT32_MAX;
+  metrics.work_time_p50_us = UINT32_MAX;
+  metrics.work_time_p95_us = UINT32_MAX;
+  metrics.work_time_p99_us = UINT32_MAX;
+  metrics.frames_work_over_budget = UINT64_MAX;
+  metrics.frames_over_1_5x_budget = UINT64_MAX;
+  metrics.frames_late = UINT64_MAX;
+  metrics.link_lockstep_frames = UINT64_MAX;
 
   length = perf_report_format(report, sizeof(report), &metadata, &metrics);
   assert(length == (int)sizeof(report) - 1);
@@ -411,6 +441,52 @@ static void test_worst_case_capacity(void)
   assert(report[0] == '\0');
 }
 
+/* The decimal value of key in a report, read digit by digit into 64 bits
+   (the host's long may be 32 bits wide). */
+static uint64_t report_value(const char *report, const char *key)
+{
+  char needle[64];
+  size_t length = strlen(key);
+  const char *at;
+  uint64_t value = 0;
+
+  assert(length + 3U <= sizeof(needle));
+  needle[0] = '\n';
+  memcpy(needle + 1, key, length);
+  needle[length + 1] = '=';
+  needle[length + 2] = '\0';
+  at = strstr(report, needle);
+  assert(at != NULL);
+  at += strlen(needle);
+  assert(*at >= '0' && *at <= '9');
+  while(*at >= '0' && *at <= '9')
+    value = value * 10U + (uint64_t)(*at++ - '0');
+  assert(*at == '\n');
+  return value;
+}
+
+/* A counter above 32 bits and the lockstep frames come back exactly. */
+static void test_u64_and_link_values_read_back(void)
+{
+  const uint64_t big = ((uint64_t)1 << 40) + 1U;
+  PerfReportMetadata metadata;
+  PerfMetricsSnapshot metrics;
+  char report[PERF_REPORT_CAPACITY];
+
+  memset(&metadata, 0, sizeof(metadata));
+  memset(&metrics, 0, sizeof(metrics));
+  metrics.state = PERF_METRICS_STOPPED;
+  metrics.work_time_total_us = big;
+  metrics.frames_late = big;
+  metrics.link_lockstep_frames = 3600;
+
+  assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
+  assert(report_value(report, "work-time-total-us") == big);
+  assert(report_value(report, "frames-late") == big);
+  assert(report_value(report, "link-lockstep-frames") == 3600);
+  assert(report_value(report, "frames-work-over-budget") == 0);
+}
+
 /* Runs every report case; a failing assert aborts the run. */
 int main(void)
 {
@@ -418,6 +494,7 @@ int main(void)
   test_states_and_empty_identity();
   test_invalid_arguments_and_small_buffer();
   test_worst_case_capacity();
+  test_u64_and_link_values_read_back();
   puts("Performance report tests passed");
   return 0;
 }

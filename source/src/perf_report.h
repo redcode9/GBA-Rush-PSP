@@ -26,7 +26,7 @@
 #define PERF_REPORT_VERSION 7U
 
 /* Worst-case report length in bytes, including the terminating NUL. */
-#define PERF_REPORT_CAPACITY 3369U
+#define PERF_REPORT_CAPACITY 3725U
 /* The longest build-id value written; a longer id is cut. */
 #define PERF_REPORT_BUILD_ID_MAX 23U
 
