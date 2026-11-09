@@ -2384,6 +2384,7 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
   perf_monitor_identity(&identity);
   memset(&metadata, 0, sizeof(metadata));
   metadata.emulator_version = GBA_RUSH_VERSION;
+  metadata.build_id = GBA_RUSH_BUILD_ID;
   model = kuKernelGetModel();
   metadata.psp_model = model < 0 ? UINT32_MAX : (u32)model;
   metadata.clock_mhz = identity.clock_mhz;

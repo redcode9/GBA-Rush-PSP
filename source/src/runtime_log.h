@@ -24,8 +24,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define RUNTIME_LOG_VERSION 5u
-#define RUNTIME_LOG_HEADER_SIZE 64u
+#define RUNTIME_LOG_VERSION 6u
+/* Version 6 grew the header to hold the build id; files of versions 1-5
+   have the 64-byte one. */
+#define RUNTIME_LOG_HEADER_SIZE 96u
+#define RUNTIME_LOG_V5_HEADER_SIZE 64u
+/* The build id field: NUL-padded ASCII, so at most 23 characters. */
+#define RUNTIME_LOG_BUILD_ID_SIZE 24u
 #define RUNTIME_LOG_RECORD_SIZE 32u
 #define RUNTIME_LOG_RING_CAPACITY 128u
 /* The critical ring uses only this many of its slots. */
@@ -130,6 +135,8 @@ typedef struct
   uint32_t rom_identity;
   uint64_t started_us;
   uint64_t flushed_us;
+  /* GBA_RUSH_BUILD_ID; empty when read from a file older than version 6. */
+  char build_id[RUNTIME_LOG_BUILD_ID_SIZE];
 } RuntimeLogMetadata;
 
 void runtime_log_ring_init(RuntimeLogRing *ring, RuntimeLogSource source);
