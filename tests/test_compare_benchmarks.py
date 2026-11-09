@@ -176,6 +176,13 @@ class BenchmarkComparisonTests(unittest.TestCase):
                          [])
         self.assertEqual(work_failures({"over_budget": 20}, over_budget=25),
                          over_budget)
+        # Exactly +20% also passes when the rate is not a round float.
+        odd = 93_123_457
+        self.assertEqual(work_failures({"over_budget": 15, "duration": odd},
+                                       over_budget=18, duration=odd), [])
+        self.assertEqual(work_failures({"over_budget": 15, "duration": odd},
+                                       over_budget=19, duration=odd),
+                         over_budget)
 
     def test_p99_regression_fails_on_v6(self):
         baseline = [report(), report(frame_p99=18100), report(frame_p99=17900)]

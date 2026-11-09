@@ -14,6 +14,7 @@ model; a baseline group without candidate reports fails the check.
 """
 
 import argparse
+import fractions
 import itertools
 import math
 import pathlib
@@ -309,10 +310,12 @@ def validate_link_runs(baseline, candidate, allow_link):
 
 
 def over_budget_per_minute(report):
-    """Frames over 1.5x the frame budget per minute of wall time."""
+    """Frames over 1.5x the frame budget per minute of wall time, exact, so
+    a rise of exactly 20% passes whatever the run's duration."""
     # compare() runs throughput() first, which rejects a duration <= 0.
-    return (number(report, "frames-over-1-5x-budget") * 60_000_000.0 /
-            number(report, "duration-us"))
+    return fractions.Fraction(
+        number(report, "frames-over-1-5x-budget") * 60_000_000,
+        number(report, "duration-us"))
 
 
 # The format 7 fields of the work-time and over-budget gates. Early format 7
@@ -423,13 +426,16 @@ def compare(baseline, candidate, allow_link=False):
                                          candidate_work_p95)
         if rise_exceeds(baseline_work_p95, candidate_work_p95, 5):
             failures.append("work-time p95 regression exceeds 5%")
-        baseline_over_budget = median_metric(baseline, over_budget_per_minute)
-        candidate_over_budget = median_metric(candidate,
-                                              over_budget_per_minute)
+        baseline_over_budget = statistics.median(
+            map(over_budget_per_minute, baseline))
+        candidate_over_budget = statistics.median(
+            map(over_budget_per_minute, candidate))
         if candidate_over_budget > baseline_over_budget + max(
-                1.0, baseline_over_budget / 5.0):
+                1, baseline_over_budget / 5):
             failures.append("frames over 1.5x budget per minute increased "
                             "by more than max(1, 20%)")
+        baseline_over_budget = float(baseline_over_budget)
+        candidate_over_budget = float(candidate_over_budget)
 
     metrics = []
     for name, metric, _ in RUN_METRICS:
