@@ -222,6 +222,19 @@ static void test_capture_identity_survives_rom_change(void)
   assert(memcmp(&saved, &replacement, sizeof(saved)) == 0);
 }
 
+/* Lockstep frames reach the session's metrics only while it runs. */
+static void test_link_lockstep_frame_wrapper(void)
+{
+  perf_monitor_init();
+  perf_monitor_record_link_lockstep_frame();
+  assert(snapshot().link_lockstep_frames == 0);
+  assert(perf_monitor_start(0));
+  perf_monitor_record_link_lockstep_frame();
+  assert(perf_monitor_stop(100));
+  perf_monitor_record_link_lockstep_frame();
+  assert(snapshot().link_lockstep_frames == 1);
+}
+
 /* Runs every session case; a failing assert aborts the run. */
 int main(void)
 {
@@ -229,6 +242,7 @@ int main(void)
   test_events_and_watermarks();
   test_wait_and_frame_wrappers();
   test_capture_identity_survives_rom_change();
+  test_link_lockstep_frame_wrapper();
   puts("Performance monitor tests passed");
   return 0;
 }

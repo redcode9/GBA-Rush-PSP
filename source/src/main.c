@@ -1396,6 +1396,7 @@ static void synchronize(void)
     {
       used_frameskip_type = FRAMESKIP_AUTO;
       used_frameskip_value = MAIN_LINK_FRAMESKIP_RUN;
+      perf_monitor_record_link_lockstep_frame();
     }
   }
 

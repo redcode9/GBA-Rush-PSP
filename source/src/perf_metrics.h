@@ -21,11 +21,18 @@
 
 #include <stdint.h>
 
-/* Frame times in 250 us buckets (to 128 ms) and GE waits in 50 us buckets
-   (to 25.6 ms); longer samples land in the last bucket. */
+/* Frame and work times in 250 us buckets (to 128 ms) and GE waits in 50 us
+   buckets (to 25.6 ms); longer samples land in the last bucket. */
 #define PERF_METRICS_HISTOGRAM_BUCKETS 512U
 #define PERF_METRICS_FRAME_BUCKET_US 250U
 #define PERF_METRICS_GE_BUCKET_US 50U
+
+/* A GBA frame (280896 cycles at 16.78 MHz) lasts 16743 us: a frame whose
+   work, its frame time minus the VBlank, audio and GE waits recorded in
+   it, takes longer cannot keep full speed. A frame time over 1.5 times
+   that (25115 us) is a visible stutter. */
+#define PERF_METRICS_WORK_BUDGET_US 16743U
+#define PERF_METRICS_FRAME_OVER_BUDGET_US 25115U
 
 /* INVALIDATED: a reset, ROM change or suspend cut the capture short. */
 typedef enum
@@ -110,8 +117,23 @@ typedef struct
   uint64_t gamepak_read_errors;
   uint64_t gamepak_rom_seek_total_us;
   uint64_t gamepak_rom_read_total_us;
+  uint64_t frames_work_over_budget;
+  uint64_t frames_over_1_5x_budget;
+  /* Frames outside fast-forward that synchronize() did not pace with a
+     backpressure VBlank wait, as real time was already ahead. A frame that
+     a wait of the frame before (the present wait with vsync on, or the
+     audio sync) carried past the VBlank counts too, so compare late counts
+     only between captures with the same vsync setting. */
+  uint64_t frames_late;
+  /* Frames emulated with a lockstep link connected: forced frameskip and
+     a different emulator thread priority. */
+  uint64_t link_lockstep_frames;
+  /* Waits recorded since the last frame; each recorded frame clears them. */
+  uint64_t frame_wait_us;
+  int frame_waited_backpressure;
   PerfMetricsHistogram frame_time;
   PerfMetricsHistogram ge_wait;
+  PerfMetricsHistogram work_time;
 } PerfMetrics;
 
 /* PerfMetrics with the histograms reduced to totals and percentiles. */
@@ -183,6 +205,16 @@ typedef struct
   uint64_t gamepak_read_errors;
   uint64_t gamepak_rom_seek_total_us;
   uint64_t gamepak_rom_read_total_us;
+  uint64_t work_time_samples;
+  uint64_t work_time_total_us;
+  uint32_t work_time_max_us;
+  uint32_t work_time_p50_us;
+  uint32_t work_time_p95_us;
+  uint32_t work_time_p99_us;
+  uint64_t frames_work_over_budget;
+  uint64_t frames_over_1_5x_budget;
+  uint64_t frames_late;
+  uint64_t link_lockstep_frames;
 } PerfMetricsSnapshot;
 
 void perf_metrics_init(PerfMetrics *metrics);
@@ -229,6 +261,7 @@ void perf_metrics_record_gamepak_evict_scan(PerfMetrics *metrics,
 void perf_metrics_record_gamepak_rom_io(PerfMetrics *metrics,
  uint32_t seek_us, uint32_t read_us, uint32_t bytes_read,
  int read_error);
+void perf_metrics_record_link_lockstep_frame(PerfMetrics *metrics);
 void perf_metrics_snapshot(const PerfMetrics *metrics,
  PerfMetricsSnapshot *snapshot);
 

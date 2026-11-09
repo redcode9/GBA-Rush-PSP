@@ -207,3 +207,8 @@ void perf_monitor_record_gamepak_rom_io(uint32_t seek_us, uint32_t read_us,
   perf_metrics_record_gamepak_rom_io(&perf_monitor_metrics, seek_us, read_us,
    bytes_read, read_error);
 }
+
+void perf_monitor_record_link_lockstep_frame(void)
+{
+  perf_metrics_record_link_lockstep_frame(&perf_monitor_metrics);
+}

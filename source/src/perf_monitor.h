@@ -91,5 +91,6 @@ void perf_monitor_record_dma(int bits32, uint32_t elements, uint32_t dma_us,
 void perf_monitor_record_gamepak_evict_scan(uint32_t us);
 void perf_monitor_record_gamepak_rom_io(uint32_t seek_us, uint32_t read_us,
  uint32_t bytes_read, int read_error);
+void perf_monitor_record_link_lockstep_frame(void);
 
 #endif /* PERF_MONITOR_H */

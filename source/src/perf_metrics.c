@@ -108,8 +108,8 @@ static uint32_t perf_metrics_histogram_percentile(
   return histogram->max_us;
 }
 
-/* Zeroes everything to IDLE and sets the frame-time and GE-wait histogram
-   bucket widths; perf_metrics_reset() does the same. */
+/* Zeroes everything to IDLE and sets the frame-time, GE-wait and work-time
+   histogram bucket widths; perf_metrics_reset() does the same. */
 void perf_metrics_init(PerfMetrics *metrics)
 {
   if(metrics == NULL)
@@ -121,6 +121,8 @@ void perf_metrics_init(PerfMetrics *metrics)
    PERF_METRICS_FRAME_BUCKET_US);
   perf_metrics_histogram_init(&metrics->ge_wait,
    PERF_METRICS_GE_BUCKET_US);
+  perf_metrics_histogram_init(&metrics->work_time,
+   PERF_METRICS_FRAME_BUCKET_US);
 }
 
 void perf_metrics_reset(PerfMetrics *metrics)
@@ -161,15 +163,21 @@ int perf_metrics_active(const PerfMetrics *metrics)
 }
 
 /* A whole frame in one call: emulated, then skipped or presented. Only
-   presented frames sample the GE wait. */
+   presented frames sample the GE wait. Its work time is the frame time
+   minus the waits recorded since the last frame and, when presented, the
+   GE wait; a skipped frame passes the GE wait of an earlier frame. */
 void perf_metrics_record_frame(PerfMetrics *metrics, uint32_t frame_time_us,
  uint32_t ge_wait_us, int skipped, int fast_forward)
 {
+  uint64_t waits;
+  uint32_t work_us = 0;
+
   if(!perf_metrics_active(metrics))
     return;
 
   perf_metrics_record_emulated_frame(metrics, frame_time_us, fast_forward);
 
+  waits = metrics->frame_wait_us;
   if(skipped)
   {
     metrics->skipped_frames = perf_metrics_saturating_add(
@@ -183,7 +191,29 @@ void perf_metrics_record_frame(PerfMetrics *metrics, uint32_t frame_time_us,
       metrics->fast_forward_presented_frames = perf_metrics_saturating_add(
        metrics->fast_forward_presented_frames, 1);
     perf_metrics_histogram_record(&metrics->ge_wait, ge_wait_us);
+    waits = perf_metrics_saturating_add(waits, ge_wait_us);
   }
+
+  /* shortcut: main_perf_start restarts the frame clock, so the first
+     recorded frame also carries the waits of the frame before it and its
+     work can come out low or 0 (one frame per capture); exact only if
+     psp_video.c reports that seed frame too. */
+  if(waits < frame_time_us)
+    work_us = frame_time_us - (uint32_t)waits;
+  perf_metrics_histogram_record(&metrics->work_time, work_us);
+
+  if(work_us > PERF_METRICS_WORK_BUDGET_US)
+    metrics->frames_work_over_budget = perf_metrics_saturating_add(
+     metrics->frames_work_over_budget, 1);
+  if(frame_time_us > PERF_METRICS_FRAME_OVER_BUDGET_US)
+    metrics->frames_over_1_5x_budget = perf_metrics_saturating_add(
+     metrics->frames_over_1_5x_budget, 1);
+  if(!fast_forward && !metrics->frame_waited_backpressure)
+    metrics->frames_late = perf_metrics_saturating_add(
+     metrics->frames_late, 1);
+
+  metrics->frame_wait_us = 0;
+  metrics->frame_waited_backpressure = 0;
 }
 
 /* The emulated half of perf_metrics_record_frame(): counts the frame and
@@ -336,8 +366,8 @@ void perf_metrics_observe_memory_available(PerfMetrics *metrics,
   metrics->has_memory_sample = 1;
 }
 
-/* Adds one VBlank wait to the count and total of its site; an unknown site
-   is ignored. */
+/* Adds one VBlank wait to the count and total of its site and to the waits
+   of the current frame; an unknown site is ignored. */
 void perf_metrics_record_wait(PerfMetrics *metrics,
  PerfMetricsWaitSite site, uint32_t wait_us)
 {
@@ -367,6 +397,10 @@ void perf_metrics_record_wait(PerfMetrics *metrics,
 
   *count = perf_metrics_saturating_add(*count, 1);
   *total = perf_metrics_saturating_add(*total, wait_us);
+  metrics->frame_wait_us = perf_metrics_saturating_add(
+   metrics->frame_wait_us, wait_us);
+  if(site == PERF_METRICS_WAIT_BACKPRESSURE)
+    metrics->frame_waited_backpressure = 1;
 }
 
 /* Time one update_screen() call took to render a GBA frame; keeps the
@@ -516,6 +550,15 @@ void perf_metrics_record_gamepak_rom_io(PerfMetrics *metrics,
      metrics->gamepak_read_errors, 1);
 }
 
+/* One frame emulated with a lockstep link connected (main.c
+   synchronize()), so a link opened halfway through a capture shows too. */
+void perf_metrics_record_link_lockstep_frame(PerfMetrics *metrics)
+{
+  if(perf_metrics_active(metrics))
+    metrics->link_lockstep_frames = perf_metrics_saturating_add(
+     metrics->link_lockstep_frames, 1);
+}
+
 /* Copies the counters, reducing each histogram to samples, total, max and
    p50/p95/p99; an all-zero snapshot when metrics is NULL. */
 void perf_metrics_snapshot(const PerfMetrics *metrics,
@@ -609,4 +652,18 @@ void perf_metrics_snapshot(const PerfMetrics *metrics,
   snapshot->gamepak_read_errors = metrics->gamepak_read_errors;
   snapshot->gamepak_rom_seek_total_us = metrics->gamepak_rom_seek_total_us;
   snapshot->gamepak_rom_read_total_us = metrics->gamepak_rom_read_total_us;
+
+  snapshot->work_time_samples = metrics->work_time.sample_count;
+  snapshot->work_time_total_us = metrics->work_time.total_us;
+  snapshot->work_time_max_us = metrics->work_time.max_us;
+  snapshot->work_time_p50_us = perf_metrics_histogram_percentile(
+   &metrics->work_time, 50);
+  snapshot->work_time_p95_us = perf_metrics_histogram_percentile(
+   &metrics->work_time, 95);
+  snapshot->work_time_p99_us = perf_metrics_histogram_percentile(
+   &metrics->work_time, 99);
+  snapshot->frames_work_over_budget = metrics->frames_work_over_budget;
+  snapshot->frames_over_1_5x_budget = metrics->frames_over_1_5x_budget;
+  snapshot->frames_late = metrics->frames_late;
+  snapshot->link_lockstep_frames = metrics->link_lockstep_frames;
 }

@@ -1,8 +1,9 @@
 /*
  * Host tests for perf_metrics.c, the counters behind the performance
  * report: session states (only an active session records), counters,
- * high and low watermarks, histogram percentiles and saturation of every
- * counter at its type's maximum.
+ * high and low watermarks, histogram percentiles, work time per frame and
+ * its budget counters, and saturation of every counter at its type's
+ * maximum.
  */
 
 #include <assert.h>
@@ -301,6 +302,171 @@ static void test_wait_and_frame_probes(void)
   assert(result.gamepak_miss_count == 0);
 }
 
+/* Work is the frame time minus every wait recorded since the last frame
+   and, for a presented frame, its GE wait; a skipped frame's stale GE wait
+   is left out. */
+static void test_work_time_subtracts_waits(void)
+{
+  PerfMetrics metrics;
+  PerfMetricsSnapshot result;
+
+  perf_metrics_init(&metrics);
+  assert(perf_metrics_start(&metrics));
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_BACKPRESSURE, 3000);
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_PRESENT, 1000);
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_AUDIO, 500);
+  perf_metrics_record_frame(&metrics, 16700, 200, 0, 0);
+  result = snapshot(&metrics);
+  assert(result.work_time_samples == 1);
+  assert(result.work_time_total_us == 12000);
+  assert(result.work_time_max_us == 12000);
+  assert(result.work_time_p50_us == 12000);
+
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_BACKPRESSURE, 1000);
+  perf_metrics_record_frame(&metrics, 10000, 9999, 1, 0);
+  result = snapshot(&metrics);
+  assert(result.work_time_samples == 2);
+  assert(result.work_time_total_us == 21000);
+  assert(result.work_time_p99_us == 12000);
+  assert(result.frame_time_total_us == 26700);
+}
+
+/* Waits longer than the frame give 0 work, not a wrapped huge value; the
+   wait sum itself saturates. */
+static void test_work_time_clamps_at_zero(void)
+{
+  PerfMetrics metrics;
+  PerfMetricsSnapshot result;
+
+  perf_metrics_init(&metrics);
+  assert(perf_metrics_start(&metrics));
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_BACKPRESSURE, 20000);
+  perf_metrics_record_frame(&metrics, 16000, 0, 0, 0);
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_AUDIO, 16000);
+  perf_metrics_record_frame(&metrics, 16500, 1000, 0, 0);
+  metrics.frame_wait_us = UINT64_MAX - 1U;
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_PRESENT, 10);
+  assert(metrics.frame_wait_us == UINT64_MAX);
+  perf_metrics_record_frame(&metrics, UINT32_MAX, UINT32_MAX, 0, 0);
+  result = snapshot(&metrics);
+  assert(result.work_time_samples == 3);
+  assert(result.work_time_total_us == 0);
+  assert(result.work_time_max_us == 0);
+  assert(result.work_time_p99_us == 0);
+  assert(result.frames_work_over_budget == 0);
+}
+
+/* Each recorded frame starts a new wait sum and a new backpressure flag. */
+static void test_waits_reset_each_frame(void)
+{
+  PerfMetrics metrics;
+  PerfMetricsSnapshot result;
+
+  perf_metrics_init(&metrics);
+  assert(perf_metrics_start(&metrics));
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_BACKPRESSURE, 5000);
+  perf_metrics_record_frame(&metrics, 16000, 0, 0, 0);
+  perf_metrics_record_frame(&metrics, 16000, 0, 0, 0);
+  result = snapshot(&metrics);
+  assert(result.work_time_total_us == 11000 + 16000);
+  assert(result.work_time_max_us == 16000);
+  assert(result.frames_late == 1);
+
+  /* A restart drops waits left over from the previous capture. */
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_BACKPRESSURE, 4000);
+  assert(perf_metrics_stop(&metrics));
+  assert(perf_metrics_start(&metrics));
+  perf_metrics_record_frame(&metrics, 16000, 0, 0, 0);
+  result = snapshot(&metrics);
+  assert(result.work_time_total_us == 16000);
+  assert(result.frames_late == 1);
+}
+
+/* Over budget means strictly above 16743 us of work or 25115 us of frame
+   time; late means no backpressure wait outside fast-forward. */
+static void test_over_budget_and_late_counts(void)
+{
+  PerfMetrics metrics;
+  PerfMetricsSnapshot result;
+
+  perf_metrics_init(&metrics);
+  assert(perf_metrics_start(&metrics));
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_BACKPRESSURE, 0);
+  perf_metrics_record_frame(&metrics, PERF_METRICS_WORK_BUDGET_US, 0, 0, 0);
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_BACKPRESSURE, 0);
+  perf_metrics_record_frame(&metrics, 16744, 0, 0, 0);
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_BACKPRESSURE, 8372);
+  perf_metrics_record_frame(&metrics, PERF_METRICS_FRAME_OVER_BUDGET_US, 0,
+   0, 0);
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_BACKPRESSURE, 8372);
+  perf_metrics_record_frame(&metrics, 25116, 0, 0, 0);
+  /* The GE wait of a presented frame counts; a skipped frame's does not. */
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_BACKPRESSURE, 0);
+  perf_metrics_record_frame(&metrics, 16744, 1, 0, 0);
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_BACKPRESSURE, 0);
+  perf_metrics_record_frame(&metrics, 16744, 16744, 1, 0);
+  result = snapshot(&metrics);
+  assert(result.frames_work_over_budget == 3);
+  assert(result.frames_over_1_5x_budget == 1);
+  assert(result.frames_late == 0);
+
+  /* A fast-forward frame is never late; another wait site does not pace. */
+  perf_metrics_record_frame(&metrics, 10000, 0, 0, 1);
+  perf_metrics_record_frame(&metrics, 10000, 0, 1, 1);
+  perf_metrics_record_frame(&metrics, 10000, 0, 0, 0);
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_PRESENT, 100);
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_AUDIO, 100);
+  perf_metrics_record_frame(&metrics, 10000, 0, 0, 0);
+  perf_metrics_record_frame(&metrics, 10000, 0, 1, 0);
+  result = snapshot(&metrics);
+  assert(result.frames_late == 3);
+  assert(result.frames_work_over_budget == 3);
+}
+
+static void test_new_counters_saturate(void)
+{
+  PerfMetrics metrics;
+  PerfMetricsSnapshot result;
+
+  perf_metrics_init(&metrics);
+  assert(perf_metrics_start(&metrics));
+  metrics.frames_work_over_budget = UINT64_MAX;
+  metrics.frames_over_1_5x_budget = UINT64_MAX;
+  metrics.frames_late = UINT64_MAX;
+  metrics.link_lockstep_frames = UINT64_MAX;
+  metrics.work_time.sample_count = UINT64_MAX;
+  metrics.work_time.total_us = UINT64_MAX;
+
+  perf_metrics_record_frame(&metrics, 30000, 0, 0, 0);
+  perf_metrics_record_link_lockstep_frame(&metrics);
+  result = snapshot(&metrics);
+  assert(result.frames_work_over_budget == UINT64_MAX);
+  assert(result.frames_over_1_5x_budget == UINT64_MAX);
+  assert(result.frames_late == UINT64_MAX);
+  assert(result.link_lockstep_frames == UINT64_MAX);
+  assert(result.work_time_samples == UINT64_MAX);
+  assert(result.work_time_total_us == UINT64_MAX);
+  assert(result.work_time_max_us == 30000);
+}
+
+/* Lockstep frames count only while a capture is active. */
+static void test_link_lockstep_frames(void)
+{
+  PerfMetrics metrics;
+
+  perf_metrics_init(&metrics);
+  perf_metrics_record_link_lockstep_frame(&metrics);
+  assert(snapshot(&metrics).link_lockstep_frames == 0);
+  assert(perf_metrics_start(&metrics));
+  perf_metrics_record_link_lockstep_frame(&metrics);
+  perf_metrics_record_link_lockstep_frame(&metrics);
+  assert(perf_metrics_stop(&metrics));
+  perf_metrics_record_link_lockstep_frame(&metrics);
+  assert(snapshot(&metrics).link_lockstep_frames == 2);
+  perf_metrics_reset(&metrics);
+  assert(snapshot(&metrics).link_lockstep_frames == 0);
+}
+
 /* Runs every counter case; a failing assert aborts the run. */
 int main(void)
 {
@@ -310,6 +476,12 @@ int main(void)
   test_empty_and_overflow_percentiles();
   test_saturating_counters();
   test_wait_and_frame_probes();
+  test_work_time_subtracts_waits();
+  test_work_time_clamps_at_zero();
+  test_waits_reset_each_frame();
+  test_over_budget_and_late_counts();
+  test_new_counters_saturate();
+  test_link_lockstep_frames();
   puts("Performance metrics tests passed");
   return 0;
 }
