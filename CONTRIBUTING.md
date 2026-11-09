@@ -44,6 +44,11 @@ make package VERSION=1.4.3
 make artifact-smoke VERSION=1.4.3
 ```
 
+`scripts/install-test-build.sh` copies a package onto the test PSPs mounted
+over USB, after archiving their logs and reports in `artifacts/` of the
+main checkout, even when run from a linked worktree; try it with
+`--dry-run` first.
+
 The optional desktop launcher has its own
 [build instructions](https://github.com/redcode9/GBA-Rush-PSP/blob/master/source/single-game_launcher/tool/README.md).
 
