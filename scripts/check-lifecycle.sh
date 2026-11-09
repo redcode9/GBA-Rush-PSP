@@ -85,7 +85,7 @@ in_order()
 # and logs the clock asked for with the CPU and bus clocks read back; quit
 # logs the last stretch before the exit flush.
 if ! in_order '/^int set_cpu_clock(u32 psp_clock)/,/^}/p' \
-     'main_log_me_clock();|(mhz, mhz, mhz / 2);|video_me_clock_changed();|main_clock_requested_mhz = mhz;|cpu_ticks, 16,' || \
+     'main_log_me_clock();|(mhz, mhz, mhz / 2);|video_me_clock_changed();|main_clock_requested_mhz = mhz;|cpu_ticks, 18,' || \
    ! in_order '/^void quit(void)/,/^}/p' \
      'main_log_me_clock();|runtime_log_psp_flush(RUNTIME_LOG_FLUSH_EXIT);'
 then

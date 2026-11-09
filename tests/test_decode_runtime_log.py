@@ -253,7 +253,7 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         # Requested, then CPU, then bus, as the decoder reads them.
         self.assertRegex(
             main_c,
-            r"cpu_ticks, 16,\s+mhz, "
+            r"cpu_ticks, 18,\s+mhz, "
             r"\(u32\)scePowerGetCpuClockFrequencyInt\(\),\s+"
             r"\(u32\)scePowerGetBusClockFrequencyInt\(\)\);")
         cases = [
@@ -276,7 +276,7 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         for values, expected in cases:
             with self.subTest(values=values):
                 self.assertEqual(
-                    decoder.describe({"event": "link-counters", "flags": 16,
+                    decoder.describe({"event": "link-counters", "flags": 18,
                                       "values": values}),
                     "cpu-clock " + expected)
 
@@ -286,7 +286,7 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         # Requested MHz, then 2 * counter ticks / us rounded, then ms.
         self.assertRegex(
             main_c,
-            r"cpu_ticks, 17,\s+main_clock_requested_mhz, "
+            r"cpu_ticks, 19,\s+main_clock_requested_mhz, "
             r"\(u32\)\(\(2 \* ticks \+ us / 2\) / us\),\s+"
             r"\(u32\)\(us / 1000\)\);")
         cases = [
@@ -306,7 +306,7 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         for values, expected in cases:
             with self.subTest(values=values):
                 self.assertEqual(
-                    decoder.describe({"event": "link-counters", "flags": 17,
+                    decoder.describe({"event": "link-counters", "flags": 19,
                                       "values": values}),
                     "me-clock " + expected)
 

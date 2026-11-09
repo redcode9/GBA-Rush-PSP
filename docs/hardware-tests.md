@@ -158,6 +158,20 @@ Each test has four fields:
   settings. Compare each game's two sets of reports with
   `scripts/compare-benchmarks.py`.
 
+## Platform
+
+### clock-every-path
+
+- Models: PSP-1000, second model
+- Minutes: 20
+- Pass: on each model the decoded log of every path shows a cpu-clock record
+  without MISMATCH, and after the Exact renderer has drawn, an me-clock
+  record without MISMATCH.
+- Steps: with the clock option at 333, play, open and close the menu, go to
+  the file browser, load another ROM, suspend and resume, host or join a link
+  session and end it, then play a minute with the Exact renderer. Decode
+  `logs/` with `tools/decode_runtime_log.py`. Repeat on the other model.
+
 ## Core
 
 ### core-rom

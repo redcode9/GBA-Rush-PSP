@@ -2554,7 +2554,7 @@ u32 yesno_dialog(const char *text)
 
 
 /* The Media Engine's clock since the last clock change, as LINK_COUNTERS
-   record 17: the clock requested then, the clock its cycle counter
+   record 19: the clock requested then, the clock its cycle counter
    measured and the milliseconds measured. Nothing if it did not draw. */
 static void main_log_me_clock(void)
 {
@@ -2567,7 +2567,7 @@ static void main_log_me_clock(void)
   main_clock_me_start = now;
   /* Its cycle counter runs at half the clock: MHz = 2 * ticks / us. */
   if(us != 0)
-    runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 17,
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 19,
      main_clock_requested_mhz, (u32)((2 * ticks + us / 2) / us),
      (u32)(us / 1000));
 }
@@ -2575,7 +2575,7 @@ static void main_log_me_clock(void)
 /* Sets PLL, CPU and bus clocks in MHz; the bus runs at half the CPU. Every
    path calls it, so the log shows the clock of each one: the requested
    clock and the CPU and bus clocks the firmware reports, as LINK_COUNTERS
-   record 16, after the Media Engine's clock at the previous request.
+   record 18, after the Media Engine's clock at the previous request.
    Emulator thread only, like every main-ring write. */
 int set_cpu_clock(u32 psp_clock)
 {
@@ -2588,7 +2588,7 @@ int set_cpu_clock(u32 psp_clock)
   video_me_clock_changed();
 
   main_clock_requested_mhz = mhz;
-  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 16,
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 18,
    mhz, (u32)scePowerGetCpuClockFrequencyInt(),
    (u32)scePowerGetBusClockFrequencyInt());
   return ret;

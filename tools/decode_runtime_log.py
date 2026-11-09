@@ -84,7 +84,7 @@ ADHOC_PHASES = [
     "peer-list", "socket", "send", "receive", "group-lost",
 ]
 # Counter records by kind; describe() spells out 11 (Exact renderer),
-# 12 (CPU core), 16 (requested and read-back CPU and bus clocks) and 17
+# 12 (CPU core), 18 (requested and read-back CPU and bus clocks) and 19
 # (requested and measured Media Engine clock).
 LINK_COUNTERS = {
     0: "rtt-us/rtt-max-us/resends",
@@ -253,7 +253,7 @@ def describe(record: dict[str, Any]) -> str:
             f"cpu-core={_name(CPU_CORES, value0)} blocks-compiled={value1} "
             f"code-flushes={value2}"
         )
-    if event == "link-counters" and flags == 16:
+    if event == "link-counters" and flags == 18:
         cpu, bus = _signed(value1), _signed(value2)
         # The firmware reports whole MHz (333 reads back 333, its bus 166).
         mismatch = abs(cpu - value0) > 1 or abs(bus - value0 // 2) > 1
@@ -261,7 +261,7 @@ def describe(record: dict[str, Any]) -> str:
             f"cpu-clock requested={value0}MHz cpu={cpu}MHz bus={bus}MHz"
             + (" MISMATCH" if mismatch else "")
         )
-    if event == "link-counters" and flags == 17:
+    if event == "link-counters" and flags == 19:
         # Measured only while the Media Engine draws (Exact renderer).
         if not value2:
             return f"me-clock requested={value0}MHz me=unmeasured"
