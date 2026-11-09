@@ -21,7 +21,7 @@
 
 ## 1.5
 
-- [ ] **ENG-1.6** — Build id nel binario, nell'interfaccia e nei formati · M, 2,25 gg · dipende da: ENG-1.3 · PSP: sì · _codice pronto (33400c0), manca la prova su PSP_
+- [ ] **ENG-1.6** — Build id nel binario, nell'interfaccia e nei formati · M, 2,25 gg · dipende da: ENG-1.3 · PSP: sì · _codice pronto (33400c0) e riga del CHANGELOG scritta (formati 6 e 7); manca solo la prova su PSP. La build da main porta il build id e l'installer di SOA-2.1 (`scripts/install-test-build.sh`) è nel tree: la prova va nella prossima sessione SOA-2.2 (pagina Diagnostica, report e log decodificato mostrano il build id del manifest)_
 - [x] **ENG-2.1** — Lint degli script in make check e pattern binari senza distinzione di maiuscole · S, 0,5 gg · dipende da: — · PSP: no · **subito**
 
 ## 1.6

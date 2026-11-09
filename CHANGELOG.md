@@ -31,7 +31,11 @@
   exact source the EBOOT was built from, ending in `-dirty` when that source
   had uncommitted changes. Performance reports, runtime logs and the
   release's build manifest record the same id, so every report can be
-  traced to its build.
+  traced to its build. Runtime logs move to format 6 and performance
+  reports to format 7 to carry it. The log decoder still reads the older
+  formats, and `scripts/compare-benchmarks.py` still compares format 6
+  reports with format 7 ones but refuses reports written before 1.4.3,
+  whose 64-bit counters are not valid.
 - Every release comes with a build manifest (the commit, build id, compiler,
   flags and the SHA-256 of each built file), a `SHA256SUMS` file and the
   corresponding source code, `GBA-Rush-PSP-<version>-source.zip`, made from
