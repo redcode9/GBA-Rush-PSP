@@ -164,7 +164,9 @@ do
        grep -Fq 'SceUInt timeout = SOUND_POWER_TIMEOUT;' || \
      ! printf '%s\n' "$audio_power_body" | \
        grep -Fq 'sceKernelWaitSema(sound_sema, 1, &timeout)' || \
-     printf '%s\n' "$audio_power_body" | grep -Fq 'SOUND_OPERATION_TIMEOUT'
+     printf '%s\n' "$audio_power_body" | grep -Fq 'SOUND_OPERATION_TIMEOUT' || \
+     printf '%s\n' "$audio_power_body" | \
+       grep -Eq '^[[:space:]]*timeout[[:space:]]*[-+*/%&|^<>]*='
   then
     fail "${fn#* } does not wait for audio with the 50 ms power deadline"
   fi
