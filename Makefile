@@ -191,7 +191,7 @@ test-tools:
 	 tests/test_prove_regression.py \
 	 tests/test_upstream_review.py \
 	 tests/test_decode_test_rom.py tests/test_gen_shift_table.py \
-	 tests/test_make_bios_vectors.py
+	 tests/test_make_bios_vectors.py tests/test_install_test_build.py
 
 # The link cable test runs fewer network profiles (--quick) under the
 # sanitizers, where it is much slower.

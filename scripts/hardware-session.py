@@ -3,7 +3,8 @@
 
 docs/hardware-tests.md is the catalog: one `### <id>` section per test with
 the fields Models, Minutes, Pass and Steps. docs/HARDWARE-RESULTS.md holds
-one table row per run, and every row must name a test of the catalog.
+one table row per run, and every row must name a test of the catalog. Its
+builds table gives the full SHA-256 of each test build's EBOOT.PBP.
 """
 
 import argparse
@@ -22,6 +23,7 @@ MODEL_CLASSES = ("PSP-1000", "second model")
 MODELS = ("PSP-1000", "PSP-2000", "PSP-3000", "PSP-N1000", "PSP-E1000")
 RESULTS_HEADER = ("Date", "Version", "EBOOT sha256", "Model", "Firmware/CFW",
                   "Storage", "Test id", "Result", "Minutes", "Evidence")
+BUILDS_HEADER = ("EBOOT.PBP", "Full SHA-256", "Built from", "Notes")
 OUTCOMES = ("pass", "fail", "partial")
 
 TEST_ID = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -94,24 +96,43 @@ def check_row(row):
     return None
 
 
+def check_build(cells):
+    """The reason a builds table row is malformed, or None."""
+    short, full = (cell.strip("`") for cell in cells[:2])
+    if not re.fullmatch(r"[0-9a-f]{64}", full):
+        return f"full SHA-256 '{full}' is not 64 lower-case hex digits"
+    if short != full[:12]:
+        return f"EBOOT.PBP '{short}' is not the start of its full SHA-256"
+    if not cells[2]:
+        return "empty Built from"
+    return None
+
+
 def parse_results(text):
-    """The rows of every results table, as dicts with their line number."""
+    """The rows of every results table, as dicts with their line number.
+
+    Builds tables are checked too, but their rows are not results."""
     rows = []
-    header_seen = False
+    header = None
     for number, line in enumerate(text.splitlines(), 1):
         if not line.startswith("|"):
             continue
         cells = cells_of(line)
-        if tuple(cells) == RESULTS_HEADER:
-            header_seen = True
+        if tuple(cells) in (RESULTS_HEADER, BUILDS_HEADER):
+            header = tuple(cells)
             continue
         if all(re.fullmatch(r":?-+:?", cell) for cell in cells):
             continue
-        if not header_seen:
+        if header is None:
             raise ValueError(f"line {number}: table row before the header")
-        if len(cells) != len(RESULTS_HEADER):
+        if len(cells) != len(header):
             raise ValueError(f"line {number}: {len(cells)} columns, expected "
-                             f"{len(RESULTS_HEADER)}")
+                             f"{len(header)}")
+        if header == BUILDS_HEADER:
+            problem = check_build(cells)
+            if problem:
+                raise ValueError(f"line {number}: {problem}")
+            continue
         row = dict(zip(RESULTS_HEADER, cells), line=number)
         problem = check_row(row)
         if problem:

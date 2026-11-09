@@ -53,6 +53,18 @@ Each test has four fields:
   the middle of a write (on the PSP-1000 remove the battery, on a PSP Go hold
   POWER), restart and check the `.sav` each time.
 
+### save-rom
+
+- Models: PSP-1000, second model
+- Minutes: 30
+- Pass: on each model every target of the save test ROM saves and rereads
+  its own generation (`read_back` and `write_verify` pass, and `flash_id` on
+  the Flash targets), each `.sav` has its chip's size, and no bus case that
+  is green on the previous release is red on the candidate.
+- Steps: build the targets of `tests/save-rom`. On each model start each
+  target, wait for GEN to change, leave it right after, start it again, and
+  decode its `.sav` with `tools/decode_test_rom.py`.
+
 ## Link
 
 ### link-frlg-both-roles

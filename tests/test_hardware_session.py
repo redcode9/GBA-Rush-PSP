@@ -112,6 +112,36 @@ class ResultsTest(unittest.TestCase):
             MODULE.parse_results(row() + HEADER)
 
 
+FULL = "0123456789ab" + "cd" * 26
+BUILDS = ("| EBOOT.PBP | Full SHA-256 | Built from | Notes |\n"
+          "|---|---|---|---|\n")
+
+
+def build(short="`0123456789ab`", full=f"`{FULL}`", source="main 1234567"):
+    return f"| {short} | {full} | {source} | Test build. |\n"
+
+
+class BuildsTest(unittest.TestCase):
+    def test_a_builds_table_before_the_results_is_not_a_result(self):
+        rows = MODULE.parse_results(BUILDS + build() + "\n" + HEADER + row())
+        self.assertEqual([r["line"] for r in rows], [7])
+
+    def assert_malformed(self, bad_row, reason):
+        with self.assertRaisesRegex(ValueError, f"^line 4: .*{reason}"):
+            MODULE.parse_results(BUILDS + build() + bad_row)
+
+    def test_a_short_digest_must_start_the_full_one(self):
+        self.assert_malformed(build(short="`0123456789ac`"), "not the start")
+
+    def test_the_full_digest_has_64_lower_case_hex_digits(self):
+        self.assert_malformed(build(full=f"`{FULL[:-1]}`"), "64 lower-case")
+        self.assert_malformed(build(full=f"`{FULL.upper()}`"), "64 lower-case")
+
+    def test_a_build_row_needs_its_source_and_four_columns(self):
+        self.assert_malformed(build(source=""), "empty Built from")
+        self.assert_malformed("| `0123456789ab` | x |\n", "2 columns, expected 4")
+
+
 class ValidateTest(unittest.TestCase):
     def test_rows_with_catalog_ids_pass(self):
         catalog = MODULE.parse_catalog(CATALOG)

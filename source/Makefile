@@ -151,6 +151,11 @@ build-config.stamp: FORCE
 	 printf '%s\n' '$(BUILD_CONFIG)' > $@; fi
 .PHONY: FORCE
 FORCE:
+# The compiler also writes each object's own header list (foo.o -> foo.d),
+# so a header missing from COMMON_FILE still rebuilds what includes it.
+$(OBJS): CPPFLAGS += -MMD -MP
+-include $(OBJS:.o=.d)
+EXTRA_CLEAN += $(OBJS:.o=.d)
 # The translations are written in UTF-8 and stored as GBK, the encoding the
 # menu font code reads.
 message.o: $(MESSAGE_FILE)
