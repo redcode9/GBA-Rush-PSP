@@ -39,6 +39,8 @@ typedef struct
   uint32_t pos;   /* next unread byte of in_buf */
   uint32_t avail; /* bytes really read into in_buf */
   uint32_t done;  /* archive bytes read so far, for progress */
+  uint32_t reported; /* done of the last progress call */
+  int quiet;      /* set while inflating: fills report nothing */
 } ZipReader;
 
 static uint16_t get16(const uint8_t *p)
@@ -50,6 +52,19 @@ static uint32_t get32(const uint8_t *p)
 {
   return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
    ((uint32_t)p[3] << 24);
+}
+
+/* Calls progress only when done grew: the popup takes a smaller or equal
+   done for a new load. */
+static void report(ZipReader *reader, uint32_t done)
+{
+  const ZipRomIo *io = reader->io;
+
+  if(io->progress != NULL && done > reader->reported)
+  {
+    reader->reported = done;
+    io->progress(io->ctx, done, io->total);
+  }
 }
 
 /* One read of up to len bytes into buf; *got is never 0 on ZIP_ROM_OK. */
@@ -65,8 +80,8 @@ static int reader_read(ZipReader *reader, uint8_t *buf, uint32_t len,
     return ZIP_ROM_TRUNCATED;
   *got = (uint32_t)count;
   reader->done += *got;
-  if(io->progress != NULL)
-    io->progress(io->ctx, reader->done, io->total);
+  if(!reader->quiet)
+    report(reader, reader->done);
   return ZIP_ROM_OK;
 }
 
@@ -165,8 +180,10 @@ static int load_stored(ZipReader *reader, uint8_t *out, uint32_t size,
   return ZIP_ROM_OK;
 }
 
-/* Inflates a raw deflate stream into out, at most out_cap bytes. On return
-   the input zlib did not use is the reader's again. */
+/* Inflates a raw deflate stream into out, at most out_cap bytes, one
+   ZIP_ROM_INFLATE_STEP at a time, reporting the archive bytes used after
+   each inflate call. On return the input zlib did not use is the reader's
+   again. */
 static int load_deflated(ZipReader *reader, uint8_t *out, uint32_t out_cap,
  uint32_t *crc_out, uint32_t *size_out)
 {
@@ -177,17 +194,29 @@ static int load_deflated(ZipReader *reader, uint8_t *out, uint32_t out_cap,
   memset(&stream, 0, sizeof(stream)); /* Z_NULL: zlib's own allocators */
   if(inflateInit2(&stream, -MAX_WBITS) != Z_OK)
     return ZIP_ROM_CORRUPT;
+  reader->quiet = 1;
   stream.next_in = reader->io->in_buf + reader->pos;
   stream.avail_in = reader->avail - reader->pos;
   stream.next_out = out;
-  stream.avail_out = out_cap;
+  stream.avail_out = out_cap < ZIP_ROM_INFLATE_STEP ? out_cap :
+   ZIP_ROM_INFLATE_STEP;
   for(;;)
   {
+    int step_full = stream.avail_out == 0 && stream.total_out < out_cap;
     uInt before;
     uInt produced;
     int err;
 
-    if(stream.avail_in == 0)
+    if(step_full)
+    {
+      uint32_t left = out_cap - (uint32_t)stream.total_out;
+
+      stream.avail_out = left < ZIP_ROM_INFLATE_STEP ? left :
+       ZIP_ROM_INFLATE_STEP;
+    }
+    /* After a full step zlib may still hold the rest of a match, or the end
+       of the stream, in its bit buffer: inflate once before reading more. */
+    else if(stream.avail_in == 0)
     {
       result = reader_fill(reader);
       if(result != ZIP_ROM_OK)
@@ -199,6 +228,7 @@ static int load_deflated(ZipReader *reader, uint8_t *out, uint32_t out_cap,
     err = inflate(&stream, Z_NO_FLUSH);
     produced = before - stream.avail_out;
     crc = crc32(crc, stream.next_out - produced, produced);
+    report(reader, reader->done - stream.avail_in);
     if(err == Z_STREAM_END)
       break;
     /* Z_BUF_ERROR with room left means all input is used: refill. */
@@ -209,6 +239,7 @@ static int load_deflated(ZipReader *reader, uint8_t *out, uint32_t out_cap,
     if(result != ZIP_ROM_OK)
       break;
   }
+  reader->quiet = 0;
   reader->pos = reader->avail - stream.avail_in;
   *crc_out = (uint32_t)crc;
   *size_out = (uint32_t)stream.total_out;
@@ -241,7 +272,7 @@ static int read_descriptor(ZipReader *reader, uint32_t *crc, uint32_t *size)
 int zip_rom_load(const ZipRomIo *io, uint8_t *out, uint32_t out_cap,
  uint32_t *size)
 {
-  ZipReader reader = { io, 0, 0, 0 };
+  ZipReader reader = { io, 0, 0, 0, 0, 0 };
   uint8_t header[LOCAL_HEADER_SIZE];
   char name[NAME_MAX_LENGTH + 1];
   uint32_t flags, method, name_length, extra_length;

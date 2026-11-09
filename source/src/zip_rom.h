@@ -32,13 +32,19 @@ enum
   ZIP_ROM_IO_ERROR     /* read returned an error */
 };
 
+/* Most ROM bytes inflated between two progress calls, so a run of padding
+   that packs into a few archive bytes still moves the bar. */
+#define ZIP_ROM_INFLATE_STEP (256u * 1024u)
+
 typedef struct
 {
   void *ctx;
   /* Reads up to len bytes into buf: the count read, 0 at end of file, or a
      negative value on error. */
   int32_t (*read)(void *ctx, uint8_t *buf, uint32_t len);
-  /* Optional (may be NULL): archive bytes read so far, against total. */
+  /* Optional (may be NULL): archive bytes read so far, against total; while
+     inflating, the archive bytes inflate has used. Each call's done is
+     larger than the one before. */
   void (*progress)(void *ctx, uint32_t done, uint32_t total);
   uint8_t *in_buf;   /* caller-owned input buffer of in_cap bytes */
   uint32_t in_cap;

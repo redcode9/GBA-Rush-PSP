@@ -35,6 +35,7 @@ static int with_progress = 1;
 
 typedef struct
 {
+  const uint8_t *data;
   uint32_t len;
   uint32_t pos;
   uint32_t chunk;
@@ -54,7 +55,7 @@ static int32_t fake_read(void *ctx, uint8_t *buf, uint32_t len)
     n = len;
   if(fake->pos + n > fake->fail_at)
     return -1;
-  memcpy(buf, archive + fake->pos, n);
+  memcpy(buf, fake->data + fake->pos, n);
   fake->pos += n;
   return (int32_t)n;
 }
@@ -79,6 +80,7 @@ static int load(uint32_t len, uint32_t chunk, uint32_t out_cap,
   int result;
 
   memset(&fake, 0, sizeof(fake));
+  fake.data = archive;
   fake.len = len;
   fake.chunk = chunk;
   fake.fail_at = fail_at;
@@ -93,7 +95,9 @@ static int load(uint32_t len, uint32_t chunk, uint32_t out_cap,
   for(i = out_cap; i < sizeof(out); i++)
     assert(out[i] == CANARY);
   assert(fake.calls <= (len + chunk - 1) / chunk + 2);
-  assert(fake.last_done == (with_progress ? fake.pos : 0));
+  /* Bytes read after the stream are not reported. */
+  assert(with_progress ? (fake.last_done <= fake.pos &&
+   fake.pos - fake.last_done <= chunk) : fake.last_done == 0);
   return result;
 }
 
@@ -369,6 +373,98 @@ static void test_read_errors_stop_the_load(void)
   assert(load(len, SMALL_CHUNK, OUT_CAP, 0, &size) == ZIP_ROM_IO_ERROR);
 }
 
+/* A 1.5 MiB ROM whose last 1 MiB is 0xFF: the padding packs into a small
+   part of one read, and must still move the bar once per inflate step. */
+#define PAD_ROM_SIZE (6u * ZIP_ROM_INFLATE_STEP)
+#define PAD_GAME_SIZE (2u * ZIP_ROM_INFLATE_STEP)
+#define PAD_CHUNK (64u * 1024u) /* zip.c's read size */
+#define PAD_DATA_OFFSET 38u     /* the header and "game.gba", no extra */
+
+static uint8_t pad_rom[PAD_ROM_SIZE];
+static uint8_t pad_archive[PAD_DATA_OFFSET + PAD_ROM_SIZE / 2u];
+static uint8_t pad_out[PAD_ROM_SIZE];
+static uint32_t high_water; /* pad_out matches pad_rom below this */
+
+/* Moves high_water over the bytes written since the last call; returns how
+   far it moved. */
+static uint32_t scan_high_water(void)
+{
+  uint32_t start = high_water;
+
+  while(high_water < PAD_ROM_SIZE &&
+   pad_out[high_water] == pad_rom[high_water])
+    high_water++;
+  return high_water - start;
+}
+
+static void padding_progress(void *ctx, uint32_t done, uint32_t total)
+{
+  fake_progress(ctx, done, total);
+  assert(scan_high_water() <= ZIP_ROM_INFLATE_STEP);
+}
+
+static void test_padding_reports_every_step(void)
+{
+  uint32_t seed = 1;
+  uint32_t i, len, size = 0;
+  z_stream stream;
+  FakeArchive fake;
+  ZipRomIo io;
+
+  for(i = 0; i < PAD_ROM_SIZE; i++)
+  {
+    seed = seed * 1103515245u + 12345u;
+    if(i >= PAD_GAME_SIZE)
+      pad_rom[i] = 0xFFu;
+    else
+      pad_rom[i] = (i & 0x1000u) != 0 ? (uint8_t)(seed >> 24) :
+       (uint8_t)(i * 7u / 13u);
+    pad_out[i] = (uint8_t)(pad_rom[i] ^ 0x5Au); /* unwritten never matches */
+  }
+
+  /* Method 8 with CRC and sizes in the header, nothing after the stream. */
+  memset(&stream, 0, sizeof(stream));
+  assert(deflateInit2(&stream, 6, Z_DEFLATED, -MAX_WBITS, 8,
+   Z_DEFAULT_STRATEGY) == Z_OK);
+  stream.next_in = pad_rom;
+  stream.avail_in = PAD_ROM_SIZE;
+  stream.next_out = pad_archive + PAD_DATA_OFFSET;
+  stream.avail_out = sizeof(pad_archive) - PAD_DATA_OFFSET;
+  assert(deflate(&stream, Z_FINISH) == Z_STREAM_END);
+  len = PAD_DATA_OFFSET + (uint32_t)stream.total_out;
+  assert(deflateEnd(&stream) == Z_OK);
+  memset(pad_archive, 0, PAD_DATA_OFFSET);
+  put32(pad_archive, 0x04034B50u);
+  put16(pad_archive + 4, 20u);
+  put16(pad_archive + 8, 8u);
+  put32(pad_archive + 14, (uint32_t)crc32(0L, pad_rom, PAD_ROM_SIZE));
+  put32(pad_archive + 18, len - PAD_DATA_OFFSET);
+  put32(pad_archive + 22, PAD_ROM_SIZE);
+  put16(pad_archive + 26, 8u);
+  memcpy(pad_archive + 30, "game.gba", 8);
+
+  memset(&fake, 0, sizeof(fake));
+  fake.data = pad_archive;
+  fake.len = len;
+  fake.chunk = PAD_CHUNK;
+  fake.fail_at = NO_FAILURE;
+  io.ctx = &fake;
+  io.read = fake_read;
+  io.progress = padding_progress;
+  io.in_buf = in_buf;
+  io.in_cap = PAD_CHUNK;
+  io.total = len;
+  high_water = 0;
+  /* out_cap is the ROM size, so the stream ends with no room left. */
+  assert(zip_rom_load(&io, pad_out, PAD_ROM_SIZE, &size) == ZIP_ROM_OK);
+  assert(size == PAD_ROM_SIZE);
+  assert(memcmp(pad_out, pad_rom, PAD_ROM_SIZE) == 0);
+  assert(fake.calls <= (len + PAD_CHUNK - 1) / PAD_CHUNK + 2);
+  /* zip.c's closing call to progress draws the rest. */
+  assert(scan_high_water() <= ZIP_ROM_INFLATE_STEP);
+  assert(high_water == PAD_ROM_SIZE);
+}
+
 int main(void)
 {
   make_fixture();
@@ -380,6 +476,7 @@ int main(void)
   test_unsupported_entries();
   test_too_big_for_the_buffer();
   test_read_errors_stop_the_load();
+  test_padding_reports_every_step();
   puts("Zip ROM tests passed");
   return 0;
 }
