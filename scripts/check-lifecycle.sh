@@ -156,17 +156,22 @@ then
   fail "SRC audio lifecycle calls the Output2 API family"
 fi
 # sound_power_suspend and sound_power_resume each wait for the audio thread
-# with the power deadline, never with the audio thread's own.
+# once, in an if and with the power deadline, never with the audio thread's
+# own; timeout is never changed after its declaration.
 for fn in 'void sound_power_suspend' 'int sound_power_resume'
 do
   audio_power_body=$(body "/^$fn(void)/,/^}/p" source/src/sound.c)
   if ! printf '%s\n' "$audio_power_body" | \
        grep -Fq 'SceUInt timeout = SOUND_POWER_TIMEOUT;' || \
-     ! printf '%s\n' "$audio_power_body" | \
-       grep -Fq 'sceKernelWaitSema(sound_sema, 1, &timeout)' || \
+     [ "$(printf '%s\n' "$audio_power_body" | \
+          grep -Fc 'sceKernelWaitSema(')" -ne 1 ] || \
+     ! printf '%s\n' "$audio_power_body" | grep -Eq \
+       '^[[:space:]]*if[[:space:]]*\(.*sceKernelWaitSema\(sound_sema, 1, &timeout\)' || \
      printf '%s\n' "$audio_power_body" | grep -Fq 'SOUND_OPERATION_TIMEOUT' || \
      printf '%s\n' "$audio_power_body" | \
-       grep -Eq '^[[:space:]]*timeout[[:space:]]*[-+*/%&|^<>]*='
+       sed 's/SceUInt timeout = SOUND_POWER_TIMEOUT;//' | grep -Eq \
+       -e '(^|[^[:alnum:]_])timeout[[:space:]]*(([-+*/%&|^]|<<|>>)?=([^=]|$)|\+\+|--)' \
+       -e '(\+\+|--)[[:space:]]*timeout'
   then
     fail "${fn#* } does not wait for audio with the 50 ms power deadline"
   fi
