@@ -160,6 +160,15 @@ def percent_change(baseline, candidate):
     return ((candidate / baseline) - 1.0) * 100.0
 
 
+def rise_exceeds(baseline, candidate, percent):
+    """Whether candidate is more than percent above baseline.
+
+    Exact on the integer and half-integer medians of the reports, where
+    percent_change() puts a rise of exactly 5% at 5.000000000000004.
+    """
+    return candidate * 100 > baseline * (100 + percent)
+
+
 def summary(values):
     """Median, minimum and maximum of the per-run values of one build."""
     return float(statistics.median(values)), min(values), max(values)
@@ -352,7 +361,7 @@ def compare(baseline, candidate, allow_link=False):
     failures = []
     if throughput_change < -2.0:
         failures.append("throughput regression exceeds 2%")
-    if frame_p95_change > 5.0:
+    if rise_exceeds(baseline_frame_p95, candidate_frame_p95, 5):
         failures.append("frame-time p95 regression exceeds 5%")
     if candidate_underruns > baseline_underruns:
         failures.append("audio underruns increased")

@@ -113,6 +113,18 @@ class BenchmarkComparisonTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertEqual(len(result["failures"]), 4)
 
+    def test_gate_boundaries(self):
+        """Each threshold passes at its exact value and fails just past it."""
+        baseline = [report(), report(), report()]
+
+        def failures(**changed):
+            return MODULE.compare(baseline, [report(**changed)
+                                             for _ in range(3)])["failures"]
+
+        self.assertEqual(failures(frame_p95=17850), [])
+        self.assertEqual(failures(frame_p95=17851),
+                         ["frame-time p95 regression exceeds 5%"])
+
     def test_mismatched_configuration_is_rejected(self):
         baseline = [report(), report(), report()]
         candidate = [report(), report(), report(clock=222)]
