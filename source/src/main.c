@@ -1827,8 +1827,8 @@ static int main_autorun_path(char *path, size_t path_size, const char *name)
   return result >= 0 && (size_t)result < path_size;
 }
 
-/* The ROM or the trace did not start: exit=1 quits, else the startup goes
-   on as usual with no game loaded. */
+/* The ROM, the trace or its hashes did not start: exit=1 quits, else the
+   startup goes on as usual with no game loaded. */
 static int main_autorun_fail(AutorunError error)
 {
   main_autorun_report(AUTORUN_STATUS_FAILED, error, 0);
@@ -1889,6 +1889,17 @@ int main_autorun_start(void)
      (!main_autorun_path(path, sizeof(path), main_autorun.trace) ||
       gui_trace_replay_file(path) <= 0))
     return main_autorun_fail(AUTORUN_ERROR_TRACE);
+  if(main_autorun.hash[0] != '\0')
+  {
+    /* The replay started without hashes: their array did not fit. */
+    if(input_diagnostic_trace_hashes() == NULL)
+    {
+      input_diagnostic_trace_cancel();
+      return main_autorun_fail(AUTORUN_ERROR_NO_HASH_MEMORY);
+    }
+    if(main_autorun.perturb)
+      input_diagnostic_trace_hashes_perturb(main_autorun.perturb_frame);
+  }
 
   main_autorun_running = main_autorun.frames != 0;
   main_autorun_report(AUTORUN_STATUS_STARTED, AUTORUN_OK, 0);
@@ -1896,14 +1907,22 @@ int main_autorun_start(void)
 }
 
 /* Called by update_gba once per emulated frame, at VBlank: after frames=N
-   frames from the ROM's start the run is done, and exit=1 quits. */
+   frames from the ROM's start the run is done, hash= gets the replay's
+   state hashes (once, at the end of the run), and exit=1 quits. */
 void main_autorun_frame(void)
 {
+  char path[MAX_PATH];
+
   if(!main_autorun_running || ++main_autorun_frames < main_autorun.frames)
     return;
 
   main_autorun_running = 0;
-  main_autorun_report(AUTORUN_STATUS_DONE, AUTORUN_OK, 0);
+  if(main_autorun.hash[0] != '\0' &&
+     (!main_autorun_path(path, sizeof(path), main_autorun.hash) ||
+      !gui_trace_write_hashes(path)))
+    main_autorun_report(AUTORUN_STATUS_FAILED, AUTORUN_ERROR_HASH, 0);
+  else
+    main_autorun_report(AUTORUN_STATUS_DONE, AUTORUN_OK, 0);
   if(main_autorun.exit_when_done)
     quit();
 }

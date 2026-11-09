@@ -35,7 +35,11 @@ static const char *const autorun_config_error_names[] =
   "needs-frames",
   "read",
   "rom",
-  "trace"
+  "trace",
+  "needs-trace",
+  "needs-hash",
+  "no-hash-memory",
+  "hash"
 };
 
 static const char *const autorun_config_status_names[] =
@@ -48,7 +52,7 @@ static const char *const autorun_config_status_names[] =
 
 typedef char autorun_config_error_names_check
  [(sizeof(autorun_config_error_names) / sizeof(autorun_config_error_names[0])
-   == AUTORUN_ERROR_TRACE + 1) ? 1 : -1];
+   == AUTORUN_ERROR_HASH + 1) ? 1 : -1];
 
 enum
 {
@@ -58,12 +62,14 @@ enum
   AUTORUN_KEY_TRACE,
   AUTORUN_KEY_FRAMES,
   AUTORUN_KEY_EXIT,
+  AUTORUN_KEY_HASH,
+  AUTORUN_KEY_PERTURB,
   AUTORUN_KEY_COUNT
 };
 
 static const char *const autorun_config_keys[AUTORUN_KEY_COUNT] =
 {
-  "version", "build", "rom", "trace", "frames", "exit"
+  "version", "build", "rom", "trace", "frames", "exit", "hash", "perturb"
 };
 
 typedef struct
@@ -97,9 +103,9 @@ static int autorun_config_key(const char *key, size_t length)
   return AUTORUN_KEY_COUNT;
 }
 
-/* Decimal digits only, 1 to AUTORUN_CONFIG_FRAMES_MAX. */
-static int autorun_config_frames(const char *text, size_t length,
- uint32_t *frames)
+/* Decimal digits only, 0 to AUTORUN_CONFIG_FRAMES_MAX. */
+static int autorun_config_number(const char *text, size_t length,
+ uint32_t *number)
 {
   uint32_t value = 0;
   size_t i;
@@ -117,9 +123,7 @@ static int autorun_config_frames(const char *text, size_t length,
       return 0;
     value = value * 10U + digit;
   }
-  if(value == 0)
-    return 0;
-  *frames = value;
+  *number = value;
   return 1;
 }
 
@@ -222,7 +226,8 @@ int autorun_config_parse(const char *text, size_t size, const char *build_id,
         break;
 
       case AUTORUN_KEY_FRAMES:
-        if(!autorun_config_frames(value, value_length, &config->frames))
+        if(!autorun_config_number(value, value_length, &config->frames) ||
+           config->frames == 0)
           return autorun_config_fail(config, AUTORUN_ERROR_BAD_VALUE,
            number);
         break;
@@ -232,6 +237,23 @@ int autorun_config_parse(const char *text, size_t size, const char *build_id,
           return autorun_config_fail(config, AUTORUN_ERROR_BAD_VALUE,
            number);
         config->exit_when_done = value[0] == '1';
+        break;
+
+      case AUTORUN_KEY_HASH:
+        if(value_length == 0)
+          return autorun_config_fail(config, AUTORUN_ERROR_BAD_VALUE,
+           number);
+        memcpy(config->hash, value, value_length);
+        config->hash[value_length] = '\0';
+        break;
+
+      case AUTORUN_KEY_PERTURB:
+        /* Checked against frames once the whole file is read. */
+        if(!autorun_config_number(value, value_length,
+            &config->perturb_frame))
+          return autorun_config_fail(config, AUTORUN_ERROR_BAD_VALUE,
+           number);
+        config->perturb = 1;
         break;
 
       default:
@@ -256,12 +278,31 @@ int autorun_config_parse(const char *text, size_t size, const char *build_id,
   if(key_line[AUTORUN_KEY_EXIT] != 0 && key_line[AUTORUN_KEY_FRAMES] == 0)
     return autorun_config_fail(config, AUTORUN_ERROR_NEEDS_FRAMES,
      key_line[AUTORUN_KEY_EXIT]);
+  if(key_line[AUTORUN_KEY_HASH] != 0)
+  {
+    if(key_line[AUTORUN_KEY_TRACE] == 0)
+      return autorun_config_fail(config, AUTORUN_ERROR_NEEDS_TRACE,
+       key_line[AUTORUN_KEY_HASH]);
+    if(key_line[AUTORUN_KEY_FRAMES] == 0)
+      return autorun_config_fail(config, AUTORUN_ERROR_NEEDS_FRAMES,
+       key_line[AUTORUN_KEY_HASH]);
+  }
+  if(key_line[AUTORUN_KEY_PERTURB] != 0)
+  {
+    if(key_line[AUTORUN_KEY_HASH] == 0)
+      return autorun_config_fail(config, AUTORUN_ERROR_NEEDS_HASH,
+       key_line[AUTORUN_KEY_PERTURB]);
+    /* A flip at or after the last frame would never show in the hashes. */
+    if(config->perturb_frame >= config->frames)
+      return autorun_config_fail(config, AUTORUN_ERROR_BAD_VALUE,
+       key_line[AUTORUN_KEY_PERTURB]);
+  }
   return 1;
 }
 
 const char *autorun_config_error_name(AutorunError error)
 {
-  if((unsigned int)error > (unsigned int)AUTORUN_ERROR_TRACE)
+  if((unsigned int)error > (unsigned int)AUTORUN_ERROR_HASH)
     return "invalid";
   return autorun_config_error_names[error];
 }

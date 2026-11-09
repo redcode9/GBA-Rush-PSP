@@ -38,11 +38,18 @@
  *                    frames. Needs rom. Without it the game runs on.
  *   exit=0|1         1 quits the EBOOT when the run is done, or when the ROM
  *                    or the trace fails to start. Needs frames.
+ *   hash=<path>      where the replay's state hashes (.gbsh, state_hash.h)
+ *                    are written when the run is done; a path without ':'
+ *                    is relative to the EBOOT folder. Needs trace and
+ *                    frames.
+ *   perturb=<n>      decimal, below frames: flips one IWRAM bit at frame n
+ *                    of the replay (0 is its first), so the hashes of this
+ *                    run must differ from an unperturbed one's from there
+ *                    on. Needs hash.
  *
- * Not keys yet: the state-hash file, the network fault profile and the
- * power events come with the code that uses them (the replay's hash
- * capture, the ad-hoc fault knobs, the power event injector). Until then
- * such a key is unknown and refuses the file.
+ * Not keys yet: the network fault profile and the power events come with
+ * the code that uses them (the ad-hoc fault knobs, the power event
+ * injector). Until then such a key is unknown and refuses the file.
  *
  * Example, to replay a trace for one minute and quit:
  *
@@ -96,7 +103,14 @@ typedef enum
   /* Set by main.c, not by the parser. */
   AUTORUN_ERROR_READ,
   AUTORUN_ERROR_ROM,
-  AUTORUN_ERROR_TRACE
+  AUTORUN_ERROR_TRACE,
+  /* Set by the parser. */
+  AUTORUN_ERROR_NEEDS_TRACE,
+  AUTORUN_ERROR_NEEDS_HASH,
+  /* Set by main.c: the hashes did not fit in memory at the start, or
+     were not written at the end. */
+  AUTORUN_ERROR_NO_HASH_MEMORY,
+  AUTORUN_ERROR_HASH
 } AutorunError;
 
 /* Logged as values, like AutorunError. */
@@ -113,6 +127,11 @@ typedef struct
   /* Empty when the file has no such key. */
   char rom[AUTORUN_CONFIG_LINE_MAX + 1];
   char trace[AUTORUN_CONFIG_LINE_MAX + 1];
+  char hash[AUTORUN_CONFIG_LINE_MAX + 1];
+  /* 1 when perturb_frame is set; the frame is relative to the replay's
+     first. */
+  uint32_t perturb;
+  uint32_t perturb_frame;
   /* 0: no frame limit. */
   uint32_t frames;
   uint32_t exit_when_done;

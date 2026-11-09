@@ -114,7 +114,7 @@ AUTORUN_REASONS = [
     "none", "too-large", "not-text", "line-too-long", "version", "syntax",
     "unknown-key", "duplicate-key", "bad-value", "build-missing",
     "build-mismatch", "build-unknown", "needs-rom", "needs-frames", "read",
-    "rom", "trace",
+    "rom", "trace", "needs-trace", "needs-hash", "no-hash-memory", "hash",
 ]
 LINK_EVENTS = {
     "link-command", "link-state", "link-pause-end", "link-error",

@@ -193,6 +193,7 @@ AUTORUN_STUBS = r'''
 #include <string.h>
 #include "autorun_config.h"
 #include "runtime_log.h"
+#include "state_hash.h"
 typedef uint8_t u8;
 typedef int32_t s32;
 typedef uint32_t u32;
@@ -248,6 +249,21 @@ s32 load_gamepak(char *name) {
 }
 void reset_gba(void) { resets++; }
 int gui_trace_replay_file(const char *name) { strcpy(traced, name); return trace_result; }
+static StateHashLog hash_log;
+static char hashed[MAX_PATH];
+static int hashes_attached, hash_result, cancels, perturbs;
+static u32 perturb_frame;
+const StateHashLog *input_diagnostic_trace_hashes(void) {
+  return hashes_attached ? &hash_log : NULL;
+}
+void input_diagnostic_trace_cancel(void) { cancels++; hashes_attached = 0; }
+void input_diagnostic_trace_hashes_perturb(u32 frame) {
+  assert(hashes_attached); perturbs++; perturb_frame = frame;
+}
+int gui_trace_write_hashes(const char *name) {
+  assert(hashes_attached); strcpy(hashed, name); hashes_attached = 0;
+  return hash_result;
+}
 void quit(void) { quits++; }
 int main_autorun_start(void);
 void main_autorun_frame(void);
@@ -262,6 +278,8 @@ AUTORUN_SCENARIOS = r'''
 static void clear_test(void) {
   file_exists = 1; read_error = 0; load_result = trace_result = 1;
   results = events = flushes = quits = resets = 0;
+  hashes_attached = hash_result = 1; cancels = perturbs = 0;
+  perturb_frame = 0; hashed[0] = '\0';
   result[0] = loaded[0] = traced[0] = gamepak_filename[0] = '\0';
   gamepak_file_size = 1;
   main_autorun_running = main_autorun_frames = 0;
@@ -345,6 +363,39 @@ int main(void) {
   assert(start(HEAD "rom=b.gba\ntrace=t.gbit\nframes=9\nexit=1\n") == 0);
   assert(quits == 1);
   expect(AUTORUN_STATUS_FAILED, "trace", 0, 0);
+
+  /* hash= writes the replay's hashes once, when frames= runs out;
+     perturb= reaches input.c before the first frame. */
+  clear_test();
+  assert(start(HEAD "rom=a.gba\ntrace=t.gbit\nframes=3\nexit=1\n"
+               "hash=out/a.gbsh\nperturb=2\n"));
+  assert(perturbs == 1 && perturb_frame == 2 && cancels == 0);
+  expect(AUTORUN_STATUS_STARTED, "none", 0, 0);
+  frames(2); assert(hashed[0] == '\0' && results == 1);
+  frames(1); assert(strcmp(hashed, "ms0:/GAME/out/a.gbsh") == 0);
+  assert(results == 2 && quits == 1 && flushes == 0);
+  expect(AUTORUN_STATUS_DONE, "none", 0, 3);
+  clear_test();
+  assert(start(HEAD "rom=a.gba\ntrace=t.gbit\nframes=2\nhash=ms0:/h.gbsh\n"));
+  assert(perturbs == 0);
+  frames(2); assert(strcmp(hashed, "ms0:/h.gbsh") == 0 && quits == 0);
+  expect(AUTORUN_STATUS_DONE, "none", 0, 2);
+  /* Without hash= nothing is written, with or without hashes. */
+  clear_test(); hashes_attached = 0;
+  assert(start(HEAD "rom=a.gba\ntrace=t.gbit\nframes=2\n"));
+  frames(2); assert(hashed[0] == '\0' && cancels == 0);
+  expect(AUTORUN_STATUS_DONE, "none", 0, 2);
+
+  clear_test(); hash_result = 0;
+  assert(start(HEAD "rom=a.gba\ntrace=t.gbit\nframes=2\nexit=1\nhash=h.gbsh\n"));
+  frames(2); assert(hashed[0] != '\0' && quits == 1 && flushes == 1);
+  expect(AUTORUN_STATUS_FAILED, "hash", 0, 2);
+  clear_test(); hashes_attached = 0;
+  assert(start(HEAD "rom=a.gba\ntrace=t.gbit\nframes=2\nexit=1\nhash=h.gbsh\n"
+               "perturb=1\n") == 0);
+  assert(cancels == 1 && perturbs == 0 && quits == 1 && flushes == 1);
+  assert(gamepak_filename[0] == '\0' && gamepak_file_size == 0);
+  expect(AUTORUN_STATUS_FAILED, "no-hash-memory", 0, 0);
   puts("diagnostic autorun regressions passed");
   return 0;
 }

@@ -1,7 +1,7 @@
 /*
  * Host tests for autorun_config.c, the diagnostic autorun file: the
- * version line, the build id gate, the keys and their limits, hostile
- * input, and the exact result text.
+ * version line, the build id gate, the keys and their limits, the replay
+ * hash keys, hostile input, and the exact result text.
  */
 
 #include <assert.h>
@@ -33,7 +33,9 @@ static void assert_refused(AutorunError error, uint32_t line)
   assert(config.error == error);
   assert(config.error_line == line);
   assert(config.rom[0] == '\0' && config.trace[0] == '\0');
+  assert(config.hash[0] == '\0');
   assert(config.frames == 0 && config.exit_when_done == 0);
+  assert(config.perturb == 0 && config.perturb_frame == 0);
 }
 
 static void refused(const char *text, AutorunError error, uint32_t line)
@@ -107,7 +109,7 @@ static void test_build_gate(void)
 static void test_keys(void)
 {
   refused(HEAD "power=suspend\n", AUTORUN_ERROR_UNKNOWN_KEY, 3);
-  refused(HEAD "rom=a.gba\n\n# hash next\nhash=1\n",
+  refused(HEAD "rom=a.gba\n\n# net next\nnet=psp-stalls\n",
    AUTORUN_ERROR_UNKNOWN_KEY, 6);
   refused(HEAD "x=\n", AUTORUN_ERROR_UNKNOWN_KEY, 3);
   refused(HEAD "=a.gba\n", AUTORUN_ERROR_UNKNOWN_KEY, 3);
@@ -143,6 +145,41 @@ static void test_values(void)
   refused(HEAD "frames=60\n", AUTORUN_ERROR_NEEDS_ROM, 3);
   refused(HEAD "rom=a.gba\nexit=1\n", AUTORUN_ERROR_NEEDS_FRAMES, 4);
   refused(HEAD "rom=a.gba\nexit=0\n", AUTORUN_ERROR_NEEDS_FRAMES, 4);
+}
+
+#define RUN HEAD "rom=a.gba\ntrace=t.gbit\nframes=600\n"
+
+static void test_hash_keys(void)
+{
+  assert(parse(RUN "hash=hashes/a.gbsh\n"));
+  assert(strcmp(config.hash, "hashes/a.gbsh") == 0);
+  assert(config.perturb == 0 && config.perturb_frame == 0);
+  /* Any order; a flip from the first replayed frame to the last one
+     before frames runs out. */
+  assert(parse(HEAD "perturb=0\nhash=ms0:/h.gbsh\nrom=a.gba\n"
+               "trace=t.gbit\nframes=600\nexit=1\n"));
+  assert(strcmp(config.hash, "ms0:/h.gbsh") == 0);
+  assert(config.perturb == 1 && config.perturb_frame == 0);
+  assert(parse(RUN "hash=h.gbsh\nperturb=599\n"));
+  assert(config.perturb == 1 && config.perturb_frame == 599);
+  assert(parse(RUN "hash=h.gbsh\nperturb=0120\n"));
+  assert(config.perturb_frame == 120);
+
+  refused(RUN "hash=\n", AUTORUN_ERROR_BAD_VALUE, 6);
+  refused(HEAD "rom=a.gba\nframes=600\nhash=h.gbsh\n",
+   AUTORUN_ERROR_NEEDS_TRACE, 5);
+  refused(HEAD "rom=a.gba\ntrace=t.gbit\nhash=h.gbsh\n",
+   AUTORUN_ERROR_NEEDS_FRAMES, 5);
+  refused(RUN "perturb=5\n", AUTORUN_ERROR_NEEDS_HASH, 6);
+  refused(RUN "hash=h.gbsh\nperturb=600\n", AUTORUN_ERROR_BAD_VALUE, 7);
+  refused(RUN "hash=h.gbsh\nperturb=4294967295\n", AUTORUN_ERROR_BAD_VALUE,
+   7);
+  refused(RUN "hash=h.gbsh\nperturb=\n", AUTORUN_ERROR_BAD_VALUE, 7);
+  refused(RUN "hash=h.gbsh\nperturb=-1\n", AUTORUN_ERROR_BAD_VALUE, 7);
+  refused(RUN "hash=h.gbsh\nperturb=5:\n", AUTORUN_ERROR_BAD_VALUE, 7);
+  refused(RUN "hash=h.gbsh\nhash=i.gbsh\n", AUTORUN_ERROR_DUPLICATE_KEY, 7);
+  refused(RUN "hash=h.gbsh\nperturb=1\nperturb=2\n",
+   AUTORUN_ERROR_DUPLICATE_KEY, 8);
 }
 
 static void test_hostile_input(void)
@@ -223,6 +260,15 @@ static void test_result_text(void)
    "too-large") == 0);
   assert(strcmp(autorun_config_error_name(AUTORUN_ERROR_TRACE), "trace")
    == 0);
+  assert(strcmp(autorun_config_error_name(AUTORUN_ERROR_NEEDS_TRACE),
+   "needs-trace") == 0);
+  assert(strcmp(autorun_config_error_name(AUTORUN_ERROR_NEEDS_HASH),
+   "needs-hash") == 0);
+  assert(strcmp(autorun_config_error_name(AUTORUN_ERROR_NO_HASH_MEMORY),
+   "no-hash-memory") == 0);
+  assert(strcmp(autorun_config_error_name(AUTORUN_ERROR_HASH), "hash") == 0);
+  assert(strcmp(autorun_config_error_name(
+   (AutorunError)(AUTORUN_ERROR_HASH + 1)), "invalid") == 0);
   assert(strcmp(autorun_config_error_name((AutorunError)99), "invalid")
    == 0);
 }
@@ -235,6 +281,7 @@ int main(void)
   test_build_gate();
   test_keys();
   test_values();
+  test_hash_keys();
   test_hostile_input();
   test_result_text();
   puts("Autorun config tests passed");
