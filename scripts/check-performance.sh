@@ -21,6 +21,16 @@ then
   exit 1
 fi
 
+# They are formatted only in gui.c, once a replay or its autorun is done,
+# never from update_gba or a hot module.
+exporters=$(grep -rlE 'state_hash_export|state_hash_text_size' source/src |
+  grep -vxE 'source/src/(gui\.c|state_hash\.c|state_hash\.h)' || true)
+if [ -n "$exporters" ]
+then
+  echo "Replay state hashes are formatted outside gui.c: $exporters" >&2
+  exit 1
+fi
+
 if grep -Eq 'perf_report_format|main_perf_write_report' \
   source/src/cpu.c source/src/memory.c source/src/psp_video.c \
   source/src/sound.c source/src/video_dispatch.c
