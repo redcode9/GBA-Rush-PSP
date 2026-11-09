@@ -30,8 +30,9 @@ HOST_SANITIZE_FLAGS ?= -fsanitize=address,undefined -fno-omit-frame-pointer
 # psp_video.c) on the host.
 PSP_SDK_INCLUDE ?= $(shell psp-config --pspsdk-path 2>/dev/null)/include
 # DIAGNOSTIC_INPUT_TRACE=1 is the old name of PROFILE=diagnostic, and
-# DIAGNOSTIC_CORE_PROFILE=1 builds that profile too (source/Makefile).
-PROFILE ?= $(if $(DIAGNOSTIC_INPUT_TRACE)$(DIAGNOSTIC_CORE_PROFILE),diagnostic,release)
+# DIAGNOSTIC_CORE_PROFILE=1 and DIAGNOSTIC_HW_PROBE=1 build that profile too
+# (source/Makefile).
+PROFILE ?= $(if $(DIAGNOSTIC_INPUT_TRACE)$(DIAGNOSTIC_CORE_PROFILE)$(DIAGNOSTIC_HW_PROBE),diagnostic,release)
 HOST_TEST_CODEBREAKER = $(HOST_BUILD_DIR)/test_codebreaker
 HOST_TEST_GBA_SIO = $(HOST_BUILD_DIR)/test_gba_sio
 HOST_TEST_LINK_NET = $(HOST_BUILD_DIR)/test_link_net

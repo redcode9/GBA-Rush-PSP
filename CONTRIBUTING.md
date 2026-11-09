@@ -74,7 +74,8 @@ The optional desktop launcher has its own
 `psp-build`, `package` and `artifact-smoke` use the release profile, the EBOOT
 players get, unless given `PROFILE=diagnostic`. The diagnostic profile adds
 the features that `source/src/build_profile.h` switches on (today the input
-trace; `DIAGNOSTIC_CORE_PROFILE=1` adds the New core's profile), is titled
+trace; `DIAGNOSTIC_CORE_PROFILE=1` adds the New core's profile and
+`DIAGNOSTIC_HW_PROBE=1` the memory system probe), is titled
 "GBA Rush PSP [DIAG]" with its own icon, and is packaged as
 `dist/GBA-Rush-PSP-<version>-diag.zip`, with its manifest and
 `dist/SHA256SUMS-diag`, for the folder `PSP/GAME/GBARushPSP-DIAG/`:

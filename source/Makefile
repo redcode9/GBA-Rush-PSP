@@ -115,6 +115,13 @@ ifneq ($(PROFILE),diagnostic)
 $(error DIAGNOSTIC_CORE_PROFILE=1 asks for PROFILE=diagnostic, not PROFILE=$(PROFILE))
 endif
 endif
+# So is the memory system probe.
+ifneq ($(DIAGNOSTIC_HW_PROBE),)
+PROFILE ?= diagnostic
+ifneq ($(PROFILE),diagnostic)
+$(error DIAGNOSTIC_HW_PROBE=1 asks for PROFILE=diagnostic, not PROFILE=$(PROFILE))
+endif
+endif
 PROFILE ?= release
 
 ifeq ($(PROFILE),release)
@@ -137,6 +144,9 @@ endif
 ifneq ($(DIAGNOSTIC_CORE_PROFILE),)
 CFLAGS += -DENABLE_DIAGNOSTIC_CORE_PROFILE
 endif
+# Defined here too: the probe takes 4 MiB and times the memory system at
+# every start, so PROFILE=diagnostic alone leaves it out (check-profiles.sh
+# allows this line as well).
 ifneq ($(DIAGNOSTIC_HW_PROBE),)
 CFLAGS += -DENABLE_DIAGNOSTIC_HW_PROBE
 endif
@@ -151,10 +161,11 @@ C_ONLY_OBJS = $(filter-out video_cc_wrap.o mips_stub.o video_blend_mips.o ku_bri
 $(C_ONLY_OBJS): CFLAGS += -Wbad-function-cast -Wmissing-prototypes
 $(OBJZ) $(OBJG): CFLAGS += -Wno-old-style-definition
 $(MAINOBJS): $(COMMON_FILE)
-# A new build id, profile or core profile setting rebuilds the objects: the
-# stamp is rewritten only when the configuration it records changes.
+# A new build id, profile, core profile or probe setting rebuilds the objects:
+# the stamp is rewritten only when the configuration it records changes.
 BUILD_CONFIG = $(strip $(BUILD_ID) $(PROFILE) \
- $(if $(DIAGNOSTIC_CORE_PROFILE),core-profile))
+ $(if $(DIAGNOSTIC_CORE_PROFILE),core-profile) \
+ $(if $(DIAGNOSTIC_HW_PROBE),hw-probe))
 $(MAINOBJS): build-config.stamp
 build-config.stamp: FORCE
 	@if [ "$$(cat $@ 2>/dev/null)" != '$(BUILD_CONFIG)' ]; then \

@@ -48,6 +48,9 @@
 #if defined(ENABLE_DIAGNOSTIC_CORE_PROFILE)
 #error "ENABLE_DIAGNOSTIC_CORE_PROFILE (new core profile) is a diagnostic feature: build it with make PROFILE=diagnostic"
 #endif
+#if defined(ENABLE_DIAGNOSTIC_HW_PROBE)
+#error "ENABLE_DIAGNOSTIC_HW_PROBE (memory system probe) is a diagnostic feature: build it with make PROFILE=diagnostic"
+#endif
 
 #else
 #error "No build profile is defined: build with make PROFILE=release or make PROFILE=diagnostic"
