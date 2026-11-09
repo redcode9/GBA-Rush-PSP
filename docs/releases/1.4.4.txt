@@ -5,9 +5,10 @@
 # (wire-unchanged, wire-extended or bump) and mixed-pair (what a pair with an
 # earlier release loses; needed with wire-extended).
 
-# The SAV-1.8 read matrix, the SAV-2.7 trade, EXT-1 and UI-1.5 join this list
-# once the catalog has their ids.
+# The SAV-2.7 trade, EXT-1 and UI-1.5 join this list once the catalog has
+# their ids.
 tests: save-sram-roundtrip, save-powerloss-10x, sleep-auto-20x, menu-every-page
+tests: save-read-matrix
 
 # 1.4.4 fixes saves that earlier releases lose.
 hotfix-data: yes
