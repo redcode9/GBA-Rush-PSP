@@ -13,16 +13,21 @@ from typing import Any, Iterable
 
 # The module docstring doubles as the --help description.
 
-# Big-endian file written by source/src/runtime_log.c. Header (64 bytes):
-# magic, version, header size, record size, critical/main/network record
-# counts, session id, flush reason, PSP model, firmware, CPU clock in MHz,
-# ROM game code, start and flush times in us, payload CRC-32 and header
-# CRC-32. Record (32 bytes): timestamp in us, emulated cycle, ordinal,
-# event, source, flags and three event-specific values.
-HEADER = struct.Struct(">4sHHHHHHIIIIIIQQII")
+# Big-endian file written by source/src/runtime_log.c. Header (96 bytes
+# from version 6, 64 before): magic, version, header size, record size,
+# critical/main/network record counts, session id, flush reason, PSP model,
+# firmware, CPU clock in MHz, ROM game code, start and flush times in us;
+# from version 6 the build id (24 bytes of NUL-padded ASCII at 56) and 8
+# reserved bytes. The header always ends with the payload CRC-32 and the
+# CRC-32 of the header bytes before it. Record (32 bytes): timestamp in us,
+# emulated cycle, ordinal, event, source, flags and three event-specific
+# values.
+HEADER = struct.Struct(">4sHHHHHHIIIIIIQQ")
 RECORD = struct.Struct(">QIIHBBIII")
 MAGIC = b"GBRL"
-VERSIONS = {1, 2, 3, 4, 5}
+# The header size of each version this decoder reads.
+HEADER_SIZES = {1: 64, 2: 64, 3: 64, 4: 64, 5: 64, 6: 96}
+BUILD_ID = slice(56, 80)
 
 SOURCES = {1: "main", 2: "network", 3: "critical"}
 EVENTS = {
@@ -155,19 +160,20 @@ def parse_snapshot(data: bytes, path: str = "<memory>") -> dict[str, Any]:
     fields = HEADER.unpack_from(data)
     (magic, version, header_size, record_size, critical_count, main_count,
      network_count, session_id, flush_reason, model, firmware, cpu_clock,
-     rom_identity, started_us, flushed_us, payload_crc, header_crc) = fields
-    if magic != MAGIC or version not in VERSIONS:
+     rom_identity, started_us, flushed_us) = fields
+    if magic != MAGIC or version not in HEADER_SIZES:
         raise ValueError(f"{path}: unsupported log format")
     # Version 1 files had no critical ring.
     if version == 1:
         critical_count = 0
-    if header_size != HEADER.size or record_size != RECORD.size:
+    if header_size != HEADER_SIZES[version] or record_size != RECORD.size:
         raise ValueError(f"{path}: incompatible record layout")
     expected = header_size + (main_count + network_count + critical_count) * record_size
     if len(data) != expected:
         raise ValueError(f"{path}: expected {expected} bytes, found {len(data)}")
-    # The header CRC covers every header byte before it (the first 60).
-    if _crc32(data[:60]) != header_crc:
+    # The header CRC covers every header byte before it.
+    payload_crc, header_crc = struct.unpack_from(">II", data, header_size - 8)
+    if _crc32(data[:header_size - 4]) != header_crc:
         raise ValueError(f"{path}: header checksum mismatch")
     if _crc32(data[header_size:]) != payload_crc:
         raise ValueError(f"{path}: payload checksum mismatch")
@@ -196,6 +202,8 @@ def parse_snapshot(data: bytes, path: str = "<memory>") -> dict[str, Any]:
     return {
         "path": path,
         "version": version,
+        "build_id": (data[BUILD_ID].split(b"\0", 1)[0].decode("ascii", "replace")
+                     if version >= 6 else ""),
         "session_id": session_id,
         "flush_reason_id": flush_reason,
         "flush_reason": FLUSH_REASONS.get(flush_reason, str(flush_reason)),
@@ -289,13 +297,19 @@ def iter_log_paths(arguments: Iterable[str]) -> list[Path]:
     return paths
 
 
-def print_snapshot(snapshot: dict[str, Any]) -> None:
-    """Print one snapshot as text: its header line, then every record."""
-    print(
+def header_line(snapshot: dict[str, Any]) -> str:
+    """The first line printed for a snapshot; build= only from version 6."""
+    line = (
         f"{snapshot['path']}: session={snapshot['session_id']:08X} "
         f"flush={snapshot['flush_reason']} PSP={snapshot['psp_model']} "
         f"clock={snapshot['cpu_clock_mhz']}MHz ROM={snapshot['rom_identity']}"
     )
+    return line + (f" build={snapshot['build_id']}" if snapshot["build_id"] else "")
+
+
+def print_snapshot(snapshot: dict[str, Any]) -> None:
+    """Print one snapshot as text: its header line, then every record."""
+    print(header_line(snapshot))
     for record in snapshot["records"]:
         elapsed = record["elapsed_us"]
         time_text = "unknown" if elapsed is None else f"+{elapsed / 1_000_000:9.3f}s"
@@ -320,11 +334,7 @@ def print_summary(snapshot: dict[str, Any]) -> None:
         latest[record["source"]] = max(
             latest.get(record["source"], 0), record["ordinal"]
         )
-    print(
-        f"{snapshot['path']}: session={snapshot['session_id']:08X} "
-        f"flush={snapshot['flush_reason']} PSP={snapshot['psp_model']} "
-        f"clock={snapshot['cpu_clock_mhz']}MHz ROM={snapshot['rom_identity']}"
-    )
+    print(header_line(snapshot))
     print(
         "  retained="
         + ", ".join(

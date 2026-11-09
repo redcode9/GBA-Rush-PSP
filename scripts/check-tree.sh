@@ -3,8 +3,11 @@
 set -eu
 
 # make tree-check, part of make check: whitespace errors, the source-level
-# guard scripts, the CBMC gate's inputs (CBMC itself runs only in make
-# check-cbmc), maintained docs, and no ROMs, saves or build output in Git.
+# guard scripts, the syntax of every script (check-scripts.sh), no forbidden
+# word (check-names.py), a host test for every pure module
+# (check-module-tests.sh), the CBMC gate's inputs (CBMC itself runs only in
+# make check-cbmc), maintained docs, and no ROMs, saves or build output in
+# Git.
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "Source tree checks require a Git checkout." >&2
@@ -26,7 +29,9 @@ do
     exit 1
   fi
 done
-sh -n scripts/check-cbmc.sh
+sh scripts/check-scripts.sh
+"${PYTHON:-python3}" scripts/check-names.py
+sh scripts/check-module-tests.sh
 if ! grep -q -- '--unwinding-assertions' scripts/check-cbmc.sh; then
   echo "CBMC gate must check complete unwinding" >&2
   exit 1
@@ -36,6 +41,7 @@ fi
 # Adding or retiring a design note must not break every unrelated host test.
 for path in README.md CHANGELOG.md CONTRIBUTING.md \
   docs/link-cable.md docs/ROADMAP-1.4.0.md \
+  docs/hardware-tests.md docs/HARDWARE-RESULTS.md \
   source/single-game_launcher/tool/README.md
 do
   if [ ! -s "$path" ]; then
@@ -44,14 +50,15 @@ do
   fi
 done
 
-git ls-files | while IFS= read -r path
-do
-  case "$path" in
-    *.gba|*.agb|*.bin|*.sav|*.svs|*.cht|*.o|*.elf|*.prx|*.PBP|*.exe|*/PARAM.SFO)
-      echo "Generated or private runtime file is tracked: $path" >&2
-      exit 1
-      ;;
-  esac
-done
+# :(icase) matches whatever the case, so EBOOT.pbp or ROM.GBA fail as well.
+tracked=$(git ls-files -- ':(icase)*.gba' ':(icase)*.agb' ':(icase)*.bin' \
+ ':(icase)*.sav' ':(icase)*.svs' ':(icase)*.cht' ':(icase)*.o' \
+ ':(icase)*.elf' ':(icase)*.prx' ':(icase)*.pbp' ':(icase)*.exe' \
+ ':(icase)*/param.sfo')
+if [ -n "$tracked" ]; then
+  printf '%s\n' "$tracked" |
+   sed 's/^/Generated or private runtime file is tracked: /' >&2
+  exit 1
+fi
 
 echo "Source tree checks passed"

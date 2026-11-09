@@ -1,0 +1,4 @@
+# SHA-256 of each forbidden word in lower case, one per line, read by
+# scripts/check-names.py. Only hashes go here, never the words. Add one
+# with: printf %s word | sha256sum
+1e10c083a457d80bbfccbc12d67b10b39374d26e045eea715ce13c60148a9bf8
