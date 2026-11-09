@@ -7,6 +7,7 @@ are the key=value files written by source/src/perf_report.c.
 """
 
 import argparse
+import re
 import statistics
 import sys
 
@@ -43,6 +44,11 @@ OPTIONAL_MATCH_FIELDS = (
     "fast-forward-audio",
 )
 
+# Reports of formats 6 and 7 compare with each other; build-id (format 7)
+# is deliberately not a match field, since comparing two builds is the
+# point. Reports written before 1.4.3 carry invalid 64-bit counters.
+FIRST_VALID_VERSION = (1, 4, 3)
+
 
 def read_report(path):
     """Parse a report into a dict; only finished (stopped) sessions count."""
@@ -61,6 +67,15 @@ def read_report(path):
 
     if values.get("state") != "stopped":
         raise ValueError(f"{path}: benchmark is not stopped")
+    # Synthetic reports leave version out; those stay accepted.
+    if "version" in values:
+        match = re.match(r"(\d+)\.(\d+)\.(\d+)", values["version"])
+        if match is None:
+            raise ValueError(f"{path}: invalid version: {values['version']}")
+        if tuple(map(int, match.groups())) < FIRST_VALID_VERSION:
+            raise ValueError(
+                f"{path}: 64-bit counters are not valid before 1.4.3 "
+                f"(version {values['version']})")
     return values
 
 

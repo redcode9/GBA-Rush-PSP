@@ -62,7 +62,7 @@ static void perf_report_sanitize_bytes(const uint8_t *source,
 }
 
 /* Like perf_report_sanitize_bytes(), for a NUL-terminated string such as
-   the emulator version. */
+   the emulator version or the build id. */
 static void perf_report_sanitize_string(const char *source,
  char *destination, size_t destination_size)
 {
@@ -147,6 +147,7 @@ int perf_report_format(char *output, size_t output_size,
 {
   PerfReportWriter writer;
   char version[64];
+  char build_id[PERF_REPORT_BUILD_ID_MAX + 1U];
   char rom_title[13];
   char game_code[5];
 
@@ -159,6 +160,8 @@ int perf_report_format(char *output, size_t output_size,
 
   perf_report_sanitize_string(metadata->emulator_version, version,
    sizeof(version));
+  perf_report_sanitize_string(metadata->build_id, build_id,
+   sizeof(build_id));
   perf_report_sanitize_bytes(metadata->rom_title, metadata->rom_title_length,
    rom_title, sizeof(rom_title));
   perf_report_sanitize_bytes(metadata->game_code, metadata->game_code_length,
@@ -172,6 +175,7 @@ int perf_report_format(char *output, size_t output_size,
   perf_report_append(&writer, "gba-rush-performance-report=%u\n",
    PERF_REPORT_VERSION);
   perf_report_append(&writer, "version=%s\n", version);
+  perf_report_append(&writer, "build-id=%s\n", build_id);
   perf_report_append(&writer, "psp-model=%u\n", metadata->psp_model);
   perf_report_append(&writer, "clock-mhz=%u\n", metadata->clock_mhz);
   perf_report_append(&writer, "psp-fw-version=%u\n",

@@ -5,7 +5,10 @@ set -eu
 # Checks the archive made by package-release.sh (make package, or make
 # artifact-smoke on its own): no user files, ROMs or BIOS dumps, exactly the
 # approved files under PSP/GAME/GBARushPSP/, no symbolic links, contents
-# identical to the tree, and a matching SHA-256 file.
+# identical to the tree and to the build manifest's hashes, a source zip
+# holding exactly the files of the tag named VERSION, and matching SHA-256
+# files. PROFILE=diagnostic checks the diagnostic package
+# (package-release.sh), under PSP/GAME/GBARushPSP-DIAG/.
 
 if [ "$#" -ne 1 ]; then
   echo "Usage: $0 VERSION" >&2
@@ -20,16 +23,31 @@ case "$version" in
     ;;
 esac
 
-release_name="GBA-Rush-PSP-$version"
+profile=${PROFILE:-release}
+case "$profile" in
+  release) suffix='' install_folder=GBARushPSP ;;
+  diagnostic) suffix=-diag install_folder=GBARushPSP-DIAG ;;
+  *)
+    echo "Invalid profile: $profile (release or diagnostic)" >&2
+    exit 1
+    ;;
+esac
+
+release_name="GBA-Rush-PSP-$version$suffix"
 archive="dist/$release_name.zip"
 checksum="$archive.sha256"
+manifest="dist/$release_name.manifest.json"
+source_name="GBA-Rush-PSP-$version-source"
+source_archive="dist/$source_name.zip"
+sums="dist/SHA256SUMS$suffix"
 
 documentation_files='LICENSE NOTICE README.md CHANGELOG.md CONTRIBUTING.md
 docs/link-cable.md docs/ROADMAP-1.4.0.md docs/images/link-trade-room.jpg
 docs/images/link-cable-club.jpg docs/images/link-trainer-card.jpg
 source/copyright source/bios/README.md source/res/PIC1.png'
 
-for required in "$archive" "$checksum" source/EBOOT.PBP \
+for required in "$archive" "$checksum" "$manifest" "$source_archive" "$sums" \
+  source/EBOOT.PBP \
   source/exception.prx source/media_engine.prx $documentation_files
 do
   if [ ! -f "$required" ]; then
@@ -44,7 +62,7 @@ trap 'rm -rf "$temporary_root"' EXIT HUP INT TERM
 expected_manifest="$temporary_root/expected.txt"
 actual_manifest="$temporary_root/actual.txt"
 
-install_dir="PSP/GAME/GBARushPSP"
+install_dir="PSP/GAME/$install_folder"
 
 {
   echo "$install_dir/EBOOT.PBP"
@@ -82,6 +100,10 @@ then
 fi
 
 package_root="$temporary_root/extracted/$install_dir"
+${PYTHON:-python3} scripts/release_manifest.py verify --manifest "$manifest" \
+  "$package_root/EBOOT.PBP" \
+  "$package_root/exception.prx" \
+  "$package_root/media_engine.prx"
 cmp source/EBOOT.PBP "$package_root/EBOOT.PBP"
 cmp source/exception.prx "$package_root/exception.prx"
 cmp source/media_engine.prx "$package_root/media_engine.prx"
@@ -90,10 +112,47 @@ do
   cmp "$document" "$package_root/docs/$document"
 done
 
-if command -v shasum >/dev/null 2>&1; then
-  (cd dist && shasum -a 256 -c "$release_name.zip.sha256")
-else
-  (cd dist && sha256sum -c "$release_name.zip.sha256")
+# The source zip holds exactly the tag's files (GPL-2.0 section 3).
+source_prefix="$source_name/"
+git -c core.quotePath=false ls-tree -r --name-only "refs/tags/$version" \
+  > "$temporary_root/tag-files.txt"
+sed "s|^|$source_prefix|" "$temporary_root/tag-files.txt" | LC_ALL=C sort \
+  > "$expected_manifest"
+unzip -Z1 "$source_archive" | sed '/\/$/d' | LC_ALL=C sort \
+  > "$actual_manifest"
+if ! diff -u "$expected_manifest" "$actual_manifest"
+then
+  echo "Source archive does not hold exactly the files of tag $version" >&2
+  exit 1
 fi
+for required in LICENSE NOTICE source/Makefile source/bios/Makefile \
+  source/bios/README.md
+do
+  if ! grep -qxF "$source_prefix$required" "$actual_manifest"; then
+    echo "Source archive is missing $required" >&2
+    exit 1
+  fi
+done
+
+sha256_check() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 -c "$@"
+  else
+    sha256sum -c "$@"
+  fi
+}
+
+(cd dist && sha256_check "$release_name.zip.sha256")
+
+# SHA256SUMS must cover this release's zips and manifest, not another's.
+listed_files=$(awk '{ sub(/^\*/, "", $2); print $2 }' "$sums")
+if [ "$listed_files" != "$release_name.zip
+$release_name.manifest.json
+$source_name.zip" ]; then
+  echo "$sums does not list $release_name.zip, its manifest and" \
+    "$source_name.zip" >&2
+  exit 1
+fi
+(cd dist && sha256_check "${sums#dist/}")
 
 echo "Release package checks passed"

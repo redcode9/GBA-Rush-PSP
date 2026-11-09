@@ -3285,6 +3285,7 @@ static MenuType *all_menus[MAX_MENUS];
 static u32 num_all_menus = 0;
 static char diagnostics_status_line[96];
 static char diagnostics_report_line[96];
+static char diagnostics_version_line[96];
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 static char diagnostics_trace_status_line[96];
 #endif
@@ -4697,6 +4698,9 @@ u32 menu(void)
     }
     snprintf(diagnostics_status_line, sizeof(diagnostics_status_line),
      "%s", MSG[status_message]);
+    snprintf(diagnostics_version_line, sizeof(diagnostics_version_line),
+     MSG[MSG_DIAGNOSTICS_VERSION_FORMAT], GBA_RUSH_VERSION,
+     GBA_RUSH_BUILD_ID);
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
     {
       u32 trace_state_message;
@@ -5422,6 +5426,7 @@ u32 menu(void)
   {
     ACTION_OPTION(NULL, NULL, diagnostics_status_line, MSG_DIAGNOSTICS_HELP_STATUS, 0, 0),
     ACTION_OPTION(NULL, NULL, diagnostics_report_line, MSG_DIAGNOSTICS_HELP_STATUS, 1, 0),
+    ACTION_OPTION(NULL, NULL, diagnostics_version_line, MSG_DIAGNOSTICS_HELP_STATUS, 2, 0),
     ACTION_OPTION(menu_diagnostics_start, NULL, MSG[MSG_DIAGNOSTICS_START], MSG_DIAGNOSTICS_HELP_START, 3, MSG_DIAGNOSTICS_START),
     ACTION_OPTION(menu_diagnostics_stop, NULL, MSG[MSG_DIAGNOSTICS_STOP], MSG_DIAGNOSTICS_HELP_STOP, 4, MSG_DIAGNOSTICS_STOP),
     ACTION_OPTION(menu_diagnostics_write_report, NULL, MSG[MSG_DIAGNOSTICS_SAVE_REPORT], MSG_DIAGNOSTICS_HELP_SAVE_REPORT, 5, MSG_DIAGNOSTICS_SAVE_REPORT),
@@ -5440,22 +5445,23 @@ u32 menu(void)
   diagnostics_options[0].behavior_flags = MENU_OPTION_PASSIVE_ROW;
   diagnostics_options[1].behavior_flags = MENU_OPTION_PASSIVE_ROW;
   diagnostics_options[1].visible_function = menu_diagnostics_report_visible;
-  diagnostics_options[2].available_function = menu_diagnostics_start_available;
-  diagnostics_options[3].available_function = menu_diagnostics_stop_available;
-  diagnostics_options[4].available_function = menu_diagnostics_report_available;
-  diagnostics_options[2].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[2].behavior_flags = MENU_OPTION_PASSIVE_ROW;
+  diagnostics_options[3].available_function = menu_diagnostics_start_available;
+  diagnostics_options[4].available_function = menu_diagnostics_stop_available;
+  diagnostics_options[5].available_function = menu_diagnostics_report_available;
   diagnostics_options[3].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[4].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[5].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
-  diagnostics_options[5].behavior_flags = MENU_OPTION_PASSIVE_ROW;
-  diagnostics_options[6].available_function = menu_trace_start_available;
-  diagnostics_options[7].available_function = menu_trace_finish_available;
-  diagnostics_options[8].available_function = menu_trace_replay_available;
-  diagnostics_options[9].available_function = menu_trace_cancel_available;
-  diagnostics_options[6].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[6].behavior_flags = MENU_OPTION_PASSIVE_ROW;
+  diagnostics_options[7].available_function = menu_trace_start_available;
+  diagnostics_options[8].available_function = menu_trace_finish_available;
+  diagnostics_options[9].available_function = menu_trace_replay_available;
+  diagnostics_options[10].available_function = menu_trace_cancel_available;
   diagnostics_options[7].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[8].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[9].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[10].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
 #endif
 
   MAKE_MENU(diagnostics, NULL, NULL);

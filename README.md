@@ -244,7 +244,10 @@ the archive manifest. The archive includes the license notices (with the
 built-in BIOS notes in `source/bios/README.md`), installation guide and
 current link test checklist. It never includes `gba_bios.bin`, ROMs, saves,
 savestates, settings, `dir.ini` or cheat databases: the check refuses an
-archive with a BIOS, ROM, save, savestate, settings file or `dir.ini`.
+archive with a BIOS, ROM, save, savestate, settings file or `dir.ini`. The
+command needs a Git tag named after the version and no uncommitted changes
+in `source/`: the corresponding source ZIP,
+`dist/GBA-Rush-PSP-<version>-source.zip`, is made from that tag.
 
 ### Performance comparison
 
