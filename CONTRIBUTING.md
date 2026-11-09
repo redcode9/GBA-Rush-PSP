@@ -55,7 +55,11 @@ a rebuild gives the manifest's build id; a tag without a suffix must pass
 `make release-gate CHANNEL=stable` on the manifest of its newest rc,
 downloaded from that rc's GitHub prerelease. The job summary shows whether
 two consecutive release builds gave the same EBOOT and, on a stable tag,
-whether the rebuild gave the rc's. To run a step as CI does:
+whether the rebuild gave the rc's. A clean release build is reproducible:
+three clean builds of commit 715b1c4, in two checkouts at different paths,
+gave a byte-identical `EBOOT.PBP` (sha256 starting `7c4d7b06ec22`), PRX
+files and package zip. If two builds of one tree differ, the cause goes in
+`docs/DESIGN-DECISIONS.md`. To run a step as CI does:
 
 ```sh
 docker build --build-context scripts=scripts --target psp -t gba-rush-ci tools/ci
