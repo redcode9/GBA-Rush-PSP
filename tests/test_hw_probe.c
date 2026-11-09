@@ -179,6 +179,9 @@ static void test_cycles_and_bandwidth_math(void)
   assert(hw_probe_cycles_x100(197, 333, 1u << 16) == 100);
   assert(hw_probe_cycles_x100(1000, 333, 0) == 0);
   assert(hw_probe_cycles_x100(UINT64_MAX / 1000000u, 333, 1) == UINT32_MAX);
+  /* Fractions of a cycle and of a MiB survive the division. */
+  assert(hw_probe_cycles_x100(1000, 333, 100000) == 333);
+  assert(hw_probe_mib_per_s((4u << 20) - (16u << 10), 1000) == 3984);
   assert(hw_probe_mib_per_s(4u << 20, 1000) == 4000);
   assert(hw_probe_mib_per_s(1u << 20, 1000000) == 1);
   assert(hw_probe_mib_per_s(1u << 20, 0) == 0);
