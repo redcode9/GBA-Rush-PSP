@@ -131,6 +131,9 @@ static void test_line_from_rising_curve(void)
   curve[4] = 850;
   curve[5] = 900;
   assert(hw_probe_line(curve) == 64);
+  /* Just under 90% is not. */
+  curve[3] = 800;
+  assert(hw_probe_line(curve) == 128);
   for(i = 0; i < HW_PROBE_STRIDES; i++)
     curve[i] = 500;
   assert(hw_probe_line(curve) == 0);
@@ -179,6 +182,7 @@ static void test_cycles_and_bandwidth_math(void)
   assert(hw_probe_mib_per_s(4u << 20, 1000) == 4000);
   assert(hw_probe_mib_per_s(1u << 20, 1000000) == 1);
   assert(hw_probe_mib_per_s(1u << 20, 0) == 0);
+  assert(hw_probe_mib_per_s((uint64_t)1 << 40, 1) == UINT32_MAX);
 }
 
 static void test_format_fits_and_overflows(void)
