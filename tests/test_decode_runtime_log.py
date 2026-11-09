@@ -273,6 +273,17 @@ class RuntimeLogDecoderTests(unittest.TestCase):
             decoder.describe({"event": "power-bits", "flags": 0,
                               "values": [0, 0, 3]}),
             "bits=0x00000000 (-) callback=0 outcome=switch-timed-out")
+        # The same record in a version 6 log, the format builds write now.
+        data = bytearray(fixture_v6())
+        struct.pack_into(">HBBIII", data, 96 + 16, 26, 1, 0,
+                         0x80001080, 2, 2)
+        struct.pack_into(">I", data, 88, binascii.crc32(data[96:]) & 0xFFFFFFFF)
+        struct.pack_into(">I", data, 92, binascii.crc32(data[:92]) & 0xFFFFFFFF)
+        record = decoder.parse_snapshot(bytes(data))["records"][0]
+        self.assertEqual(
+            decoder.describe(record),
+            "bits=0x80001080 (switch) callback=2 "
+            "outcome=entered-by-suspending")
 
     # Events are numbered by their place in the C enum, so a name table out
     # of step (an event appended on two branches) shows here.
