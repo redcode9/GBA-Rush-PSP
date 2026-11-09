@@ -26,6 +26,10 @@
 #include "perf_metrics.h"
 
 #define GBA_RUSH_VERSION "1.4.3"
+/* source/Makefile passes the id of the source/ tree it builds. */
+#ifndef GBA_RUSH_BUILD_ID
+#define GBA_RUSH_BUILD_ID "unknown"
+#endif
 
 // video scale type
 #define SCALED_NONE    0

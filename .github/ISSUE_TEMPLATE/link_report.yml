@@ -1,0 +1,146 @@
+name: Link cable report
+description: Two PSPs linked over Wi-Fi do not connect, disconnect, stall or desynchronize.
+labels: ["link"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        **Do not attach or link ROMs, BIOS files (`gba_bios.bin`), or saves
+        and savestates that are not your own.**
+  - type: input
+    id: game
+    attributes:
+      label: Games, regions and revisions
+      description: The game on each PSP.
+      placeholder: Pokemon FireRed (Europe) (Rev 1) on both
+    validations:
+      required: true
+  - type: input
+    id: version-p1
+    attributes:
+      label: Player 1 version
+      description: >-
+        Player 1 is the PSP that chose Create session. The version and build
+        id shown on its Diagnostics page; if the page does not show them, the
+        name of the zip installed on it.
+      placeholder: GBA-Rush-PSP-1.4.3.zip
+    validations:
+      required: true
+  - type: dropdown
+    id: model-p1
+    attributes:
+      label: Player 1 PSP model
+      options:
+        - PSP-1000
+        - PSP-2000
+        - PSP-3000
+        - PSP Go (N1000)
+        - PSP Street (E1000)
+        - PPSSPP
+        - Other or not sure
+    validations:
+      required: true
+  - type: input
+    id: firmware-p1
+    attributes:
+      label: Player 1 firmware or custom firmware
+      description: The firmware version and the custom firmware with its version. For PPSSPP, its version.
+      placeholder: 6.61 PRO-C2
+  - type: input
+    id: version-p2
+    attributes:
+      label: Player 2 version
+      description: >-
+        Player 2 is the PSP that chose Join session. The version and build id
+        shown on its Diagnostics page; if the page does not show them, the
+        name of the zip installed on it.
+      placeholder: GBA-Rush-PSP-1.4.3.zip
+    validations:
+      required: true
+  - type: dropdown
+    id: model-p2
+    attributes:
+      label: Player 2 PSP model
+      options:
+        - PSP-1000
+        - PSP-2000
+        - PSP-3000
+        - PSP Go (N1000)
+        - PSP Street (E1000)
+        - PPSSPP
+        - Other or not sure
+    validations:
+      required: true
+  - type: input
+    id: firmware-p2
+    attributes:
+      label: Player 2 firmware or custom firmware
+      description: The firmware version and the custom firmware with its version. For PPSSPP, its version.
+      placeholder: 6.61 PRO-C2
+  - type: dropdown
+    id: roles-swapped
+    attributes:
+      label: With the roles swapped
+      description: Does the same happen when the other PSP chooses Create session?
+      options:
+        - "Yes, the same happens"
+        - "No, only with these roles"
+        - "Not tried"
+  - type: textarea
+    id: plugins
+    attributes:
+      label: Plugins
+      description: The plugins enabled for games on each PSP, or none.
+  - type: textarea
+    id: settings
+    attributes:
+      label: Changed settings
+      description: >-
+        Settings changed from their defaults on each PSP, for example the
+        renderer, the CPU core, frame skip or the clock, and whether
+        `gba_bios.bin` is present.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: >-
+        What both players did, where in the game it happened, what happened
+        and what you expected. Say whether it happens every time.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        Zip the `logs` folder beside the EBOOT (`PSP/GAME/GBARushPSP/logs`)
+        of each PSP, one zip per player, and drag the zips into this box, or
+        paste links to them. If a PSP has no `logs` folder, write that here.
+    validations:
+      required: true
+  - type: textarea
+    id: savestate
+    attributes:
+      label: Savestate (optional)
+      description: >-
+        A savestate you made yourself before linking, zipped and dragged into
+        this box. Say which player it belongs to.
+  - type: textarea
+    id: trace
+    attributes:
+      label: Input trace (optional)
+      description: >-
+        With a diagnostic build, the input trace from the `traces` folder
+        (`input-<game code>-r<version>.gbit`), zipped and dragged into this
+        box. Say which player it belongs to.
+  - type: checkboxes
+    id: own-files
+    attributes:
+      label: Attachments
+      options:
+        - label: This report attaches and links no ROM, no BIOS, and no save or savestate that I did not make myself.
+          required: true

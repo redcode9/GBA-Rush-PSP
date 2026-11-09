@@ -18,6 +18,11 @@ Use one PSP-1000 and one PSP-2000 with the same EBOOT. Copy both
 `logs/` folders after each run and decode them with
 `tools/decode_runtime_log.py`.
 
+The [hardware test catalog](hardware-tests.md) now names these tests and the
+later ones, and every run is a row of
+[HARDWARE-RESULTS.md](HARDWARE-RESULTS.md), the first paired run of 2026-10-31
+included.
+
 - [ ] FireRed with FireRed: enter the Cable Club trade room, trade one Pokemon
   each way, save in-game, reload and check both Pokemon. Repeat with the other
   PSP as host.

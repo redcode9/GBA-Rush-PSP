@@ -1,0 +1,9 @@
+# Link facts for the "Links with" part of the release notes, next to what
+# the protocol constants of each release tag show (scripts/release_gate.py).
+# One fact per line: <releases> with <releases>: <text>. <releases> is one
+# release (1.4.0), a range (1.4.1-1.4.2) or a release and every later one
+# (1.4.1+). A text that starts with "no link" means those releases never
+# link, whatever their constants say. The notes of a release quote every
+# line that names a release it links with.
+1.4.0 with 1.4.1+: no link; 1.4.0 has link version 1 like them, but an older cable protocol
+1.4.3 with 1.4.1-1.4.2: links; the 1.4.3 trade fix applies only if both PSPs run 1.4.3 or later

@@ -180,6 +180,8 @@ int runtime_log_psp_init(const char *base_path)
   runtime_log_psp.metadata.cpu_clock_mhz =
    (uint32_t)scePowerGetCpuClockFrequencyInt();
   runtime_log_psp.metadata.started_us = now;
+  snprintf(runtime_log_psp.metadata.build_id,
+   sizeof(runtime_log_psp.metadata.build_id), "%s", GBA_RUSH_BUILD_ID);
   runtime_log_psp.initialized = 1;
 
   runtime_log_psp_main(RUNTIME_LOG_EVENT_SESSION_START, 0, 0,

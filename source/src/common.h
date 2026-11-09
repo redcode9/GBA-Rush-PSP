@@ -24,6 +24,9 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+/* First: the module headers below test the profile's ENABLE_DIAGNOSTIC_*. */
+#include "build_profile.h"
+
 #include <kubridge.h>
 
 #include <pspgu.h>

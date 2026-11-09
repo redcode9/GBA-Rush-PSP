@@ -16,8 +16,33 @@
 
 #include "link_net.h"
 
-/* The 40-byte header plus 12 bytes: room for several short records. */
+/* The 40-byte header plus 12 bytes: room for up to 6 records. The unwind
+   bound in scripts/check-cbmc.sh follows from it: if the datagram grows and
+   the bound does not, the proof fails on an unwinding assertion. */
 #define PROOF_DATAGRAM 52u
+
+/* Replaces CBMC's built-in memcpy, whose temporary array of symbolic size
+   sends the solver into array theory and out of memory. The preconditions
+   are CBMC 6.11's own, word for word; the copy goes byte by byte, so every
+   byte is checked as well. scripts/check-cbmc.sh explains its unwind bound
+   and why the proof still checks everything it did. The preconditions come
+   first so that CBMC checks them at each call, as it does its own. */
+void *memcpy(void *dst, const void *src, size_t n)
+{
+  __CPROVER_precondition(
+    __CPROVER_POINTER_OBJECT(dst) != __CPROVER_POINTER_OBJECT(src) ||
+      ((const unsigned char *)src >= (const unsigned char *)dst + n) ||
+      ((const unsigned char *)dst >= (const unsigned char *)src + n),
+    "memcpy src/dst overlap");
+  __CPROVER_precondition(
+    __CPROVER_r_ok(src, n), "memcpy source region readable");
+  __CPROVER_precondition(
+    __CPROVER_w_ok(dst, n), "memcpy destination region writeable");
+
+  for(size_t i = 0; i < n; i++)
+    ((unsigned char *)dst)[i] = ((const unsigned char *)src)[i];
+  return dst;
+}
 
 /* Left undefined on purpose: CBMC lets each call return any value. */
 uint32_t nondet_u32(void);

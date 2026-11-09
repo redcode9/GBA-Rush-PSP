@@ -13,6 +13,7 @@
 
 #include "runtime_log.h"
 #include "runtime_log_store.h"
+#include "zlib/zlib.h"
 
 typedef struct
 {
@@ -139,6 +140,27 @@ static uint16_t read_u16(const uint8_t *input)
   return (uint16_t)(((uint16_t)input[0] << 8) | input[1]);
 }
 
+static void write_u32(uint8_t *output, uint32_t value)
+{
+  output[0] = (uint8_t)(value >> 24);
+  output[1] = (uint8_t)(value >> 16);
+  output[2] = (uint8_t)(value >> 8);
+  output[3] = (uint8_t)value;
+}
+
+/* The payload CRC and then the header CRC, in the last 8 header bytes. */
+static void write_crcs(uint8_t *data, size_t header_size, size_t size)
+{
+  uLong crc;
+
+  crc = crc32(0L, Z_NULL, 0);
+  crc = crc32(crc, data + header_size, (uInt)(size - header_size));
+  write_u32(data + header_size - 8u, (uint32_t)crc);
+  crc = crc32(0L, Z_NULL, 0);
+  crc = crc32(crc, data, (uInt)(header_size - 4u));
+  write_u32(data + header_size - 4u, (uint32_t)crc);
+}
+
 static void test_ring_retains_latest_records(void)
 {
   RuntimeLogRecord records[RUNTIME_LOG_RING_CAPACITY];
@@ -243,20 +265,14 @@ static void test_snapshot_at_ordinal_limit_is_bounded(void)
   assert(records[1].ordinal == UINT32_MAX);
 }
 
-/* One record per ring survives encode and validate, and a flipped
-   payload byte fails the CRC. The version is pinned so that a format
-   change also updates VERSIONS in tools/decode_runtime_log.py. */
-static void test_encode_and_validate(void)
+/* Encodes one record per ring with the metadata of a session; the build id
+   is the longest the header holds. */
+static size_t encode_sample(uint8_t *encoded, size_t capacity)
 {
-  uint8_t encoded[RUNTIME_LOG_MAX_FILE_SIZE];
-  RuntimeLogMetadata decoded;
   RuntimeLogMetadata metadata;
   RuntimeLogRing main_ring;
   RuntimeLogRing network_ring;
   RuntimeLogRing critical_ring;
-  uint16_t main_count = 0;
-  uint16_t network_count = 0;
-  uint16_t critical_count = 0;
   size_t written = 0;
 
   memset(&metadata, 0, sizeof(metadata));
@@ -268,6 +284,7 @@ static void test_encode_and_validate(void)
   metadata.rom_identity = 0x42505249u;
   metadata.started_us = 100;
   metadata.flushed_us = 900;
+  strcpy(metadata.build_id, "0123456789ab-dirty-tar.");
 
   runtime_log_ring_init(&main_ring, RUNTIME_LOG_SOURCE_MAIN);
   runtime_log_ring_init(&network_ring, RUNTIME_LOG_SOURCE_NETWORK);
@@ -280,23 +297,84 @@ static void test_encode_and_validate(void)
    RUNTIME_LOG_EVENT_LINK_CHECKPOINT, 0, 6, 0, 0);
 
   assert(runtime_log_encode(&main_ring, &network_ring, &critical_ring,
-   &metadata, encoded, sizeof(encoded), &written));
+   &metadata, encoded, capacity, &written));
+  return written;
+}
+
+/* One record per ring and the build id survive encode and validate, and a
+   flipped payload byte fails the CRC. The version and header layout are
+   pinned so that a format change also updates
+   tools/decode_runtime_log.py. */
+static void test_encode_and_validate(void)
+{
+  uint8_t encoded[RUNTIME_LOG_MAX_FILE_SIZE];
+  RuntimeLogMetadata decoded;
+  uint16_t main_count = 0;
+  uint16_t network_count = 0;
+  uint16_t critical_count = 0;
+  size_t written;
+  size_t index;
+
+  written = encode_sample(encoded, sizeof(encoded));
   assert(written == RUNTIME_LOG_HEADER_SIZE +
    (3u * RUNTIME_LOG_RECORD_SIZE));
   assert(runtime_log_validate(encoded, written, &decoded, &main_count,
    &network_count, &critical_count));
   assert(read_u16(encoded + 4) == RUNTIME_LOG_VERSION);
-  assert(RUNTIME_LOG_VERSION == 5u);
+  assert(RUNTIME_LOG_VERSION == 6u);
+  assert(read_u16(encoded + 6) == 96u);
   assert(main_count == 1);
   assert(network_count == 1);
   assert(critical_count == 1);
-  assert(decoded.session_id == metadata.session_id);
-  assert(decoded.rom_identity == metadata.rom_identity);
+  assert(decoded.session_id == 0x12345678u);
+  assert(decoded.rom_identity == 0x42505249u);
+  assert(decoded.flushed_us == 900u);
+  assert(strcmp(decoded.build_id, "0123456789ab-dirty-tar.") == 0);
+  /* The id at 56, NUL-padded to 80, then zero up to the CRCs at 88. */
+  assert(memcmp(encoded + 56, "0123456789ab-dirty-tar.", 23) == 0);
+  for(index = 79; index < 88; index++)
+    assert(encoded[index] == 0);
   /* value[0] of the first record, 20 bytes into it. */
   assert(read_u32(encoded + RUNTIME_LOG_HEADER_SIZE + 20) == 6u);
 
   encoded[written - 1] ^= 1u;
   assert(!runtime_log_validate(encoded, written, NULL, NULL, NULL, NULL));
+}
+
+/* A version 5 file, built from a version 6 one the way runtime_log.c wrote
+   it then (64-byte header, CRCs at 56 and 60), still validates and has no
+   build id; a version 6 header of the old size does not. */
+static void test_version_five_still_validates(void)
+{
+  uint8_t encoded[RUNTIME_LOG_MAX_FILE_SIZE];
+  uint8_t old[RUNTIME_LOG_MAX_FILE_SIZE];
+  RuntimeLogMetadata decoded;
+  uint16_t main_count = 0;
+  size_t written;
+  size_t old_size;
+
+  written = encode_sample(encoded, sizeof(encoded));
+  old_size = written - (RUNTIME_LOG_HEADER_SIZE - RUNTIME_LOG_V5_HEADER_SIZE);
+  memcpy(old, encoded, 56);
+  memcpy(old + RUNTIME_LOG_V5_HEADER_SIZE, encoded + RUNTIME_LOG_HEADER_SIZE,
+   written - RUNTIME_LOG_HEADER_SIZE);
+  old[4] = 0;
+  old[5] = 5;
+  old[6] = 0;
+  old[7] = RUNTIME_LOG_V5_HEADER_SIZE;
+  write_crcs(old, RUNTIME_LOG_V5_HEADER_SIZE, old_size);
+
+  memset(&decoded, 0xFF, sizeof(decoded));
+  assert(runtime_log_validate(old, old_size, &decoded, &main_count, NULL,
+   NULL));
+  assert(main_count == 1);
+  assert(decoded.session_id == 0x12345678u);
+  assert(decoded.flushed_us == 900u);
+  assert(decoded.build_id[0] == '\0');
+
+  old[5] = 6;
+  write_crcs(old, RUNTIME_LOG_V5_HEADER_SIZE, old_size);
+  assert(!runtime_log_validate(old, old_size, NULL, NULL, NULL, NULL));
 }
 
 /* NULL arguments are rejected. The encode call fails on its NULL critical
@@ -412,6 +490,7 @@ int main(void)
   test_benchmark_survives_shutdown_checkpoint();
   test_snapshot_at_ordinal_limit_is_bounded();
   test_encode_and_validate();
+  test_version_five_still_validates();
   test_invalid_arguments();
   test_maximum_current_snapshot_size();
   test_store_preserves_previous_log_on_failed_promote();

@@ -1035,6 +1035,8 @@
   "Status: recording stopped",
   // MSG_DIAGNOSTICS_STATUS_INVALID
   "Status: interrupted",
+  // MSG_DIAGNOSTICS_VERSION_FORMAT
+  "Version: %s (%s)",
   // MSG_DIAGNOSTICS_START
   "Start recording",
   // MSG_DIAGNOSTICS_STOP

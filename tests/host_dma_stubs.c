@@ -63,7 +63,6 @@ uint32_t savestate_slot = 0;
 char dir_save[512] = { 0 };
 char dir_state[512] = { 0 };
 char main_path[512] = { 0 };
-unsigned char bios[0x20000] = { 0 };
 
 /* --- File I/O (only the paged ROM reads are reached) --------------------- */
 
