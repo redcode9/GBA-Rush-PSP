@@ -56,6 +56,7 @@ EVENTS = {
     23: "link-stream-metrics",
     24: "link-timeout",
     25: "link-benchmark",
+    26: "diag-autorun",
 }
 FLUSH_REASONS = {
     1: "start",
@@ -105,6 +106,15 @@ EXACT_RENDERER = [
     "not-started", "media-engine", "cpu-no-module", "cpu-no-driver",
     "cpu-no-answer", "cpu-stopped", "cpu-fault", "cpu-too-slow",
     "cpu-no-memory",
+]
+# The diagnostic autorun's outcome: AutorunStatus and the AutorunError
+# tokens of source/src/autorun_config.c, in enum order.
+AUTORUN_STATUS = ["ignored", "failed", "started", "done"]
+AUTORUN_REASONS = [
+    "none", "too-large", "not-text", "line-too-long", "version", "syntax",
+    "unknown-key", "duplicate-key", "bad-value", "build-missing",
+    "build-mismatch", "build-unknown", "needs-rom", "needs-frames", "read",
+    "rom", "trace",
 ]
 LINK_EVENTS = {
     "link-command", "link-state", "link-pause-end", "link-error",
@@ -218,6 +228,12 @@ def describe(record: dict[str, Any]) -> str:
         )
     if event == "log-flush":
         return f"reason={FLUSH_REASONS.get(value0, value0)} main={value1} network={value2}"
+    if event == "diag-autorun":
+        return (
+            f"status={_name(AUTORUN_STATUS, flags)} "
+            f"reason={_name(AUTORUN_REASONS, value0)} line={value1} "
+            f"frames={value2}"
+        )
     # Earlier versions belong to a retired link design; show raw values.
     if event not in LINK_EVENTS or record.get("version", 5) < 5:
         return f"flags=0x{flags:02X} values={value0}/{value1}/{value2}"

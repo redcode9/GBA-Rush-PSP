@@ -89,11 +89,14 @@ def fixture_v3() -> bytes:
     return bytes(header) + payload
 
 
-def fixture_v6(build_id: bytes = b"0123456789ab-dirty") -> bytes:
-    """Version 6 log: the 96-byte header with a build id, one record."""
-    record = struct.pack(
-        ">QIIHBBIII", 110, 7, 1, 18, 1, 0, 2, 1, 0
-    )
+def fixture_v6(build_id: bytes = b"0123456789ab-dirty",
+               record: bytes = b"") -> bytes:
+    """Version 6 log: the 96-byte header with a build id, one record (a
+    log-flush unless given)."""
+    if not record:
+        record = struct.pack(
+            ">QIIHBBIII", 110, 7, 1, 18, 1, 0, 2, 1, 0
+        )
     header = bytearray(96)
     struct.pack_into(
         ">4sHHHHHHIIIIIIQQ", header, 0, b"GBRL", 6, 96, 32, 0, 1, 0,
@@ -246,6 +249,40 @@ class RuntimeLogDecoderTests(unittest.TestCase):
             decoder.describe({"event": "link-counters", "flags": 12,
                               "values": [1, 8116, 2]}),
             "cpu-core=new blocks-compiled=8116 code-flushes=2")
+
+    def test_decodes_diag_autorun_record(self):
+        # Event 26 is appended to the enum, so the file stays version 6.
+        record = struct.pack(">QIIHBBIII", 110, 7, 1, 26, 1, 0, 10, 2, 0)
+        snapshot = decoder.parse_snapshot(fixture_v6(record=record))
+
+        self.assertEqual(snapshot["version"], 6)
+        self.assertEqual(snapshot["records"][0]["event"], "diag-autorun")
+        self.assertEqual(
+            decoder.describe(snapshot["records"][0]),
+            "status=ignored reason=build-mismatch line=2 frames=0")
+        self.assertEqual(
+            decoder.describe({"event": "diag-autorun", "flags": 3,
+                              "values": [0, 0, 3600]}),
+            "status=done reason=none line=0 frames=3600")
+        self.assertEqual(
+            decoder.describe({"event": "diag-autorun", "flags": 9,
+                              "values": [99, 0, 0]}),
+            "status=9 reason=99 line=0 frames=0")
+
+    def test_autorun_names_match_the_c_module(self):
+        source = Path(__file__).parents[1] / "source" / "src"
+        header = (source / "autorun_config.h").read_text()
+        table = re.search(r"autorun_config_error_names\[\] =\s*\{(.*?)\};",
+                          (source / "autorun_config.c").read_text(), re.S)
+        errors = re.findall(r"^\s+(AUTORUN_(?:OK|ERROR_[A-Z_]+)),?$", header,
+                            re.M)
+        statuses = re.findall(r"^\s+AUTORUN_STATUS_([A-Z]+),?$", header, re.M)
+
+        self.assertEqual(re.findall(r'"([a-z-]+)"', table.group(1)),
+                         decoder.AUTORUN_REASONS)
+        self.assertEqual(len(errors), len(decoder.AUTORUN_REASONS))
+        self.assertEqual([status.lower() for status in statuses],
+                         decoder.AUTORUN_STATUS)
 
     def test_exact_renderer_names_match_the_c_enum(self):
         header = (Path(__file__).parents[1] / "source" / "src" /

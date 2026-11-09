@@ -77,7 +77,9 @@ typedef enum
   RUNTIME_LOG_EVENT_LINK_FAILURE,
   RUNTIME_LOG_EVENT_LINK_STREAM_METRICS,
   RUNTIME_LOG_EVENT_LINK_TIMEOUT,
-  RUNTIME_LOG_EVENT_LINK_BENCHMARK
+  RUNTIME_LOG_EVENT_LINK_BENCHMARK,
+  /* Diagnostic profile: the autorun file's outcome (autorun_config.h). */
+  RUNTIME_LOG_EVENT_DIAG_AUTORUN
 } RuntimeLogEventType;
 
 typedef enum
