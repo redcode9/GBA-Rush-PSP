@@ -134,6 +134,9 @@ static void test_round_trip(void)
   uint8_t trailer[SAVESTATE_TRAILER_SIZE];
   uint8_t again[SAVESTATE_TRAILER_SIZE];
 
+  /* Non-zero fill, so the padding and reserved bytes must be written. */
+  memset(trailer, 0xA5, sizeof(trailer));
+  memset(again, 0x5A, sizeof(again));
   savestate_trailer_encode(&t, trailer);
   CHECK(decode_full(trailer, t.payload_crc, &t.rom, &out) ==
    SAVESTATE_TRAILER_V2);
@@ -151,6 +154,7 @@ static void test_golden_vector(void)
   SavestateTrailer out;
   uint8_t trailer[SAVESTATE_TRAILER_SIZE];
 
+  memset(trailer, 0xA5, sizeof(trailer));
   savestate_trailer_encode(&t, trailer);
   CHECK(memcmp(trailer, golden, sizeof(golden)) == 0);
   CHECK(decode_full(golden, t.payload_crc, &t.rom, &out) ==
@@ -189,6 +193,27 @@ static void test_altered_fields(void)
   CHECK(savestate_trailer_decode(PAYLOAD + 8u, trailer, 8, t.payload_crc,
    &t.rom, &out) == SAVESTATE_TRAILER_NEWER);
   CHECK(out.version == 0xFFFFu);
+
+  /* The version alone decides it: a later trailer of another size, with
+     its own size field, is still a later version. */
+  {
+    uint8_t longer[FUZZ_BUFFER];
+
+    memset(longer, 0, sizeof(longer));
+    memcpy(longer, good, sizeof(good));
+    longer[4] = 3;
+    longer[5] = 0;
+    longer[6] = (uint8_t)FUZZ_BUFFER;
+    CHECK(decode_at_end(PAYLOAD + FUZZ_BUFFER, longer, FUZZ_BUFFER,
+     t.payload_crc, &t.rom, &out) == SAVESTATE_TRAILER_NEWER);
+    CHECK(out.version == 3);
+    for(i = 0; i <= FUZZ_BUFFER; i += FUZZ_BUFFER)
+    {
+      longer[6] = (uint8_t)i;
+      CHECK(decode_at_end(PAYLOAD + 8u, longer, 8, t.payload_crc, &t.rom,
+       &out) == SAVESTATE_TRAILER_NEWER);
+    }
+  }
 
   /* A 6- or 7-byte tail is corrupt, whatever version it holds. */
   for(i = 6; i < 8; i++)
