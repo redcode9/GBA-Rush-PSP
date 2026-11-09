@@ -13,7 +13,6 @@
 
 #include <string.h>
 
-#define STATE_HASH_FNV_BASIS 2166136261U
 #define STATE_HASH_FNV_PRIME 16777619U
 
 /* The record size is part of the capture buffer's budget, and the region

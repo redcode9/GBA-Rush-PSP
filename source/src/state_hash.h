@@ -52,6 +52,9 @@
 #define STATE_HASH_REGION_COUNT 9U
 #define STATE_HASH_BUILD_ID_MAX 40U
 #define STATE_HASH_GAME_CODE_SIZE 4U
+/* The FNV offset basis that starts each region's hash; also seeds a
+   running hash that is fed to state_hash_words() piece by piece. */
+#define STATE_HASH_FNV_BASIS 2166136261U
 
 /* Region indices; the caller supplies the matching names. */
 enum

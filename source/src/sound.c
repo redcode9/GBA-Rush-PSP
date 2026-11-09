@@ -30,6 +30,9 @@
 #include "link_audio_wait.h"
 #include "perf_monitor.h"
 #include "sound_math.h"
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+#include "state_hash.h"
+#endif
 
 
 // s16 entries in one interleaved stereo PSP output block.
@@ -272,6 +275,48 @@ u32 gbc_sound_last_cpu_ticks = 0;
 u32 gbc_sound_partial_ticks = 0;
 
 FIXED08_24 gbc_sound_tick_step;
+
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+// Replay state hashes (input.c): a running hash of every mixed sample,
+// taken once per emulated frame.
+static u32 sound_diagnostic_audio_on = 0;
+static u32 sound_diagnostic_audio_hash = STATE_HASH_FNV_BASIS;
+
+// 1 starts a new running hash, 0 stops hashing.
+void sound_diagnostic_audio_enable(u32 enabled)
+{
+  sound_diagnostic_audio_on = enabled;
+  sound_diagnostic_audio_hash = STATE_HASH_FNV_BASIS;
+}
+
+// The hash of the samples mixed since the last call; starts the next one.
+u32 sound_diagnostic_audio_take(void)
+{
+  u32 hash = sound_diagnostic_audio_hash;
+
+  sound_diagnostic_audio_hash = STATE_HASH_FNV_BASIS;
+  return hash;
+}
+
+// Folds the count ring entries from gbc_sound_buffer_index, which
+// update_gbc_sound has just finished. The audio thread reads (and zeroes)
+// only entries behind that index, so they cannot change under the read;
+// reading them later, from input.c, would race with it.
+static void sound_diagnostic_audio_fold(u32 count)
+{
+  u32 first = RING_BUFFER_SIZE - gbc_sound_buffer_index;
+
+  if (count > RING_BUFFER_SIZE)
+    count = RING_BUFFER_SIZE;
+  if (first > count)
+    first = count;
+
+  sound_diagnostic_audio_hash = state_hash_words(sound_diagnostic_audio_hash,
+   sound_buffer + gbc_sound_buffer_index, first * sizeof(s32));
+  sound_diagnostic_audio_hash = state_hash_words(sound_diagnostic_audio_hash,
+   sound_buffer, (count - first) * sizeof(s32));
+}
+#endif
 
 
 // SOUND1CNT_H / SOUND2CNT_L / SOUND4CNT_L: length (bits 0-5), duty (6-7),
@@ -1207,6 +1252,10 @@ void update_gbc_sound(u32 cpu_ticks)
   pIO_REG(REG_SOUNDCNT_X) = sound_status;
 
   gbc_sound_last_cpu_ticks = cpu_ticks;
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  if (sound_diagnostic_audio_on != 0)
+    sound_diagnostic_audio_fold(buffer_ticks << 1);
+#endif
   gbc_sound_buffer_index = (gbc_sound_buffer_index + (buffer_ticks << 1)) % RING_BUFFER_SIZE;
 
   sound_thread_wakeup();

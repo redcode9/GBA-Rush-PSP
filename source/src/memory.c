@@ -2511,6 +2511,15 @@ u32 memory_rtc_active(void)
   return rtc_state != RTC_DISABLED;
 }
 
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+// The whole backup chip image, for the replay state hashes (input.c).
+const u8 *memory_backup_bytes(u32 *size)
+{
+  *size = sizeof(gamepak_backup);
+  return gamepak_backup;
+}
+#endif
+
 
 // Whole-address-space accessors for C code (cheats). Addresses of
 // 0x10000000 and above read as open bus.

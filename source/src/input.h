@@ -23,6 +23,7 @@
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 #include "input_trace.h"
+#include "state_hash.h"
 #endif
 
 /* GBA key bits as in KEYINPUT (which stores them inverted). */
@@ -117,6 +118,15 @@ InputTraceState input_diagnostic_trace_state(void);
 InputTraceError input_diagnostic_trace_error(void);
 u32 input_diagnostic_trace_event_count(void);
 size_t input_diagnostic_trace_max_encoded_size(void);
+u32 input_diagnostic_trace_duration(void);
+/* Replay state hashes, one record per replayed frame. attach takes
+   records (from malloc) and frees them on cancel or after the export;
+   hashes is NULL when none are attached. */
+void input_diagnostic_trace_hashes_attach(StateHashRecord *records,
+ u32 capacity);
+const StateHashLog *input_diagnostic_trace_hashes(void);
+void input_diagnostic_trace_hashes_free(void);
+void input_diagnostic_trace_hashes_perturb(u32 frame);
 #endif
 
 void input_write_mem_savestate(SceUID savestate_file);
