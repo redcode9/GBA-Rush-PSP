@@ -1,5 +1,6 @@
 """Check that custom menu colours survive a reboot, with the real functions."""
 
+import re
 import unittest
 
 # Extracts a C function from a source file and builds a spliced test.
@@ -141,6 +142,17 @@ class ThemeBootTests(unittest.TestCase):
                          function("source/src/gui.c", "static void apply_theme(u32 theme)"))
         self.assertNotIn("apply_theme",
                          function("source/src/gui.c", "s32 load_dir_cfg(char *file_name)"))
+        # The preset rows' callbacks are nested in menu() with an indented
+        # brace, so function() cannot cut them out; "\s*\{" skips their
+        # forward declarations.
+        menu = function("source/src/gui.c", "u32 menu(void)")
+        for name in ("menu_passive_theme", "menu_theme_default"):
+            body = re.search(r"void %s\(void\)\s*\{([^}]*)\}" % name, menu)
+            self.assertIsNotNone(body, name)
+            self.assertIn("select_theme_preset(option_theme);", body.group(1))
+            self.assertNotIn("apply_theme", body.group(1))
+        self.assertIn("STRING_SELECTION_OPTION(menu_passive_theme,", menu)
+        self.assertIn("ACTION_OPTION(menu_theme_default,", menu)
 
 
 if __name__ == "__main__":
