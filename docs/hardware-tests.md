@@ -195,3 +195,19 @@ Each test has four fields:
 - Steps: run the third-party test suites the repository pins on the
   previous release and on the candidate, on each model, and compare the
   results of every test.
+
+### replay-hash-selfcheck
+
+- Models: PSP-1000
+- Minutes: 20
+- Pass: two replays of the same `.gbit` give `.gbsh` files that
+  `tools/state_hash_diff.py` finds identical (exit 0). A run with
+  `perturb=N` exits 1 against them, naming frame N and `iwram`.
+- Steps: build with `make psp-build PROFILE=diagnostic`. Record a trace of
+  at least 10 seconds from Diagnostics > Start input trace and save it,
+  which leaves the `.gbit` and its `.svs` in `traces/`. Write
+  `diag-autorun.txt` with the build id, `rom=`, `trace=` that `.gbit`,
+  `frames=600`, `exit=1` and `hash=a.gbsh`, and start the EBOOT; run it
+  again with `hash=b.gbsh`, then with `hash=c.gbsh` and `perturb=300`. Each
+  `diag-autorun.result` must say `status=done`. Compare `a.gbsh` with
+  `b.gbsh`, then `a.gbsh` with `c.gbsh`, with `tools/state_hash_diff.py`.

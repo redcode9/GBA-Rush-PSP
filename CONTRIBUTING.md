@@ -207,6 +207,11 @@ only one file has is printed but does not fail.
   unperturbed run. The diff must exit 1 naming frame N and `iwram`;
   otherwise the comparison cannot see a divergence.
 
+On the PSP each run is a diagnostic autorun (`source/src/autorun_config.h`)
+with `trace=`, `hash=` (a new `.gbsh` path per run), `frames=` and `exit=1`;
+the perturbed run adds `perturb=N`. A replay started from the menu writes
+`traces/input-<game>-r<rev>.gbsh` the next time the menu opens.
+
 A compact golden keeps one record every 60 frames and the sha256 of a full
 `.gbsh` taken from its regions line through its last record, without the
 magic, identity and counters lines (`tools/state_hash_diff.py --help`
