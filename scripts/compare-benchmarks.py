@@ -73,6 +73,11 @@ OPTIONAL_MATCH_FIELDS = (
 # point. Reports written before 1.4.3 carry invalid 64-bit counters.
 FIRST_VALID_VERSION = (1, 4, 3)
 
+# Why a run with link-lockstep-frames above 0 is rejected: a lockstep link
+# forces auto frameskip and runs the emulator thread at priority 0x77.
+LINK_REASON = ("captured during a lockstep link: forced frameskip and "
+               "priority 0x77")
+
 
 def read_report(path):
     """Parse a report into a dict; only finished (stopped) sessions count."""
@@ -281,7 +286,20 @@ def validate_matching_runs(baseline, candidate):
                 raise ValueError(f"benchmark field does not match: {field}")
 
 
-def compare(baseline, candidate):
+def validate_link_runs(baseline, candidate, allow_link):
+    """Reject runs captured during a lockstep link (LINK_REASON), unless
+    allow_link and every run of both builds was; reports without
+    link-lockstep-frames (format 6) count as captured without a link."""
+    linked = ["link-lockstep-frames" in report and
+              number(report, "link-lockstep-frames") > 0
+              for report in baseline + candidate]
+    if any(linked) and not (allow_link and all(linked)):
+        if allow_link:
+            raise ValueError(f"{LINK_REASON} in only some runs")
+        raise ValueError(LINK_REASON)
+
+
+def compare(baseline, candidate, allow_link=False):
     """Compare run medians and list every regression past its threshold.
 
     Fails on throughput down more than 2%, frame-time p95 up more than 5%,
@@ -291,6 +309,7 @@ def compare(baseline, candidate):
     if min(len(baseline), len(candidate)) < MIN_RUNS:
         raise ValueError(f"at least {MIN_RUNS} reports per build are needed")
     validate_matching_runs(baseline, candidate)
+    validate_link_runs(baseline, candidate, allow_link)
 
     baseline_throughput = median_metric(baseline, throughput)
     candidate_throughput = median_metric(candidate, throughput)
@@ -456,7 +475,7 @@ def collect_groups(*directories):
     return groups
 
 
-def compare_groups(baseline_groups, candidate_groups):
+def compare_groups(baseline_groups, candidate_groups, allow_link=False):
     """Compare every baseline group with the candidate group of its key.
 
     Every group is compared before the verdict, so the output lists them
@@ -468,7 +487,8 @@ def compare_groups(baseline_groups, candidate_groups):
         result = None
         if key in candidate_groups:
             try:
-                result = compare(baseline_groups[key], candidate_groups[key])
+                result = compare(baseline_groups[key], candidate_groups[key],
+                                 allow_link)
             except ValueError as error:
                 raise ValueError(f"group {group_name(key)}: {error}") from None
         groups.append((group_name(key), result))
@@ -517,6 +537,9 @@ def main(argv=None):
                         "such as benchmarks/psp-1000/*/1.4.3 for one "
                         "release of the archive")
     parser.add_argument("--candidate-dir", nargs="+", metavar="DIR")
+    parser.add_argument("--allow-link", action="store_true",
+                        help="accept runs captured during a lockstep link "
+                        "when every run of both builds was")
     arguments = parser.parse_args(argv)
     files = (arguments.baseline, arguments.candidate)
     directories = (arguments.baseline_dir, arguments.candidate_dir)
@@ -528,12 +551,13 @@ def main(argv=None):
     try:
         if all(directories):
             outcome = compare_groups(collect_groups(*arguments.baseline_dir),
-                                     collect_groups(*arguments.candidate_dir))
+                                     collect_groups(*arguments.candidate_dir),
+                                     arguments.allow_link)
             print(format_groups(outcome))
             return 0 if outcome["passed"] else 1
         baseline = [read_report(path) for path in arguments.baseline]
         candidate = [read_report(path) for path in arguments.candidate]
-        result = compare(baseline, candidate)
+        result = compare(baseline, candidate, arguments.allow_link)
     except (OSError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 2

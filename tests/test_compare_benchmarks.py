@@ -545,6 +545,77 @@ class BenchmarkComparisonTests(unittest.TestCase):
                                         r"\._run-0\.txt: not a UTF-8 report"):
                 MODULE.read_report(stray.as_posix())
 
+    def test_link_capture_is_rejected(self):
+        linked = report()
+        linked["link-lockstep-frames"] = "1"
+        unlinked = report()
+        unlinked["link-lockstep-frames"] = "0"
+
+        with self.assertRaisesRegex(
+                ValueError, r"^captured during a lockstep link: forced "
+                r"frameskip and priority 0x77$"):
+            MODULE.compare([report(), report(), report()],
+                           [unlinked, unlinked, linked])
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for index, values in enumerate([report()] * 3 + [linked] * 3):
+                path = pathlib.Path(directory) / f"run-{index}.txt"
+                write_report(path, values)
+                paths.append(str(path))
+            error = io.StringIO()
+            with contextlib.redirect_stderr(error):
+                status = MODULE.main(["--baseline", *paths[:3],
+                                      "--candidate", *paths[3:]])
+        self.assertEqual(status, 2)
+        self.assertIn("captured during a lockstep link", error.getvalue())
+
+    def test_allow_link_needs_every_run_in_lockstep(self):
+        def linked(frames):
+            values = report(frames=frames)
+            values["link-lockstep-frames"] = str(frames)
+            return values
+
+        baseline = [linked(600), linked(601), linked(602)]
+        candidate = [linked(605), linked(606), linked(604)]
+        self.assertTrue(MODULE.compare(baseline, candidate,
+                                       allow_link=True)["passed"])
+        # A run without the field, as format 6 writes it, is not in lockstep.
+        for mixed in ([report(frames=605)] + candidate[1:],
+                      [report(), report(), report()]):
+            with self.subTest(mixed=mixed), self.assertRaisesRegex(
+                    ValueError, "lockstep link.*in only some runs"):
+                MODULE.compare(baseline, mixed, allow_link=True)
+
+        key = ("1", "BPRE", "0")
+        outcome = MODULE.compare_groups({key: baseline}, {key: candidate},
+                                        allow_link=True)
+        self.assertTrue(outcome["passed"])
+        with self.assertRaisesRegex(ValueError,
+                                    "group 1/BPRE-r0: captured during"):
+            MODULE.compare_groups({key: baseline}, {key: candidate})
+
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for index, values in enumerate(baseline + candidate):
+                path = pathlib.Path(directory) / f"run-{index}.txt"
+                write_report(path, values)
+                paths.append(str(path))
+            with contextlib.redirect_stdout(io.StringIO()):
+                status = MODULE.main(["--baseline", *paths[:3],
+                                      "--candidate", *paths[3:],
+                                      "--allow-link"])
+        self.assertEqual(status, 0)
+
+    def test_format_six_report_without_link_field_is_accepted(self):
+        unlinked = report(frames=605)
+        unlinked["link-lockstep-frames"] = "0"
+        self.assertNotIn("link-lockstep-frames", report())
+
+        result = MODULE.compare([report(), report(), report()],
+                                [unlinked, unlinked, unlinked])
+
+        self.assertTrue(result["passed"])
+
     def test_legacy_v6_fixtures_same_pass_fail(self):
         passing = MODULE.compare(
             [report(), report(frame_p95=17100), report(frame_p95=16900)],
