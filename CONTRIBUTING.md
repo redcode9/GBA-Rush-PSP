@@ -173,12 +173,14 @@ python3 scripts/compare-benchmarks.py \
   --candidate new-1.txt new-2.txt new-3.txt
 ```
 
-PASS and FAIL still come from the medians and their thresholds, plus a
-frame-time max above 1.5x the baseline median in at least two candidate runs
-(one spike alone passes). When every run has the format 7 work fields, a
-work-time p95 up more than 5% or frames over 1.5x the budget per minute up
-more than max(1, 20%) fail too; otherwise a note says those gates were
-skipped. For each
+PASS and FAIL still come from the medians and their thresholds, among them a
+frame-time p95 or p99 up more than 5%, plus a frame-time max above 1.5x the
+baseline median in at least two candidate runs (one spike alone passes). When
+every run has the format 7 work fields, a work-time p95 up more than 5% or
+frames over 1.5x the budget per minute up more than max(1, 20%) fail too;
+otherwise a note says those gates were skipped. Frame and work times are
+measured in 250 us buckets, so below 5 ms a rise of a single bucket is
+already more than 5% and fails their gates. For each
 metric the tool also prints the median, minimum and maximum of both builds and
 the verdict of an exact one-sided permutation test on the per-run values. With
 3+3 runs that test reaches p=0.05 only when every candidate run is above (or
