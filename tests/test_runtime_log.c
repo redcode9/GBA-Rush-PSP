@@ -537,6 +537,8 @@ static void test_name_probe_chunks_d_name(void)
   memset(name, 'n', sizeof(name));
   assert(check_probe_entry(name, sizeof(name), 255u, fat,
    sizeof(fat)) == 20u);
+  /* Nor does it read past name_size. */
+  assert(check_probe_entry(name, 5u, 5u, fat, sizeof(fat)) == 20u);
 }
 
 /* The FAT bytes logged reach the end of both layouts' long names. */
