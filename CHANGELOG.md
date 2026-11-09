@@ -35,6 +35,13 @@
   Link Cable (the other console's game code, or waiting).
 - The Save and Load page shows thumbnails of all 11 slots (0-9 and AUTO)
   with the selected slot framed. They appear one per frame as the page opens.
+- Diagnostics > Log file name encoding, to find out how a firmware stores
+  file names that are not ASCII: it goes through the `name-probe` folder
+  beside the EBOOT and writes each name to the runtime log as the PSP
+  reports it, with the long name and 8.3 alias the firmware keeps for it and
+  whether the file opens by each of them, then shows how many names it
+  logged. `tools/decode_runtime_log.py` shows each name in hex and as
+  UTF-8, Shift-JIS and GBK text.
 - The Diagnostics page shows the version and the build id, an id of the
   exact source the EBOOT was built from, ending in `-dirty` when that source
   had uncommitted changes. Performance reports, runtime logs and the
