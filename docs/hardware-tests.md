@@ -68,34 +68,41 @@ Each test has four fields:
 ### save-read-matrix
 
 - Models: PSP-1000, second model
-- Minutes: 120
+- Minutes: 130
 - Pass: on each model every start of the matrix loads the expected save, and
   the decoded log has one save-load event per start, and one more per retry,
   each with the expected result. A `.sav` changes size only to go back to its
   chip's size, and always with `<rom>.sav.orig` beside it. No `.sav` is
   written after a failed read. In the unreadable case Yes to "Try again?"
   reads it again, and after "Play without saving?" and exiting the file is
-  as it was.
+  as it was. In the card-removed case "Try again?" appears and the log shows
+  save-load failed, never not-found, then ok once the card is back.
 - Steps: four games, one each with a Flash 128 KiB save (such as Pokemon
   FireRed), a Flash 64 KiB, an SRAM and an EEPROM save. Run each with its
   own `.sav` and with a 128 KiB `.sav` written by libretro gpSP, and the SRAM
   game also with a 64 KiB `.sav`. Before each case put that `.sav` in the
   saves folder and remove the files an earlier case left beside it
-  (`docs/saves.md` lists them). Start the game, check that the save loads,
-  save in the game and exit GBA Rush PSP; note the size and CRC of the
-  `.sav` and whether `<rom>.sav.orig` exists. `logs/` keeps only the last 4
-  runs of the emulator: copy it off after every 4 cases at most. Unreadable
-  case: move one game's `.sav` away, make an empty directory named
-  `<rom>.sav` in the saves folder, start the game, answer Yes to "Try
+  (`docs/saves.md` lists them). Answer No whenever "Load auto-savestate?"
+  appears: that state is the previous case's. Start the game, check that the
+  save loads, save in the game and exit GBA Rush PSP; note the size and CRC
+  of the `.sav` and whether `<rom>.sav.orig` exists. `logs/` keeps only the
+  last 4 runs of the emulator: copy it off after every 4 cases at most.
+  Unreadable case: move one game's `.sav` away, make an empty directory
+  named `<rom>.sav` in the saves folder, start the game, answer Yes to "Try
   again?" once, then No, then Yes to "Play without saving?", save in the
   game and exit; the directory must keep its date and stay empty. If the
-  game starts without the question, exit without saving and note it: that
-  model reads the directory, and the case needs a fault injected in a
-  diagnostic build. The case of a `.sav` that does not stat while the saves
-  folder does not open needs another model, such as a PSP Go keeping the
-  saves on its Memory Stick Micro, or an injected fault: on the PSP-1000 and
-  the PSP-2000 the ROM is read from the same card just before the save, and
-  a retry counts a missing file as unreadable anyway.
+  game starts without the question, exit without saving and record the row
+  as partial with a note: that model reads the directory, and the save
+  fault for a diagnostic build (F-137) is not written yet. Card-removed
+  case, a `.sav` that does not stat while the saves folder does not open:
+  copy one game's `.sav` beside it as `<rom>.sav.link1`, start the game
+  with Update backup on AUTO and wait a few seconds, so no write is
+  pending. Open Link cable > Restore pre-link save; at "Restore save of
+  ...? Game restarts." take the Memory Stick out and answer Yes: "The save
+  file cannot be read. Try again?" must appear. Put the card back, wait a
+  few seconds and answer Yes, again if it asks again. "The save could not
+  be restored." follows and the game goes on with its own save. Exit
+  without saving in the game: the `.sav` keeps its size, CRC and date.
 
 ## Link
 
