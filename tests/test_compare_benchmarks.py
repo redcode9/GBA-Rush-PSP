@@ -147,6 +147,46 @@ class BenchmarkComparisonTests(unittest.TestCase):
         candidate[0]["gamepak-ram-buffer-size"] = "16777216"
         self.assertTrue(MODULE.compare(baseline, candidate)["passed"])
 
+    def read_back(self, directory, name, values):
+        """values written as a report file and read with read_report()."""
+        path = pathlib.Path(directory) / name
+        path.write_text("".join(f"{key}={value}\n" for key, value in values.items()),
+                        encoding="utf-8")
+        return MODULE.read_report(path)
+
+    def test_format_six_and_seven_reports_of_different_builds_compare(self):
+        with tempfile.TemporaryDirectory() as directory:
+            baseline = [
+                self.read_back(directory, f"base-{run}.txt", {
+                    "gba-rush-performance-report": "6", "version": "1.4.3",
+                    **report()})
+                for run in range(3)
+            ]
+            candidate = [
+                self.read_back(directory, f"cand-{run}.txt", {
+                    "gba-rush-performance-report": "7", "version": "1.5.0",
+                    "build-id": f"0123456789a{run}-dirty", **report(frames=605)})
+                for run in range(3)
+            ]
+
+        self.assertTrue(MODULE.compare(baseline, candidate)["passed"])
+
+    def test_versions_before_1_4_3_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for version in ("1.4.2", "0.9.9", "1.3.10"):
+                with self.subTest(version=version), self.assertRaisesRegex(
+                        ValueError, "64-bit counters are not valid before 1.4.3"):
+                    self.read_back(directory, "old.txt",
+                                   {"version": version, **report()})
+            for version in ("1.4.3", "1.4.3-rc.1", "1.10.0", "2.0.0"):
+                with self.subTest(version=version):
+                    self.assertEqual(self.read_back(
+                        directory, "new.txt",
+                        {"version": version, **report()})["version"], version)
+            self.assertNotIn("version", self.read_back(directory, "bare.txt", report()))
+            with self.assertRaisesRegex(ValueError, "invalid version"):
+                self.read_back(directory, "bad.txt", {"version": "dev", **report()})
+
     def test_parser_rejects_unstopped_report(self):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "report.txt"
