@@ -333,6 +333,10 @@ static void test_unsupported_entries(void)
   assert(load_all(len, SMALL_CHUNK) == ZIP_ROM_UNSUPPORTED);
   len = build(0, 8, "game", ROM_SIZE, DESC_NONE);
   assert(load_all(len, SMALL_CHUNK) == ZIP_ROM_UNSUPPORTED);
+  len = build(0, 8, "game.gb", ROM_SIZE, DESC_NONE);
+  assert(load_all(len, SMALL_CHUNK) == ZIP_ROM_UNSUPPORTED);
+  len = build(0, 8, "game.gbax", ROM_SIZE, DESC_NONE);
+  assert(load_all(len, SMALL_CHUNK) == ZIP_ROM_UNSUPPORTED);
 }
 
 static void test_too_big_for_the_buffer(void)
