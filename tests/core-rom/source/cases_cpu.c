@@ -22,10 +22,10 @@
  * and the one-instruction window is missed. The expected values stay the
  * data sheet's. To confirm on hardware.
  *
- * The IRQ cases get their IRQ from a one-word DMA3 copy that requests one
- * when it ends: it is pending as soon as the copy is done, with no timer
- * to program. cpu_irq_handler, the IRQ vector during those cases,
- * acknowledges it and logs the call (irq_log).
+ * The IRQ cases but cpu_irq_cycles get their IRQ from a one-word DMA3
+ * copy that requests one when it ends: it is pending as soon as the copy
+ * is done, with no timer to program. cpu_irq_handler, the IRQ vector
+ * during those cases, acknowledges it and logs the call (irq_log).
  *
  * cpu_shift_reg: LSL, LSR, ASR and ROR by register, with the results of
  * shift_table.h (gen_shift_table.py), in seven forms: 0 ARM MOVS, 1 MOV
@@ -292,17 +292,18 @@ static int cpu_irq_latency(u32 *detail)
   return irq_log[0] == 1 && ran < 16 ? RESULT_PASS : RESULT_FAIL;
 }
 
-/* cpu_irq_cycles counts the whole cycles from timer 0's overflow (counter
-   reloaded and IF set at once: GBATEK gives no delay) to the handler's
-   read, which sees the counter as it was when its cycle began, as
-   cases_timer.c counts from GBATEK (a load right after a timer start
-   reads 1). Every access takes 1 cycle: BIOS, IWRAM (the code, the IRQ
-   stack, 03FFFFFCh), I/O. The latency is 9 cycles, the figure GBA Rush
-   takes from the ARM7TDMI data sheet (irq_ticks in source/src/main.c):
-   9 cycles after the IRQ rises the CPU starts the b at 18h, the
-   exception entry included. Then
-   GBATEK's ARM timings, the same for the official BIOS dispatcher and
-   the built-in one (source/bios/source/core.s):
+/* cpu_irq_cycles counts as cases_timer.c does from GBATEK: an event leaves
+   the counter at the reload in its own cycle, and a load reads the whole
+   cycles between that cycle and its access (a load right after a timer
+   start reads 1, its opcode fetch). The event is timer 0's overflow,
+   which reloads the counter and sets IF at once (GBATEK gives no delay).
+   Every access takes 1 cycle: BIOS, IWRAM (the code, the IRQ stack,
+   03FFFFFCh), I/O. The IRQ latency is 9 cycles, the figure GBA Rush takes
+   from the ARM7TDMI data sheet (irq_ticks in source/src/main.c), counted
+   the same way: 9 whole cycles, the exception entry included, lie between
+   the overflow and the first cycle of the b at 18h. Then GBATEK's ARM
+   timings, the same for the official BIOS dispatcher and the built-in
+   one (source/bios/source/core.s):
      latency, up to the b at 18h                          9
      b to the dispatcher                 2S+1N            3
      stmdb sp!, {r0-r3, r12, lr}         5S+2N            7
