@@ -9,7 +9,7 @@
 
 ## 2.0
 
-- [ ] **GIO-1.1** — Modulo puro rewind_ring: delta XOR all'indietro, RLE degli zeri, anello, regola di atterraggio · M, 3,5 gg · dipende da: — · PSP: no · **subito** · _in parte: codice e test pronti (5bb8b56), mancano make check e make test-sanitize con gcc e ASan e la nota sul throughput del codec sull'host_
+- [ ] **GIO-1.1** — Modulo puro rewind_ring: delta XOR all'indietro, RLE degli zeri, anello, regola di atterraggio · M, 3,5 gg · dipende da: — · PSP: no · **subito** · _in parte: codice e test pronti (5bb8b56); throughput del codec sull'host, solo come informazione e senza alcuna affermazione sul PSP: tra 0,04 e 0,08 ms per cattura delle sei aree (387 KiB) più 4 KiB di stato piccolo con 0-1000 parole cambiate, circa 0,24 ms con 10.000 (x86-64, clang -O2, migliore di 5 esecuzioni); manca il verde di make check e make test-sanitize nella CI_
 - [ ] **GIO-1.2** — Snapshot e ripristino in memoria, salvataggio protetto · M, 3 gg · dipende da: GIO-1.1, F-007, ENG-3.1, ENG-3.3 · PSP: sì · aspetta: ENG-3.1 (`wip/replay-oracle`), ENG-3.3 (`wip/replay-oracle`)
 - [ ] **GIO-1.3** — Cattura a fine frame nel margine misurato · M, 3 gg · dipende da: GIO-1.2, F-025, F-027 · PSP: sì
 - [ ] **GIO-1.4** — Comando Riavvolgi, indicatore e opzioni in cinque lingue · L, 5 gg · dipende da: GIO-1.3, F-045, LNK-3.2 · PSP: sì · aspetta: LNK-3.2 (`wip/link-diagnostics`)
