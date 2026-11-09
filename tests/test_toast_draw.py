@@ -61,6 +61,7 @@ int main(void) {
   assert(toast_current(now_us + 0x80000000u) != NULL);
   assert(toast_current(now_us + 0xFFFFFFFEu) != NULL);
   assert(toast_current(now_us - 1u) != NULL);
+  assert(toast_current(now_us + 1u) != NULL);
   puts("pinned toast passed");
   return 0;
 }
@@ -82,6 +83,18 @@ class ToastDrawTests(unittest.TestCase):
         menu = function("source/src/gui.c", "u32 menu(void)")
         self.assertRegex(menu, r"#ifdef ENABLE_DIAGNOSTIC_PINNED_TOAST\s+"
                                r"ACTION_OPTION\(menu_diagnostics_pin_toast,")
+        # With the trace and pin blocks on (the code before #else), the pin
+        # is option 11, which the availability line names by index, and no
+        # two rows share a screen line.
+        rows = menu[menu.index("MenuOptionType diagnostics_options[] ="):]
+        rows = re.findall(r"ACTION(?:_SUBMENU)?_OPTION\((\w+),.*, (\d+), \w+\)",
+                          rows[:rows.index("#else")])
+        self.assertEqual([name for name, _ in rows].index("menu_diagnostics_pin_toast"), 11)
+        lines = [line for _, line in rows]
+        self.assertEqual(len(set(lines)), len(lines))
+        self.assertRegex(menu, r"#ifdef ENABLE_DIAGNOSTIC_PINNED_TOAST\s+[^#]*"
+                               r"diagnostics_options\[11\]\.available_function"
+                               r" = menu_game_available;")
 
     def test_toast_drawn_on_presented_frames_only(self):
         # synchronize() cannot be built on the host: the only toast_current()
