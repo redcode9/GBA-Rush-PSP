@@ -37,6 +37,13 @@ Vendored zlib source retains its original notices. PSP SDK import libraries in
 `source/SDK/` and the power library in `source/src/libpower/` are inherited
 build dependencies from the upstream source snapshot.
 
+Corresponding source code: every release carries
+`GBA-Rush-PSP-<version>-source.zip` next to the binary zip. It is made from
+the release's Git tag, named after the version, and holds every file of that
+tag, including the BIOS sources in `source/bios/`. The zip has no Git history,
+so a build from it takes the build id from the release's `.manifest.json`:
+`make -C source BUILD_ID=<build_id>`.
+
 Game Boy Advance, PlayStation Portable, Nintendo, Sony, and CodeBreaker names
 may be trademarks of their respective owners. GBA Rush PSP is not affiliated
 with or endorsed by those owners or by the upstream maintainers.

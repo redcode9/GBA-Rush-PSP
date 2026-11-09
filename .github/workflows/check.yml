@@ -1,0 +1,152 @@
+# Every push (tags too) and pull request runs the host tests, the CBMC proof,
+# both PSP profiles and make package inside the images of tools/ci/Dockerfile,
+# built from inputs pinned by digest or SHA-256. Third-party actions are
+# pinned by commit SHA; the comment after each SHA names its tag.
+name: check
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    name: make ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [check, test-sanitize]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the CI image
+        run: >-
+          docker build --build-context scripts=scripts --target psp
+          -t gba-rush-ci tools/ci
+      - name: make ${{ matrix.target }}
+        run: >-
+          docker run --rm -v "$PWD:/workspace" -w /workspace gba-rush-ci
+          make -j4 ${{ matrix.target }} HOST_CC='cc -O1'
+
+  cbmc:
+    name: make check-cbmc
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the CBMC image
+        run: docker build --target cbmc -t gba-rush-cbmc tools/ci
+      - name: make check-cbmc
+        run: >-
+          docker run --rm -v "$PWD:/workspace" -w /workspace gba-rush-cbmc
+          make check-cbmc
+
+  psp:
+    name: PSP builds and package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # make package, artifact-smoke and release-gate read tags.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Start the CI container
+        run: |
+          docker build --build-context scripts=scripts --target psp \
+            -t gba-rush-ci tools/ci
+          docker run -d --name ci -v "$PWD:/workspace" -w /workspace \
+            gba-rush-ci sleep infinity
+      - name: make psp-build PROFILE=release
+        run: |
+          docker exec ci make -j4 psp-build PROFILE=release
+          docker exec ci sh -c \
+            'sha256sum source/EBOOT.PBP > /tmp/first-build.sha256'
+      - name: make psp-build PROFILE=diagnostic
+        run: |
+          docker exec ci make -C source clean
+          docker exec ci make -j4 psp-build PROFILE=diagnostic
+      # make package needs a tag named VERSION: a branch or pull request gets
+      # a local ci-<sha> tag, which is never pushed. No -j on package: its
+      # psp-build and check would both build the Media Engine program.
+      - name: make package
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/*) version=$GITHUB_REF_NAME ;;
+            *) version=ci-$GITHUB_SHA; docker exec ci git tag "$version" ;;
+          esac
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          docker exec ci make -C source clean
+          docker exec ci make -j4 psp-build PROFILE=release
+          docker exec ci make package VERSION="$version"
+      # A difference is reported, not failed: its cause goes in
+      # docs/DESIGN-DECISIONS.md.
+      - name: Compare the EBOOTs of two consecutive release builds
+        run: |
+          first=$(docker exec ci cat /tmp/first-build.sha256)
+          second=$(docker exec ci sha256sum source/EBOOT.PBP)
+          printf '### EBOOT.PBP of two consecutive release builds\n\n    first   %s\n    second  %s\n' \
+            "$first" "$second" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$first" != "$second" ]; then
+            echo "::warning::Two consecutive release builds gave different EBOOT.PBP files"
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: GBA-Rush-PSP-${{ env.VERSION }}
+          path: |
+            source/EBOOT.PBP
+            dist/GBA-Rush-PSP-${{ env.VERSION }}.manifest.json
+          if-no-files-found: error
+      - name: make artifact-smoke
+        if: startsWith(github.ref, 'refs/tags/')
+        run: docker exec ci make artifact-smoke VERSION="$VERSION"
+      - name: Rebuild at the tag and compare the build id with the manifest
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          docker exec ci make -C source clean
+          docker exec ci make -j4 psp-build PROFILE=release
+          built=$(docker exec ci make -s --no-print-directory -C source \
+            print-build-id)
+          manifest=$(docker exec ci python3 -c \
+            'import json, sys; print(json.load(open(sys.argv[1]))["build_id"])' \
+            "dist/GBA-Rush-PSP-$VERSION.manifest.json")
+          echo "Build id: rebuilt $built, manifest $manifest"
+          test "$built" = "$manifest"
+          docker exec ci python3 scripts/check-elf.py --build-id "$manifest" \
+            source/TempGBA.elf
+      # A tag without a suffix (1.4.4, not 1.4.4-rc.1) is a stable release.
+      # It republishes the package of its newest rc, so the gate reads that
+      # rc's manifest, taken from its GitHub prerelease: without it, or
+      # without the hardware results of its EBOOT, this job fails in public.
+      # The rebuild above only measures reproducibility: a difference from
+      # the rc's EBOOT is reported, not failed, and its cause goes in
+      # docs/DESIGN-DECISIONS.md.
+      - name: Fetch the newest rc's manifest and compare its EBOOT
+        if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rc=$(docker exec ci git for-each-ref --sort=-creatordate --count=1 \
+            --format='%(refname:lstrip=2)' "refs/tags/$VERSION-rc.*")
+          file=GBA-Rush-PSP-$rc.manifest.json
+          if [ -z "$rc" ] || ! gh release download "$rc" \
+            --repo "$GITHUB_REPOSITORY" --pattern "$file" --dir "$RUNNER_TEMP"
+          then
+            echo "::warning::No manifest of a $VERSION-rc.N prerelease"
+            exit 0
+          fi
+          docker cp "$RUNNER_TEMP/$file" "ci:/workspace/dist/$file"
+          expected=$(docker exec ci python3 -c \
+            'import json, sys; print(json.load(open(sys.argv[1]))["files"]["EBOOT.PBP"]["sha256"])' \
+            "dist/$file")
+          rebuilt=$(docker exec ci sha256sum source/EBOOT.PBP | cut -d ' ' -f 1)
+          printf '### EBOOT.PBP of %s and of the rebuild at %s\n\n    %s  %s\n    %s  rebuild\n' \
+            "$rc" "$VERSION" "$expected" "$rc" "$rebuilt" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$expected" != "$rebuilt" ]; then
+            echo "::warning::The rebuild at $VERSION did not give the EBOOT.PBP of $rc"
+          fi
+      - name: make release-gate CHANNEL=stable
+        if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-')
+        run: docker exec ci make release-gate VERSION="$VERSION" CHANNEL=stable

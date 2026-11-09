@@ -3,7 +3,16 @@
 #                         the Media Engine program's build where the PSP SDK is
 #   make test-sanitize    the C tests again under ASan and UBSan
 #   make psp-build        the EBOOT (needs the PSP SDK)
+#   make test-roms        the GBA test ROMs, built and run on the New core
+#                         (needs arm-none-eabi-gcc, skipped without it)
 #   make package VERSION=x.y.z   build, check and zip a release
+#   make release-gate VERSION=x.y.z CHANNEL=stable|prerelease
+#                         check a packaged release and write its notes
+#   make prove-regression REF=<tag> TEST=<name>   show that a C test fails,
+#                         plain or under ASan and UBSan, on an older tag that
+#                         has the bug it guards against
+# psp-build, package and artifact-smoke take PROFILE=release (the default)
+# or PROFILE=diagnostic (source/Makefile).
 # Each test builds the module it covers straight from source/src, so most
 # need only a host C compiler.
 #
@@ -20,6 +29,9 @@ HOST_SANITIZE_FLAGS ?= -fsanitize=address,undefined -fno-omit-frame-pointer
 # SDK headers for the two tests that compile PSP sources (memory.c and
 # psp_video.c) on the host.
 PSP_SDK_INCLUDE ?= $(shell psp-config --pspsdk-path 2>/dev/null)/include
+# DIAGNOSTIC_INPUT_TRACE=1 is the old name of PROFILE=diagnostic, and
+# DIAGNOSTIC_CORE_PROFILE=1 builds that profile too (source/Makefile).
+PROFILE ?= $(if $(DIAGNOSTIC_INPUT_TRACE)$(DIAGNOSTIC_CORE_PROFILE),diagnostic,release)
 HOST_TEST_CODEBREAKER = $(HOST_BUILD_DIR)/test_codebreaker
 HOST_TEST_GBA_SIO = $(HOST_BUILD_DIR)/test_gba_sio
 HOST_TEST_LINK_NET = $(HOST_BUILD_DIR)/test_link_net
@@ -49,15 +61,25 @@ HOST_TEST_FAST_FORWARD_AUDIO = $(HOST_BUILD_DIR)/test_fast_forward_audio
 HOST_TEST_VIDEO_MOSAIC = $(HOST_BUILD_DIR)/test_video_mosaic
 HOST_TEST_DYNAREC_WORKLIST = $(HOST_BUILD_DIR)/test_dynarec_worklist
 HOST_TEST_SOUND_MATH = $(HOST_BUILD_DIR)/test_sound_math
+HOST_TEST_EVENT_QUEUE = $(HOST_BUILD_DIR)/test_event_queue
 HOST_TEST_RUNTIME_LOG = $(HOST_BUILD_DIR)/test_runtime_log
 HOST_TEST_ARM_CORE = $(HOST_BUILD_DIR)/test_arm_core
+HOST_TEST_CORE_PROFILE = $(HOST_BUILD_DIR)/test_core_profile
 # arm_mips.c is only compiled here (its tests need Unicorn: make check-core).
 ARM_CORE_SOURCES = source/src/arm_decode.c source/src/arm_interp.c \
  source/src/arm_mips.c
 ARM_CORE_HEADERS = source/src/arm_core.h source/src/arm_ir.h \
  source/src/arm_mips.h
+# Runs the GBA test ROMs for make test-roms.
+HOST_ROM_RUN = $(HOST_BUILD_DIR)/rom_run
+HOST_TEST_ROM_RUN = $(HOST_BUILD_DIR)/test_rom_run
+# The interpreter rom_run.c runs on; test_rom_run includes rom_run.c.
+ROM_RUN_SOURCES = source/src/arm_decode.c source/src/arm_interp.c
+ROM_RUN_DEPS = tests/core/rom_run.c $(ROM_RUN_SOURCES) $(ARM_CORE_HEADERS) \
+ source/src/open_bios.h
 HOST_TEST_GBA_PPU = $(HOST_BUILD_DIR)/test_gba_ppu
 HOST_TEST_GBA_PPU_LOG = $(HOST_BUILD_DIR)/test_gba_ppu_log
+HOST_TEST_UPSTREAM_AW_RELAY = $(HOST_BUILD_DIR)/test_upstream_aw_relay
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_LINK_NET) $(HOST_TEST_LINK_CABLE) \
  $(HOST_TEST_ADHOC_PEER) \
@@ -72,8 +94,10 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE) $(HOST_TEST_FAST_FORWARD) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
- $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_GBA_PPU) \
- $(HOST_TEST_GBA_PPU_LOG)
+ $(HOST_TEST_EVENT_QUEUE) \
+ $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_CORE_PROFILE) \
+ $(HOST_TEST_ROM_RUN) \
+ $(HOST_TEST_GBA_PPU) $(HOST_TEST_GBA_PPU_LOG) $(HOST_TEST_UPSTREAM_AW_RELAY)
 # The same C tests built with HOST_SANITIZE_FLAGS for make test-sanitize.
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_net \
@@ -98,14 +122,19 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_video_mosaic \
  $(HOST_SANITIZE_DIR)/test_dynarec_worklist \
  $(HOST_SANITIZE_DIR)/test_sound_math \
+ $(HOST_SANITIZE_DIR)/test_event_queue \
  $(HOST_SANITIZE_DIR)/test_runtime_log \
  $(HOST_SANITIZE_DIR)/test_arm_core \
+ $(HOST_SANITIZE_DIR)/test_core_profile \
+ $(HOST_SANITIZE_DIR)/test_rom_run \
  $(HOST_SANITIZE_DIR)/test_gba_ppu \
- $(HOST_SANITIZE_DIR)/test_gba_ppu_log
+ $(HOST_SANITIZE_DIR)/test_gba_ppu_log \
+ $(HOST_SANITIZE_DIR)/test_upstream_aw_relay
 
-.PHONY: all check test test-tools test-sanitize check-cbmc check-rom-link \
- check-core check-render tree-check media-engine-check psp-build \
- launcher-stub package artifact-smoke clean
+.PHONY: all check test test-tools test-sanitize test-roms check-cbmc \
+ check-rom-link check-core check-render check-core-quick check-render-quick \
+ check-eboot tree-check psp-sdk-headers media-engine-check psp-build \
+ launcher-stub package artifact-smoke release-gate prove-regression clean
 
 all: check
 
@@ -136,17 +165,33 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_VIDEO_MOSAIC)
 	$(HOST_TEST_DYNAREC_WORKLIST)
 	$(HOST_TEST_SOUND_MATH)
+	$(HOST_TEST_EVENT_QUEUE)
 	$(HOST_TEST_RUNTIME_LOG)
 	$(HOST_TEST_ARM_CORE)
+	$(HOST_TEST_CORE_PROFILE)
+	$(HOST_TEST_ROM_RUN)
 	$(HOST_TEST_GBA_PPU)
 	$(HOST_TEST_GBA_PPU_LOG)
+	$(HOST_TEST_UPSTREAM_AW_RELAY)
 
 # Python tests. test_startup, test_browser_text and test_open_bios also
-# compile functions cut out of main.c, gui.c and memory.c with HOST_CC.
+# compile functions cut out of main.c, gui.c and memory.c with HOST_CC;
+# test_check_scripts and test_check_names run their scripts on scratch Git
+# trees.
 test-tools:
 	$(PYTHON) -m unittest tests/test_compare_benchmarks.py \
 	 tests/test_decode_runtime_log.py tests/test_startup.py \
-	 tests/test_browser_text.py tests/test_open_bios.py
+	 tests/test_browser_text.py tests/test_open_bios.py \
+	 tests/test_elf_info.py tests/test_release_manifest.py \
+	 tests/test_build_profile.py tests/test_check_elf.py \
+	 tests/test_check_scripts.py \
+	 tests/test_hardware_session.py \
+	 tests/test_release_gate.py \
+	 tests/test_check_names.py \
+	 tests/test_prove_regression.py \
+	 tests/test_upstream_review.py \
+	 tests/test_decode_test_rom.py tests/test_gen_shift_table.py \
+	 tests/test_make_bios_vectors.py tests/test_install_test_build.py
 
 # The link cable test runs fewer network profiles (--quick) under the
 # sanitizers, where it is much slower.
@@ -175,10 +220,14 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_video_mosaic
 	$(HOST_SANITIZE_DIR)/test_dynarec_worklist
 	$(HOST_SANITIZE_DIR)/test_sound_math
+	$(HOST_SANITIZE_DIR)/test_event_queue
 	$(HOST_SANITIZE_DIR)/test_runtime_log
 	$(HOST_SANITIZE_DIR)/test_arm_core
+	$(HOST_SANITIZE_DIR)/test_core_profile
+	$(HOST_SANITIZE_DIR)/test_rom_run
 	$(HOST_SANITIZE_DIR)/test_gba_ppu
 	$(HOST_SANITIZE_DIR)/test_gba_ppu_log
+	$(HOST_SANITIZE_DIR)/test_upstream_aw_relay
 
 $(HOST_TEST_CODEBREAKER): tests/test_codebreaker.c source/src/codebreaker.c source/src/codebreaker.h
 	mkdir -p $(HOST_BUILD_DIR)
@@ -271,12 +320,13 @@ $(HOST_TEST_PERF_DMA_PROBE): tests/test_perf_dma_probe.c tests/host_dma_stubs.c 
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
- tests/host_shim/psptypes.h
+ tests/host_shim/psptypes.h | psp-sdk-headers
 	mkdir -p $(HOST_BUILD_DIR)
 	# SDK include before tests/host_shim: the real SDK psptypes.h must win
 	# for memory.c (the shim psptypes.h must not shadow it).
 	$(HOST_CC) -std=c99 -O1 -w -include tests/host_shim/host_builtins.h \
 	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -DGBA_RUSH_PROFILE_RELEASE \
 	 -c source/src/memory.c -o $(HOST_BUILD_DIR)/perf_dma_memory.o
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror \
 	 -I source/src \
@@ -295,7 +345,7 @@ $(HOST_TEST_PERF_VIDEO_SENTINEL): tests/test_perf_video_sentinel.c \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/gba_types.h tests/host_shim/host_builtins.h \
- tests/host_shim/psptypes.h
+ tests/host_shim/psptypes.h | psp-sdk-headers
 	mkdir -p $(HOST_BUILD_DIR)
 	# Stages 1-2 put the SDK include before tests/host_shim: the real
 	# SDK psptypes.h (needed by pspthreadman.h, ...) wins, while the
@@ -304,6 +354,7 @@ $(HOST_TEST_PERF_VIDEO_SENTINEL): tests/test_perf_video_sentinel.c \
 	# the shim psptypes.h (host_shim first, no SDK path).
 	$(HOST_CC) -std=c99 -O1 -w -include tests/host_shim/host_builtins.h \
 	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -DGBA_RUSH_PROFILE_RELEASE \
 	 -c source/src/psp_video.c -o $(HOST_BUILD_DIR)/perf_video_psp_video.o
 	$(HOST_CC) -std=c99 -O1 -w -include tests/host_shim/host_builtins.h \
 	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
@@ -379,11 +430,33 @@ $(HOST_TEST_SOUND_MATH): tests/test_sound_math.c source/src/sound_math.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_sound_math.c source/src/sound_math.c -o $@
 
+$(HOST_TEST_EVENT_QUEUE): tests/test_event_queue.c source/src/event_queue.c \
+ source/src/event_queue.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_event_queue.c source/src/event_queue.c -o $@
+
 $(HOST_TEST_ARM_CORE): tests/test_arm_core.c $(ARM_CORE_SOURCES) \
  $(ARM_CORE_HEADERS)
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_arm_core.c $(ARM_CORE_SOURCES) -o $@
+
+$(HOST_TEST_CORE_PROFILE): tests/test_core_profile.c \
+ source/src/core_profile.c source/src/core_profile.h $(ARM_CORE_HEADERS)
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_core_profile.c source/src/core_profile.c -o $@
+
+$(HOST_ROM_RUN): $(ROM_RUN_DEPS)
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -Isource/src \
+	 tests/core/rom_run.c $(ROM_RUN_SOURCES) -o $@
+
+$(HOST_TEST_ROM_RUN): tests/test_rom_run.c $(ROM_RUN_DEPS)
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_rom_run.c $(ROM_RUN_SOURCES) -o $@
 
 $(HOST_TEST_GBA_PPU): tests/test_gba_ppu.c source/src/gba_ppu.c \
  source/src/gba_ppu.h
@@ -400,6 +473,12 @@ $(HOST_TEST_GBA_PPU_LOG): $(GBA_PPU_LOG_SOURCES) $(GBA_PPU_LOG_HEADERS)
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -pthread -Wall -Wextra -Werror -Isource/src \
 	 $(GBA_PPU_LOG_SOURCES) -o $@
+
+# A model of a libretro/gpsp code path, for docs/UPSTREAM.md: no source module.
+$(HOST_TEST_UPSTREAM_AW_RELAY): tests/test_upstream_aw_relay.c
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror \
+	 tests/test_upstream_aw_relay.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_codebreaker: tests/test_codebreaker.c \
  source/src/codebreaker.c source/src/codebreaker.h
@@ -484,13 +563,14 @@ $(HOST_SANITIZE_DIR)/test_perf_dma_probe: tests/test_perf_dma_probe.c \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
- tests/host_shim/psptypes.h
+ tests/host_shim/psptypes.h | psp-sdk-headers
 	mkdir -p $(HOST_SANITIZE_DIR)
 	# SDK include before tests/host_shim: the real SDK psptypes.h must win
 	# for memory.c (the shim psptypes.h must not shadow it).
 	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
 	 -include tests/host_shim/host_builtins.h \
 	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -DGBA_RUSH_PROFILE_RELEASE \
 	 -c source/src/memory.c -o $(HOST_SANITIZE_DIR)/perf_dma_memory.o
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -I source/src \
@@ -505,11 +585,12 @@ $(HOST_SANITIZE_DIR)/test_perf_video_sentinel: tests/test_perf_video_sentinel.c 
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/gba_types.h tests/host_shim/host_builtins.h \
- tests/host_shim/psptypes.h
+ tests/host_shim/psptypes.h | psp-sdk-headers
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
 	 -include tests/host_shim/host_builtins.h \
 	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -DGBA_RUSH_PROFILE_RELEASE \
 	 -c source/src/psp_video.c -o $(HOST_SANITIZE_DIR)/perf_video_psp_video.o
 	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
 	 -include tests/host_shim/host_builtins.h \
@@ -600,11 +681,28 @@ $(HOST_SANITIZE_DIR)/test_sound_math: tests/test_sound_math.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_sound_math.c source/src/sound_math.c -o $@
 
+$(HOST_SANITIZE_DIR)/test_event_queue: tests/test_event_queue.c \
+ source/src/event_queue.c source/src/event_queue.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_event_queue.c source/src/event_queue.c -o $@
+
 $(HOST_SANITIZE_DIR)/test_arm_core: tests/test_arm_core.c \
  $(ARM_CORE_SOURCES) $(ARM_CORE_HEADERS)
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_arm_core.c $(ARM_CORE_SOURCES) -o $@
+
+$(HOST_SANITIZE_DIR)/test_core_profile: tests/test_core_profile.c \
+ source/src/core_profile.c source/src/core_profile.h $(ARM_CORE_HEADERS)
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_core_profile.c source/src/core_profile.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_rom_run: tests/test_rom_run.c $(ROM_RUN_DEPS)
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_rom_run.c $(ROM_RUN_SOURCES) -o $@
 
 $(HOST_SANITIZE_DIR)/test_gba_ppu: tests/test_gba_ppu.c \
  source/src/gba_ppu.c source/src/gba_ppu.h
@@ -617,6 +715,11 @@ $(HOST_SANITIZE_DIR)/test_gba_ppu_log: $(GBA_PPU_LOG_SOURCES) \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -pthread -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src $(GBA_PPU_LOG_SOURCES) -o $@
+
+$(HOST_SANITIZE_DIR)/test_upstream_aw_relay: tests/test_upstream_aw_relay.c
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 tests/test_upstream_aw_relay.c -o $@
 
 # Optional gates outside make check: the CBMC proof needs CBMC, the ROM link
 # trade needs mGBA plus your own FireRed ROM, BIOS and save, and races Mario
@@ -632,12 +735,41 @@ check-rom-link:
 check-core:
 	sh scripts/check-core.sh
 
+# Builds the GBA test ROMs (tests/core-rom, tests/save-rom, tests/raster-rom)
+# and runs each on rom_run, checking the signature it leaves; see
+# scripts/check-test-roms.sh.
+test-roms: $(HOST_ROM_RUN)
+	RUN=$(HOST_ROM_RUN) sh scripts/check-test-roms.sh
+
 # Compares gba_ppu with mGBA's renderer on your own ROMs; see the script.
 check-render:
 	sh scripts/check-render.sh
 
+# Shorter runs of the two checks above, for every pull request; each part
+# is skipped when its inputs are missing.
+check-core-quick:
+	sh scripts/check-core.sh --quick
+
+check-render-quick:
+	sh scripts/check-render.sh --quick
+
+# Runs the EBOOT in PPSSPP's headless runner on your own games; see the
+# script. Build it first with make psp-build.
+check-eboot:
+	sh scripts/check-eboot.sh
+
 tree-check:
 	sh scripts/check-tree.sh
+	sh scripts/check-profiles.sh
+
+# The tests that build memory.c and psp_video.c need the PSP SDK headers:
+# say where to get them instead of failing halfway through the build.
+psp-sdk-headers:
+	@test -f "$(PSP_SDK_INCLUDE)/pspkernel.h" || { \
+	  echo "PSP SDK headers not found in $(PSP_SDK_INCLUDE)." >&2; \
+	  echo "Run sh scripts/setup-dev.sh and export the PATH it prints," \
+	   "or set PSP_SDK_INCLUDE to the SDK's include directory." >&2; \
+	  exit 1; }
 
 # The Media Engine program (source/prx/media_engine) must build and fit the
 # Media Engine's instruction cache.
@@ -649,7 +781,7 @@ media-engine-check:
 	fi
 
 psp-build:
-	$(MAKE) -C source
+	$(MAKE) -C source PROFILE=$(PROFILE)
 
 # Rebuilds the single-game launcher EBOOT that the desktop launcher tool
 # ships in its assets.
@@ -661,19 +793,34 @@ launcher-stub:
 package: psp-build check
 	@test -n "$(VERSION)" || \
 	 (echo "Set VERSION, for example VERSION=1.4.3" >&2; exit 1)
-	sh scripts/package-release.sh "$(VERSION)"
-	sh scripts/check-package.sh "$(VERSION)"
+	PROFILE=$(PROFILE) sh scripts/package-release.sh "$(VERSION)"
+	PROFILE=$(PROFILE) sh scripts/check-package.sh "$(VERSION)"
 
 # Re-checks an existing release archive without rebuilding it.
 artifact-smoke:
 	@test -n "$(VERSION)" || \
 	 (echo "Set VERSION, for example VERSION=1.4.3" >&2; exit 1)
-	sh scripts/check-package.sh "$(VERSION)"
+	PROFILE=$(PROFILE) sh scripts/check-package.sh "$(VERSION)"
+
+# Checks the hardware results, the soak and the link status of a packaged
+# release and writes dist/RELEASE-NOTES-VERSION.md; see "Releasing" in
+# CONTRIBUTING.md.
+release-gate:
+	$(PYTHON) scripts/release_gate.py --version "$(VERSION)" \
+	 --channel "$(CHANNEL)"
+
+# Builds and runs TEST against REF's source/ to show that it catches the bug
+# it was written for; scripts/prove-regression.sh explains the outcomes.
+prove-regression:
+	@test -n "$(REF)" && test -n "$(TEST)" || \
+	 (echo "Set REF and TEST, for example REF=1.4.2 TEST=test_link_net" >&2; exit 1)
+	MAKE='$(MAKE)' sh scripts/prove-regression.sh "$(REF)" "$(TEST)"
 
 clean:
 	$(MAKE) -C source clean
 	$(MAKE) -C source/single-game_launcher clean
 	$(RM) source/single-game_launcher/tool/assets/EBOOT.PBP
 	$(RM) $(HOST_TESTS)
-	$(RM) $(HOST_SANITIZE_TESTS)
+	$(RM) $(HOST_SANITIZE_TESTS) $(HOST_ROM_RUN)
+	$(RM) -r build/test-roms
 	-rmdir $(HOST_BUILD_DIR) $(HOST_SANITIZE_DIR) build 2>/dev/null

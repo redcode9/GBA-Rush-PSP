@@ -10,6 +10,7 @@ set -eu
 #   ROM2 SAVE2  optional second game (defaults to ROM and SAVE), such as
 #             LeafGreen with a matching save
 #   MKSC      optional Mario Kart: Super Circuit ROM (European release)
+# MGBA_DIR defaults to what scripts/setup-dev.sh put in ext/.
 # The script trades the host's first Pokemon for the joiner's second one,
 # then checks both saved parties, under several network conditions and once
 # in the lockstep mode used for every non-Pokemon game. With MKSC it also
@@ -17,7 +18,10 @@ set -eu
 # and checks that both race clocks run in step and, under PSP conditions,
 # that the race runs near full speed.
 
-: "${MGBA_DIR:?Set MGBA_DIR to an mGBA 0.10 tree built in build/}"
+if [ -z "${MGBA_DIR+set}" ] && [ -f ext/mgba-0.10.3/build/libmgba.a ]; then
+  MGBA_DIR=ext/mgba-0.10.3
+fi
+: "${MGBA_DIR:?Set MGBA_DIR, or run sh scripts/setup-dev.sh mgba}"
 : "${ROM:?Set ROM to a FireRed ROM}"
 : "${BIOS:?Set BIOS to a GBA BIOS}"
 : "${SAVE:?Set SAVE to a FireRed save}"
