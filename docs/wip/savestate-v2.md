@@ -9,7 +9,7 @@
 
 ## 1.5
 
-- [ ] **SAV-4.1** — Modulo puro savestate_trailer: trailer v2 dopo i 512 KiB · M, 1 gg · dipende da: — · PSP: no · **subito** · _in parte: test host verdi anche con UBSan e prova CBMC scritta; manca la verifica della CI (`make test-sanitize`, cioè il fuzz da 100k input sotto ASan, e `make check-cbmc`, mai eseguita)_
+- [x] **SAV-4.1** — Modulo puro savestate_trailer: trailer v2 dopo i 512 KiB · M, 1 gg · dipende da: — · PSP: no · **subito** · _CI verde su d63b0a8 (run 42676646757): `make check`, `make test-sanitize` con il fuzz da 100k input sotto ASan, `make check-cbmc` con la prova del trailer_
 - [ ] **SAV-4.2** — Inventario dei campi e modulo puro savestate_check · M, 1,5 gg · dipende da: SAV-1.7 · PSP: no · aspetta: SAV-1.7 (`wip/save-store`)
 - [ ] **SAV-4.3** — Scrittura del trailer v2 e decoder per PC · S, 0,5 gg · dipende da: SAV-4.1, SAV-2.5 · PSP: no · aspetta: SAV-2.5 (`wip/save-store`)
 - [ ] **SAV-4.4** — Caricamento validato prima di applicare · M, 1,5 gg · dipende da: SAV-4.1, SAV-4.2, SAV-4.3 · PSP: sì
