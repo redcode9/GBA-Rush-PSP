@@ -1152,6 +1152,10 @@
   "Replay the saved trace for this game",
   // MSG_TRACE_HELP_CANCEL
   "Stop the active trace operation",
+  // MSG_DIAGNOSTICS_PIN_TOAST
+  "Pin a test toast",
+  // MSG_DIAGNOSTICS_HELP_PIN_TOAST
+  "Keep a toast on screen until the game resets, to measure its cost",
   // MSG_TRACE_SAVED
   "Input trace saved",
   // MSG_TRACE_FAILED

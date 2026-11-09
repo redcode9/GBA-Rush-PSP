@@ -1152,6 +1152,10 @@
   "Riproduce la traccia salvata per il gioco",
   // MSG_TRACE_HELP_CANCEL
   "Ferma l'operazione di tracciamento",
+  // MSG_DIAGNOSTICS_PIN_TOAST
+  "Fissa un avviso di prova",
+  // MSG_DIAGNOSTICS_HELP_PIN_TOAST
+  "Tiene un avviso a schermo fino al riavvio, per misurarne il costo",
   // MSG_TRACE_SAVED
   "Traccia input salvata",
   // MSG_TRACE_FAILED

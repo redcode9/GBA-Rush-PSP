@@ -74,7 +74,8 @@ The optional desktop launcher has its own
 `psp-build`, `package` and `artifact-smoke` use the release profile, the EBOOT
 players get, unless given `PROFILE=diagnostic`. The diagnostic profile adds
 the features that `source/src/build_profile.h` switches on (today the input
-trace; `DIAGNOSTIC_CORE_PROFILE=1` adds the New core's profile), is titled
+trace and Diagnostics > Pin a test toast; `DIAGNOSTIC_CORE_PROFILE=1` adds
+the New core's profile), is titled
 "GBA Rush PSP [DIAG]" with its own icon, and is packaged as
 `dist/GBA-Rush-PSP-<version>-diag.zip`, with its manifest and
 `dist/SHA256SUMS-diag`, for the folder `PSP/GAME/GBARushPSP-DIAG/`:
@@ -89,6 +90,12 @@ Switching profile rebuilds every object. A release build given an
 `scripts/check-profiles.sh` (part of `make check`) refuses those macros
 anywhere but `build_profile.h`. `DIAGNOSTIC_INPUT_TRACE=1`, the old name of
 `PROFILE=diagnostic`, still works with a warning until the next release.
+
+To measure what drawing a toast costs, capture three perf reports with the
+toast pinned and three without, in the same diagnostic EBOOT, and compare
+them with `scripts/compare-benchmarks.py`. The pin lasts until the game
+resets; a turbo Toggle press or a Video cycle clears it, and any other toast
+waits behind it.
 
 ### Reproducing a player's bug with the diagnostic build
 

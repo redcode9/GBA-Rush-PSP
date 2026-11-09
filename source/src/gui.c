@@ -3635,6 +3635,19 @@ static void menu_trace_cancel(void)
     input_diagnostic_trace_cancel();
     diagnostics_report_line[0] = '\0';
 }
+
+/* build_profile.h switches the pinned toast on with the input trace, whose
+   rows it joins. The first-run hint, the toast that lasts longest, gets a
+   duration toast_current() never reaches: it stays until reset_gba() (a ROM
+   load) clears it, so perf reports with and without it show what drawing a
+   toast costs. */
+#ifdef ENABLE_DIAGNOSTIC_PINNED_TOAST
+static void menu_diagnostics_pin_toast(void)
+{
+    toast_push(MSG[MSG_FIRST_RUN_MENU_HINT], 0xFFFFFFFFu, 0,
+     sceKernelGetSystemTimeLow());
+}
+#endif
 #endif
 
 /* A link session needs a game: loading another one closes the link.
@@ -5436,7 +5449,10 @@ u32 menu(void)
     ACTION_OPTION(menu_trace_finish_save, NULL, MSG[MSG_TRACE_FINISH_SAVE], MSG_TRACE_HELP_FINISH_SAVE, 11, MSG_TRACE_FINISH_SAVE),
     ACTION_OPTION(menu_trace_replay, NULL, MSG[MSG_TRACE_REPLAY], MSG_TRACE_HELP_REPLAY, 12, MSG_TRACE_REPLAY),
     ACTION_OPTION(menu_trace_cancel, NULL, MSG[MSG_TRACE_CANCEL], MSG_TRACE_HELP_CANCEL, 13, MSG_TRACE_CANCEL),
-    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 15, MSG_OPTION_MENU_11)
+#ifdef ENABLE_DIAGNOSTIC_PINNED_TOAST
+    ACTION_OPTION(menu_diagnostics_pin_toast, NULL, MSG[MSG_DIAGNOSTICS_PIN_TOAST], MSG_DIAGNOSTICS_HELP_PIN_TOAST, 15, MSG_DIAGNOSTICS_PIN_TOAST),
+#endif
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 17, MSG_OPTION_MENU_11)
 #else
     ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 7, MSG_OPTION_MENU_11)
 #endif
@@ -5462,6 +5478,11 @@ u32 menu(void)
   diagnostics_options[8].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[9].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[10].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+#ifdef ENABLE_DIAGNOSTIC_PINNED_TOAST
+  /* Without a game, the next ROM load's reset_gba() would drop the pin. */
+  diagnostics_options[11].available_function = menu_game_available;
+  diagnostics_options[11].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+#endif
 #endif
 
   MAKE_MENU(diagnostics, NULL, NULL);
