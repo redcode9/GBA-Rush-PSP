@@ -67,9 +67,9 @@ CFLAGS = \
  -DZLIB_CONST -flto
 
 # Taking the address of a nested function that uses its parent's variables
-# makes GCC write a trampoline to the stack. In 1.4.3 two such callbacks of
-# the Performance page menu crashed both PSPs with a "Reserved instruction"
-# screen. Fail the build instead, on every object, zlib included.
+# makes GCC write a trampoline to the stack. Two such Performance page
+# callbacks (1.4.0-1.4.2, fixed in 1.4.3) crashed both PSPs with a "Reserved
+# instruction" screen. Fail the build instead, on every object, zlib included.
 CFLAGS += -Werror=trampolines
 
 # The build id names the source/ tree, not the commit, so a commit that
@@ -140,12 +140,13 @@ ASFLAGS = ${CFLAGS}
 # zlib's old-style definitions are tolerated.
 C_ONLY_OBJS = $(filter-out video_cc_wrap.o mips_stub.o video_blend_mips.o ku_bridge.o,$(OBJS))
 $(C_ONLY_OBJS): CFLAGS += -Wbad-function-cast -Wmissing-prototypes
-# Warnings in our C code fail the build; the vendored zlib is left out. The
+# Warnings in our C code fail the build; the vendored zlib is left out of
+# this compile-stage -Werror only (the LTO link below checks it too). The
 # font tables gbkfont.c and shinonomefont.c are #included by ch_print.c and
-# mh_print.c, so they are checked through those two objects. A warning that
-# truly cannot be fixed gets -Wno-error=<name> on that one object, with a
-# comment saying why. Keep this after every MAINOBJS += line: make expands
-# the target list when it reads the line.
+# mh_print.c, so they are checked through those two objects. A compile-stage
+# warning that truly cannot be fixed gets -Wno-error=<name> on that one
+# object, with a comment saying why. Keep this after every MAINOBJS +=
+# line: make expands the target list when it reads the line.
 $(filter-out $(OBJZ) $(OBJG),$(C_ONLY_OBJS)): CFLAGS += -Werror
 $(OBJZ) $(OBJG): CFLAGS += -Wno-old-style-definition
 $(MAINOBJS): $(COMMON_FILE)
@@ -187,8 +188,12 @@ include ${PSPSDK}/lib/build.mak
 $(PSP_EBOOT_SFO): build-config.stamp
 
 # With -flto the late warnings (maybe-uninitialized, array-bounds,
-# stringop-*, trampolines) appear while the link compiles the program, and
-# only the link command's flags apply there, so the link fails on them too.
+# stringop-*, trampolines) appear while the link compiles the whole program,
+# zlib and video_cc.cc included, and only the link command's flags apply
+# there: the link fails on them too, and a per-object -Wno-error cannot
+# reach them. If one appears in a vendored file or in video_cc.cc, build
+# that object with -fno-lto or drop -Werror here, and write the choice in
+# docs/DESIGN-DECISIONS.md (ENG-2.3).
 # -flto=auto also ends lto-wrapper's "using serial compilation" warning; the
 # partitioning does not depend on the job count, so the code does not change.
 LDFLAGS += -flto=auto -Werror
