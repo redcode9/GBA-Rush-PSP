@@ -89,11 +89,10 @@ def fixture_v3() -> bytes:
     return bytes(header) + payload
 
 
-def fixture_v6(build_id: bytes = b"0123456789ab-dirty") -> bytes:
+def fixture_v6(build_id: bytes = b"0123456789ab-dirty",
+               record: bytes = struct.pack(
+                   ">QIIHBBIII", 110, 7, 1, 18, 1, 0, 2, 1, 0)) -> bytes:
     """Version 6 log: the 96-byte header with a build id, one record."""
-    record = struct.pack(
-        ">QIIHBBIII", 110, 7, 1, 18, 1, 0, 2, 1, 0
-    )
     header = bytearray(96)
     struct.pack_into(
         ">4sHHHHHHIIIIIIQQ", header, 0, b"GBRL", 6, 96, 32, 0, 1, 0,
@@ -309,6 +308,63 @@ class RuntimeLogDecoderTests(unittest.TestCase):
                     decoder.describe({"event": "link-counters", "flags": 19,
                                       "values": values}),
                     "me-clock " + expected)
+
+    def test_describes_memory_stats_records(self):
+        # flags = point << 1 | part; values in KiB.
+        cases = [
+            (2, [3072, 1024, 8192],
+             "point=boot image=3072KiB heap-free=1024KiB heap-largest=8192KiB"),
+            (3, [20480, 12288, 32768],
+             "point=boot kernel-free=20480KiB kernel-largest=12288KiB "
+             "rom-buffer=32768KiB rom-pages=1024"),
+            (11, [0, 0, 4096],
+             "point=capture-stop kernel-free=0KiB kernel-largest=0KiB "
+             "rom-buffer=4096KiB rom-pages=128"),
+            (14, [1, 2, 3],
+             "point=7 image=1KiB heap-free=2KiB heap-largest=3KiB"),
+        ]
+        for flags, values, expected in cases:
+            with self.subTest(flags=flags):
+                self.assertEqual(
+                    decoder.describe({"event": "memory-stats", "flags": flags,
+                                      "values": values}),
+                    expected)
+
+    def test_decodes_memory_stats_in_a_version_six_log(self):
+        record = struct.pack(
+            ">QIIHBBIII", 110, 7, 1, 26, 1, 5, 21504, 12288, 16384)
+        snapshot = decoder.parse_snapshot(fixture_v6(record=record))
+
+        self.assertEqual(snapshot["records"][0]["event"], "memory-stats")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            decoder.print_snapshot(snapshot)
+        self.assertIn(
+            "memory-stats            point=rom-load kernel-free=21504KiB "
+            "kernel-largest=12288KiB rom-buffer=16384KiB rom-pages=512\n",
+            output.getvalue())
+
+    # A bad merge of event types appended by two branches shows up here.
+    def test_event_names_match_the_c_enum(self):
+        header = (Path(__file__).parents[1] / "source" / "src" /
+                  "runtime_log.h").read_text()
+        body = header.split("typedef enum", 2)[2].split("} RuntimeLogEventType;")[0]
+        names = re.findall(r"^\s*RUNTIME_LOG_EVENT_(\w+)", body, re.M)
+        self.assertIn("RUNTIME_LOG_EVENT_SESSION_START = 1", body)
+        self.assertEqual(
+            decoder.EVENTS,
+            {index: name.lower().replace("_", "-")
+             for index, name in enumerate(names, 1)})
+
+    def test_memory_points_match_the_c_enum(self):
+        header = (Path(__file__).parents[1] / "source" / "src" /
+                  "mem_stats.h").read_text()
+        body = header.split("typedef enum", 1)[1].split("} MemStatsPoint;")[0]
+        names = re.findall(r"^\s*MEM_STATS_(\w+)", body, re.M)
+        self.assertIn("MEM_STATS_BOOT = 1", body)
+        self.assertEqual(
+            decoder.MEMORY_POINTS,
+            ["none"] + [name.lower().replace("_", "-") for name in names])
 
     def test_exact_renderer_names_match_the_c_enum(self):
         header = (Path(__file__).parents[1] / "source" / "src" /

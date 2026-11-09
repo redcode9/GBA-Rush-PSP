@@ -30,6 +30,7 @@
 
 #include "common.h"
 #include "fast_forward_policy.h"
+#include "mem_stats.h"
 #include "perf_monitor.h"
 #include "perf_report.h"
 #include "power_lifecycle.h"
@@ -751,6 +752,55 @@ static int main_link_service(IRQ_TYPE *irq_raised)
   return restart;
 }
 
+/* ---- Memory measurements ----------------------------------------------
+ * Two MEMORY_STATS records (mem_stats.c) at startup, ROM load, link start
+ * and capture start and stop. The largest block probe allocates, so it
+ * runs only there, on the emulator thread: never in update_gba or the
+ * power callback. */
+
+/* Linker script symbols. _ftext, the start of .text, is where the PRX image
+   begins; exception.c already links against it. */
+extern int _ftext;
+extern char _end[];
+
+/* The lowest of the capture's start and stop measurements, for its report. */
+static MemStats main_perf_memory;
+
+static void *main_memory_alloc(size_t size, void *context)
+{
+  (void)context;
+  return malloc(size);
+}
+
+static void main_memory_release(void *block, void *context)
+{
+  (void)context;
+  free(block);
+}
+
+static MemStats main_memory_sample(MemStatsPoint point)
+{
+  /* Read before the probe, which can grow newlib's arena. */
+  struct mallinfo heap = mallinfo();
+  MemStats stats;
+  uint8_t flags[2];
+  uint32_t values[2][3];
+  u32 part;
+
+  stats.image = (u32)((uintptr_t)_end - (uintptr_t)&_ftext);
+  stats.heap_free = (u32)heap.fordblks;
+  stats.heap_largest = mem_stats_largest_block(main_memory_alloc,
+   main_memory_release, NULL, 64u << 20);
+  stats.kernel_free = (u32)sceKernelTotalFreeMemSize();
+  stats.kernel_largest = (u32)sceKernelMaxFreeMemSize();
+  stats.rom_buffer = gamepak_ram_buffer_size;
+  mem_stats_encode(&stats, point, flags, values);
+  for(part = 0; part < 2; part++)
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_MEMORY_STATS, cpu_ticks,
+     flags[part], values[part][0], values[part][1], values[part][2]);
+  return stats;
+}
+
 /* Hosts or joins after stopping fast-forward and any earlier session.
    0 if WLAN is off or the SIO or the network could not be started. */
 static int main_link_start(int host)
@@ -776,6 +826,8 @@ static int main_link_start(int host)
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COMMAND, cpu_ticks,
    (u8)(host != 0), ((u32)(u8)game[0] << 24) | ((u32)(u8)game[1] << 16) |
    ((u32)(u8)game[2] << 8) | (u8)game[3], 0, 0);
+  /* Before the network modules load. */
+  main_memory_sample(MEM_STATS_LINK_START);
 
   /* Pin the clock before the network starts; changing it later can
      disturb the WLAN. */
@@ -1759,6 +1811,7 @@ static void setup_main(const char *eboot_path)
   hw_probe_psp_run(main_path);
 #endif
   init_gamepak_buffer();
+  main_memory_sample(MEM_STATS_BOOT);
 
   sound_pause = 1;
   set_sound_volume();
@@ -1984,6 +2037,7 @@ void reset_gba(void)
     runtime_log_rom_identity = new_identity;
     runtime_log_rom_active = 1;
   }
+  main_memory_sample(MEM_STATS_ROM_LOAD);
   reset_sound();
 }
 
@@ -2273,6 +2327,7 @@ int main_perf_start(void)
   }
   perf_monitor_set_identity(&identity);
 
+  main_perf_memory = main_memory_sample(MEM_STATS_CAPTURE_START);
   perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
   video_reset_frame_timing();
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
@@ -2283,9 +2338,13 @@ int main_perf_start(void)
 
 int main_perf_stop(void)
 {
+  MemStats stop;
+
   if(!perf_monitor_active())
     return 0;
 
+  stop = main_memory_sample(MEM_STATS_CAPTURE_STOP);
+  mem_stats_keep_lowest(&main_perf_memory, &stop);
   perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_stop();

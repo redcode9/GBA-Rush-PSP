@@ -102,6 +102,20 @@ static void test_zero_memory(void)
   assert(heap.calls == 0);
 }
 
+/* A capture's report keeps the lower of its start and stop values. */
+static void test_keep_lowest_per_field(void)
+{
+  const MemStats start = { 10, 20, 30, 40, 50, 60 };
+  const MemStats lower = { 9, 18, 27, 36, 45, 54 };
+  const MemStats higher = { 11, 21, 31, 41, 51, 61 };
+  MemStats lowest = start;
+
+  mem_stats_keep_lowest(&lowest, &higher);
+  assert(memcmp(&lowest, &start, sizeof(lowest)) == 0);
+  mem_stats_keep_lowest(&lowest, &lower);
+  assert(memcmp(&lowest, &lower, sizeof(lowest)) == 0);
+}
+
 static void roundtrip(const MemStats *stats, MemStatsPoint point)
 {
   MemStats decoded;
@@ -185,6 +199,7 @@ int main(void)
 {
   test_largest_block_bisection_fake_allocator();
   test_zero_memory();
+  test_keep_lowest_per_field();
   test_encode_decode_roundtrip();
   puts("Memory stats tests passed");
   return 0;

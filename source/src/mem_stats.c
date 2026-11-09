@@ -34,6 +34,22 @@ uint32_t mem_stats_largest_block(void *(*alloc)(size_t, void *),
   return low * MEM_STATS_STEP;
 }
 
+static void mem_stats_lower(uint32_t *lowest, uint32_t sample)
+{
+  if(sample < *lowest)
+    *lowest = sample;
+}
+
+void mem_stats_keep_lowest(MemStats *lowest, const MemStats *sample)
+{
+  mem_stats_lower(&lowest->image, sample->image);
+  mem_stats_lower(&lowest->heap_free, sample->heap_free);
+  mem_stats_lower(&lowest->heap_largest, sample->heap_largest);
+  mem_stats_lower(&lowest->kernel_free, sample->kernel_free);
+  mem_stats_lower(&lowest->kernel_largest, sample->kernel_largest);
+  mem_stats_lower(&lowest->rom_buffer, sample->rom_buffer);
+}
+
 void mem_stats_encode(const MemStats *stats, MemStatsPoint point,
  uint8_t flags[2], uint32_t values[2][3])
 {

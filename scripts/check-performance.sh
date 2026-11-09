@@ -4,7 +4,7 @@ set -eu
 
 # Keeps the performance instrumentation cheap enough to leave on: sampling
 # never allocates or touches files, and the report is only formatted and
-# written outside the emulation hot paths.
+# written outside the emulation hot paths, where the memory probe never runs.
 
 if grep -Eq 'FILE_|sceIo|malloc\(|calloc\(|realloc\(|free\(' \
   source/src/perf_metrics.c source/src/perf_monitor.c
@@ -13,20 +13,20 @@ then
   exit 1
 fi
 
-if grep -Eq 'perf_report_format|main_perf_write_report' \
+if grep -Eq 'perf_report_format|main_perf_write_report|mem_stats_largest_block' \
   source/src/cpu.c source/src/memory.c source/src/psp_video.c \
   source/src/sound.c source/src/video_dispatch.c
 then
-  echo "A performance report is formatted or written from a hot module" >&2
+  echo "A performance report or the memory probe runs in a hot module" >&2
   exit 1
 fi
 
 update_body=$(sed -n '/^u32 update_gba/,/^static void init_main/p' \
   source/src/main.c)
 if printf '%s\n' "$update_body" | \
-  grep -Eq 'perf_report_format|main_perf_write_report'
+  grep -Eq 'perf_report_format|main_perf_write_report|mem_stats_largest_block|main_memory_sample'
 then
-  echo "A performance report is formatted or written from update_gba" >&2
+  echo "A performance report or the memory probe runs in update_gba" >&2
   exit 1
 fi
 

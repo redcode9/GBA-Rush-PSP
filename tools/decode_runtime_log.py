@@ -56,6 +56,7 @@ EVENTS = {
     23: "link-stream-metrics",
     24: "link-timeout",
     25: "link-benchmark",
+    26: "memory-stats",
 }
 FLUSH_REASONS = {
     1: "start",
@@ -108,6 +109,10 @@ EXACT_RENDERER = [
     "not-started", "media-engine", "cpu-no-module", "cpu-no-driver",
     "cpu-no-answer", "cpu-stopped", "cpu-fault", "cpu-too-slow",
     "cpu-no-memory",
+]
+# Where main.c measured the memory (MemStatsPoint in source/src/mem_stats.h).
+MEMORY_POINTS = [
+    "none", "boot", "rom-load", "link-start", "capture-start", "capture-stop",
 ]
 LINK_EVENTS = {
     "link-command", "link-state", "link-pause-end", "link-error",
@@ -221,6 +226,17 @@ def describe(record: dict[str, Any]) -> str:
         )
     if event == "log-flush":
         return f"reason={FLUSH_REASONS.get(value0, value0)} main={value1} network={value2}"
+    if event == "memory-stats":
+        # Two records per measurement, values in KiB (mem_stats_encode).
+        # heap-free counts only free space newlib has already taken from the
+        # system; heap-largest is the largest block malloc still gives.
+        point = f"point={_name(MEMORY_POINTS, flags >> 1)}"
+        if flags & 1:
+            return (
+                f"{point} kernel-free={value0}KiB kernel-largest={value1}KiB "
+                f"rom-buffer={value2}KiB rom-pages={value2 // 32}"
+            )
+        return f"{point} image={value0}KiB heap-free={value1}KiB heap-largest={value2}KiB"
     # Earlier versions belong to a retired link design; show raw values.
     if event not in LINK_EVENTS or record.get("version", 5) < 5:
         return f"flags=0x{flags:02X} values={value0}/{value1}/{value2}"

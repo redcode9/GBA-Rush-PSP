@@ -53,6 +53,9 @@ typedef struct
 uint32_t mem_stats_largest_block(void *(*alloc)(size_t, void *),
  void (*release)(void *, void *), void *context, uint32_t limit);
 
+/* Lowers each field of lowest to sample's where that is lower. */
+void mem_stats_keep_lowest(MemStats *lowest, const MemStats *sample);
+
 /* Two records with flags = point << 1 | part. Part 0 holds image,
    heap_free and heap_largest, part 1 kernel_free, kernel_largest and
    rom_buffer, all in KiB rounded down. The ROM pages are rom_buffer / 32
