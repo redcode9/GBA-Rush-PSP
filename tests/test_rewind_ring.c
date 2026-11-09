@@ -2,7 +2,8 @@
  * Host tests for rewind_ring.c: captures give back every state bit for bit
  * when the cursor walks back and forward, a full ring keeps the newest
  * records, an oversized record leaves everything untouched, a damaged
- * record stops the cursor, unmarked pages are not recorded, the landing
+ * record stops the cursor, a damaged length met while evicting drops the
+ * old records, unmarked pages are not recorded, the landing
  * rule and its search, wrapping at the end of the buffer, the worst case
  * against record_bound, and 100,000 random operations against a model.
  * Every large array is static: the stack is small on some hosts.
@@ -534,6 +535,68 @@ static void test_records_wrap_at_buffer_end(void)
   check_guard(wrap_ring, 97);
 }
 
+/* The oldest record's payload length is damaged before a capture must evict
+   it: one length runs past the ring, the other wraps below a record's size.
+   The capture drops every old record and the ring stays in its buffer. No
+   rng(), so the tests after this one see the same random numbers. */
+static void test_damaged_length_on_eviction(void)
+{
+  static const uint32_t damage[2] = { 1000, 0xFFFFFFF9u };
+  static uint32_t small_live[64];
+  static uint32_t small_ref[64];
+  static uint32_t small_states[9][64];
+  static uint32_t ring_words[40 + GUARD_WORDS];
+  RewindSpan span;
+  RewindRing ring;
+  RewindStamp stamp;
+  RewindStamp out;
+  uint32_t d;
+  uint32_t k;
+
+  span.live = small_live;
+  span.ref = small_ref;
+  span.words = 64;
+  span.page_map = NULL;
+  for(d = 0; d < 2; d++)
+  {
+    for(k = 0; k < 64; k++)
+      small_live[k] = k * 0x9E3779B9u;
+    memcpy(small_ref, small_live, sizeof(small_ref));
+    for(k = 0; k < GUARD_WORDS; k++)
+      ring_words[40 + k] = GUARD_VALUE;
+    stamp = make_stamp(0, 0, 0);
+    rewind_ring_init(&ring, ring_words, 40, &stamp);
+
+    /* Ten-word records (header, token, literal, zero run, length): four
+       fill the ring, so the fifth capture evicts the damaged one. */
+    for(k = 1; k <= 8; k++)
+    {
+      if(k == 5)
+      {
+        assert(ring.count == 4 && ring.used == 40);
+        ring_words[ring.tail + 3] = damage[d];  /* payload length word */
+      }
+      small_live[k] ^= 1;
+      stamp = make_stamp(k, 0, 0);
+      assert(rewind_ring_capture(&ring, &span, 1, &stamp) == REWIND_OK);
+      assert(ring.tail < ring.capacity && ring.used <= ring.capacity);
+      check_guard(ring_words, 40);
+      memcpy(small_states[k], small_live, sizeof(small_live));
+    }
+
+    /* Only the records written from the fifth capture on remain. */
+    assert(ring.count == 4);
+    for(k = 7; k >= 4; k--)
+    {
+      assert(rewind_ring_step_back(&ring, &span, 1, &out) == REWIND_OK);
+      assert(memcmp(small_ref, small_states[k], sizeof(small_ref)) == 0);
+      assert(out.frame == k);
+    }
+    assert(rewind_ring_step_back(&ring, &span, 1, &out) == REWIND_AT_OLDEST);
+    check_guard(ring_words, 40);
+  }
+}
+
 static void test_worst_case_within_bound(void)
 {
   RewindRing ring;
@@ -836,6 +899,7 @@ int main(void)
   test_small_ring_keeps_recent_records();
   test_record_bigger_than_ring_is_refused();
   test_damaged_record_stops_the_cursor();
+  test_damaged_length_on_eviction();
   test_page_map_skips_clear_pages();
   test_land_rule();
   test_land_pick();
