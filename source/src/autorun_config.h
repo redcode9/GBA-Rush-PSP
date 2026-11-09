@@ -39,6 +39,11 @@
  *   exit=0|1         1 quits the EBOOT when the run is done, or when the ROM
  *                    or the trace fails to start. Needs frames.
  *
+ * Not keys yet: the state-hash file, the network fault profile and the
+ * power events come with the code that uses them (the replay's hash
+ * capture, the ad-hoc fault knobs, the power event injector). Until then
+ * such a key is unknown and refuses the file.
+ *
  * Example, to replay a trace for one minute and quit:
  *
  *   version=1
