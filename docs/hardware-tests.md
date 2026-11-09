@@ -104,6 +104,32 @@ Each test has four fields:
   be restored." follows and the game goes on with its own save. Exit
   without saving in the game: the `.sav` keeps its size, CRC and date.
 
+### save-eeprom8k-wfirst
+
+- Models: PSP-1000, second model
+- Minutes: 30
+- Pass: on the candidate, on each model, the first start of
+  `save-eeprom8k_wfirst` with no `.sav` lists no failed case on screen, the
+  `.sav` it leaves is 8192 bytes, and `tools/decode_test_rom.py` prints
+  write_first PASS 0000003F for it.
+- Steps: build the save test ROM with `make test-roms`, which needs an ARM
+  compiler (`tests/gba-rom.mk`) and writes
+  `build/test-roms/save-eeprom8k_wfirst.gba`. On each model run it on
+  release 1.4.2 first, then on the candidate. Install 1.4.2 beside the
+  test build with `sh scripts/install-test-build.sh --folder GBARush-142
+  --rom build/test-roms/save-eeprom8k_wfirst.gba
+  dist/GBA-Rush-PSP-1.4.2.zip`, and the candidate as usual with the same
+  `--rom`. Each run: delete any `save-eeprom8k_wfirst.sav` from that
+  build's saves folder, start the ROM, answer No if "Load auto-savestate?"
+  appears, note what the screen lists, wait for GEN to change and exit GBA
+  Rush PSP right after. Run the same install command again: it archives
+  the `.sav` into `artifacts/hardware/`, where you check its size and
+  decode it with `tools/decode_test_rom.py`. On 1.4.2 the screen is
+  expected to list write_first FAIL, with FFFFFFFF when the block reads
+  back blank or DEAD0000 when the chip never reports the write done:
+  record that run as a `fail` row of the 1.4.2 EBOOT (`5e6e02004b2c`),
+  which shows that the test catches the bug.
+
 ## Link
 
 ### link-frlg-both-roles
