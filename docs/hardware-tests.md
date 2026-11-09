@@ -133,6 +133,23 @@ Each test has four fields:
 - Steps: remove `gba_bios.bin` from the emulator's folder, start 10
   different games and play each until gameplay.
 
+### diag-autorun-smoke
+
+- Models: PSP-1000
+- Minutes: 15
+- Pass: a `diag-autorun.txt` with the build's id, `rom=`, `frames=600` and
+  `exit=1` starts the game without the browser or the menu and the EBOOT
+  exits by itself, leaving `status=done` and `frames=600` in
+  `diag-autorun.result`. With another build id in the file the result says
+  `status=ignored` and `reason=build-mismatch`, the EBOOT starts as usual,
+  and the decoded log shows a `diag-autorun` event with that reason.
+- Steps: build with `make psp-build PROFILE=diagnostic` and copy the EBOOT
+  to its own folder. Next to it write `diag-autorun.txt` as
+  `source/src/autorun_config.h` describes, with the build id that the
+  Diagnostics page shows, a ROM, `frames=600` and `exit=1`, and start the
+  EBOOT. Then change one character of the build id, start the EBOOT again,
+  quit from the menu, and decode `logs/`.
+
 ## Menu
 
 ### menu-every-page
