@@ -109,9 +109,10 @@ Each test has four fields:
 - Models: PSP-1000, second model
 - Minutes: 30
 - Pass: on the candidate, on each model, the first start of
-  `save-eeprom8k_wfirst` with no `.sav` lists no failed case on screen, the
-  `.sav` it leaves is 8192 bytes, and `tools/decode_test_rom.py` prints
-  write_first PASS 0000003F for it.
+  `save-eeprom8k_wfirst` with no save files lists no failed case on screen,
+  the `.sav` it leaves is 8192 bytes, and `tools/decode_test_rom.py` prints
+  write_first PASS 0000003F and read_back SKIP for it. read_back PASS means
+  that start found an earlier save, so the run does not count.
 - Steps: build the save test ROM with `make test-roms`, which needs an ARM
   compiler (`tests/gba-rom.mk`) and writes
   `build/test-roms/save-eeprom8k_wfirst.gba`. On each model run it on
@@ -119,8 +120,11 @@ Each test has four fields:
   test build with `sh scripts/install-test-build.sh --folder GBARush-142
   --rom build/test-roms/save-eeprom8k_wfirst.gba
   dist/GBA-Rush-PSP-1.4.2.zip`, and the candidate as usual with the same
-  `--rom`. Each run: delete any `save-eeprom8k_wfirst.sav` from that
-  build's saves folder, start the ROM, answer No if "Load auto-savestate?"
+  `--rom`. Each run: from that build's saves folder delete
+  `save-eeprom8k_wfirst.sav` and every file whose name starts with it
+  (`.sav.tmp`, `.sav.bak`, `.sav.orig`, `.sav.link1` to `.link3`;
+  `docs/saves.md` lists them), since the candidate brings a `.bak` back as
+  the `.sav`. Start the ROM, answer No if "Load auto-savestate?"
   appears, note what the screen lists, wait for GEN to change and exit GBA
   Rush PSP right after. Run the same install command again: it archives
   the `.sav` into `artifacts/hardware/`, where you check its size and
