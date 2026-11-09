@@ -14,6 +14,9 @@ ARG UBUNTU=ubuntu@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce
 # ca-certificates (and the openssl it needs) comes from the live archive;
 # then apt is set to the snapshot and the live package lists are dropped,
 # so every later apt call, CBMC's dependencies included, reads the snapshot.
+# When apt finds no snapshot server for a source (arm64's ports.ubuntu.com,
+# say) it reads the live archive without an error, so after apt-get update
+# each stage fails unless the snapshot is the only source apt-cache lists.
 ARG UBUNTU_SNAPSHOT=20261109T000000Z
 
 FROM $UBUNTU AS base
@@ -30,7 +33,10 @@ RUN apt-get update \
 # -w. The workspace is mounted from the runner, owned by another user than
 # the container's root, so Git is told to trust it.
 FROM base AS psp
+ARG UBUNTU_SNAPSHOT
 RUN apt-get update \
+ && apt-cache policy | grep -qF "://snapshot.ubuntu.com/ubuntu/$UBUNTU_SNAPSHOT" \
+ && ! apt-cache policy | grep '://' | grep -vF "://snapshot.ubuntu.com/ubuntu/$UBUNTU_SNAPSHOT" \
  && apt-get install -y --no-install-recommends curl gcc-14 \
   libc6-dev make zlib1g-dev python3 python3-yaml git zip unzip \
  && rm -rf /var/lib/apt/lists/* \
@@ -47,7 +53,10 @@ RUN sh scripts/setup-dev.sh pspdev && rm -rf ext/downloads
 FROM base AS cbmc
 ARG CBMC_VERSION=6.11.0
 ARG CBMC_SHA256=b3721aa541038384d7801ea3aeabbcddc3e8845ac8f1cbff637cf8dec7481ac8
+ARG UBUNTU_SNAPSHOT
 RUN apt-get update \
+ && apt-cache policy | grep -qF "://snapshot.ubuntu.com/ubuntu/$UBUNTU_SNAPSHOT" \
+ && ! apt-cache policy | grep '://' | grep -vF "://snapshot.ubuntu.com/ubuntu/$UBUNTU_SNAPSHOT" \
  && apt-get install -y --no-install-recommends curl gcc \
   libc6-dev make \
  && curl -fsSL -o /tmp/cbmc.deb "https://github.com/diffblue/cbmc/releases/download/cbmc-$CBMC_VERSION/ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb" \
