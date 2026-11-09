@@ -1798,6 +1798,10 @@ static void main_autorun_report(AutorunStatus status, AutorunError error,
 
   runtime_log_psp_main(RUNTIME_LOG_EVENT_DIAG_AUTORUN, cpu_ticks, (u8)status,
    (u32)error, line, main_autorun_frames);
+  /* No game start follows to save the log: store the reason now, in case
+     the EBOOT is killed in the browser. */
+  if(status == AUTORUN_STATUS_IGNORED || status == AUTORUN_STATUS_FAILED)
+    runtime_log_psp_flush(RUNTIME_LOG_FLUSH_START);
 
   length = autorun_config_result(GBA_RUSH_BUILD_ID, status, error, line,
    main_autorun_frames, text, sizeof(text));
