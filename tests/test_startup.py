@@ -1,4 +1,5 @@
-"""Exercise production startup and auto-state paths with host API stubs."""
+"""Exercise production startup, auto-state and diagnostic autorun paths
+with host API stubs."""
 
 import os
 from pathlib import Path
@@ -176,6 +177,193 @@ int main(void) {
 '''
 
 
+def autorun_block():
+    """Return main.c's diagnostic autorun block, from its #ifdef to #endif."""
+    text = (ROOT / "source/src/main.c").read_text()
+    start = text.index("#ifdef ENABLE_DIAGNOSTIC_AUTORUN\n/* ---- Diagnostic autorun")
+    return text[start:text.index("\n#endif\n", start) + len("\n#endif\n")]
+
+
+# Host stand-ins for what the autorun block calls. The file is read back in
+# pieces of at most 1000 bytes, and quit() returns instead of exiting.
+AUTORUN_STUBS = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include "autorun_config.h"
+#include "runtime_log.h"
+typedef uint8_t u8;
+typedef int32_t s32;
+typedef uint32_t u32;
+typedef int SceUID;
+#define MAX_PATH 512
+#define GBA_RUSH_BUILD_ID "abc123"
+#define FILE_OPEN(tag, name, mode) tag = stub_open(name, #mode)
+#define FILE_CHECK_VALID(tag) ((tag) >= 0)
+#define FILE_CLOSE(tag) stub_close(tag)
+#define FILE_READ(tag, buffer, size) stub_read(tag, buffer, size)
+#define FILE_WRITE(tag, buffer, size) stub_write(tag, buffer, size)
+char main_path[MAX_PATH] = "ms0:/GAME/";
+char gamepak_filename[MAX_PATH];
+u32 cpu_ticks, gamepak_file_size;
+static char file_text[8192], result[512], loaded[MAX_PATH], traced[MAX_PATH];
+static size_t file_size, file_at;
+static int file_exists, read_error, open_files, load_result, trace_result;
+static int results, events, flushes, quits, resets;
+static u32 event_flags, event_values[3];
+static SceUID stub_open(const char *name, const char *mode) {
+  assert(strcmp(name, strcmp(mode, "READ") == 0 ?
+   "ms0:/GAME/diag-autorun.txt" : "ms0:/GAME/diag-autorun.result") == 0);
+  if(strcmp(mode, "READ") == 0 && !file_exists) return -1;
+  open_files++; file_at = 0; return 3;
+}
+static void stub_close(SceUID file) { assert(file == 3); open_files--; }
+static int stub_read(SceUID file, char *buffer, size_t size) {
+  size_t n = 0;
+  assert(file == 3);
+  if(read_error) return -1;
+  while(n < size && n < 1000 && file_at < file_size)
+    buffer[n++] = file_text[file_at++];
+  return (int)n;
+}
+static int stub_write(SceUID file, const char *buffer, size_t size) {
+  assert(file == 3 && size < sizeof(result));
+  memcpy(result, buffer, size); result[size] = '\0'; results++;
+  return (int)size;
+}
+void runtime_log_psp_main(RuntimeLogEventType type, uint32_t cycle,
+ uint8_t flags, uint32_t value0, uint32_t value1, uint32_t value2) {
+  (void)cycle; assert(type == RUNTIME_LOG_EVENT_DIAG_AUTORUN); events++;
+  event_flags = flags; event_values[0] = value0;
+  event_values[1] = value1; event_values[2] = value2;
+}
+int runtime_log_psp_flush(RuntimeLogFlushReason reason) {
+  assert(reason == RUNTIME_LOG_FLUSH_START); flushes++; return 1;
+}
+s32 load_gamepak(char *name) {
+  strcpy(loaded, name);
+  if(load_result > 0) { strcpy(gamepak_filename, name); gamepak_file_size = 1; }
+  return load_result;
+}
+void reset_gba(void) { resets++; }
+int gui_trace_replay_file(const char *name) { strcpy(traced, name); return trace_result; }
+void quit(void) { quits++; }
+int main_autorun_start(void);
+void main_autorun_frame(void);
+'''
+
+
+# No file; refused files (another build, 4097 bytes, a read error); runs
+# with and without frames= and exit=1, with relative and absolute paths;
+# ROM and trace failures. A refused or failed file stores the log at once.
+AUTORUN_SCENARIOS = r'''
+#define HEAD "version=1\nbuild=abc123\n"
+static void clear_test(void) {
+  file_exists = 1; read_error = 0; load_result = trace_result = 1;
+  results = events = flushes = quits = resets = 0;
+  result[0] = loaded[0] = traced[0] = gamepak_filename[0] = '\0';
+  gamepak_file_size = 1;
+  main_autorun_running = main_autorun_frames = 0;
+}
+static int start_size(size_t size) {
+  int started;
+  file_size = size;
+  started = main_autorun_start();
+  assert(open_files == 0);
+  return started;
+}
+static int start(const char *text) {
+  strcpy(file_text, text);
+  return start_size(strlen(text));
+}
+static void frames(int count) { while(count-- > 0) main_autorun_frame(); }
+static void expect(AutorunStatus status, const char *reason, u32 line,
+ u32 frames_run) {
+  static const char *names[] = { "ignored", "failed", "started", "done" };
+  char text[256];
+  snprintf(text, sizeof(text), "version=1\nbuild=abc123\nstatus=%s\n"
+   "reason=%s\nline=%u\nframes=%u\n", names[status], reason,
+   (unsigned)line, (unsigned)frames_run);
+  assert(strcmp(result, text) == 0);
+  assert(event_flags == (u32)status && event_values[1] == line);
+  assert(event_values[2] == frames_run);
+  assert(strcmp(autorun_config_error_name((AutorunError)event_values[0]),
+   reason) == 0);
+}
+int main(void) {
+  clear_test(); file_exists = 0;
+  assert(start("") == 0 && results == 0 && events == 0 && flushes == 0);
+
+  clear_test();
+  assert(start("version=1\nbuild=abc124\nrom=a.gba\nframes=5\nexit=1\n") == 0);
+  assert(loaded[0] == '\0' && quits == 0 && flushes == 1);
+  expect(AUTORUN_STATUS_IGNORED, "build-mismatch", 2, 0);
+
+  clear_test(); memset(file_text, '\n', 4097); memcpy(file_text, HEAD, sizeof(HEAD) - 1);
+  assert(start_size(4096) == 0 && flushes == 0);
+  expect(AUTORUN_STATUS_STARTED, "none", 0, 0);
+  clear_test(); assert(start_size(4097) == 0 && flushes == 1);
+  expect(AUTORUN_STATUS_IGNORED, "too-large", 0, 0);
+  clear_test(); read_error = 1; assert(start(HEAD) == 0 && flushes == 1);
+  expect(AUTORUN_STATUS_IGNORED, "read", 0, 0);
+
+  clear_test();
+  assert(start(HEAD "rom=roms/a.gba\ntrace=traces/t.gbit\nframes=3\nexit=1\n"));
+  assert(strcmp(loaded, "ms0:/GAME/roms/a.gba") == 0 && resets == 1);
+  assert(strcmp(traced, "ms0:/GAME/traces/t.gbit") == 0 && flushes == 0);
+  expect(AUTORUN_STATUS_STARTED, "none", 0, 0);
+  frames(2); assert(results == 1 && quits == 0);
+  frames(1); assert(results == 2 && quits == 1);
+  expect(AUTORUN_STATUS_DONE, "none", 0, 3);
+  frames(5); assert(results == 2 && quits == 1);
+
+  clear_test(); assert(start(HEAD "rom=ms0:/ROMS/b.gba\nframes=2\n"));
+  assert(strcmp(loaded, "ms0:/ROMS/b.gba") == 0 && traced[0] == '\0');
+  frames(10); assert(results == 2 && quits == 0);
+  expect(AUTORUN_STATUS_DONE, "none", 0, 2);
+  clear_test(); assert(start(HEAD "rom=b.gba\n"));
+  frames(10); assert(results == 1);
+
+  clear_test(); load_result = -1; assert(start(HEAD "rom=b.gba\n") == 0);
+  assert(resets == 0 && quits == 0 && flushes == 1);
+  assert(gamepak_filename[0] == '\0' && gamepak_file_size == 0);
+  expect(AUTORUN_STATUS_FAILED, "rom", 0, 0);
+  clear_test(); load_result = 0; assert(start(HEAD "rom=b.gba\n") == 0);
+  expect(AUTORUN_STATUS_FAILED, "rom", 0, 0);
+  clear_test(); assert(start(HEAD "rom=roms/game\n") == 0 && loaded[0] == '\0');
+  expect(AUTORUN_STATUS_FAILED, "rom", 0, 0);
+  clear_test(); load_result = -1;
+  assert(start(HEAD "rom=b.gba\nframes=9\nexit=1\n") == 0 && quits == 1);
+
+  clear_test(); trace_result = 0;
+  assert(start(HEAD "rom=b.gba\ntrace=t.gbit\n") == 0);
+  assert(resets == 1 && quits == 0 && flushes == 1);
+  assert(gamepak_filename[0] == '\0' && gamepak_file_size == 0);
+  expect(AUTORUN_STATUS_FAILED, "trace", 0, 0);
+  clear_test(); trace_result = -1;
+  assert(start(HEAD "rom=b.gba\ntrace=t.gbit\nframes=9\nexit=1\n") == 0);
+  assert(quits == 1);
+  expect(AUTORUN_STATUS_FAILED, "trace", 0, 0);
+  puts("diagnostic autorun regressions passed");
+  return 0;
+}
+'''
+
+
+def build_and_run(name, source, flags):
+    """Build one C file with HOST_CC and the given flags, then run it."""
+    with tempfile.TemporaryDirectory(prefix="gbarush-startup-") as directory:
+        path = Path(directory)
+        (path / (name + ".c")).write_text(source)
+        command = shlex.split(os.environ.get("HOST_CC", "cc"))
+        subprocess.run(command + ["-std=c99", "-Wall", "-Wextra", "-Werror"]
+                       + flags + [str(path / (name + ".c")),
+                                  "-o", str(path / name)],
+                       check=True, capture_output=True, text=True)
+        subprocess.run([str(path / name)], check=True)
+
+
 class StartupTests(unittest.TestCase):
     def test_production_startup_paths(self):
         # Splice the real functions between the stubs and the scenarios,
@@ -186,16 +374,14 @@ class StartupTests(unittest.TestCase):
         source += function("source/src/main.c", "int user_main(int argc, char *argv[])")
         source += SCENARIOS
         for defines in ([], ["-DENABLE_DIAGNOSTIC_AUTORUN"]):
-            with self.subTest(defines=defines), tempfile.TemporaryDirectory(
-                    prefix="gbarush-startup-") as directory:
-                path = Path(directory)
-                (path / "startup.c").write_text(source)
-                command = shlex.split(os.environ.get("HOST_CC", "cc"))
-                subprocess.run(command + ["-std=c99", "-Wall", "-Wextra", "-Werror"]
-                               + defines + [str(path / "startup.c"),
-                                            "-o", str(path / "startup")],
-                               check=True, capture_output=True, text=True)
-                subprocess.run([str(path / "startup")], check=True)
+            with self.subTest(defines=defines):
+                build_and_run("startup", source, defines)
+
+    def test_diagnostic_autorun_glue(self):
+        # main.c's autorun block with the real parser behind it.
+        build_and_run("autorun", AUTORUN_STUBS + autorun_block() + AUTORUN_SCENARIOS,
+                      ["-DENABLE_DIAGNOSTIC_AUTORUN", "-I" + str(ROOT / "source/src"),
+                       str(ROOT / "source/src/autorun_config.c")])
 
 
 if __name__ == "__main__":
