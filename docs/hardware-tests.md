@@ -210,6 +210,26 @@ Each test has four fields:
   exit GBA Rush PSP. Start each game again, check that it has the Pokemon
   it received, and check the size of both `.sav` files.
 
+### savestate-load-auto-file
+
+- Models: PSP-1000
+- Minutes: 10
+- Pass: "Load state from file" on the game's AUTO state brings back the
+  state the file held before the choice; on `<rom>_0.svs` it still writes
+  the AUTO state first, then loads slot 0.
+- Steps: the AUTO state is `<rom>_auto.svs` with `gba_bios.bin` in the
+  emulator's folder, `<rom>_auto-builtin.svs` with the built-in BIOS.
+  Start a game, play to a place you will recognise (A) and save it to
+  slot 0 from the Savestate menu. Play on to place B and exit GBA Rush
+  PSP, which writes B to the AUTO state. Start the game again, answer No
+  to "Load auto-savestate?" and stay at the title screen. In the
+  Savestate menu choose "Load state from file", pick the AUTO state and
+  answer Yes to "Load savestate file?": the game must come back at B.
+  Play on to place C, then do the same with `<rom>_0.svs`: the game must
+  come back at A. Load the AUTO slot from the Savestate menu: the game
+  must be at C, since the AUTO state was written just before slot 0
+  loaded.
+
 ## Link
 
 ### link-frlg-both-roles
@@ -266,6 +286,22 @@ Each test has four fields:
 - Steps: during play, suspend with the POWER switch, resume and check that
   the game goes on and the AUTO savestate loads. Repeat 20 times on each
   model.
+
+### sleep-resume-question
+
+- Models: PSP-1000
+- Minutes: 10
+- Pass: a suspend with "Load auto-savestate?" open leaves the AUTO state
+  as it was: after the resume, Yes brings back the game where it stood at
+  the last exit, and the Savestate menu shows the AUTO slot with the date
+  and time of that exit.
+- Steps: start a game, play to a place you will recognise, note the time
+  and exit GBA Rush PSP from the menu, which writes the AUTO state
+  (`<rom>_auto.svs`, or `<rom>_auto-builtin.svs` with the built-in BIOS).
+  At least a minute later start GBA Rush PSP and the game. While "Load
+  auto-savestate?" is on screen, suspend with the POWER switch, wait 10
+  seconds and resume. Answer Yes, check the place, then open the
+  Savestate menu and read the date and time of the AUTO slot.
 
 ## Startup
 

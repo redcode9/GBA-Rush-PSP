@@ -10,6 +10,7 @@ tests: save-sram-roundtrip, save-powerloss-10x, sleep-auto-20x, menu-every-page
 tests: save-read-matrix
 tests: save-eeprom8k-wfirst
 tests: save-powerloss-100x, save-card-full, save-trade-fr-emerald
+tests: savestate-load-auto-file, sleep-resume-question
 
 # 1.4.4 fixes saves that earlier releases lose.
 hotfix-data: yes
