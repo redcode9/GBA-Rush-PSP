@@ -89,34 +89,23 @@ def fixture_v3() -> bytes:
     return bytes(header) + payload
 
 
-def fixture_v5(*records: bytes) -> bytes:
-    """Version 5 log of main-ring records."""
-    payload = b"".join(records)
-    header = bytearray(64)
-    struct.pack_into(
-        ">4sHHHHHHIIIIIIQQ", header, 0, b"GBRL", 5, 64, 32, 0,
-        len(records), 0, 0x12345678, 1, 1, 0x06060110, 333, 0x42505249,
-        100, 120,
-    )
-    struct.pack_into(">I", header, 56, binascii.crc32(payload) & 0xFFFFFFFF)
-    struct.pack_into(">I", header, 60, binascii.crc32(header[:60]) & 0xFFFFFFFF)
-    return bytes(header) + payload
-
-
-def fixture_v6(build_id: bytes = b"0123456789ab-dirty") -> bytes:
-    """Version 6 log: the 96-byte header with a build id, one record."""
-    record = struct.pack(
+def fixture_v6(*records: bytes,
+               build_id: bytes = b"0123456789ab-dirty") -> bytes:
+    """Version 6 log: the 96-byte header with a build id, then the given
+    main-ring records, or one log-flush record."""
+    payload = b"".join(records) or struct.pack(
         ">QIIHBBIII", 110, 7, 1, 18, 1, 0, 2, 1, 0
     )
     header = bytearray(96)
     struct.pack_into(
-        ">4sHHHHHHIIIIIIQQ", header, 0, b"GBRL", 6, 96, 32, 0, 1, 0,
-        0x12345678, 2, 1, 0x06060110, 333, 0x42505249, 100, 120,
+        ">4sHHHHHHIIIIIIQQ", header, 0, b"GBRL", 6, 96, 32, 0,
+        len(payload) // 32, 0, 0x12345678, 2, 1, 0x06060110, 333,
+        0x42505249, 100, 120,
     )
     header[56:56 + len(build_id)] = build_id
-    struct.pack_into(">I", header, 88, binascii.crc32(record) & 0xFFFFFFFF)
+    struct.pack_into(">I", header, 88, binascii.crc32(payload) & 0xFFFFFFFF)
     struct.pack_into(">I", header, 92, binascii.crc32(header[:92]) & 0xFFFFFFFF)
-    return bytes(header) + record
+    return bytes(header) + payload
 
 
 class RuntimeLogDecoderTests(unittest.TestCase):
@@ -172,7 +161,7 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         self.assertIn(" build=0123456789ab-dirty\n", output.getvalue())
 
     def test_build_id_may_fill_its_field(self):
-        snapshot = decoder.parse_snapshot(fixture_v6(b"B" * 24))
+        snapshot = decoder.parse_snapshot(fixture_v6(build_id=b"B" * 24))
 
         self.assertEqual(snapshot["build_id"], "B" * 24)
 
@@ -272,7 +261,7 @@ class RuntimeLogDecoderTests(unittest.TestCase):
     def test_decodes_save_load(self):
         # A 128 KiB file for a 64 KiB Flash game, then one that will not
         # read (event 26, flags = the load's result).
-        snapshot = decoder.parse_snapshot(fixture_v5(
+        snapshot = decoder.parse_snapshot(fixture_v6(
             struct.pack(">QIIHBBIII", 110, 0, 1, 26, 1, 0,
                         131072, 65536, 1 | 3 << 8 | 1 << 16),
             struct.pack(">QIIHBBIII", 111, 0, 2, 26, 1, 2, 0, 0, 3),
@@ -292,7 +281,7 @@ class RuntimeLogDecoderTests(unittest.TestCase):
     def test_decodes_save_write(self):
         # A Flash 128 KiB flush on a full Memory Stick, its retry that
         # writes, and a result this decoder lacks (event 28).
-        snapshot = decoder.parse_snapshot(fixture_v5(
+        snapshot = decoder.parse_snapshot(fixture_v6(
             struct.pack(">QIIHBBIII", 110, 0, 1, 28, 1, 3,
                         41250, 131072, 1),
             struct.pack(">QIIHBBIII", 111, 0, 2, 28, 1, 0,
@@ -330,7 +319,7 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         # A state with a bad Flash bank and EEPROM counter, then one whose
         # type went back to the one in use, plus a bit this decoder lacks
         # (event 27).
-        snapshot = decoder.parse_snapshot(fixture_v5(
+        snapshot = decoder.parse_snapshot(fixture_v6(
             struct.pack(">QIIHBBIII", 110, 0, 1, 27, 1, 0,
                         0x108, 1, 0),
             struct.pack(">QIIHBBIII", 111, 0, 2, 27, 1, 0,
