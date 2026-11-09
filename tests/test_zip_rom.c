@@ -40,6 +40,7 @@ typedef struct
   uint32_t pos;
   uint32_t chunk;
   uint32_t fail_at; /* a read that would reach this byte fails */
+  uint32_t split;   /* when not 0, no read crosses this byte */
   uint32_t calls;
   uint32_t last_done;
 } FakeArchive;
@@ -53,6 +54,8 @@ static int32_t fake_read(void *ctx, uint8_t *buf, uint32_t len)
   fake->calls++;
   if(n > len)
     n = len;
+  if(fake->pos < fake->split && fake->pos + n > fake->split)
+    n = fake->split - fake->pos;
   if(fake->pos + n > fake->fail_at)
     return -1;
   memcpy(buf, fake->data + fake->pos, n);
@@ -444,9 +447,10 @@ static uint32_t build_padded(uint32_t game)
   return len;
 }
 
-/* Loads pad_archive through PAD_CHUNK reads into a pad_out where no byte
-   matches pad_rom until written. */
-static int load_padded(uint32_t len, uint32_t out_cap, uint32_t *size)
+/* Loads pad_archive through PAD_CHUNK reads, none crossing split (0: no
+   split), into a pad_out where no byte matches pad_rom until written. */
+static int load_padded(uint32_t len, uint32_t split, uint32_t out_cap,
+ uint32_t *size)
 {
   FakeArchive fake;
   ZipRomIo io;
@@ -460,6 +464,7 @@ static int load_padded(uint32_t len, uint32_t out_cap, uint32_t *size)
   fake.len = len;
   fake.chunk = PAD_CHUNK;
   fake.fail_at = NO_FAILURE;
+  fake.split = split;
   io.ctx = &fake;
   io.read = fake_read;
   io.progress = padding_progress;
@@ -472,12 +477,12 @@ static int load_padded(uint32_t len, uint32_t out_cap, uint32_t *size)
   return result;
 }
 
-static void expect_padded(uint32_t len)
+static void expect_padded(uint32_t len, uint32_t split)
 {
   uint32_t size = 0;
 
   /* out_cap is the ROM size, so the stream ends with no room left. */
-  assert(load_padded(len, PAD_ROM_SIZE, &size) == ZIP_ROM_OK);
+  assert(load_padded(len, split, PAD_ROM_SIZE, &size) == ZIP_ROM_OK);
   assert(size == PAD_ROM_SIZE);
   assert(memcmp(pad_out, pad_rom, PAD_ROM_SIZE) == 0);
   /* zip.c's closing call to progress draws the rest. */
@@ -490,14 +495,25 @@ static void test_padding_reports_every_step(void)
   /* With 512 KiB of game the padding starts a few reads in; with 32 KiB
      the whole archive comes in the first read. */
   static const uint32_t game[] = { 2u * ZIP_ROM_INFLATE_STEP, 32u * 1024u };
-  uint32_t i, len = 0;
+  uint32_t i, tail, len = 0, size;
 
   for(i = 0; i < sizeof(game) / sizeof(game[0]); i++)
   {
     len = build_padded(game[i]);
-    expect_padded(len);
+    expect_padded(len, 0);
+    /* The stream's last bytes in a read of their own: out_cap is full
+       before the end code arrives. */
+    for(tail = 1; tail <= 2; tail++)
+      expect_padded(len, len - tail);
   }
   assert(len <= PAD_CHUNK);
+
+  /* One byte short, with the sizes left to a descriptor: the last step
+     stops at out_cap and the byte after it is never written. */
+  put16(pad_archive + 6, 8u);
+  assert(load_padded(len, 0, PAD_ROM_SIZE - 1, &size) == ZIP_ROM_TOO_BIG);
+  assert(pad_out[PAD_ROM_SIZE - 1] ==
+   (uint8_t)(pad_rom[PAD_ROM_SIZE - 1] ^ 0x5Au));
 }
 
 int main(void)
