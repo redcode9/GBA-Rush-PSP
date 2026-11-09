@@ -101,7 +101,8 @@ def summarize(reports):
         [compare_benchmarks.throughput(report) for report in reports])
     work = [median_cell(reports, KEYS[key], "{:.0f}")
             for key in ("work-p50", "work-p99")]
-    dates = [report.get(KEYS["date"]) for report in reports]
+    # A capture whose clock read failed writes the date empty.
+    dates = [report.get(KEYS["date"]) or None for report in reports]
     return shared(reports, "rom-title") or "", (
         "{:.2f} ({:.2f}-{:.2f})".format(*fps),
         MISSING if MISSING in work else "/".join(work),

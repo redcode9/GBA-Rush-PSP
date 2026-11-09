@@ -128,6 +128,16 @@ class PerfTableTests(unittest.TestCase):
         self.assertEqual(table["POKEMON RUBY (AXVE-r1)", "psp-1000"][0],
                          "60.00 (60.00-60.00)")
 
+    def test_empty_capture_time_is_missing(self):
+        # A capture whose clock read failed writes capture-local-time empty.
+        root = archive(self.directory, [
+            (FIRE_RED.format(1000, run),
+             report(extra={"capture-local-time": ""})) for run in (1, 2, 3)])
+
+        table = rows(MODULE.render(MODULE.collect(root)))
+
+        self.assertEqual(table["POKEMON FIRE (BPRE-r0)", "psp-1000"][-1], "—")
+
     def test_mismatched_group_rejected(self):
         root = archive(self.directory / "clock", [
             (FIRE_RED.format(1000, 1), report()),
