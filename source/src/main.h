@@ -185,7 +185,7 @@ void quit(void);
 /* The diagnostic autorun file (autorun_config.h): 1 when it loaded and
    reset its ROM, which user_main then runs at once; 0 for a normal start. */
 int main_autorun_start(void);
-/* Once per emulated frame, from update_input. */
+/* Once per emulated frame, from update_gba at VBlank. */
 void main_autorun_frame(void);
 #endif
 

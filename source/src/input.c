@@ -458,9 +458,6 @@ u32 update_input(void)
    (u16)new_key);
   diagnostic_trace_frame++;
 #endif
-#ifdef ENABLE_DIAGNOSTIC_AUTORUN
-  main_autorun_frame();
-#endif
 
   // Only a newly pressed key can trigger the keypad IRQ
   if ((new_key | gba_keys_held) != gba_keys_held)

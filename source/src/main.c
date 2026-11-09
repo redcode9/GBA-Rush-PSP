@@ -1165,6 +1165,10 @@ u32 update_gba(void)
             main_follow_cpu_core();
             continue;
           }
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+          /* Here, not in update_input: link waits call that too. */
+          main_autorun_frame();
+#endif
 
           if (!skip_next_frame)
           {
@@ -1887,8 +1891,8 @@ int main_autorun_start(void)
   return 1;
 }
 
-/* Called by update_input once per frame: after frames=N frames from the
-   ROM's start the run is done, and exit=1 quits. */
+/* Called by update_gba once per emulated frame, at VBlank: after frames=N
+   frames from the ROM's start the run is done, and exit=1 quits. */
 void main_autorun_frame(void)
 {
   if(!main_autorun_running || ++main_autorun_frames < main_autorun.frames)
