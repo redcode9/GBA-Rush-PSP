@@ -53,7 +53,7 @@ u32 gamepak_file_size, reg[1], option_clock_speed, sound_pause;
 u32 enable_home_menu;
 int regular_file, browser_result, load_result, menu_result;
 int reset_calls, prompt_calls, execute_calls, quit_calls, recent_calls;
-int flush_calls;
+int flush_calls, browser_calls, menu_calls;
 int popup_value, active_link, state_exists, dialog_result, restored_slot;
 jmp_buf stopped;
 void setup_main(const char *p) { (void)p; }
@@ -66,6 +66,7 @@ void clear_screen(int c) { (void)c; }
 void error_msg(const char *m, int c) { (void)m; (void)c; }
 void quit(void) { quit_calls++; longjmp(stopped, 1); }
 u32 menu(void) {
+  menu_calls++;
   if(menu_result) {
     strcpy(gamepak_filename, "menu.gba"); gamepak_file_size = 1024;
     reg[0] = 0xFEED;
@@ -73,10 +74,22 @@ u32 menu(void) {
   return menu_result;
 }
 int load_file(const char **e, char *p, char *d, u32 r) {
-  (void)e; (void)d; (void)r; strcpy(p, "browser.gba"); return browser_result;
+  (void)e; (void)d; (void)r; browser_calls++; strcpy(p, "browser.gba");
+  return browser_result;
 }
 void add_recent_rom(const char *p) { (void)p; recent_calls++; }
 void reset_gba(void) { reset_calls++; reg[0] = 0xCAFE; }
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+/* Like the real one: a ROM it starts is loaded and reset. */
+int autorun_result;
+int main_autorun_start(void) {
+  if(autorun_result) {
+    strcpy(gamepak_filename, "autorun.gba"); gamepak_file_size = 1024;
+    reset_gba();
+  }
+  return autorun_result;
+}
+#endif
 void maybe_load_auto_savestate(void);
 int sceImposeSetHomePopup(u32 p) { popup_value = p; return 0; }
 void set_cpu_clock(u32 c) { (void)c; }
@@ -108,9 +121,12 @@ static void clear_test(void) {
   regular_file = menu_result = active_link = 0;
   browser_result = -1; load_result = 0;
   reset_calls = prompt_calls = execute_calls = quit_calls = recent_calls = 0;
-  flush_calls = 0;
+  flush_calls = browser_calls = menu_calls = 0;
   state_exists = 1; dialog_result = 0; restored_slot = -1; popup_value = -1;
   gamepak_filename[0] = 0; sound_pause = 1;
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+  autorun_result = 0;
+#endif
 }
 static void start(int argc) {
   char *argv[] = {"EBOOT.PBP", "direct.gba"};
@@ -144,6 +160,16 @@ int main(void) {
   maybe_load_auto_savestate(); assert(prompt_calls == 0);
   state_exists = 1; dialog_result = 1;
   maybe_load_auto_savestate(); assert(prompt_calls == 1 && restored_slot == -1);
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+  clear_test(); autorun_result = 1; start(2);
+  assert(execute_calls == 1 && reset_calls == 1 && prompt_calls == 0);
+  assert(browser_calls == 0 && menu_calls == 0 && recent_calls == 0);
+  assert(strcmp(gamepak_filename, "autorun.gba") == 0);
+  assert(sound_pause == 0 && popup_value == 1 && quit_calls == 1);
+  clear_test(); autorun_result = 1; start(1);
+  assert(execute_calls == 1 && reset_calls == 1 && prompt_calls == 0);
+  assert(browser_calls == 0 && menu_calls == 0);
+#endif
   puts("startup and auto-state regressions passed");
   return 0;
 }
@@ -152,19 +178,24 @@ int main(void) {
 
 class StartupTests(unittest.TestCase):
     def test_production_startup_paths(self):
-        # Splice the real functions between the stubs and the scenarios.
+        # Splice the real functions between the stubs and the scenarios,
+        # once as the release builds them and once with the diagnostic
+        # autorun, whose stub starts a ROM in the extra scenarios only.
         source = STUBS + function("source/src/gui.c",
                                  "void maybe_load_auto_savestate(void)")
         source += function("source/src/main.c", "int user_main(int argc, char *argv[])")
         source += SCENARIOS
-        with tempfile.TemporaryDirectory(prefix="gbarush-startup-") as directory:
-            path = Path(directory)
-            (path / "startup.c").write_text(source)
-            command = shlex.split(os.environ.get("HOST_CC", "cc"))
-            subprocess.run(command + ["-std=c99", "-Wall", "-Wextra", "-Werror",
-                                     str(path / "startup.c"), "-o", str(path / "startup")],
-                           check=True, capture_output=True, text=True)
-            subprocess.run([str(path / "startup")], check=True)
+        for defines in ([], ["-DENABLE_DIAGNOSTIC_AUTORUN"]):
+            with self.subTest(defines=defines), tempfile.TemporaryDirectory(
+                    prefix="gbarush-startup-") as directory:
+                path = Path(directory)
+                (path / "startup.c").write_text(source)
+                command = shlex.split(os.environ.get("HOST_CC", "cc"))
+                subprocess.run(command + ["-std=c99", "-Wall", "-Wextra", "-Werror"]
+                               + defines + [str(path / "startup.c"),
+                                            "-o", str(path / "startup")],
+                               check=True, capture_output=True, text=True)
+                subprocess.run([str(path / "startup")], check=True)
 
 
 if __name__ == "__main__":

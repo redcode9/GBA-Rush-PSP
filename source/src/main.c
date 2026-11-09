@@ -37,6 +37,9 @@
 #include "runtime_log_psp.h"
 #include "sound_math.h"
 #include "video_me.h"
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+#include "autorun_config.h"
+#endif
 
 // Main thread params; on the PSP a lower priority number runs first.
 // 32 is 0x20, so MAIN_LINK_LOCKSTEP_PRIORITY (0x77) is lower.
@@ -1766,6 +1769,138 @@ static int path_is_regular_file(const char *path)
   return FIO_S_ISREG(stats.st_mode) != 0;
 }
 
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+/* ---- Diagnostic autorun ------------------------------------------------
+ * <main_path>diag-autorun.txt (its format is in autorun_config.h) starts a
+ * ROM without the browser, the menu or the auto-state prompt, can replay a
+ * trace and can quit after a number of frames. diag-autorun.result and a
+ * runtime log event say what happened; without the file nothing is
+ * written. */
+
+static AutorunConfig main_autorun;
+/* Set while a frames= limit is counting. */
+static u32 main_autorun_running;
+static u32 main_autorun_frames;
+
+/* Writes diag-autorun.result and logs the same outcome. */
+static void main_autorun_report(AutorunStatus status, AutorunError error,
+ u32 line)
+{
+  char path[MAX_PATH];
+  char text[AUTORUN_CONFIG_RESULT_SIZE];
+  size_t length;
+  SceUID file;
+  int result;
+
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_DIAG_AUTORUN, cpu_ticks, (u8)status,
+   (u32)error, line, main_autorun_frames);
+
+  length = autorun_config_result(GBA_RUSH_BUILD_ID, status, error, line,
+   main_autorun_frames, text, sizeof(text));
+  result = snprintf(path, sizeof(path), "%sdiag-autorun.result", main_path);
+  if(length == 0 || result < 0 || (size_t)result >= sizeof(path))
+    return;
+
+  FILE_OPEN(file, path, WRITE);
+  if(FILE_CHECK_VALID(file))
+  {
+    FILE_WRITE(file, text, length);
+    FILE_CLOSE(file);
+  }
+}
+
+/* A path from the autorun file: one without a device (no ':') is relative
+   to the EBOOT folder. */
+static int main_autorun_path(char *path, size_t path_size, const char *name)
+{
+  int result = snprintf(path, path_size, "%s%s",
+   strchr(name, ':') == NULL ? main_path : "", name);
+
+  return result >= 0 && (size_t)result < path_size;
+}
+
+/* The ROM or the trace did not start: exit=1 quits, else the startup goes
+   on as usual with no game loaded. */
+static int main_autorun_fail(AutorunError error)
+{
+  main_autorun_report(AUTORUN_STATUS_FAILED, error, 0);
+  if(main_autorun.exit_when_done)
+    quit();
+  gamepak_filename[0] = 0;
+  gamepak_file_size = 0;
+  return 0;
+}
+
+/* Reads diag-autorun.txt. Returns 1 when its ROM is loaded and reset (and
+   its trace started), so user_main runs it at once; 0 otherwise, when
+   nothing in the file applies. */
+int main_autorun_start(void)
+{
+  /* One byte over the limit tells a file that is too large. */
+  char text[AUTORUN_CONFIG_MAX_SIZE + 1];
+  char path[MAX_PATH];
+  SceUID file;
+  size_t size = 0;
+  int result;
+
+  result = snprintf(path, sizeof(path), "%sdiag-autorun.txt", main_path);
+  if(result < 0 || (size_t)result >= sizeof(path))
+    return 0;
+  FILE_OPEN(file, path, READ);
+  if(!FILE_CHECK_VALID(file))
+    return 0;
+  while(size < sizeof(text) &&
+        (result = FILE_READ(file, text + size, sizeof(text) - size)) > 0)
+    size += (size_t)result;
+  FILE_CLOSE(file);
+
+  if(result < 0)
+  {
+    main_autorun_report(AUTORUN_STATUS_IGNORED, AUTORUN_ERROR_READ, 0);
+    return 0;
+  }
+  if(!autorun_config_parse(text, size, GBA_RUSH_BUILD_ID, &main_autorun))
+  {
+    main_autorun_report(AUTORUN_STATUS_IGNORED, main_autorun.error,
+     main_autorun.error_line);
+    return 0;
+  }
+  if(main_autorun.rom[0] == '\0')
+  {
+    /* A file for this build with nothing to start. */
+    main_autorun_report(AUTORUN_STATUS_STARTED, AUTORUN_OK, 0);
+    return 0;
+  }
+
+  /* load_gamepak() reads the extension after the last '.'. */
+  if(!main_autorun_path(path, sizeof(path), main_autorun.rom) ||
+     strrchr(path, '.') == NULL || load_gamepak(path) <= 0)
+    return main_autorun_fail(AUTORUN_ERROR_ROM);
+  reset_gba();
+  if(main_autorun.trace[0] != '\0' &&
+     (!main_autorun_path(path, sizeof(path), main_autorun.trace) ||
+      gui_trace_replay_file(path) <= 0))
+    return main_autorun_fail(AUTORUN_ERROR_TRACE);
+
+  main_autorun_running = main_autorun.frames != 0;
+  main_autorun_report(AUTORUN_STATUS_STARTED, AUTORUN_OK, 0);
+  return 1;
+}
+
+/* Called by update_input once per frame: after frames=N frames from the
+   ROM's start the run is done, and exit=1 quits. */
+void main_autorun_frame(void)
+{
+  if(!main_autorun_running || ++main_autorun_frames < main_autorun.frames)
+    return;
+
+  main_autorun_running = 0;
+  main_autorun_report(AUTORUN_STATUS_DONE, AUTORUN_OK, 0);
+  if(main_autorun.exit_when_done)
+    quit();
+}
+#endif
+
 /* Picks the ROM (a path argument, then roms/game.gba, then the browser or
    menu) and runs it in the dynarec, which never returns; else quits.
    tests/test_startup.py extracts this function by its exact signature. */
@@ -1781,6 +1916,13 @@ int user_main(int argc, char *argv[])
   gamepak_filename[0] = 0;
   gamepak_file_size = 0;
 
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+  /* A diag-autorun.txt that loaded and reset its ROM skips the launch
+     orders below, the menu and the auto-state prompt. */
+  if (main_autorun_start())
+    prepared_by_menu = rom_loaded = 1;
+  else
+#endif
   /* Priority 1: launcher or file manager passed a ROM path */
   if (argc > 1)
   {

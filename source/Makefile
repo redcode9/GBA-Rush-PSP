@@ -120,8 +120,8 @@ CFLAGS += -DGBA_RUSH_PROFILE_DIAGNOSTIC
 PSP_EBOOT_ICON = res/ICON0-diag.png
 PSP_EBOOT_PIC1 = res/PIC1-diag.png
 PSP_EBOOT_TITLE = GBA Rush PSP [DIAG]
-COMMON_FILE += input_trace.h
-MAINOBJS += input_trace.o
+COMMON_FILE += input_trace.h autorun_config.h
+MAINOBJS += input_trace.o autorun_config.o
 else
 $(error PROFILE must be release or diagnostic, not '$(PROFILE)')
 endif

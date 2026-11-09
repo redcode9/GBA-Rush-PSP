@@ -15,6 +15,9 @@ PROGRAM = """#include "build_profile.h"
 #if defined(GBA_RUSH_PROFILE_DIAGNOSTIC) != defined(ENABLE_DIAGNOSTIC_INPUT_TRACE)
 #error "the input trace does not follow the profile"
 #endif
+#if defined(GBA_RUSH_PROFILE_DIAGNOSTIC) != defined(ENABLE_DIAGNOSTIC_AUTORUN)
+#error "the autorun does not follow the profile"
+#endif
 const char *profile_name = GBA_RUSH_PROFILE_NAME;
 """
 

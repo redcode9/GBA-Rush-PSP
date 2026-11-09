@@ -181,6 +181,14 @@ u32 update_gba(void);
 void reset_gba(void);
 void quit(void);
 
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+/* The diagnostic autorun file (autorun_config.h): 1 when it loaded and
+   reset its ROM, which user_main then runs at once; 0 for a normal start. */
+int main_autorun_start(void);
+/* Once per emulated frame, from update_input. */
+void main_autorun_frame(void);
+#endif
+
 void error_msg(const char *text, u8 confirm);
 /* Shows text and waits: returns 0 on the confirm button (O, or X with
    option_swap_confirm_buttons) or START, 1 on the cancel button. */
