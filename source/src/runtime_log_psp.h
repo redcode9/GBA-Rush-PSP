@@ -41,6 +41,11 @@ void runtime_log_psp_network(RuntimeLogEventType type, uint8_t flags,
 void runtime_log_psp_critical(RuntimeLogEventType type,
  uint32_t emulated_cycle, uint8_t flags, uint32_t value0,
  uint32_t value1, uint32_t value2);
+/* runtime_log_name_probe_entry() on the main ring, so emulator thread
+   only; 0 before runtime_log_psp_init(). */
+size_t runtime_log_psp_name_probe_entry(uint32_t index, const uint8_t *name,
+ size_t name_size, const uint8_t *fat_record, size_t fat_capacity,
+ const int32_t open_result[3], size_t record_budget);
 void runtime_log_psp_get_drop_counts(uint32_t *main_dropped,
  uint32_t *network_dropped, uint32_t *critical_dropped);
 /* Writes the current snapshot to storage; blocks on file I/O. */

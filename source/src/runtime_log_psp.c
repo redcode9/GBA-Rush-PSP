@@ -259,6 +259,17 @@ void runtime_log_psp_critical(RuntimeLogEventType type,
    value0, value1, value2);
 }
 
+size_t runtime_log_psp_name_probe_entry(uint32_t index, const uint8_t *name,
+ size_t name_size, const uint8_t *fat_record, size_t fat_capacity,
+ const int32_t open_result[3], size_t record_budget)
+{
+  if(!runtime_log_psp.initialized)
+    return 0;
+  return runtime_log_name_probe_entry(&runtime_log_psp.main_ring,
+   sceKernelGetSystemTimeWide(), index, name, name_size, fat_record,
+   fat_capacity, open_result, record_budget);
+}
+
 void runtime_log_psp_get_drop_counts(uint32_t *main_dropped,
  uint32_t *network_dropped, uint32_t *critical_dropped)
 {

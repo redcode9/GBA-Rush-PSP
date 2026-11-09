@@ -175,6 +175,120 @@ uint32_t runtime_log_ring_dropped(const RuntimeLogRing *ring)
   return ring->dropped_records;
 }
 
+/* Bytes before the first NUL, at most limit. */
+static size_t runtime_log_name_length(const uint8_t *text, size_t limit)
+{
+  size_t length = 0;
+
+  while(length < limit && text[length] != 0)
+    length++;
+  return length;
+}
+
+/* The FAT record bytes that hold both layouts' long names: up to the end of
+   the longer one (offset 13 or 20), each read up to
+   RUNTIME_LOG_NAME_PROBE_MAX_NAME bytes. */
+static size_t runtime_log_name_probe_fat_length(const uint8_t *record,
+ size_t capacity)
+{
+  static const size_t long_name_offsets[2] = { 13u, 20u };
+  size_t length = 0;
+  size_t limit;
+  size_t end;
+  unsigned int layout;
+
+  if(record == NULL)
+    return 0;
+  for(layout = 0; layout < 2u; layout++)
+  {
+    end = capacity;
+    if(capacity > long_name_offsets[layout])
+    {
+      limit = capacity - long_name_offsets[layout];
+      if(limit > RUNTIME_LOG_NAME_PROBE_MAX_NAME)
+        limit = RUNTIME_LOG_NAME_PROBE_MAX_NAME;
+      end = long_name_offsets[layout] + runtime_log_name_length(
+       record + long_name_offsets[layout], limit);
+    }
+    if(end > length)
+      length = end;
+  }
+  return length;
+}
+
+static uint32_t runtime_log_name_probe_word(const uint8_t *bytes,
+ size_t length, size_t offset)
+{
+  uint32_t value = 0;
+  unsigned int index;
+
+  for(index = 0; index < 4u; index++)
+  {
+    value <<= 8;
+    if(offset + index < length)
+      value |= bytes[offset + index];
+  }
+  return value;
+}
+
+/* One chunk record per 12 bytes of bytes[0, length). */
+static void runtime_log_name_probe_chunks(RuntimeLogRing *ring,
+ uint64_t timestamp_us, unsigned int part, const uint8_t *bytes,
+ size_t length)
+{
+  size_t offset;
+
+  for(offset = 0; offset < length;
+   offset += RUNTIME_LOG_NAME_PROBE_CHUNK_SIZE)
+    runtime_log_ring_emit(ring, timestamp_us, 0,
+     RUNTIME_LOG_EVENT_NAME_PROBE, RUNTIME_LOG_NAME_PROBE_FLAGS(part,
+      offset / RUNTIME_LOG_NAME_PROBE_CHUNK_SIZE),
+     runtime_log_name_probe_word(bytes, length, offset),
+     runtime_log_name_probe_word(bytes, length, offset + 4u),
+     runtime_log_name_probe_word(bytes, length, offset + 8u));
+}
+
+static size_t runtime_log_name_probe_chunk_count(size_t length)
+{
+  return (length + RUNTIME_LOG_NAME_PROBE_CHUNK_SIZE - 1u) /
+   RUNTIME_LOG_NAME_PROBE_CHUNK_SIZE;
+}
+
+size_t runtime_log_name_probe_entry(RuntimeLogRing *ring,
+ uint64_t timestamp_us, uint32_t index, const uint8_t *name,
+ size_t name_size, const uint8_t *fat_record, size_t fat_capacity,
+ const int32_t open_result[3], size_t record_budget)
+{
+  size_t name_length;
+  size_t fat_length;
+  size_t count;
+
+  if(ring == NULL || name == NULL || open_result == NULL)
+    return 0;
+  name_length = runtime_log_name_length(name,
+   name_size < RUNTIME_LOG_NAME_PROBE_MAX_NAME ? name_size :
+   RUNTIME_LOG_NAME_PROBE_MAX_NAME);
+  fat_length = runtime_log_name_probe_fat_length(fat_record, fat_capacity);
+  count = 2u + runtime_log_name_probe_chunk_count(name_length) +
+   runtime_log_name_probe_chunk_count(fat_length);
+  if(count > record_budget)
+    return 0;
+
+  runtime_log_ring_emit(ring, timestamp_us, 0, RUNTIME_LOG_EVENT_NAME_PROBE,
+   RUNTIME_LOG_NAME_PROBE_FLAGS(RUNTIME_LOG_NAME_PROBE_HEADER,
+    RUNTIME_LOG_NAME_PROBE_ENTRY),
+   index, (uint32_t)name_length, (uint32_t)fat_length);
+  runtime_log_name_probe_chunks(ring, timestamp_us,
+   RUNTIME_LOG_NAME_PROBE_NAME, name, name_length);
+  runtime_log_name_probe_chunks(ring, timestamp_us,
+   RUNTIME_LOG_NAME_PROBE_FAT, fat_record, fat_length);
+  runtime_log_ring_emit(ring, timestamp_us, 0, RUNTIME_LOG_EVENT_NAME_PROBE,
+   RUNTIME_LOG_NAME_PROBE_FLAGS(RUNTIME_LOG_NAME_PROBE_OPEN, 0u),
+   (uint32_t)open_result[0], (uint32_t)open_result[1],
+   (uint32_t)open_result[2]);
+  return count;
+}
+
 /* Record (32 bytes): 0 timestamp, 8 emulated cycle, 12 ordinal, 16 type,
    18 source, 19 flags, 20/24/28 values. */
 static void runtime_log_encode_record(uint8_t *output,
