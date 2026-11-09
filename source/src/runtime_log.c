@@ -293,6 +293,18 @@ size_t runtime_log_name_probe_entry(RuntimeLogRing *ring,
   return count;
 }
 
+void runtime_log_name_probe_end(RuntimeLogRing *ring, uint64_t timestamp_us,
+ int32_t dopen_result, int32_t dread_result, uint32_t seen,
+ uint32_t logged)
+{
+  int stopped = dread_result < 0;
+
+  runtime_log_ring_emit(ring, timestamp_us, 0, RUNTIME_LOG_EVENT_NAME_PROBE,
+   RUNTIME_LOG_NAME_PROBE_FLAGS(RUNTIME_LOG_NAME_PROBE_HEADER,
+    stopped ? RUNTIME_LOG_NAME_PROBE_STOPPED : RUNTIME_LOG_NAME_PROBE_END),
+   (uint32_t)(stopped ? dread_result : dopen_result), seen, logged);
+}
+
 /* Record (32 bytes): 0 timestamp, 8 emulated cycle, 12 ordinal, 16 type,
    18 source, 19 flags, 20/24/28 values. */
 static void runtime_log_encode_record(uint8_t *output,

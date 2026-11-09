@@ -3516,6 +3516,7 @@ static void menu_diagnostics_name_probe(void)
   SceUID dir;
   u32 seen = 0;
   u32 logged = 0;
+  int dread = 0;
   int saved;
   int length;
 
@@ -3538,7 +3539,9 @@ static void menu_diagnostics_name_probe(void)
       memset(name_probe_fat_record, 0, sizeof(name_probe_fat_record));
       name_probe_fat_record[0] = sizeof(name_probe_fat_record);
       entry.d_private = name_probe_fat_record;
-      if(sceIoDread(dir, &entry) <= 0)
+      /* 0 ends the listing; a PSP error stops it and goes in the log. */
+      dread = sceIoDread(dir, &entry);
+      if(dread <= 0)
         break;
       if(strcmp(entry.d_name, ".") == 0 || strcmp(entry.d_name, "..") == 0)
         continue;
@@ -3570,13 +3573,11 @@ static void menu_diagnostics_name_probe(void)
     }
     sceIoDclose(dir);
   }
-  runtime_log_psp_main(RUNTIME_LOG_EVENT_NAME_PROBE, 0,
-   RUNTIME_LOG_NAME_PROBE_FLAGS(RUNTIME_LOG_NAME_PROBE_HEADER,
-    RUNTIME_LOG_NAME_PROBE_END), (u32)dir, seen, logged);
+  runtime_log_psp_name_probe_end(dir, dread, seen, logged);
   saved = runtime_log_psp_flush(RUNTIME_LOG_FLUSH_MENU);
   scePowerUnlock(0);
 
-  if(dir < 0 || !saved)
+  if(dir < 0 || dread < 0 || !saved)
     snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
      "%s", MSG[MSG_DIAGNOSTICS_NAME_PROBE_FAILED]);
   else

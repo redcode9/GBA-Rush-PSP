@@ -114,9 +114,11 @@ LINK_EVENTS = {
 }
 # Name-probe records (RUNTIME_LOG_EVENT_NAME_PROBE in source/src/runtime_log.h):
 # flags bits 7-6 are the part, bits 5-0 the chunk index or, in the header
-# part, the kind (0 an entry, 1 the end of the probe). A chunk is the 12
-# bytes of the three values, big-endian.
+# part, the kind (0 an entry, 1 the end of the probe, 2 its end after a
+# failed sceIoDread). A chunk is the 12 bytes of the three values, big-endian.
 NAME_PROBE_PARTS = ["header", "name", "fat", "open"]
+# Header kinds that end the probe, with the PSP call whose result value0 is.
+NAME_PROBE_ENDS = {1: "end dopen", 2: "stopped dread"}
 # Open record i holds the results labelled [3 * i, 3 * i + 3); record 1's
 # third value is unused.
 NAME_PROBE_OPENS = ["name", "alias-a", "alias-b", "long-a", "long-b"]
@@ -279,9 +281,9 @@ def describe(record: dict[str, Any]) -> str:
         part, index = flags >> 6, flags & 0x3F
         if part == 0 and index == 0:
             return f"entry={value0} name-bytes={value1} fat-bytes={value2}"
-        if part == 0 and index == 1:
+        if part == 0 and index in NAME_PROBE_ENDS:
             return (
-                f"end dopen={_signed(value0)}/0x{value0:08X} "
+                f"{NAME_PROBE_ENDS[index]}={_signed(value0)}/0x{value0:08X} "
                 f"seen={value1} logged={value2}"
             )
         if part == 3:

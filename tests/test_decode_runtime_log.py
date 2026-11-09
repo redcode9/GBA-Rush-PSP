@@ -435,6 +435,8 @@ class RuntimeLogDecoderTests(unittest.TestCase):
                          "open long-a=fd 4 long-b=error 0x80010002")
         self.assertEqual(describe(0x01, 0x80010002, 4, 3),
                          "end dopen=-2147418110/0x80010002 seen=4 logged=3")
+        self.assertEqual(describe(0x02, 0x80010013, 2, 1),
+                         "stopped dread=-2147418093/0x80010013 seen=2 logged=1")
 
     def test_command_line_prints_and_exports_the_probe(self):
         data = pack_snapshot(probe_records(PROBE_ENTRIES), 6)

@@ -598,6 +598,28 @@ static void test_name_probe_budget(void)
    sizeof(fat), opened, 7) == 0u);
 }
 
+/* The last record says how the listing ended: END with the sceIoDopen
+   result, or STOPPED with the sceIoDread error. */
+static void test_name_probe_end(void)
+{
+  RuntimeLogRecord records[3];
+  RuntimeLogRing ring;
+
+  runtime_log_ring_init(&ring, RUNTIME_LOG_SOURCE_MAIN);
+  runtime_log_name_probe_end(&ring, 9, 7, 0, 4, 3);
+  runtime_log_name_probe_end(&ring, 9, (int32_t)0x80010002u, 0, 0, 0);
+  runtime_log_name_probe_end(&ring, 9, 7, (int32_t)0x80010013u, 2, 1);
+  assert(runtime_log_ring_snapshot(&ring, records, 3) == 3u);
+  assert(records[0].type == RUNTIME_LOG_EVENT_NAME_PROBE);
+  assert(records[0].flags == 0x01u);
+  assert(records[0].value[0] == 7u && records[0].value[1] == 4u &&
+   records[0].value[2] == 3u);
+  assert(records[1].flags == 0x01u && records[1].value[0] == 0x80010002u);
+  assert(records[2].flags == 0x02u);
+  assert(records[2].value[0] == 0x80010013u && records[2].value[1] == 2u &&
+   records[2].value[2] == 1u);
+}
+
 /* The snapshot file holds a chunk's bytes in their original order. */
 static void test_name_probe_bytes_in_file_order(void)
 {
@@ -687,6 +709,7 @@ int main(void)
   test_name_probe_chunks_d_name();
   test_name_probe_fat_layouts();
   test_name_probe_budget();
+  test_name_probe_end();
   test_name_probe_bytes_in_file_order();
   test_store_preserves_previous_log_on_failed_promote();
   test_store_rotates_four_sessions();
