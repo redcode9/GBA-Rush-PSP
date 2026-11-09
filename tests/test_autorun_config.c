@@ -1,0 +1,239 @@
+/*
+ * Host tests for autorun_config.c, the diagnostic autorun file: the
+ * version line, the build id gate, the keys and their limits, hostile
+ * input, and the exact result text.
+ */
+
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "autorun_config.h"
+
+#define ID "0123456789ab-dirty"
+#define HEAD "version=1\nbuild=" ID "\n"
+
+static AutorunConfig config;
+static char big[AUTORUN_CONFIG_MAX_SIZE + 2];
+
+static int parse_size(const char *text, size_t size)
+{
+  return autorun_config_parse(text, size, ID, &config);
+}
+
+static int parse(const char *text)
+{
+  return parse_size(text, strlen(text));
+}
+
+/* A refused file reports error at line and leaves nothing to apply. */
+static void assert_refused(AutorunError error, uint32_t line)
+{
+  assert(config.error == error);
+  assert(config.error_line == line);
+  assert(config.rom[0] == '\0' && config.trace[0] == '\0');
+  assert(config.frames == 0 && config.exit_when_done == 0);
+}
+
+static void refused(const char *text, AutorunError error, uint32_t line)
+{
+  assert(parse(text) == 0);
+  assert_refused(error, line);
+}
+
+static void test_valid_files(void)
+{
+  assert(parse(HEAD "rom=roms/game.gba\n"));
+  assert(config.error == AUTORUN_OK && config.error_line == 0);
+  assert(strcmp(config.rom, "roms/game.gba") == 0);
+  assert(config.trace[0] == '\0' && config.frames == 0);
+  assert(config.exit_when_done == 0);
+
+  /* No rom: nothing to start, still a file for this build. */
+  assert(parse(HEAD));
+  assert(config.rom[0] == '\0');
+
+  /* CRLF, comments, blank lines, no final newline. */
+  assert(parse("# autorun for the smoke test\r\n\r\nversion=1\r\n"
+               "# the build it is for\r\nbuild=" ID "\r\n\r\n"
+               "rom=ms0:/ROMS/A Game.gba\r\n"
+               "trace=traces/input-AXVE-r1.gbit\r\nframes=3600\r\nexit=1"));
+  assert(strcmp(config.rom, "ms0:/ROMS/A Game.gba") == 0);
+  assert(strcmp(config.trace, "traces/input-AXVE-r1.gbit") == 0);
+  assert(config.frames == 3600 && config.exit_when_done == 1);
+
+  assert(parse(HEAD "rom=a.gba\nframes=007\nexit=0\n"));
+  assert(config.frames == 7 && config.exit_when_done == 0);
+  assert(parse(HEAD "rom=a.gba\nframes=2147483647\n"));
+  assert(config.frames == 0x7FFFFFFFU);
+}
+
+static void test_version(void)
+{
+  refused("", AUTORUN_ERROR_VERSION, 0);
+  refused("# only a comment\n\n", AUTORUN_ERROR_VERSION, 0);
+  refused("build=" ID "\nversion=1\n", AUTORUN_ERROR_VERSION, 1);
+  refused("\n# first\nversion=2\nbuild=" ID "\n", AUTORUN_ERROR_VERSION, 3);
+  refused("version=1 \nbuild=" ID "\n", AUTORUN_ERROR_VERSION, 1);
+  refused("VERSION=1\nbuild=" ID "\n", AUTORUN_ERROR_VERSION, 1);
+  refused(HEAD "version=1\n", AUTORUN_ERROR_DUPLICATE_KEY, 3);
+}
+
+static void test_build_gate(void)
+{
+  refused("version=1\n", AUTORUN_ERROR_BUILD_MISSING, 0);
+  refused("version=1\nrom=a.gba\nbuild=" ID "\n",
+   AUTORUN_ERROR_BUILD_MISSING, 2);
+  refused("version=1\nbuild=0123456789ab\nrom=a.gba\n",
+   AUTORUN_ERROR_BUILD_MISMATCH, 2);
+  refused("version=1\nbuild=" ID "x\nrom=a.gba\n",
+   AUTORUN_ERROR_BUILD_MISMATCH, 2);
+  refused("version=1\nbuild=\n", AUTORUN_ERROR_BUILD_MISMATCH, 2);
+  /* The gate is read before any later key, valid or not. */
+  refused("version=1\nbuild=fedcba987654\nframes=0\npower=1\n",
+   AUTORUN_ERROR_BUILD_MISMATCH, 2);
+
+  /* A build without an id refuses every file, its own id included. */
+  assert(autorun_config_parse("version=1\nbuild=unknown\n", 24, "unknown",
+   &config) == 0);
+  assert_refused(AUTORUN_ERROR_BUILD_UNKNOWN, 0);
+  assert(autorun_config_parse("version=1\nbuild=\n", 17, "", &config) == 0);
+  assert_refused(AUTORUN_ERROR_BUILD_UNKNOWN, 0);
+  assert(autorun_config_parse(HEAD, strlen(HEAD), NULL, &config) == 0);
+  assert_refused(AUTORUN_ERROR_BUILD_UNKNOWN, 0);
+}
+
+static void test_keys(void)
+{
+  refused(HEAD "power=suspend\n", AUTORUN_ERROR_UNKNOWN_KEY, 3);
+  refused(HEAD "rom=a.gba\n\n# hash next\nhash=1\n",
+   AUTORUN_ERROR_UNKNOWN_KEY, 6);
+  refused(HEAD "x=\n", AUTORUN_ERROR_UNKNOWN_KEY, 3);
+  refused(HEAD "=a.gba\n", AUTORUN_ERROR_UNKNOWN_KEY, 3);
+  refused(HEAD "rom =a.gba\n", AUTORUN_ERROR_UNKNOWN_KEY, 3);
+  refused(HEAD "rom\n", AUTORUN_ERROR_SYNTAX, 3);
+  refused(HEAD "rom=a.gba\nrom=b.gba\n", AUTORUN_ERROR_DUPLICATE_KEY, 4);
+  refused(HEAD "build=" ID "\n", AUTORUN_ERROR_DUPLICATE_KEY, 3);
+  refused(HEAD "rom=\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "rom=a.gba\ntrace=t.svs\n", AUTORUN_ERROR_BAD_VALUE, 4);
+  refused(HEAD "rom=a.gba\ntrace=.gbit\n", AUTORUN_ERROR_BAD_VALUE, 4);
+}
+
+static void test_values(void)
+{
+  refused(HEAD "rom=a.gba\nframes=0\n", AUTORUN_ERROR_BAD_VALUE, 4);
+  refused(HEAD "rom=a.gba\nframes=4294967296\n", AUTORUN_ERROR_BAD_VALUE, 4);
+  refused(HEAD "rom=a.gba\nframes=2147483648\n", AUTORUN_ERROR_BAD_VALUE, 4);
+  refused(HEAD "rom=a.gba\nframes=99999999999999999999\n",
+   AUTORUN_ERROR_BAD_VALUE, 4);
+  refused(HEAD "rom=a.gba\nframes=+5\n", AUTORUN_ERROR_BAD_VALUE, 4);
+  refused(HEAD "rom=a.gba\nframes=-5\n", AUTORUN_ERROR_BAD_VALUE, 4);
+  refused(HEAD "rom=a.gba\nframes=5x\n", AUTORUN_ERROR_BAD_VALUE, 4);
+  refused(HEAD "rom=a.gba\nframes= 5\n", AUTORUN_ERROR_BAD_VALUE, 4);
+  refused(HEAD "rom=a.gba\nframes=\n", AUTORUN_ERROR_BAD_VALUE, 4);
+  refused(HEAD "rom=a.gba\nframes=9\nexit=2\n", AUTORUN_ERROR_BAD_VALUE, 5);
+  refused(HEAD "rom=a.gba\nframes=9\nexit=\n", AUTORUN_ERROR_BAD_VALUE, 5);
+  refused(HEAD "rom=a.gba\nframes=9\nexit=10\n", AUTORUN_ERROR_BAD_VALUE, 5);
+
+  refused(HEAD "trace=t.gbit\n", AUTORUN_ERROR_NEEDS_ROM, 3);
+  refused(HEAD "frames=60\n", AUTORUN_ERROR_NEEDS_ROM, 3);
+  refused(HEAD "rom=a.gba\nexit=1\n", AUTORUN_ERROR_NEEDS_FRAMES, 4);
+  refused(HEAD "rom=a.gba\nexit=0\n", AUTORUN_ERROR_NEEDS_FRAMES, 4);
+}
+
+static void test_hostile_input(void)
+{
+  static const char nul[] = HEAD "rom=a\0.gba\n";
+  size_t head = strlen(HEAD);
+
+  /* 255 characters fit, 256 do not; the CR of CRLF is not counted. */
+  memcpy(big, HEAD "rom=", head + 4);
+  memset(big + head + 4, 'r', AUTORUN_CONFIG_LINE_MAX - 4);
+  memcpy(big + head + AUTORUN_CONFIG_LINE_MAX, "\r\n", 2);
+  assert(parse_size(big, head + AUTORUN_CONFIG_LINE_MAX + 2));
+  assert(strlen(config.rom) == AUTORUN_CONFIG_LINE_MAX - 4);
+  big[head + AUTORUN_CONFIG_LINE_MAX] = 'r';
+  assert(parse_size(big, head + AUTORUN_CONFIG_LINE_MAX + 2) == 0);
+  assert_refused(AUTORUN_ERROR_LINE_TOO_LONG, 3);
+  /* A long comment is refused too. */
+  memset(big, '#', 300);
+  assert(parse_size(big, 300) == 0);
+  assert_refused(AUTORUN_ERROR_LINE_TOO_LONG, 1);
+
+  assert(parse_size(nul, sizeof(nul) - 1) == 0);
+  assert_refused(AUTORUN_ERROR_NOT_TEXT, 3);
+  refused(HEAD "rom=a\tb.gba\n", AUTORUN_ERROR_NOT_TEXT, 3);
+  refused(HEAD "rom=a\rb.gba\n", AUTORUN_ERROR_NOT_TEXT, 3);
+  refused(HEAD "# \x7f\n", AUTORUN_ERROR_NOT_TEXT, 3);
+  refused(HEAD "rom=\xe8.gba\n", AUTORUN_ERROR_NOT_TEXT, 3);
+  refused("version=1\r\r\n", AUTORUN_ERROR_NOT_TEXT, 1);
+
+  /* The size limit holds before anything is read; a full-size file of
+     comments and blank lines is still read. */
+  memset(big, '\n', sizeof(big));
+  memcpy(big, HEAD, head);
+  assert(parse_size(big, AUTORUN_CONFIG_MAX_SIZE));
+  assert(parse_size(big, AUTORUN_CONFIG_MAX_SIZE + 1) == 0);
+  assert_refused(AUTORUN_ERROR_TOO_LARGE, 0);
+  assert(parse_size(big, (size_t)-1) == 0);
+  assert_refused(AUTORUN_ERROR_TOO_LARGE, 0);
+}
+
+static void test_result_text(void)
+{
+  static const char done[] =
+   "version=1\nbuild=" ID "\nstatus=done\nreason=none\nline=0\n"
+   "frames=3600\n";
+  static const char ignored[] =
+   "version=1\nbuild=" ID "\nstatus=ignored\nreason=build-mismatch\n"
+   "line=2\nframes=0\n";
+  char out[AUTORUN_CONFIG_RESULT_SIZE];
+  size_t length;
+
+  length = autorun_config_result(ID, AUTORUN_STATUS_DONE, AUTORUN_OK, 0,
+   3600, out, sizeof(out));
+  assert(length == sizeof(done) - 1 && strcmp(out, done) == 0);
+  length = autorun_config_result(ID, AUTORUN_STATUS_IGNORED,
+   AUTORUN_ERROR_BUILD_MISMATCH, 2, 0, out, sizeof(out));
+  assert(length == sizeof(ignored) - 1 && strcmp(out, ignored) == 0);
+
+  /* Room for the text and its NUL, not one byte less. */
+  memset(out, 'x', sizeof(out));
+  assert(autorun_config_result(ID, AUTORUN_STATUS_DONE, AUTORUN_OK, 0, 3600,
+   out, sizeof(done)) == sizeof(done) - 1);
+  assert(strcmp(out, done) == 0);
+  assert(autorun_config_result(ID, AUTORUN_STATUS_DONE, AUTORUN_OK, 0, 3600,
+   out, sizeof(done) - 1) == 0);
+  assert(autorun_config_result(ID, AUTORUN_STATUS_DONE, AUTORUN_OK, 0, 3600,
+   out, 0) == 0);
+  assert(autorun_config_result(ID, (AutorunStatus)4, AUTORUN_OK, 0, 0, out,
+   sizeof(out)) == 0);
+
+  length = autorun_config_result(ID, AUTORUN_STATUS_FAILED,
+   AUTORUN_ERROR_TRACE, 4294967295U, 4294967295U, out, sizeof(out));
+  assert(length > 0 && strstr(out, "\nstatus=failed\nreason=trace\n"
+   "line=4294967295\nframes=4294967295\n") != NULL);
+
+  assert(strcmp(autorun_config_error_name(AUTORUN_OK), "none") == 0);
+  assert(strcmp(autorun_config_error_name(AUTORUN_ERROR_TOO_LARGE),
+   "too-large") == 0);
+  assert(strcmp(autorun_config_error_name(AUTORUN_ERROR_TRACE), "trace")
+   == 0);
+  assert(strcmp(autorun_config_error_name((AutorunError)99), "invalid")
+   == 0);
+}
+
+/* Runs every parse and result case; a failing assert aborts the run. */
+int main(void)
+{
+  test_valid_files();
+  test_version();
+  test_build_gate();
+  test_keys();
+  test_values();
+  test_hostile_input();
+  test_result_text();
+  puts("Autorun config tests passed");
+  return 0;
+}

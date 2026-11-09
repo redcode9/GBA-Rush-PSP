@@ -55,6 +55,7 @@ HOST_TEST_PERF_DMA_PROBE = $(HOST_BUILD_DIR)/test_perf_dma_probe
 HOST_TEST_PERF_VIDEO_SENTINEL = $(HOST_BUILD_DIR)/test_perf_video_sentinel
 HOST_TEST_INPUT_TRACE = $(HOST_BUILD_DIR)/test_input_trace
 HOST_TEST_STATE_HASH = $(HOST_BUILD_DIR)/test_state_hash
+HOST_TEST_AUTORUN_CONFIG = $(HOST_BUILD_DIR)/test_autorun_config
 HOST_TEST_MENU_MODEL = $(HOST_BUILD_DIR)/test_menu_model
 HOST_TEST_MENU_LAYOUT = $(HOST_BUILD_DIR)/test_menu_layout
 HOST_TEST_CONFIG_MODEL = $(HOST_BUILD_DIR)/test_config_model
@@ -92,7 +93,8 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_PERF_METRICS) $(HOST_TEST_PERF_REPORT) \
  $(HOST_TEST_PERF_MONITOR) $(HOST_TEST_PERF_DMA_PROBE) \
  $(HOST_TEST_PERF_VIDEO_SENTINEL) \
- $(HOST_TEST_INPUT_TRACE) $(HOST_TEST_STATE_HASH) $(HOST_TEST_MENU_MODEL) \
+ $(HOST_TEST_INPUT_TRACE) $(HOST_TEST_STATE_HASH) $(HOST_TEST_AUTORUN_CONFIG) \
+ $(HOST_TEST_MENU_MODEL) \
  $(HOST_TEST_MENU_LAYOUT) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE) $(HOST_TEST_FAST_FORWARD) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
@@ -118,6 +120,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_perf_video_sentinel \
  $(HOST_SANITIZE_DIR)/test_input_trace \
  $(HOST_SANITIZE_DIR)/test_state_hash \
+ $(HOST_SANITIZE_DIR)/test_autorun_config \
  $(HOST_SANITIZE_DIR)/test_menu_model \
  $(HOST_SANITIZE_DIR)/test_menu_layout \
  $(HOST_SANITIZE_DIR)/test_config_model \
@@ -163,6 +166,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_PERF_VIDEO_SENTINEL)
 	$(HOST_TEST_INPUT_TRACE)
 	$(HOST_TEST_STATE_HASH)
+	$(HOST_TEST_AUTORUN_CONFIG)
 	$(HOST_TEST_MENU_MODEL)
 	$(HOST_TEST_MENU_LAYOUT)
 	$(HOST_TEST_CONFIG_MODEL)
@@ -221,6 +225,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_perf_video_sentinel
 	$(HOST_SANITIZE_DIR)/test_input_trace
 	$(HOST_SANITIZE_DIR)/test_state_hash
+	$(HOST_SANITIZE_DIR)/test_autorun_config
 	$(HOST_SANITIZE_DIR)/test_menu_model
 	$(HOST_SANITIZE_DIR)/test_menu_layout
 	$(HOST_SANITIZE_DIR)/test_config_model
@@ -394,6 +399,12 @@ $(HOST_TEST_STATE_HASH): tests/test_state_hash.c \
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_state_hash.c source/src/state_hash.c -o $@
+
+$(HOST_TEST_AUTORUN_CONFIG): tests/test_autorun_config.c \
+ source/src/autorun_config.c source/src/autorun_config.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_autorun_config.c source/src/autorun_config.c -o $@
 
 $(HOST_TEST_MENU_MODEL): tests/test_menu_model.c \
  source/src/menu_model.c source/src/menu_model.h \
@@ -651,6 +662,12 @@ $(HOST_SANITIZE_DIR)/test_state_hash: tests/test_state_hash.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_state_hash.c source/src/state_hash.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_autorun_config: tests/test_autorun_config.c \
+ source/src/autorun_config.c source/src/autorun_config.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_autorun_config.c source/src/autorun_config.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_menu_model: tests/test_menu_model.c \
  source/src/menu_model.c source/src/menu_model.h \
