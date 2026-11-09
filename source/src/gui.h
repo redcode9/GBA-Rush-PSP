@@ -55,6 +55,12 @@ void maybe_load_auto_savestate(void);
 void load_recent_roms(void);
 void add_recent_rom(const char *filename);
 
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+/* Replays a .gbit from the current frame: 2 when it also loaded its .svs,
+   1 without one, 0 on a failure, -1 when the .svs is missing or another. */
+int gui_trace_replay_file(const char *gbit_path);
+#endif
+
 /* Theme colors — defined in gui.c, accessible everywhere via common.h */
 extern u16 color_bg;
 extern u16 color_rom_info;

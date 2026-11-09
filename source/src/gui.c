@@ -3655,10 +3655,13 @@ finish:
      MSG[success ? MSG_TRACE_SAVED : MSG_TRACE_FAILED]);
 }
 
-/* Start replaying this ROM's saved trace. A version 2 trace first loads
-   the .svs it names and refuses a missing or different one; on a game
-   that uses the RTC the status row warns that the replay may diverge. */
-static void menu_trace_replay(void)
+/* Starts replaying the trace at gbit_path from the current frame. A
+   version 2 trace first loads the .svs of the same name and refuses a
+   missing or different one. Returns 2 when it loaded that .svs, 1 when the
+   replay started without one, 0 on a failure and -1 when the .svs is
+   missing or not the one the trace names. Leaves menu_trace_resume alone:
+   the diagnostic autorun calls it outside the menu. */
+int gui_trace_replay_file(const char *gbit_path)
 {
     char path[MAX_PATH];
     SceIoStat stat;
@@ -3667,17 +3670,16 @@ static void menu_trace_replay(void)
     size_t size;
     u32 crc = 0;
     u32 state_size = 0;
-    u32 message = MSG_TRACE_FAILED;
     int success = 0;
 
-    if(!menu_trace_path(path, sizeof(path), 0, ".gbit") ||
-       sceIoGetstat(path, &stat) < 0 || stat.st_size <= 0 ||
+    if(strlen(gbit_path) >= sizeof(path) ||
+       sceIoGetstat(gbit_path, &stat) < 0 || stat.st_size <= 0 ||
        (u64)stat.st_size > input_diagnostic_trace_max_encoded_size())
-        goto finish;
+        return 0;
 
     size = (size_t)stat.st_size;
     encoded = (u8 *)safe_malloc(size);
-    FILE_OPEN(file, path, READ);
+    FILE_OPEN(file, gbit_path, READ);
     if(FILE_CHECK_VALID(file))
     {
         success = menu_trace_read_all(file, encoded, size);
@@ -3686,30 +3688,43 @@ static void menu_trace_replay(void)
     if(success)
         success = input_diagnostic_trace_begin_replay(encoded, size);
     free(encoded);
+    if(!success)
+        return 0;
+    if(input_diagnostic_trace_version() < 2)
+        return 1;
 
     /* The trace starts at the current frame, so the state loads now. */
-    if(success && input_diagnostic_trace_version() >= 2)
+    change_ext((char *)gbit_path, path, ".svs");
+    if(!menu_trace_file_crc32(path, &crc, &state_size) ||
+       !input_diagnostic_trace_check_state(crc, state_size))
     {
-        if(!menu_trace_path(path, sizeof(path), 0, ".svs") ||
-           !menu_trace_file_crc32(path, &crc, &state_size) ||
-           !input_diagnostic_trace_check_state(crc, state_size))
-        {
-            message = MSG_TRACE_STATE_MISMATCH;
-            success = 0;
-        }
-        else
-            success = menu_trace_state_io(path, NULL) != 0;
-
-        if(success)
-            menu_trace_resume = 1;
-        else
-            input_diagnostic_trace_cancel();
+        input_diagnostic_trace_cancel();
+        return -1;
     }
+    if(menu_trace_state_io(path, NULL) == 0)
+    {
+        input_diagnostic_trace_cancel();
+        return 0;
+    }
+    return 2;
+}
 
-finish:
-    if(!success)
+/* Start replaying this ROM's saved trace (gui_trace_replay_file()); on a
+   game that uses the RTC the status row warns that the replay may
+   diverge. */
+static void menu_trace_replay(void)
+{
+    char path[MAX_PATH];
+    int result = 0;
+
+    if(menu_trace_path(path, sizeof(path), 0, ".gbit"))
+        result = gui_trace_replay_file(path);
+    if(result == 2)
+        menu_trace_resume = 1;
+
+    if(result <= 0)
         snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
-         "%s", MSG[message]);
+         "%s", MSG[result < 0 ? MSG_TRACE_STATE_MISMATCH : MSG_TRACE_FAILED]);
     else if(memory_rtc_active())
         snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
          "%s", MSG[MSG_TRACE_RTC_WARNING]);
