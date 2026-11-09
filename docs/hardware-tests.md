@@ -177,6 +177,20 @@ Each test has four fields:
   the emulator, which writes the last records to `logs/`. Decode `logs/`
   with `tools/decode_runtime_log.py`. Repeat on the other model.
 
+### memory-probe-3x
+
+- Models: PSP-1000, second model
+- Minutes: 20
+- Pass: on each model the 3 runs agree on the line, the ways and the
+  capacity of both caches, and the numbers are in the results table of
+  "Memory system on the PSP" in `docs/DESIGN-DECISIONS.md`.
+- Steps: build with `make psp-build DIAGNOSTIC_HW_PROBE=1` (it implies
+  `PROFILE=diagnostic`). With the clock option at 333, start the emulator 3
+  times on a PSP-1000 and 3 times on a slim. Each start rewrites
+  `hw-probe.txt` beside the EBOOT, so copy it after every start and check
+  that it reads `cpu-mhz=333` and `bus-mhz=166`. The 3 copies are the row's
+  evidence.
+
 ## Core
 
 ### core-rom
