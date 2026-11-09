@@ -9,7 +9,7 @@
 
 ## 1.5
 
-- [ ] **ENG-8.3** — Test di proprietà sulla macchina a stati power · S, 0,5 gg · dipende da: SAV-7.6 · PSP: no · _in parte: manca la verifica della CI (`make test-sanitize`, ASan di gcc)_
+- [x] **ENG-8.3** — Test di proprietà sulla macchina a stati power · S, 0,5 gg · dipende da: SAV-7.6 · PSP: no · _CI verde su 19a06b1 (run 42722774446): test_power_lifecycle passa in `make check` e in `make test-sanitize` con ASan di gcc_
 - [ ] **SAV-7.1** — Finestra di sospensione senza allocazioni né dialoghi · S, 1 gg · dipende da: SAV-2.5 · PSP: sì · aspetta: SAV-2.5 (`wip/save-store`)
 - [ ] **SAV-7.2** — Batteria in sospeso scritta per prima alla sospensione · S, 0,5 gg · dipende da: SAV-2.3 · PSP: sì · aspetta: SAV-2.3 (`wip/save-store`)
 - [ ] **SAV-7.3** — POWER tenuto durante l'avvio e la chiusura del link · S, 0,5 gg · dipende da: SAV-3.2 · PSP: sì · aspetta: SAV-3.2 (`wip/save-store`)
