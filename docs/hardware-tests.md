@@ -152,8 +152,8 @@ Each test has four fields:
   menu and opening it again and after a restart; the savestate and cheat
   browsers open in the list; switching view writes no file to the Memory
   Stick but the covers' `.raw` caches; with 500 ROMs the median of the
-  candidate's 3 carousel opens is at most 0.1 s (6 frames on a 60 fps
-  video) above the median of 1.4.3's.
+  candidate's 3 carousel opens, counted in frames of a 60 fps video, is at
+  most 6 frames (0.1 s) above the median of 1.4.3's.
 - Steps: put the same 500 ROMs and their covers in the ROM and cover
   folders of each build, sharing a folder only where dir.ini gives it an
   absolute path (copying them is not in the minutes). Time with no game
@@ -163,10 +163,15 @@ Each test has four fields:
   browser opens straight into it. Before timing, open the carousel once on
   each build without timing it and without moving the cursor, so every
   visible cover has its `.raw` cache. Then open it 3 times on each build,
-  alternating the two, and time each open with a stopwatch or a 60 fps
-  video, from the Load game press to the carousel with every visible cover
-  drawn, leaving out on 1.4.3 the pause between the list and SELECT. Write
-  both sets of 3 times and their medians in the row's notes. On the
+  alternating the two, and film each open with a 60 fps video that shows
+  the screen and the L and SELECT buttons. A stopwatch is not enough: it
+  adds a reaction time at each visual end, two on 1.4.3 and one on the
+  candidate. Count frames on the video: on the candidate, from the frame
+  where L goes down to the first frame with every visible cover drawn; on
+  1.4.3, the frames from L going down to the first frame of the list, plus
+  the frames from SELECT going down to the first frame of the carousel
+  with every visible cover drawn. Write both sets of 3 frame counts and
+  their medians in the row's notes. On the
   candidate, choose the carousel, leave the menu and open the browser
   again, then quit from the menu, start the emulator again and open it: it
   must be in carousel both times. Load a game and open the savestate and
