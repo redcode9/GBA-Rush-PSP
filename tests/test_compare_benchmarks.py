@@ -195,6 +195,9 @@ class BenchmarkComparisonTests(unittest.TestCase):
         output = MODULE.format_result(result)
         self.assertIn("\nframe-p99=19000 us (+5.56%)\n", output)
         self.assertIn("\nreason=frame-time p99 regression exceeds 5%", output)
+        # The gate reads the median: one slow run alone passes.
+        self.assertTrue(MODULE.compare(baseline, [
+            report(frame_p99=19000), report(), report()])["passed"])
 
     def test_single_max_spike_ignored(self):
         baseline = [report(), report(), report()]
@@ -234,8 +237,12 @@ class BenchmarkComparisonTests(unittest.TestCase):
 
         self.assertEqual(result["failures"],
                          ["work-time p95 regression exceeds 5%"])
-        self.assertIn("\nwork-p95=13000 us (+8.33%)\n",
-                      MODULE.format_result(result))
+        output = MODULE.format_result(result)
+        self.assertIn("\nwork-p95=13000 us (+8.33%)\n", output)
+        self.assertNotIn("note=work-p95", output)
+        # The gate reads the median: one slow run alone passes.
+        self.assertTrue(MODULE.compare(baseline, [
+            v7(work_p95=13000), v7(), v7()])["passed"])
 
     def test_over_budget_per_minute_increase_fails(self):
         baseline = [v7(over_budget=20) for _ in range(3)]
@@ -807,7 +814,8 @@ class BenchmarkComparisonTests(unittest.TestCase):
         )
         self.assertTrue(passing["passed"])
         self.assertEqual(passing["failures"], [])
-        # The lines printed before the per-run lines are unchanged.
+        # The lines printed before the per-run lines: the format 6 ones plus
+        # frame-p99, frame-max and the skipped-gates note.
         self.assertEqual(
             [line for line in MODULE.format_result(passing).splitlines()
              if "-runs=" not in line],
