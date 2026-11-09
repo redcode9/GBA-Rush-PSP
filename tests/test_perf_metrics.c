@@ -331,6 +331,34 @@ static void test_work_time_subtracts_waits(void)
   assert(result.frame_time_total_us == 26700);
 }
 
+/* Work percentiles come from the work histogram in 250 us buckets: 18
+   frames of 8100 us work, one of 12100 and one of 20000 give p50 8250,
+   p95 12250 and p99 20000, while the frame-time p95 is 16750. */
+static void test_work_time_percentiles(void)
+{
+  PerfMetrics metrics;
+  PerfMetricsSnapshot result;
+  unsigned frame;
+
+  perf_metrics_init(&metrics);
+  assert(perf_metrics_start(&metrics));
+  for(frame = 0; frame < 18; frame++)
+  {
+    perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_BACKPRESSURE, 8600);
+    perf_metrics_record_frame(&metrics, 16700, 0, 0, 0);
+  }
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_BACKPRESSURE, 4600);
+  perf_metrics_record_frame(&metrics, 16700, 0, 0, 0);
+  perf_metrics_record_frame(&metrics, 20000, 0, 0, 0);
+
+  result = snapshot(&metrics);
+  assert(result.work_time_samples == 20);
+  assert(result.work_time_p50_us == 8250);
+  assert(result.work_time_p95_us == 12250);
+  assert(result.work_time_p99_us == 20000);
+  assert(result.frame_time_p95_us == 16750);
+}
+
 /* Waits longer than the frame give 0 work, not a wrapped huge value; the
    wait sum itself saturates. */
 static void test_work_time_clamps_at_zero(void)
@@ -477,6 +505,7 @@ int main(void)
   test_saturating_counters();
   test_wait_and_frame_probes();
   test_work_time_subtracts_waits();
+  test_work_time_percentiles();
   test_work_time_clamps_at_zero();
   test_waits_reset_each_frame();
   test_over_budget_and_late_counts();
