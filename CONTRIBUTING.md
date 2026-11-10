@@ -212,6 +212,13 @@ with `trace=`, `hash=` (a new `.gbsh` path per run), `frames=` and `exit=1`;
 the perturbed run adds `perturb=N`. A replay started from the menu writes
 `traces/input-<game>-r<rev>.gbsh` the next time the menu opens.
 
+Backup memory is hashed, but the trace's `.svs` does not restore it: copy
+the game's `.sav` right after saving the trace and put it back before each
+run. If two runs differ only in `audio`, look first at the sound ring:
+samples it drops without playing them (a sound timeout, muted fast-forward,
+a link wait) stay in it for one lap, and so does a direct-sound sample mixed
+behind the index the hash has already passed.
+
 A compact golden keeps one record every 60 frames and the sha256 of a full
 `.gbsh` taken from its regions line through its last record, without the
 magic, identity and counters lines (`tools/state_hash_diff.py --help`

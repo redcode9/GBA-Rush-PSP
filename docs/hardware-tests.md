@@ -205,7 +205,8 @@ Each test has four fields:
   `perturb=N` exits 1 against them, naming frame N and `iwram`.
 - Steps: build with `make psp-build PROFILE=diagnostic`. Record a trace of
   at least 10 seconds from Diagnostics > Start input trace and save it,
-  which leaves the `.gbit` and its `.svs` in `traces/`. Write
+  which leaves the `.gbit` and its `.svs` in `traces/`, then copy the
+  game's `.sav` aside and put it back before each run below. Write
   `diag-autorun.txt` with the build id, `rom=`, `trace=` that `.gbit`,
   `frames=600`, `exit=1` and `hash=a.gbsh`, and start the EBOOT; run it
   again with `hash=b.gbsh`, then with `hash=c.gbsh` and `perturb=300`. Each
