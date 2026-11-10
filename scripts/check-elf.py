@@ -24,9 +24,12 @@ CHECK_LAYOUT = ROOT / "scripts" / "check-layout.py"
 # Strings only the diagnostic profile may hold: the autorun control files
 # (diag-autorun.txt and .result), input trace files and their magic,
 # [DIAG] in case code ever prints the diagnostic title tag (the title itself
-# is in PARAM.SFO, which the build-config.stamp check covers), and the
-# memory system probe's hw-probe.txt and its hw-probe=1 report line.
-FORBIDDEN = (b"diag-autorun", b".gbit", b"GBIT", b"[DIAG]", b"hw-probe")
+# is in PARAM.SFO, which the build-config.stamp check covers), the
+# memory system probe's hw-probe.txt and its hw-probe=1 report line, and the
+# allocation trace: its malloc wrapper's symbol, its alloc-trace report line
+# and the memory-hold.txt file it reads.
+FORBIDDEN = (b"diag-autorun", b".gbit", b"GBIT", b"[DIAG]", b"hw-probe",
+             b"__wrap_malloc", b"alloc-trace", b"memory-hold")
 
 
 def source_version(path=MAIN_HEADER):
