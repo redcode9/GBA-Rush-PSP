@@ -130,6 +130,10 @@ interrupted.
   is mixed.
 - `bench-input`: `none` for the benchmark, `pad` when paced.
 
+compare-benchmarks requires the same `bench-*` values in every run, and
+reads a report without them (from an older build) as paced, so a benchmark
+never compares with a paced capture.
+
 A benchmark's `duration-us` is the sum of its frame times, which run back
 to back, so the return from the menu before its first frame is left out.
 Its `vsync=0`, `frameskip-type=2` (none) and `frameskip-value=0` are what
