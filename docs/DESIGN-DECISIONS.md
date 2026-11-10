@@ -105,6 +105,12 @@ so copy it after every start, and check that it reads `cpu-mhz=333` and
   `invalidate_all_cache` in `source/src/mips_stub.S` step by 64 bytes, and
   `invalidate_all_cache` reaches the second way at 0x2000: two ways of
   8 KiB, so 16 KiB caches.
+- The cache instructions of `write_back`, `forget` and `hand_over` in
+  `source/src/gba_ppu_log.c`, which pass the Media Engine renderer's ring
+  and rows between the two processors, step by 64 bytes, and
+  `source/src/gba_ppu_log.h` puts the frame rows
+  (`GBA_PPU_LOG_FRAME_STRIDE`) and the writer and reader sides on 64-byte
+  lines.
 - The 16 KiB I-cache of the hot code budget in PRF-10.4.
 
 **Criterion.** On each model the 3 runs agree on the line, capacity and
