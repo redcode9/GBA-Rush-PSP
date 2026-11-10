@@ -192,11 +192,13 @@ $(PSP_EBOOT_SFO): build-config.stamp
 # stringop-*, trampolines) appear while the link compiles the whole program,
 # zlib and video_cc.cc included, and only the link command's flags apply
 # there: the link fails on them too, and a per-object -Wno-error cannot
-# reach them. If one appears in a vendored file or in video_cc.cc, build
-# that object with -fno-lto or drop -Werror here, and write the choice in
-# docs/DESIGN-DECISIONS.md (ENG-2.3).
+# reach them. One in our C code is fixed in the code. If that is impossible,
+# or it is in a vendored file or in video_cc.cc, build that object with
+# -fno-lto, or add -Wno-error=<name> here (or drop -Werror), and write the
+# choice in docs/DESIGN-DECISIONS.md (ENG-2.3).
 # -flto=auto also ends lto-wrapper's "using serial compilation" warning; the
-# partitioning does not depend on the job count, so the code does not change.
+# partitioning does not depend on the job count, so the code should not
+# change either.
 LDFLAGS += -flto=auto -Werror
 
 all: $(EXTRA_TARGETS)
