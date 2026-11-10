@@ -138,7 +138,9 @@ count as skipped. Unbound benchmark, audio off writes no sound samples,
 while the Direct Sound FIFO, its DMA and the PSG channels advance as
 always. Their reports say `bench-render=0` or `bench-audio=0`, and the
 throughput they gain over the plain benchmark of the same build and slot
-is what drawing or the audio costs.
+is what drawing or the audio costs. compare-benchmarks refuses that pair,
+because its `bench-render` or `bench-audio` differ, so read the gain from
+each report's `emulated-frames` and `duration-us`.
 
 compare-benchmarks requires the same `bench-*` values in every run, and
 reads a report without them (from an older build) as paced, so a benchmark
