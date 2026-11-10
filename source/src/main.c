@@ -782,8 +782,13 @@ static void main_alloc_trace_take(void)
 
 static void *main_memory_alloc(size_t size, void *context)
 {
+  /* volatile: once inlined, a malloc only tested for NULL and freed can be
+     folded away (clang -O2, GCC 15 -fmalloc-dce), and the probe would always
+     report its limit. */
+  void *volatile block = malloc(size);
+
   (void)context;
-  return malloc(size);
+  return block;
 }
 
 static void main_memory_release(void *block, void *context)
