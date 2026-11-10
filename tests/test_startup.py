@@ -292,6 +292,8 @@ void quit(void) {
 static u16 texture[GBA_LINE_SIZE * (GBA_SCREEN_HEIGHT + 1)];
 u16 *screen_texture = texture;
 static u32 shown_scale[16], shown_filter[16], results_at_mode[16];
+/* The result file as it was when each mode began. */
+static char result_at_mode[16][1024];
 static u32 modes_shown, presents, flips, ticks;
 #define PSP_POWER_TICK_DISPLAY 6
 int scePowerTick(int type) {
@@ -302,6 +304,8 @@ void video_resolution_small(void) {
   assert(modes_shown < 16 && option_screen_mag == 170);
   shown_scale[modes_shown] = option_screen_scale;
   shown_filter[modes_shown] = option_screen_filter;
+  assert(result_length < sizeof(result_at_mode[0]));
+  strcpy(result_at_mode[modes_shown], result);
   results_at_mode[modes_shown++] = (u32)results;
 }
 static void present(void) { presents++; }
@@ -463,16 +467,46 @@ int main(void) {
   expect(AUTORUN_STATUS_FAILED, "perturb-past-trace", 0, 0);
 
   /* testpat=all: every scale, nearest first, the result rewritten before
-     the first mode and after each one; the user's screen options are back
+     the first mode and after each one, started with the modes and frames
+     so far until the last says done; the user's screen options are back
      when it quits. */
   clear_test(); option_screen_scale = 6; option_screen_filter = 1;
   option_screen_mag = 120; memset(texture, 0xAA, sizeof(texture));
   assert(start(HEAD "testpat=all\n") == 0);
   assert(modes_shown == AUTORUN_TESTPAT_MODES && loaded[0] == '\0');
-  for(i = 0; i < AUTORUN_TESTPAT_MODES; i++)
+  for(i = 0; i <= AUTORUN_TESTPAT_MODES; i++)
   {
+    static const char *const lines[AUTORUN_TESTPAT_MODES] = {
+     "testpat=none-nearest used=gu/nearest\n",
+     "testpat=none-linear used=gu/linear\n",
+     "testpat=x15-gu-nearest used=gu/nearest\n",
+     "testpat=x15-gu-linear used=gu/linear\n",
+     "testpat=x15-sw-nearest used=sw/none\n",
+     "testpat=x15-sw-linear used=sw/none\n",
+     "testpat=user-nearest used=gu/nearest\n",
+     "testpat=user-linear used=gu/linear\n",
+     "testpat=16x9-gu-nearest used=gu/nearest\n",
+     "testpat=16x9-gu-linear used=gu/linear\n",
+     "testpat=16x9-sharp-nearest used=sharp/nearest\n",
+     "testpat=16x9-sharp-linear used=sharp/nearest\n",
+     "testpat=16x9-auto-nearest used=sharp/nearest\n",
+     "testpat=16x9-auto-linear used=sharp/nearest\n" };
+    u32 shown;
+
+    snprintf(text, sizeof(text), "version=1\nbuild=abc123\nstatus=%s\n"
+     "reason=none\nline=0\nframes=%u\n",
+     i == AUTORUN_TESTPAT_MODES ? "done" : "started",
+     (unsigned)(i * AUTORUN_TESTPAT_HOLD_FRAMES));
+    for(shown = 0; shown < i; shown++)
+      strcat(text, lines[shown]);
+    if(i == AUTORUN_TESTPAT_MODES)
+    {
+      assert(strcmp(result, text) == 0);
+      break;
+    }
     assert(shown_scale[i] == i / 2 && shown_filter[i] == i % 2);
     assert(results_at_mode[i] == i + 1);
+    assert(strcmp(result_at_mode[i], text) == 0);
   }
   assert(presents == AUTORUN_TESTPAT_MODES * AUTORUN_TESTPAT_HOLD_FRAMES);
   assert(flips == presents && ticks == presents);
@@ -480,23 +514,6 @@ int main(void) {
   assert(quits == 1 && quit_scale == 6 && quit_filter == 1 && quit_mag == 120);
   assert(flushes == 0 && event_flags == AUTORUN_STATUS_DONE);
   assert(event_values[2] == presents);
-  snprintf(text, sizeof(text), "version=1\nbuild=abc123\nstatus=done\n"
-   "reason=none\nline=0\nframes=%u\n%s", (unsigned)presents,
-   "testpat=none-nearest used=gu/nearest\n"
-   "testpat=none-linear used=gu/linear\n"
-   "testpat=x15-gu-nearest used=gu/nearest\n"
-   "testpat=x15-gu-linear used=gu/linear\n"
-   "testpat=x15-sw-nearest used=sw/none\n"
-   "testpat=x15-sw-linear used=sw/none\n"
-   "testpat=user-nearest used=gu/nearest\n"
-   "testpat=user-linear used=gu/linear\n"
-   "testpat=16x9-gu-nearest used=gu/nearest\n"
-   "testpat=16x9-gu-linear used=gu/linear\n"
-   "testpat=16x9-sharp-nearest used=sharp/nearest\n"
-   "testpat=16x9-sharp-linear used=sharp/nearest\n"
-   "testpat=16x9-auto-nearest used=sharp/nearest\n"
-   "testpat=16x9-auto-linear used=sharp/nearest\n");
-  assert(strcmp(result, text) == 0);
   /* Eight bars of 30 pixels on every row, nothing past the 240x160 frame. */
   for(i = 0; i < 8; i++)
   {
