@@ -214,7 +214,11 @@ the perturbed run adds `perturb=N`. A replay started from the menu writes
 
 Backup memory is hashed, but the trace's `.svs` does not restore it: copy
 the game's `.sav` right after saving the trace and put it back before each
-run. If two runs differ only in `audio`, look first at the sound ring:
+run. While a replay hashes, the audio thread asks for no PSG updates of its
+own and the mixing splits only at emulated ticks. A PSG register write
+applies back to the last update, so an update at a host time would change
+the samples and SOUNDCNT_X's channel flags. The replay's sound may stutter.
+If two runs differ only in `audio`, look first at the sound ring:
 samples it drops without playing them (a sound timeout, muted fast-forward,
 a link wait) stay in it for one lap, and so does a direct-sound sample mixed
 behind the index the hash has already passed.

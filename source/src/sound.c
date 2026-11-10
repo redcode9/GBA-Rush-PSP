@@ -290,10 +290,10 @@ void sound_diagnostic_audio_enable(u32 enabled)
 }
 
 // Mixes the PSG channels up to cpu_ticks, then returns the hash of the
-// samples mixed since the last call and starts the next one. The audio
-// thread asks for extra updates (gbc_sound_update) at host times, so
-// only a take that renders up to its own tick ends every frame's hash at
-// the same sample; this also brings SOUNDCNT_X up to that tick.
+// samples mixed since the last call and starts the next one, so every
+// frame's hash ends at the same sample; this also brings SOUNDCNT_X up to
+// that tick. Mixing is split only at emulated ticks: while hashing, the
+// audio thread asks for no updates of its own (sound_update_thread).
 u32 sound_diagnostic_audio_take(u32 cpu_ticks)
 {
   u32 hash;
@@ -1391,7 +1391,15 @@ static int sound_update_thread(SceSize args, void *argp)
         else if(now - sound_fast_forward_starvation_since >= 100000)
           sound_fast_forward_fallback_pending = 1;
       }
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+      // Not while a replay hashes audio: a PSG register write applies back
+      // to the last update, so an update at a host time changes the samples
+      // themselves. The next emulated update (a write, the VBlank) wakes it.
+      if (sound_diagnostic_audio_on == 0)
+        gbc_sound_update = 1;
+#else
       gbc_sound_update = 1;
+#endif
       sound_sleep = 1;
       sceKernelSleepThread();
 
