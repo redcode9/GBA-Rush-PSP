@@ -275,6 +275,154 @@ static void test_header_file_size_gate(void)
   assert(replay.state == INPUT_TRACE_FINISHED);
 }
 
+/* The checksum field (bytes 24-27) of an encoded trace. */
+static uint32_t file_checksum(const uint8_t *encoded)
+{
+  return (uint32_t)encoded[24] | ((uint32_t)encoded[25] << 8) |
+   ((uint32_t)encoded[26] << 16) | ((uint32_t)encoded[27] << 24);
+}
+
+/* Replays the make_trace keys from start, as update_input does frame by
+   frame, and checks that the replay ends right after them. */
+static void check_bench_replay(InputTrace *trace, uint32_t start)
+{
+  static const uint16_t keys[6] = { 0, 1, 1, 3, 0, 0 };
+  uint32_t i;
+
+  assert(input_trace_apply(trace, start - 1U, 0x3FF) == 0x3FF);
+  for(i = 0; i < 6; i++)
+    assert(input_trace_apply(trace, start + i, 0x3FF) == keys[i]);
+  assert(input_trace_apply(trace, start + 6U, 0x155) == 0x155);
+  assert(trace->state == INPUT_TRACE_FINISHED);
+}
+
+/* The unbound benchmark replays the trace in memory from its own first
+   frame, as often as it runs: one just recorded, one that finished, one
+   half replayed or one loaded from a file. Each run gets the same keys and
+   the same checksum, the one in the trace's file. A trace of another game
+   or revision is refused, and with no trace there is nothing to replay. */
+static void test_restart_replay_for_bench(void)
+{
+  uint8_t encoded[INPUT_TRACE_HEADER_SIZE + 8 * INPUT_TRACE_EVENT_SIZE];
+  uint8_t header[INPUT_TRACE_IDENTITY_SIZE];
+  InputTraceEvent events[8];
+  InputTraceEvent loaded_events[8];
+  InputTrace trace;
+  InputTrace loaded;
+  size_t size = make_trace(encoded, sizeof(encoded));
+  uint32_t checksum = file_checksum(encoded);
+
+  memset(header, 0, sizeof(header));
+  memcpy(header + 0xAC, game_code, sizeof(game_code));
+  header[0xBC] = 1;
+
+  input_trace_init(&trace, events, 8);
+  assert(input_trace_restart_replay(&trace, header, 0x1000000U, 0) == 0);
+  assert(trace.state == INPUT_TRACE_IDLE);
+  assert(input_trace_begin_record(&trace, 100, game_code, 1, 0));
+  assert(input_trace_restart_replay(&trace, header, 0x1000000U, 0) == 0);
+  assert(trace.state == INPUT_TRACE_RECORDING);
+  assert(input_trace_apply(&trace, 100, 0) == 0);
+  assert(input_trace_apply(&trace, 101, 1) == 1);
+  assert(input_trace_apply(&trace, 102, 1) == 1);
+  assert(input_trace_apply(&trace, 103, 3) == 3);
+  assert(input_trace_apply(&trace, 104, 0) == 0);
+  assert(input_trace_finish_record(&trace, 105));
+  /* Known when the recording ends, before any file is written. */
+  assert(trace.state == INPUT_TRACE_READY);
+  assert(trace.checksum == checksum);
+
+  assert(input_trace_restart_replay(&trace, header, 0x1000000U, 700) == 6);
+  assert(trace.state == INPUT_TRACE_REPLAYING);
+  check_bench_replay(&trace, 700);
+  assert(input_trace_restart_replay(&trace, header, 0x1000000U, 800) == 6);
+  check_bench_replay(&trace, 800);
+  assert(input_trace_restart_replay(&trace, header, 0x1000000U, 900) == 6);
+  assert(input_trace_apply(&trace, 900, 0x3FF) == 0);
+  assert(input_trace_apply(&trace, 901, 0x3FF) == 1);
+  assert(input_trace_restart_replay(&trace, header, 0x1000000U, 1000) == 6);
+  check_bench_replay(&trace, 1000);
+  assert(trace.checksum == checksum);
+
+  input_trace_init(&loaded, loaded_events, 8);
+  assert(input_trace_begin_replay_from_header(&loaded, encoded, size,
+   header, 0x1000000U, 500));
+  assert(loaded.checksum == checksum);
+  assert(input_trace_apply(&loaded, 500, 0x3FF) == 0);
+  assert(input_trace_restart_replay(&loaded, header, 0x1000000U, 600) == 6);
+  check_bench_replay(&loaded, 600);
+  assert(loaded.checksum == checksum);
+
+  /* No header or a ROM shorter than one leaves the trace as it was. */
+  assert(input_trace_restart_replay(&loaded, NULL, 0x1000000U, 0) == 0);
+  assert(input_trace_restart_replay(&loaded, header,
+   INPUT_TRACE_IDENTITY_SIZE - 1U, 0) == 0);
+  assert(loaded.state == INPUT_TRACE_FINISHED);
+  assert(input_trace_restart_replay(NULL, header, 0x1000000U, 0) == 0);
+
+  header[0xBC] = 2;
+  assert(input_trace_restart_replay(&loaded, header, 0x1000000U, 0) == 0);
+  assert(loaded.state == INPUT_TRACE_ERROR);
+  assert(loaded.error == INPUT_TRACE_ERROR_IDENTITY);
+  assert(input_trace_restart_replay(&loaded, header, 0x1000000U, 0) == 0);
+  header[0xBC] = 1;
+  header[0xAC] = 'A';
+  assert(input_trace_restart_replay(&trace, header, 0x1000000U, 0) == 0);
+  assert(trace.error == INPUT_TRACE_ERROR_IDENTITY);
+  header[0xAC] = game_code[0];
+
+  /* A one-frame trace replays one frame; the longest one saturates. */
+  assert(input_trace_begin_record(&trace, 10, game_code, 1, 5));
+  assert(input_trace_finish_record(&trace, 10));
+  assert(input_trace_restart_replay(&trace, header, 0x1000000U, 50) == 1);
+  assert(input_trace_apply(&trace, 50, 0x3FF) == 5);
+  assert(input_trace_apply(&trace, 51, 0x3FF) == 0x3FF);
+  assert(input_trace_begin_record(&trace, 0, game_code, 1, 0));
+  assert(input_trace_finish_record(&trace, UINT32_MAX));
+  assert(input_trace_restart_replay(&trace, header, 0x1000000U, 0) ==
+   UINT32_MAX);
+}
+
+/* update_input asks after each replayed frame whether it was the trace's
+   last, and ends the bench with it: the end is signalled once, on frame
+   start + duration, which still gets the trace's keys. Nothing else
+   signals, a replay before it starts or after it ends included. */
+static void test_replay_end_signalled_to_bench(void)
+{
+  uint8_t encoded[INPUT_TRACE_HEADER_SIZE + 8 * INPUT_TRACE_EVENT_SIZE];
+  InputTraceEvent events[8];
+  InputTrace replay;
+  size_t size = make_trace(encoded, sizeof(encoded));
+  uint32_t signals = 0;
+  uint32_t frame;
+
+  assert(!input_trace_replay_last_frame(NULL, 0));
+  input_trace_init(&replay, events, 8);
+  assert(!input_trace_replay_last_frame(&replay, 5));
+  assert(input_trace_begin_replay(&replay, encoded, size, game_code, 1, 500));
+  for(frame = 490; frame < 520; frame++)
+  {
+    uint16_t keys = input_trace_apply(&replay, frame, 0x3FF);
+
+    if(input_trace_replay_last_frame(&replay, frame))
+    {
+      assert(frame == 505);
+      assert(keys == 0);
+      signals++;
+    }
+  }
+  assert(signals == 1);
+  assert(replay.state == INPUT_TRACE_FINISHED);
+  assert(!input_trace_replay_last_frame(&replay, 505));
+
+  /* A recording that ends at frame 105 is not a replay. */
+  input_trace_init(&replay, events, 8);
+  assert(input_trace_begin_record(&replay, 100, game_code, 1, 0));
+  assert(!input_trace_replay_last_frame(&replay, 100));
+  assert(input_trace_finish_record(&replay, 105));
+  assert(!input_trace_replay_last_frame(&replay, 105));
+}
+
 /* Runs every recording, file and replay case; a failing assert aborts the
    run. */
 int main(void)
@@ -286,6 +434,8 @@ int main(void)
   test_cancel_and_invalid_arguments();
   test_paged_header_identity();
   test_header_file_size_gate();
+  test_restart_replay_for_bench();
+  test_replay_end_signalled_to_bench();
   puts("Input trace tests passed");
   return 0;
 }
