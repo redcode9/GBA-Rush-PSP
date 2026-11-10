@@ -166,12 +166,15 @@ Each test has four fields:
 
 - Models: PSP-1000, second model
 - Minutes: 30
-- Pass: on each model, once the release ZIP is extracted at the root of
-  the storage, the XMB shows GBA Rush PSP and it starts to the file
-  browser; once the ZIP is extracted over a 1.4.3 install, its saves,
-  savestates and configuration files are unchanged and in use: the game
-  loads its save, the savestate loads and the settings changed on 1.4.3
-  are still set.
+- Pass: on the PSP-1000 from the Memory Stick `ms0:` and on a PSP Go
+  (PSP-N1000) from its internal storage `ef0:`, once the release ZIP is
+  extracted at the root of the storage, the XMB shows GBA Rush PSP and it
+  starts to the file browser; once the ZIP is extracted over a 1.4.3
+  install, its saves, savestates and configuration files are unchanged
+  and in use: the game loads its save, the savestate loads and the
+  settings changed on 1.4.3 are still set. The second model's pass row
+  names the PSP-N1000 in its Model cell and `ef0:` in its Storage cell;
+  a row from any other second model is not a pass for this test.
 - Steps: the second model must be a PSP Go (PSP-N1000), with the ZIP
   extracted at the root of its internal storage `ef0:`; on the PSP-1000
   it goes to the root of the Memory Stick `ms0:`. Install by hand as a
