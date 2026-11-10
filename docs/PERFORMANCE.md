@@ -53,6 +53,35 @@ differ on the claimed side at p <= 0.05; otherwise it says
 `not demonstrated`, or `not measured` when a run lacks the metric. The
 claim never changes PASS or FAIL.
 
+## Phase timers
+
+During a capture one frame in 11 (the 11th, 22nd, ... of the capture) is
+timed in phases; 11 is prime, so the sampled frames do not follow the 2- to
+6-frame cycles of games. Divide each total by `phase-main-sampled-frames`
+for the time per frame:
+
+- `phase-main-update-gba-us`: update_gba's own time (scheduler, input,
+  presenting the frame, DMA), without the two phases below and without the
+  waits the work time leaves out (the VBlank waits and the GE wait). During
+  a lockstep link it also holds the link waits.
+- `phase-main-scanline-us`: update_scanline.
+- `phase-main-gbc-sound-us`: the PSG channels (update_gbc_sound). Direct
+  sound, hundreds of calls a frame, is not timed.
+- `phase-main-work-us`: the work time of the same frames. The three phases
+  add up to less; the rest is the CPU core.
+- `probe-read-ns`: the cost of one clock read, from 64 reads in a row when
+  the capture starts. `probe-reads`: the reads the timers made in the
+  sampled frames. Their product is the time the timers added.
+
+The sampled frames count as frames but stay out of the frame-time and
+work-time percentiles and maximum. A sampled frame longer than 128 ms (a
+menu, a save state) is not timed.
+
+The New core's diagnostic profile, saved beside the report as
+`-core.txt`, has its own `phase-<name>` keys (code, dispatch, memory,
+translate, interpret, events): those split the CPU core's time and are a
+different measure, hence the `phase-main-` prefix here.
+
 ## Baselines per model
 
 The reports of each published release are archived under
