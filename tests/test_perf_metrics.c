@@ -615,10 +615,10 @@ static void test_nested_phase_subtraction(void)
   assert(result.phase_scanline_us == 3200 + 900);
 }
 
-/* A sampled frame counts as a frame but stays out of the frame and work
-   histograms. One longer than 128 ms (a menu or a save state) drops its
-   phases and is counted like any frame; a capture stopped during a sampled
-   frame never adds it. */
+/* A sampled frame counts in every counter (fast-forward and late included)
+   but stays out of the frame and work histograms. One longer than 128 ms
+   (a menu or a save state) drops its phases and is counted like any
+   frame; a capture stopped during a sampled frame never adds it. */
 static void test_sampled_frames_excluded_from_histograms(void)
 {
   PerfMetrics metrics;
@@ -633,7 +633,7 @@ static void test_sampled_frames_excluded_from_histograms(void)
 
     assert(sampled == (frame == 11 || frame == 22));
     perf_metrics_record_frame(&metrics, sampled ? 40000 : 16000, 100, 0,
-     0);
+     frame == 22);
   }
   assert(!perf_metrics_phase_begin_frame(&metrics));
   result = snapshot(&metrics);
@@ -642,6 +642,10 @@ static void test_sampled_frames_excluded_from_histograms(void)
   assert(result.ge_wait_samples == 22);
   assert(result.frames_over_1_5x_budget == 2);
   assert(result.frames_work_over_budget == 2);
+  assert(result.frames_late == 21);
+  assert(result.fast_forward_frames == 1);
+  assert(result.fast_forward_time_us == 40000);
+  assert(result.fast_forward_presented_frames == 1);
   assert(result.frame_time_samples == 20);
   assert(result.frame_time_total_us == 20U * 16000U);
   assert(result.frame_time_max_us == 16000);
