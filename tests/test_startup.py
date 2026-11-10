@@ -581,7 +581,8 @@ class StartupTests(unittest.TestCase):
         build_and_run("autorun", screen_defines() + AUTORUN_STUBS
                       + autorun_block() + AUTORUN_SCENARIOS,
                       ["-DENABLE_DIAGNOSTIC_AUTORUN", "-I" + str(ROOT / "source/src"),
-                       str(ROOT / "source/src/autorun_config.c")])
+                       str(ROOT / "source/src/autorun_config.c"),
+                       str(ROOT / "source/src/net_fault.c")])
 
 
 if __name__ == "__main__":

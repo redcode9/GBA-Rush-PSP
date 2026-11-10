@@ -401,10 +401,12 @@ $(HOST_TEST_STATE_HASH): tests/test_state_hash.c \
 	 tests/test_state_hash.c source/src/state_hash.c -o $@
 
 $(HOST_TEST_AUTORUN_CONFIG): tests/test_autorun_config.c \
- source/src/autorun_config.c source/src/autorun_config.h
+ source/src/autorun_config.c source/src/autorun_config.h \
+ source/src/net_fault.c source/src/net_fault.h
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
-	 tests/test_autorun_config.c source/src/autorun_config.c -o $@
+	 tests/test_autorun_config.c source/src/autorun_config.c \
+	 source/src/net_fault.c -o $@
 
 $(HOST_TEST_MENU_MODEL): tests/test_menu_model.c \
  source/src/menu_model.c source/src/menu_model.h \
@@ -664,10 +666,12 @@ $(HOST_SANITIZE_DIR)/test_state_hash: tests/test_state_hash.c \
 	 -Isource/src tests/test_state_hash.c source/src/state_hash.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_autorun_config: tests/test_autorun_config.c \
- source/src/autorun_config.c source/src/autorun_config.h
+ source/src/autorun_config.c source/src/autorun_config.h \
+ source/src/net_fault.c source/src/net_fault.h
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
-	 -Isource/src tests/test_autorun_config.c source/src/autorun_config.c -o $@
+	 -Isource/src tests/test_autorun_config.c source/src/autorun_config.c \
+	 source/src/net_fault.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_menu_model: tests/test_menu_model.c \
  source/src/menu_model.c source/src/menu_model.h \

@@ -79,6 +79,7 @@ enum
   AUTORUN_KEY_EXIT,
   AUTORUN_KEY_HASH,
   AUTORUN_KEY_PERTURB,
+  AUTORUN_KEY_NET_PROFILE,
   AUTORUN_KEY_TESTPAT,
   AUTORUN_KEY_COUNT
 };
@@ -86,7 +87,7 @@ enum
 static const char *const autorun_config_keys[AUTORUN_KEY_COUNT] =
 {
   "version", "build", "rom", "trace", "frames", "exit", "hash", "perturb",
-  "testpat"
+  "net_profile", "testpat"
 };
 
 typedef struct
@@ -296,6 +297,23 @@ int autorun_config_parse(const char *text, size_t size, const char *build_id,
            number);
         config->perturb = 1;
         break;
+
+      case AUTORUN_KEY_NET_PROFILE:
+      {
+        /* Longer than every profile name. */
+        char name[16];
+
+        if(value_length >= sizeof(name))
+          return autorun_config_fail(config, AUTORUN_ERROR_BAD_VALUE,
+           number);
+        memcpy(name, value, value_length);
+        name[value_length] = '\0';
+        config->net_profile = net_fault_profile_find(name);
+        if(config->net_profile == NULL)
+          return autorun_config_fail(config, AUTORUN_ERROR_BAD_VALUE,
+           number);
+        break;
+      }
 
       case AUTORUN_KEY_TESTPAT:
         config->testpat_mode = autorun_config_testpat_mode(value,

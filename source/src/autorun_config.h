@@ -57,10 +57,16 @@
  *                    or linear. all runs the 14 modes in that order, each
  *                    scale with nearest first. Goes with no other key but
  *                    version and build.
+ *   net_profile=<name>  a simulated network (net_fault.h) for the ad-hoc
+ *                    link: lan, adhoc, noisy, outage, terrible or dropouts.
+ *                    Every datagram the link sends or receives goes through
+ *                    it, and the runtime log's network ring records the
+ *                    profile, its seed and what it lost, delayed and
+ *                    duplicated. Needs no other key.
  *
- * Not keys yet: the network fault profile and the power events come with
- * the code that uses them (the ad-hoc fault knobs, the power event
- * injector). Until then such a key is unknown and refuses the file.
+ * Not keys yet: the power events come with the code that uses them (the
+ * power event injector). Until then such a key is unknown and refuses the
+ * file.
  *
  * Example, to replay a trace for one minute and quit:
  *
@@ -96,6 +102,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+#include "net_fault.h"
 
 #define AUTORUN_CONFIG_MAX_SIZE 4096U
 #define AUTORUN_CONFIG_LINE_MAX 255U
@@ -172,6 +180,8 @@ typedef struct
      AUTORUN_TESTPAT_ALL. */
   uint32_t testpat;
   uint32_t testpat_mode;
+  /* One of net_fault_profiles, or NULL for none. */
+  const NetFaultProfile *net_profile;
   /* 0: no frame limit. */
   uint32_t frames;
   uint32_t exit_when_done;

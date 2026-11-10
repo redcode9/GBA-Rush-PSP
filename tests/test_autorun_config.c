@@ -1,7 +1,7 @@
 /*
  * Host tests for autorun_config.c, the diagnostic autorun file: the
  * version line, the build id gate, the keys and their limits, the replay
- * hash keys, hostile input, and the exact result text.
+ * hash keys, the network profile, hostile input, and the exact result text.
  */
 
 #include <assert.h>
@@ -37,6 +37,7 @@ static void assert_refused(AutorunError error, uint32_t line)
   assert(config.frames == 0 && config.exit_when_done == 0);
   assert(config.perturb == 0 && config.perturb_frame == 0);
   assert(config.testpat == 0 && config.testpat_mode == 0);
+  assert(config.net_profile == NULL);
 }
 
 static void refused(const char *text, AutorunError error, uint32_t line)
@@ -243,6 +244,46 @@ static void test_testpat_key(void)
   refused(RUN "testpat=all\n", AUTORUN_ERROR_TESTPAT_ALONE, 3);
 }
 
+/* Each of the six profiles by name, alone or with a run; anything else is
+   refused on its own line. */
+static void test_net_profile_key(void)
+{
+  char text[128];
+  uint32_t i;
+
+  for(i = 0; i < NET_FAULT_PROFILE_COUNT; i++)
+  {
+    snprintf(text, sizeof(text), HEAD "net_profile=%s\n",
+     net_fault_profiles[i].name);
+    assert(parse(text));
+    assert(config.net_profile == &net_fault_profiles[i]);
+    assert(config.rom[0] == '\0' && config.frames == 0);
+  }
+  assert(parse(RUN "exit=1\r\nnet_profile=noisy"));
+  assert(config.net_profile == &net_fault_profiles[2]);
+  assert(strcmp(config.rom, "a.gba") == 0 && config.exit_when_done == 1);
+  assert(parse(HEAD "rom=a.gba\n"));
+  assert(config.net_profile == NULL);
+
+  refused(HEAD "net_profile=\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "\nnet_profile=Noisy\n", AUTORUN_ERROR_BAD_VALUE, 4);
+  refused(HEAD "net_profile=nois\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "net_profile=noisy \n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "net_profile=psp-stalls\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  /* 15 and 16 characters: one fits the name buffer, one does not. */
+  refused(HEAD "net_profile=dropoutsdropout\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "net_profile=dropoutsdropouts\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(RUN "net_profile=lan\nnet_profile=lan\n",
+   AUTORUN_ERROR_DUPLICATE_KEY, 7);
+  refused(HEAD "net_profile=adhoc\nnet_profile=noisy\n",
+   AUTORUN_ERROR_DUPLICATE_KEY, 4);
+  /* The test pattern runs no link. */
+  refused(HEAD "net_profile=noisy\ntestpat=all\n",
+   AUTORUN_ERROR_TESTPAT_ALONE, 3);
+  refused("version=1\nbuild=fedcba987654\nnet_profile=noisy\n",
+   AUTORUN_ERROR_BUILD_MISMATCH, 2);
+}
+
 static void test_testpat_line(void)
 {
   static const char line[] = "testpat=16x9-auto-linear used=sharp/nearest\n";
@@ -386,6 +427,7 @@ int main(void)
   test_values();
   test_hash_keys();
   test_testpat_key();
+  test_net_profile_key();
   test_testpat_line();
   test_hostile_input();
   test_result_text();
