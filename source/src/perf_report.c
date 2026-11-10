@@ -413,7 +413,13 @@ int perf_report_format(char *output, size_t output_size,
    metadata->bench_render != 0);
   perf_report_append(&writer, "bench-audio=%d\n", metadata->bench_audio != 0);
   perf_report_append(&writer, "bench-input=%s\n",
+   metadata->bench_input == PERF_REPORT_BENCH_INPUT_TRACE ? "trace" :
    metadata->bench_input == PERF_REPORT_BENCH_INPUT_NONE ? "none" : "pad");
+  if(metadata->bench_input == PERF_REPORT_BENCH_INPUT_TRACE)
+    perf_report_append(&writer, "bench-trace-checksum=0x%08x\n",
+     metadata->bench_trace_checksum);
+  else
+    perf_report_append(&writer, "bench-trace-checksum=\n");
 
   if(writer.failed)
   {

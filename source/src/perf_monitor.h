@@ -91,6 +91,7 @@ typedef struct
   uint32_t bench_render;
   uint32_t bench_audio;
   uint32_t bench_input;
+  uint32_t bench_trace_checksum;
 } PerfMonitorIdentity;
 
 void perf_monitor_set_identity(const PerfMonitorIdentity *identity);

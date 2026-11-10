@@ -151,7 +151,8 @@ static void test_golden_report(void)
    "bench-frames=3600\n"
    "bench-render=1\n"
    "bench-audio=1\n"
-   "bench-input=none\n";
+   "bench-input=none\n"
+   "bench-trace-checksum=\n";
   PerfReportMetadata metadata;
   PerfMetricsSnapshot metrics;
   char report[PERF_REPORT_CAPACITY];
@@ -424,7 +425,8 @@ static void test_worst_case_capacity(void)
   metadata.bench_frames = UINT32_MAX;
   metadata.bench_render = UINT32_MAX;
   metadata.bench_audio = UINT32_MAX;
-  metadata.bench_input = PERF_REPORT_BENCH_INPUT_NONE;
+  metadata.bench_input = PERF_REPORT_BENCH_INPUT_TRACE;
+  metadata.bench_trace_checksum = UINT32_MAX;
 
   memset(&metrics, 0, sizeof(metrics));
   metrics.state = PERF_METRICS_INVALIDATED;
@@ -720,6 +722,48 @@ static void test_bench_arm_keys(void)
   assert(strstr(report, "\nbench-render=1\nbench-audio=0\n") != NULL);
 }
 
+/* A benchmark that replays a diagnostic input trace says so and ends the
+   report with the trace's checksum in eight hex digits; any other capture
+   leaves that checksum empty, whatever the field holds. */
+static void test_bench_trace_keys(void)
+{
+  static const char trace_tail[] =
+   "\nbench-input=trace\nbench-trace-checksum=0x0badf00d\n";
+  PerfReportMetadata metadata;
+  PerfMetricsSnapshot metrics;
+  char report[PERF_REPORT_CAPACITY];
+  int length;
+
+  memset(&metadata, 0, sizeof(metadata));
+  memset(&metrics, 0, sizeof(metrics));
+  metrics.state = PERF_METRICS_STOPPED;
+  metadata.bench_mode = PERF_REPORT_BENCH_UNBOUND;
+  metadata.bench_frames = 1234;
+  metadata.bench_render = 1;
+  metadata.bench_audio = 1;
+  metadata.bench_input = PERF_REPORT_BENCH_INPUT_TRACE;
+  metadata.bench_trace_checksum = 0x0BADF00DU;
+  length = perf_report_format(report, sizeof(report), &metadata, &metrics);
+  assert(length > (int)sizeof(trace_tail));
+  assert(strcmp(report + length - (sizeof(trace_tail) - 1U),
+   trace_tail) == 0);
+
+  metadata.bench_trace_checksum = 0;
+  assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
+  assert(strstr(report, "\nbench-trace-checksum=0x00000000\n") != NULL);
+
+  metadata.bench_trace_checksum = 0x0BADF00DU;
+  metadata.bench_input = PERF_REPORT_BENCH_INPUT_NONE;
+  assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
+  assert(strstr(report, "\nbench-input=none\nbench-trace-checksum=\n") !=
+   NULL);
+  metadata.bench_mode = PERF_REPORT_BENCH_PACED;
+  metadata.bench_input = PERF_REPORT_BENCH_INPUT_PAD;
+  assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
+  assert(strstr(report, "\nbench-input=pad\nbench-trace-checksum=\n") !=
+   NULL);
+}
+
 /* Runs every report case; a failing assert aborts the run. */
 int main(void)
 {
@@ -732,6 +776,7 @@ int main(void)
   test_preempt_keys();
   test_bench_keys();
   test_bench_arm_keys();
+  test_bench_trace_keys();
   puts("Performance report tests passed");
   return 0;
 }
