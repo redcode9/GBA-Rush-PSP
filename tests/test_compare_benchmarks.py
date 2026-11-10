@@ -218,9 +218,6 @@ class BenchmarkComparisonTests(unittest.TestCase):
         output = MODULE.format_result(result)
         self.assertIn("\nframe-p99=19000 us (+5.56%)\n", output)
         self.assertIn("\nreason=frame-time p99 regression exceeds 5%", output)
-        # The gate reads the median: one slow run alone passes.
-        self.assertTrue(MODULE.compare(baseline, [
-            report(frame_p99=19000), report(), report()])["passed"])
 
     def test_single_max_spike_ignored(self):
         baseline = [report(), report(), report()]
@@ -263,9 +260,6 @@ class BenchmarkComparisonTests(unittest.TestCase):
         output = MODULE.format_result(result)
         self.assertIn("\nwork-p95=13000 us (+8.33%)\n", output)
         self.assertNotIn("note=work-p95", output)
-        # The gate reads the median: one slow run alone passes.
-        self.assertTrue(MODULE.compare(baseline, [
-            v7(work_p95=13000), v7(), v7()])["passed"])
 
     def test_over_budget_per_minute_increase_fails(self):
         baseline = [v7(over_budget=20) for _ in range(3)]
@@ -278,6 +272,32 @@ class BenchmarkComparisonTests(unittest.TestCase):
             "max(1, 20%)"])
         self.assertIn("\nover-budget=15.0/min (baseline 10.0/min)\n",
                       MODULE.format_result(result))
+
+    def test_extreme_gates_read_the_median_of_each_build(self):
+        """One slow run of either build moves no gate; two of three do."""
+        quiet = [v7() for _ in range(3)]
+        for slow, over, failure in (
+                # A p99 never exceeds the max of the same run.
+                ({"frame_p99": 24000, "frame_max": 24000}, {"frame_p99": 19000},
+                 "frame-time p99 regression exceeds 5%"),
+                ({"work_p95": 20000}, {"work_p95": 13000},
+                 "work-time p95 regression exceeds 5%"),
+                # 40 and 4 frames in two minutes: 20 and 2 per minute.
+                ({"over_budget": 40, "frame_max": 40000}, {"over_budget": 4},
+                 "frames over 1.5x budget per minute increased by more than "
+                 "max(1, 20%)")):
+            with self.subTest(slow=slow):
+                one_slow = [v7(**slow), v7(), v7()]
+                two_slow = [v7(**slow), v7(**slow), v7()]
+                self.assertTrue(MODULE.compare(quiet, one_slow)["passed"])
+                self.assertIn(failure,
+                              MODULE.compare(quiet, two_slow)["failures"])
+                # The reference is neither raised by one slow baseline run
+                # nor lowered by one quiet one.
+                self.assertIn(failure, MODULE.compare(
+                    one_slow, [v7(**over) for _ in range(3)])["failures"])
+                self.assertTrue(MODULE.compare(
+                    two_slow, [v7(**slow) for _ in range(3)])["passed"])
 
     def test_v6_reports_skip_v7_gates_with_note(self):
         note = ("\nnote=work-p95 and over-budget gates skipped: a run lacks "
