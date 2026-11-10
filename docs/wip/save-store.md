@@ -34,7 +34,7 @@
 - [x] **SAV-3.1** — save_store_ring_push: rotazione verificata delle generazioni · S, 0,5 gg · dipende da: SAV-2.1 · PSP: no
 - [ ] **SAV-3.2** — Flush e copia in main_link_start · S, 0,5 gg · dipende da: SAV-3.1, SAV-2.3 · PSP: no · _in parte: codice pronto (e4b43d2, b6095dc), manca la CI verde dopo il push (`make check` e `make test-sanitize` per test_memory_backup sul vero memory.c, psp-build per gui.c e main.c); SAV-2.3 è ancora in parte_
 - [ ] **SAV-3.3** — Ripristina salvataggio pre-link nel menu Link · M, 1 gg · dipende da: SAV-3.2 · PSP: no · _in parte: codice pronto (463bfca, 99e11fc, e4f9f0e), manca la CI verde dopo il push (`make check` e `make test-sanitize` per test_memory_backup sul vero memory.c; gui.c lo compila solo psp-build, non `make check`)_
-- [ ] **SAV-3.4** — Validazione con uno scambio reale · S, 0,5 gg · dipende da: SAV-3.3 · PSP: sì · _in parte: docs/saves.md (650222a, f9d4407) e la durata della copia pre-link nel runtime log (e992f93, d40651b), mancano la voce del CHANGELOG sulla durata della copia pre-link nel runtime log, un id nel catalogo hardware, la sessione hardware e la CI verde dopo il push_
+- [ ] **SAV-3.4** — Validazione con uno scambio reale · S, 0,5 gg · dipende da: SAV-3.3 · PSP: sì · _in parte: docs/saves.md (650222a, f9d4407) e la durata della copia pre-link nel runtime log (e992f93, d40651b, d8f10bb), mancano un id nel catalogo hardware, la sessione hardware e la CI verde dopo il push_
 
 ## dopo gate
 
