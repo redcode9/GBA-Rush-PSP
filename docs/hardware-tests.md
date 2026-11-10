@@ -110,6 +110,23 @@ Each test has four fields:
   Trade 3 times in the Cable Club and run one Mario Kart: Super Circuit race
   in each role, the candidate hosting first.
 
+### net-fault-noisy-frlg
+
+- Models: PSP-1000, second model
+- Minutes: 30
+- Pass: with the `noisy` network profile on both PSPs a FireRed and
+  LeafGreen trade completes, and each decoded log shows a
+  `net-fault-profile=noisy` line with its seed and the `fault-out` and
+  `fault-in` lines with the datagrams lost, delayed and duplicated, some of
+  them lost.
+- Steps: build with `make psp-build PROFILE=diagnostic` and copy the EBOOT
+  to its own folder on both PSPs. Next to it write `diag-autorun.txt` as
+  `source/src/autorun_config.h` describes, with the build id that the
+  Diagnostics page shows and `net_profile=noisy`. Start FireRed on the
+  PSP-1000 and LeafGreen on the other, link with the PSP-1000 as host, enter
+  the Cable Club and trade once. Close the link from the menu, play on for a
+  few seconds, quit from the menu, and decode `logs/` on both PSPs.
+
 ## Power
 
 ### sleep-auto-20x
