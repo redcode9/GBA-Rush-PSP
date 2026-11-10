@@ -88,20 +88,26 @@ fi
 # of sound samples into the ring, so the guest runs the same: what sound.c
 # runs under sound_bench_audio_off, from each if that tests it to the end
 # of the block that if opens (one in sound_timer, one for the PSG
-# channels), never touches the Direct Sound FIFO or a DMA request.
-if ! awk '/if[ ]*\(.*sound_bench_audio_off/ {
+# channels), never touches the Direct Sound FIFO or a DMA request, and no
+# line ties the FIFO or DMA to the flag outside an if either. The PSG arm
+# still runs the channel's render loop with no output, so the sample
+# position and the length, envelope and sweep counters keep stepping.
+if ! awk '/sound_bench_audio_off/ && /fifo|dma/ { bad++ }
+  /if[ ]*\(.*sound_bench_audio_off/ {
     inside = 1; depth = 0; opened = 0; found++ }
   inside {
     if ($0 ~ /fifo|dma/) bad++
+    if ($0 ~ /GBC_SOUND_RENDER_##type[(]NULL,/) steps++
     opens = gsub(/[{]/, "{"); closes = gsub(/[}]/, "}")
     depth += opens - closes
     if (opens) opened = 1
     if (opened && depth <= 0) inside = 0
   }
-  END { exit (found != 2 || bad) }' source/src/sound.c
+  END { exit (found != 2 || bad || steps != 1) }' source/src/sound.c
 then
   echo "sound.c runs FIFO or DMA code under the audio-off bench arm" \
-    "(or the arm is not in sound_timer and the PSG render)" >&2
+    "(or the arm is not in sound_timer and the PSG render, or the PSG" \
+    "arm no longer steps the channel)" >&2
   exit 1
 fi
 
