@@ -159,8 +159,10 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         self.assertIn(" build=0123456789ab-dirty\n", output.getvalue())
 
     def test_decodes_rom_load_stages(self):
-        values = (500, 12 << 16 | 3, 99 << 16 | 9)
-        expected = "open=12ms read=500ms config=3ms backup-id=99ms sav=9ms"
+        # Every half above 255 and the read above 65535, so a narrower mask fails.
+        values = (70000, 1200 << 16 | 300, 65535 << 16 | 4000)
+        expected = ("open=1200ms read=70000ms config=300ms "
+                    "backup-id=65535ms sav=4000ms")
         self.assertEqual(
             decoder.describe({"event": "rom-load-stages", "flags": 0,
                               "values": list(values)}), expected)
