@@ -1903,8 +1903,9 @@ static void main_autorun_testpat(void)
     video_resolution_small();
     for(frame = 0; frame < AUTORUN_TESTPAT_HOLD_FRAMES; frame++)
     {
-      /* No button is pressed for minutes: keep the backlight on. */
-      scePowerTick(PSP_POWER_TICK_DISPLAY);
+      /* No button is pressed for minutes: keep the backlight on and Auto
+         Sleep away (PSP_POWER_TICK_DISPLAY holds the backlight only). */
+      scePowerTick(PSP_POWER_TICK_ALL);
       (*update_screen)();
       flip_screen(1);
     }
@@ -2031,6 +2032,10 @@ void main_autorun_frame(void)
 
   if(!main_autorun_running)
     return;
+  /* Nobody presses a button during the run: keep Auto Sleep from
+     suspending the PSP, about once a second. */
+  if(main_autorun_frames % 60 == 0)
+    scePowerTick(PSP_POWER_TICK_ALL);
 
   trace = input_diagnostic_trace_state();
   if(main_autorun.trace[0] != '\0' && trace != INPUT_TRACE_REPLAYING &&

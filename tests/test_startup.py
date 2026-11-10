@@ -309,9 +309,13 @@ static u32 shown_scale[16], shown_filter[16], results_at_mode[16];
 /* The result file as it was when each mode began. */
 static char result_at_mode[16][1024];
 static u32 modes_shown, presents, flips, ticks;
+#define PSP_POWER_TICK_ALL 0
 #define PSP_POWER_TICK_DISPLAY 6
+/* Every tick is ALL: DISPLAY holds the backlight only, not Auto Sleep. A
+   testpat= run ticks before each frame it presents. */
 int scePowerTick(int type) {
-  assert(type == PSP_POWER_TICK_DISPLAY && ticks == presents); ticks++; return 0;
+  assert(type == PSP_POWER_TICK_ALL && (modes_shown == 0 || ticks == presents));
+  ticks++; return 0;
 }
 void video_sync_present(void) {}
 void video_resolution_small(void) {
@@ -436,7 +440,16 @@ int main(void) {
   frames(10); assert(results == 2 && quits == 0);
   expect(AUTORUN_STATUS_DONE, "none", 0, 2);
   clear_test(); assert(start(HEAD "rom=b.gba\n"));
-  frames(10); assert(results == 1);
+  frames(10); assert(results == 1 && ticks == 0);
+  /* Nobody presses a button: from its first frame to its last, a frames=
+     run keeps Auto Sleep away about once a second. */
+  clear_test(); assert(start(HEAD "rom=b.gba\nframes=130\n") && ticks == 0);
+  frames(1); assert(ticks == 1);
+  frames(59); assert(ticks == 1);
+  frames(1); assert(ticks == 2);
+  frames(69); assert(ticks == 3 && results == 2);
+  frames(100); assert(ticks == 3);
+  expect(AUTORUN_STATUS_DONE, "none", 0, 130);
 
   clear_test(); load_result = -1; assert(start(HEAD "rom=b.gba\n") == 0);
   assert(resets == 0 && quits == 0 && flushes == 1);
