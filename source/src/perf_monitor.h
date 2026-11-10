@@ -107,5 +107,13 @@ int perf_monitor_phase_begin_frame(void);
 void perf_monitor_phase_add(PerfMetricsPhase phase, uint32_t us);
 void perf_monitor_record_probe_calibration(uint32_t elapsed_us,
  uint32_t reads);
+/* Preemption counts (main.c): wanted is 0 without a capture or once the
+   kernel refused a read, which unavailable reports. */
+int perf_monitor_preempt_wanted(void);
+void perf_monitor_preempt_sample(PerfMetricsPreemptPoint point,
+ uint32_t thread_count, uint32_t intr_count);
+void perf_monitor_preempt_unavailable(void);
+void perf_monitor_record_preempt_calibration(uint32_t elapsed_us,
+ uint32_t calls);
 
 #endif /* PERF_MONITOR_H */

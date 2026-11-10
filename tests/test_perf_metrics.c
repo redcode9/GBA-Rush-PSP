@@ -3,7 +3,8 @@
  * report: session states (only an active session records), counters,
  * high and low watermarks, histogram percentiles, work time per frame and
  * its budget counters, the phase timers of sampled frames and the probe
- * calibration, and saturation of every counter at its type's maximum.
+ * calibration, the emulation thread's preemptions per frame, and
+ * saturation of every counter at its type's maximum.
  */
 
 #include <assert.h>
@@ -829,6 +830,216 @@ static void test_phase_sum_within_sampled_work(void)
   assert(result.frame_time_samples == 11U * 200U - 200U);
 }
 
+/* One frame of preemption reads as main.c makes them: the work end, then
+   the wait end, each giving the kernel's running counts after its window
+   added its thread and interrupt preemptions. The counts wrap at 32 bits
+   like the kernel's. */
+static void preempt_frame(PerfMetrics *metrics, uint32_t counts[2],
+ uint32_t work_thread, uint32_t work_intr, uint32_t wait_thread,
+ uint32_t wait_intr)
+{
+  counts[0] += work_thread;
+  counts[1] += work_intr;
+  perf_metrics_preempt_sample(metrics, PERF_METRICS_PREEMPT_WORK_END,
+   counts[0], counts[1]);
+  counts[0] += wait_thread;
+  counts[1] += wait_intr;
+  perf_metrics_preempt_sample(metrics, PERF_METRICS_PREEMPT_WAIT_END,
+   counts[0], counts[1]);
+}
+
+/* A frame's preemptions, thread and interrupt in both windows, land in
+   one class: 0, 1, 2, 3-4, 5-8, 9-16 or 17+. Both edges of every class
+   are hit, each frame spread over the four counts so each one counts. */
+static void test_preempt_histogram_bins(void)
+{
+  static const uint32_t cases[][2] =
+  {
+    { 0, 0 }, { 1, 1 }, { 2, 2 }, { 3, 3 }, { 4, 3 }, { 5, 4 }, { 8, 4 },
+    { 9, 5 }, { 16, 5 }, { 17, 6 }, { 1000, 6 }
+  };
+  PerfMetrics metrics;
+  uint32_t counts[2] = { 0, 0 };
+  uint64_t expected[PERF_METRICS_PREEMPT_CLASSES] = { 0 };
+  size_t i;
+  uint32_t preempt_class;
+
+  perf_metrics_init(&metrics);
+  assert(perf_metrics_start(&metrics));
+  perf_metrics_preempt_sample(&metrics, PERF_METRICS_PREEMPT_WAIT_END, 0, 0);
+  for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+  {
+    uint32_t n = cases[i][0];
+    PerfMetricsSnapshot result;
+
+    preempt_frame(&metrics, counts, n / 4U, n / 4U, n / 4U, n - 3U * (n / 4U));
+    expected[cases[i][1]]++;
+    result = snapshot(&metrics);
+    for(preempt_class = 0; preempt_class < PERF_METRICS_PREEMPT_CLASSES;
+        preempt_class++)
+      assert(result.preempt_frames[preempt_class] == expected[preempt_class]);
+  }
+  /* One preemption in any single count is a frame of class 1. */
+  preempt_frame(&metrics, counts, 1, 0, 0, 0);
+  preempt_frame(&metrics, counts, 0, 1, 0, 0);
+  preempt_frame(&metrics, counts, 0, 0, 1, 0);
+  assert(snapshot(&metrics).preempt_frames[1] == 4);
+
+  metrics.preempt_frames[6] = UINT64_MAX;
+  preempt_frame(&metrics, counts, 20, 0, 0, 0);
+  assert(snapshot(&metrics).preempt_frames[6] == UINT64_MAX);
+}
+
+/* The maximum is the most preemptions in one frame, both windows and both
+   kinds together; the totals keep work and wait, thread and interrupt
+   apart. A frame counts only once its work window opened at the previous
+   frame's wait end, and the deltas survive the counts wrapping. */
+static void test_preempt_max_per_frame(void)
+{
+  PerfMetrics metrics;
+  PerfMetricsSnapshot result;
+  uint32_t counts[2] = { 100, 200 };
+
+  perf_metrics_preempt_sample(NULL, PERF_METRICS_PREEMPT_WAIT_END, 0, 0);
+  perf_metrics_init(&metrics);
+  perf_metrics_preempt_sample(&metrics, PERF_METRICS_PREEMPT_WAIT_END, 0, 0);
+  preempt_frame(&metrics, counts, 9, 9, 9, 9);
+  assert(snapshot(&metrics).preempt_max_per_frame == 0);
+
+  /* The first frame of a capture began before it: not counted. */
+  assert(perf_metrics_start(&metrics));
+  preempt_frame(&metrics, counts, 30, 30, 30, 30);
+  result = snapshot(&metrics);
+  assert(result.preempt_max_per_frame == 0);
+  assert(result.preempt_work_thread == 0 && result.preempt_wait_intr == 0);
+
+  preempt_frame(&metrics, counts, 5, 0, 5, 0);
+  preempt_frame(&metrics, counts, 0, 0, 0, 9);
+  preempt_frame(&metrics, counts, 1, 2, 3, 1);
+  result = snapshot(&metrics);
+  assert(result.preempt_max_per_frame == 10);
+  assert(result.preempt_work_thread == 6);
+  assert(result.preempt_work_intr == 2);
+  assert(result.preempt_wait_thread == 8);
+  assert(result.preempt_wait_intr == 10);
+
+  /* A second work end with no wait end before it opens no window, and an
+     unknown point changes nothing. */
+  counts[0] += 50;
+  perf_metrics_preempt_sample(&metrics, PERF_METRICS_PREEMPT_WORK_END,
+   counts[0], counts[1]);
+  preempt_frame(&metrics, counts, 40, 0, 40, 0);
+  assert(snapshot(&metrics).preempt_work_thread == 6);
+  perf_metrics_preempt_sample(&metrics, (PerfMetricsPreemptPoint)7,
+   counts[0] + 1000U, counts[1] + 1000U);
+  preempt_frame(&metrics, counts, 2, 0, 0, 0);
+  result = snapshot(&metrics);
+  assert(result.preempt_work_thread == 8);
+  assert(result.preempt_wait_thread == 8);
+  assert(result.preempt_max_per_frame == 10);
+
+  /* The kernel's counts wrap at 32 bits. */
+  counts[0] = UINT32_MAX - 1U;
+  counts[1] = UINT32_MAX;
+  perf_metrics_preempt_sample(&metrics, PERF_METRICS_PREEMPT_WAIT_END,
+   counts[0], counts[1]);
+  preempt_frame(&metrics, counts, 3, 2, 4, 3);
+  result = snapshot(&metrics);
+  assert(counts[0] == 5U && counts[1] == 4U);
+  assert(result.preempt_work_thread == 11);
+  assert(result.preempt_work_intr == 4);
+  assert(result.preempt_wait_thread == 12);
+  assert(result.preempt_wait_intr == 13);
+  assert(result.preempt_max_per_frame == 12);
+
+  metrics.preempt_work_thread = UINT64_MAX - 1U;
+  metrics.preempt_wait_intr = UINT64_MAX;
+  preempt_frame(&metrics, counts, 2, 0, 0, 1);
+  result = snapshot(&metrics);
+  assert(result.preempt_work_thread == UINT64_MAX);
+  assert(result.preempt_wait_intr == UINT64_MAX);
+
+  /* A new capture starts empty and again skips its first frame. */
+  assert(perf_metrics_stop(&metrics));
+  preempt_frame(&metrics, counts, 99, 0, 0, 0);
+  assert(snapshot(&metrics).preempt_max_per_frame == 12);
+  assert(perf_metrics_start(&metrics));
+  preempt_frame(&metrics, counts, 1, 0, 0, 0);
+  result = snapshot(&metrics);
+  assert(result.preempt_max_per_frame == 0);
+  assert(result.preempt_frames[0] == 0 && result.preempt_frames[1] == 0);
+}
+
+/* A refused read turns the preemption counts off but not the capture:
+   frames still count, later reads are ignored, and the snapshot says
+   preempt_available = 0 until a new capture starts. */
+static void test_preempt_unavailable_path(void)
+{
+  PerfMetrics metrics;
+  PerfMetricsSnapshot result;
+  uint32_t counts[2] = { 0, 0 };
+
+  perf_metrics_preempt_unavailable(NULL);
+  assert(!perf_metrics_preempt_wanted(NULL));
+  perf_metrics_init(&metrics);
+  assert(!perf_metrics_preempt_wanted(&metrics));
+  perf_metrics_preempt_unavailable(&metrics);
+
+  assert(perf_metrics_start(&metrics));
+  assert(perf_metrics_preempt_wanted(&metrics));
+  assert(snapshot(&metrics).preempt_available == 1);
+  preempt_frame(&metrics, counts, 0, 0, 0, 0);
+  preempt_frame(&metrics, counts, 2, 1, 0, 3);
+  perf_metrics_record_frame(&metrics, 16000, 0, 0, 0);
+
+  perf_metrics_preempt_unavailable(&metrics);
+  assert(!perf_metrics_preempt_wanted(&metrics));
+  assert(perf_metrics_active(&metrics));
+  preempt_frame(&metrics, counts, 7, 7, 7, 7);
+  preempt_frame(&metrics, counts, 7, 7, 7, 7);
+  perf_metrics_record_frame(&metrics, 16000, 0, 0, 0);
+  result = snapshot(&metrics);
+  assert(result.preempt_available == 0);
+  assert(result.emulated_frames == 2);
+  assert(result.preempt_work_thread == 2);
+  assert(result.preempt_wait_intr == 3);
+  assert(result.preempt_max_per_frame == 6);
+
+  assert(perf_metrics_stop(&metrics));
+  assert(snapshot(&metrics).preempt_available == 0);
+  assert(perf_metrics_start(&metrics));
+  assert(perf_metrics_preempt_wanted(&metrics));
+  result = snapshot(&metrics);
+  assert(result.preempt_available == 1);
+  assert(result.preempt_work_thread == 0);
+}
+
+/* The call cost comes from reads timed together when a capture starts. */
+static void test_preempt_call_cost(void)
+{
+  PerfMetrics metrics;
+
+  perf_metrics_record_preempt_calibration(NULL, 40, 16);
+  perf_metrics_init(&metrics);
+  perf_metrics_record_preempt_calibration(&metrics, 40, 16);
+  assert(snapshot(&metrics).preempt_call_ns == 0);
+
+  assert(perf_metrics_start(&metrics));
+  perf_metrics_record_preempt_calibration(&metrics, 40,
+   PERF_METRICS_PREEMPT_CALIBRATION_CALLS);
+  assert(snapshot(&metrics).preempt_call_ns == 2500);
+  perf_metrics_record_preempt_calibration(&metrics, 5, 0);
+  assert(snapshot(&metrics).preempt_call_ns == 2500);
+  perf_metrics_record_preempt_calibration(&metrics, 1, 3);
+  assert(snapshot(&metrics).preempt_call_ns == 333);
+  perf_metrics_record_preempt_calibration(&metrics, UINT32_MAX, 1);
+  assert(snapshot(&metrics).preempt_call_ns == UINT32_MAX);
+
+  assert(perf_metrics_stop(&metrics));
+  assert(perf_metrics_start(&metrics));
+  assert(snapshot(&metrics).preempt_call_ns == 0);
+}
+
 /* Runs every counter case; a failing assert aborts the run. */
 int main(void)
 {
@@ -850,6 +1061,10 @@ int main(void)
   test_sampled_frames_excluded_from_histograms();
   test_probe_cost_reported();
   test_phase_sum_within_sampled_work();
+  test_preempt_histogram_bins();
+  test_preempt_max_per_frame();
+  test_preempt_unavailable_path();
+  test_preempt_call_cost();
   puts("Performance metrics tests passed");
   return 0;
 }

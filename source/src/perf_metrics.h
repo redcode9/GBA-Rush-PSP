@@ -46,6 +46,15 @@
    the cost of one read. */
 #define PERF_METRICS_PROBE_CALIBRATION_READS 64U
 
+/* Preemptions of the emulation thread, from the PSP kernel's thread run
+   status, which main.c reads at two points of each frame end: before
+   synchronize() (the work ends) and after the flip (the waits end). A
+   frame's preemptions, thread and interrupt in both windows, fall in one
+   of 7 classes: 0, 1, 2, 3-4, 5-8, 9-16 and 17 or more. main.c times
+   PERF_METRICS_PREEMPT_CALIBRATION_CALLS reads when a capture starts. */
+#define PERF_METRICS_PREEMPT_CLASSES 7U
+#define PERF_METRICS_PREEMPT_CALIBRATION_CALLS 16U
+
 /* INVALIDATED: a reset, ROM change or suspend cut the capture short. */
 typedef enum
 {
@@ -81,6 +90,13 @@ typedef enum
   PERF_METRICS_PHASE_SCANLINE,
   PERF_METRICS_PHASE_GBC_SOUND
 } PerfMetricsPhase;
+
+/* Where main.c reads the preemption counts. */
+typedef enum
+{
+  PERF_METRICS_PREEMPT_WORK_END,
+  PERF_METRICS_PREEMPT_WAIT_END
+} PerfMetricsPreemptPoint;
 
 typedef struct
 {
@@ -177,6 +193,24 @@ typedef struct
      sampled frames: their product is the time the timers added. */
   uint32_t probe_read_ns;
   uint64_t probe_reads;
+  /* Preemptions. preempt_unavailable: the kernel refused a read, so the
+     capture takes no more. preempt_stage is 1 after a wait end (the work
+     window is open) and 2 after the work end that follows it, whose
+     deltas preempt_frame_work_ holds; 0 otherwise. preempt_last_ holds the
+     counts of the last read. */
+  int preempt_unavailable;
+  int preempt_stage;
+  uint32_t preempt_last_thread;
+  uint32_t preempt_last_intr;
+  uint32_t preempt_frame_work_thread;
+  uint32_t preempt_frame_work_intr;
+  uint64_t preempt_work_thread;
+  uint64_t preempt_work_intr;
+  uint64_t preempt_wait_thread;
+  uint64_t preempt_wait_intr;
+  uint64_t preempt_max_per_frame;
+  uint64_t preempt_frames[PERF_METRICS_PREEMPT_CLASSES];
+  uint32_t preempt_call_ns;
   PerfMetricsHistogram frame_time;
   PerfMetricsHistogram ge_wait;
   PerfMetricsHistogram work_time;
@@ -268,6 +302,14 @@ typedef struct
   uint64_t phase_work_us;
   uint32_t probe_read_ns;
   uint64_t probe_reads;
+  int preempt_available;
+  uint64_t preempt_work_thread;
+  uint64_t preempt_work_intr;
+  uint64_t preempt_wait_thread;
+  uint64_t preempt_wait_intr;
+  uint64_t preempt_max_per_frame;
+  uint64_t preempt_frames[PERF_METRICS_PREEMPT_CLASSES];
+  uint32_t preempt_call_ns;
 } PerfMetricsSnapshot;
 
 void perf_metrics_init(PerfMetrics *metrics);
@@ -320,6 +362,12 @@ void perf_metrics_phase_add(PerfMetrics *metrics, PerfMetricsPhase phase,
  uint32_t us);
 void perf_metrics_record_probe_calibration(PerfMetrics *metrics,
  uint32_t elapsed_us, uint32_t reads);
+int perf_metrics_preempt_wanted(const PerfMetrics *metrics);
+void perf_metrics_preempt_sample(PerfMetrics *metrics,
+ PerfMetricsPreemptPoint point, uint32_t thread_count, uint32_t intr_count);
+void perf_metrics_preempt_unavailable(PerfMetrics *metrics);
+void perf_metrics_record_preempt_calibration(PerfMetrics *metrics,
+ uint32_t elapsed_us, uint32_t calls);
 void perf_metrics_snapshot(const PerfMetrics *metrics,
  PerfMetricsSnapshot *snapshot);
 

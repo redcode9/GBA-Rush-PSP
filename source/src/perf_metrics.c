@@ -667,19 +667,119 @@ void perf_metrics_phase_add(PerfMetrics *metrics, PerfMetricsPhase phase,
    metrics->phase_frame_reads, 2);
 }
 
+/* Nanoseconds of each of count steps that took elapsed_us together,
+   saturated; count must not be 0. */
+static uint32_t perf_metrics_ns_each(uint32_t elapsed_us, uint32_t count)
+{
+  uint64_t ns = (uint64_t)elapsed_us * 1000U / count;
+
+  return ns > UINT32_MAX ? UINT32_MAX : (uint32_t)ns;
+}
+
 /* The cost of one clock read from `reads` reads made back to back, which
    took elapsed_us from the first to the last: reads - 1 intervals. */
 void perf_metrics_record_probe_calibration(PerfMetrics *metrics,
  uint32_t elapsed_us, uint32_t reads)
 {
-  uint64_t read_ns;
-
   if(!perf_metrics_active(metrics) || reads < 2U)
     return;
 
-  read_ns = (uint64_t)elapsed_us * 1000U / (reads - 1U);
-  metrics->probe_read_ns = read_ns > UINT32_MAX ? UINT32_MAX :
-   (uint32_t)read_ns;
+  metrics->probe_read_ns = perf_metrics_ns_each(elapsed_us, reads - 1U);
+}
+
+/* Whether main.c should read the preemption counts: a capture runs and
+   the kernel has not refused a read. */
+int perf_metrics_preempt_wanted(const PerfMetrics *metrics)
+{
+  return perf_metrics_active(metrics) && !metrics->preempt_unavailable;
+}
+
+/* Adds one frame: the work deltas held since its work end, and its wait
+   deltas. */
+static void perf_metrics_record_preempt_frame(PerfMetrics *metrics,
+ uint32_t wait_thread, uint32_t wait_intr)
+{
+  uint64_t count = (uint64_t)metrics->preempt_frame_work_thread +
+   metrics->preempt_frame_work_intr + wait_thread + wait_intr;
+  uint32_t preempt_class;
+
+  metrics->preempt_work_thread = perf_metrics_saturating_add(
+   metrics->preempt_work_thread, metrics->preempt_frame_work_thread);
+  metrics->preempt_work_intr = perf_metrics_saturating_add(
+   metrics->preempt_work_intr, metrics->preempt_frame_work_intr);
+  metrics->preempt_wait_thread = perf_metrics_saturating_add(
+   metrics->preempt_wait_thread, wait_thread);
+  metrics->preempt_wait_intr = perf_metrics_saturating_add(
+   metrics->preempt_wait_intr, wait_intr);
+  if(count > metrics->preempt_max_per_frame)
+    metrics->preempt_max_per_frame = count;
+
+  if(count <= 2U)
+    preempt_class = (uint32_t)count;
+  else if(count <= 4U)
+    preempt_class = 3;
+  else if(count <= 8U)
+    preempt_class = 4;
+  else if(count <= 16U)
+    preempt_class = 5;
+  else
+    preempt_class = 6;
+  metrics->preempt_frames[preempt_class] = perf_metrics_saturating_add(
+   metrics->preempt_frames[preempt_class], 1);
+}
+
+/* The thread and interrupt preemption counts the kernel gave at a point.
+   The counts only grow and wrap at 32 bits, so a window's preemptions are
+   the difference from the read before. A frame is added at its wait end
+   once its work window and the previous frame's wait end were both read:
+   never the first frame of a capture, which began before the capture. An
+   unknown point is ignored. */
+void perf_metrics_preempt_sample(PerfMetrics *metrics,
+ PerfMetricsPreemptPoint point, uint32_t thread_count, uint32_t intr_count)
+{
+  uint32_t thread_delta;
+  uint32_t intr_delta;
+
+  if(!perf_metrics_preempt_wanted(metrics))
+    return;
+
+  thread_delta = (uint32_t)(thread_count - metrics->preempt_last_thread);
+  intr_delta = (uint32_t)(intr_count - metrics->preempt_last_intr);
+  switch(point)
+  {
+    case PERF_METRICS_PREEMPT_WORK_END:
+      metrics->preempt_frame_work_thread = thread_delta;
+      metrics->preempt_frame_work_intr = intr_delta;
+      metrics->preempt_stage = metrics->preempt_stage == 1 ? 2 : 0;
+      break;
+    case PERF_METRICS_PREEMPT_WAIT_END:
+      if(metrics->preempt_stage == 2)
+        perf_metrics_record_preempt_frame(metrics, thread_delta, intr_delta);
+      metrics->preempt_stage = 1;
+      break;
+    default:
+      return;
+  }
+  metrics->preempt_last_thread = thread_count;
+  metrics->preempt_last_intr = intr_count;
+}
+
+/* The kernel refused a read (some firmware, PPSSPP): the capture goes on
+   without preemptions and its report says so. */
+void perf_metrics_preempt_unavailable(PerfMetrics *metrics)
+{
+  if(perf_metrics_active(metrics))
+    metrics->preempt_unavailable = 1;
+}
+
+/* The cost of one preemption read, from `calls` reads timed together. */
+void perf_metrics_record_preempt_calibration(PerfMetrics *metrics,
+ uint32_t elapsed_us, uint32_t calls)
+{
+  if(!perf_metrics_active(metrics) || calls == 0U)
+    return;
+
+  metrics->preempt_call_ns = perf_metrics_ns_each(elapsed_us, calls);
 }
 
 /* Copies the counters, reducing each histogram to samples, total, max and
@@ -796,4 +896,13 @@ void perf_metrics_snapshot(const PerfMetrics *metrics,
   snapshot->phase_work_us = metrics->phase_work_us;
   snapshot->probe_read_ns = metrics->probe_read_ns;
   snapshot->probe_reads = metrics->probe_reads;
+  snapshot->preempt_available = !metrics->preempt_unavailable;
+  snapshot->preempt_work_thread = metrics->preempt_work_thread;
+  snapshot->preempt_work_intr = metrics->preempt_work_intr;
+  snapshot->preempt_wait_thread = metrics->preempt_wait_thread;
+  snapshot->preempt_wait_intr = metrics->preempt_wait_intr;
+  snapshot->preempt_max_per_frame = metrics->preempt_max_per_frame;
+  memcpy(snapshot->preempt_frames, metrics->preempt_frames,
+   sizeof(snapshot->preempt_frames));
+  snapshot->preempt_call_ns = metrics->preempt_call_ns;
 }

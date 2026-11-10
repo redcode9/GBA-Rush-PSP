@@ -270,6 +270,37 @@ static void test_phase_wrappers(void)
   assert(result.frame_time_samples == 10);
 }
 
+/* The preemption wrappers reach the session's metrics: nothing wanted
+   without a capture, a frame from its work and wait ends, the call cost,
+   and a refused read turning them off for the rest of the capture. */
+static void test_preempt_wrappers(void)
+{
+  PerfMetricsSnapshot result;
+
+  perf_monitor_init();
+  assert(!perf_monitor_preempt_wanted());
+  assert(perf_monitor_start(0));
+  assert(perf_monitor_preempt_wanted());
+  perf_monitor_record_preempt_calibration(32, 16);
+  perf_monitor_preempt_sample(PERF_METRICS_PREEMPT_WAIT_END, 10, 20);
+  perf_monitor_preempt_sample(PERF_METRICS_PREEMPT_WORK_END, 13, 21);
+  perf_monitor_preempt_sample(PERF_METRICS_PREEMPT_WAIT_END, 15, 25);
+  perf_monitor_preempt_unavailable();
+  assert(!perf_monitor_preempt_wanted());
+  assert(perf_monitor_active());
+  assert(perf_monitor_stop(100));
+
+  result = snapshot();
+  assert(result.preempt_available == 0);
+  assert(result.preempt_work_thread == 3);
+  assert(result.preempt_work_intr == 1);
+  assert(result.preempt_wait_thread == 2);
+  assert(result.preempt_wait_intr == 4);
+  assert(result.preempt_max_per_frame == 10);
+  assert(result.preempt_frames[5] == 1);
+  assert(result.preempt_call_ns == 2000);
+}
+
 /* Runs every session case; a failing assert aborts the run. */
 int main(void)
 {
@@ -279,6 +310,7 @@ int main(void)
   test_capture_identity_survives_rom_change();
   test_link_lockstep_frame_wrapper();
   test_phase_wrappers();
+  test_preempt_wrappers();
   puts("Performance monitor tests passed");
   return 0;
 }

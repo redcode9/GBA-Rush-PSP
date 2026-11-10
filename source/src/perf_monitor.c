@@ -229,3 +229,27 @@ void perf_monitor_record_probe_calibration(uint32_t elapsed_us,
   perf_metrics_record_probe_calibration(&perf_monitor_metrics, elapsed_us,
    reads);
 }
+
+int perf_monitor_preempt_wanted(void)
+{
+  return perf_metrics_preempt_wanted(&perf_monitor_metrics);
+}
+
+void perf_monitor_preempt_sample(PerfMetricsPreemptPoint point,
+ uint32_t thread_count, uint32_t intr_count)
+{
+  perf_metrics_preempt_sample(&perf_monitor_metrics, point, thread_count,
+   intr_count);
+}
+
+void perf_monitor_preempt_unavailable(void)
+{
+  perf_metrics_preempt_unavailable(&perf_monitor_metrics);
+}
+
+void perf_monitor_record_preempt_calibration(uint32_t elapsed_us,
+ uint32_t calls)
+{
+  perf_metrics_record_preempt_calibration(&perf_monitor_metrics, elapsed_us,
+   calls);
+}
