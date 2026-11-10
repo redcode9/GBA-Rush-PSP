@@ -462,9 +462,14 @@ u32 update_input(void)
   diagnostic_trace_frame++;
 #endif
 
-  // The unbound benchmark runs the loaded slot with no keys held
+  // The unbound benchmark runs the loaded slot with no keys held and the
+  // tilt sensor centred
   if (perf_monitor_bench_running())
+  {
     new_key = 0;
+    tilt_sensorX = 0x800;
+    tilt_sensorY = 0x800;
+  }
 
   // Only a newly pressed key can trigger the keypad IRQ
   if ((new_key | gba_keys_held) != gba_keys_held)
