@@ -47,6 +47,16 @@
  *                    run must differ from an unperturbed one's from there
  *                    on. Needs hash. The run fails at the start when the
  *                    trace ends before frame n.
+ *   testpat=<mode>|all  no ROM: eight colour bars (main.c) go through the
+ *                    real presenter of one screen scale and filter, or of
+ *                    every one in turn, AUTORUN_TESTPAT_HOLD_FRAMES each,
+ *                    then the EBOOT quits. <mode> is <scale>-<filter>: the
+ *                    scale is none, x15-gu, x15-sw, user, 16x9-gu,
+ *                    16x9-sharp or 16x9-auto (SCALED_NONE..SCALED_16X9_AUTO
+ *                    in main.h; user is shown at 170%), the filter nearest
+ *                    or linear. all runs the 14 modes in that order, each
+ *                    scale with nearest first. Goes with no other key but
+ *                    version and build.
  *
  * Not keys yet: the network fault profile and the power events come with
  * the code that uses them (the ad-hoc fault knobs, the power event
@@ -70,6 +80,15 @@
  *   reason=<autorun_config_error_name()>
  *   line=<the line the reason refers to, 0 for none>
  *   frames=<frames run>
+ *
+ * A testpat= run rewrites it after each mode, adding one line per mode
+ * shown so far (see autorun_config_testpat_line()):
+ *
+ *   testpat=<mode> used=gu|sw|sharp/nearest|linear|none
+ *
+ * naming the presenter and the filter psp_video.c really used: 16x9-auto
+ * starts at sharp, sharp always samples the frame nearest, and sw scales
+ * on the CPU with no GU filter.
  */
 
 #ifndef AUTORUN_CONFIG_H
@@ -83,6 +102,18 @@
 #define AUTORUN_CONFIG_FRAMES_MAX 0x7FFFFFFFU
 /* Room for the result text of a build id of up to 255 characters. */
 #define AUTORUN_CONFIG_RESULT_SIZE 384U
+
+/* testpat= mode m is scale m / 2 (a SCALED_* value) with filter m % 2
+   (FILTER_NEAREST, FILTER_BILINEAR). */
+#define AUTORUN_TESTPAT_SCALES 7U
+#define AUTORUN_TESTPAT_MODES (AUTORUN_TESTPAT_SCALES * 2U)
+#define AUTORUN_TESTPAT_ALL AUTORUN_TESTPAT_MODES
+#define AUTORUN_TESTPAT_SCALE(mode) ((mode) / 2U)
+#define AUTORUN_TESTPAT_FILTER(mode) ((mode) % 2U)
+/* VBlanks each mode stays on screen: about 10 seconds, time for a photo. */
+#define AUTORUN_TESTPAT_HOLD_FRAMES 600U
+/* Room for one testpat= result line. */
+#define AUTORUN_CONFIG_TESTPAT_LINE_SIZE 64U
 
 /* Logged as values: append new ones at the end, never reorder. */
 typedef enum
@@ -113,7 +144,9 @@ typedef enum
   AUTORUN_ERROR_NO_HASH_MEMORY,
   AUTORUN_ERROR_HASH,
   /* Set by main.c: perturb= is past the trace's last frame. */
-  AUTORUN_ERROR_PERTURB_PAST_TRACE
+  AUTORUN_ERROR_PERTURB_PAST_TRACE,
+  /* Set by the parser: testpat= with a key it cannot go with. */
+  AUTORUN_ERROR_TESTPAT_ALONE
 } AutorunError;
 
 /* Logged as values, like AutorunError. */
@@ -135,6 +168,10 @@ typedef struct
      first. */
   uint32_t perturb;
   uint32_t perturb_frame;
+  /* 1 when testpat_mode is set: a mode below AUTORUN_TESTPAT_MODES, or
+     AUTORUN_TESTPAT_ALL. */
+  uint32_t testpat;
+  uint32_t testpat_mode;
   /* 0: no frame limit. */
   uint32_t frames;
   uint32_t exit_when_done;
@@ -155,5 +192,10 @@ const char *autorun_config_error_name(AutorunError error);
 size_t autorun_config_result(const char *build_id, AutorunStatus status,
  AutorunError error, uint32_t line, uint32_t frames, char *out,
  size_t out_size);
+/* Writes "testpat=<mode> used=<presenter>/<filter>" with an LF and a
+   terminating NUL; returns its length without the NUL, or 0 when mode is
+   not below AUTORUN_TESTPAT_MODES or out_size is too small. */
+size_t autorun_config_testpat_line(uint32_t mode, const char *presenter,
+ const char *filter, char *out, size_t out_size);
 
 #endif /* AUTORUN_CONFIG_H */

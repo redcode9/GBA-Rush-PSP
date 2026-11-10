@@ -40,7 +40,8 @@ static const char *const autorun_config_error_names[] =
   "needs-hash",
   "no-hash-memory",
   "hash",
-  "perturb-past-trace"
+  "perturb-past-trace",
+  "testpat-alone"
 };
 
 static const char *const autorun_config_status_names[] =
@@ -53,8 +54,21 @@ static const char *const autorun_config_status_names[] =
 
 typedef char autorun_config_error_names_check
  [(sizeof(autorun_config_error_names) / sizeof(autorun_config_error_names[0])
-   == AUTORUN_ERROR_PERTURB_PAST_TRACE + 1) ? 1 : -1];
+   == AUTORUN_ERROR_TESTPAT_ALONE + 1) ? 1 : -1];
 
+/* testpat= scales in SCALED_* order (main.h checks it), and filters. */
+static const char *const
+ autorun_config_testpat_scales[AUTORUN_TESTPAT_SCALES] =
+{
+  "none", "x15-gu", "x15-sw", "user", "16x9-gu", "16x9-sharp", "16x9-auto"
+};
+
+static const char *const autorun_config_testpat_filters[2] =
+{
+  "nearest", "linear"
+};
+
+/* testpat= refuses every key from rom on, up to itself. */
 enum
 {
   AUTORUN_KEY_VERSION,
@@ -65,12 +79,14 @@ enum
   AUTORUN_KEY_EXIT,
   AUTORUN_KEY_HASH,
   AUTORUN_KEY_PERTURB,
+  AUTORUN_KEY_TESTPAT,
   AUTORUN_KEY_COUNT
 };
 
 static const char *const autorun_config_keys[AUTORUN_KEY_COUNT] =
 {
-  "version", "build", "rom", "trace", "frames", "exit", "hash", "perturb"
+  "version", "build", "rom", "trace", "frames", "exit", "hash", "perturb",
+  "testpat"
 };
 
 typedef struct
@@ -126,6 +142,30 @@ static int autorun_config_number(const char *text, size_t length,
   }
   *number = value;
   return 1;
+}
+
+/* The testpat= mode text names: AUTORUN_TESTPAT_ALL for "all", or
+   AUTORUN_TESTPAT_ALL + 1 for no mode. */
+static uint32_t autorun_config_testpat_mode(const char *text, size_t length)
+{
+  uint32_t mode;
+
+  if(length == 3 && memcmp(text, "all", 3) == 0)
+    return AUTORUN_TESTPAT_ALL;
+  for(mode = 0; mode < AUTORUN_TESTPAT_MODES; mode++)
+  {
+    const char *scale =
+     autorun_config_testpat_scales[AUTORUN_TESTPAT_SCALE(mode)];
+    const char *filter =
+     autorun_config_testpat_filters[AUTORUN_TESTPAT_FILTER(mode)];
+    size_t scale_length = strlen(scale);
+
+    if(length == scale_length + 1 + strlen(filter) &&
+       memcmp(text, scale, scale_length) == 0 && text[scale_length] == '-' &&
+       memcmp(text + scale_length + 1, filter, strlen(filter)) == 0)
+      return mode;
+  }
+  return AUTORUN_TESTPAT_ALL + 1;
 }
 
 int autorun_config_parse(const char *text, size_t size, const char *build_id,
@@ -257,6 +297,15 @@ int autorun_config_parse(const char *text, size_t size, const char *build_id,
         config->perturb = 1;
         break;
 
+      case AUTORUN_KEY_TESTPAT:
+        config->testpat_mode = autorun_config_testpat_mode(value,
+         value_length);
+        if(config->testpat_mode > AUTORUN_TESTPAT_ALL)
+          return autorun_config_fail(config, AUTORUN_ERROR_BAD_VALUE,
+           number);
+        config->testpat = 1;
+        break;
+
       default:
         /* version is caught above as a duplicate. */
         break;
@@ -267,6 +316,18 @@ int autorun_config_parse(const char *text, size_t size, const char *build_id,
     return autorun_config_fail(config, AUTORUN_ERROR_VERSION, 0);
   if(key_line[AUTORUN_KEY_BUILD] == 0)
     return autorun_config_fail(config, AUTORUN_ERROR_BUILD_MISSING, 0);
+  if(key_line[AUTORUN_KEY_TESTPAT] != 0)
+  {
+    int key;
+
+    /* The test pattern runs without a ROM and quits by itself. */
+    for(key = AUTORUN_KEY_ROM; key < AUTORUN_KEY_TESTPAT; key++)
+    {
+      if(key_line[key] != 0)
+        return autorun_config_fail(config, AUTORUN_ERROR_TESTPAT_ALONE,
+         key_line[key]);
+    }
+  }
   if(key_line[AUTORUN_KEY_ROM] == 0)
   {
     if(key_line[AUTORUN_KEY_TRACE] != 0)
@@ -303,7 +364,7 @@ int autorun_config_parse(const char *text, size_t size, const char *build_id,
 
 const char *autorun_config_error_name(AutorunError error)
 {
-  if((unsigned int)error > (unsigned int)AUTORUN_ERROR_PERTURB_PAST_TRACE)
+  if((unsigned int)error > (unsigned int)AUTORUN_ERROR_TESTPAT_ALONE)
     return "invalid";
   return autorun_config_error_names[error];
 }
@@ -360,6 +421,36 @@ size_t autorun_config_result(const char *build_id, AutorunStatus status,
   autorun_config_put_number(&writer, line);
   autorun_config_put(&writer, "\nframes=");
   autorun_config_put_number(&writer, frames);
+  autorun_config_put(&writer, "\n");
+  if(writer.full)
+    return 0;
+  out[writer.length] = '\0';
+  return writer.length;
+}
+
+size_t autorun_config_testpat_line(uint32_t mode, const char *presenter,
+ const char *filter, char *out, size_t out_size)
+{
+  AutorunWriter writer;
+
+  writer.out = out;
+  writer.size = out_size;
+  writer.length = 0;
+  writer.full = 0;
+  if(out == NULL || out_size == 0 || mode >= AUTORUN_TESTPAT_MODES ||
+     presenter == NULL || filter == NULL)
+    return 0;
+
+  autorun_config_put(&writer, "testpat=");
+  autorun_config_put(&writer,
+   autorun_config_testpat_scales[AUTORUN_TESTPAT_SCALE(mode)]);
+  autorun_config_put(&writer, "-");
+  autorun_config_put(&writer,
+   autorun_config_testpat_filters[AUTORUN_TESTPAT_FILTER(mode)]);
+  autorun_config_put(&writer, " used=");
+  autorun_config_put(&writer, presenter);
+  autorun_config_put(&writer, "/");
+  autorun_config_put(&writer, filter);
   autorun_config_put(&writer, "\n");
   if(writer.full)
     return 0;

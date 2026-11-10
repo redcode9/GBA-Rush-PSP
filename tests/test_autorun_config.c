@@ -36,6 +36,7 @@ static void assert_refused(AutorunError error, uint32_t line)
   assert(config.hash[0] == '\0');
   assert(config.frames == 0 && config.exit_when_done == 0);
   assert(config.perturb == 0 && config.perturb_frame == 0);
+  assert(config.testpat == 0 && config.testpat_mode == 0);
 }
 
 static void refused(const char *text, AutorunError error, uint32_t line)
@@ -182,6 +183,101 @@ static void test_hash_keys(void)
    AUTORUN_ERROR_DUPLICATE_KEY, 8);
 }
 
+/* Mode m is scale m / 2 (SCALED_* order) with filter m % 2. */
+static const char *const testpat_modes[AUTORUN_TESTPAT_MODES] =
+{
+  "none-nearest", "none-linear", "x15-gu-nearest", "x15-gu-linear",
+  "x15-sw-nearest", "x15-sw-linear", "user-nearest", "user-linear",
+  "16x9-gu-nearest", "16x9-gu-linear", "16x9-sharp-nearest",
+  "16x9-sharp-linear", "16x9-auto-nearest", "16x9-auto-linear"
+};
+
+static void test_testpat_key(void)
+{
+  char text[128];
+  uint32_t mode;
+
+  for(mode = 0; mode < AUTORUN_TESTPAT_MODES; mode++)
+  {
+    snprintf(text, sizeof(text), HEAD "testpat=%s\n", testpat_modes[mode]);
+    assert(parse(text));
+    assert(config.testpat == 1 && config.testpat_mode == mode);
+    assert(config.rom[0] == '\0' && config.frames == 0);
+  }
+  assert(AUTORUN_TESTPAT_SCALE(13U) == 6 && AUTORUN_TESTPAT_FILTER(13U) == 1);
+  assert(parse("version=1\r\nbuild=" ID "\r\n# all of them\r\ntestpat=all"));
+  assert(config.testpat == 1 && config.testpat_mode == AUTORUN_TESTPAT_ALL);
+
+  refused(HEAD "testpat=\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "\ntestpat=x15\n", AUTORUN_ERROR_BAD_VALUE, 4);
+  refused(HEAD "testpat=ALL\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "testpat=al\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "testpat=alll\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "testpat=x15-gu\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "testpat=x15-gu-\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "testpat=x15-gu-bilinear\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "testpat=x15-gu_nearest\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "testpat=x15-gu-nearestx\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "testpat=xx15-gu-nearest\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "testpat=linear-none\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "testpat=16x9-nearest\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "testpat= all\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "testpat=all\ntestpat=all\n", AUTORUN_ERROR_DUPLICATE_KEY, 4);
+  /* It never names a mode for another build. */
+  refused("version=1\nbuild=fedcba987654\ntestpat=all\n",
+   AUTORUN_ERROR_BUILD_MISMATCH, 2);
+
+  /* No ROM runs and it quits by itself: every run key is refused, on its
+     own line, whichever comes first. */
+  refused(HEAD "testpat=all\nrom=a.gba\n", AUTORUN_ERROR_TESTPAT_ALONE, 4);
+  refused(HEAD "rom=a.gba\ntestpat=all\n", AUTORUN_ERROR_TESTPAT_ALONE, 3);
+  refused(HEAD "testpat=all\ntrace=t.gbit\n", AUTORUN_ERROR_TESTPAT_ALONE, 4);
+  refused(HEAD "testpat=all\nframes=60\n", AUTORUN_ERROR_TESTPAT_ALONE, 4);
+  refused(HEAD "testpat=all\n\nexit=1\n", AUTORUN_ERROR_TESTPAT_ALONE, 5);
+  refused(HEAD "testpat=user-linear\nhash=h.gbsh\n",
+   AUTORUN_ERROR_TESTPAT_ALONE, 4);
+  refused(HEAD "testpat=all\nperturb=1\n", AUTORUN_ERROR_TESTPAT_ALONE, 4);
+  refused(RUN "testpat=all\n", AUTORUN_ERROR_TESTPAT_ALONE, 3);
+}
+
+static void test_testpat_line(void)
+{
+  static const char line[] = "testpat=16x9-auto-linear used=sharp/nearest\n";
+  char out[AUTORUN_CONFIG_TESTPAT_LINE_SIZE];
+  char expected[AUTORUN_CONFIG_TESTPAT_LINE_SIZE];
+  uint32_t mode;
+
+  assert(autorun_config_testpat_line(13, "sharp", "nearest", out,
+   sizeof(out)) == sizeof(line) - 1);
+  assert(strcmp(out, line) == 0);
+  for(mode = 0; mode < AUTORUN_TESTPAT_MODES; mode++)
+  {
+    snprintf(expected, sizeof(expected), "testpat=%s used=gu/linear\n",
+     testpat_modes[mode]);
+    assert(autorun_config_testpat_line(mode, "gu", "linear", out,
+     sizeof(out)) == strlen(expected));
+    assert(strcmp(out, expected) == 0);
+  }
+  assert(autorun_config_testpat_line(4, "sw", "none", out, sizeof(out)) > 0);
+  assert(strcmp(out, "testpat=x15-sw-nearest used=sw/none\n") == 0);
+
+  /* Room for the line and its NUL, not one byte less; no mode past the
+     last one, all included. */
+  memset(out, 'x', sizeof(out));
+  assert(autorun_config_testpat_line(13, "sharp", "nearest", out,
+   sizeof(line)) == sizeof(line) - 1);
+  assert(strcmp(out, line) == 0);
+  assert(autorun_config_testpat_line(13, "sharp", "nearest", out,
+   sizeof(line) - 1) == 0);
+  assert(autorun_config_testpat_line(0, "gu", "linear", out, 0) == 0);
+  assert(autorun_config_testpat_line(0, "gu", "linear", NULL, 64) == 0);
+  assert(autorun_config_testpat_line(AUTORUN_TESTPAT_ALL, "gu", "linear", out,
+   sizeof(out)) == 0);
+  assert(autorun_config_testpat_line(0, NULL, "linear", out, sizeof(out))
+   == 0);
+  assert(autorun_config_testpat_line(0, "gu", NULL, out, sizeof(out)) == 0);
+}
+
 static void test_hostile_input(void)
 {
   static const char nul[] = HEAD "rom=a\0.gba\n";
@@ -269,8 +365,10 @@ static void test_result_text(void)
   assert(strcmp(autorun_config_error_name(AUTORUN_ERROR_HASH), "hash") == 0);
   assert(strcmp(autorun_config_error_name(AUTORUN_ERROR_PERTURB_PAST_TRACE),
    "perturb-past-trace") == 0);
+  assert(strcmp(autorun_config_error_name(AUTORUN_ERROR_TESTPAT_ALONE),
+   "testpat-alone") == 0);
   assert(strcmp(autorun_config_error_name(
-   (AutorunError)(AUTORUN_ERROR_PERTURB_PAST_TRACE + 1)), "invalid") == 0);
+   (AutorunError)(AUTORUN_ERROR_TESTPAT_ALONE + 1)), "invalid") == 0);
   assert(strcmp(autorun_config_error_name((AutorunError)99), "invalid")
    == 0);
 }
@@ -284,6 +382,8 @@ int main(void)
   test_keys();
   test_values();
   test_hash_keys();
+  test_testpat_key();
+  test_testpat_line();
   test_hostile_input();
   test_result_text();
   puts("Autorun config tests passed");
