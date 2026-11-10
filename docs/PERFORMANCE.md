@@ -26,8 +26,8 @@ A speed claim needs runs captured this way:
    for example `throughput>=+3` (the candidate at least 3% faster) or
    `frame-p95<=-2`.
 2. Set the CPU clock to 333 MHz and keep the link off. Use the same BIOS for
-   both builds (`gba_bios.bin` or the built-in one) and write down which;
-   the reports do not record it yet. Write down the battery level, or that
+   both builds (`gba_bios.bin` or the built-in one); when the reports have
+   no `bios=` line, write down which. Write down the battery level, or that
    the PSP ran on its charger.
 3. Start every run from the same save state slot.
 4. Make one warm-up run first and discard its report.
