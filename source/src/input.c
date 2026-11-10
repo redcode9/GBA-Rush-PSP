@@ -24,6 +24,7 @@
    repeat. */
 
 #include "common.h"
+#include "perf_monitor.h"
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 #include "input_trace.h"
@@ -458,6 +459,10 @@ u32 update_input(void)
    (u16)new_key);
   diagnostic_trace_frame++;
 #endif
+
+  // The unbound benchmark runs the loaded slot with no keys held
+  if (perf_monitor_bench_running())
+    new_key = 0;
 
   // Only a newly pressed key can trigger the keypad IRQ
   if ((new_key | gba_keys_held) != gba_keys_held)

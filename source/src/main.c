@@ -759,6 +759,9 @@ static int main_link_start(int host)
     return 0;
 
   main_fast_forward_stop();
+  /* A link paces the game, so a running unbound benchmark ends unusable. */
+  if(perf_monitor_bench_running())
+    perf_monitor_invalidate(sceKernelGetSystemTimeWide());
   main_link_disconnect(MAIN_LINK_END_USER);
 
   /* The game code sits at 0xAC in the 0xC0-byte cartridge header. */
@@ -952,13 +955,14 @@ static void main_fast_forward_update_sound(void)
 }
 
 /* Called from update_input every frame with the fast-forward button's new
-   press and held state. Fast-forward is unavailable during a link session. */
+   press and held state. Fast-forward is unavailable during a link session
+   and the unbound benchmark. */
 void main_fast_forward_input(u32 pressed, u32 held)
 {
   int was_active;
   FastForwardSpeed was_speed;
 
-  if(main_link_active())
+  if(main_link_active() || perf_monitor_bench_running())
   {
     if(fast_forward_policy_active(&fast_forward_policy))
       main_fast_forward_stop();
@@ -1286,7 +1290,7 @@ u32 update_gba(void)
           if (draw_this_frame != 0)
           {
             video_present_finish();
-            flip_screen(option_psp_vsync);
+            flip_screen(perf_monitor_bench_running() ? 0 : option_psp_vsync);
           }
 
           video_adaptive_frame_complete(draw_this_frame == 0, 0);
@@ -1539,6 +1543,30 @@ static void synchronize(void)
         print_string_gbk(main_fast_forward_status(), 0, 0, COLOR15_WHITE,
          COLOR15_BLACK);
     }
+  }
+
+  // Unbound benchmark: draw every frame and never wait. Sound runs as in
+  // muted fast-forward, mixed then dropped while the audio thread sleeps;
+  // set each frame, as a menu visit restores it. The counts stay at 0, so
+  // pacing restarts from now once the bench ends.
+  if(perf_monitor_bench_running())
+  {
+    sound_set_fast_forward(1);
+    skip_next_frame = 0;
+    real_frame_count = 0;
+    virtual_frame_count = 0;
+    num_skipped_frames = 0;
+    frameskip_counter = 0;
+    return;
+  }
+
+  // The bench stopped its capture after its last frame: its report is
+  // written once, outside the measured frames, and pacing starts again.
+  if(perf_monitor_bench_take_done())
+  {
+    menu_diagnostics_write_report();
+    real_frame_count = 0;
+    virtual_frame_count = 0;
   }
 
   if(main_fast_forward_active())
@@ -2321,14 +2349,21 @@ static void main_perf_calibrate_preempt(void)
    start, PERF_METRICS_PREEMPT_CALIBRATION_CALLS);
 }
 
-/* Starts a capture and pins the settings it runs under for the report. */
-int main_perf_start(void)
+/* Frames the unbound benchmark runs: about a minute of GBA time. */
+#define MAIN_PERF_BENCH_FRAMES 3600U
+
+/* Starts a capture and pins the settings it runs under for the report:
+   the unbound benchmark when bench_frames is not 0, else one the player
+   paces. */
+static int main_perf_begin(u32 bench_frames)
 {
   FastForwardSettings fast_forward_settings;
   PerfMonitorIdentity identity;
   ScePspDateTime date = { 0 };
+  u64 now = sceKernelGetSystemTimeWide();
 
-  if(!perf_monitor_start(sceKernelGetSystemTimeWide()))
+  if(!(bench_frames != 0 ? perf_monitor_bench_start(now, bench_frames) :
+     perf_monitor_start(now)))
     return 0;
 
   fast_forward_settings = main_fast_forward_settings();
@@ -2371,6 +2406,13 @@ int main_perf_start(void)
     identity.capture_minute = date.minute;
     identity.capture_second = date.second;
   }
+  identity.bench_mode = bench_frames != 0 ? PERF_REPORT_BENCH_UNBOUND :
+   PERF_REPORT_BENCH_PACED;
+  identity.bench_frames = bench_frames;
+  identity.bench_render = 1;
+  identity.bench_audio = 1;
+  identity.bench_input = bench_frames != 0 ? PERF_REPORT_BENCH_INPUT_NONE :
+   PERF_REPORT_BENCH_INPUT_PAD;
   perf_monitor_set_identity(&identity);
 
   perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
@@ -2383,6 +2425,23 @@ int main_perf_start(void)
   arm_gba_profile_start();
 #endif
   return 1;
+}
+
+int main_perf_start(void)
+{
+  return main_perf_begin(0);
+}
+
+/* The unbound benchmark, refused during a link: fast-forward stops, and
+   synchronize() runs MAIN_PERF_BENCH_FRAMES frames without pacing, then
+   saves the report. */
+int main_perf_bench_start(void)
+{
+  if(main_link_active())
+    return 0;
+
+  main_fast_forward_stop();
+  return main_perf_begin(MAIN_PERF_BENCH_FRAMES);
 }
 
 int main_perf_stop(void)
@@ -2517,6 +2576,11 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
   metadata.capture_hour = identity.capture_hour;
   metadata.capture_minute = identity.capture_minute;
   metadata.capture_second = identity.capture_second;
+  metadata.bench_mode = identity.bench_mode;
+  metadata.bench_frames = identity.bench_frames;
+  metadata.bench_render = identity.bench_render;
+  metadata.bench_audio = identity.bench_audio;
+  metadata.bench_input = identity.bench_input;
   metadata.duration_us = perf_monitor_duration_us();
 
   report_length = perf_report_format(report, sizeof(report), &metadata,

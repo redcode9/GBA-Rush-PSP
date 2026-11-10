@@ -170,6 +170,7 @@ void main_fast_forward_apply_settings(void);
 void main_fast_forward_reset_game_settings(void);
 
 int main_perf_start(void);
+int main_perf_bench_start(void);
 int main_perf_stop(void);
 void main_perf_snapshot(PerfMetricsSnapshot *snapshot);
 int main_perf_write_report(char *output_path, size_t output_path_size);

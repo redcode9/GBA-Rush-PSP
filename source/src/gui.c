@@ -3345,7 +3345,7 @@ static void menu_diagnostics_stop(void)
 
 /* Write the perf report and show its file name, or the failure, on the
    status row. */
-static void menu_diagnostics_write_report(void)
+void menu_diagnostics_write_report(void)
 {
     char report_path[MAX_PATH];
     const char *filename;
