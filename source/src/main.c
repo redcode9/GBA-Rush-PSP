@@ -1960,6 +1960,10 @@ int main_autorun_start(void)
      main_autorun.error_line);
     return 0;
   }
+#ifdef ENABLE_DIAGNOSTIC_NET_INJECTION
+  /* Before any link starts, so every session of this run gets it. */
+  psp_adhoc_set_fault(main_autorun.net_profile);
+#endif /* ENABLE_DIAGNOSTIC_NET_INJECTION */
   if(main_autorun.testpat)
   {
     main_autorun_testpat();

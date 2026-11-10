@@ -23,7 +23,11 @@
 #include <pspwlan.h>
 
 #include "adhoc_peer.h"
+#include "build_profile.h"
 #include "psp_adhoc.h"
+#ifdef ENABLE_DIAGNOSTIC_NET_INJECTION
+#include "runtime_log_psp.h"
+#endif
 
 #define PSP_ADHOC_HOST_PORT        31000u
 #define PSP_ADHOC_JOIN_PORT        31001u
@@ -501,6 +505,176 @@ static int psp_adhoc_join(PspAdhocContext *context)
   return 1;
 }
 
+#ifdef ENABLE_DIAGNOSTIC_NET_INJECTION
+/* ---- Diagnostic network faults ----------------------------------------
+ * With a profile from diag-autorun.txt (net_profile=), each session sends
+ * every outgoing datagram through one simulated network (net_fault.h)
+ * before sceNetAdhocPdpSend, and every datagram from the peer through a
+ * second one before the incoming queue. The emulator thread still sees
+ * only the two queues. This worker is the only writer of the runtime log's
+ * network ring: LINK_COUNTERS 13 (profile index, seed) when a session
+ * starts, then 14 (outgoing) and 15 (incoming) when it ends, each with the
+ * datagrams lost (blackouts and a full queue included), delivered after
+ * their delay, and duplicated. Without a profile nothing changes. */
+
+/* Datagrams each direction holds in flight, about 1 KB each. */
+#define PSP_ADHOC_FAULT_FLIGHTS        32u
+/* The shortest sleep while a datagram is almost due, so the worker never
+   spins. */
+#define PSP_ADHOC_FAULT_MIN_SLEEP_US  100u
+/* The seed comes from the clock; the incoming network's is the outgoing
+   one's with these bits flipped, so the two directions differ. */
+#define PSP_ADHOC_FAULT_SEED_IN 0x9E3779B9u
+
+typedef char PspAdhocFaultDatagramCheck[
+ NET_FAULT_MAX_DATAGRAM >= PSP_ADHOC_MAX_DATAGRAM ? 1 : -1];
+
+typedef struct
+{
+  const NetFaultProfile *profile;
+  /* 1 while a session runs with profile. */
+  int active;
+  NetFault out;
+  NetFault in;
+  NetFaultFlight out_flights[PSP_ADHOC_FAULT_FLIGHTS];
+  NetFaultFlight in_flights[PSP_ADHOC_FAULT_FLIGHTS];
+  uint32_t out_delivered;
+  uint32_t in_delivered;
+  /* The first fatal send error of one delivery, or 0. */
+  int send_error;
+  /* 1 when one delivery reached the incoming queue. */
+  int received;
+} PspAdhocFault;
+
+static PspAdhocFault psp_adhoc_fault;
+
+void psp_adhoc_set_fault(const NetFaultProfile *profile)
+{
+  psp_adhoc_fault.profile = profile;
+}
+
+/* Starts a session's faults, if there is a profile: both networks empty,
+   their outage windows timed from now. */
+static void psp_adhoc_fault_begin(void)
+{
+  PspAdhocFault *fault = &psp_adhoc_fault;
+  uint64_t now = sceKernelGetSystemTimeWide();
+  uint32_t seed = (uint32_t)now;
+
+  fault->active = fault->profile != NULL;
+  if(!fault->active)
+    return;
+  net_fault_init(&fault->out, fault->profile, fault->out_flights,
+   PSP_ADHOC_FAULT_FLIGHTS, seed);
+  net_fault_init(&fault->in, fault->profile, fault->in_flights,
+   PSP_ADHOC_FAULT_FLIGHTS, seed ^ PSP_ADHOC_FAULT_SEED_IN);
+  net_fault_restart(&fault->out, now);
+  net_fault_restart(&fault->in, now);
+  fault->out_delivered = 0;
+  fault->in_delivered = 0;
+  runtime_log_psp_network(RUNTIME_LOG_EVENT_LINK_COUNTERS, 13,
+   (uint32_t)(fault->profile - net_fault_profiles), seed, 0);
+}
+
+/* Logs what the session's networks did; datagrams still in flight are
+   dropped. */
+static void psp_adhoc_fault_end(void)
+{
+  PspAdhocFault *fault = &psp_adhoc_fault;
+
+  if(!fault->active)
+    return;
+  fault->active = 0;
+  runtime_log_psp_network(RUNTIME_LOG_EVENT_LINK_COUNTERS, 14,
+   fault->out.lost + fault->out.blackout + fault->out.overflow,
+   fault->out_delivered, fault->out.duplicated);
+  runtime_log_psp_network(RUNTIME_LOG_EVENT_LINK_COUNTERS, 15,
+   fault->in.lost + fault->in.blackout + fault->in.overflow,
+   fault->in_delivered, fault->in.duplicated);
+}
+
+/* Sends a datagram the outgoing network delivers, as psp_adhoc_send_all
+   does without faults. A fatal error waits in send_error: psp_adhoc_fail
+   must not run in the middle of a delivery. */
+static void psp_adhoc_fault_send(void *argument,
+ const NetFaultFlight *flight)
+{
+  PspAdhocContext *context = argument;
+  int result;
+
+  psp_adhoc_fault.out_delivered++;
+  if(psp_adhoc_fault.send_error != 0)
+    return;
+  context->sends++;
+  result = sceNetAdhocPdpSend(context->socket_id, context->peer_mac,
+   context->peer_port, (void *)flight->data, (unsigned int)flight->size,
+   0, 1);
+  if(result == SCE_NET_ERROR_NO_SPACE ||
+     result == SCE_ADHOC_ERROR_WOULD_BLOCK ||
+     result == SCE_ADHOC_ERROR_TIMEOUT)
+    context->send_errors++;
+  else if(result < 0)
+    psp_adhoc_fault.send_error = result;
+}
+
+/* Sends what the outgoing network delivers by now_us: 1, or -1 after a
+   fatal send error. */
+static int psp_adhoc_fault_send_due(PspAdhocContext *context,
+ uint64_t now_us)
+{
+  psp_adhoc_fault.send_error = 0;
+  net_fault_deliver(&psp_adhoc_fault.out, now_us, psp_adhoc_fault_send,
+   context);
+  if(psp_adhoc_fault.send_error != 0)
+    return psp_adhoc_fail(context, psp_adhoc_fault.send_error);
+  return 1;
+}
+
+/* Queues a datagram the incoming network delivers for the emulator. */
+static void psp_adhoc_fault_receive(void *argument,
+ const NetFaultFlight *flight)
+{
+  PspAdhocContext *context = argument;
+
+  psp_adhoc_fault.in_delivered++;
+  if(ring_push(&context->incoming, flight->data, flight->size))
+    psp_adhoc_fault.received = 1;
+  else
+    context->receive_drops++;
+}
+
+/* Queues what the incoming network delivers by now; 1 when anything
+   reached the emulator's queue. */
+static int psp_adhoc_fault_receive_due(PspAdhocContext *context)
+{
+  psp_adhoc_fault.received = 0;
+  net_fault_deliver(&psp_adhoc_fault.in, sceKernelGetSystemTimeWide(),
+   psp_adhoc_fault_receive, context);
+  return psp_adhoc_fault.received;
+}
+
+/* The worker's sleep: PSP_ADHOC_POLL_US, cut short when a datagram in
+   flight is due sooner, but never below PSP_ADHOC_FAULT_MIN_SLEEP_US. */
+static unsigned int psp_adhoc_fault_sleep_us(void)
+{
+  uint64_t now = sceKernelGetSystemTimeWide();
+  uint64_t wake = now + PSP_ADHOC_POLL_US;
+  uint64_t arrival;
+
+  if(!psp_adhoc_fault.active)
+    return PSP_ADHOC_POLL_US;
+  if(net_fault_next_arrival(&psp_adhoc_fault.out, &arrival) &&
+     arrival < wake)
+    wake = arrival;
+  if(net_fault_next_arrival(&psp_adhoc_fault.in, &arrival) &&
+     arrival < wake)
+    wake = arrival;
+  if(wake < now + PSP_ADHOC_FAULT_MIN_SLEEP_US)
+    return PSP_ADHOC_FAULT_MIN_SLEEP_US;
+  return (unsigned int)(wake - now);
+}
+#endif /* ENABLE_DIAGNOSTIC_NET_INJECTION */
+
 /* ---- Connected -------------------------------------------------------- */
 
 static int psp_adhoc_receive_all(PspAdhocContext *context)
@@ -547,11 +721,24 @@ static int psp_adhoc_receive_all(PspAdhocContext *context)
             source_port != context->peer_port)
       continue;
 
+#ifdef ENABLE_DIAGNOSTIC_NET_INJECTION
+    /* After the pairing above, which no fault may hide. */
+    if(psp_adhoc_fault.active)
+    {
+      net_fault_send(&psp_adhoc_fault.in, 0, data, (size_t)length,
+       sceKernelGetSystemTimeWide());
+      continue;
+    }
+#endif /* ENABLE_DIAGNOSTIC_NET_INJECTION */
     if(ring_push(&context->incoming, data, (size_t)length))
       delivered = 1;
     else
       context->receive_drops++;
   }
+#ifdef ENABLE_DIAGNOSTIC_NET_INJECTION
+  if(psp_adhoc_fault.active && psp_adhoc_fault_receive_due(context))
+    delivered = 1;
+#endif /* ENABLE_DIAGNOSTIC_NET_INJECTION */
   if(delivered)
     psp_adhoc_wake(context->wake_receive);
   return 1;
@@ -571,6 +758,14 @@ static int psp_adhoc_send_all(PspAdhocContext *context)
 
     if(!context->peer_valid)
       continue;
+#ifdef ENABLE_DIAGNOSTIC_NET_INJECTION
+    if(psp_adhoc_fault.active)
+    {
+      net_fault_send(&psp_adhoc_fault.out, 0, data, size,
+       sceKernelGetSystemTimeWide());
+      continue;
+    }
+#endif /* ENABLE_DIAGNOSTIC_NET_INJECTION */
     context->sends++;
     result = sceNetAdhocPdpSend(context->socket_id, context->peer_mac,
      context->peer_port, data, (unsigned int)size, 0, 1);
@@ -584,6 +779,10 @@ static int psp_adhoc_send_all(PspAdhocContext *context)
     else if(result < 0)
       return psp_adhoc_fail(context, result);
   }
+#ifdef ENABLE_DIAGNOSTIC_NET_INJECTION
+  if(psp_adhoc_fault.active)
+    return psp_adhoc_fault_send_due(context, sceKernelGetSystemTimeWide());
+#endif /* ENABLE_DIAGNOSTIC_NET_INJECTION */
   return 1;
 }
 
@@ -626,6 +825,9 @@ static void psp_adhoc_connected(PspAdhocContext *context)
 
   if(context->peer_valid)
     context->state = PSP_ADHOC_CONNECTED;
+#ifdef ENABLE_DIAGNOSTIC_NET_INJECTION
+  psp_adhoc_fault_begin();
+#endif /* ENABLE_DIAGNOSTIC_NET_INJECTION */
 
   while(!psp_adhoc_stopping(context))
   {
@@ -644,11 +846,20 @@ static void psp_adhoc_connected(PspAdhocContext *context)
     }
 
     /* Wake at once for outgoing data, otherwise poll every millisecond. */
+#ifdef ENABLE_DIAGNOSTIC_NET_INJECTION
+    psp_adhoc_sleep(context->wake_send, psp_adhoc_fault_sleep_us());
+#else
     psp_adhoc_sleep(context->wake_send, PSP_ADHOC_POLL_US);
+#endif /* ENABLE_DIAGNOSTIC_NET_INJECTION */
   }
 
   /* Deliver a final goodbye, if the emulator queued one. */
   psp_adhoc_send_all(context);
+#ifdef ENABLE_DIAGNOSTIC_NET_INJECTION
+  /* With faults it is still in flight: it and the rest leave now. */
+  if(psp_adhoc_fault.active)
+    psp_adhoc_fault_send_due(context, UINT64_MAX);
+#endif /* ENABLE_DIAGNOSTIC_NET_INJECTION */
 }
 
 /* The worker thread: brings the network up, hosts or joins, runs the
@@ -669,6 +880,9 @@ static int psp_adhoc_thread(SceSize args, void *argp)
       psp_adhoc_connected(context);
   }
 
+#ifdef ENABLE_DIAGNOSTIC_NET_INJECTION
+  psp_adhoc_fault_end();
+#endif /* ENABLE_DIAGNOSTIC_NET_INJECTION */
   psp_adhoc_network_term(context);
   if(context->state != PSP_ADHOC_FAILED)
     context->state = PSP_ADHOC_STOPPED;

@@ -86,4 +86,13 @@ void psp_adhoc_counters(uint32_t *sends, uint32_t *send_errors,
 /* Sleeps until a datagram arrives or the timeout expires. */
 void psp_adhoc_wait(unsigned int timeout_us);
 
+#ifdef ENABLE_DIAGNOSTIC_NET_INJECTION
+#include "net_fault.h"
+
+/* Diagnostic profile: the link sessions started after this call send and
+   receive every datagram through a simulated network with this profile;
+   NULL, the default, for none. */
+void psp_adhoc_set_fault(const NetFaultProfile *profile);
+#endif
+
 #endif /* PSP_ADHOC_H */

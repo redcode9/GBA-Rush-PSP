@@ -317,6 +317,11 @@ void video_presenter_names(const char **presenter, const char **filter) {
   *filter = option_screen_scale == 2 ? "none" :
    sharp || option_screen_filter == 0 ? "nearest" : "linear";
 }
+static const NetFaultProfile *fault_profile;
+static int fault_sets;
+void psp_adhoc_set_fault(const NetFaultProfile *profile) {
+  fault_profile = profile; fault_sets++;
+}
 int main_autorun_start(void);
 void main_autorun_frame(void);
 '''
@@ -336,6 +341,7 @@ static void clear_test(void) {
   gamepak_file_size = 1;
   main_autorun_running = main_autorun_frames = 0;
   main_testpat_length = 0; modes_shown = presents = flips = ticks = 0;
+  fault_profile = &net_fault_profiles[0]; fault_sets = 0;
   quit_scale = quit_filter = quit_mag = 99;
 }
 static int start_size(size_t size) {
@@ -372,8 +378,24 @@ int main(void) {
 
   clear_test();
   assert(start("version=1\nbuild=abc124\nrom=a.gba\nframes=5\nexit=1\n") == 0);
-  assert(loaded[0] == '\0' && quits == 0 && flushes == 1);
+  assert(loaded[0] == '\0' && quits == 0 && flushes == 1 && fault_sets == 0);
   expect(AUTORUN_STATUS_IGNORED, "build-mismatch", 2, 0);
+  clear_test();
+  assert(start("version=1\nbuild=abc124\nnet_profile=noisy\n") == 0);
+  assert(fault_sets == 0);
+
+  /* net_profile= reaches the ad-hoc worker before any link starts, with or
+     without a ROM to run. */
+  clear_test(); assert(start(HEAD "rom=a.gba\nnet_profile=noisy\n"));
+  assert(fault_sets == 1 && fault_profile == &net_fault_profiles[2]);
+  clear_test(); assert(start(HEAD "net_profile=dropouts\n") == 0);
+  assert(fault_sets == 1 && fault_profile == &net_fault_profiles[5]);
+  expect(AUTORUN_STATUS_STARTED, "none", 0, 0);
+  clear_test(); assert(start(HEAD "rom=a.gba\n"));
+  assert(fault_sets == 1 && fault_profile == NULL);
+  clear_test(); assert(start(HEAD "net_profile=Noisy\n") == 0);
+  assert(fault_sets == 0);
+  expect(AUTORUN_STATUS_IGNORED, "bad-value", 3, 0);
 
   clear_test(); memset(file_text, '\n', 4097); memcpy(file_text, HEAD, sizeof(HEAD) - 1);
   assert(start_size(4096) == 0 && flushes == 0);
@@ -580,7 +602,9 @@ class StartupTests(unittest.TestCase):
         # main.c's autorun block with the real parser behind it.
         build_and_run("autorun", screen_defines() + AUTORUN_STUBS
                       + autorun_block() + AUTORUN_SCENARIOS,
-                      ["-DENABLE_DIAGNOSTIC_AUTORUN", "-I" + str(ROOT / "source/src"),
+                      ["-DENABLE_DIAGNOSTIC_AUTORUN",
+                       "-DENABLE_DIAGNOSTIC_NET_INJECTION",
+                       "-I" + str(ROOT / "source/src"),
                        str(ROOT / "source/src/autorun_config.c"),
                        str(ROOT / "source/src/net_fault.c")])
 
