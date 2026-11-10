@@ -759,9 +759,6 @@ static int main_link_start(int host)
     return 0;
 
   main_fast_forward_stop();
-  /* A link paces the game, so a running unbound benchmark ends unusable. */
-  if(perf_monitor_bench_running())
-    perf_monitor_invalidate(sceKernelGetSystemTimeWide());
   main_link_disconnect(MAIN_LINK_END_USER);
 
   /* The game code sits at 0xAC in the 0xC0-byte cartridge header. */
@@ -874,7 +871,8 @@ void main_link_pump(void)
 
 /* menu() reports leaving (0) and resuming (1) the game. Each change is
    logged, the runtime log is flushed when the menu opens, and the core
-   profile of diagnostic builds skips the menu. */
+   profile of diagnostic builds skips the menu. Opening the menu ends a
+   running unbound benchmark, whose frames must run back to back. */
 void main_link_set_gameplay_active(int active)
 {
   u8 value = active != 0;
@@ -882,6 +880,8 @@ void main_link_set_gameplay_active(int active)
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_pause(!value);
 #endif
+  if(!value)
+    main_perf_bench_cancel();
   if(gba_link_gameplay_active == value)
     return;
   gba_link_gameplay_active = value;
@@ -2451,6 +2451,19 @@ int main_perf_bench_start(void)
 
   main_fast_forward_stop();
   return main_perf_begin(MAIN_PERF_BENCH_FRAMES);
+}
+
+/* Ends a running unbound benchmark as unusable: the menu or a state hotkey
+   would put its time in one of the frames. */
+void main_perf_bench_cancel(void)
+{
+  if(!perf_monitor_bench_running())
+    return;
+
+  perf_monitor_invalidate(sceKernelGetSystemTimeWide());
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+  arm_gba_profile_stop();
+#endif
 }
 
 int main_perf_stop(void)

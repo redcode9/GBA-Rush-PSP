@@ -411,10 +411,12 @@ u32 update_input(void)
           return menu();
 
         case BUTTON_ID_LOADSTATE:
+          main_perf_bench_cancel();
           action_loadstate();
           return 1;
 
         case BUTTON_ID_SAVESTATE:
+          main_perf_bench_cancel();
           action_savestate();
           return 0;
 
