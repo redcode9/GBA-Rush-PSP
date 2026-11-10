@@ -320,5 +320,7 @@ When the release requires `perf-baseline-5`, its PSP-1000 reports in
 must pass `scripts/compare-benchmarks.py` against those of the newest earlier
 release in that archive in every group, and a group without candidate reports
 fails; a release that does not require that test, such as a hotfix, adds no
-reports, so the next release compares with the newest one that has them.
+reports, so the next release compares with the newest one that has them. The
+build id names the `source/` tree only, so measure the packaged `EBOOT.PBP`:
+the gate cannot tell it from a diagnostic or local build of the same tree.
 The notes do not replace the CHANGELOG, which stays hand-written.

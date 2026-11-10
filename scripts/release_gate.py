@@ -306,6 +306,9 @@ def performance_problems(repo, version, build_id):
         problems.append(f"performance on PSP-1000: no build_id in the rc "
                         f"manifest to tie the {version} reports to its EBOOT")
     for key, reports in sorted(candidate.items()):
+        # shortcut: the build id names the source/ tree, so a diagnostic or
+        # local build of the rc tree also matches; tie the reports to the
+        # manifest's EBOOT sha256 once a report can carry it.
         if build_id is not None and any(report.get("build-id") != build_id
                                         for report in reports):
             problems.append(

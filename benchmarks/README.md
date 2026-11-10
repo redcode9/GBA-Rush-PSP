@@ -26,7 +26,9 @@ Rules:
   the sha256 of that `EBOOT.PBP` in the commit that adds the reports.
 - A candidate's reports come from the `EBOOT.PBP` of its newest rc package
   and carry its build id: `make release-gate CHANNEL=stable` checks their
-  `build-id` against that rc's manifest.
+  `build-id` against that rc's manifest. The build id names the `source/`
+  tree only, so the gate cannot tell a diagnostic or local build of the
+  same tree from the packaged one.
 - Keep only the baselines of each release; development builds are compared
   with `scripts/compare-benchmarks.py` and not archived.
 

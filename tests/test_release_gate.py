@@ -274,7 +274,9 @@ class StableGateTest(ScratchRepoTest):
     def test_the_candidate_reports_must_come_from_the_rc_build(self):
         self.perf_candidate()
         self.repo.bench("1.4.4", "AXVE", [600] * 3)
-        self.repo.bench("1.4.4", "BPRE", [600] * 3, build_id="0badc0ffee00")
+        self.repo.bench("1.4.4", "BPRE", [600] * 3)
+        # One run of another build is enough to refuse its group.
+        self.repo.bench("1.4.4", "BPRE", [600], build_id="0badc0ffee00")
         self.assertEqual(self.repo.gate(), [
          "performance on PSP-1000: group 0/BPRE-r0 has 1.4.4 reports without "
          f"build-id={BUILD_ID} of the rc manifest"])
