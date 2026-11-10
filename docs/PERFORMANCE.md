@@ -105,8 +105,9 @@ a capture is not counted.
   3-4, 5-8, 9-16 and 17 or more preemptions.
 - `preempt-call-ns`: the cost of one read, from 16 reads when the capture
   starts. Each frame makes two, which count as work.
-- `preempt-available=0`: the kernel refused a read (some firmware, or
-  PPSSPP), so the counts stopped there; the rest of the report is valid.
+- `preempt-available=0`: the kernel refused a read (the call may be
+  missing on some firmware or in PPSSPP), so the counts stopped there; the
+  rest of the report is valid.
 
 ## Baselines per model
 
