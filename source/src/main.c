@@ -1854,11 +1854,12 @@ typedef char main_testpat_modes_check
    FILTER_NEAREST == 0 && FILTER_BILINEAR == 1) ? 1 : -1];
 
 /* Eight bars 30 pixels wide, in screen_texture's GU_PSM_5551 with red in
-   the low bits: black, white, red, green, blue, yellow, cyan, magenta. A
+   the low bits: white, black, red, green, blue, yellow, cyan, magenta. No
+   bar at an edge is black, so the black border cannot hide one. A
    red/blue swap shows as the third and fifth bars trading colours. */
 static const u16 main_testpat_bars[8] =
 {
-  0x0000, 0x7FFF, 0x001F, 0x03E0, 0x7C00, 0x03FF, 0x7FE0, 0x7C1F
+  0x7FFF, 0x0000, 0x001F, 0x03E0, 0x7C00, 0x03FF, 0x7FE0, 0x7C1F
 };
 
 /* testpat=: no ROM runs. The bars go through the presenter of each mode

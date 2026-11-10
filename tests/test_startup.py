@@ -501,7 +501,7 @@ int main(void) {
   for(i = 0; i < 8; i++)
   {
     static const u16 bars[8] =
-     { 0x0000, 0x7FFF, 0x001F, 0x03E0, 0x7C00, 0x03FF, 0x7FE0, 0x7C1F };
+     { 0x7FFF, 0x0000, 0x001F, 0x03E0, 0x7C00, 0x03FF, 0x7FE0, 0x7C1F };
     assert(texture[i * 30] == bars[i] && texture[i * 30 + 29] == bars[i]);
     assert(texture[159 * GBA_LINE_SIZE + i * 30 + 15] == bars[i]);
   }
