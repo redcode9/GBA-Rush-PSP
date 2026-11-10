@@ -138,6 +138,14 @@ class CheckAgeTest(unittest.TestCase):
                 self.assertIn(f"Warning: the last upstream review, on 2025-12-20, is "
                               f"{days} days old", result.stderr)
 
+    def test_08_and_09_are_decimal(self):
+        # Shell arithmetic reads a leading 0 as octal, where 08 and 09 are errors.
+        result = self.check_age("2026-09-08", "2026-08-09")
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
+        result = self.check_age("2026-09-23", "2026-08-08")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("on 2026-08-08, is 46 days old", result.stderr)
+
     def test_unparsable_date_fails(self):
         for reviewed in ("2026-13-01", "2026-11-32", "5 Nov 2026", ""):
             with self.subTest(reviewed=reviewed):
