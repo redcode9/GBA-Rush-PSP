@@ -41,6 +41,18 @@
   its own icons and installs in `PSP/GAME/GBARushPSP-DIAG`, so it keeps its
   own settings, saves and logs and never touches the regular install. The
   regular build contains none of its diagnostic code.
+- The diagnostic build can run a test with nobody at the console: a
+  `diag-autorun.txt` beside the EBOOT that names the build's id starts a
+  ROM, can replay an input trace for a number of frames and quit, and
+  writes the outcome to `diag-autorun.result` and to the runtime log. A
+  file written for another build is ignored. The same file can instead
+  show colour bars through every screen scale and filter, to photograph
+  the screen, or put the wireless link on a simulated bad network that
+  loses, delays and duplicates packets, which the runtime log records.
+- In the diagnostic build, replaying an input trace records a hash of the
+  emulated machine for every frame and saves them beside the trace as a
+  `.gbsh` file, so `tools/state_hash_diff.py` can show the first frame and
+  the part of the machine where two replays differ.
 - On GitHub, bug, game and link reports open as forms that ask for the
   version, the PSP model and firmware, the steps and the `logs/` folder, and
   warn not to attach ROMs, BIOS files or saves that are not your own.
