@@ -20,17 +20,17 @@
 - [ ] **EXT-4.1** — Campo browser_view nel ConfigModel e vista ripristinata · S, 0,5 gg · dipende da: — · PSP: sì · **subito** · _codice pronto (7bf076e), manca la prova su PSP (`browser-carousel-500`)_
 - [ ] **UI-1.3** — Libreria vuota spiegata e gba_bios.bin nascosto · S, 1 gg · dipende da: — · PSP: sì · **subito** · _codice pronto (fae1ddc), manca la prova su PSP_
 - [ ] **UI-1.4** — Suggerimento al primo avvio sui tasti del menu · S, 0,5 gg · dipende da: UI-2.2, UI-4.4, CMP-1.1 · PSP: sì · _codice pronto (3d0af02), manca la prova su PSP_
-- [ ] **UI-2.1** — Modulo puro dei toast · S, 1 gg · dipende da: — · PSP: no · **subito** · _in parte: manca la verifica della CI_
+- [x] **UI-2.1** — Modulo puro dei toast · S, 1 gg · dipende da: — · PSP: no · **subito** · _CI verde su 4a3d359 (run 42798826357): `test_toast` passa in make check e in make test-sanitize (ASan e UBSan), e `check-performance.sh` passa con `toast.c` senza allocazioni né I/O_
 - [ ] **UI-2.2** — Disegno dei toast in gioco · M, 1,5 gg · dipende da: UI-2.1 · PSP: sì · _codice pronto (ff7fa37), manca la prova su PSP; per il confronto con un toast sempre visibile la build PROFILE=diagnostic ha Diagnostica > «Fissa un avviso di prova»_
 - [ ] **UI-3.1** — Tasti stato senza dialogo, con toast · M, 2 gg · dipende da: LNK-3.2 · PSP: sì · aspetta: LNK-3.2 (`wip/link-diagnostics`)
 - [ ] **UI-3.2** — Il toast del salvataggio rapido rimanda ad 'Annulla ultimo salvataggio' · S, 0,25 gg · dipende da: UI-3.1, SAV-4.5 · PSP: sì · aspetta: SAV-4.5 (`wip/savestate-v2`)
-- [ ] **UI-4.1** — Modulo puro degli accordi · M, 2 gg · dipende da: — · PSP: no · **subito** · _in parte: manca la verifica della CI_
+- [x] **UI-4.1** — Modulo puro degli accordi · M, 2 gg · dipende da: — · PSP: no · **subito** · _CI verde su 4a3d359 (run 42798826357): `test_input_chord` passa in make check e in make test-sanitize (ASan e UBSan)_
 - [ ] **UI-4.2** — Accordi nel ciclo di input e nella config per gioco · M, 2 gg · dipende da: UI-4.1 · PSP: sì · _codice pronto (ff92689), manca la prova su PSP_
 - [ ] **UI-4.4** — Menu senza HOME: una tenuta di riserva che non esce mai · S, 1 gg · dipende da: UI-4.2 · PSP: sì · _codice pronto (e07bd55), manca la prova su PSP_
-- [ ] **UI-5.1** — Modulo puro input_model: turbo e isteresi · M, 1,5 gg · dipende da: — · PSP: no · **subito** · _in parte: manca la verifica della CI_
+- [x] **UI-5.1** — Modulo puro input_model: turbo e isteresi · M, 1,5 gg · dipende da: — · PSP: no · **subito** · _CI verde su 4a3d359 (run 42798826357): `test_input_model` passa in make check e in make test-sanitize (ASan e UBSan)_
 - [ ] **UI-5.2** — input.c passa a input_model · S, 0,75 gg · dipende da: UI-5.1 · PSP: sì · _codice pronto (95101d5), manca la prova su PSP_
 - [ ] **UI-5.3** — Velocità e modalità del turbo per gioco · S, 1 gg · dipende da: UI-5.2, UI-2.2 · PSP: sì · _codice pronto (26ff97e), manca la prova su PSP_
-- [ ] **UI-6.1** — Writer PNG nuovo e testato · M, 2 gg · dipende da: — · PSP: no · **subito** · _in parte: manca la verifica della CI_
+- [x] **UI-6.1** — Writer PNG nuovo e testato · M, 2 gg · dipende da: — · PSP: no · **subito** · _CI verde su 4a3d359 (run 42798826357): `test_png_write` passa in make check e in make test-sanitize (ASan e UBSan); le build PSP release e diagnostic compilano `png_write.c` e non più `png.c`_
 - [ ] **UI-6.2** — Azione Screenshot · S, 1,25 gg · dipende da: UI-6.1, UI-2.2, UI-4.2, SAV-7.1 · PSP: sì · aspetta: SAV-7.1 (`wip/suspend-resume`)
 - [ ] **UI-6.3** — Opzione screenshot: nativo o come mostrato · S, 1 gg · dipende da: UI-6.2 · PSP: sì
 
