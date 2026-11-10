@@ -35,6 +35,10 @@ typedef void (*RomLoadProgress)(const char *name, u32 stage_msg, u32 done,
  u32 total);
 extern RomLoadProgress rom_load_progress;
 
+/* When the current load's ROM file was open (sceKernelGetSystemTimeWide),
+   for the runtime log's stage times; load_gamepak() clears it. */
+extern u64 rom_load_opened_us;
+
 /* Loads the ROM in the first entry of a .zip into gamepak_rom. Returns its
    size (above 0), -1 if the file cannot be opened or memory runs out, -2 if
    the ROM does not fit in the ROM buffer, or -3 for any other failure: a

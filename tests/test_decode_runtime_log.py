@@ -89,10 +89,11 @@ def fixture_v3() -> bytes:
     return bytes(header) + payload
 
 
-def fixture_v6(build_id: bytes = b"0123456789ab-dirty") -> bytes:
+def fixture_v6(build_id: bytes = b"0123456789ab-dirty", event: int = 18,
+               values: tuple = (2, 1, 0)) -> bytes:
     """Version 6 log: the 96-byte header with a build id, one record."""
     record = struct.pack(
-        ">QIIHBBIII", 110, 7, 1, 18, 1, 0, 2, 1, 0
+        ">QIIHBBIII", 110, 7, 1, event, 1, 0, *values
     )
     header = bytearray(96)
     struct.pack_into(
@@ -156,6 +157,30 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             decoder.print_snapshot(snapshot)
         self.assertIn(" build=0123456789ab-dirty\n", output.getvalue())
+
+    def test_decodes_rom_load_stages(self):
+        values = (500, 12 << 16 | 3, 99 << 16 | 9)
+        expected = "open=12ms read=500ms config=3ms backup-id=99ms sav=9ms"
+        self.assertEqual(
+            decoder.describe({"event": "rom-load-stages", "flags": 0,
+                              "values": list(values)}), expected)
+        snapshot = decoder.parse_snapshot(fixture_v6(event=26, values=values))
+
+        self.assertEqual(snapshot["records"][0]["event"], "rom-load-stages")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            decoder.print_snapshot(snapshot)
+        self.assertRegex(output.getvalue(), rf" rom-load-stages +{expected}\n")
+
+    # The event numbers are the C enum's order, from 1.
+    def test_event_names_match_the_c_enum(self):
+        header = (Path(__file__).parents[1] / "source" / "src" /
+                  "runtime_log.h").read_text()
+        names = re.findall(r"^\s+RUNTIME_LOG_EVENT_([A-Z0-9_]+)", header, re.M)
+        self.assertEqual(decoder.EVENTS, {
+            number: name.lower().replace("_", "-")
+            for number, name in enumerate(names, 1)
+        })
 
     def test_build_id_may_fill_its_field(self):
         snapshot = decoder.parse_snapshot(fixture_v6(b"B" * 24))

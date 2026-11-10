@@ -41,6 +41,12 @@ uint64_t ticker(void)
   return host_stub_t1;
 }
 
+/* load_gamepak()'s stage times; the DMA test never loads a ROM. */
+uint64_t sceKernelGetSystemTimeWide(void)
+{
+  return 0;
+}
+
 /* --- Data symbols -------------------------------------------------------- */
 
 uint32_t reg[64] = { 0 };
@@ -227,6 +233,8 @@ void print_string(void) {}
 void print_string_gbk(void) {}
 void quit(void) {}
 void rebuild_fast_forward_button_mask(void) {}
+void runtime_log_load_stages(void) {}
+void runtime_log_psp_main(void) {}
 void set_cpu_clock(void) {}
 void sound_control_high(void) {}
 void sound_control_low(void) {}

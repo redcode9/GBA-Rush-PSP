@@ -13,7 +13,9 @@
  * Runtime diagnostic log. Events are 32-byte records kept in fixed rings in
  * memory (main, network and critical sources) and encoded into a "GBRL"
  * snapshot when runtime_log_psp.c flushes. tools/decode_runtime_log.py
- * reads the files; enum values and record layouts are part of the format.
+ * reads the files. The record layout and the meaning of existing enum
+ * values are the format; a value added at the end of an enum keeps the
+ * version, and older decoders show it as a number.
  */
 
 #ifndef RUNTIME_LOG_H
@@ -77,8 +79,20 @@ typedef enum
   RUNTIME_LOG_EVENT_LINK_FAILURE,
   RUNTIME_LOG_EVENT_LINK_STREAM_METRICS,
   RUNTIME_LOG_EVENT_LINK_TIMEOUT,
-  RUNTIME_LOG_EVENT_LINK_BENCHMARK
+  RUNTIME_LOG_EVENT_LINK_BENCHMARK,
+  RUNTIME_LOG_EVENT_ROM_LOAD_STAGES
 } RuntimeLogEventType;
+
+/* load_gamepak()'s stages, in the order it runs them. */
+typedef enum
+{
+  RUNTIME_LOG_LOAD_OPEN,
+  RUNTIME_LOG_LOAD_READ,
+  RUNTIME_LOG_LOAD_CONFIG,
+  RUNTIME_LOG_LOAD_BACKUP_ID,
+  RUNTIME_LOG_LOAD_SAV,
+  RUNTIME_LOG_LOAD_STAGE_COUNT
+} RuntimeLogLoadStage;
 
 typedef enum
 {
@@ -145,6 +159,14 @@ size_t runtime_log_ring_snapshot(const RuntimeLogRing *ring,
 /* Records overwritten since init because the ring was full, whether or not
    a flush had already saved them; stops at UINT_MAX. */
 uint32_t runtime_log_ring_dropped(const RuntimeLogRing *ring);
+/* The values of a ROM_LOAD_STAGES record, in ms: value[0] the read,
+   value[1] open << 16 | config, value[2] backup id << 16 | .sav; each
+   16-bit half stops at 65535. Stage i runs from the end of stage i - 1
+   (start_us for the first) to end_us[i]. A 0 end, a 0 begin or an end
+   before its begin counts 0 ms, so every stage after one that did not run
+   is 0. */
+void runtime_log_load_stages(uint64_t start_us,
+ const uint64_t end_us[RUNTIME_LOG_LOAD_STAGE_COUNT], uint32_t value[3]);
 int runtime_log_encode(const RuntimeLogRing *main_ring,
  const RuntimeLogRing *network_ring, const RuntimeLogRing *critical_ring,
  const RuntimeLogMetadata *metadata, uint8_t *output, size_t capacity,

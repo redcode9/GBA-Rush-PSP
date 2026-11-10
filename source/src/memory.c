@@ -27,6 +27,7 @@
 #include "common.h"
 #include "perf_monitor.h"
 #include "open_bios.h"
+#include "runtime_log_psp.h"
 
 /* Popup depth frame — declared in psp_video.h, defined in psp_video.c */
 extern void draw_popup_frame_auto(int x, int y, int w, int h);
@@ -3644,6 +3645,8 @@ resume_after_entry:
 }
 
 
+u64 rom_load_opened_us;
+
 // Reads the whole ROM if it fits the buffer, in ROM_LOAD_CHUNK_SIZE reads
 // reported to rom_load_progress; otherwise reads only the header and keeps
 // the file open for load_gamepak_page(). Returns the file size, or -1 if
@@ -3657,6 +3660,7 @@ static s32 load_gamepak_raw(char *name)
   if (FILE_CHECK_VALID(gamepak_file))
   {
     u32 _gamepak_size = file_length(name);
+    rom_load_opened_us = sceKernelGetSystemTimeWide();
 
     // If it's a big file size keep it don't close it, we'll
     // probably want to load it later
@@ -3718,6 +3722,9 @@ static s32 load_gamepak_raw(char *name)
 s32 load_gamepak(char *name)
 {
   char *dot_position = strrchr(name, '.');
+  uint64_t load_start;
+  uint64_t stage_end[RUNTIME_LOG_LOAD_STAGE_COUNT] = { 0 };
+  uint32_t stage_values[3];
 
   s32 file_size = -1;
   gamepak_file_large = GAMEPAK_FILE_NONE;
@@ -3730,6 +3737,8 @@ s32 load_gamepak(char *name)
 
   scePowerLock(0);
   set_cpu_clock(PSP_CLOCK_333);
+  rom_load_opened_us = 0;
+  load_start = sceKernelGetSystemTimeWide();
 
   if (!strcasecmp(dot_position, ".zip") || !strcasecmp(dot_position, ".gbz"))
   {
@@ -3744,6 +3753,8 @@ s32 load_gamepak(char *name)
     print_string_gbk(MSG[MSG_SEARCHING_BACKUP_ID], X_POS_CENTER, 194, color_active_item, BG_NO_FILL);
     flip_screen(1);
   }
+  stage_end[RUNTIME_LOG_LOAD_OPEN] = rom_load_opened_us;
+  stage_end[RUNTIME_LOG_LOAD_READ] = sceKernelGetSystemTimeWide();
 
   if (file_size > 0)
   {
@@ -3774,15 +3785,22 @@ s32 load_gamepak(char *name)
     // gui.c: the user's saved settings for this game
     load_game_config_file();
     rebuild_fast_forward_button_mask();
+    stage_end[RUNTIME_LOG_LOAD_CONFIG] = sceKernelGetSystemTimeWide();
 
     load_backup_id();
+    stage_end[RUNTIME_LOG_LOAD_BACKUP_ID] = sceKernelGetSystemTimeWide();
     change_ext(gamepak_filename, backup_filename, ".sav");
     load_backup(backup_filename);
+    stage_end[RUNTIME_LOG_LOAD_SAV] = sceKernelGetSystemTimeWide();
 
     /* Cheat lists are selected explicitly from the cheat menu. */
     clear_cheats();
   }
 
+  // Logged for failed loads too: their missing stages count 0 ms.
+  runtime_log_load_stages(load_start, stage_end, stage_values);
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_ROM_LOAD_STAGES, 0, 0,
+   stage_values[0], stage_values[1], stage_values[2]);
   set_cpu_clock(PSP_CLOCK_222);
   scePowerUnlock(0);
 

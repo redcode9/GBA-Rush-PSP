@@ -56,6 +56,7 @@ EVENTS = {
     23: "link-stream-metrics",
     24: "link-timeout",
     25: "link-benchmark",
+    26: "rom-load-stages",
 }
 FLUSH_REASONS = {
     1: "start",
@@ -218,6 +219,12 @@ def describe(record: dict[str, Any]) -> str:
         )
     if event == "log-flush":
         return f"reason={FLUSH_REASONS.get(value0, value0)} main={value1} network={value2}"
+    # runtime_log_load_stages() in source/src/runtime_log.c packs the times.
+    if event == "rom-load-stages":
+        return (
+            f"open={value1 >> 16}ms read={value0}ms config={value1 & 0xFFFF}ms "
+            f"backup-id={value2 >> 16}ms sav={value2 & 0xFFFF}ms"
+        )
     # Earlier versions belong to a retired link design; show raw values.
     if event not in LINK_EVENTS or record.get("version", 5) < 5:
         return f"flags=0x{flags:02X} values={value0}/{value1}/{value2}"

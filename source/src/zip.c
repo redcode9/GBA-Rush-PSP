@@ -69,6 +69,7 @@ s32 load_file_zip(char *filename)
   io.in_buf = malloc(ROM_LOAD_CHUNK_SIZE);
   io.in_cap = ROM_LOAD_CHUNK_SIZE;
   io.total = file_length(filename);
+  rom_load_opened_us = sceKernelGetSystemTimeWide();
 
   if (io.in_buf == NULL)
   {
