@@ -18,7 +18,7 @@
 ## 1.6
 
 - [ ] **UI-14.1** — Barra di avanzamento reale · S, 1 gg · dipende da: — · PSP: sì · **subito** · _codice pronto (c60f182, e9b56d4), manca la prova su PSP_
-- [ ] **UI-14.2** — Tempi delle fasi nel runtime log · S, 1 gg · dipende da: ENG-1.6 · PSP: no · _in parte: codice e test host pronti (2640464), passano normali e con UBSan; mancano `make test-sanitize` e la build PSP in CI_
+- [ ] **UI-14.2** — Tempi delle fasi nel runtime log · S, 1 gg · dipende da: ENG-1.6 · PSP: no · _in parte: codice e test host pronti (2640464, ff027c6), passano normali e con UBSan; mancano `make check` (test_perf_dma_probe), `make test-sanitize` e le build PSP in CI_
 
 ## dopo gate
 
