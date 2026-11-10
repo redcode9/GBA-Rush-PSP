@@ -442,6 +442,41 @@ class BenchmarkComparisonTests(unittest.TestCase):
         candidate[0]["gamepak-ram-buffer-size"] = "16777216"
         self.assertTrue(MODULE.compare(baseline, candidate)["passed"])
 
+    def test_bench_vs_paced_rejected(self):
+        def bench(**changed):
+            """A report of the unbound benchmark."""
+            return dict(report(), **{
+                "bench-mode": "unbound", "bench-frames": "3600",
+                "bench-render": "1", "bench-audio": "1",
+                "bench-input": "none", **changed})
+
+        paced = dict(report(), **{
+            "bench-mode": "paced", "bench-frames": "0", "bench-render": "1",
+            "bench-audio": "1", "bench-input": "pad"})
+        unbound = [bench() for _ in range(3)]
+        # A paced baseline, with the bench fields or from a build without
+        # them, never compares with a benchmark, on either side.
+        for name, runs in (("paced", [paced] * 3), ("no fields", [report()] * 3)):
+            for baseline, candidate in ((runs, unbound), (unbound, runs)):
+                with self.subTest(name, baseline=baseline[0].get("bench-mode")), \
+                        self.assertRaisesRegex(ValueError, "bench-mode"):
+                    MODULE.compare(baseline, candidate)
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors):
+            status, _ = run_files([report()] * 3, unbound)
+        self.assertEqual((status, errors.getvalue()),
+                         (2, "ERROR: benchmark field does not match: bench-mode\n"))
+
+        self.assertTrue(MODULE.compare(unbound, [bench() for _ in range(3)])["passed"])
+        for field, value in (("bench-frames", "1800"), ("bench-render", "0"),
+                             ("bench-audio", "0"), ("bench-input", "pad")):
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, field):
+                MODULE.compare(unbound, [bench(), bench(), bench(**{field: value})])
+
+        # Paced captures compare whichever build's reports lack the fields.
+        self.assertTrue(MODULE.compare([report()] * 3, [paced] * 3)["passed"])
+        self.assertTrue(MODULE.compare([paced] * 3, [report()] * 3)["passed"])
+
     def read_back(self, directory, name, values):
         """values written as a report file and read with read_report()."""
         path = pathlib.Path(directory) / name

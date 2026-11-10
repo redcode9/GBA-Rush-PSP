@@ -73,6 +73,18 @@ OPTIONAL_MATCH_FIELDS = (
     "fast-forward-audio",
 )
 
+# Optional fields of the unbound benchmark, with the value a paced capture
+# writes. Every run must match on them, and a report without them (format 6,
+# early format 7) was paced, so a benchmark never compares with a paced
+# capture, whichever build's reports lack the fields.
+PACED_BENCH_FIELDS = {
+    "bench-mode": "paced",
+    "bench-frames": "0",
+    "bench-render": "1",
+    "bench-audio": "1",
+    "bench-input": "pad",
+}
+
 # Reports of formats 6 and 7 compare with each other; build-id (format 7)
 # is deliberately not a match field, since comparing two builds is the
 # point. Reports written before 1.4.3 carry invalid 64-bit counters.
@@ -377,9 +389,9 @@ def claim_verdict(baseline, candidate, claim, measured):
 
 
 def validate_matching_runs(baseline, candidate):
-    """All runs must share the settings in MATCH_FIELDS, and the
-    OPTIONAL_MATCH_FIELDS the first run reports, or the numbers are not
-    comparable."""
+    """All runs must share the settings in MATCH_FIELDS, the
+    OPTIONAL_MATCH_FIELDS the first run reports and the PACED_BENCH_FIELDS
+    (a missing one read as paced), or the numbers are not comparable."""
     reference = baseline[0]
     for report in baseline[1:] + candidate:
         for field in MATCH_FIELDS:
@@ -387,6 +399,9 @@ def validate_matching_runs(baseline, candidate):
                 raise ValueError(f"benchmark field does not match: {field}")
         for field in OPTIONAL_MATCH_FIELDS:
             if field in reference and report.get(field) != reference[field]:
+                raise ValueError(f"benchmark field does not match: {field}")
+        for field, paced in PACED_BENCH_FIELDS.items():
+            if report.get(field, paced) != reference.get(field, paced):
                 raise ValueError(f"benchmark field does not match: {field}")
 
 
