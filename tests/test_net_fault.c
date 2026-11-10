@@ -350,6 +350,11 @@ static void test_next_arrival(void)
   net_fault_restart(&fault, 0u);
   assert(net_fault_next_arrival(&fault, &arrival) == 0 && arrival == 700u);
   assert(received.count == 2u && fault.rng_state == state);
+
+  /* A lone flight, the worker's usual case in lockstep. */
+  send_indexed(0, 4, 4u, 50u);
+  assert(fault.count == 1u);
+  assert(net_fault_next_arrival(&fault, &arrival) == 1 && arrival == 150u);
 }
 
 int main(void)
