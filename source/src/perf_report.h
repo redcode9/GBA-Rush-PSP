@@ -64,9 +64,11 @@ typedef struct
   uint32_t gamepak_ram_buffer_size;
   uint32_t gamepak_ram_pages;
   /* Bytes, the lower of the capture's start and stop measurements
-     (mem_stats.h): the heap's free space and largest block, and the
-     largest kernel block outside the heap (sceKernelMaxFreeMemSize), which
-     the network modules need. memory-low-water stays the lowest
+     (mem_stats.h): the free space newlib has already taken from the system
+     (mallinfo, not the unclaimed rest of the heap block), the largest block
+     malloc still gives, and the largest kernel block outside the heap
+     (sceKernelMaxFreeMemSize, the runtime log's kernel-largest), which the
+     network modules need. memory-low-water stays the lowest
      sceKernelTotalFreeMemSize. */
   uint32_t heap_free_low;
   uint32_t heap_largest_low;
