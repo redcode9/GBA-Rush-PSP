@@ -595,16 +595,17 @@ static void psp_adhoc_fault_end(void)
 
 /* Sends a datagram the outgoing network delivers, as psp_adhoc_send_all
    does without faults. A fatal error waits in send_error: psp_adhoc_fail
-   must not run in the middle of a delivery. */
+   must not run in the middle of a delivery, and the datagrams after it are
+   neither sent nor counted. */
 static void psp_adhoc_fault_send(void *argument,
  const NetFaultFlight *flight)
 {
   PspAdhocContext *context = argument;
   int result;
 
-  psp_adhoc_fault.out_delivered++;
   if(psp_adhoc_fault.send_error != 0)
     return;
+  psp_adhoc_fault.out_delivered++;
   context->sends++;
   result = sceNetAdhocPdpSend(context->socket_id, context->peer_mac,
    context->peer_port, (void *)flight->data, (unsigned int)flight->size,
@@ -856,8 +857,9 @@ static void psp_adhoc_connected(PspAdhocContext *context)
   /* Deliver a final goodbye, if the emulator queued one. */
   psp_adhoc_send_all(context);
 #ifdef ENABLE_DIAGNOSTIC_NET_INJECTION
-  /* With faults it is still in flight: it and the rest leave now. */
-  if(psp_adhoc_fault.active)
+  /* With faults it is still in flight: it and the rest leave now, unless
+     that send failed. */
+  if(psp_adhoc_fault.active && context->state != PSP_ADHOC_FAILED)
     psp_adhoc_fault_send_due(context, UINT64_MAX);
 #endif /* ENABLE_DIAGNOSTIC_NET_INJECTION */
 }
