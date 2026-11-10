@@ -3370,35 +3370,33 @@ void menu_diagnostics_write_report(void)
    at once and reports the new machine state, as a slot load does. */
 static u8 diagnostics_bench_loaded;
 
-/* Unbound benchmark: loads the current slot without asking, after backing
-   up the progress it replaces to the auto slot as the slot menu does, and
-   starts the run. A link or a slot without a usable state refuses it, with
-   the reason on the status row. */
+/* Unbound benchmark: loads the current slot as the slot menu does, backing
+   up the progress a numbered slot replaces to the auto slot and asking
+   first, and starts the run. A link or a slot without a state refuses it,
+   with the reason on the status row. */
 static void menu_diagnostics_bench(void)
 {
     char filename[MAX_FILE];
     const char *reason = NULL;
 
+    diagnostics_report_line[0] = '\0';
     if(main_link_active())
         reason = MSG[MSG_DIAGNOSTICS_BENCH_LINK];
     else if(!savestate_file_exists(savestate_slot))
         reason = MSG[MSG_DIAGNOSTICS_BENCH_NO_STATE];
-    else
-    {
-        if(savestate_slot < AUTO_SAVESTATE_SLOT)
-            action_savestate_slot(AUTO_SAVESTATE_SLOT);
-        get_savestate_filename(savestate_slot, filename);
-        if(!load_state_silent(filename))
-            reason = MSG[MSG_DIAGNOSTICS_BENCH_NO_STATE];
-    }
-
-    diagnostics_report_line[0] = '\0';
     if(reason != NULL)
     {
         snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
          "%s", reason);
         return;
     }
+
+    if(savestate_slot < AUTO_SAVESTATE_SLOT)
+        action_savestate_slot(AUTO_SAVESTATE_SLOT);
+    get_savestate_filename(savestate_slot, filename);
+    /* A No leaves the game as it was; load_state shows its own errors. */
+    if(!load_state(filename))
+        return;
 
     diagnostics_bench_loaded = 1;
     main_perf_bench_start();
