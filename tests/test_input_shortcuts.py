@@ -72,7 +72,7 @@ static int menus, loads, saves, ff_presses, ff_held;
 u32 sceKernelGetSystemTimeLow(void) { return now_us; }
 int sceCtrlReadBufferPositive(SceCtrlData *data, int count);
 int sceCtrlReadBufferPositive(SceCtrlData *data, int count)
-{ (void)data; return count; }
+{ memset(data, 0, sizeof(*data) * (size_t)count); return count; }
 void main_power_service(void) {}
 void main_fast_forward_input(u32 pressed, u32 held)
 { ff_presses += pressed != 0; ff_held = held != 0; }
