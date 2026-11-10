@@ -67,4 +67,45 @@ void mem_stats_encode(const MemStats *stats, MemStatsPoint point,
 int mem_stats_decode(const uint8_t flags[2], const uint32_t values[2][3],
  MemStats *stats, MemStatsPoint *point);
 
+/* The diagnostic profile's allocation trace: the last malloc and free calls
+   of one thread, written by alloc_trace_psp.c. */
+#define MEM_STATS_TRACE_CAPACITY 256u
+/* The size of an entry that records a free. */
+#define MEM_STATS_TRACE_FREE UINT32_MAX
+
+/* Ring indices are masked, so the capacity must be a power of two. */
+typedef char MemStatsTraceCapacityCheck[
+ (MEM_STATS_TRACE_CAPACITY != 0u &&
+  (MEM_STATS_TRACE_CAPACITY & (MEM_STATS_TRACE_CAPACITY - 1u)) == 0u) ?
+  1 : -1];
+
+typedef struct
+{
+  uint32_t pointer;
+  uint32_t size;
+  uint32_t caller;
+} MemStatsTraceEntry;
+
+/* Zeroed means empty. next counts the pushes, and stays at least the
+   capacity once the ring is full. */
+typedef struct
+{
+  MemStatsTraceEntry entries[MEM_STATS_TRACE_CAPACITY];
+  uint32_t next;
+} MemStatsTraceRing;
+
+/* Records an entry, overwriting the oldest when the ring is full. */
+void mem_stats_trace_push(MemStatsTraceRing *ring, uint32_t pointer,
+ uint32_t size, uint32_t caller);
+/* Copies the newest entries, at most capacity of them, oldest first;
+   returns how many. */
+size_t mem_stats_trace_snapshot(const MemStatsTraceRing *ring,
+ MemStatsTraceEntry *out, size_t capacity);
+
+/* The PSP side, in alloc_trace_psp.c, built only by PROFILE=diagnostic:
+   traces the calling thread's malloc and free from now on, and copies the
+   trace as mem_stats_trace_snapshot does. */
+void alloc_trace_start(void);
+size_t alloc_trace_snapshot(MemStatsTraceEntry *out, size_t capacity);
+
 #endif

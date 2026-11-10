@@ -86,3 +86,32 @@ int mem_stats_decode(const uint8_t flags[2], const uint32_t values[2][3],
   *point = (MemStatsPoint)first;
   return 1;
 }
+
+void mem_stats_trace_push(MemStatsTraceRing *ring, uint32_t pointer,
+ uint32_t size, uint32_t caller)
+{
+  MemStatsTraceEntry *entry =
+   &ring->entries[ring->next & (MEM_STATS_TRACE_CAPACITY - 1u)];
+
+  entry->pointer = pointer;
+  entry->size = size;
+  entry->caller = caller;
+  /* After 4G pushes the count wraps; the ring is still full. */
+  if(++ring->next == 0)
+    ring->next = MEM_STATS_TRACE_CAPACITY;
+}
+
+size_t mem_stats_trace_snapshot(const MemStatsTraceRing *ring,
+ MemStatsTraceEntry *out, size_t capacity)
+{
+  size_t count = ring->next < MEM_STATS_TRACE_CAPACITY ?
+   ring->next : MEM_STATS_TRACE_CAPACITY;
+  size_t i;
+
+  if(count > capacity)
+    count = capacity;
+  for(i = 0; i < count; i++)
+    out[i] = ring->entries[(ring->next - count + i) &
+     (MEM_STATS_TRACE_CAPACITY - 1u)];
+  return count;
+}

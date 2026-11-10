@@ -1,7 +1,8 @@
 /*
  * Host tests for mem_stats.c: the largest block search on a fake
- * allocator that gives blocks up to a threshold, and the packing of a
- * measurement into the two MEMORY_STATS records of the runtime log.
+ * allocator that gives blocks up to a threshold, the packing of a
+ * measurement into the two MEMORY_STATS records of the runtime log, and
+ * the allocation trace ring.
  */
 
 #include <assert.h>
@@ -202,12 +203,66 @@ static void test_encode_decode_roundtrip(void)
   assert(!decodes(2, 3, (UINT32_MAX >> 10) + 1));
 }
 
+/* Push n has pointer n, size n, caller n + 1; even pushes are frees. */
+static void push_numbered(MemStatsTraceRing *ring, uint32_t n)
+{
+  mem_stats_trace_push(ring, n, n % 2 ? n : MEM_STATS_TRACE_FREE, n + 1);
+}
+
+static void assert_numbered(const MemStatsTraceEntry *entry, uint32_t n)
+{
+  assert(entry->pointer == n);
+  assert(entry->size == (n % 2 ? n : MEM_STATS_TRACE_FREE));
+  assert(entry->caller == n + 1);
+}
+
+static void test_trace_ring_overwrites_oldest(void)
+{
+  static MemStatsTraceRing ring;
+  static MemStatsTraceEntry out[MEM_STATS_TRACE_CAPACITY + 1];
+  uint32_t n;
+  size_t i;
+
+  assert(mem_stats_trace_snapshot(&ring, out, MEM_STATS_TRACE_CAPACITY) == 0);
+
+  /* Partial: in push order. */
+  for(n = 1; n <= 3; n++)
+    push_numbered(&ring, n);
+  assert(mem_stats_trace_snapshot(&ring, out, MEM_STATS_TRACE_CAPACITY) == 3);
+  for(i = 0; i < 3; i++)
+    assert_numbered(&out[i], (uint32_t)i + 1);
+
+  /* Full and wrapped by 3: pushes 1-3 are gone. */
+  for(; n <= MEM_STATS_TRACE_CAPACITY + 3; n++)
+    push_numbered(&ring, n);
+  assert(mem_stats_trace_snapshot(&ring, out, MEM_STATS_TRACE_CAPACITY + 1) ==
+   MEM_STATS_TRACE_CAPACITY);
+  for(i = 0; i < MEM_STATS_TRACE_CAPACITY; i++)
+    assert_numbered(&out[i], (uint32_t)i + 4);
+
+  /* A smaller output keeps the newest. */
+  assert(mem_stats_trace_snapshot(&ring, out, 5) == 5);
+  for(i = 0; i < 5; i++)
+    assert_numbered(&out[i], MEM_STATS_TRACE_CAPACITY - 1 + (uint32_t)i);
+  assert(mem_stats_trace_snapshot(&ring, out, 0) == 0);
+
+  /* The push count wrapping past 4G leaves the ring full. */
+  ring.next = UINT32_MAX;
+  push_numbered(&ring, 7);
+  push_numbered(&ring, 8);
+  assert(mem_stats_trace_snapshot(&ring, out, MEM_STATS_TRACE_CAPACITY) ==
+   MEM_STATS_TRACE_CAPACITY);
+  assert_numbered(&out[MEM_STATS_TRACE_CAPACITY - 2], 7);
+  assert_numbered(&out[MEM_STATS_TRACE_CAPACITY - 1], 8);
+}
+
 int main(void)
 {
   test_largest_block_bisection_fake_allocator();
   test_zero_memory();
   test_keep_lowest_per_field();
   test_encode_decode_roundtrip();
+  test_trace_ring_overwrites_oldest();
   puts("Memory stats tests passed");
   return 0;
 }
