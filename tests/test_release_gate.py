@@ -1,5 +1,6 @@
 """Tests for scripts/release_gate.py on scratch Git repositories with dated
-tags and synthetic test records."""
+tags and synthetic test records, and for the tag and source zip checks of
+scripts/package-release.sh and scripts/check-package.sh on a fake build."""
 
 import contextlib
 import hashlib
@@ -7,10 +8,13 @@ import io
 import json
 import os
 import pathlib
+import re
+import struct
 import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -441,6 +445,126 @@ class ReleaseFilesTest(unittest.TestCase):
             with self.subTest(line=line):
                 with self.assertRaisesRegex(ValueError, "line 2"):
                     release_gate.parse_compat(f"# facts\n{line}\n")
+
+
+PACKAGE_VERSION = "9.9.9"
+SOURCE_ZIP = f"GBA-Rush-PSP-{PACKAGE_VERSION}-source.zip"
+# An ELF32 header with one PT_LOAD, all release_manifest.py reads of it.
+FAKE_ELF = (b"\x7fELF\x01\x01\x01".ljust(16, b"\0")
+            + struct.pack("<HHIIIIIHHHHHH", 2, 8, 1, 0, 52, 0, 0, 52, 32, 1, 0, 0, 0)
+            + struct.pack("<8I", 1, 0, 0x100, 0x100, 0x3000, 0x3000, 0, 4))
+
+
+class PackageTest(unittest.TestCase):
+    """package-release.sh and check-package.sh in a scratch repository with a
+    fake diagnostic build (the release profile would also run check-elf.py).
+    make, psp-gcc and psp-config are scripts that print "fake"."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = pathlib.Path(directory.name) / "repo"
+        tools = pathlib.Path(directory.name) / "bin"
+        tools.mkdir()
+        for name in ("make", "psp-gcc", "psp-config"):
+            (tools / name).write_bytes(b"#!/bin/sh\necho fake\n")
+            (tools / name).chmod(0o755)
+        # GIT_DIR and friends would point git at the checkout running the tests.
+        self.env = {key: value for key, value in os.environ.items()
+                    if not key.startswith("GIT_")}
+        self.env.update(PATH=f"{tools}{os.pathsep}{os.environ['PATH']}",
+                        MAKE=(tools / "make").as_posix(), PROFILE="diagnostic",
+                        PYTHON=pathlib.Path(sys.executable).as_posix())
+        for name in ("package-release.sh", "check-package.sh",
+                     "release_manifest.py", "elf_info.py"):
+            self.write(f"scripts/{name}",
+                       (ROOT / "scripts" / name).read_text(encoding="utf-8"))
+        script = (self.root / "scripts" / "package-release.sh").read_text()
+        documents = re.search(r"documentation_files='([^']*)'", script)
+        for name in documents[1].split() + [
+         "source/Makefile", "source/bios/Makefile", "source/src/main.c"]:
+            self.write(name, f"{name}\n")
+        self.write(".gitignore", "/dist/\n__pycache__/\n/source/*.PBP\n"
+                   "/source/*.prx\n/source/*.elf\n/source/build-config.stamp\n")
+        self.git("init", "-q")
+        for key, value in (("user.name", "Test"), ("user.email", "test@example.com"),
+                           ("commit.gpgsign", "false"), ("tag.gpgsign", "false"),
+                           ("core.autocrlf", "false")):
+            self.git("config", key, value)
+        self.commit()
+        for name in ("EBOOT.PBP", "exception.prx", "media_engine.prx"):
+            self.write(f"source/{name}", name)
+        (self.root / "source" / "TempGBA.elf").write_bytes(FAKE_ELF)
+        self.write("source/build-config.stamp", "fake\n")
+
+    def write(self, name, text):
+        (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / name).write_bytes(text.encode())
+
+    def git(self, *args):
+        subprocess.run(["git", "-C", self.root.as_posix(), *args], check=True,
+                       capture_output=True, env=self.env)
+
+    def commit(self):
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "change")
+
+    def script(self, name):
+        return subprocess.run(["sh", f"scripts/{name}", PACKAGE_VERSION],
+                              cwd=self.root, capture_output=True, text=True,
+                              env=self.env)
+
+    def assertRefused(self, name, message):
+        result = self.script(name)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(message, result.stderr)
+
+    def test_packaging_needs_the_tag(self):
+        self.assertRefused("package-release.sh", f"Missing tag {PACKAGE_VERSION}")
+
+    def test_packaging_refuses_uncommitted_changes_in_source(self):
+        self.git("tag", PACKAGE_VERSION)
+        self.write("source/src/main.c", "changed\n")
+        self.assertRefused("package-release.sh", "source/ has uncommitted changes")
+
+    def test_packaging_refuses_a_tag_with_another_source_tree(self):
+        self.git("tag", PACKAGE_VERSION)
+        self.write("source/src/main.c", "changed\n")
+        self.commit()
+        self.assertRefused("package-release.sh", f"Tag {PACKAGE_VERSION} "
+                           "has a different source/ tree than HEAD")
+
+    def test_the_source_zip_holds_exactly_the_files_of_the_tag(self):
+        if subprocess.run(["sh", "-c", "command -v zip && command -v unzip"],
+                          capture_output=True, env=self.env).returncode:
+            self.skipTest("needs zip and unzip")
+        self.git("tag", PACKAGE_VERSION)
+        for name in ("package-release.sh", "check-package.sh"):
+            result = self.script(name)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        dist = self.root / "dist"
+        with zipfile.ZipFile(dist / SOURCE_ZIP) as archive:
+            members = archive.namelist()
+        prefix = SOURCE_ZIP[:-len(".zip")] + "/"
+        for change, changed in (
+         ("extra file", members + [prefix + "extra.txt"]),
+         ("missing file", [name for name in members
+                           if name != prefix + "source/bios/README.md"])):
+            with self.subTest(change=change):
+                with zipfile.ZipFile(dist / SOURCE_ZIP, "w") as archive:
+                    for name in changed:
+                        archive.writestr(name, "")
+                # A packaging bug would also list the wrong zip's hash: only
+                # the tag's file list can tell.
+                names = (f"GBA-Rush-PSP-{PACKAGE_VERSION}-diag.zip",
+                         f"GBA-Rush-PSP-{PACKAGE_VERSION}-diag.manifest.json",
+                         SOURCE_ZIP)
+                (dist / "SHA256SUMS-diag").write_bytes("".join(
+                 f"{hashlib.sha256((dist / name).read_bytes()).hexdigest()}  {name}\n"
+                 for name in names).encode())
+                self.assertRefused(
+                 "check-package.sh", "Source archive does not hold exactly "
+                 f"the files of tag {PACKAGE_VERSION}")
 
 
 if __name__ == "__main__":
