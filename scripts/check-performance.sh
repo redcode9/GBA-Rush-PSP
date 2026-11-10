@@ -84,6 +84,27 @@ then
   exit 1
 fi
 
+# The audio-off bench arm of diagnostic builds leaves out only the writes
+# of sound samples into the ring, so the guest runs the same: what sound.c
+# runs under sound_bench_audio_off, from each if that tests it to the end
+# of the block that if opens (one in sound_timer, one for the PSG
+# channels), never touches the Direct Sound FIFO or a DMA request.
+if ! awk '/if[ ]*\(.*sound_bench_audio_off/ {
+    inside = 1; depth = 0; opened = 0; found++ }
+  inside {
+    if ($0 ~ /fifo|dma/) bad++
+    opens = gsub(/[{]/, "{"); closes = gsub(/[}]/, "}")
+    depth += opens - closes
+    if (opens) opened = 1
+    if (opened && depth <= 0) inside = 0
+  }
+  END { exit (found != 2 || bad) }' source/src/sound.c
+then
+  echo "sound.c runs FIFO or DMA code under the audio-off bench arm" \
+    "(or the arm is not in sound_timer and the PSG render)" >&2
+  exit 1
+fi
+
 # Benchmarks compare at least MIN_RUNS runs per build with matching settings.
 if ! grep -Eq 'MIN_RUNS = 3' scripts/compare-benchmarks.py || \
    ! grep -Eq 'MATCH_FIELDS' scripts/compare-benchmarks.py
