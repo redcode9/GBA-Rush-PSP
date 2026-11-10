@@ -32,6 +32,10 @@
   follows the whole read, for `.zip` archives and for loose ROMs that fit in
   memory. A loose ROM too large to load whole, which is read in pages while
   the game runs, still shows only "Now Loading...".
+- The runtime log records how long each ROM load takes, stage by stage:
+  opening the file, reading or unpacking the ROM, loading the game's
+  settings, searching its backup ID and reading its `.sav`. Loads that fail
+  are recorded too, and `tools/decode_runtime_log.py` prints the times.
 - The Diagnostics page shows the version and the build id, an id of the
   exact source the EBOOT was built from, ending in `-dirty` when that source
   had uncommitted changes. Performance reports, runtime logs and the
