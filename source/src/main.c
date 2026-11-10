@@ -1081,6 +1081,29 @@ static void main_perf_phase_frame(void)
   if(perf_phase_sampling) perf_phase_gba_start = sceKernelGetSystemTimeLow();
 }
 
+/* The kernel's run status of the calling thread, the emulation thread
+   here; < 0 where the firmware or PPSSPP refuses the call. */
+static int main_perf_preempt_read(SceKernelThreadRunStatus *status)
+{
+  status->size = sizeof(*status);
+  return sceKernelReferThreadRunStatus(sceKernelGetThreadId(), status);
+}
+
+/* During a capture, gives the preemption counts at the end of a frame's
+   work or of its waits; a refused read turns them off for the capture. */
+static void main_perf_preempt_sample(PerfMetricsPreemptPoint point)
+{
+  SceKernelThreadRunStatus status;
+
+  if(!perf_monitor_preempt_wanted())
+    return;
+  if(main_perf_preempt_read(&status) < 0)
+    perf_monitor_preempt_unavailable();
+  else
+    perf_monitor_preempt_sample(point, status.threadPreemptCount,
+     status.intrPreemptCount);
+}
+
 /* The hardware scheduler. The dynarec calls it when a slice of
    reg[EXECUTE_CYCLES] cycles has run: it advances serial, timers, LCD timing
    and DMA by that amount, raises IRQs, and returns the length of the next
@@ -1254,6 +1277,7 @@ u32 update_gba(void)
 
           u32 draw_this_frame = skip_next_frame ^ 0x01;
 
+          main_perf_preempt_sample(PERF_METRICS_PREEMPT_WORK_END);
           synchronize();
           synchronize_sound();
 
@@ -1266,6 +1290,7 @@ u32 update_gba(void)
           }
 
           video_adaptive_frame_complete(draw_this_frame == 0, 0);
+          main_perf_preempt_sample(PERF_METRICS_PREEMPT_WAIT_END);
 
           vcount = 0;
           video_dispatch_frame_begin();
@@ -2276,6 +2301,26 @@ static void main_perf_calibrate_probe(void)
    PERF_METRICS_PROBE_CALIBRATION_READS);
 }
 
+/* Times PERF_METRICS_PREEMPT_CALIBRATION_CALLS preemption reads, the cost
+   each frame of the capture pays twice; a refused read turns them off. */
+static void main_perf_calibrate_preempt(void)
+{
+  SceKernelThreadRunStatus status;
+  u32 start = sceKernelGetSystemTimeLow();
+  u32 i;
+
+  for(i = 0; i < PERF_METRICS_PREEMPT_CALIBRATION_CALLS; i++)
+  {
+    if(main_perf_preempt_read(&status) < 0)
+    {
+      perf_monitor_preempt_unavailable();
+      return;
+    }
+  }
+  perf_monitor_record_preempt_calibration(sceKernelGetSystemTimeLow() -
+   start, PERF_METRICS_PREEMPT_CALIBRATION_CALLS);
+}
+
 /* Starts a capture and pins the settings it runs under for the report. */
 int main_perf_start(void)
 {
@@ -2332,6 +2377,7 @@ int main_perf_start(void)
   /* The first frame start of the new capture decides the sampling. */
   perf_phase_sampling = 0;
   main_perf_calibrate_probe();
+  main_perf_calibrate_preempt();
   video_reset_frame_timing();
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_start();

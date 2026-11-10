@@ -41,13 +41,14 @@ fi
 # Work time per frame reuses the clock reads already taken, so capturing
 # costs no more than before. A story that adds a read on purpose updates
 # these counts: main.c went from 5 to 14 with the phase timers (7 lines)
-# and their calibration (2).
+# and their calibration (2), then to 16 with the preemption calibration,
+# which runs once when a capture starts.
 main_reads=$(grep -c sceKernelGetSystemTimeLow source/src/main.c || true)
 video_reads=$(grep -c sceKernelGetSystemTimeLow source/src/psp_video.c || true)
-if [ "$main_reads" != 14 ] || [ "$video_reads" != 9 ]
+if [ "$main_reads" != 16 ] || [ "$video_reads" != 9 ]
 then
   echo "sceKernelGetSystemTimeLow lines changed (main.c $main_reads," \
-    "psp_video.c $video_reads; pinned at 14 and 9 in" \
+    "psp_video.c $video_reads; pinned at 16 and 9 in" \
     "scripts/check-performance.sh)" >&2
   exit 1
 fi
