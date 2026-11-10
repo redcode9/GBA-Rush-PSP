@@ -459,14 +459,22 @@ u32 update_input(void)
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
   new_key = input_trace_apply(&diagnostic_trace, diagnostic_trace_frame,
    (u16)new_key);
+  // A benchmark that replays the trace ends with the trace's last frame
+  if (input_trace_replay_last_frame(&diagnostic_trace, diagnostic_trace_frame))
+    perf_monitor_bench_end_with_frame();
   diagnostic_trace_frame++;
 #endif
 
-  // The unbound benchmark runs the loaded slot with no keys held and the
-  // tilt sensor centred
+  // The unbound benchmark runs the loaded slot with the tilt sensor centred
+  // and no keys held, or the keys of the trace it replays
   if (perf_monitor_bench_running())
   {
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+    if (diagnostic_trace.state != INPUT_TRACE_REPLAYING)
+      new_key = 0;
+#else
     new_key = 0;
+#endif
     tilt_sensorX = 0x800;
     tilt_sensorY = 0x800;
   }
@@ -545,6 +553,21 @@ int input_diagnostic_trace_begin_replay(const u8 *encoded,
 {
   return input_trace_begin_replay_from_header(&diagnostic_trace, encoded,
    encoded_size, gamepak_header, gamepak_file_size, diagnostic_trace_frame);
+}
+
+/* The unbound benchmark replays the trace held here (just recorded, being
+   replayed or finished) from its first frame, once it matches this ROM.
+   Returns the frames the trace replays, or 0 when there is none. */
+u32 input_diagnostic_trace_begin_bench(void)
+{
+  return input_trace_restart_replay(&diagnostic_trace, gamepak_header,
+   gamepak_file_size, diagnostic_trace_frame);
+}
+
+/* The checksum field of the held trace's file, for the benchmark report. */
+u32 input_diagnostic_trace_checksum(void)
+{
+  return diagnostic_trace.checksum;
 }
 
 void input_diagnostic_trace_cancel(void)

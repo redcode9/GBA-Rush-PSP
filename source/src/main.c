@@ -266,6 +266,10 @@ u32 vblank_count = 0;
 static u8 main_perf_bench_render = 1;
 static u8 main_perf_bench_audio = 1;
 #endif
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+/* Set when the unbound benchmark starts replaying the held input trace. */
+static u8 main_perf_bench_trace;
+#endif
 
 /* The first init_main flushes both translation caches; later ROM loads
    flush the read-only one and clear the RAM block metadata instead. */
@@ -2452,6 +2456,13 @@ static int main_perf_begin(u32 bench_frames)
     identity.bench_render = main_perf_bench_render;
     identity.bench_audio = main_perf_bench_audio;
 #endif
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+    if(main_perf_bench_trace)
+    {
+      identity.bench_input = PERF_REPORT_BENCH_INPUT_TRACE;
+      identity.bench_trace_checksum = input_diagnostic_trace_checksum();
+    }
+#endif
   }
   perf_monitor_set_identity(&identity);
 
@@ -2477,6 +2488,8 @@ int main_perf_start(void)
    saves the report. */
 int main_perf_bench_start(u32 render, u32 audio)
 {
+  u32 frames = MAIN_PERF_BENCH_FRAMES;
+
   if(main_link_active())
     return 0;
 
@@ -2485,7 +2498,16 @@ int main_perf_bench_start(u32 render, u32 audio)
   main_perf_bench_render = render != 0;
   main_perf_bench_audio = audio != 0;
 #endif
-  return main_perf_begin(MAIN_PERF_BENCH_FRAMES);
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  /* A held input trace replays from the bench's first frame instead of no
+     input. Its length bounds the bench, and update_input ends the bench
+     with the trace's last frame. */
+  frames = input_diagnostic_trace_begin_bench();
+  main_perf_bench_trace = frames != 0;
+  if(!main_perf_bench_trace)
+    frames = MAIN_PERF_BENCH_FRAMES;
+#endif
+  return main_perf_begin(frames);
 }
 
 /* Ends a running unbound benchmark as unusable: the menu or a state hotkey
