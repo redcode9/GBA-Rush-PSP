@@ -32,6 +32,15 @@ int perf_monitor_start(uint64_t now_us);
 int perf_monitor_stop(uint64_t now_us);
 void perf_monitor_invalidate(uint64_t now_us);
 int perf_monitor_active(void);
+/* The unbound benchmark: bench_start starts a capture, or returns 0 while
+   one runs or for 0 frames, that stops itself once it has recorded frames
+   frames. Its duration is then the sum of their frame times, which run back
+   to back, so the menu exit before the first is left out. A stop before
+   that, or an invalidate, cuts it short and marks it unusable. take_done
+   returns 1 once after a bench reached its count; a new start drops it. */
+int perf_monitor_bench_start(uint64_t now_us, uint32_t frames);
+int perf_monitor_bench_running(void);
+int perf_monitor_bench_take_done(void);
 /* Length of the last capture, set by stop or invalidate; 0 while a capture
    is running. */
 uint64_t perf_monitor_duration_us(void);
@@ -70,6 +79,12 @@ typedef struct
   uint32_t capture_hour;
   uint32_t capture_minute;
   uint32_t capture_second;
+  /* The report's bench-* keys (PERF_REPORT_BENCH_* in perf_report.h). */
+  uint32_t bench_mode;
+  uint32_t bench_frames;
+  uint32_t bench_render;
+  uint32_t bench_audio;
+  uint32_t bench_input;
 } PerfMonitorIdentity;
 
 void perf_monitor_set_identity(const PerfMonitorIdentity *identity);

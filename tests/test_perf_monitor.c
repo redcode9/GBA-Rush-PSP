@@ -301,6 +301,107 @@ static void test_preempt_wrappers(void)
   assert(result.preempt_call_ns == 2000);
 }
 
+/* A bench stops its own capture at its frame count. Its duration is the
+   sum of the frame times, not the wall time since the start, and the done
+   flag is taken once. */
+static void test_bench_counts_frames_and_stops(void)
+{
+  PerfMetricsSnapshot result;
+
+  perf_monitor_init();
+  assert(!perf_monitor_bench_start(1000, 0));
+  assert(!perf_monitor_active());
+  assert(perf_monitor_bench_start(1000, 3));
+  assert(perf_monitor_active());
+  assert(perf_monitor_bench_running());
+  assert(!perf_monitor_bench_take_done());
+
+  perf_monitor_record_frame(10000, 0, 0, 0);
+  perf_monitor_record_frame(12000, 0, 0, 0);
+  assert(perf_monitor_active());
+  assert(perf_monitor_bench_running());
+  assert(!perf_monitor_bench_take_done());
+  perf_monitor_record_frame(14000, 0, 0, 0);
+  assert(!perf_monitor_active());
+  assert(!perf_monitor_bench_running());
+  assert(perf_monitor_duration_us() == 36000);
+
+  perf_monitor_record_frame(16000, 0, 0, 0);
+  result = snapshot();
+  assert(result.state == PERF_METRICS_STOPPED);
+  assert(result.emulated_frames == 3);
+  assert(result.presented_frames == 3);
+  assert(!perf_monitor_stop(900000));
+  assert(perf_monitor_duration_us() == 36000);
+
+  assert(perf_monitor_bench_take_done());
+  assert(!perf_monitor_bench_take_done());
+
+  /* A second bench counts its frames and time from zero again. */
+  assert(perf_monitor_bench_start(2000, 2));
+  perf_monitor_record_frame(9000, 0, 1, 0);
+  assert(perf_monitor_bench_running());
+  perf_monitor_record_frame(1000, 0, 0, 0);
+  assert(snapshot().state == PERF_METRICS_STOPPED);
+  assert(snapshot().emulated_frames == 2);
+  assert(snapshot().skipped_frames == 1);
+  assert(perf_monitor_duration_us() == 10000);
+  assert(perf_monitor_bench_take_done());
+}
+
+/* A bench never starts over a running capture, its own included, and a
+   capture started after a bench finished drops the unsaved done flag. */
+static void test_bench_refused_while_capture_active(void)
+{
+  perf_monitor_init();
+  assert(perf_monitor_start(100));
+  assert(!perf_monitor_bench_start(200, 3600));
+  assert(!perf_monitor_bench_running());
+  perf_monitor_record_frame(16667, 0, 0, 0);
+  assert(perf_monitor_active());
+  assert(perf_monitor_stop(300));
+  assert(snapshot().state == PERF_METRICS_STOPPED);
+  assert(snapshot().emulated_frames == 1);
+  assert(perf_monitor_duration_us() == 200);
+
+  assert(perf_monitor_bench_start(400, 3600));
+  assert(!perf_monitor_bench_start(500, 3600));
+  assert(!perf_monitor_start(500));
+  assert(perf_monitor_bench_running());
+
+  perf_monitor_init();
+  assert(perf_monitor_bench_start(0, 1));
+  perf_monitor_record_frame(16667, 0, 0, 0);
+  assert(perf_monitor_start(50000));
+  assert(!perf_monitor_bench_take_done());
+  perf_monitor_record_frame(16667, 0, 0, 0);
+  assert(perf_monitor_active());
+}
+
+/* A bench cut short by a reset, a ROM change, a suspend or a stop from the
+   menu is invalidated, ends, and is never reported as done. */
+static void test_bench_cut_short_is_invalidated(void)
+{
+  perf_monitor_init();
+  assert(perf_monitor_bench_start(1000, 3600));
+  perf_monitor_record_frame(16667, 0, 0, 0);
+  perf_monitor_invalidate(5000);
+  assert(!perf_monitor_bench_running());
+  assert(!perf_monitor_bench_take_done());
+  assert(snapshot().state == PERF_METRICS_INVALIDATED);
+  assert(perf_monitor_duration_us() == 4000);
+
+  assert(perf_monitor_bench_start(10000, 3600));
+  perf_monitor_record_frame(16667, 0, 0, 0);
+  assert(perf_monitor_stop(30000));
+  assert(!perf_monitor_bench_running());
+  assert(!perf_monitor_bench_take_done());
+  assert(snapshot().state == PERF_METRICS_INVALIDATED);
+  assert(snapshot().emulated_frames == 1);
+  assert(perf_monitor_duration_us() == 20000);
+  assert(!perf_monitor_stop(40000));
+}
+
 /* Runs every session case; a failing assert aborts the run. */
 int main(void)
 {
@@ -311,6 +412,9 @@ int main(void)
   test_link_lockstep_frame_wrapper();
   test_phase_wrappers();
   test_preempt_wrappers();
+  test_bench_counts_frames_and_stops();
+  test_bench_refused_while_capture_active();
+  test_bench_cut_short_is_invalidated();
   puts("Performance monitor tests passed");
   return 0;
 }

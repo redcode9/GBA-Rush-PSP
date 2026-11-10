@@ -14,10 +14,23 @@
 #include <stddef.h>
 #include <string.h>
 
+/* The unbound benchmark: RUNNING while its capture records, DONE once it
+   reached its frame count, until taken. */
+typedef enum
+{
+  PERF_MONITOR_BENCH_IDLE,
+  PERF_MONITOR_BENCH_RUNNING,
+  PERF_MONITOR_BENCH_DONE
+} PerfMonitorBench;
+
 static PerfMetrics perf_monitor_metrics;
 static PerfMonitorIdentity perf_monitor_current_identity;
 static uint64_t perf_monitor_started_us;
 static uint64_t perf_monitor_elapsed_us;
+static PerfMonitorBench perf_monitor_bench;
+static uint32_t perf_monitor_bench_count;
+static uint32_t perf_monitor_bench_target;
+static uint64_t perf_monitor_bench_elapsed_us;
 
 static uint64_t perf_monitor_elapsed(uint64_t now_us)
 {
@@ -34,6 +47,7 @@ void perf_monitor_init(void)
    sizeof(perf_monitor_current_identity));
   perf_monitor_started_us = 0;
   perf_monitor_elapsed_us = 0;
+  perf_monitor_bench = PERF_MONITOR_BENCH_IDLE;
 }
 
 int perf_monitor_start(uint64_t now_us)
@@ -45,6 +59,7 @@ int perf_monitor_start(uint64_t now_us)
   perf_monitor_elapsed_us = 0;
   memset(&perf_monitor_current_identity, 0,
    sizeof(perf_monitor_current_identity));
+  perf_monitor_bench = PERF_MONITOR_BENCH_IDLE;
   return 1;
 }
 
@@ -53,6 +68,11 @@ int perf_monitor_stop(uint64_t now_us)
   if(!perf_metrics_active(&perf_monitor_metrics))
     return 0;
 
+  if(perf_monitor_bench == PERF_MONITOR_BENCH_RUNNING)
+  {
+    perf_monitor_invalidate(now_us);
+    return 1;
+  }
   perf_monitor_elapsed_us = perf_monitor_elapsed(now_us);
   return perf_metrics_stop(&perf_monitor_metrics);
 }
@@ -64,11 +84,38 @@ void perf_monitor_invalidate(uint64_t now_us)
 
   perf_monitor_elapsed_us = perf_monitor_elapsed(now_us);
   perf_metrics_invalidate(&perf_monitor_metrics);
+  perf_monitor_bench = PERF_MONITOR_BENCH_IDLE;
 }
 
 int perf_monitor_active(void)
 {
   return perf_metrics_active(&perf_monitor_metrics);
+}
+
+int perf_monitor_bench_start(uint64_t now_us, uint32_t frames)
+{
+  if(frames == 0 || !perf_monitor_start(now_us))
+    return 0;
+
+  perf_monitor_bench = PERF_MONITOR_BENCH_RUNNING;
+  perf_monitor_bench_count = 0;
+  perf_monitor_bench_target = frames;
+  perf_monitor_bench_elapsed_us = 0;
+  return 1;
+}
+
+int perf_monitor_bench_running(void)
+{
+  return perf_monitor_bench == PERF_MONITOR_BENCH_RUNNING;
+}
+
+int perf_monitor_bench_take_done(void)
+{
+  if(perf_monitor_bench != PERF_MONITOR_BENCH_DONE)
+    return 0;
+
+  perf_monitor_bench = PERF_MONITOR_BENCH_IDLE;
+  return 1;
 }
 
 uint64_t perf_monitor_duration_us(void)
@@ -86,6 +133,16 @@ void perf_monitor_record_frame(uint32_t frame_time_us, uint32_t ge_wait_us,
 {
   perf_metrics_record_frame(&perf_monitor_metrics, frame_time_us, ge_wait_us,
    skipped, fast_forward);
+  if(perf_monitor_bench != PERF_MONITOR_BENCH_RUNNING)
+    return;
+
+  perf_monitor_bench_elapsed_us += frame_time_us;
+  if(++perf_monitor_bench_count < perf_monitor_bench_target)
+    return;
+
+  perf_metrics_stop(&perf_monitor_metrics);
+  perf_monitor_elapsed_us = perf_monitor_bench_elapsed_us;
+  perf_monitor_bench = PERF_MONITOR_BENCH_DONE;
 }
 
 void perf_monitor_record_audio_recovery(void)
