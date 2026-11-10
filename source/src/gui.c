@@ -3569,13 +3569,13 @@ static void menu_trace_start(void)
     u16 *screen;
     u32 crc = 0;
     u32 size = 0;
-    u32 message = MSG_TRACE_FAILED;
+    u32 message_id = MSG_TRACE_FAILED;
     int success = 0;
 
     diagnostics_report_line[0] = '\0';
     if(main_link_active())
     {
-        message = MSG_LINK_SAVESTATE_BLOCKED;
+        message_id = MSG_LINK_SAVESTATE_BLOCKED;
         goto finish;
     }
     if(!menu_trace_path(path, sizeof(path), 1, MENU_TRACE_PENDING_STATE))
@@ -3598,7 +3598,7 @@ static void menu_trace_start(void)
 finish:
     if(!success)
         snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
-         "%s", MSG[message]);
+         "%s", MSG[message_id]);
 }
 
 /* Stop recording and save the trace to menu_trace_path(). Once the .gbit
