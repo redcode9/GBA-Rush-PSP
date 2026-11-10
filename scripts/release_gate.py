@@ -299,7 +299,6 @@ def performance_problems(repo, version, build_id):
          *sorted(archive.glob(f"*/{previous}")))
         candidate = compare_benchmarks.collect_groups(
          *sorted(archive.glob(f"*/{version}")))
-        outcome = compare_benchmarks.compare_groups(baseline, candidate)
     except ValueError as error:
         return [f"performance on PSP-1000: {error}"], []
     problems = []
@@ -313,17 +312,26 @@ def performance_problems(repo, version, build_id):
              f"performance on PSP-1000: group "
              f"{compare_benchmarks.group_name(key)} has {version} reports "
              f"without build-id={build_id} of the rc manifest")
-    groups = outcome["groups"]
-    results = [f"{name} " + ("MISSING: no candidate reports" if result is None
-                             else "PASS" if result["passed"] else
-                             "FAIL: " + "; ".join(result["failures"]))
-               for name, result in groups]
-    if not outcome["passed"]:
-        missing = sum(result is None for _, result in groups)
-        failed = sum(result is not None and not result["passed"]
-                     for _, result in groups)
+    results, failed, missing = [], 0, 0
+    for key in sorted(baseline):
+        name = compare_benchmarks.group_name(key)
+        if key not in candidate:
+            missing += 1
+            results.append(f"{name} MISSING: no candidate reports")
+            continue
+        try:
+            failures = compare_benchmarks.compare(baseline[key],
+                                                  candidate[key])["failures"]
+        except ValueError as error:
+            # A lost run or a changed setting fails its group without
+            # hiding the other groups' results.
+            failures = [str(error)]
+        failed += bool(failures)
+        results.append(f"{name} " + (f"FAIL: {'; '.join(failures)}"
+                                     if failures else "PASS"))
+    if failed or missing:
         problems.append(f"performance on PSP-1000 against {previous}: FAIL "
-                        f"groups={len(groups)} failed={failed} "
+                        f"groups={len(results)} failed={failed} "
                         f"missing={missing}")
         problems += [f"performance on PSP-1000: group {result}"
                      for result in results]

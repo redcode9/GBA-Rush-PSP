@@ -290,9 +290,13 @@ class StableGateTest(ScratchRepoTest):
         self.perf_candidate()
         self.repo.bench("1.4.4", "AXVE", [600] * 3)
         self.repo.bench("1.4.4", "BPRE", [600] * 2)
+        # The short group fails without hiding the other group's result.
         self.assertEqual(self.repo.gate(), [
-         "performance on PSP-1000: group 0/BPRE-r0: at least 3 reports per "
-         "build are needed"])
+         "performance on PSP-1000 against 1.4.3: FAIL groups=2 failed=1 "
+         "missing=0",
+         "performance on PSP-1000: group 0/AXVE-r0 PASS",
+         "performance on PSP-1000: group 0/BPRE-r0 FAIL: at least 3 reports "
+         "per build are needed"])
         for game in ("BPRE", "AXVE"):
             shutil.rmtree(self.repo.root / "benchmarks" / "psp-1000" /
                           f"{game}-r0" / "1.4.3")
