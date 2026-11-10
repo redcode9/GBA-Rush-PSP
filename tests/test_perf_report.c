@@ -146,7 +146,12 @@ static void test_golden_report(void)
    "preempt-frames-5-8=20\n"
    "preempt-frames-9-16=4\n"
    "preempt-frames-17-plus=1\n"
-   "preempt-call-ns=1850\n";
+   "preempt-call-ns=1850\n"
+   "bench-mode=unbound\n"
+   "bench-frames=3600\n"
+   "bench-render=1\n"
+   "bench-audio=1\n"
+   "bench-input=none\n";
   PerfReportMetadata metadata;
   PerfMetricsSnapshot metrics;
   char report[PERF_REPORT_CAPACITY];
@@ -189,6 +194,11 @@ static void test_golden_report(void)
   metadata.capture_hour = 9;
   metadata.capture_minute = 5;
   metadata.capture_second = 1;
+  metadata.bench_mode = PERF_REPORT_BENCH_UNBOUND;
+  metadata.bench_frames = 3600;
+  metadata.bench_render = 1;
+  metadata.bench_audio = 1;
+  metadata.bench_input = PERF_REPORT_BENCH_INPUT_NONE;
 
   memset(&metrics, 0, sizeof(metrics));
   metrics.state = PERF_METRICS_STOPPED;
@@ -410,6 +420,11 @@ static void test_worst_case_capacity(void)
   metadata.capture_hour = UINT32_MAX;
   metadata.capture_minute = UINT32_MAX;
   metadata.capture_second = UINT32_MAX;
+  metadata.bench_mode = PERF_REPORT_BENCH_UNBOUND;
+  metadata.bench_frames = UINT32_MAX;
+  metadata.bench_render = UINT32_MAX;
+  metadata.bench_audio = UINT32_MAX;
+  metadata.bench_input = PERF_REPORT_BENCH_INPUT_NONE;
 
   memset(&metrics, 0, sizeof(metrics));
   metrics.state = PERF_METRICS_INVALIDATED;
@@ -649,6 +664,36 @@ static void test_preempt_keys(void)
   assert(report_value(report, "preempt-call-ns") == 2125);
 }
 
+/* Every report carries the bench keys, so a paced capture says so; the
+   unbound benchmark writes its frame count and gives the game no input. */
+static void test_bench_keys(void)
+{
+  PerfReportMetadata metadata;
+  PerfMetricsSnapshot metrics;
+  char report[PERF_REPORT_CAPACITY];
+
+  memset(&metadata, 0, sizeof(metadata));
+  memset(&metrics, 0, sizeof(metrics));
+  metrics.state = PERF_METRICS_STOPPED;
+  metadata.bench_render = 1;
+  metadata.bench_audio = 1;
+  assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
+  assert(strstr(report, "\nbench-mode=paced\nbench-frames=0\n"
+   "bench-render=1\nbench-audio=1\nbench-input=pad\n") != NULL);
+
+  metadata.bench_mode = PERF_REPORT_BENCH_UNBOUND;
+  metadata.bench_frames = 3600;
+  metadata.bench_render = 0;
+  metadata.bench_audio = 2;
+  metadata.bench_input = PERF_REPORT_BENCH_INPUT_NONE;
+  assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
+  assert(strstr(report, "\nbench-mode=unbound\n") != NULL);
+  assert(report_value(report, "bench-frames") == 3600);
+  assert(report_value(report, "bench-render") == 0);
+  assert(report_value(report, "bench-audio") == 1);
+  assert(strstr(report, "\nbench-input=none\n") != NULL);
+}
+
 /* Runs every report case; a failing assert aborts the run. */
 int main(void)
 {
@@ -659,6 +704,7 @@ int main(void)
   test_u64_and_link_values_read_back();
   test_phase_and_probe_keys();
   test_preempt_keys();
+  test_bench_keys();
   puts("Performance report tests passed");
   return 0;
 }

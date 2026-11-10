@@ -26,9 +26,16 @@
 #define PERF_REPORT_VERSION 7U
 
 /* Worst-case report length in bytes, including the terminating NUL. */
-#define PERF_REPORT_CAPACITY 4619U
+#define PERF_REPORT_CAPACITY 4708U
 /* The longest build-id value written; a longer id is cut. */
 #define PERF_REPORT_BUILD_ID_MAX 23U
+
+/* bench-mode= and bench-input= values: a capture the player paces with the
+   pad, or the unbound benchmark, which gives the game no input. */
+#define PERF_REPORT_BENCH_PACED 0U
+#define PERF_REPORT_BENCH_UNBOUND 1U
+#define PERF_REPORT_BENCH_INPUT_PAD 0U
+#define PERF_REPORT_BENCH_INPUT_NONE 1U
 
 typedef struct
 {
@@ -71,6 +78,13 @@ typedef struct
   uint32_t capture_hour;
   uint32_t capture_minute;
   uint32_t capture_second;
+  /* bench-*: the mode and input above, the benchmark's frame count (0 when
+     paced), and whether frames were rendered and audio mixed. */
+  uint32_t bench_mode;
+  uint32_t bench_frames;
+  uint32_t bench_render;
+  uint32_t bench_audio;
+  uint32_t bench_input;
 } PerfReportMetadata;
 
 /* Returns the report length, or -1 (and an empty string) if it does not

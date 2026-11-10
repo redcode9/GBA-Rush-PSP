@@ -406,6 +406,14 @@ int perf_report_format(char *output, size_t output_size,
      metrics->preempt_frames[i]);
   perf_report_append(&writer, "preempt-call-ns=%u\n",
    metrics->preempt_call_ns);
+  perf_report_append(&writer, "bench-mode=%s\n",
+   metadata->bench_mode == PERF_REPORT_BENCH_UNBOUND ? "unbound" : "paced");
+  perf_report_append(&writer, "bench-frames=%u\n", metadata->bench_frames);
+  perf_report_append(&writer, "bench-render=%d\n",
+   metadata->bench_render != 0);
+  perf_report_append(&writer, "bench-audio=%d\n", metadata->bench_audio != 0);
+  perf_report_append(&writer, "bench-input=%s\n",
+   metadata->bench_input == PERF_REPORT_BENCH_INPUT_NONE ? "none" : "pad");
 
   if(writer.failed)
   {
