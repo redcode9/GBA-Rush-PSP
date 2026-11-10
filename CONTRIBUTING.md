@@ -315,4 +315,9 @@ refuses it); no change under
 a pair with an earlier release loses) or `bump` line. A change of
 `LINK_NET_VERSION` or `LINK_CABLE_PROTOCOL` needs `link: bump` and a passed
 link test.
+When the release requires `perf-baseline-5`, its PSP-1000 reports in
+`benchmarks/psp-1000/*/<version>`, whose `build-id` must be the manifest's,
+must pass `scripts/compare-benchmarks.py` against the previous release's in
+every group, and a group without candidate reports fails; a release that does
+not require that test, such as a hotfix, needs no archive.
 The notes do not replace the CHANGELOG, which stays hand-written.

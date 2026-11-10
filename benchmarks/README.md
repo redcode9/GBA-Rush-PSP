@@ -24,6 +24,9 @@ Rules:
   other file here. Never add ROMs, saves, save states or BIOS files.
 - Only reports from the `EBOOT.PBP` of a published release package. Write
   the sha256 of that `EBOOT.PBP` in the commit that adds the reports.
+- A candidate's reports come from the `EBOOT.PBP` of its newest rc package
+  and carry its build id: `make release-gate CHANNEL=stable` checks their
+  `build-id` against that rc's manifest.
 - Keep only the baselines of each release; development builds are compared
   with `scripts/compare-benchmarks.py` and not archived.
 
