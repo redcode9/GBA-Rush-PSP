@@ -89,7 +89,8 @@ The diagnostic profile also traces the emulator thread's last 256 `malloc`
 and `free` calls into `perf-<time>-alloc.txt` beside each benchmark report,
 and holds from startup the KiB written in `memory-hold.txt` beside the EBOOT
 (at most 65536), to imitate a console with less memory in PPSSPP, which is
-not a proof.
+not a proof. The first line of each `-alloc.txt` gives the KiB asked for
+(`memory-hold-kib`) and the KiB actually held (`held-kib`).
 
 Switching profile rebuilds every object. A release build given an
 `ENABLE_DIAGNOSTIC_*` macro stops with an `#error`, and

@@ -1772,6 +1772,8 @@ static void find_main_path(const char *eboot_path)
 #ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
 /* Never freed; volatile keeps the compiler from dropping the malloc. */
 static void *volatile main_memory_held;
+/* The KiB memory-hold.txt asked for; 0 when missing or unparsable. */
+static unsigned long main_memory_hold_kib;
 
 /* Holds the KiB written in memory-hold.txt beside the EBOOT (decimal, at
    most 65536) until exit, to imitate a console with less memory in PPSSPP,
@@ -1797,6 +1799,7 @@ static void main_memory_hold(void)
     return;
   text[length] = '\0';
   kib = strtoul(text, &end, 10);
+  main_memory_hold_kib = kib;
   if(end == text || kib == 0 || kib > 65536)
     return;
   main_memory_held = malloc((size_t)kib << 10);
@@ -2475,7 +2478,7 @@ static void main_perf_write_core_profile(const char *report_path)
 static void main_perf_write_alloc_trace(const char *report_path)
 {
   /* The first line, then at most 50 characters per entry. */
-  static char text[64 + MEM_STATS_TRACE_CAPACITY * 50];
+  static char text[96 + MEM_STATS_TRACE_CAPACITY * 50];
   char path[MAX_PATH];
   size_t stem = strlen(report_path) - 4;
   size_t length;
@@ -2486,9 +2489,11 @@ static void main_perf_write_alloc_trace(const char *report_path)
     return;
   memcpy(path, report_path, stem);
   strcpy(path + stem, "-alloc.txt");
+  /* A hold lowers every memory figure of the report, so say if one ran. */
   length = (size_t)snprintf(text, sizeof(text),
-   "alloc-trace entries=%u thread=emulator\n",
-   (unsigned)main_alloc_trace_count);
+   "alloc-trace entries=%u thread=emulator memory-hold-kib=%lu held-kib=%lu\n",
+   (unsigned)main_alloc_trace_count, main_memory_hold_kib,
+   main_memory_held != NULL ? main_memory_hold_kib : 0ul);
   for(i = 0; i < main_alloc_trace_count && length < sizeof(text); i++)
   {
     const MemStatsTraceEntry *entry = &main_alloc_trace[i];
