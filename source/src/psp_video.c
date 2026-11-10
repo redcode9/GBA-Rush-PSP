@@ -859,6 +859,30 @@ static void apply_adaptive_quality(void)
   }
 }
 
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+/* For the autorun's test pattern: the presenter update_screen runs and the
+   filter it samples the GBA frame with. blit_sharp samples it nearest (its
+   squeeze to the screen is linear); blit_sw averages pixels on the CPU. */
+void video_presenter_names(const char **presenter, const char **filter)
+{
+  if(update_screen == blit_sharp)
+  {
+    *presenter = "sharp";
+    *filter = "nearest";
+  }
+  else if(update_screen == blit_sw)
+  {
+    *presenter = "sw";
+    *filter = "none";
+  }
+  else
+  {
+    *presenter = "gu";
+    *filter = selected_texture_filter() == GU_NEAREST ? "nearest" : "linear";
+  }
+}
+#endif
+
 /* color is a COLOR32 value, stored as 5551 with the alpha bit set. */
 void clear_screen(u32 color)
 {

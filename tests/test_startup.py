@@ -3,6 +3,7 @@ with host API stubs."""
 
 import os
 from pathlib import Path
+import re
 import shlex
 import subprocess
 import tempfile
@@ -184,8 +185,19 @@ def autorun_block():
     return text[start:text.index("\n#endif\n", start) + len("\n#endif\n")]
 
 
+def screen_defines():
+    """main.h's screen scale and filter values, so the autorun block's
+    check of the testpat= modes reads the real ones."""
+    text = (ROOT / "source/src/main.h").read_text()
+    return "\n".join(re.findall(
+        r"^#define (?:SCALED_|SCREEN_SCALE_COUNT|FILTER_)\w* .*$", text,
+        re.M)) + "\n"
+
+
 # Host stand-ins for what the autorun block calls. The file is read back in
-# pieces of at most 1000 bytes, and quit() returns instead of exiting.
+# pieces of at most 1000 bytes, each result file is kept whole, and quit()
+# returns instead of exiting. The presenter names follow psp_video.c: x15-sw
+# scales on the CPU, 16x9-sharp and 16x9-auto (at its start) are sharp.
 AUTORUN_STUBS = r'''
 #include <assert.h>
 #include <stdint.h>
@@ -195,11 +207,15 @@ AUTORUN_STUBS = r'''
 #include "runtime_log.h"
 #include "state_hash.h"
 typedef uint8_t u8;
+typedef uint16_t u16;
 typedef int32_t s32;
 typedef uint32_t u32;
 typedef int SceUID;
 #define MAX_PATH 512
 #define GBA_RUSH_BUILD_ID "abc123"
+#define GBA_SCREEN_WIDTH (240)
+#define GBA_SCREEN_HEIGHT (160)
+#define GBA_LINE_SIZE (256)
 #define FILE_OPEN(tag, name, mode) tag = stub_open(name, #mode)
 #define FILE_CHECK_VALID(tag) ((tag) >= 0)
 #define FILE_CLOSE(tag) stub_close(tag)
@@ -208,8 +224,8 @@ typedef int SceUID;
 char main_path[MAX_PATH] = "ms0:/GAME/";
 char gamepak_filename[MAX_PATH];
 u32 cpu_ticks, gamepak_file_size;
-static char file_text[8192], result[512], loaded[MAX_PATH], traced[MAX_PATH];
-static size_t file_size, file_at;
+static char file_text[8192], result[2048], loaded[MAX_PATH], traced[MAX_PATH];
+static size_t file_size, file_at, result_length;
 static int file_exists, read_error, open_files, load_result, trace_result;
 static int results, events, flushes, quits, resets;
 static u32 event_flags, event_values[3];
@@ -217,6 +233,7 @@ static SceUID stub_open(const char *name, const char *mode) {
   assert(strcmp(name, strcmp(mode, "READ") == 0 ?
    "ms0:/GAME/diag-autorun.txt" : "ms0:/GAME/diag-autorun.result") == 0);
   if(strcmp(mode, "READ") == 0 && !file_exists) return -1;
+  if(strcmp(mode, "WRITE") == 0) { results++; result_length = 0; result[0] = '\0'; }
   open_files++; file_at = 0; return 3;
 }
 static void stub_close(SceUID file) { assert(file == 3); open_files--; }
@@ -229,8 +246,9 @@ static int stub_read(SceUID file, char *buffer, size_t size) {
   return (int)n;
 }
 static int stub_write(SceUID file, const char *buffer, size_t size) {
-  assert(file == 3 && size < sizeof(result));
-  memcpy(result, buffer, size); result[size] = '\0'; results++;
+  assert(file == 3 && result_length + size < sizeof(result));
+  memcpy(result + result_length, buffer, size);
+  result_length += size; result[result_length] = '\0';
   return (int)size;
 }
 void runtime_log_psp_main(RuntimeLogEventType type, uint32_t cycle,
@@ -265,7 +283,36 @@ int gui_trace_write_hashes(const char *name) {
   assert(hashes_attached); strcpy(hashed, name); hashes_attached = 0;
   return hash_result;
 }
-void quit(void) { quits++; }
+u32 option_screen_scale, option_screen_filter, option_screen_mag;
+static u32 quit_scale, quit_filter, quit_mag;
+void quit(void) {
+  quits++; quit_scale = option_screen_scale; quit_filter = option_screen_filter;
+  quit_mag = option_screen_mag;
+}
+static u16 texture[GBA_LINE_SIZE * (GBA_SCREEN_HEIGHT + 1)];
+u16 *screen_texture = texture;
+static u32 shown_scale[16], shown_filter[16], results_at_mode[16];
+static u32 modes_shown, presents, flips, ticks;
+#define PSP_POWER_TICK_DISPLAY 6
+int scePowerTick(int type) {
+  assert(type == PSP_POWER_TICK_DISPLAY && ticks == presents); ticks++; return 0;
+}
+void video_sync_present(void) {}
+void video_resolution_small(void) {
+  assert(modes_shown < 16 && option_screen_mag == 170);
+  shown_scale[modes_shown] = option_screen_scale;
+  shown_filter[modes_shown] = option_screen_filter;
+  results_at_mode[modes_shown++] = (u32)results;
+}
+static void present(void) { presents++; }
+void (*update_screen)(void) = present;
+void flip_screen(u32 vsync) { assert(vsync == 1 && flips < presents); flips++; }
+void video_presenter_names(const char **presenter, const char **filter) {
+  u32 sharp = option_screen_scale >= 5;
+  *presenter = option_screen_scale == 2 ? "sw" : sharp ? "sharp" : "gu";
+  *filter = option_screen_scale == 2 ? "none" :
+   sharp || option_screen_filter == 0 ? "nearest" : "linear";
+}
 int main_autorun_start(void);
 void main_autorun_frame(void);
 '''
@@ -284,6 +331,8 @@ static void clear_test(void) {
   result[0] = loaded[0] = traced[0] = gamepak_filename[0] = '\0';
   gamepak_file_size = 1;
   main_autorun_running = main_autorun_frames = 0;
+  main_testpat_length = 0; modes_shown = presents = flips = ticks = 0;
+  quit_scale = quit_filter = quit_mag = 99;
 }
 static int start_size(size_t size) {
   int started;
@@ -311,6 +360,9 @@ static void expect(AutorunStatus status, const char *reason, u32 line,
    reason) == 0);
 }
 int main(void) {
+  char text[2048];
+  u32 i;
+
   clear_test(); file_exists = 0;
   assert(start("") == 0 && results == 0 && events == 0 && flushes == 0);
 
@@ -409,6 +461,72 @@ int main(void) {
   assert(cancels == 1 && perturbs == 0 && quits == 1 && flushes == 1);
   assert(gamepak_filename[0] == '\0' && gamepak_file_size == 0);
   expect(AUTORUN_STATUS_FAILED, "perturb-past-trace", 0, 0);
+
+  /* testpat=all: every scale, nearest first, the result rewritten before
+     the first mode and after each one; the user's screen options are back
+     when it quits. */
+  clear_test(); option_screen_scale = 6; option_screen_filter = 1;
+  option_screen_mag = 120; memset(texture, 0xAA, sizeof(texture));
+  assert(start(HEAD "testpat=all\n") == 0);
+  assert(modes_shown == AUTORUN_TESTPAT_MODES && loaded[0] == '\0');
+  for(i = 0; i < AUTORUN_TESTPAT_MODES; i++)
+  {
+    assert(shown_scale[i] == i / 2 && shown_filter[i] == i % 2);
+    assert(results_at_mode[i] == i + 1);
+  }
+  assert(presents == AUTORUN_TESTPAT_MODES * AUTORUN_TESTPAT_HOLD_FRAMES);
+  assert(flips == presents && ticks == presents);
+  assert((u32)results == AUTORUN_TESTPAT_MODES + 1);
+  assert(quits == 1 && quit_scale == 6 && quit_filter == 1 && quit_mag == 120);
+  assert(flushes == 0 && event_flags == AUTORUN_STATUS_DONE);
+  assert(event_values[2] == presents);
+  snprintf(text, sizeof(text), "version=1\nbuild=abc123\nstatus=done\n"
+   "reason=none\nline=0\nframes=%u\n%s", (unsigned)presents,
+   "testpat=none-nearest used=gu/nearest\n"
+   "testpat=none-linear used=gu/linear\n"
+   "testpat=x15-gu-nearest used=gu/nearest\n"
+   "testpat=x15-gu-linear used=gu/linear\n"
+   "testpat=x15-sw-nearest used=sw/none\n"
+   "testpat=x15-sw-linear used=sw/none\n"
+   "testpat=user-nearest used=gu/nearest\n"
+   "testpat=user-linear used=gu/linear\n"
+   "testpat=16x9-gu-nearest used=gu/nearest\n"
+   "testpat=16x9-gu-linear used=gu/linear\n"
+   "testpat=16x9-sharp-nearest used=sharp/nearest\n"
+   "testpat=16x9-sharp-linear used=sharp/nearest\n"
+   "testpat=16x9-auto-nearest used=sharp/nearest\n"
+   "testpat=16x9-auto-linear used=sharp/nearest\n");
+  assert(strcmp(result, text) == 0);
+  /* Eight bars of 30 pixels on every row, nothing past the 240x160 frame. */
+  for(i = 0; i < 8; i++)
+  {
+    static const u16 bars[8] =
+     { 0x0000, 0x7FFF, 0x001F, 0x03E0, 0x7C00, 0x03FF, 0x7FE0, 0x7C1F };
+    assert(texture[i * 30] == bars[i] && texture[i * 30 + 29] == bars[i]);
+    assert(texture[159 * GBA_LINE_SIZE + i * 30 + 15] == bars[i]);
+  }
+  assert(texture[240] == 0xAAAA && texture[159 * GBA_LINE_SIZE + 255] == 0xAAAA);
+  assert(texture[160 * GBA_LINE_SIZE] == 0xAAAA);
+
+  /* One mode. */
+  clear_test(); option_screen_scale = 1; option_screen_filter = 0;
+  option_screen_mag = 100;
+  assert(start(HEAD "testpat=16x9-auto-linear\n") == 0);
+  assert(modes_shown == 1 && shown_scale[0] == 6 && shown_filter[0] == 1);
+  assert(presents == AUTORUN_TESTPAT_HOLD_FRAMES && results == 2);
+  assert(quits == 1 && quit_scale == 1 && quit_filter == 0 && quit_mag == 100);
+  snprintf(text, sizeof(text), "version=1\nbuild=abc123\nstatus=done\n"
+   "reason=none\nline=0\nframes=%u\n"
+   "testpat=16x9-auto-linear used=sharp/nearest\n", (unsigned)presents);
+  assert(strcmp(result, text) == 0);
+
+  /* Refused: with a ROM run, or an unknown mode; nothing is shown. */
+  clear_test();
+  assert(start(HEAD "testpat=all\nrom=a.gba\nframes=9\nexit=1\n") == 0);
+  assert(modes_shown == 0 && loaded[0] == '\0' && quits == 0 && flushes == 1);
+  expect(AUTORUN_STATUS_IGNORED, "testpat-alone", 4, 0);
+  clear_test(); assert(start(HEAD "testpat=x15\n") == 0 && modes_shown == 0);
+  expect(AUTORUN_STATUS_IGNORED, "bad-value", 3, 0);
   puts("diagnostic autorun regressions passed");
   return 0;
 }
@@ -443,7 +561,8 @@ class StartupTests(unittest.TestCase):
 
     def test_diagnostic_autorun_glue(self):
         # main.c's autorun block with the real parser behind it.
-        build_and_run("autorun", AUTORUN_STUBS + autorun_block() + AUTORUN_SCENARIOS,
+        build_and_run("autorun", screen_defines() + AUTORUN_STUBS
+                      + autorun_block() + AUTORUN_SCENARIOS,
                       ["-DENABLE_DIAGNOSTIC_AUTORUN", "-I" + str(ROOT / "source/src"),
                        str(ROOT / "source/src/autorun_config.c")])
 

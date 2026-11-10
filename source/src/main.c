@@ -1785,6 +1785,11 @@ static AutorunConfig main_autorun;
 /* Set while a frames= limit is counting. */
 static u32 main_autorun_running;
 static u32 main_autorun_frames;
+/* What diag-autorun.result holds after its six lines: a testpat= line for
+   each mode shown so far. */
+static char main_testpat_lines[AUTORUN_TESTPAT_MODES *
+ AUTORUN_CONFIG_TESTPAT_LINE_SIZE];
+static size_t main_testpat_length;
 
 /* Writes diag-autorun.result and logs the same outcome. */
 static void main_autorun_report(AutorunStatus status, AutorunError error,
@@ -1813,6 +1818,8 @@ static void main_autorun_report(AutorunStatus status, AutorunError error,
   if(FILE_CHECK_VALID(file))
   {
     FILE_WRITE(file, text, length);
+    if(main_testpat_length != 0)
+      FILE_WRITE(file, main_testpat_lines, main_testpat_length);
     FILE_CLOSE(file);
   }
 }
@@ -1839,9 +1846,88 @@ static int main_autorun_fail(AutorunError error)
   return 0;
 }
 
+/* testpat= mode m is scale m / 2 with filter m % 2 (autorun_config.h). */
+typedef char main_testpat_modes_check
+ [(SCALED_NONE == 0 && SCALED_X15_GU == 1 && SCALED_X15_SW == 2 &&
+   SCALED_USER == 3 && SCALED_16X9_GU == 4 && SCALED_16X9_SHARP == 5 &&
+   SCALED_16X9_AUTO == 6 && SCREEN_SCALE_COUNT == AUTORUN_TESTPAT_SCALES &&
+   FILTER_NEAREST == 0 && FILTER_BILINEAR == 1) ? 1 : -1];
+
+/* Eight bars 30 pixels wide, in screen_texture's GU_PSM_5551 with red in
+   the low bits: black, white, red, green, blue, yellow, cyan, magenta. A
+   red/blue swap shows as the third and fifth bars trading colours. */
+static const u16 main_testpat_bars[8] =
+{
+  0x0000, 0x7FFF, 0x001F, 0x03E0, 0x7C00, 0x03FF, 0x7FE0, 0x7C1F
+};
+
+/* testpat=: no ROM runs. The bars go through the presenter of each mode
+   asked for, AUTORUN_TESTPAT_HOLD_FRAMES each, and after each mode the
+   result names the presenter and filter psp_video.c really used. The
+   user's screen options are put back before quit(), which saves them. */
+static void main_autorun_testpat(void)
+{
+  u32 saved_scale = option_screen_scale;
+  u32 saved_filter = option_screen_filter;
+  u32 saved_mag = option_screen_mag;
+  u32 mode = main_autorun.testpat_mode;
+  u32 last = mode;
+  u32 x, y, frame;
+
+  if(mode == AUTORUN_TESTPAT_ALL)
+  {
+    mode = 0;
+    last = AUTORUN_TESTPAT_MODES - 1;
+  }
+  main_autorun_report(AUTORUN_STATUS_STARTED, AUTORUN_OK, 0);
+
+  /* Every presenter writes the dcache back before the GE reads these. */
+  video_sync_present();
+  for(y = 0; y < GBA_SCREEN_HEIGHT; y++)
+  {
+    for(x = 0; x < GBA_SCREEN_WIDTH; x++)
+      screen_texture[y * GBA_LINE_SIZE + x] =
+       main_testpat_bars[x / (GBA_SCREEN_WIDTH / 8)];
+  }
+  /* The factory magnification, so every photo of user is alike. */
+  option_screen_mag = 170;
+
+  for(; mode <= last; mode++)
+  {
+    const char *presenter;
+    const char *filter;
+
+    option_screen_scale = AUTORUN_TESTPAT_SCALE(mode);
+    option_screen_filter = AUTORUN_TESTPAT_FILTER(mode);
+    video_resolution_small();
+    for(frame = 0; frame < AUTORUN_TESTPAT_HOLD_FRAMES; frame++)
+    {
+      /* No button is pressed for minutes: keep the backlight on. */
+      scePowerTick(PSP_POWER_TICK_DISPLAY);
+      (*update_screen)();
+      flip_screen(1);
+    }
+    main_autorun_frames += AUTORUN_TESTPAT_HOLD_FRAMES;
+
+    /* Asked after the frames: blit_sharp falls back to the GU presenter
+       when the GE list runs out. */
+    video_presenter_names(&presenter, &filter);
+    main_testpat_length += autorun_config_testpat_line(mode, presenter,
+     filter, main_testpat_lines + main_testpat_length,
+     sizeof(main_testpat_lines) - main_testpat_length);
+    main_autorun_report(mode == last ? AUTORUN_STATUS_DONE :
+     AUTORUN_STATUS_STARTED, AUTORUN_OK, 0);
+  }
+
+  option_screen_scale = saved_scale;
+  option_screen_filter = saved_filter;
+  option_screen_mag = saved_mag;
+  quit();
+}
+
 /* Reads diag-autorun.txt. Returns 1 when its ROM is loaded and reset (and
    its trace started), so user_main runs it at once; 0 otherwise, when
-   nothing in the file applies. */
+   nothing in the file applies. testpat= quits from here. */
 int main_autorun_start(void)
 {
   /* One byte over the limit tells a file that is too large. */
@@ -1871,6 +1957,11 @@ int main_autorun_start(void)
   {
     main_autorun_report(AUTORUN_STATUS_IGNORED, main_autorun.error,
      main_autorun.error_line);
+    return 0;
+  }
+  if(main_autorun.testpat)
+  {
+    main_autorun_testpat();
     return 0;
   }
   if(main_autorun.rom[0] == '\0')
