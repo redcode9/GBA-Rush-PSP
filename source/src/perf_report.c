@@ -362,6 +362,20 @@ int perf_report_format(char *output, size_t output_size,
      metadata->capture_second);
   else
     perf_report_append(&writer, "capture-local-time=\n");
+  /* phase-main- keeps these apart from the New core profile's phase-*
+     keys in the -core.txt file saved beside the report. */
+  perf_report_append_u64(&writer, "phase-main-sampled-frames",
+   metrics->phase_sampled_frames);
+  perf_report_append_u64(&writer, "phase-main-update-gba-us",
+   metrics->phase_update_gba_us);
+  perf_report_append_u64(&writer, "phase-main-scanline-us",
+   metrics->phase_scanline_us);
+  perf_report_append_u64(&writer, "phase-main-gbc-sound-us",
+   metrics->phase_gbc_sound_us);
+  perf_report_append_u64(&writer, "phase-main-work-us",
+   metrics->phase_work_us);
+  perf_report_append(&writer, "probe-read-ns=%u\n", metrics->probe_read_ns);
+  perf_report_append_u64(&writer, "probe-reads", metrics->probe_reads);
 
   if(writer.failed)
   {

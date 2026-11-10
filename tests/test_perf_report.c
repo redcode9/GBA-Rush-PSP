@@ -125,7 +125,14 @@ static void test_golden_report(void)
    "frames-over-1-5x-budget=0\n"
    "frames-late=7\n"
    "link-lockstep-frames=0\n"
-   "capture-local-time=2026-03-07T09:05:01\n";
+   "capture-local-time=2026-03-07T09:05:01\n"
+   "phase-main-sampled-frames=16\n"
+   "phase-main-update-gba-us=48000\n"
+   "phase-main-scanline-us=96000\n"
+   "phase-main-gbc-sound-us=8000\n"
+   "phase-main-work-us=180000\n"
+   "probe-read-ns=312\n"
+   "probe-reads=24576\n";
   PerfReportMetadata metadata;
   PerfMetricsSnapshot metrics;
   char report[PERF_REPORT_CAPACITY];
@@ -246,6 +253,13 @@ static void test_golden_report(void)
   metrics.frames_over_1_5x_budget = 0;
   metrics.frames_late = 7;
   metrics.link_lockstep_frames = 0;
+  metrics.phase_sampled_frames = 16;
+  metrics.phase_update_gba_us = 48000;
+  metrics.phase_scanline_us = 96000;
+  metrics.phase_gbc_sound_us = 8000;
+  metrics.phase_work_us = 180000;
+  metrics.probe_read_ns = 312;
+  metrics.probe_reads = 24576;
 
   length = perf_report_format(report, sizeof(report), &metadata, &metrics);
   assert(length == (int)strlen(expected));
@@ -446,6 +460,13 @@ static void test_worst_case_capacity(void)
   metrics.frames_over_1_5x_budget = UINT64_MAX;
   metrics.frames_late = UINT64_MAX;
   metrics.link_lockstep_frames = UINT64_MAX;
+  metrics.phase_sampled_frames = UINT64_MAX;
+  metrics.phase_update_gba_us = UINT64_MAX;
+  metrics.phase_scanline_us = UINT64_MAX;
+  metrics.phase_gbc_sound_us = UINT64_MAX;
+  metrics.phase_work_us = UINT64_MAX;
+  metrics.probe_read_ns = UINT32_MAX;
+  metrics.probe_reads = UINT64_MAX;
 
   length = perf_report_format(report, sizeof(report), &metadata, &metrics);
   assert(length == (int)sizeof(report) - 1);
@@ -507,6 +528,46 @@ static void test_u64_and_link_values_read_back(void)
   assert(report_value(report, "frames-work-over-budget") == 0);
 }
 
+/* The phase and probe keys come back exactly, and every phase key starts
+   with phase-main-, apart from the New core profile's phase-<name> keys. */
+static void test_phase_and_probe_keys(void)
+{
+  const uint64_t big = ((uint64_t)1 << 40) + 3U;
+  PerfReportMetadata metadata;
+  PerfMetricsSnapshot metrics;
+  char report[PERF_REPORT_CAPACITY];
+  const char *at;
+  unsigned phase_keys = 0;
+
+  memset(&metadata, 0, sizeof(metadata));
+  memset(&metrics, 0, sizeof(metrics));
+  metrics.state = PERF_METRICS_STOPPED;
+  metrics.phase_sampled_frames = 327;
+  metrics.phase_update_gba_us = big;
+  metrics.phase_scanline_us = 1100000;
+  metrics.phase_gbc_sound_us = 90000;
+  metrics.phase_work_us = big + 5U;
+  metrics.probe_read_ns = UINT32_MAX;
+  metrics.probe_reads = big + 7U;
+
+  assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
+  assert(report_value(report, "phase-main-sampled-frames") == 327);
+  assert(report_value(report, "phase-main-update-gba-us") == big);
+  assert(report_value(report, "phase-main-scanline-us") == 1100000);
+  assert(report_value(report, "phase-main-gbc-sound-us") == 90000);
+  assert(report_value(report, "phase-main-work-us") == big + 5U);
+  assert(report_value(report, "probe-read-ns") == UINT32_MAX);
+  assert(report_value(report, "probe-reads") == big + 7U);
+
+  for(at = strstr(report, "\nphase-"); at != NULL;
+      at = strstr(at + 1, "\nphase-"))
+  {
+    assert(strncmp(at, "\nphase-main-", 12) == 0);
+    phase_keys++;
+  }
+  assert(phase_keys == 5);
+}
+
 /* Runs every report case; a failing assert aborts the run. */
 int main(void)
 {
@@ -515,6 +576,7 @@ int main(void)
   test_invalid_arguments_and_small_buffer();
   test_worst_case_capacity();
   test_u64_and_link_values_read_back();
+  test_phase_and_probe_keys();
   puts("Performance report tests passed");
   return 0;
 }
