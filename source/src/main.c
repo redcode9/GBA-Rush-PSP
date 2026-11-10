@@ -766,9 +766,18 @@ extern char _end[];
 /* The lowest of the capture's start and stop measurements, for its report. */
 static MemStats main_perf_memory;
 #ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
-/* The allocation trace when the capture stopped, for its report. */
+/* The allocation trace when the capture ended, for its report. */
 static MemStatsTraceEntry main_alloc_trace[MEM_STATS_TRACE_CAPACITY];
 static size_t main_alloc_trace_count;
+
+/* Called wherever a capture ends, stopped or invalidated, so its report
+   never carries another capture's trace. */
+static void main_alloc_trace_take(void)
+{
+  if(perf_monitor_active())
+    main_alloc_trace_count = alloc_trace_snapshot(main_alloc_trace,
+     MEM_STATS_TRACE_CAPACITY);
+}
 #endif
 
 static void *main_memory_alloc(size_t size, void *context)
@@ -2051,6 +2060,9 @@ void reset_gba(void)
   u32 new_identity = 0;
 
   main_fast_forward_stop();
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+  main_alloc_trace_take();
+#endif
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_stop();
@@ -2135,6 +2147,9 @@ static void psp_sleep_loop(void)
   runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_SUSPEND, cpu_ticks, 0,
    (u32)gba_link.status, main_adhoc_state_value(), sleep_flag);
   main_fast_forward_stop();
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+  main_alloc_trace_take();
+#endif
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_stop();
@@ -2370,6 +2385,9 @@ int main_perf_start(void)
     identity.rom_revision = gamepak_header[0xBC];
   }
   perf_monitor_set_identity(&identity);
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+  main_alloc_trace_count = 0;
+#endif
 
   main_perf_memory = main_memory_sample(MEM_STATS_CAPTURE_START);
   perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
@@ -2389,8 +2407,7 @@ int main_perf_stop(void)
 
 #ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
   /* Before the stop sample's own malloc and free calls. */
-  main_alloc_trace_count = alloc_trace_snapshot(main_alloc_trace,
-   MEM_STATS_TRACE_CAPACITY);
+  main_alloc_trace_take();
 #endif
   stop = main_memory_sample(MEM_STATS_CAPTURE_STOP);
   mem_stats_keep_lowest(&main_perf_memory, &stop);
@@ -2454,7 +2471,7 @@ static void main_perf_write_core_profile(const char *report_path)
 
 #ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
 /* The emulator thread's last malloc and free calls before the capture
-   stopped, beside its report as perf-<local time>-alloc.txt. */
+   ended, beside its report as perf-<local time>-alloc.txt. */
 static void main_perf_write_alloc_trace(const char *report_path)
 {
   /* The first line, then at most 50 characters per entry. */
