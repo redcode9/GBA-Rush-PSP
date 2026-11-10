@@ -3538,7 +3538,9 @@ static void menu_diagnostics_name_probe(void)
       memset(&entry, 0, sizeof(entry));
       memset(name_probe_fat_record, 0, sizeof(name_probe_fat_record));
       name_probe_fat_record[0] = sizeof(name_probe_fat_record);
-      entry.d_private = name_probe_fat_record;
+      /* void *: older SDKs declare d_private as void *, newer ones as
+         SceIoFatDirentPrivate *, and the probe reads it as raw bytes. */
+      entry.d_private = (void *)name_probe_fat_record;
       /* 0 ends the listing; a PSP error stops it and goes in the log. */
       dread = sceIoDread(dir, &entry);
       if(dread <= 0)

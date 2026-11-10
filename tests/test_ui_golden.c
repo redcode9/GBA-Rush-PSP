@@ -71,7 +71,9 @@ typedef struct
 u32 option_language;
 u32 option_swap_confirm_buttons;
 int date_format;
-char main_path[MAX_PATH] = "ms0:/PSP/GAME/GBARush/";
+/* Sized to its text: in a 512-byte array gcc flags apply_theme's
+   sprintf of main_path plus the theme file name (-Wformat-overflow). */
+char main_path[] = "ms0:/PSP/GAME/GBARush/";
 
 u32 get_pad_input(u32 mask) { (void)mask; return 0; }
 GUI_ACTION_TYPE get_gui_input(void) { return CURSOR_SELECT; }
