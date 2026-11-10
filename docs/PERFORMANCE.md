@@ -109,6 +109,30 @@ a capture is not counted.
   missing on some firmware or in PPSSPP), so the counts stopped there; the
   rest of the report is valid.
 
+## Unbound benchmark
+
+Diagnostics > Unbound benchmark loads the current save state slot (a
+numbered slot backs up the progress it replaces to the auto slot first) and
+runs 3600 frames as fast as the PSP can: every frame is drawn, nothing waits
+for the VBlank, VSync is off, and the sound is mixed but dropped, so the
+emulation never waits for audio. The game gets no input. The capture then
+stops by itself and its report is saved to `benchmarks/`; the Diagnostics
+status row shows its name. A link refuses the benchmark. A reset, a ROM
+change, a suspend, a link start or Stop recording before the end mark the
+report interrupted.
+
+- `bench-mode`: `unbound` for the benchmark, `paced` for a capture the
+  player runs.
+- `bench-frames`: the benchmark's frame count, 0 when paced.
+- `bench-render`, `bench-audio`: 1 when the frames are drawn and the audio
+  is mixed.
+- `bench-input`: `none` for the benchmark, `pad` when paced.
+
+A benchmark's `duration-us` is the sum of its frame times, which run back
+to back, so the return from the menu before its first frame is left out.
+Its `vsync=` still records the option, which the benchmark ignores, and
+every one of its frames counts in `frames-late`, since none waits.
+
 ## Baselines per model
 
 The reports of each published release are archived under
