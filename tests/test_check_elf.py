@@ -71,7 +71,7 @@ class CheckElfTest(unittest.TestCase):
     def test_each_forbidden_string_fails(self):
         for text in (b"diag-autorun.txt", b"testpat=", b"main_autorun_testpat",
                      b"traces/input-AXVE-r1.gbit", b"GBIT",
-                     b"GBA Rush PSP [DIAG]"):
+                     b"dropouts", b"GBA Rush PSP [DIAG]"):
             with self.subTest(text=text):
                 status, _, err = self.run_check(
                  elf32(clean_payload() + text + b"\0"))
