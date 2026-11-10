@@ -61,7 +61,8 @@ whether the rebuild gave the rc's. Three clean builds of commit 715b1c4
 paths, gave a byte-identical `EBOOT.PBP` (sha256 starting `7c4d7b06ec22`),
 PRX files and package zip; the release profile is compared only by CI's
 two builds, in one checkout. If two builds of one tree differ, the cause goes in
-`docs/DESIGN-DECISIONS.md`. To run a step as CI does:
+`docs/DESIGN-DECISIONS.md`. To run a step as CI does (the images are amd64,
+emulated on an arm64 host):
 
 ```sh
 docker build --build-context scripts=scripts --target psp -t gba-rush-ci tools/ci

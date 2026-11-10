@@ -6,7 +6,9 @@
 # The psp image reads setup-dev.sh from a second build context:
 #   docker build --build-context scripts=scripts --target psp tools/ci
 
-# Ubuntu 24.04, the base of both images.
+# Ubuntu 24.04, the base of both images. Both are amd64 on every host, as
+# in CI (the CBMC package is amd64 only, and an arm64 Ubuntu reads another
+# archive); an arm64 host runs them emulated.
 ARG UBUNTU=ubuntu@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 
 # Both images install their packages from the Ubuntu archive as it was at
@@ -21,7 +23,7 @@ ARG UBUNTU=ubuntu@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce
 # apt-cache lists.
 ARG UBUNTU_SNAPSHOT=20261109T000000Z
 
-FROM $UBUNTU AS base
+FROM --platform=linux/amd64 $UBUNTU AS base
 ARG UBUNTU_SNAPSHOT
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
