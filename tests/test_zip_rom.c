@@ -376,9 +376,9 @@ static void test_read_errors_stop_the_load(void)
   assert(load(len, SMALL_CHUNK, OUT_CAP, 0, &size) == ZIP_ROM_IO_ERROR);
 }
 
-/* A 1.5 MiB ROM: game bytes, then 0xFF to the end. The padding packs into a
-   small part of one read, and must still move the bar once per inflate
-   step. */
+/* ROMs of up to 1.5 MiB: game bytes, then 0xFF to the end. The padding
+   packs into a small part of one read, and must still get a progress call
+   per inflate step. */
 #define PAD_ROM_SIZE (6u * ZIP_ROM_INFLATE_STEP)
 #define PAD_CHUNK (64u * 1024u) /* zip.c's read size */
 #define PAD_DATA_OFFSET 38u     /* the header and "game.gba", no extra */
@@ -386,6 +386,7 @@ static void test_read_errors_stop_the_load(void)
 static uint8_t pad_rom[PAD_ROM_SIZE];
 static uint8_t pad_archive[PAD_DATA_OFFSET + PAD_ROM_SIZE / 2u];
 static uint8_t pad_out[PAD_ROM_SIZE];
+static uint32_t pad_size; /* bytes of pad_rom the last build_padded used */
 static uint32_t high_water; /* pad_out matches pad_rom below this */
 
 /* Moves high_water over the bytes written since the last call; returns how
@@ -394,7 +395,7 @@ static uint32_t scan_high_water(void)
 {
   uint32_t start = high_water;
 
-  while(high_water < PAD_ROM_SIZE &&
+  while(high_water < pad_size &&
    pad_out[high_water] == pad_rom[high_water])
     high_water++;
   return high_water - start;
@@ -406,16 +407,18 @@ static void padding_progress(void *ctx, uint32_t done, uint32_t total)
   assert(scan_high_water() <= ZIP_ROM_INFLATE_STEP);
 }
 
-/* Fills pad_rom with game bytes of the fixture's pattern and 0xFF after
-   them, and pad_archive with its entry: method 8, CRC and sizes in the
-   header, nothing after the stream. Returns the archive's length. */
-static uint32_t build_padded(uint32_t game)
+/* Fills size bytes of pad_rom with game bytes of the fixture's pattern and
+   0xFF after them, and pad_archive with its entry, deflated with strategy:
+   method 8, CRC and sizes in the header, nothing after the stream. Returns
+   the archive's length. */
+static uint32_t build_padded(uint32_t game, uint32_t size, int strategy)
 {
   uint32_t seed = 1;
   uint32_t i, len;
   z_stream stream;
 
-  for(i = 0; i < PAD_ROM_SIZE; i++)
+  pad_size = size;
+  for(i = 0; i < size; i++)
   {
     seed = seed * 1103515245u + 12345u;
     if(i >= game)
@@ -427,9 +430,9 @@ static uint32_t build_padded(uint32_t game)
 
   memset(&stream, 0, sizeof(stream));
   assert(deflateInit2(&stream, 6, Z_DEFLATED, -MAX_WBITS, 8,
-   Z_DEFAULT_STRATEGY) == Z_OK);
+   strategy) == Z_OK);
   stream.next_in = pad_rom;
-  stream.avail_in = PAD_ROM_SIZE;
+  stream.avail_in = size;
   stream.next_out = pad_archive + PAD_DATA_OFFSET;
   stream.avail_out = sizeof(pad_archive) - PAD_DATA_OFFSET;
   assert(deflate(&stream, Z_FINISH) == Z_STREAM_END);
@@ -439,9 +442,9 @@ static uint32_t build_padded(uint32_t game)
   put32(pad_archive, 0x04034B50u);
   put16(pad_archive + 4, 20u);
   put16(pad_archive + 8, 8u);
-  put32(pad_archive + 14, (uint32_t)crc32(0L, pad_rom, PAD_ROM_SIZE));
+  put32(pad_archive + 14, (uint32_t)crc32(0L, pad_rom, size));
   put32(pad_archive + 18, len - PAD_DATA_OFFSET);
-  put32(pad_archive + 22, PAD_ROM_SIZE);
+  put32(pad_archive + 22, size);
   put16(pad_archive + 26, 8u);
   memcpy(pad_archive + 30, "game.gba", 8);
   return len;
@@ -482,12 +485,12 @@ static void expect_padded(uint32_t len, uint32_t split)
   uint32_t size = 0;
 
   /* out_cap is the ROM size, so the stream ends with no room left. */
-  assert(load_padded(len, split, PAD_ROM_SIZE, &size) == ZIP_ROM_OK);
-  assert(size == PAD_ROM_SIZE);
-  assert(memcmp(pad_out, pad_rom, PAD_ROM_SIZE) == 0);
+  assert(load_padded(len, split, pad_size, &size) == ZIP_ROM_OK);
+  assert(size == pad_size);
+  assert(memcmp(pad_out, pad_rom, pad_size) == 0);
   /* zip.c's closing call to progress draws the rest. */
   assert(scan_high_water() <= ZIP_ROM_INFLATE_STEP);
-  assert(high_water == PAD_ROM_SIZE);
+  assert(high_water == pad_size);
 }
 
 static void test_padding_reports_every_step(void)
@@ -499,7 +502,7 @@ static void test_padding_reports_every_step(void)
 
   for(i = 0; i < sizeof(game) / sizeof(game[0]); i++)
   {
-    len = build_padded(game[i]);
+    len = build_padded(game[i], PAD_ROM_SIZE, Z_DEFAULT_STRATEGY);
     expect_padded(len, 0);
     /* The stream's last bytes in a read of their own: out_cap is full
        before the end code arrives. */
@@ -514,6 +517,12 @@ static void test_padding_reports_every_step(void)
   assert(load_padded(len, 0, PAD_ROM_SIZE - 1, &size) == ZIP_ROM_TOO_BIG);
   assert(pad_out[PAD_ROM_SIZE - 1] ==
    (uint8_t)(pad_rom[PAD_ROM_SIZE - 1] ^ 0x5Au));
+
+  /* A step ends one byte before the ROM does, and Z_RLE packs the padding
+     so tightly that zlib has taken the whole archive by then: the last byte
+     comes from what zlib holds, with no read, which would find the end. */
+  expect_padded(build_padded(32u * 1024u, ZIP_ROM_INFLATE_STEP + 1u, Z_RLE),
+   0);
 }
 
 int main(void)
