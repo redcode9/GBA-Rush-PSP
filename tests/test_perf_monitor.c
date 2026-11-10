@@ -412,6 +412,50 @@ static void test_bench_cut_short_is_invalidated(void)
   assert(!perf_monitor_stop(40000));
 }
 
+/* A bench replaying a trace ends with the trace's last frame, before its
+   frame count: that frame is recorded and the bench is done as at its
+   count. A second call in the same frame changes nothing, and the call
+   leaves a capture the player paces, or no capture, alone. */
+static void test_bench_ends_with_frame(void)
+{
+  perf_monitor_init();
+  perf_monitor_bench_end_with_frame();
+  assert(!perf_monitor_active());
+  assert(perf_monitor_bench_start(1000, 3600));
+  perf_monitor_record_frame(10000, 0, 0, 0);
+  perf_monitor_record_frame(11000, 0, 0, 0);
+  assert(perf_monitor_bench_frames_left() == 3598);
+  perf_monitor_bench_end_with_frame();
+  perf_monitor_bench_end_with_frame();
+  assert(perf_monitor_bench_running());
+  assert(perf_monitor_bench_frames_left() == 1);
+  perf_monitor_record_frame(12000, 0, 0, 0);
+  assert(!perf_monitor_bench_running());
+  assert(!perf_monitor_active());
+  assert(snapshot().state == PERF_METRICS_STOPPED);
+  assert(snapshot().emulated_frames == 3);
+  assert(perf_monitor_duration_us() == 33000);
+  perf_monitor_bench_end_with_frame();
+  assert(perf_monitor_bench_take_done());
+  assert(!perf_monitor_bench_take_done());
+
+  /* At its first frame the bench records just that one. */
+  assert(perf_monitor_bench_start(2000, 3600));
+  perf_monitor_bench_end_with_frame();
+  perf_monitor_record_frame(9000, 0, 0, 0);
+  assert(snapshot().state == PERF_METRICS_STOPPED);
+  assert(snapshot().emulated_frames == 1);
+  assert(perf_monitor_bench_take_done());
+
+  assert(perf_monitor_start(5000));
+  perf_monitor_bench_end_with_frame();
+  perf_monitor_record_frame(16667, 0, 0, 0);
+  perf_monitor_record_frame(16667, 0, 0, 0);
+  assert(perf_monitor_active());
+  assert(perf_monitor_bench_frames_left() == 0);
+  assert(!perf_monitor_bench_take_done());
+}
+
 /* Runs every session case; a failing assert aborts the run. */
 int main(void)
 {
@@ -425,6 +469,7 @@ int main(void)
   test_bench_counts_frames_and_stops();
   test_bench_refused_while_capture_active();
   test_bench_cut_short_is_invalidated();
+  test_bench_ends_with_frame();
   puts("Performance monitor tests passed");
   return 0;
 }

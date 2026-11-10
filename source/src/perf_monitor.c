@@ -126,6 +126,12 @@ int perf_monitor_bench_take_done(void)
   return 1;
 }
 
+/* Only a running bench reads the target, and the next start sets it. */
+void perf_monitor_bench_end_with_frame(void)
+{
+  perf_monitor_bench_target = perf_monitor_bench_count + 1U;
+}
+
 uint64_t perf_monitor_duration_us(void)
 {
   return perf_monitor_elapsed_us;

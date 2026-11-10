@@ -39,11 +39,14 @@ int perf_monitor_active(void);
    that, or an invalidate, cuts it short and marks it unusable. take_done
    returns 1 once after a bench reached its count; a new start drops it.
    frames_left is the frames still to record, 0 unless a bench runs: at 1
-   the next recorded frame ends the capture. */
+   the next recorded frame ends the capture. end_with_frame makes the frame
+   under way a running bench's last, as when the trace it replays ends:
+   frames_left turns 1 and the bench is done when that frame is recorded. */
 int perf_monitor_bench_start(uint64_t now_us, uint32_t frames);
 int perf_monitor_bench_running(void);
 uint32_t perf_monitor_bench_frames_left(void);
 int perf_monitor_bench_take_done(void);
+void perf_monitor_bench_end_with_frame(void);
 /* Length of the last capture, set by stop or invalidate; 0 while a capture
    is running. */
 uint64_t perf_monitor_duration_us(void);
