@@ -236,6 +236,9 @@ class BenchmarkComparisonTests(unittest.TestCase):
         output = MODULE.format_result(result)
         self.assertIn("\nframe-p99=19000 us (+5.56%)\n", output)
         self.assertIn("\nreason=frame-time p99 regression exceeds 5%", output)
+        self.assertIn("\nframe-p99-runs=baseline 18000 [17900..18100], "
+                      "candidate 19000 [19000..19000]; candidate higher",
+                      output)
 
     def test_single_max_spike_ignored(self):
         baseline = [report(), report(), report()]
@@ -278,6 +281,9 @@ class BenchmarkComparisonTests(unittest.TestCase):
         output = MODULE.format_result(result)
         self.assertIn("\nwork-p95=13000 us (+8.33%)\n", output)
         self.assertNotIn("note=work-p95", output)
+        self.assertIn("\nwork-p95-runs=baseline 12000 [11900..12100], "
+                      "candidate 13000 [13000..13000]; candidate higher",
+                      output)
 
     def test_over_budget_per_minute_increase_fails(self):
         baseline = [v7(over_budget=20) for _ in range(3)]
@@ -288,8 +294,11 @@ class BenchmarkComparisonTests(unittest.TestCase):
         self.assertEqual(result["failures"], [
             "frames over 1.5x budget per minute increased by more than "
             "max(1, 20%)"])
-        self.assertIn("\nover-budget=15.0/min (baseline 10.0/min)\n",
-                      MODULE.format_result(result))
+        output = MODULE.format_result(result)
+        self.assertIn("\nover-budget=15.0/min (baseline 10.0/min)\n", output)
+        self.assertIn("\nover-budget-runs=baseline 10.0/min [10.0/min..10.0/min]"
+                      ", candidate 15.0/min [15.0/min..15.0/min]; candidate "
+                      "higher", output)
 
     def test_extreme_gates_read_the_median_of_each_build(self):
         """One slow run of either build moves no gate; two of three do."""
@@ -336,6 +345,8 @@ class BenchmarkComparisonTests(unittest.TestCase):
                 output = MODULE.format_result(result)
                 self.assertIn(note, output)
                 self.assertNotIn("work-p95=", output)
+                self.assertNotIn("work-p95-runs=", output)
+                self.assertNotIn("over-budget-runs=", output)
 
     def test_synthetic_stutter_fails_with_p95_and_p99_unchanged(self):
         # One 40 ms frame every 3 s: 40 frames over 1.5x budget in each
@@ -989,6 +1000,8 @@ class BenchmarkComparisonTests(unittest.TestCase):
             with self.subTest(text), self.assertRaises(
                     MODULE.argparse.ArgumentTypeError):
                 MODULE.parse_claim(text)
+        self.assertEqual(MODULE.parse_claim("frame-p99<=-5"),
+                         ("frame-p99", "<=", -5.0))
         with contextlib.redirect_stderr(io.StringIO()), \
                 self.assertRaises(SystemExit) as error:
             run_files(fps, faster, "--claim", "fps>=+3")

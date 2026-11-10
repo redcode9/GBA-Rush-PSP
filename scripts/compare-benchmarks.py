@@ -294,11 +294,18 @@ def verdict(baseline_values, candidate_values):
 
 
 # The per-run metrics whose spread and verdict the report prints, with
-# their display format; fast-forward only when every run measured it.
+# their display format; fast-forward only when every run measured it, the
+# WORK_METRICS only when the work gates run.
 RUN_METRICS = (
     ("throughput", throughput, "{:.2f}"),
     ("frame-p95", lambda report: number(report, "frame-time-p95-us"),
      "{:.0f}"),
+    ("frame-p99", lambda report: number(report, "frame-time-p99-us"),
+     "{:.0f}"),
+    ("work-p95", lambda report: number(report, "work-time-p95-us"),
+     "{:.0f}"),
+    ("over-budget", lambda report: float(over_budget_per_minute(report)),
+     "{:.1f}/min"),
     ("ge-p95", lambda report: number(report, "ge-wait-p95-us"), "{:.0f}"),
     ("audio-underruns", lambda report: number(report, "audio-underruns"),
      "{:.0f}"),
@@ -306,6 +313,7 @@ RUN_METRICS = (
      "{:.2f}%"),
     ("fast-forward", fast_forward_multiplier, "{:.2f}x"),
 )
+WORK_METRICS = ("work-p95", "over-budget")
 
 
 def run_order(baseline, candidate):
@@ -528,6 +536,8 @@ def compare(baseline, candidate, allow_link=False, order_check=False,
     metrics = []
     for name, metric, _ in RUN_METRICS:
         if name == "fast-forward" and baseline_fast_forward is None:
+            continue
+        if name in WORK_METRICS and candidate_work_p95 is None:
             continue
         baseline_values = [metric(report) for report in baseline]
         candidate_values = [metric(report) for report in candidate]

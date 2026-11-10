@@ -181,8 +181,9 @@ frames over 1.5x the budget per minute up more than max(1, 20%) fail too;
 otherwise a note says those gates were skipped. Frame and work times are
 measured in 250 us buckets, so below 5 ms a rise of a single bucket is
 already more than 5% and fails their gates. For each
-metric the tool also prints the median, minimum and maximum of both builds and
-the verdict of an exact one-sided permutation test on the per-run values. With
+metric but the frame-time max the tool also prints the median, minimum and
+maximum of both builds and the verdict of an exact one-sided permutation test
+on the per-run values. With
 3+3 runs that test reaches p=0.05 only when every candidate run is above (or
 every one is below) every baseline run; otherwise the verdict says undecided
 and estimates how many runs per build would decide it. Overlapping ranges
