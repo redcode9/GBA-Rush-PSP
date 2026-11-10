@@ -133,3 +133,16 @@ void net_fault_deliver(NetFault *fault, uint64_t now_us,
       i++;
   }
 }
+
+int net_fault_next_arrival(const NetFault *fault, uint64_t *arrival)
+{
+  uint32_t i;
+
+  if(fault->count == 0)
+    return 0;
+  *arrival = fault->flights[0].arrival;
+  for(i = 1; i < fault->count; i++)
+    if(fault->flights[i].arrival < *arrival)
+      *arrival = fault->flights[i].arrival;
+  return 1;
+}

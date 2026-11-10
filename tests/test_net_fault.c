@@ -314,6 +314,44 @@ static void test_pinned_vector(void)
   assert(fault.rng_state == 0x1E7FEAB3u);
 }
 
+/* The earliest arrival of the queue, wherever it sits, and nothing on an
+   empty one; the queue and the generator stay as they were. */
+static void test_next_arrival(void)
+{
+  static const NetFaultProfile late =
+   { "late", 100u, 0u, 0u, 0u, 0u, 0u, 0u, 0u };
+  static NetFaultFlight before[4];
+  uint64_t arrival = 77u;
+  uint32_t state;
+
+  Received received;
+
+  memset(&received, 0, sizeof(received));
+  net_fault_init(&fault, &late, storage, CAPACITY, 5u);
+  assert(net_fault_next_arrival(&fault, &arrival) == 0 && arrival == 77u);
+  /* Arrivals 1000, 300, 700 and 400, in this order in the queue. */
+  send_indexed(0, 0, 4u, 900u);
+  send_indexed(0, 1, 4u, 200u);
+  send_indexed(0, 2, 4u, 600u);
+  send_indexed(0, 3, 4u, 300u);
+  state = fault.rng_state;
+  memcpy(before, storage, sizeof(before));
+  assert(net_fault_next_arrival(&fault, &arrival) == 1 && arrival == 300u);
+  assert(fault.count == 4u && fault.rng_state == state && fault.sent == 4u);
+  assert(memcmp(before, storage, sizeof(before)) == 0);
+
+  /* Each delivery moves the last flight into the freed slot, so the
+     earliest ends up in the middle, then in the last slot. */
+  net_fault_deliver(&fault, 300u, receive, &received);
+  assert(net_fault_next_arrival(&fault, &arrival) == 1 && arrival == 400u);
+  net_fault_deliver(&fault, 400u, receive, &received);
+  assert(fault.count == 2u && storage[1].arrival == 700u);
+  assert(net_fault_next_arrival(&fault, &arrival) == 1 && arrival == 700u);
+  net_fault_restart(&fault, 0u);
+  assert(net_fault_next_arrival(&fault, &arrival) == 0 && arrival == 700u);
+  assert(received.count == 2u && fault.rng_state == state);
+}
+
 int main(void)
 {
   test_profiles();
@@ -324,6 +362,7 @@ int main(void)
   test_blackouts();
   test_airtime();
   test_pinned_vector();
+  test_next_arrival();
   puts("Net fault tests passed");
   return 0;
 }

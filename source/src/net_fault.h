@@ -90,5 +90,8 @@ void net_fault_send(NetFault *fault, int to, const uint8_t *data,
 void net_fault_deliver(NetFault *fault, uint64_t now_us,
  void (*deliver)(void *context, const NetFaultFlight *flight),
  void *context);
+/* 1 with the earliest arrival time in the queue, 0 when it is empty;
+   changes nothing. */
+int net_fault_next_arrival(const NetFault *fault, uint64_t *arrival);
 
 #endif
