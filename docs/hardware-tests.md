@@ -156,33 +156,41 @@ Each test has four fields:
   most 6 frames (0.1 s) above the median of 1.4.3's.
 - Steps: put the same 500 ROMs and their covers in the ROM and cover
   folders of each build, sharing a folder only where dir.ini gives it an
-  absolute path (copying them is not in the minutes). Time with no game
-  loaded: back out of the browser that opens at startup and open the ROM
-  browser with the menu's Load game (L). On 1.4.3 press SELECT for the
-  carousel; on the candidate, after choosing the carousel once, the
-  browser opens straight into it. Before timing, open the carousel once on
-  each build without timing it and without moving the cursor, so every
-  visible cover has its `.raw` cache. Then open it 3 times on each build,
-  alternating the two, and film each open with a 60 fps video that shows
-  the screen and the L and SELECT buttons. A stopwatch is not enough: it
-  adds a reaction time at each visual end, two on 1.4.3 and one on the
-  candidate. Count frames on the video: on the candidate, from the frame
-  where L goes down to the first frame with every visible cover drawn; on
-  1.4.3, the frames from L going down to the first frame of the list, plus
-  the frames from SELECT going down to the first frame of the carousel
-  with every visible cover drawn. Write both sets of 3 frame counts and
-  their medians in the row's notes. On the
-  candidate, choose the carousel, leave the menu and open the browser
-  again, then quit from the menu, start the emulator again and open it: it
-  must be in carousel both times. Load a game and open the savestate and
-  cheat browsers: they must start in the list. For the Memory Stick, start
-  the candidate with no game, wait for the browser's clock to change
-  minute, note it and switch view several times, then hold the POWER
-  switch up for at least 3 seconds until the PSP turns off (switched on
-  again, it shows the XMB, not the emulator). A short slide only puts it
-  to sleep, and HOME > Exit or the menu's exit write the config. Over USB,
-  no file outside `logs/` other than the covers' `.raw` caches may have a
-  modification time at or after the noted minute.
+  absolute path (copying them is not in the minutes). Each build's ROM
+  folder holds the 500 ROMs and nothing else, with no subfolder, so both
+  carousels open on the first ROM; 1.4.3 reads ROMs from its own folder
+  unless dir.ini's `rom_directory` names another, so give it that line.
+  Time with no game loaded: back out of the browser that opens at startup
+  and open the ROM browser with the menu's Load game (L). On 1.4.3 press
+  SELECT for the carousel; on the candidate, after choosing the carousel
+  once, the browser opens straight into it. Before timing, open the
+  carousel once on each build without timing it and without moving the
+  cursor, so every visible cover has its `.raw` cache, and check that both
+  builds show the same five items with the first ROM in the centre. Then
+  open it 3 times on each build, alternating the two, and film each open
+  with a 60 fps video that shows the screen and the L and SELECT buttons.
+  A stopwatch is not enough: it adds a reaction time at each visual end,
+  two on 1.4.3 and one on the candidate. Count frames on the video: on the
+  candidate, from the frame where L goes down to the first frame with
+  every visible cover drawn; on 1.4.3, the frames from L going down to the
+  first frame of the list, plus the frames from SELECT going down to the
+  first frame of the carousel with every visible cover drawn. Write both
+  sets of 3 frame counts and their medians in the row's notes. On the
+  candidate, choose the carousel and load a game from it, which leaves the
+  menu (with no game loaded the menu cannot be left). Open the menu again
+  and the ROM browser with L: it must be in carousel. Back out and open
+  the savestate and cheat browsers: they must start in the list. Quit from
+  the menu and start the emulator again: the browser that opens at startup
+  must be in carousel. For the Memory Stick, start the candidate with no
+  game, wait for the browser's clock to change minute, note it and switch
+  view several times, then hold the POWER switch up for at least 3 seconds
+  until the PSP turns off (switched on again, it shows the XMB, not the
+  emulator). A short slide only puts it to sleep, and HOME > Exit or the
+  menu's exit write the config. Over USB, look only in the emulator's
+  folder and the folders its dir.ini names, and leave out the files the PC
+  itself writes, such as `.DS_Store`: no file there outside `logs/`, other
+  than the covers' `.raw` caches, may have a modification time at or after
+  the noted minute.
 
 ## Performance
 
