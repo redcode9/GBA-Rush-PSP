@@ -138,8 +138,10 @@ SceUID psp_fopen(const char *path, const char *mode) {
 void psp_fclose(SceUID file) { if(file >= 0) sceIoClose(file); }
 '''
 
-# Every negative sceIo result, and a write that moves nothing, must come
-# back as a failure, through the table memory.c uses.
+# Through the table memory.c uses: every negative sceIo result on the write
+# side, and a write that moves nothing, must come back as a failure. A read
+# error or an early end of file only ends the read short, and a folder that
+# will not open counts as present.
 SCENARIOS = r'''
 int main(void) {
   const SaveStoreIo *io = &gui_save_store_io;
@@ -219,6 +221,10 @@ int main(void) {
   reset(); chunk = 1000; fail_call = 3; fail_value = -1;
   assert(io->read(NULL, "s", buffer, FILE_SIZE, &size, &file_size) == 1);
   assert(size == 2000 && file_size == FILE_SIZE && closes == 1);
+  /* So does an end of file before the length the seek gave. */
+  reset(); chunk = 1000; fail_call = 3; fail_value = 0;
+  assert(io->read(NULL, "s", buffer, FILE_SIZE, &size, &file_size) == 1);
+  assert(size == 2000 && closes == 1);
   reset(); memset(buffer, 0, FILE_SIZE);
   assert(io->read(NULL, "s", buffer, 100, &size, &file_size) == 1);
   assert(size == 100 && file_size == FILE_SIZE && buffer[100] == 0);
