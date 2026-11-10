@@ -218,6 +218,9 @@ static void test_testpat_key(void)
   refused(HEAD "testpat=x15-gu-bilinear\n", AUTORUN_ERROR_BAD_VALUE, 3);
   refused(HEAD "testpat=x15-gu_nearest\n", AUTORUN_ERROR_BAD_VALUE, 3);
   refused(HEAD "testpat=x15-gu-nearestx\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  /* A filter of the right length is compared whole. */
+  refused(HEAD "testpat=x15-gu-nearesx\n", AUTORUN_ERROR_BAD_VALUE, 3);
+  refused(HEAD "testpat=none-lineaR\n", AUTORUN_ERROR_BAD_VALUE, 3);
   refused(HEAD "testpat=xx15-gu-nearest\n", AUTORUN_ERROR_BAD_VALUE, 3);
   refused(HEAD "testpat=linear-none\n", AUTORUN_ERROR_BAD_VALUE, 3);
   refused(HEAD "testpat=16x9-nearest\n", AUTORUN_ERROR_BAD_VALUE, 3);
