@@ -41,6 +41,19 @@
   its own icons and installs in `PSP/GAME/GBARushPSP-DIAG`, so it keeps its
   own settings, saves and logs and never touches the regular install. The
   regular build contains none of its diagnostic code.
+- The runtime log records the memory when GBA Rush PSP starts, each time a
+  game is loaded or reset, before a link session starts and when a
+  performance measurement starts and stops: the size of the program, the
+  free heap and its largest block, the free system memory and its largest
+  block, and the size of the ROM buffer. Performance reports give the lowest
+  free heap, largest heap block and largest system memory block measured
+  during the capture (`heap-free-low`, `heap-largest-low`,
+  `kernel-free-low`).
+- The diagnostic build can hold back memory from startup, to imitate a PSP
+  with less memory in an emulator: write the amount in KiB (at most 65536)
+  in `memory-hold.txt` beside the EBOOT. Beside each performance report it
+  also saves the emulator's last 256 memory allocations and frees as
+  `perf-<time>-alloc.txt`.
 - On GitHub, bug, game and link reports open as forms that ask for the
   version, the PSP model and firmware, the steps and the `logs/` folder, and
   warn not to attach ROMs, BIOS files or saves that are not your own.
