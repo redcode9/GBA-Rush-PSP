@@ -143,10 +143,11 @@ $(C_ONLY_OBJS): CFLAGS += -Wbad-function-cast -Wmissing-prototypes
 # Warnings in our C code fail the build; the vendored zlib is left out of
 # this compile-stage -Werror only (the LTO link below checks it too). The
 # font tables gbkfont.c and shinonomefont.c are #included by ch_print.c and
-# mh_print.c, so they are checked through those two objects. A compile-stage
-# warning that truly cannot be fixed gets -Wno-error=<name> on that one
-# object, with a comment saying why. Keep this after every MAINOBJS +=
-# line: make expands the target list when it reads the line.
+# mh_print.c, so they are checked through those two objects. The two PRX
+# modules that 'all' builds set -Werror in their own Makefiles. A
+# compile-stage warning that truly cannot be fixed gets -Wno-error=<name> on
+# that one object, with a comment saying why. Keep this after every
+# MAINOBJS += line: make expands the target list when it reads the line.
 $(filter-out $(OBJZ) $(OBJG),$(C_ONLY_OBJS)): CFLAGS += -Werror
 $(OBJZ) $(OBJG): CFLAGS += -Wno-old-style-definition
 $(MAINOBJS): $(COMMON_FILE)
