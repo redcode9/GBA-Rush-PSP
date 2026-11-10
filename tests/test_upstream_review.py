@@ -124,7 +124,8 @@ class CheckAgeTest(unittest.TestCase):
         return (self.REVIEWED + datetime.timedelta(days=days)).isoformat()
 
     def test_review_up_to_45_days_old_gives_no_warning(self):
-        for days in (0, 44, 45):
+        # -1: a review dated a day after today, east of UTC, is CI's tomorrow.
+        for days in (-1, 0, 44, 45):
             with self.subTest(days=days):
                 result = self.check_age(self.after(days))
                 self.assertEqual((result.returncode, result.stdout, result.stderr),
@@ -145,6 +146,15 @@ class CheckAgeTest(unittest.TestCase):
         result = self.check_age("2026-09-23", "2026-08-08")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("on 2026-08-08, is 46 days old", result.stderr)
+
+    def test_review_after_tomorrow_fails(self):
+        # A wrong year would otherwise silence the warning for a year or more.
+        for days in (-2, -365):
+            with self.subTest(days=days):
+                result = self.check_age(self.after(days))
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("The last upstream review, on 2025-12-20, is after today",
+                              result.stderr)
 
     def test_unparsable_date_fails(self):
         for reviewed in ("2026-13-01", "2026-11-32", "5 Nov 2026", ""):

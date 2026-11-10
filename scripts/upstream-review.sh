@@ -13,6 +13,7 @@ set -eu
 #   sh scripts/upstream-review.sh --check-age [--today YYYY-MM-DD]
 # warns, and still exits 0, when the "Last review" date of docs/UPSTREAM.md
 # is more than 45 days before today: the review is monthly (CONTRIBUTING.md).
+# It fails when that date is missing, malformed or more than a day after today.
 
 usage() {
   echo "Usage: $0 CLONE [LAST_REVIEWED_COMMIT]" >&2
@@ -62,6 +63,12 @@ if [ "${1-}" = --check-age ]; then
     exit 1
   fi
   age=$(( to - from ))
+  # A day ahead is allowed: east of UTC a review's date can be CI's tomorrow.
+  if [ "$age" -lt -1 ]; then
+    echo "The last upstream review, on $reviewed, is after today ($today):" \
+      "fix the 'Last review' line in $register" >&2
+    exit 1
+  fi
   if [ "$age" -gt 45 ]; then
     echo "Warning: the last upstream review, on $reviewed, is $age days" \
       "old (more than 45). Run the monthly review (CONTRIBUTING.md)." >&2
