@@ -12,18 +12,20 @@ ARG UBUNTU=ubuntu@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce
 # Both images install their packages from the Ubuntu archive as it was at
 # this moment (UTC), served by snapshot.ubuntu.com. That is HTTPS, so
 # ca-certificates (and the openssl it needs) comes from the live archive;
-# then apt is set to the snapshot and the live package lists are dropped,
-# so every later apt call, CBMC's dependencies included, reads the snapshot.
-# When apt finds no snapshot server for a source (arm64's ports.ubuntu.com,
-# say) it reads the live archive without an error, so after apt-get update
-# each stage fails unless the snapshot is the only source apt-cache lists.
+# then the archive and security sources are pointed at the snapshot and
+# the live package lists are dropped, so every later apt call, CBMC's
+# dependencies included, reads the snapshot. The sources name the snapshot
+# itself: APT::Snapshot learns the snapshot server from the Release files
+# apt has cached and reads the live archive when it has none. After
+# apt-get update each stage fails unless the snapshot is the only source
+# apt-cache lists.
 ARG UBUNTU_SNAPSHOT=20261109T000000Z
 
 FROM $UBUNTU AS base
 ARG UBUNTU_SNAPSHOT
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
- && echo "APT::Snapshot \"$UBUNTU_SNAPSHOT\";" > /etc/apt/apt.conf.d/50snapshot \
+ && sed -i -E "s#http://(archive|security)\.ubuntu\.com/ubuntu/?#https://snapshot.ubuntu.com/ubuntu/$UBUNTU_SNAPSHOT/#" /etc/apt/sources.list.d/ubuntu.sources \
  && rm -rf /var/lib/apt/lists/*
 
 # The PSP toolchain that setup-dev.sh installs for developers plus what the
