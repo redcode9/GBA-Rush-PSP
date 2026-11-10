@@ -694,6 +694,32 @@ static void test_bench_keys(void)
   assert(strstr(report, "\nbench-input=none\n") != NULL);
 }
 
+/* The render-off and audio-off arms of diagnostic builds each write their
+   own 0, and only that one. */
+static void test_bench_arm_keys(void)
+{
+  PerfReportMetadata metadata;
+  PerfMetricsSnapshot metrics;
+  char report[PERF_REPORT_CAPACITY];
+
+  memset(&metadata, 0, sizeof(metadata));
+  memset(&metrics, 0, sizeof(metrics));
+  metrics.state = PERF_METRICS_STOPPED;
+  metadata.bench_mode = PERF_REPORT_BENCH_UNBOUND;
+  metadata.bench_frames = 3600;
+  metadata.bench_input = PERF_REPORT_BENCH_INPUT_NONE;
+
+  metadata.bench_render = 0;
+  metadata.bench_audio = 1;
+  assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
+  assert(strstr(report, "\nbench-render=0\nbench-audio=1\n") != NULL);
+
+  metadata.bench_render = 1;
+  metadata.bench_audio = 0;
+  assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
+  assert(strstr(report, "\nbench-render=1\nbench-audio=0\n") != NULL);
+}
+
 /* Runs every report case; a failing assert aborts the run. */
 int main(void)
 {
@@ -705,6 +731,7 @@ int main(void)
   test_phase_and_probe_keys();
   test_preempt_keys();
   test_bench_keys();
+  test_bench_arm_keys();
   puts("Performance report tests passed");
   return 0;
 }
