@@ -381,6 +381,15 @@ static void test_restart_replay_for_bench(void)
   assert(input_trace_finish_record(&trace, UINT32_MAX));
   assert(input_trace_restart_replay(&trace, header, 0x1000000U, 0) ==
    UINT32_MAX);
+
+  /* A recording that overflowed keeps this game's code but is not
+     replayed. */
+  input_trace_init(&trace, events, 1);
+  assert(input_trace_begin_record(&trace, 10, game_code, 1, 0));
+  assert(!input_trace_record(&trace, 11, 1));
+  assert(input_trace_restart_replay(&trace, header, 0x1000000U, 0) == 0);
+  assert(trace.state == INPUT_TRACE_ERROR);
+  assert(trace.error == INPUT_TRACE_ERROR_CAPACITY);
 }
 
 /* update_input asks after each replayed frame whether it was the trace's
