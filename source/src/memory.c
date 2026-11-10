@@ -88,6 +88,9 @@ u16 vram_metadata [0x18000]; // Video RAM code metadata                192 KiB
 u32 bios_read_protect;
 // 1 when bios.rom holds the built-in open BIOS instead of gba_bios.bin.
 u32 bios_builtin;
+// Set while nobody is there to close the popup of a savestate made with the
+// other BIOS: load_state_silent then refuses it without one.
+u32 savestate_bios_error_quiet;
 
 // Internal memory control register (0x4000800).
 u32 iwram_control;
@@ -3912,7 +3915,8 @@ u32 load_state(char *savestate_filename)
 }
 
 // load_state() without the confirmation dialog. A savestate made with the
-// other BIOS is not loaded; the player is told which BIOS it needs.
+// other BIOS is not loaded; the player is told which BIOS it needs, unless
+// savestate_bios_error_quiet is set.
 u32 load_state_silent(char *savestate_filename)
 {
   SceUID savestate_file;
@@ -3955,7 +3959,7 @@ u32 load_state_silent(char *savestate_filename)
     FILE_CLOSE(savestate_file);
 
   scePowerUnlock(0);
-  if (!bios_matches)
+  if (!bios_matches && !savestate_bios_error_quiet)
     show_savestate_bios_error();
   sound_pause = prev_sound_pause;
   return result;

@@ -266,7 +266,14 @@ s32 load_gamepak(char *name) {
   return load_result;
 }
 void reset_gba(void) { resets++; }
-int gui_trace_replay_file(const char *name) { strcpy(traced, name); return trace_result; }
+/* load_state_silent's popup for a .svs made with the other BIOS is off
+   while the trace starts: traced_quiet says whether it was. */
+u32 savestate_bios_error_quiet;
+static u32 traced_quiet;
+int gui_trace_replay_file(const char *name) {
+  strcpy(traced, name); traced_quiet = savestate_bios_error_quiet;
+  return trace_result;
+}
 static StateHashLog hash_log;
 static char hashed[MAX_PATH];
 static int hashes_attached, hash_result, cancels, perturbs;
@@ -338,7 +345,7 @@ static void clear_test(void) {
   hashes_attached = hash_result = 1; cancels = perturbs = 0;
   perturb_frame = 0; trace_duration = 9; hashed[0] = '\0';
   result[0] = loaded[0] = traced[0] = gamepak_filename[0] = '\0';
-  gamepak_file_size = 1;
+  gamepak_file_size = 1; traced_quiet = savestate_bios_error_quiet = 0;
   main_autorun_running = main_autorun_frames = 0;
   main_testpat_length = 0; modes_shown = presents = flips = ticks = 0;
   fault_profile = &net_fault_profiles[0]; fault_sets = 0;
@@ -409,6 +416,7 @@ int main(void) {
   assert(start(HEAD "rom=roms/a.gba\ntrace=traces/t.gbit\nframes=3\nexit=1\n"));
   assert(strcmp(loaded, "ms0:/GAME/roms/a.gba") == 0 && resets == 1);
   assert(strcmp(traced, "ms0:/GAME/traces/t.gbit") == 0 && flushes == 0);
+  assert(traced_quiet == 1 && savestate_bios_error_quiet == 0);
   expect(AUTORUN_STATUS_STARTED, "none", 0, 0);
   frames(2); assert(results == 1 && quits == 0);
   frames(1); assert(results == 2 && quits == 1);
@@ -441,6 +449,12 @@ int main(void) {
   clear_test(); trace_result = -1;
   assert(start(HEAD "rom=b.gba\ntrace=t.gbit\nframes=9\nexit=1\n") == 0);
   assert(quits == 1);
+  expect(AUTORUN_STATUS_FAILED, "trace", 0, 0);
+  /* A .svs made with the other BIOS: the load fails with no popup to wait
+     on, so the trace fails and exit=1 quits. */
+  clear_test(); trace_result = 0;
+  assert(start(HEAD "rom=b.gba\ntrace=t.gbit\nframes=9\nexit=1\n") == 0);
+  assert(traced_quiet == 1 && savestate_bios_error_quiet == 0 && quits == 1);
   expect(AUTORUN_STATUS_FAILED, "trace", 0, 0);
 
   /* hash= writes the replay's hashes once, when frames= runs out;

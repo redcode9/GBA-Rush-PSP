@@ -86,6 +86,7 @@ u8 *write_mem_ptr;
 GbaSio gba_sio;
 u32 idle_loop_targets, idle_loop_target_pc[MAX_IDLE_LOOPS];
 u32 smc_gate_targets, iwram_stack_optimize, bios_builtin;
+u32 savestate_bios_error_quiet;
 u32 sound_pause, oam_update, gbc_sound_update, reg[32];
 char dir_state[] = "states/";
 char main_path[] = "";
@@ -128,7 +129,8 @@ static void *safe_malloc(size_t size) {
 # handler code in the built-in BIOS). A savestate records the BIOS kind in
 # the word before the link snapshot, and load_state_silent refuses one made
 # with the other BIOS: it closes the file unread and reports it after the
-# power lock is released. Zero padding (older savestates) means gba_bios.bin.
+# power lock is released, or not at all while savestate_bios_error_quiet is
+# set. Zero padding (older savestates) means gba_bios.bin.
 # save_state_silent fails when the file takes less than the whole savestate.
 SCENARIOS = r'''
 static u8 image[0x5000];
@@ -201,6 +203,10 @@ int main(void) {
   bios_builtin = 0; shown = NULL; closes = 0; blocks_read = 0;
   assert(load_state_silent("s.svs") == 0 && blocks_read == 0 && closes == 1);
   assert(shown == MSG[MSG_ERR_STATE_NEEDS_BUILTIN_BIOS] && !power_locked);
+  savestate_bios_error_quiet = 1; shown = NULL; closes = 0;
+  assert(load_state_silent("s.svs") == 0 && blocks_read == 0 && closes == 1);
+  assert(shown == NULL && !power_locked);
+  savestate_bios_error_quiet = 0;
   bios_builtin = 1; shown = NULL; closes = 0;
   assert(load_state_silent("s.svs") == 1 && blocks_read == 1 && closes == 1);
   assert(shown == NULL && !power_locked);

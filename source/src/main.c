@@ -1981,10 +1981,19 @@ int main_autorun_start(void)
      strrchr(path, '.') == NULL || load_gamepak(path) <= 0)
     return main_autorun_fail(AUTORUN_ERROR_ROM);
   reset_gba();
-  if(main_autorun.trace[0] != '\0' &&
-     (!main_autorun_path(path, sizeof(path), main_autorun.trace) ||
-      gui_trace_replay_file(path) <= 0))
-    return main_autorun_fail(AUTORUN_ERROR_TRACE);
+  if(main_autorun.trace[0] != '\0')
+  {
+    int replay = 0;
+
+    /* A .svs made with the other BIOS fails the trace here, instead of
+       showing a popup that waits for a button nobody presses. */
+    savestate_bios_error_quiet = 1;
+    if(main_autorun_path(path, sizeof(path), main_autorun.trace))
+      replay = gui_trace_replay_file(path);
+    savestate_bios_error_quiet = 0;
+    if(replay <= 0)
+      return main_autorun_fail(AUTORUN_ERROR_TRACE);
+  }
   if(main_autorun.hash[0] != '\0')
   {
     AutorunError error = AUTORUN_OK;
