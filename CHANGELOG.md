@@ -37,8 +37,9 @@
   session.
 - The runtime log records how every `.sav` was read (its size, the save
   chip chosen and whether they disagree), how long every save write took,
-  whether it worked and how many tries it needed, and which save fields of
-  a damaged savestate were repaired on load.
+  whether it worked and how many tries it needed, how long the save copy
+  made before a link session took and whether it worked, and which save
+  fields of a damaged savestate were repaired on load.
 - The Diagnostics page shows the version and the build id, an id of the
   exact source the EBOOT was built from, ending in `-dirty` when that source
   had uncommitted changes. Performance reports, runtime logs and the
