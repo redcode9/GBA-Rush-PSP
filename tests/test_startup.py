@@ -204,6 +204,7 @@ AUTORUN_STUBS = r'''
 #include <stdio.h>
 #include <string.h>
 #include "autorun_config.h"
+#include "input_trace.h"
 #include "runtime_log.h"
 #include "state_hash.h"
 typedef uint8_t u8;
@@ -270,10 +271,14 @@ void reset_gba(void) { resets++; }
    while the trace starts: traced_quiet says whether it was. */
 u32 savestate_bios_error_quiet;
 static u32 traced_quiet;
+/* A trace that starts is replaying until it finishes or is cancelled. */
+static InputTraceState trace_state;
 int gui_trace_replay_file(const char *name) {
   strcpy(traced, name); traced_quiet = savestate_bios_error_quiet;
+  if(trace_result > 0) trace_state = INPUT_TRACE_REPLAYING;
   return trace_result;
 }
+InputTraceState input_diagnostic_trace_state(void) { return trace_state; }
 static StateHashLog hash_log;
 static char hashed[MAX_PATH];
 static int hashes_attached, hash_result, cancels, perturbs;
@@ -281,7 +286,9 @@ static u32 perturb_frame, trace_duration;
 const StateHashLog *input_diagnostic_trace_hashes(void) {
   return hashes_attached ? &hash_log : NULL;
 }
-void input_diagnostic_trace_cancel(void) { cancels++; hashes_attached = 0; }
+void input_diagnostic_trace_cancel(void) {
+  cancels++; hashes_attached = 0; trace_state = INPUT_TRACE_IDLE;
+}
 u32 input_diagnostic_trace_duration(void) { return trace_duration; }
 void input_diagnostic_trace_hashes_perturb(u32 frame) {
   assert(hashes_attached); perturbs++; perturb_frame = frame;
@@ -346,6 +353,7 @@ static void clear_test(void) {
   perturb_frame = 0; trace_duration = 9; hashed[0] = '\0';
   result[0] = loaded[0] = traced[0] = gamepak_filename[0] = '\0';
   gamepak_file_size = 1; traced_quiet = savestate_bios_error_quiet = 0;
+  trace_state = INPUT_TRACE_IDLE;
   main_autorun_running = main_autorun_frames = 0;
   main_testpat_length = 0; modes_shown = presents = flips = ticks = 0;
   fault_profile = &net_fault_profiles[0]; fault_sets = 0;
@@ -489,6 +497,21 @@ int main(void) {
   assert(cancels == 1 && perturbs == 0 && quits == 1 && flushes == 1);
   assert(gamepak_filename[0] == '\0' && gamepak_file_size == 0);
   expect(AUTORUN_STATUS_FAILED, "no-hash-memory", 0, 0);
+
+  /* A suspend cancels the replay (psp_sleep_loop): the run fails at the
+     next frame, with the frames run before it, and writes no hashes. A
+     replay that ends before frames= runs out is done. */
+  clear_test();
+  assert(start(HEAD "rom=a.gba\ntrace=t.gbit\nframes=5\nexit=1\nhash=h.gbsh\n"));
+  frames(2); input_diagnostic_trace_cancel();
+  frames(1); assert(results == 2 && quits == 1 && flushes == 1);
+  assert(hashed[0] == '\0');
+  expect(AUTORUN_STATUS_FAILED, "trace", 0, 2);
+  frames(5); assert(results == 2 && quits == 1);
+  clear_test(); assert(start(HEAD "rom=a.gba\ntrace=t.gbit\nframes=3\n"));
+  frames(1); trace_state = INPUT_TRACE_FINISHED;
+  frames(2); assert(results == 2 && quits == 0);
+  expect(AUTORUN_STATUS_DONE, "none", 0, 3);
 
   /* perturb= at the trace's last frame flips; past it nothing would. */
   clear_test(); trace_duration = 4;

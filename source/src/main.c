@@ -2021,21 +2021,31 @@ int main_autorun_start(void)
 
 /* Called by update_gba once per emulated frame, at VBlank: after frames=N
    frames from the ROM's start the run is done, hash= gets the replay's
-   state hashes (once, at the end of the run), and exit=1 quits. */
+   state hashes (once, at the end of the run), and exit=1 quits. A replay
+   cancelled before then (a suspend does that) fails the run at once. */
 void main_autorun_frame(void)
 {
   char path[MAX_PATH];
+  AutorunError error = AUTORUN_OK;
+  InputTraceState trace;
 
-  if(!main_autorun_running || ++main_autorun_frames < main_autorun.frames)
+  if(!main_autorun_running)
     return;
 
+  trace = input_diagnostic_trace_state();
+  if(main_autorun.trace[0] != '\0' && trace != INPUT_TRACE_REPLAYING &&
+     trace != INPUT_TRACE_FINISHED)
+    error = AUTORUN_ERROR_TRACE;
+  else if(++main_autorun_frames < main_autorun.frames)
+    return;
+  else if(main_autorun.hash[0] != '\0' &&
+          (!main_autorun_path(path, sizeof(path), main_autorun.hash) ||
+           !gui_trace_write_hashes(path)))
+    error = AUTORUN_ERROR_HASH;
+
   main_autorun_running = 0;
-  if(main_autorun.hash[0] != '\0' &&
-     (!main_autorun_path(path, sizeof(path), main_autorun.hash) ||
-      !gui_trace_write_hashes(path)))
-    main_autorun_report(AUTORUN_STATUS_FAILED, AUTORUN_ERROR_HASH, 0);
-  else
-    main_autorun_report(AUTORUN_STATUS_DONE, AUTORUN_OK, 0);
+  main_autorun_report(error == AUTORUN_OK ? AUTORUN_STATUS_DONE :
+   AUTORUN_STATUS_FAILED, error, 0);
   if(main_autorun.exit_when_done)
     quit();
 }

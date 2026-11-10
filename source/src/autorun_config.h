@@ -33,11 +33,12 @@
  *                    the EBOOT folder. Not added to Recent ROMs.
  *   trace=<path>     an input trace (.gbit) replayed from the first frame;
  *                    a version 2 trace loads the .svs of the same name
- *                    first. Needs rom.
+ *                    first. A replay cancelled before frames= runs out (a
+ *                    suspend does that) fails the run. Needs rom.
  *   frames=<n>       decimal, 1 to 2147483647: the run is done after n
  *                    frames. Needs rom. Without it the game runs on.
  *   exit=0|1         1 quits the EBOOT when the run is done, or when the ROM
- *                    or the trace fails to start. Needs frames.
+ *                    or the trace fails. Needs frames.
  *   hash=<path>      where the replay's state hashes (.gbsh, state_hash.h)
  *                    are written when the run is done; a path without ':'
  *                    is relative to the EBOOT folder. Needs trace and
