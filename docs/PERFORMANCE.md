@@ -170,6 +170,57 @@ Its `vsync=0`, `frameskip-type=2` (none) and `frameskip-value=0` are what
 it runs under, whatever the options say, and every one of its frames counts
 in `frames-late`, since none waits.
 
+## Padding experiment
+
+Moving code and data by a few kilobytes, as any unrelated change does, can
+change the emulator's speed through the PSP's caches. This experiment
+measures that effect with two diagnostic builds of the same tree that differ
+only by about 3000 bytes of code and 3000 bytes of BSS that nothing uses
+(`source/src/padding_probe.c`):
+
+```sh
+make -j4 psp-build PROFILE=diagnostic PADDING_PROBE_BYTES=0
+make -j4 psp-build PROFILE=diagnostic PADDING_PROBE_BYTES=3000
+```
+
+Copy `EBOOT.PBP`, the two PRXs and `TempGBA.elf` out of `source/` after
+each build. Install the builds in two folders, such as
+`PSP/GAME/GBARushPSP-PAD0/` and `PSP/GAME/GBARushPSP-PAD3000/`, with the
+same settings, BIOS and save state in both. Their reports carry the same
+`build-id`, so only the folder a report was saved in tells the builds
+apart.
+
+Before any run, list both ELFs with `psp-nm -n`: `update_gba` and the
+translation caches (`readonly_code_cache`, `writable_code_cache`) must sit
+at different addresses in the two builds. With `-flto` the build may place
+the padding after them; then the builds do not differ where it matters, so
+write that down instead of running the benchmarks.
+
+Then, on a PSP-1000 and on one slim, with the same two titles on both:
+
+1. Follow steps 2 to 5 of the [measurement protocol](#measurement-protocol):
+   333 MHz, link off, the same BIOS and save state slot, one warm-up run
+   discarded, the builds alternated.
+2. Each run is the plain [Unbound benchmark](#unbound-benchmark), without
+   an input trace recorded or loaded first, so every report says
+   `bench-input=none`.
+3. Make 3 runs per build and title: 12 runs per model.
+
+Put each build's reports in its own folder and compare them, the 0-byte
+build as baseline; compare-benchmarks makes one group per title and model:
+
+```sh
+python3 scripts/compare-benchmarks.py --order-check --strict \
+  --baseline-dir pad-0 --candidate-dir pad-3000
+```
+
+The decision comes from each group's exact test, not from PASS or FAIL. The
+padding changes the speed when, on at least one model, a title's
+`throughput=` changes by more than 2% either way and its `throughput-runs=`
+verdict states the difference (`candidate higher` or `candidate lower`).
+Every group must say `order=alternated`. The result and the decision go
+here, with the addresses `psp-nm` showed, after the hardware session.
+
 ## Baselines per model
 
 The reports of each published release are archived under
