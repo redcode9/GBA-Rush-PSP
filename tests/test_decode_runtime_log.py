@@ -300,6 +300,26 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         self.assertEqual(decoder.describe(unknown),
                          "result=9 duration-us=5 bytes=512 attempt=1")
 
+    def test_decodes_save_link_copy(self):
+        # The pre-link copy of a Flash 128 KiB save, one that failed and a
+        # result this decoder lacks (event 29).
+        snapshot = decoder.parse_snapshot(fixture_v6(
+            struct.pack(">QIIHBBIII", 120, 0, 1, 29, 1, 0,
+                        96500, 131072, 0),
+            struct.pack(">QIIHBBIII", 121, 0, 2, 29, 1, 2,
+                        1200, 32768, 0),
+            struct.pack(">QIIHBBIII", 122, 0, 3, 29, 1, 9, 5, 512, 0),
+        ))
+        copied, failed, unknown = snapshot["records"]
+
+        self.assertEqual(copied["event"], "save-link-copy")
+        self.assertEqual(decoder.describe(copied),
+                         "result=ok duration-us=96500 bytes=131072")
+        self.assertEqual(decoder.describe(failed),
+                         "result=failed duration-us=1200 bytes=32768")
+        self.assertEqual(decoder.describe(unknown),
+                         "result=9 duration-us=5 bytes=512")
+
     def test_save_load_names_match_the_c_enums(self):
         source = Path(__file__).parents[1] / "source" / "src"
         store = (source / "save_store.h").read_text()

@@ -13,8 +13,9 @@
 // by the paged ROM test, controlled by host_stub_rom_io(). And for
 // load_gamepak(): the ROM file size (host_stub_file_length()), the answers
 // of the yes/no prompts (host_stub_yesno()) and a working change_ext().
-// And the runtime log, which keeps the last SAVE_LOAD and SAVE_WRITE
-// events (host_stub_save_load(), host_stub_save_write()).
+// And the runtime log, which keeps the last SAVE_LOAD, SAVE_WRITE and
+// SAVE_LINK_COPY events (host_stub_save_load(), host_stub_save_write(),
+// host_stub_save_link_copy()).
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,6 +57,9 @@ static uint32_t host_save_load_values[3];
 static int host_save_writes;
 static uint8_t host_save_write_flags;
 static uint32_t host_save_write_values[3];
+static int host_save_link_copies;
+static uint8_t host_save_link_copy_flags;
+static uint32_t host_save_link_copy_values[3];
 
 void runtime_log_psp_main(RuntimeLogEventType type, uint32_t emulated_cycle,
  uint8_t flags, uint32_t value0, uint32_t value1, uint32_t value2)
@@ -68,6 +72,14 @@ void runtime_log_psp_main(RuntimeLogEventType type, uint32_t emulated_cycle,
     host_save_write_values[0] = value0;
     host_save_write_values[1] = value1;
     host_save_write_values[2] = value2;
+  }
+  if(type == RUNTIME_LOG_EVENT_SAVE_LINK_COPY)
+  {
+    host_save_link_copies++;
+    host_save_link_copy_flags = flags;
+    host_save_link_copy_values[0] = value0;
+    host_save_link_copy_values[1] = value1;
+    host_save_link_copy_values[2] = value2;
   }
   if(type != RUNTIME_LOG_EVENT_SAVE_LOAD)
     return;
@@ -84,6 +96,15 @@ int host_stub_save_write(uint8_t *flags, uint32_t values[3])
   *flags = host_save_write_flags;
   memcpy(values, host_save_write_values, sizeof(host_save_write_values));
   return host_save_writes;
+}
+
+/* SAVE_LINK_COPY events so far; the last one's flags and values. */
+int host_stub_save_link_copy(uint8_t *flags, uint32_t values[3])
+{
+  *flags = host_save_link_copy_flags;
+  memcpy(values, host_save_link_copy_values,
+   sizeof(host_save_link_copy_values));
+  return host_save_link_copies;
 }
 
 /* SAVE_LOAD events so far; the last one's flags and values. */

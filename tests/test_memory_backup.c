@@ -26,6 +26,7 @@ int host_stub_yesno_asked(void);
 int host_stub_yesno_saw_rom(void);
 int host_stub_save_load(uint8_t *flags, uint32_t values[3]);
 int host_stub_save_write(uint8_t *flags, uint32_t values[3]);
+int host_stub_save_link_copy(uint8_t *flags, uint32_t values[3]);
 void host_stub_set_time(uint64_t t0, uint64_t t1);
 
 #define KIB 1024u
@@ -474,6 +475,37 @@ static void test_cut_write_leaves_old_or_new(void)
   assert(olds > 0 && news > 0);
 }
 
+/* The pre-link copy: .link1 holds the save, and the runtime log has the
+   copy's result, duration and size. With writes blocked ('play without
+   saving') nothing is copied or logged, and that counts as done. */
+static void test_push_link_copy_is_logged(void)
+{
+  static const unsigned answers[] = { NO, YES };
+  uint8_t flags;
+  uint32_t values[3];
+  int copies;
+
+  fresh_store();
+  fake_store_seed(&store, 32 * KIB, 17);
+  assert(load("SRAM_V113", NULL, 0) == ROM_SIZE);
+  copies = host_stub_save_link_copy(&flags, values);
+  host_stub_set_time(2000, 2350);
+  assert(backup_push_link_copy());
+  assert(fake_store_file_is(&store, "game.sav.link1", 32 * KIB, 17));
+  assert(host_stub_save_link_copy(&flags, values) == copies + 1);
+  assert(flags == SAVE_STORE_OK && values[0] == 350 &&
+         values[1] == 32 * KIB);
+
+  fresh_store();
+  fake_store_seed(&store, 32 * KIB, 3);
+  store.fail_open = 1;
+  assert(load("SRAM_V113", answers, 2) == ROM_SIZE);
+  store.fail_open = 0;
+  assert(backup_push_link_copy());
+  assert(fake_store_file_size(&store, "game.sav.link1") < 0);
+  assert(host_stub_save_link_copy(&flags, values) == copies + 1);
+}
+
 /* Restoring the pre-link copy .link2: the game's pending write goes out
    first, then the .sav and the save in RAM are the copy, nothing pending,
    and putting the .bak back brings the replaced save back, that write
@@ -588,6 +620,7 @@ int main(void)
   test_warning_once_per_game();
   test_final_write_reports_failure();
   test_cut_write_leaves_old_or_new();
+  test_push_link_copy_is_logged();
   test_restore_link_copy();
   test_failed_restore_asks_when_the_save_will_not_read();
   puts("memory backup tests passed");

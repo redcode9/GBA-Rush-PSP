@@ -59,6 +59,7 @@ EVENTS = {
     26: "save-load",
     27: "savestate-repair",
     28: "save-write",
+    29: "save-link-copy",
 }
 FLUSH_REASONS = {
     1: "start",
@@ -113,6 +114,8 @@ EXACT_RENDERER = [
 # (source/src/save_store.h), then SaveType and SaveTag
 # (source/src/save_format.h). save-write, from memory.c's save_backup():
 # the write's SaveStoreResult, microseconds, bytes and try number.
+# save-link-copy, from memory.c's backup_push_link_copy(): the pre-link
+# copy's SaveStoreResult, microseconds and bytes.
 SAVE_RESULTS = [
     "ok", "not-found", "failed", "write-failed", "verify-failed",
     "backup-failed", "promote-failed", "restore-failed",
@@ -250,6 +253,11 @@ def describe(record: dict[str, Any]) -> str:
         return (
             f"result={_name(SAVE_RESULTS, flags)} duration-us={value0} "
             f"bytes={value1} attempt={value2}"
+        )
+    if event == "save-link-copy":
+        return (
+            f"result={_name(SAVE_RESULTS, flags)} duration-us={value0} "
+            f"bytes={value1}"
         )
     if event == "savestate-repair":
         fixed = [name for bit, name in enumerate(SAVE_FIXES) if value0 >> bit & 1]
