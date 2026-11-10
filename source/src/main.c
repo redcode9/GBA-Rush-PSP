@@ -1547,10 +1547,19 @@ static void synchronize(void)
 
   // Unbound benchmark: draw every frame and never wait. Sound runs as in
   // muted fast-forward, mixed then dropped while the audio thread sleeps;
-  // set each frame, as a menu visit restores it. The counts stay at 0, so
-  // pacing restarts from now once the bench ends.
+  // set each frame, as the start cleared it. The counts stay at 0, so
+  // pacing restarts from now once the bench ends. Before the last frame is
+  // recorded, which stops the capture, the stop work of main_perf_stop
+  // runs: the end memory sample and the core profile's stop.
   if(perf_monitor_bench_running())
   {
+    if(perf_monitor_bench_frames_left() == 1)
+    {
+      perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+      arm_gba_profile_stop();
+#endif
+    }
     sound_set_fast_forward(1);
     skip_next_frame = 0;
     real_frame_count = 0;
