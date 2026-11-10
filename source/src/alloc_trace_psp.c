@@ -42,10 +42,14 @@ __attribute__((used)) void *__wrap_malloc(size_t size)
 {
   void *caller = __builtin_return_address(0);
   void *pointer = __real_malloc(size);
+  /* A malloc of the free marker's size is kept one byte smaller, so it is
+     never read back as a free. */
+  uint32_t traced = (uint32_t)size == MEM_STATS_TRACE_FREE ?
+   MEM_STATS_TRACE_FREE - 1u : (uint32_t)size;
 
   if(alloc_trace_here())
     mem_stats_trace_push(&alloc_trace_ring, (uint32_t)(uintptr_t)pointer,
-     (uint32_t)size, (uint32_t)(uintptr_t)caller);
+     traced, (uint32_t)(uintptr_t)caller);
   return pointer;
 }
 
