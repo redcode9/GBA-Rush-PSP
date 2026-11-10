@@ -75,9 +75,8 @@ then
 fi
 
 # Only the worker touches the network; the emulator thread never blocks on it.
-if grep -Eq 'sceNetAdhoc|sceNetInit|sceUtilityLoadNetModule' \
-  source/src/main.c source/src/gui.c source/src/link_cable.c \
-  source/src/link_net.c
+if git grep -qE --untracked 'sceNetAdhoc|sceNetInit|sceUtilityLoadNetModule' \
+  -- source/src ':(exclude)source/src/psp_adhoc.c'
 then
   fail "Network calls are made outside the ad-hoc worker"
 fi
