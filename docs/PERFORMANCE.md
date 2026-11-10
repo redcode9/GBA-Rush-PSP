@@ -86,6 +86,26 @@ The New core's diagnostic profile, saved beside the report as
 translate, interpret, events): those split the CPU core's time and are a
 different measure, hence the `phase-main-` prefix here.
 
+## Preemptions
+
+During a capture the emulation thread reads its preemption counts from the
+PSP kernel twice a frame: before the frame pacing in `synchronize()`, where
+the work ends, and after the flip, where the waits end. The first frame of
+a capture is not counted.
+
+- `preempt-work-thread`, `preempt-work-intr`: the times another thread or
+  an interrupt took the CPU from the emulation thread during the work.
+- `preempt-wait-thread`, `preempt-wait-intr`: the same during the frame
+  pacing, the sound sync and the flip.
+- `preempt-max-per-frame`: the most preemptions in one frame, all four
+  together.
+- `preempt-frames-0` to `preempt-frames-17-plus`: the frames with 0, 1, 2,
+  3-4, 5-8, 9-16 and 17 or more preemptions.
+- `preempt-call-ns`: the cost of one read, from 16 reads when the capture
+  starts. Each frame makes two, which count as work.
+- `preempt-available=0`: the kernel refused a read (some firmware, or
+  PPSSPP), so the counts stopped there; the rest of the report is valid.
+
 ## Baselines per model
 
 The reports of each published release are archived under
