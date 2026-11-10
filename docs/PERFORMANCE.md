@@ -75,7 +75,11 @@ for the time per frame:
 
 The sampled frames count as frames but stay out of the frame-time and
 work-time percentiles and maximum. A sampled frame longer than 128 ms (a
-menu, a save state) is not timed.
+menu, a save state) is not timed. `frames-work-over-budget`,
+`frames-over-1-5x-budget` and `frames-late` still count the sampled frames
+with the time the timers' reads add, so a frame just under budget can go
+over on a sampled frame: allow for it when comparing with a report made
+before the phase timers.
 
 The New core's diagnostic profile, saved beside the report as
 `-core.txt`, has its own `phase-<name>` keys (code, dispatch, memory,
