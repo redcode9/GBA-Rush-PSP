@@ -10,7 +10,7 @@
 ## 1.5
 
 - [ ] **CMP-6.1** — Gate: Classic NES Series su 1.4.2 · S, 0,5 gg · dipende da: — · PSP: sì · **subito**
-- [ ] **EXT-2.1** — Modulo puro zip_rom: inflate a blocchi con esiti distinti e CRC32 · M, 1,5 gg · dipende da: — · PSP: no · **subito** · _in parte: codice e test host pronti (37756d8, f9643c6, f140760), passano normali e con UBSan; manca la prova sotto ASan (`make test-sanitize`)_
+- [x] **EXT-2.1** — Modulo puro zip_rom: inflate a blocchi con esiti distinti e CRC32 · M, 1,5 gg · dipende da: — · PSP: no · **subito** · _CI verde su 65c2d6b (run 42803702949): in `make test-sanitize` `test_zip_rom`, costruito con `-fsanitize=address,undefined`, stampa «Zip ROM tests passed», e passa anche in `make check`; codice e test host in 37756d8, f9643c6, f140760_
 - [ ] **EXT-2.2** — zip.c sopra zip_rom e messaggio per lo zip danneggiato · S, 0,5 gg · dipende da: EXT-2.1 · PSP: sì · _codice pronto (c60f182), manca la prova su PSP; per la sessione lo zip in streaming si scrive con `zipfile.ZipFile(stream non seekable, 'w', compression=zipfile.ZIP_DEFLATED)` e il suo primo header locale deve avere `flags & 8` e metodo 8 (uno zip in streaming con la ROM non compressa, metodo 0, è rifiutato di proposito)_
 - [ ] **EXT-5.1** — Finestra EEPROM decisa in read16_eeprom, con test host su una ROM paginata da 32 MiB · S, 1 gg · dipende da: EXT-1.1 · PSP: no · aspetta: EXT-1.1 (`wip/save-store`)
 - [ ] **EXT-5.2** — Variante da 32 MiB della ROM di test dei salvataggi · S, 1 gg · dipende da: SAV-2.6, EXT-5.1 · PSP: sì · aspetta: EXT-1.1 (`wip/save-store`), tramite EXT-5.1
@@ -18,7 +18,7 @@
 ## 1.6
 
 - [ ] **UI-14.1** — Barra di avanzamento reale · S, 1 gg · dipende da: — · PSP: sì · **subito** · _codice pronto (c60f182, e9b56d4, a022834), manca la prova su PSP_
-- [ ] **UI-14.2** — Tempi delle fasi nel runtime log · S, 1 gg · dipende da: ENG-1.6 · PSP: no · _in parte: codice e test host pronti (2640464, ff027c6), passano normali e con UBSan; mancano `make check` (test_perf_dma_probe), `make test-sanitize` e le build PSP in CI_
+- [x] **UI-14.2** — Tempi delle fasi nel runtime log · S, 1 gg · dipende da: ENG-1.6 · PSP: no · _CI verde su 65c2d6b (run 42803702949): `test_runtime_log` e `test_perf_dma_probe` (costruito sul `memory.c` del branch) passano in `make check` e sotto ASan e UBSan in `make test-sanitize`, i 157 test Python con `test_decode_runtime_log.py` danno OK, e le build PSP release e diagnostic compilano `memory.c`, `runtime_log.c` e `runtime_log_psp.c` senza avvisi; codice e test host in 2640464, ff027c6_
 
 ## dopo gate
 
