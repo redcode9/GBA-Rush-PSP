@@ -131,10 +131,16 @@ def median_metric(reports, metric):
 
 def throughput(report):
     """Emulated frames per second of wall time."""
+    return float(exact_throughput(report))
+
+
+def exact_throughput(report):
+    """throughput() as an exact fraction, which the -2% gate compares."""
     duration = number(report, "duration-us")
     if duration <= 0:
         raise ValueError("duration-us must be positive")
-    return number(report, "emulated-frames") * 1_000_000.0 / duration
+    return fractions.Fraction(number(report, "emulated-frames") * 1_000_000,
+                              duration)
 
 
 def skip_ratio(report):
@@ -146,7 +152,12 @@ def skip_ratio(report):
 
 
 def fast_forward_multiplier(report):
-    """Fast-forward speed as a multiple of a real GBA.
+    """Fast-forward speed as a multiple of a real GBA."""
+    return float(exact_fast_forward(report))
+
+
+def exact_fast_forward(report):
+    """fast_forward_multiplier() as an exact fraction, for the -2% gate.
 
     Each frame is 280896 cycles at 16777216 Hz, so emulated time in us is
     frames * 280896e6 / 16777216, divided here by the wall time spent.
@@ -155,7 +166,8 @@ def fast_forward_multiplier(report):
     if duration <= 0:
         raise ValueError("fast-forward-time-us must be positive")
     frames = number(report, "fast-forward-frames")
-    return frames * 280_896_000_000.0 / (duration * 16_777_216.0)
+    return fractions.Fraction(frames * 280_896_000_000,
+                              duration * 16_777_216)
 
 
 def percent_change(baseline, candidate):
@@ -172,6 +184,16 @@ def rise_exceeds(baseline, candidate, percent):
     percent_change() puts a rise of exactly 5% at 5.000000000000004.
     """
     return candidate * 100 > baseline * (100 + percent)
+
+
+def drop_exceeds(baseline, candidate, percent):
+    """Whether candidate is more than percent below baseline.
+
+    Exact on the fraction medians of exact_throughput() and
+    exact_fast_forward(), where percent_change() puts a drop of exactly 2%
+    (60 to 58.8 fps) at -2.0000000000000018.
+    """
+    return candidate * 100 < baseline * (100 - percent)
 
 
 def summary(values):
@@ -403,8 +425,8 @@ def compare(baseline, candidate, allow_link=False, order_check=False,
     validate_matching_runs(baseline, candidate)
     validate_link_runs(baseline, candidate, allow_link)
 
-    baseline_throughput = median_metric(baseline, throughput)
-    candidate_throughput = median_metric(candidate, throughput)
+    baseline_throughput = statistics.median(map(exact_throughput, baseline))
+    candidate_throughput = statistics.median(map(exact_throughput, candidate))
     baseline_frame_p95 = median_metric(
         baseline, lambda report: number(report, "frame-time-p95-us")
     )
@@ -444,19 +466,17 @@ def compare(baseline, candidate, allow_link=False, order_check=False,
     if all("fast-forward-time-us" in report and
            number(report, "fast-forward-time-us") > 0 for report in
            baseline + candidate):
-        baseline_fast_forward = median_metric(
-            baseline, fast_forward_multiplier
-        )
-        candidate_fast_forward = median_metric(
-            candidate, fast_forward_multiplier
-        )
+        baseline_fast_forward = statistics.median(
+            map(exact_fast_forward, baseline))
+        candidate_fast_forward = statistics.median(
+            map(exact_fast_forward, candidate))
 
     throughput_change = percent_change(baseline_throughput, candidate_throughput)
     frame_p95_change = percent_change(baseline_frame_p95, candidate_frame_p95)
     ge_p95_change = percent_change(baseline_ge_p95, candidate_ge_p95)
 
     failures = []
-    if throughput_change < -2.0:
+    if drop_exceeds(baseline_throughput, candidate_throughput, 2):
         failures.append("throughput regression exceeds 2%")
     if rise_exceeds(baseline_frame_p95, candidate_frame_p95, 5):
         failures.append("frame-time p95 regression exceeds 5%")
@@ -474,8 +494,9 @@ def compare(baseline, candidate, allow_link=False, order_check=False,
         fast_forward_change = percent_change(
             baseline_fast_forward, candidate_fast_forward
         )
-        if fast_forward_change < -2.0:
+        if drop_exceeds(baseline_fast_forward, candidate_fast_forward, 2):
             failures.append("fast-forward speed regression exceeds 2%")
+        candidate_fast_forward = float(candidate_fast_forward)
     candidate_work_p95 = work_p95_change = None
     baseline_over_budget = candidate_over_budget = None
     if all(field in report for field in WORK_FIELDS
@@ -517,7 +538,7 @@ def compare(baseline, candidate, allow_link=False, order_check=False,
     return {
         "passed": not failures,
         "failures": failures,
-        "throughput": candidate_throughput,
+        "throughput": float(candidate_throughput),
         "throughput_change": throughput_change,
         "frame_p95": candidate_frame_p95,
         "frame_p95_change": frame_p95_change,

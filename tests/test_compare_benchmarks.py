@@ -161,6 +161,24 @@ class BenchmarkComparisonTests(unittest.TestCase):
             return MODULE.compare(baseline, [report(**changed)
                                              for _ in range(3)])["failures"]
 
+        def drop_failures(baseline_changes, **changed):
+            return MODULE.compare(
+                [report(**baseline_changes) for _ in range(3)],
+                [report(**changed) for _ in range(3)])["failures"]
+
+        # 35 to 34.3 fps in 10 s is exactly -2%, which float rates put past
+        # the gate; one microsecond more is past it.
+        self.assertEqual(drop_failures({"frames": 350}, frames=343), [])
+        self.assertEqual(drop_failures({"frames": 350}, frames=343,
+                                       duration=10_000_001),
+                         ["throughput regression exceeds 2%"])
+        # The same for 1350 to 1323 frames in 10 s of fast-forward.
+        fast = {"fast_forward_time": 10_000_000, "fast_forward_frames": 1350}
+        self.assertEqual(drop_failures(fast, fast_forward_time=10_000_000,
+                                       fast_forward_frames=1323), [])
+        self.assertEqual(drop_failures(fast, fast_forward_time=10_000_001,
+                                       fast_forward_frames=1323),
+                         ["fast-forward speed regression exceeds 2%"])
         self.assertEqual(failures(frame_p95=17850), [])
         self.assertEqual(failures(frame_p95=17851),
                          ["frame-time p95 regression exceeds 5%"])
