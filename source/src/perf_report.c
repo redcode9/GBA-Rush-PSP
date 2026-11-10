@@ -143,10 +143,23 @@ static const char *perf_report_state_name(PerfMetricsState state)
   }
 }
 
+/* Frames by preemptions per frame, the classes of perf_metrics.h. */
+static const char *const preempt_class_keys[PERF_METRICS_PREEMPT_CLASSES] =
+{
+  "preempt-frames-0",
+  "preempt-frames-1",
+  "preempt-frames-2",
+  "preempt-frames-3-4",
+  "preempt-frames-5-8",
+  "preempt-frames-9-16",
+  "preempt-frames-17-plus"
+};
+
 int perf_report_format(char *output, size_t output_size,
  const PerfReportMetadata *metadata, const PerfMetricsSnapshot *metrics)
 {
   PerfReportWriter writer;
+  uint32_t i;
   char version[64];
   char build_id[PERF_REPORT_BUILD_ID_MAX + 1U];
   char rom_title[13];
@@ -376,6 +389,23 @@ int perf_report_format(char *output, size_t output_size,
    metrics->phase_work_us);
   perf_report_append(&writer, "probe-read-ns=%u\n", metrics->probe_read_ns);
   perf_report_append_u64(&writer, "probe-reads", metrics->probe_reads);
+  perf_report_append(&writer, "preempt-available=%d\n",
+   metrics->preempt_available != 0);
+  perf_report_append_u64(&writer, "preempt-work-thread",
+   metrics->preempt_work_thread);
+  perf_report_append_u64(&writer, "preempt-work-intr",
+   metrics->preempt_work_intr);
+  perf_report_append_u64(&writer, "preempt-wait-thread",
+   metrics->preempt_wait_thread);
+  perf_report_append_u64(&writer, "preempt-wait-intr",
+   metrics->preempt_wait_intr);
+  perf_report_append_u64(&writer, "preempt-max-per-frame",
+   metrics->preempt_max_per_frame);
+  for(i = 0; i < PERF_METRICS_PREEMPT_CLASSES; i++)
+    perf_report_append_u64(&writer, preempt_class_keys[i],
+     metrics->preempt_frames[i]);
+  perf_report_append(&writer, "preempt-call-ns=%u\n",
+   metrics->preempt_call_ns);
 
   if(writer.failed)
   {

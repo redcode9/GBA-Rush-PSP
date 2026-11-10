@@ -132,7 +132,21 @@ static void test_golden_report(void)
    "phase-main-gbc-sound-us=8000\n"
    "phase-main-work-us=180000\n"
    "probe-read-ns=312\n"
-   "probe-reads=24576\n";
+   "probe-reads=24576\n"
+   "preempt-available=1\n"
+   "preempt-work-thread=412\n"
+   "preempt-work-intr=1960\n"
+   "preempt-wait-thread=35\n"
+   "preempt-wait-intr=180\n"
+   "preempt-max-per-frame=19\n"
+   "preempt-frames-0=2\n"
+   "preempt-frames-1=51\n"
+   "preempt-frames-2=60\n"
+   "preempt-frames-3-4=40\n"
+   "preempt-frames-5-8=20\n"
+   "preempt-frames-9-16=4\n"
+   "preempt-frames-17-plus=1\n"
+   "preempt-call-ns=1850\n";
   PerfReportMetadata metadata;
   PerfMetricsSnapshot metrics;
   char report[PERF_REPORT_CAPACITY];
@@ -260,6 +274,20 @@ static void test_golden_report(void)
   metrics.phase_work_us = 180000;
   metrics.probe_read_ns = 312;
   metrics.probe_reads = 24576;
+  metrics.preempt_available = 1;
+  metrics.preempt_work_thread = 412;
+  metrics.preempt_work_intr = 1960;
+  metrics.preempt_wait_thread = 35;
+  metrics.preempt_wait_intr = 180;
+  metrics.preempt_max_per_frame = 19;
+  metrics.preempt_frames[0] = 2;
+  metrics.preempt_frames[1] = 51;
+  metrics.preempt_frames[2] = 60;
+  metrics.preempt_frames[3] = 40;
+  metrics.preempt_frames[4] = 20;
+  metrics.preempt_frames[5] = 4;
+  metrics.preempt_frames[6] = 1;
+  metrics.preempt_call_ns = 1850;
 
   length = perf_report_format(report, sizeof(report), &metadata, &metrics);
   assert(length == (int)strlen(expected));
@@ -467,6 +495,15 @@ static void test_worst_case_capacity(void)
   metrics.phase_work_us = UINT64_MAX;
   metrics.probe_read_ns = UINT32_MAX;
   metrics.probe_reads = UINT64_MAX;
+  metrics.preempt_available = 1;
+  metrics.preempt_work_thread = UINT64_MAX;
+  metrics.preempt_work_intr = UINT64_MAX;
+  metrics.preempt_wait_thread = UINT64_MAX;
+  metrics.preempt_wait_intr = UINT64_MAX;
+  metrics.preempt_max_per_frame = UINT64_MAX;
+  for(i = 0; i < PERF_METRICS_PREEMPT_CLASSES; i++)
+    metrics.preempt_frames[i] = UINT64_MAX;
+  metrics.preempt_call_ns = UINT32_MAX;
 
   length = perf_report_format(report, sizeof(report), &metadata, &metrics);
   assert(length == (int)sizeof(report) - 1);
@@ -568,6 +605,50 @@ static void test_phase_and_probe_keys(void)
   assert(phase_keys == 5);
 }
 
+/* The preemption keys come back exactly, and a capture whose read was
+   refused says preempt-available=0. */
+static void test_preempt_keys(void)
+{
+  const uint64_t big = ((uint64_t)1 << 40) + 9U;
+  static const char *const class_keys[PERF_METRICS_PREEMPT_CLASSES] =
+  {
+    "preempt-frames-0", "preempt-frames-1", "preempt-frames-2",
+    "preempt-frames-3-4", "preempt-frames-5-8", "preempt-frames-9-16",
+    "preempt-frames-17-plus"
+  };
+  PerfReportMetadata metadata;
+  PerfMetricsSnapshot metrics;
+  char report[PERF_REPORT_CAPACITY];
+  uint32_t i;
+
+  memset(&metadata, 0, sizeof(metadata));
+  memset(&metrics, 0, sizeof(metrics));
+  metrics.state = PERF_METRICS_STOPPED;
+  assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
+  assert(strstr(report, "\npreempt-available=0\n") != NULL);
+
+  metrics.preempt_available = 2;
+  metrics.preempt_work_thread = big;
+  metrics.preempt_work_intr = 7;
+  metrics.preempt_wait_thread = big + 1U;
+  metrics.preempt_wait_intr = 11;
+  metrics.preempt_max_per_frame = 23;
+  for(i = 0; i < PERF_METRICS_PREEMPT_CLASSES; i++)
+    metrics.preempt_frames[i] = 100U + i;
+  metrics.preempt_call_ns = 2125;
+
+  assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
+  assert(report_value(report, "preempt-available") == 1);
+  assert(report_value(report, "preempt-work-thread") == big);
+  assert(report_value(report, "preempt-work-intr") == 7);
+  assert(report_value(report, "preempt-wait-thread") == big + 1U);
+  assert(report_value(report, "preempt-wait-intr") == 11);
+  assert(report_value(report, "preempt-max-per-frame") == 23);
+  for(i = 0; i < PERF_METRICS_PREEMPT_CLASSES; i++)
+    assert(report_value(report, class_keys[i]) == 100U + i);
+  assert(report_value(report, "preempt-call-ns") == 2125);
+}
+
 /* Runs every report case; a failing assert aborts the run. */
 int main(void)
 {
@@ -577,6 +658,7 @@ int main(void)
   test_worst_case_capacity();
   test_u64_and_link_values_read_back();
   test_phase_and_probe_keys();
+  test_preempt_keys();
   puts("Performance report tests passed");
   return 0;
 }
