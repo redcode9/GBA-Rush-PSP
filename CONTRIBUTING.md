@@ -85,6 +85,12 @@ make -j4 psp-build PROFILE=diagnostic
 make package VERSION=1.4.3 PROFILE=diagnostic
 ```
 
+The diagnostic profile also traces the emulator thread's last 256 `malloc`
+and `free` calls into `perf-<time>-alloc.txt` beside each benchmark report,
+and holds from startup the KiB written in `memory-hold.txt` beside the EBOOT
+(at most 65536), to imitate a console with less memory in PPSSPP, which is
+not a proof.
+
 Switching profile rebuilds every object. A release build given an
 `ENABLE_DIAGNOSTIC_*` macro stops with an `#error`, and
 `scripts/check-profiles.sh` (part of `make check`) refuses those macros

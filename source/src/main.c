@@ -765,6 +765,11 @@ extern char _end[];
 
 /* The lowest of the capture's start and stop measurements, for its report. */
 static MemStats main_perf_memory;
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+/* The allocation trace when the capture stopped, for its report. */
+static MemStatsTraceEntry main_alloc_trace[MEM_STATS_TRACE_CAPACITY];
+static size_t main_alloc_trace_count;
+#endif
 
 static void *main_memory_alloc(size_t size, void *context)
 {
@@ -1755,6 +1760,40 @@ static void find_main_path(const char *eboot_path)
     }
 }
 
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+/* Never freed; volatile keeps the compiler from dropping the malloc. */
+static void *volatile main_memory_held;
+
+/* Holds the KiB written in memory-hold.txt beside the EBOOT (decimal, at
+   most 65536) until exit, to imitate a console with less memory in PPSSPP,
+   which is not a proof. A missing or unreadable file holds nothing. */
+static void main_memory_hold(void)
+{
+  char path[MAX_PATH];
+  char text[16];
+  char *end;
+  unsigned long kib;
+  SceUID file;
+  int length;
+
+  length = snprintf(path, sizeof(path), "%smemory-hold.txt", main_path);
+  if(main_path[0] == '\0' || length < 0 || (size_t)length >= sizeof(path))
+    return;
+  FILE_OPEN(file, path, READ);
+  if(!FILE_CHECK_VALID(file))
+    return;
+  length = FILE_READ(file, text, sizeof(text) - 1);
+  FILE_CLOSE(file);
+  if(length <= 0)
+    return;
+  text[length] = '\0';
+  kib = strtoul(text, &end, 10);
+  if(end == text || kib == 0 || kib > 65536)
+    return;
+  main_memory_held = malloc((size_t)kib << 10);
+}
+#endif
+
 /* One-time startup: platform services, settings, BIOS, sound and the
    power callbacks. The power lock keeps the PSP from suspending meanwhile. */
 static void setup_main(const char *eboot_path)
@@ -1785,6 +1824,11 @@ static void setup_main(const char *eboot_path)
 
   find_main_path(eboot_path);
   runtime_log_psp_init(main_path[0] != '\0' ? main_path : NULL);
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+  /* Before the ROM buffer and the probe take their share of the heap. */
+  alloc_trace_start();
+  main_memory_hold();
+#endif
 
   sceKernelRegisterSubIntrHandler(PSP_VBLANK_INT, 0, vblank_interrupt_handler, NULL);
   sceKernelEnableSubIntr(PSP_VBLANK_INT, 0);
@@ -2343,6 +2387,11 @@ int main_perf_stop(void)
   if(!perf_monitor_active())
     return 0;
 
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+  /* Before the stop sample's own malloc and free calls. */
+  main_alloc_trace_count = alloc_trace_snapshot(main_alloc_trace,
+   MEM_STATS_TRACE_CAPACITY);
+#endif
   stop = main_memory_sample(MEM_STATS_CAPTURE_STOP);
   mem_stats_keep_lowest(&main_perf_memory, &stop);
   perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
@@ -2394,6 +2443,54 @@ static void main_perf_write_core_profile(const char *report_path)
   if(!FILE_CHECK_VALID(file))
     return;
   if(!main_perf_write_all(file, profile, (u32)length))
+  {
+    FILE_CLOSE(file);
+    sceIoRemove(path);
+    return;
+  }
+  FILE_CLOSE(file);
+}
+#endif
+
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+/* The emulator thread's last malloc and free calls before the capture
+   stopped, beside its report as perf-<local time>-alloc.txt. */
+static void main_perf_write_alloc_trace(const char *report_path)
+{
+  /* The first line, then at most 50 characters per entry. */
+  static char text[64 + MEM_STATS_TRACE_CAPACITY * 50];
+  char path[MAX_PATH];
+  size_t stem = strlen(report_path) - 4;
+  size_t length;
+  size_t i;
+  SceUID file;
+
+  if(stem + sizeof("-alloc.txt") > sizeof(path))
+    return;
+  memcpy(path, report_path, stem);
+  strcpy(path + stem, "-alloc.txt");
+  length = (size_t)snprintf(text, sizeof(text),
+   "alloc-trace entries=%u thread=emulator\n",
+   (unsigned)main_alloc_trace_count);
+  for(i = 0; i < main_alloc_trace_count && length < sizeof(text); i++)
+  {
+    const MemStatsTraceEntry *entry = &main_alloc_trace[i];
+
+    if(entry->size == MEM_STATS_TRACE_FREE)
+      length += (size_t)snprintf(text + length, sizeof(text) - length,
+       "free caller=0x%08x at=0x%08x\n", (unsigned)entry->caller,
+       (unsigned)entry->pointer);
+    else
+      length += (size_t)snprintf(text + length, sizeof(text) - length,
+       "malloc %u caller=0x%08x at=0x%08x\n", (unsigned)entry->size,
+       (unsigned)entry->caller, (unsigned)entry->pointer);
+  }
+  if(length >= sizeof(text))
+    return;
+  FILE_OPEN(file, path, WRITE);
+  if(!FILE_CHECK_VALID(file))
+    return;
+  if(!main_perf_write_all(file, text, (u32)length))
   {
     FILE_CLOSE(file);
     sceIoRemove(path);
@@ -2511,6 +2608,9 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
   FILE_CLOSE(file);
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   main_perf_write_core_profile(filename);
+#endif
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+  main_perf_write_alloc_trace(filename);
 #endif
 
   if(output_path != NULL && output_path_size != 0)

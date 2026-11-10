@@ -136,6 +136,9 @@ PSP_EBOOT_PIC1 = res/PIC1-diag.png
 PSP_EBOOT_TITLE = GBA Rush PSP [DIAG]
 COMMON_FILE += input_trace.h
 MAINOBJS += input_trace.o
+# The allocation trace (alloc_trace_psp.c) sees every malloc and free.
+MAINOBJS += alloc_trace_psp.o
+LDFLAGS += -Wl,--wrap=malloc,--wrap=free
 else
 $(error PROFILE must be release or diagnostic, not '$(PROFILE)')
 endif
@@ -187,6 +190,9 @@ video_cc_wrap.o: src/video_cc.cc
 video_old_wrap.o: src/video.c
 # memory.c embeds the built-in BIOS from this header.
 memory.o: src/open_bios.h
+# --wrap has had linker bugs with wrappers defined in LTO objects, so the
+# diagnostic profile's malloc and free wrappers stay a plain object.
+alloc_trace_psp.o: CFLAGS += -fno-lto
 
 INCDIR = SDK/include src src/zlib src/libpower
 LIBDIR = SDK/lib
