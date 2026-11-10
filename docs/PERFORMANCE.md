@@ -132,8 +132,9 @@ interrupted.
 
 A benchmark's `duration-us` is the sum of its frame times, which run back
 to back, so the return from the menu before its first frame is left out.
-Its `vsync=` still records the option, which the benchmark ignores, and
-every one of its frames counts in `frames-late`, since none waits.
+Its `vsync=0`, `frameskip-type=2` (none) and `frameskip-value=0` are what
+it runs under, whatever the options say, and every one of its frames counts
+in `frames-late`, since none waits.
 
 ## Baselines per model
 

@@ -2422,6 +2422,13 @@ static int main_perf_begin(u32 bench_frames)
   identity.bench_audio = 1;
   identity.bench_input = bench_frames != 0 ? PERF_REPORT_BENCH_INPUT_NONE :
    PERF_REPORT_BENCH_INPUT_PAD;
+  if(bench_frames != 0)
+  {
+    /* What the benchmark runs under, whatever the options say. */
+    identity.psp_vsync = 0;
+    identity.frameskip_type = FRAMESKIP_NONE;
+    identity.frameskip_value = 0;
+  }
   perf_monitor_set_identity(&identity);
 
   perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
