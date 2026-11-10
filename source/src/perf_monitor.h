@@ -37,9 +37,12 @@ int perf_monitor_active(void);
    frames. Its duration is then the sum of their frame times, which run back
    to back, so the menu exit before the first is left out. A stop before
    that, or an invalidate, cuts it short and marks it unusable. take_done
-   returns 1 once after a bench reached its count; a new start drops it. */
+   returns 1 once after a bench reached its count; a new start drops it.
+   frames_left is the frames still to record, 0 unless a bench runs: at 1
+   the next recorded frame ends the capture. */
 int perf_monitor_bench_start(uint64_t now_us, uint32_t frames);
 int perf_monitor_bench_running(void);
+uint32_t perf_monitor_bench_frames_left(void);
 int perf_monitor_bench_take_done(void);
 /* Length of the last capture, set by stop or invalidate; 0 while a capture
    is running. */

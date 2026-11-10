@@ -314,6 +314,7 @@ static void test_bench_counts_frames_and_stops(void)
   assert(perf_monitor_bench_start(1000, 3));
   assert(perf_monitor_active());
   assert(perf_monitor_bench_running());
+  assert(perf_monitor_bench_frames_left() == 3);
   assert(!perf_monitor_bench_take_done());
 
   perf_monitor_record_frame(10000, 0, 0, 0);
@@ -321,9 +322,13 @@ static void test_bench_counts_frames_and_stops(void)
   assert(perf_monitor_active());
   assert(perf_monitor_bench_running());
   assert(!perf_monitor_bench_take_done());
+  /* At 1 left main.c takes the stop's memory sample, which still counts. */
+  assert(perf_monitor_bench_frames_left() == 1);
+  perf_monitor_observe_memory_available(4096);
   perf_monitor_record_frame(14000, 0, 0, 0);
   assert(!perf_monitor_active());
   assert(!perf_monitor_bench_running());
+  assert(perf_monitor_bench_frames_left() == 0);
   assert(perf_monitor_duration_us() == 36000);
 
   perf_monitor_record_frame(16000, 0, 0, 0);
@@ -331,6 +336,8 @@ static void test_bench_counts_frames_and_stops(void)
   assert(result.state == PERF_METRICS_STOPPED);
   assert(result.emulated_frames == 3);
   assert(result.presented_frames == 3);
+  assert(result.has_memory_sample);
+  assert(result.memory_low_water == 4096);
   assert(!perf_monitor_stop(900000));
   assert(perf_monitor_duration_us() == 36000);
 
@@ -339,8 +346,10 @@ static void test_bench_counts_frames_and_stops(void)
 
   /* A second bench counts its frames and time from zero again. */
   assert(perf_monitor_bench_start(2000, 2));
+  assert(perf_monitor_bench_frames_left() == 2);
   perf_monitor_record_frame(9000, 0, 1, 0);
   assert(perf_monitor_bench_running());
+  assert(perf_monitor_bench_frames_left() == 1);
   perf_monitor_record_frame(1000, 0, 0, 0);
   assert(snapshot().state == PERF_METRICS_STOPPED);
   assert(snapshot().emulated_frames == 2);
@@ -387,6 +396,7 @@ static void test_bench_cut_short_is_invalidated(void)
   perf_monitor_record_frame(16667, 0, 0, 0);
   perf_monitor_invalidate(5000);
   assert(!perf_monitor_bench_running());
+  assert(perf_monitor_bench_frames_left() == 0);
   assert(!perf_monitor_bench_take_done());
   assert(snapshot().state == PERF_METRICS_INVALIDATED);
   assert(perf_monitor_duration_us() == 4000);

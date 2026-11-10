@@ -109,6 +109,14 @@ int perf_monitor_bench_running(void)
   return perf_monitor_bench == PERF_MONITOR_BENCH_RUNNING;
 }
 
+uint32_t perf_monitor_bench_frames_left(void)
+{
+  if(perf_monitor_bench != PERF_MONITOR_BENCH_RUNNING)
+    return 0;
+
+  return perf_monitor_bench_target - perf_monitor_bench_count;
+}
+
 int perf_monitor_bench_take_done(void)
 {
   if(perf_monitor_bench != PERF_MONITOR_BENCH_DONE)
