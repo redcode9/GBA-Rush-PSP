@@ -3743,18 +3743,21 @@ s32 load_gamepak(char *name)
   if (!strcasecmp(dot_position, ".zip") || !strcasecmp(dot_position, ".gbz"))
   {
     file_size = load_file_zip(name);
+    stage_end[RUNTIME_LOG_LOAD_READ] = sceKernelGetSystemTimeWide();
   }
   else
 
   if (!strcasecmp(dot_position, ".gba") || !strcasecmp(dot_position, ".agb") || !strcasecmp(dot_position, ".bin"))
   {
     file_size = load_gamepak_raw(name);
+    // Before the draw below, so a zip's read and a loose ROM's read time the
+    // same work; the draw's vblank wait counts in the config stage.
+    stage_end[RUNTIME_LOG_LOAD_READ] = sceKernelGetSystemTimeWide();
     // Below the progress bar that gui.c draws at y 136-169.
     print_string_gbk(MSG[MSG_SEARCHING_BACKUP_ID], X_POS_CENTER, 194, color_active_item, BG_NO_FILL);
     flip_screen(1);
   }
   stage_end[RUNTIME_LOG_LOAD_OPEN] = rom_load_opened_us;
-  stage_end[RUNTIME_LOG_LOAD_READ] = sceKernelGetSystemTimeWide();
 
   if (file_size > 0)
   {
