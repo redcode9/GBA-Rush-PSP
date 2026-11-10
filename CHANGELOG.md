@@ -50,6 +50,9 @@
   both ways into the menu: "HOME: menu, or hold START+SELECT". It comes back
   at each start until the emulator has been closed once from the Exit menu,
   which saves the settings file.
+- In the diagnostic build, Diagnostics > Pin a test toast keeps a notice on
+  screen until the game is reset, to measure what drawing notices costs. It
+  is available once a game is loaded.
 - The Diagnostics page shows the version and the build id, an id of the
   exact source the EBOOT was built from, ending in `-dirty` when that source
   had uncommitted changes. Performance reports, runtime logs and the
