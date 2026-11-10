@@ -477,7 +477,10 @@ static void test_cut_write_leaves_old_or_new(void)
 
 /* The pre-link copy: .link1 holds the save, and the runtime log has the
    copy's result, duration and size. With writes blocked ('play without
-   saving') nothing is copied or logged, and that counts as done. */
+   saving') nothing is copied or logged, and that counts as done.
+   shortcut: the stub clock steps on its second read, not during the copy,
+   so this cannot show the duration covers the copy (save_backup()'s test
+   alike); step it on the fake store's writes if that order ever slips. */
 static void test_push_link_copy_is_logged(void)
 {
   static const unsigned answers[] = { NO, YES };
@@ -504,6 +507,19 @@ static void test_push_link_copy_is_logged(void)
   assert(backup_push_link_copy());
   assert(fake_store_file_size(&store, "game.sav.link1") < 0);
   assert(host_stub_save_link_copy(&flags, values) == copies + 1);
+
+  /* A copy that fails is logged with its failure: main.c ends the link
+     start on it. */
+  fresh_store();
+  fake_store_seed(&store, 32 * KIB, 5);
+  assert(load("SRAM_V113", NULL, 0) == ROM_SIZE);
+  store.fail_open_write = store.open_write_calls + 1;
+  host_stub_set_time(100, 180);
+  assert(!backup_push_link_copy());
+  assert(fake_store_file_size(&store, "game.sav.link1") < 0);
+  assert(host_stub_save_link_copy(&flags, values) == copies + 2);
+  assert(flags == SAVE_STORE_WRITE_FAILED && values[0] == 80 &&
+         values[1] == 32 * KIB);
 }
 
 /* Restoring the pre-link copy .link2: the game's pending write goes out
