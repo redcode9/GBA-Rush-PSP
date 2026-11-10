@@ -174,6 +174,10 @@ class CheckAgeTest(unittest.TestCase):
                                  reviewed.group(1)], capture_output=True, text=True)
         self.assertEqual((result.returncode, result.stderr), (0, ""))
 
+    def test_make_check_runs_the_age_check(self):
+        self.assertRegex((ROOT / "scripts" / "check-tree.sh").read_text(encoding="utf-8"),
+                         r"(?m)^sh scripts/upstream-review\.sh --check-age$")
+
 
 if __name__ == "__main__":
     unittest.main()
