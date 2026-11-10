@@ -130,6 +130,16 @@ interrupted.
   is mixed.
 - `bench-input`: `none` for the benchmark, `pad` when paced.
 
+Diagnostic builds add two arms of the same run below it. Unbound
+benchmark, rendering off skips every frame as frameskip does: no line is
+drawn and nothing is presented or flipped, with the Exact renderer on the
+Media Engine too, so the screen keeps its last picture and the frames
+count as skipped. Unbound benchmark, audio off writes no sound samples,
+while the Direct Sound FIFO, its DMA and the PSG channels advance as
+always. Their reports say `bench-render=0` or `bench-audio=0`, and the
+throughput they gain over the plain benchmark of the same build and slot
+is what drawing or the audio costs.
+
 compare-benchmarks requires the same `bench-*` values in every run, and
 reads a report without them (from an older build) as paced, so a benchmark
 never compares with a paced capture.
