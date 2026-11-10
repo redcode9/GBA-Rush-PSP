@@ -351,8 +351,11 @@ GUI_ACTION_TYPE get_gui_input_fs_hold(u32 button_id)
 extern u32 cpu_ticks;
 
 /* Hashes the machine of this replayed frame into the next record: what a
-   savestate stores, less the stub scratch slots of reg[] (REG_SAVE..3,
-   GP_SAVE, REG_TMP), which hold host addresses. */
+   savestate stores, except reg[] past REG_CPSR other than CPU_MODE and
+   CPU_HALT_STATE. Those are unused slots, the stubs' scratch (REG_SAVE..3,
+   GP_SAVE, REG_TMP: host addresses), the dynarec's CHANGED_PC_STATUS and
+   EXECUTE_CYCLES, and the DMA open-bus latch CPU_DMA_HACK/CPU_DMA_LAST,
+   left out until a hardware self-check shows them deterministic. */
 static void input_diagnostic_trace_hash_frame(void)
 {
   u32 backup_size;
