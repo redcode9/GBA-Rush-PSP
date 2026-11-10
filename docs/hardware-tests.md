@@ -201,14 +201,20 @@ Each test has four fields:
   does not drop while a game saves; both games reload with the Pokemon
   they received, both `.sav` files are 131072 bytes, and each decoded log
   shows save-write events with result=ok for the save made during the
-  session and no link-error event.
+  session. Each log's only link-error event is the session's end: end=user
+  on the PSP that exited first, end=peer-left on the other (end=user on
+  both if they exit at the same moment); none has end=lost, network,
+  incompatible or save-failed.
 - Steps: FireRed on one PSP, with the Network Machine on One Island
   already repaired in its save, and Emerald on the other, both with
   Update backup on AUTO. Enter the Cable Club and trade once: both games
   save while the link session is still open, where a save stalls the link
   the longest. Leave the Cable Club, save in the game on both PSPs and
-  exit GBA Rush PSP. Start each game again, check that it has the Pokemon
-  it received, and check the size of both `.sav` files.
+  exit GBA Rush PSP on one PSP, then on the other: the first exit ends the
+  link session. Start each game again, answer No to "Load auto-savestate?"
+  and continue from the title screen, so the game loads its `.sav`; check
+  that it has the Pokemon it received, and check the size of both `.sav`
+  files.
 
 ### savestate-load-auto-file
 
