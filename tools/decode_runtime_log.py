@@ -230,10 +230,13 @@ def describe(record: dict[str, Any]) -> str:
         # Two records per measurement, values in KiB (mem_stats_encode).
         # heap-free counts only free space newlib has already taken from the
         # system; heap-largest is the largest block malloc still gives.
+        # kernel-total is sceKernelTotalFreeMemSize, kernel-largest
+        # sceKernelMaxFreeMemSize: the perf report's kernel-free-low is the
+        # lowest kernel-largest of a capture.
         point = f"point={_name(MEMORY_POINTS, flags >> 1)}"
         if flags & 1:
             return (
-                f"{point} kernel-free={value0}KiB kernel-largest={value1}KiB "
+                f"{point} kernel-total={value0}KiB kernel-largest={value1}KiB "
                 f"rom-buffer={value2}KiB rom-pages={value2 // 32}"
             )
         return f"{point} image={value0}KiB heap-free={value1}KiB heap-largest={value2}KiB"

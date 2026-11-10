@@ -315,10 +315,10 @@ class RuntimeLogDecoderTests(unittest.TestCase):
             (2, [3072, 1024, 8192],
              "point=boot image=3072KiB heap-free=1024KiB heap-largest=8192KiB"),
             (3, [20480, 12288, 32768],
-             "point=boot kernel-free=20480KiB kernel-largest=12288KiB "
+             "point=boot kernel-total=20480KiB kernel-largest=12288KiB "
              "rom-buffer=32768KiB rom-pages=1024"),
             (11, [0, 0, 4096],
-             "point=capture-stop kernel-free=0KiB kernel-largest=0KiB "
+             "point=capture-stop kernel-total=0KiB kernel-largest=0KiB "
              "rom-buffer=4096KiB rom-pages=128"),
             (14, [1, 2, 3],
              "point=7 image=1KiB heap-free=2KiB heap-largest=3KiB"),
@@ -340,7 +340,7 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             decoder.print_snapshot(snapshot)
         self.assertIn(
-            "memory-stats            point=rom-load kernel-free=21504KiB "
+            "memory-stats            point=rom-load kernel-total=21504KiB "
             "kernel-largest=12288KiB rom-buffer=16384KiB rom-pages=512\n",
             output.getvalue())
 
