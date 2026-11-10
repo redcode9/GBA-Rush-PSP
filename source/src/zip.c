@@ -22,7 +22,7 @@
 /* Loads a ROM from a .zip for load_gamepak() in memory.c. zip_rom.c does the
  * work: it reads the first entry, a stored or deflated .gba, .agb or .bin
  * file, straight into gamepak_rom and checks its size and CRC32. This file
- * only gives it the PSP file and reports the archive bytes read to the
+ * only gives it the PSP file and reports the archive bytes used to the
  * loading popup. */
 
 #include "common.h"

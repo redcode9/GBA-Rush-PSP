@@ -32,8 +32,9 @@ enum
   ZIP_ROM_IO_ERROR     /* read returned an error */
 };
 
-/* Most ROM bytes inflated between two progress calls, so a run of padding
-   that packs into a few archive bytes still moves the bar. */
+/* Most ROM bytes inflated between two progress calls, so the popup is still
+   redrawn while a run of padding that packs into a few archive bytes is
+   inflated. */
 #define ZIP_ROM_INFLATE_STEP (256u * 1024u)
 
 typedef struct

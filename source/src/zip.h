@@ -25,10 +25,12 @@
 /* ROM files are read this much at a time, so the loading popup moves. */
 #define ROM_LOAD_CHUNK_SIZE (64u * 1024u)
 
-/* Called after every read of a ROM load when not NULL: name is the file,
-   stage_msg the MSG_ id of the step (MSG_LOADING_STAGE_READ for a .gba,
-   MSG_LOADING_STAGE_UNZIP for a .zip), done the bytes of the file read so
-   far out of total. gui.c points it at the loading popup. */
+/* Called during a ROM load when not NULL: name is the file, stage_msg the
+   MSG_ id of the step (MSG_LOADING_STAGE_READ for a .gba,
+   MSG_LOADING_STAGE_UNZIP for a .zip), done the bytes of the file used so
+   far out of total. A .gba reports after every read, a .zip after each read
+   of a stored ROM and each inflate step (zip_rom.h). gui.c points it at the
+   loading popup. */
 typedef void (*RomLoadProgress)(const char *name, u32 stage_msg, u32 done,
  u32 total);
 extern RomLoadProgress rom_load_progress;

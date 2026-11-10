@@ -966,8 +966,8 @@ static void draw_rom_load_popup(const char *name, u32 stage_msg, u32 done, u32 t
     print_string_gbk(kib, 345 - strlen(kib) * FONTWIDTH, 176, color_active_item, BG_NO_FILL);
 }
 
-/* rom_load_progress (zip.h): redraws the loading popup after the 64 KiB
-   reads load_progress_due() picks, over 20 times per second. No vsync
+/* rom_load_progress (zip.h): redraws the loading popup after the reads and
+   inflate steps load_progress_due() picks, over 20 times per second. No vsync
    wait, so the popup costs little of the load time. */
 static void draw_rom_load_progress(const char *name, u32 stage_msg, u32 done, u32 total)
 {
