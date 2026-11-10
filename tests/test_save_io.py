@@ -287,7 +287,8 @@ class SaveIoTests(unittest.TestCase):
                                                "-o", str(path / "save_io")],
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            subprocess.run([str(path / "save_io")], check=True)
+            # A loop that never ends in the binding fails the test, not hangs it.
+            subprocess.run([str(path / "save_io")], check=True, timeout=60)
 
 
 if __name__ == "__main__":
