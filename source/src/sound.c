@@ -297,25 +297,6 @@ u32 sound_diagnostic_audio_take(void)
   sound_diagnostic_audio_hash = STATE_HASH_FNV_BASIS;
   return hash;
 }
-
-// Folds the count ring entries from gbc_sound_buffer_index, which
-// update_gbc_sound has just finished. The audio thread reads (and zeroes)
-// only entries behind that index, so they cannot change under the read;
-// reading them later, from input.c, would race with it.
-static void sound_diagnostic_audio_fold(u32 count)
-{
-  u32 first = RING_BUFFER_SIZE - gbc_sound_buffer_index;
-
-  if (count > RING_BUFFER_SIZE)
-    count = RING_BUFFER_SIZE;
-  if (first > count)
-    first = count;
-
-  sound_diagnostic_audio_hash = state_hash_words(sound_diagnostic_audio_hash,
-   sound_buffer + gbc_sound_buffer_index, first * sizeof(s32));
-  sound_diagnostic_audio_hash = state_hash_words(sound_diagnostic_audio_hash,
-   sound_buffer, (count - first) * sizeof(s32));
-}
 #endif
 
 
@@ -1253,8 +1234,12 @@ void update_gbc_sound(u32 cpu_ticks)
 
   gbc_sound_last_cpu_ticks = cpu_ticks;
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  // The entries just mixed, before the index passes them: the audio
+  // thread reads (and zeroes) only entries behind it, so reading them
+  // later, from input.c, would race with it.
   if (sound_diagnostic_audio_on != 0)
-    sound_diagnostic_audio_fold(buffer_ticks << 1);
+    sound_diagnostic_audio_hash = state_hash_ring(sound_diagnostic_audio_hash,
+     sound_buffer, RING_BUFFER_SIZE, gbc_sound_buffer_index, buffer_ticks << 1);
 #endif
   gbc_sound_buffer_index = (gbc_sound_buffer_index + (buffer_ticks << 1)) % RING_BUFFER_SIZE;
 

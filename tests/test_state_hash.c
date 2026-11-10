@@ -149,6 +149,42 @@ static void test_split_spans(void)
    state_hash_words(7, memory[1], 8));
 }
 
+/* sound.c folds each stretch of its sample ring as it is mixed. */
+static void test_ring(void)
+{
+  uint32_t ring[8];
+  uint32_t line[8];
+  uint32_t i;
+  uint32_t hash;
+
+  for(i = 0; i < 8; i++)
+    ring[i] = i * 0x01010101U + 1U;
+  /* A stretch across the end reads like the same words laid out in a line. */
+  line[0] = ring[6];
+  line[1] = ring[7];
+  memcpy(line + 2, ring, 3 * sizeof(uint32_t));
+  hash = state_hash_words(5, line, 5 * 4);
+  assert(state_hash_ring(5, ring, 8, 6, 5) == hash);
+  /* Split into updates anywhere, it folds the same. */
+  assert(state_hash_ring(state_hash_ring(5, ring, 8, 6, 1), ring, 8, 7, 4) ==
+   hash);
+  assert(state_hash_ring(state_hash_ring(5, ring, 8, 6, 2), ring, 8, 0, 3) ==
+   hash);
+  /* The whole ring once, however much more is asked for. */
+  memcpy(line, ring + 3, 5 * sizeof(uint32_t));
+  memcpy(line + 5, ring, 3 * sizeof(uint32_t));
+  hash = state_hash_words(5, line, sizeof(line));
+  assert(state_hash_ring(5, ring, 8, 3, 8) == hash);
+  assert(state_hash_ring(5, ring, 8, 3, 9) == hash);
+  assert(state_hash_ring(5, ring, 8, 3, 0xFFFFFFFFU) == hash);
+  assert(state_hash_ring(5, ring, 8, 0, 8) ==
+   state_hash_words(5, ring, sizeof(ring)));
+  /* Nothing to fold. */
+  assert(state_hash_ring(5, ring, 8, 3, 0) == 5);
+  assert(state_hash_ring(5, ring, 8, 8, 2) == 5);
+  assert(state_hash_ring(5, ring, 0, 0, 2) == 5);
+}
+
 static void test_capacity_and_arguments(void)
 {
   static const char *const bad_names[STATE_HASH_REGION_COUNT] =
@@ -380,6 +416,7 @@ int main(void)
 {
   test_determinism_and_regions();
   test_split_spans();
+  test_ring();
   test_capacity_and_arguments();
   test_exact_text();
   test_round_trip();

@@ -109,6 +109,11 @@ typedef struct
 } StateHashCounter;
 
 uint32_t state_hash_words(uint32_t hash, const void *data, uint32_t size);
+/* Feeds count 4-byte words of a ring of ring_words words to hash, from
+   word first on, wrapping to the ring's start. count is capped at
+   ring_words; a first outside the ring feeds nothing. */
+uint32_t state_hash_ring(uint32_t hash, const void *ring, uint32_t ring_words,
+ uint32_t first, uint32_t count);
 /* Fails when an argument is missing or a region name is empty or uses a
    character outside [A-Za-z0-9._-]. */
 int state_hash_log_init(StateHashLog *log, StateHashRecord *records,

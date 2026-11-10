@@ -74,6 +74,23 @@ uint32_t state_hash_words(uint32_t hash, const void *data, uint32_t size)
   return hash;
 }
 
+uint32_t state_hash_ring(uint32_t hash, const void *ring, uint32_t ring_words,
+ uint32_t first, uint32_t count)
+{
+  const uint8_t *words = (const uint8_t *)ring;
+  uint32_t tail;
+
+  if(first >= ring_words)
+    return hash;
+  if(count > ring_words)
+    count = ring_words;
+  tail = ring_words - first;
+  if(tail > count)
+    tail = count;
+  hash = state_hash_words(hash, words + first * 4U, tail * 4U);
+  return state_hash_words(hash, words, (count - tail) * 4U);
+}
+
 int state_hash_log_init(StateHashLog *log, StateHashRecord *records,
  uint32_t capacity, const char *const *names, const char *build_id,
  const uint8_t game_code[STATE_HASH_GAME_CODE_SIZE], uint32_t revision,
