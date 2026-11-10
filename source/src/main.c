@@ -2660,6 +2660,7 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
   metadata.bench_render = identity.bench_render;
   metadata.bench_audio = identity.bench_audio;
   metadata.bench_input = identity.bench_input;
+  metadata.bench_trace_checksum = identity.bench_trace_checksum;
   metadata.duration_us = perf_monitor_duration_us();
 
   report_length = perf_report_format(report, sizeof(report), &metadata,
