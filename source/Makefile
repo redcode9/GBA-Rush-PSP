@@ -108,6 +108,17 @@ ifneq ($(PROFILE),diagnostic)
 $(error DIAGNOSTIC_CORE_PROFILE=1 asks for PROFILE=diagnostic, not PROFILE=$(PROFILE))
 endif
 endif
+# make PADDING_PROBE_BYTES=N links src/padding_probe.c, about N bytes of code
+# and N of BSS that nothing uses, for the padding experiment in
+# docs/PERFORMANCE.md; 0 links it empty. A diagnostic build only.
+ifneq ($(PADDING_PROBE_BYTES),)
+PROFILE ?= diagnostic
+ifneq ($(PROFILE),diagnostic)
+$(error PADDING_PROBE_BYTES asks for PROFILE=diagnostic, not PROFILE=$(PROFILE))
+endif
+MAINOBJS += padding_probe.o
+CFLAGS += -DPADDING_PROBE_BYTES=$(PADDING_PROBE_BYTES)
+endif
 PROFILE ?= release
 
 ifeq ($(PROFILE),release)
@@ -141,10 +152,12 @@ C_ONLY_OBJS = $(filter-out video_cc_wrap.o mips_stub.o video_blend_mips.o ku_bri
 $(C_ONLY_OBJS): CFLAGS += -Wbad-function-cast -Wmissing-prototypes
 $(OBJZ) $(OBJG): CFLAGS += -Wno-old-style-definition
 $(MAINOBJS): $(COMMON_FILE)
-# A new build id, profile or core profile setting rebuilds the objects: the
-# stamp is rewritten only when the configuration it records changes.
+# A new build id, profile, core profile or padding setting rebuilds the
+# objects: the stamp is rewritten only when the configuration it records
+# changes.
 BUILD_CONFIG = $(strip $(BUILD_ID) $(PROFILE) \
- $(if $(DIAGNOSTIC_CORE_PROFILE),core-profile))
+ $(if $(DIAGNOSTIC_CORE_PROFILE),core-profile) \
+ $(if $(PADDING_PROBE_BYTES),padding-$(PADDING_PROBE_BYTES)))
 $(MAINOBJS): build-config.stamp
 build-config.stamp: FORCE
 	@if [ "$$(cat $@ 2>/dev/null)" != '$(BUILD_CONFIG)' ]; then \
