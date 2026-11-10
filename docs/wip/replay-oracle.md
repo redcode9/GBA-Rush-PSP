@@ -17,7 +17,7 @@
 - [ ] **ENG-3.6** — Registrazione e replay anche nelle build release · S, 1 gg · dipende da: ENG-3.2, F-027 · PSP: sì · aspetta: F-027 (PRF-4, `wip/platform`)
 - [ ] **ENG-3.7** — Replay deterministico sui titoli con RTC · S, 0,5 gg · dipende da: ENG-3.2, CMP-7.3 · PSP: sì · aspetta: CMP-7.3 (`wip/game-compat`)
 - [ ] **ENG-6.1** — Spike: EBOOT in PPSSPP headless fissato · S, 1,5 gg · dipende da: ENG-2.2, CMP-1.1 · PSP: no
-- [ ] **ENG-6.2** — Autorun diagnostico · M, 1,5 gg · dipende da: ENG-2.2, ENG-2.4, ENG-1.6 · PSP: sì · _codice pronto (e777332), manca la prova su PSP_
+- [ ] **ENG-6.2** — Autorun diagnostico · M, 1,5 gg · dipende da: ENG-2.2, ENG-2.4, ENG-1.6 · PSP: sì · _codice pronto (338cc33) tranne gli eventi power, che arrivano con ENG-8.1; manca la prova su PSP_
 - [ ] **ENG-6.6** — Modalità testpat su PSP con autorun e foto · S, 0,5 gg · dipende da: ENG-6.2 · PSP: sì · _codice pronto (da0b3b7), manca la prova su PSP_
 
 ## 2.0
