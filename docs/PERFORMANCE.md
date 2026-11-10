@@ -98,7 +98,9 @@ a capture is not counted.
 - `preempt-wait-thread`, `preempt-wait-intr`: the same during the frame
   pacing, the sound sync and the flip.
 - `preempt-max-per-frame`: the most preemptions in one frame, all four
-  together.
+  together. A menu visit or a save state during the capture falls in one
+  frame's work and can set it, and the 17-plus class, as it sets the
+  frame-time maximum.
 - `preempt-frames-0` to `preempt-frames-17-plus`: the frames with 0, 1, 2,
   3-4, 5-8, 9-16 and 17 or more preemptions.
 - `preempt-call-ns`: the cost of one read, from 16 reads when the capture
