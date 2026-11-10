@@ -212,3 +212,20 @@ void perf_monitor_record_link_lockstep_frame(void)
 {
   perf_metrics_record_link_lockstep_frame(&perf_monitor_metrics);
 }
+
+int perf_monitor_phase_begin_frame(void)
+{
+  return perf_metrics_phase_begin_frame(&perf_monitor_metrics);
+}
+
+void perf_monitor_phase_add(PerfMetricsPhase phase, uint32_t us)
+{
+  perf_metrics_phase_add(&perf_monitor_metrics, phase, us);
+}
+
+void perf_monitor_record_probe_calibration(uint32_t elapsed_us,
+ uint32_t reads)
+{
+  perf_metrics_record_probe_calibration(&perf_monitor_metrics, elapsed_us,
+   reads);
+}

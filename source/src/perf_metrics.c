@@ -162,20 +162,50 @@ int perf_metrics_active(const PerfMetrics *metrics)
   return metrics != NULL && metrics->state == PERF_METRICS_ACTIVE;
 }
 
+/* Counts an emulated frame and its fast-forward time, without the
+   frame-time histogram. */
+static void perf_metrics_count_emulated_frame(PerfMetrics *metrics,
+ uint32_t frame_time_us, int fast_forward)
+{
+  metrics->emulated_frames = perf_metrics_saturating_add(
+   metrics->emulated_frames, 1);
+  if(fast_forward)
+  {
+    metrics->fast_forward_frames = perf_metrics_saturating_add(
+     metrics->fast_forward_frames, 1);
+    metrics->fast_forward_time_us = perf_metrics_saturating_add(
+     metrics->fast_forward_time_us, frame_time_us);
+  }
+}
+
 /* A whole frame in one call: emulated, then skipped or presented. Only
    presented frames sample the GE wait. Its work time is the frame time
    minus the waits recorded since the last frame and, when presented, the
-   GE wait; a skipped frame passes the GE wait of an earlier frame. */
+   GE wait; a skipped frame passes the GE wait of an earlier frame. A frame
+   the phase timers sample keeps its waits and work for them and stays out
+   of the frame and work histograms, which the timers' clock reads would
+   inflate; its counters still count. A sampled frame longer than
+   PERF_METRICS_PHASE_MAX_FRAME_US, or a second record before the next
+   frame begins, drops the sample and is recorded like any frame. */
 void perf_metrics_record_frame(PerfMetrics *metrics, uint32_t frame_time_us,
  uint32_t ge_wait_us, int skipped, int fast_forward)
 {
   uint64_t waits;
   uint32_t work_us = 0;
+  int sampled;
 
   if(!perf_metrics_active(metrics))
     return;
 
-  perf_metrics_record_emulated_frame(metrics, frame_time_us, fast_forward);
+  if(metrics->phase_sampling &&
+     (metrics->phase_recorded ||
+      frame_time_us > PERF_METRICS_PHASE_MAX_FRAME_US))
+    metrics->phase_sampling = 0;
+  sampled = metrics->phase_sampling;
+
+  perf_metrics_count_emulated_frame(metrics, frame_time_us, fast_forward);
+  if(!sampled)
+    perf_metrics_histogram_record(&metrics->frame_time, frame_time_us);
 
   waits = metrics->frame_wait_us;
   if(skipped)
@@ -200,7 +230,14 @@ void perf_metrics_record_frame(PerfMetrics *metrics, uint32_t frame_time_us,
      psp_video.c reports that seed frame too. */
   if(waits < frame_time_us)
     work_us = frame_time_us - (uint32_t)waits;
-  perf_metrics_histogram_record(&metrics->work_time, work_us);
+  if(sampled)
+  {
+    metrics->phase_recorded = 1;
+    metrics->phase_frame_wait_us = waits;
+    metrics->phase_frame_work_us = work_us;
+  }
+  else
+    perf_metrics_histogram_record(&metrics->work_time, work_us);
 
   if(work_us > PERF_METRICS_WORK_BUDGET_US)
     metrics->frames_work_over_budget = perf_metrics_saturating_add(
@@ -224,15 +261,7 @@ void perf_metrics_record_emulated_frame(PerfMetrics *metrics,
   if(!perf_metrics_active(metrics))
     return;
 
-  metrics->emulated_frames = perf_metrics_saturating_add(
-   metrics->emulated_frames, 1);
-  if(fast_forward)
-  {
-    metrics->fast_forward_frames = perf_metrics_saturating_add(
-     metrics->fast_forward_frames, 1);
-    metrics->fast_forward_time_us = perf_metrics_saturating_add(
-     metrics->fast_forward_time_us, frame_time_us);
-  }
+  perf_metrics_count_emulated_frame(metrics, frame_time_us, fast_forward);
   perf_metrics_histogram_record(&metrics->frame_time, frame_time_us);
 }
 
@@ -559,6 +588,100 @@ void perf_metrics_record_link_lockstep_frame(PerfMetrics *metrics)
      metrics->link_lockstep_frames, 1);
 }
 
+/* Called as each frame begins. Adds the sampled frame that just ended to
+   the phase totals, if perf_metrics_record_frame() recorded it, and
+   returns whether the new frame is sampled: every
+   PERF_METRICS_PHASE_STRIDE-th frame of the capture, so never the first,
+   whose work also holds the waits from before the capture. */
+int perf_metrics_phase_begin_frame(PerfMetrics *metrics)
+{
+  if(!perf_metrics_active(metrics))
+    return 0;
+
+  if(metrics->phase_sampling && metrics->phase_recorded)
+  {
+    /* The frame's waits ran inside update_gba (synchronize(), the sound
+       sync and the flip), like the scanline and PSG phases. */
+    uint64_t nested = perf_metrics_saturating_add(
+     perf_metrics_saturating_add(metrics->phase_frame_scanline_us,
+     metrics->phase_frame_gbc_sound_us), metrics->phase_frame_wait_us);
+    uint64_t self_us = 0;
+
+    if(metrics->phase_frame_update_gba_us > nested)
+      self_us = metrics->phase_frame_update_gba_us - nested;
+    metrics->phase_sampled_frames = perf_metrics_saturating_add(
+     metrics->phase_sampled_frames, 1);
+    metrics->phase_update_gba_us = perf_metrics_saturating_add(
+     metrics->phase_update_gba_us, self_us);
+    metrics->phase_scanline_us = perf_metrics_saturating_add(
+     metrics->phase_scanline_us, metrics->phase_frame_scanline_us);
+    metrics->phase_gbc_sound_us = perf_metrics_saturating_add(
+     metrics->phase_gbc_sound_us, metrics->phase_frame_gbc_sound_us);
+    metrics->phase_work_us = perf_metrics_saturating_add(
+     metrics->phase_work_us, metrics->phase_frame_work_us);
+    metrics->probe_reads = perf_metrics_saturating_add(
+     metrics->probe_reads, metrics->phase_frame_reads);
+  }
+
+  metrics->phase_frames++;
+  metrics->phase_sampling =
+   metrics->phase_frames % PERF_METRICS_PHASE_STRIDE == 0U;
+  metrics->phase_recorded = 0;
+  metrics->phase_frame_update_gba_us = 0;
+  metrics->phase_frame_scanline_us = 0;
+  metrics->phase_frame_gbc_sound_us = 0;
+  metrics->phase_frame_wait_us = 0;
+  metrics->phase_frame_reads = 0;
+  metrics->phase_frame_work_us = 0;
+  return metrics->phase_sampling;
+}
+
+/* One timed stretch of the current frame, measured with two clock reads.
+   It reaches the totals only if the frame is sampled and recorded; an
+   unknown phase is ignored. */
+void perf_metrics_phase_add(PerfMetrics *metrics, PerfMetricsPhase phase,
+ uint32_t us)
+{
+  uint64_t *total;
+
+  if(!perf_metrics_active(metrics))
+    return;
+
+  switch(phase)
+  {
+    case PERF_METRICS_PHASE_UPDATE_GBA:
+      total = &metrics->phase_frame_update_gba_us;
+      break;
+    case PERF_METRICS_PHASE_SCANLINE:
+      total = &metrics->phase_frame_scanline_us;
+      break;
+    case PERF_METRICS_PHASE_GBC_SOUND:
+      total = &metrics->phase_frame_gbc_sound_us;
+      break;
+    default:
+      return;
+  }
+
+  *total = perf_metrics_saturating_add(*total, us);
+  metrics->phase_frame_reads = perf_metrics_saturating_add(
+   metrics->phase_frame_reads, 2);
+}
+
+/* The cost of one clock read from `reads` reads made back to back, which
+   took elapsed_us from the first to the last: reads - 1 intervals. */
+void perf_metrics_record_probe_calibration(PerfMetrics *metrics,
+ uint32_t elapsed_us, uint32_t reads)
+{
+  uint64_t read_ns;
+
+  if(!perf_metrics_active(metrics) || reads < 2U)
+    return;
+
+  read_ns = (uint64_t)elapsed_us * 1000U / (reads - 1U);
+  metrics->probe_read_ns = read_ns > UINT32_MAX ? UINT32_MAX :
+   (uint32_t)read_ns;
+}
+
 /* Copies the counters, reducing each histogram to samples, total, max and
    p50/p95/p99; an all-zero snapshot when metrics is NULL. */
 void perf_metrics_snapshot(const PerfMetrics *metrics,
@@ -666,4 +789,11 @@ void perf_metrics_snapshot(const PerfMetrics *metrics,
   snapshot->frames_over_1_5x_budget = metrics->frames_over_1_5x_budget;
   snapshot->frames_late = metrics->frames_late;
   snapshot->link_lockstep_frames = metrics->link_lockstep_frames;
+  snapshot->phase_sampled_frames = metrics->phase_sampled_frames;
+  snapshot->phase_update_gba_us = metrics->phase_update_gba_us;
+  snapshot->phase_scanline_us = metrics->phase_scanline_us;
+  snapshot->phase_gbc_sound_us = metrics->phase_gbc_sound_us;
+  snapshot->phase_work_us = metrics->phase_work_us;
+  snapshot->probe_read_ns = metrics->probe_read_ns;
+  snapshot->probe_reads = metrics->probe_reads;
 }

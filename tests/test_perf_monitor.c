@@ -235,6 +235,41 @@ static void test_link_lockstep_frame_wrapper(void)
   assert(snapshot().link_lockstep_frames == 1);
 }
 
+/* The phase wrappers reach the session's metrics: no sampling without a
+   capture, each phase in its own total, and the calibrated read cost. */
+static void test_phase_wrappers(void)
+{
+  PerfMetricsSnapshot result;
+  unsigned frame;
+
+  perf_monitor_init();
+  assert(!perf_monitor_phase_begin_frame());
+  assert(perf_monitor_start(0));
+  perf_monitor_record_probe_calibration(63, 64);
+  for(frame = 1; frame < PERF_METRICS_PHASE_STRIDE; frame++)
+  {
+    assert(!perf_monitor_phase_begin_frame());
+    perf_monitor_record_frame(16000, 0, 0, 0);
+  }
+  assert(perf_monitor_phase_begin_frame());
+  perf_monitor_phase_add(PERF_METRICS_PHASE_UPDATE_GBA, 9000);
+  perf_monitor_phase_add(PERF_METRICS_PHASE_SCANLINE, 3000);
+  perf_monitor_phase_add(PERF_METRICS_PHASE_GBC_SOUND, 400);
+  perf_monitor_record_frame(16000, 0, 0, 0);
+  assert(!perf_monitor_phase_begin_frame());
+  assert(perf_monitor_stop(100));
+
+  result = snapshot();
+  assert(result.phase_sampled_frames == 1);
+  assert(result.phase_update_gba_us == 5600);
+  assert(result.phase_scanline_us == 3000);
+  assert(result.phase_gbc_sound_us == 400);
+  assert(result.phase_work_us == 16000);
+  assert(result.probe_read_ns == 1000);
+  assert(result.probe_reads == 6);
+  assert(result.frame_time_samples == 10);
+}
+
 /* Runs every session case; a failing assert aborts the run. */
 int main(void)
 {
@@ -243,6 +278,7 @@ int main(void)
   test_wait_and_frame_wrappers();
   test_capture_identity_survives_rom_change();
   test_link_lockstep_frame_wrapper();
+  test_phase_wrappers();
   puts("Performance monitor tests passed");
   return 0;
 }

@@ -34,6 +34,18 @@
 #define PERF_METRICS_WORK_BUDGET_US 16743U
 #define PERF_METRICS_FRAME_OVER_BUDGET_US 25115U
 
+/* Phase timers: main.c times update_gba, update_scanline and the PSG
+   update (update_gbc_sound) in one frame out of 11 of a capture. 11 is
+   prime, so the sampled frames do not lock onto the 2- to 6-frame cycles
+   of games. A sampled frame longer than the frame histogram's range
+   (128 ms) held a menu, a save state or a stall: its phases are dropped. */
+#define PERF_METRICS_PHASE_STRIDE 11U
+#define PERF_METRICS_PHASE_MAX_FRAME_US \
+ (PERF_METRICS_HISTOGRAM_BUCKETS * PERF_METRICS_FRAME_BUCKET_US)
+/* Clock reads main.c makes back to back when a capture starts, to measure
+   the cost of one read. */
+#define PERF_METRICS_PROBE_CALIBRATION_READS 64U
+
 /* INVALIDATED: a reset, ROM change or suspend cut the capture short. */
 typedef enum
 {
@@ -60,6 +72,15 @@ typedef enum
   PERF_METRICS_WAIT_PRESENT,
   PERF_METRICS_WAIT_AUDIO
 } PerfMetricsWaitSite;
+
+/* What a phase timer measured. UPDATE_GBA is the whole call; the scanline
+   and PSG phases and the frame's waits run inside it. */
+typedef enum
+{
+  PERF_METRICS_PHASE_UPDATE_GBA,
+  PERF_METRICS_PHASE_SCANLINE,
+  PERF_METRICS_PHASE_GBC_SOUND
+} PerfMetricsPhase;
 
 typedef struct
 {
@@ -131,6 +152,31 @@ typedef struct
   /* Waits recorded since the last frame; each recorded frame clears them. */
   uint64_t frame_wait_us;
   int frame_waited_backpressure;
+  /* Phase timers. phase_frames counts the frames begun in the capture;
+     phase_sampling is set while the current frame is sampled, and
+     phase_recorded once perf_metrics_record_frame() gave its waits and
+     work. The phase_frame_ fields hold that frame until the next one
+     begins and adds them to the totals. */
+  uint32_t phase_frames;
+  int phase_sampling;
+  int phase_recorded;
+  uint64_t phase_frame_update_gba_us;
+  uint64_t phase_frame_scanline_us;
+  uint64_t phase_frame_gbc_sound_us;
+  uint64_t phase_frame_wait_us;
+  uint64_t phase_frame_reads;
+  uint32_t phase_frame_work_us;
+  uint64_t phase_sampled_frames;
+  /* update_gba's own time: without the scanline and PSG phases and the
+     frame's waits. */
+  uint64_t phase_update_gba_us;
+  uint64_t phase_scanline_us;
+  uint64_t phase_gbc_sound_us;
+  uint64_t phase_work_us;
+  /* Cost of one clock read, and the reads the phase timers made in the
+     sampled frames: their product is the time the timers added. */
+  uint32_t probe_read_ns;
+  uint64_t probe_reads;
   PerfMetricsHistogram frame_time;
   PerfMetricsHistogram ge_wait;
   PerfMetricsHistogram work_time;
@@ -215,6 +261,13 @@ typedef struct
   uint64_t frames_over_1_5x_budget;
   uint64_t frames_late;
   uint64_t link_lockstep_frames;
+  uint64_t phase_sampled_frames;
+  uint64_t phase_update_gba_us;
+  uint64_t phase_scanline_us;
+  uint64_t phase_gbc_sound_us;
+  uint64_t phase_work_us;
+  uint32_t probe_read_ns;
+  uint64_t probe_reads;
 } PerfMetricsSnapshot;
 
 void perf_metrics_init(PerfMetrics *metrics);
@@ -262,6 +315,11 @@ void perf_metrics_record_gamepak_rom_io(PerfMetrics *metrics,
  uint32_t seek_us, uint32_t read_us, uint32_t bytes_read,
  int read_error);
 void perf_metrics_record_link_lockstep_frame(PerfMetrics *metrics);
+int perf_metrics_phase_begin_frame(PerfMetrics *metrics);
+void perf_metrics_phase_add(PerfMetrics *metrics, PerfMetricsPhase phase,
+ uint32_t us);
+void perf_metrics_record_probe_calibration(PerfMetrics *metrics,
+ uint32_t elapsed_us, uint32_t reads);
 void perf_metrics_snapshot(const PerfMetrics *metrics,
  PerfMetricsSnapshot *snapshot);
 

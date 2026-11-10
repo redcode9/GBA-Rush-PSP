@@ -101,5 +101,11 @@ void perf_monitor_record_gamepak_evict_scan(uint32_t us);
 void perf_monitor_record_gamepak_rom_io(uint32_t seek_us, uint32_t read_us,
  uint32_t bytes_read, int read_error);
 void perf_monitor_record_link_lockstep_frame(void);
+/* Phase timers (main.c): begin_frame returns whether the frame starting
+   now is sampled, and 0 when no capture runs. */
+int perf_monitor_phase_begin_frame(void);
+void perf_monitor_phase_add(PerfMetricsPhase phase, uint32_t us);
+void perf_monitor_record_probe_calibration(uint32_t elapsed_us,
+ uint32_t reads);
 
 #endif /* PERF_MONITOR_H */
