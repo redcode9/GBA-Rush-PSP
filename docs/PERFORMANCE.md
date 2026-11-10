@@ -128,7 +128,10 @@ interrupted.
 - `bench-frames`: the benchmark's frame count, 0 when paced.
 - `bench-render`, `bench-audio`: 1 when the frames are drawn and the audio
   is mixed.
-- `bench-input`: `none` for the benchmark, `pad` when paced.
+- `bench-input`: `none` for the benchmark, `pad` when paced, `trace` when
+  the benchmark replays an input trace.
+- `bench-trace-checksum`: with `bench-input=trace`, the checksum field of
+  the trace's file as `0x` and eight hex digits; empty otherwise.
 
 Diagnostic builds add two arms of the same run below it. Unbound
 benchmark, rendering off skips every frame as frameskip does: no line is
@@ -142,9 +145,22 @@ is what drawing or the audio costs. compare-benchmarks refuses that pair,
 because its `bench-render` or `bench-audio` differ, so read the gain from
 each report's `emulated-frames` and `duration-us`.
 
+In diagnostic builds the benchmark also replays the input trace the
+Diagnostics page holds: one just recorded and saved, one loaded with its
+replay row, or one whose replay finished, as long as its game code and
+revision match the loaded ROM. The trace starts again from its first
+frame with the benchmark's, the game gets its keys instead of none, and the
+run ends with the trace's last frame instead of after 3600 frames.
+`bench-frames` is then the trace's length in frames, which bounds the run,
+and the report says `bench-input=trace` with the trace's checksum. With no
+trace held, or one that does not match the ROM, the benchmark runs
+without input as above.
+
 compare-benchmarks requires the same `bench-*` values in every run, and
 reads a report without them (from an older build) as paced, so a benchmark
-never compares with a paced capture.
+never compares with a paced capture. It does not read
+`bench-trace-checksum`: check by hand that two trace benchmarks replayed
+the same trace.
 
 A benchmark's `duration-us` is the sum of its frame times, which run back
 to back, so the return from the menu before its first frame is left out.
