@@ -1040,6 +1040,49 @@ void main_fast_forward_reset_game_settings(void)
   main_fast_forward_apply_settings();
 }
 
+/* Phase timers of a capture: update_gba reads the clock only while
+   perf_phase_sampling is set, during the frames perf_monitor samples.
+   Otherwise each timed site costs one test of the flag. */
+static u8 perf_phase_sampling;
+static u32 perf_phase_gba_start;
+
+static void main_phase_scanline(void)
+{
+  u32 start = sceKernelGetSystemTimeLow();
+
+  update_scanline();
+  perf_monitor_phase_add(PERF_METRICS_PHASE_SCANLINE,
+   sceKernelGetSystemTimeLow() - start);
+}
+
+/* The PSG channels (update_gbc_sound). */
+static void main_phase_gbc_sound(void)
+{
+  u32 start = sceKernelGetSystemTimeLow();
+
+  update_gbc_sound(cpu_ticks);
+  perf_monitor_phase_add(PERF_METRICS_PHASE_GBC_SOUND,
+   sceKernelGetSystemTimeLow() - start);
+}
+
+/* update_gba's time since its entry, or since the sampled frame began. */
+static void main_phase_update_gba(void)
+{
+  perf_monitor_phase_add(PERF_METRICS_PHASE_UPDATE_GBA,
+   sceKernelGetSystemTimeLow() - perf_phase_gba_start);
+}
+
+/* At each frame start: ends a sampled frame's update_gba time, then
+   decides whether the new frame is sampled (never without a capture). */
+static void main_perf_phase_frame(void)
+{
+  if(perf_phase_sampling)
+    main_phase_update_gba();
+  perf_phase_sampling = perf_monitor_phase_begin_frame();
+  if(perf_phase_sampling)
+    perf_phase_gba_start = sceKernelGetSystemTimeLow();
+}
+
 /* The hardware scheduler. The dynarec calls it when a slice of
    reg[EXECUTE_CYCLES] cycles has run: it advances serial, timers, LCD timing
    and DMA by that amount, raises IRQs, and returns the length of the next
@@ -1053,6 +1096,7 @@ u32 update_gba(void)
   GbaSioEvent sio_event;
 
   perf_monitor_record_gba_update_entry();
+  if(perf_phase_sampling) perf_phase_gba_start = sceKernelGetSystemTimeLow();
 
   /* One pass per timed event until the CPU is running. A `continue` (the
      menu or the link service replaced the machine state) goes straight to
@@ -1082,7 +1126,7 @@ u32 update_gba(void)
 
     if (gbc_sound_update != 0)
     {
-      update_gbc_sound(cpu_ticks);
+      perf_phase_sampling ? main_phase_gbc_sound() : update_gbc_sound(cpu_ticks);
       gbc_sound_update = 0;
     }
 
@@ -1109,7 +1153,7 @@ u32 update_gba(void)
         if ((dispstat & 0x01) == 0)
         {
           if (!skip_next_frame)
-            update_scanline();
+            perf_phase_sampling ? main_phase_scanline() : update_scanline();
 
           // If in visible area also fire HDMA
           for (i = 0; i < 4; i++)
@@ -1177,7 +1221,7 @@ u32 update_gba(void)
                sceKernelGetSystemTimeLow() - renderer_start);
           }
 
-          update_gbc_sound(cpu_ticks);
+          perf_phase_sampling ? main_phase_gbc_sound() : update_gbc_sound(cpu_ticks);
           gbc_sound_update = 0;
 
           // Reload the BG2/BG3 affine reference points from BG2X/Y and
@@ -1227,6 +1271,7 @@ u32 update_gba(void)
 
           vcount = 0;
           video_dispatch_frame_begin();
+          main_perf_phase_frame();
         }
 
         if (vcount == (dispstat >> 8))
@@ -1348,6 +1393,7 @@ u32 update_gba(void)
   }
   while (reg[CPU_HALT_STATE] != CPU_ACTIVE);
 
+  if(perf_phase_sampling) main_phase_update_gba();
   return reg[EXECUTE_CYCLES];
 }
 
@@ -2218,6 +2264,20 @@ static u32 main_perf_clock_mhz(void)
  * The diagnostics menu starts and stops a capture; perf_monitor.c collects
  * it and perf_report.c formats the report written here. */
 
+/* Times PERF_METRICS_PROBE_CALIBRATION_READS clock reads made back to
+   back, for the cost of one read of the phase timers. */
+static void main_perf_calibrate_probe(void)
+{
+  u32 first = sceKernelGetSystemTimeLow();
+  u32 last = first;
+  u32 i;
+
+  for(i = 1; i < PERF_METRICS_PROBE_CALIBRATION_READS; i++)
+    last = sceKernelGetSystemTimeLow();
+  perf_monitor_record_probe_calibration(last - first,
+   PERF_METRICS_PROBE_CALIBRATION_READS);
+}
+
 /* Starts a capture and pins the settings it runs under for the report. */
 int main_perf_start(void)
 {
@@ -2271,6 +2331,9 @@ int main_perf_start(void)
   perf_monitor_set_identity(&identity);
 
   perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
+  /* The first frame start of the new capture decides the sampling. */
+  perf_phase_sampling = 0;
+  main_perf_calibrate_probe();
   video_reset_frame_timing();
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_start();

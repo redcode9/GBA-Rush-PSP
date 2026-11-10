@@ -40,14 +40,31 @@ fi
 
 # Work time per frame reuses the clock reads already taken, so capturing
 # costs no more than before. A story that adds a read on purpose updates
-# these counts.
+# these counts: main.c went from 5 to 14 with the phase timers (7 lines)
+# and their calibration (2).
 main_reads=$(grep -c sceKernelGetSystemTimeLow source/src/main.c || true)
 video_reads=$(grep -c sceKernelGetSystemTimeLow source/src/psp_video.c || true)
-if [ "$main_reads" != 5 ] || [ "$video_reads" != 9 ]
+if [ "$main_reads" != 14 ] || [ "$video_reads" != 9 ]
 then
   echo "sceKernelGetSystemTimeLow lines changed (main.c $main_reads," \
-    "psp_video.c $video_reads; pinned at 5 and 9 in" \
+    "psp_video.c $video_reads; pinned at 14 and 9 in" \
     "scripts/check-performance.sh)" >&2
+  exit 1
+fi
+
+# Inside update_gba the phase timers read the clock only on sampled frames:
+# a clock read or a main_phase_ timer there tests perf_phase_sampling on
+# its own line. The renderer time, taken under perf_monitor_active(), is
+# the one exception.
+gba_body=$(awk '/^u32 update_gba/ { inside = 1 }
+  inside { print }
+  inside && /^}/ { exit }' source/src/main.c)
+unguarded=$(printf '%s\n' "$gba_body" | \
+  grep -E 'sceKernelGetSystemTime|main_phase_' | \
+  grep -v 'perf_phase_sampling' | grep -v 'renderer_start' || true)
+if [ -z "$gba_body" ] || [ -n "$unguarded" ]
+then
+  echo "update_gba reads the clock outside the phase sampling flag" >&2
   exit 1
 fi
 
