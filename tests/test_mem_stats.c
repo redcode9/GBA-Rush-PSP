@@ -108,12 +108,19 @@ static void test_keep_lowest_per_field(void)
   const MemStats start = { 10, 20, 30, 40, 50, 60 };
   const MemStats lower = { 9, 18, 27, 36, 45, 54 };
   const MemStats higher = { 11, 21, 31, 41, 51, 61 };
+  const MemStats mixed = { 9, 21, 27, 41, 45, 61 };
+  const MemStats mixed_lowest = { 9, 20, 27, 40, 45, 60 };
   MemStats lowest = start;
 
   mem_stats_keep_lowest(&lowest, &higher);
   assert(memcmp(&lowest, &start, sizeof(lowest)) == 0);
   mem_stats_keep_lowest(&lowest, &lower);
   assert(memcmp(&lowest, &lower, sizeof(lowest)) == 0);
+
+  /* Each field on its own: a sample lower in some fields only. */
+  lowest = start;
+  mem_stats_keep_lowest(&lowest, &mixed);
+  assert(memcmp(&lowest, &mixed_lowest, sizeof(lowest)) == 0);
 }
 
 static void roundtrip(const MemStats *stats, MemStatsPoint point)
