@@ -300,9 +300,11 @@ def build_and_run(source, name):
         path = Path(directory)
         (path / (name + ".c")).write_text(source)
         command = shlex.split(os.environ.get("HOST_CC", "cc"))
-        subprocess.run(command + ["-std=c99", "-Wall", "-Wextra", "-Werror",
-                                 str(path / (name + ".c")), "-o", str(path / name)],
-                       check=True, capture_output=True, text=True)
+        build = subprocess.run(command + ["-std=c99", "-Wall", "-Wextra", "-Werror",
+                                         str(path / (name + ".c")), "-o", str(path / name)],
+                               capture_output=True, text=True)
+        if build.returncode != 0:
+            raise AssertionError(build.stdout + build.stderr)
         subprocess.run([str(path / name)], check=True)
 
 
