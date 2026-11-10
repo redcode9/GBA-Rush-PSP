@@ -161,6 +161,30 @@ Each test has four fields:
   option at least once, then do the same from the file browser without a
   game.
 
+## Video
+
+### ge-testpat-photo
+
+- Models: PSP-1000
+- Minutes: 20
+- Pass: each of the 14 modes has one photo showing eight bars of equal
+  width, left to right black, white, red, green, blue, yellow, cyan and
+  magenta, at the size of its scale (none 240x160, x15-gu and x15-sw
+  360x240, user 408x272, the three 16:9 scales the whole 480x272 screen).
+  The EBOOT exits by itself and `diag-autorun.result` says `status=done`
+  and `frames=8400`, followed by one `testpat=<mode> used=<presenter>/<filter>`
+  line per mode. The bars are stored in GU_PSM_5551 with red in the low
+  bits (0x0000, 0x7FFF, 0x001F, 0x03E0, 0x7C00, 0x03FF, 0x7FE0, 0x7C1F):
+  red and blue trading places means a swapped channel.
+- Steps: build with `make psp-build PROFILE=diagnostic` and copy the EBOOT
+  to its own folder. Next to it write `diag-autorun.txt` with the lines
+  `version=1`, `build=<id>` (the build id the Diagnostics page shows) and
+  `testpat=all`, and start the EBOOT without touching the console. Each
+  mode stays about 10 seconds, in the order `source/src/autorun_config.h`
+  gives (none, x15-gu, x15-sw, user, 16x9-gu, 16x9-sharp, 16x9-auto, each
+  nearest then linear): photograph each one straight on, then keep the
+  result file with the photos.
+
 ## Performance
 
 ### perf-baseline-5
