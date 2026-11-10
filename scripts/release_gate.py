@@ -16,9 +16,9 @@ only when, for the EBOOT.PBP of that manifest:
   that passed;
 - if the release requires perf-baseline-5, the PSP-1000 reports of the
   manifest's build id under benchmarks/psp-1000/*/<version> pass
-  scripts/compare-benchmarks.py against the previous release's in every
-  group (title x model) of that release; a group without candidate reports
-  fails.
+  scripts/compare-benchmarks.py against those of the newest earlier release
+  in that archive, in every group (title x model) of that release; a group
+  without candidate reports fails.
 Both channels fail when a commit message since the previous release holds a
 forbidden word (scripts/check-names.py); otherwise the prerelease channel
 always passes. Both write dist/RELEASE-NOTES-<version>.md; the CHANGELOG
@@ -282,20 +282,24 @@ def link_problems(repo, version, release, passed):
 
 def performance_problems(repo, version, build_id):
     """(problems, results) of the PSP-1000 comparison of the archive's
-    <version> reports, which must carry build_id, with the previous
-    release's; results names every baseline group's verdict."""
-    previous = previous_release(repo, version)
+    <version> reports, which must carry build_id, with those of the newest
+    earlier release in the archive (a release that did not require
+    perf-baseline-5 may have none); results names every baseline group's
+    verdict."""
     archive = pathlib.Path(repo) / "benchmarks" / "psp-1000"
-    baseline = sorted(archive.glob(f"*/{previous}")) if previous else []
-    if not baseline:
-        return [f"performance on PSP-1000: no baseline of "
-                f"{previous or 'a previous release'} in benchmarks/psp-1000"
-                ], []
+    earlier = [tag for tag in release_tags(repo)
+               if version_key(tag) < version_key(version)
+               and any(archive.glob(f"*/{tag}"))]
+    if not earlier:
+        return ["performance on PSP-1000: no earlier release has reports in "
+                "benchmarks/psp-1000"], []
+    previous = earlier[-1]
     try:
+        baseline = compare_benchmarks.collect_groups(
+         *sorted(archive.glob(f"*/{previous}")))
         candidate = compare_benchmarks.collect_groups(
          *sorted(archive.glob(f"*/{version}")))
-        outcome = compare_benchmarks.compare_groups(
-         compare_benchmarks.collect_groups(*baseline), candidate)
+        outcome = compare_benchmarks.compare_groups(baseline, candidate)
     except ValueError as error:
         return [f"performance on PSP-1000: {error}"], []
     problems = []
@@ -443,7 +447,8 @@ def gate(version, channel, repo, dist, now):
         problems += candidate_problems(repo, version, release, now)
         problems += link_problems(repo, version, release, passed)
         # Only a release that requires the measurement: a hotfix without
-        # perf-baseline-5 needs no archive.
+        # perf-baseline-5 adds no reports, and the next release compares
+        # with the newest one that did.
         if "perf-baseline-5" in tests:
             found, performance = performance_problems(repo, version, build_id)
             problems += found

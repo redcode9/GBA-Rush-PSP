@@ -317,7 +317,8 @@ a pair with an earlier release loses) or `bump` line. A change of
 link test.
 When the release requires `perf-baseline-5`, its PSP-1000 reports in
 `benchmarks/psp-1000/*/<version>`, whose `build-id` must be the manifest's,
-must pass `scripts/compare-benchmarks.py` against the previous release's in
-every group, and a group without candidate reports fails; a release that does
-not require that test, such as a hotfix, needs no archive.
+must pass `scripts/compare-benchmarks.py` against those of the newest earlier
+release in that archive in every group, and a group without candidate reports
+fails; a release that does not require that test, such as a hotfix, adds no
+reports, so the next release compares with the newest one that has them.
 The notes do not replace the CHANGELOG, which stays hand-written.

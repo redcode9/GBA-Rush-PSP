@@ -252,6 +252,25 @@ class StableGateTest(ScratchRepoTest):
         self.assertIn("  performance on PSP-1000: group 0/BPRE-r0 PASS",
                       stderr.getvalue())
 
+    def test_the_baseline_is_the_newest_release_in_the_archive(self):
+        self.perf_candidate()
+        # 1.4.4 ships without PSP-1000 reports, like a hotfix that does not
+        # require perf-baseline-5: the 1.5.0 candidate compares with 1.4.3.
+        self.repo.commit(RC + 8 * DAY, "1.4.4")
+        self.repo.release("1.5.0", tests="save-a, perf-baseline-5")
+        self.repo.manifest("1.5.0-rc.1")
+        self.rc(when=RC + 9 * DAY, tag="1.5.0-rc.1")
+        for game in ("BPRE", "AXVE"):
+            self.repo.bench("1.5.0", game, [600] * 3)
+        self.assertEqual(self.repo.gate("1.5.0", now=RC + 17 * DAY), [])
+        self.assertIn("PSP-1000 against 1.4.3: 0/AXVE-r0 PASS, 0/BPRE-r0 "
+                      "PASS\n", self.repo.notes("1.5.0"))
+        # Once 1.4.4 has reports, they are the baseline.
+        for game in ("BPRE", "AXVE"):
+            self.repo.bench("1.4.4", game, [600] * 3, OLD_BUILD_ID)
+        self.assertEqual(self.repo.gate("1.5.0", now=RC + 17 * DAY), [])
+        self.assertIn("PSP-1000 against 1.4.4: ", self.repo.notes("1.5.0"))
+
     def test_the_candidate_reports_must_come_from_the_rc_build(self):
         self.perf_candidate()
         self.repo.bench("1.4.4", "AXVE", [600] * 3)
@@ -278,7 +297,7 @@ class StableGateTest(ScratchRepoTest):
             shutil.rmtree(self.repo.root / "benchmarks" / "psp-1000" /
                           f"{game}-r0" / "1.4.3")
         self.assertEqual(self.repo.gate(), [
-         "performance on PSP-1000: no baseline of 1.4.3 in "
+         "performance on PSP-1000: no earlier release has reports in "
          "benchmarks/psp-1000"])
 
     def test_a_missing_row_names_the_test_and_the_model_class(self):
