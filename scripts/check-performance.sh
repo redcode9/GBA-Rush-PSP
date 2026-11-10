@@ -23,10 +23,21 @@ fi
 
 update_body=$(sed -n '/^u32 update_gba/,/^static void init_main/p' \
   source/src/main.c)
+# The one exception: synchronize() saves the unbound benchmark's report
+# once, through gui.c's menu_diagnostics_write_report, two lines under the
+# perf_monitor_bench_take_done() that is true only after the bench's last
+# frame.
+bench_writes=$(printf '%s\n' "$update_body" | \
+  grep -c 'menu_diagnostics_write_report' || true)
+guarded_writes=$(printf '%s\n' "$update_body" | \
+  grep -B2 'menu_diagnostics_write_report' | \
+  grep -c 'perf_monitor_bench_take_done()' || true)
 if printf '%s\n' "$update_body" | \
-  grep -Eq 'perf_report_format|main_perf_write_report'
+  grep -Eq 'perf_report_format|main_perf_write_report' || \
+  [ "$bench_writes" != 1 ] || [ "$guarded_writes" != 1 ]
 then
-  echo "A performance report is formatted or written from update_gba" >&2
+  echo "A performance report is formatted or written from update_gba" \
+    "(beyond the benchmark's one save after perf_monitor_bench_take_done)" >&2
   exit 1
 fi
 
