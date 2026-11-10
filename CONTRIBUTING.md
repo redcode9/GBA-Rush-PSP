@@ -60,7 +60,9 @@ whether the rebuild gave the rc's. Three clean builds of commit 715b1c4
 (before the release and diagnostic profiles), in two checkouts at different
 paths, gave a byte-identical `EBOOT.PBP` (sha256 starting `7c4d7b06ec22`),
 PRX files and package zip; the release profile is compared only by CI's
-two builds, in one checkout. If two builds of one tree differ, the cause goes in
+two builds, in one checkout, which for commit 5c53880 gave the same
+`EBOOT.PBP` (sha256 starting `653c1028aa6a`) in both the push and the pull
+request run. If two builds of one tree differ, the cause goes in
 `docs/DESIGN-DECISIONS.md`. To run a step as CI does (the images are amd64,
 emulated on an arm64 host):
 
