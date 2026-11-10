@@ -50,7 +50,8 @@ in a row) or `unknown` (a report lacks `capture-local-time` or two share
 it); with `--strict` anything but `alternated` fails. `claim=` says
 `holds` only when the candidate runs, divided by 1 + percent/100, still
 differ on the claimed side at p <= 0.05; otherwise it says
-`not demonstrated`. The claim never changes PASS or FAIL.
+`not demonstrated`, or `not measured` when a run lacks the metric. The
+claim never changes PASS or FAIL.
 
 ## Baselines per model
 

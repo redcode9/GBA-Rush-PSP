@@ -353,14 +353,19 @@ def parse_claim(text):
     return match[1], match[2], float(match[3])
 
 
-def claim_verdict(baseline, candidate, claim):
+def claim_verdict(baseline, candidate, claim, measured):
     """Whether a claim written before the runs holds, as claim= prints it.
 
     The candidate runs are divided by 1 + percent / 100, and the exact
     one-sided test on the side the claim declares (higher for >=, lower
-    for <=) must then give p <= ALPHA.
+    for <=) must then give p <= ALPHA. A claim on a metric not among the
+    measured names (fast-forward or a WORK_METRICS name that compare()
+    skipped) is not measured.
     """
     name, operator, percent = claim
+    text = f"{name}{operator}{percent:+g}%"
+    if name not in measured:
+        return f"{text} not measured (not every run has {name})"
     metric = next(metric for metric_name, metric, _ in RUN_METRICS
                   if metric_name == name)
     factor = 1.0 + percent / 100.0
@@ -368,8 +373,7 @@ def claim_verdict(baseline, candidate, claim):
                              [metric(report) / factor for report in candidate],
                              operator == ">=")
     state = "holds" if p <= ALPHA else "not demonstrated"
-    return (f"{name}{operator}{percent:+g}% {state} "
-            f"(p{'=' if exact else '~'}{p:.3f})")
+    return f"{text} {state} (p{'=' if exact else '~'}{p:.3f})"
 
 
 def validate_matching_runs(baseline, candidate):
@@ -570,7 +574,8 @@ def compare(baseline, candidate, allow_link=False, order_check=False,
         "fast_forward_change": fast_forward_change,
         "metrics": metrics,
         "order": order,
-        "claim": (claim_verdict(baseline, candidate, claim)
+        "claim": (claim_verdict(baseline, candidate, claim,
+                                [metric[0] for metric in metrics])
                   if claim is not None else None),
     }
 
@@ -767,7 +772,8 @@ def main(argv=None):
                         "or 'frame-p95<=-2', on a metric of the -runs= "
                         "lines; it holds when the candidate runs divided by "
                         "1 + PERCENT/100 are higher (>=) or lower (<=) at "
-                        f"p <= {ALPHA}, otherwise it is not demonstrated. "
+                        f"p <= {ALPHA}, otherwise it is not demonstrated "
+                        "(or not measured when a run lacks the metric). "
                         "The claim never changes the exit status")
     arguments = parser.parse_args(argv)
     files = (arguments.baseline, arguments.candidate)

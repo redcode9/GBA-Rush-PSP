@@ -994,6 +994,17 @@ class BenchmarkComparisonTests(unittest.TestCase):
         status, output = run_files(fps, underruns, "--claim", "throughput>=+3")
         self.assertEqual(status, 1)
         self.assertIn("\nclaim=throughput>=+3% holds (p=0.050)\n", output)
+        # A metric the runs lack (no work fields, no fast-forward time)
+        # leaves PASS, FAIL and the exit status as they are.
+        normal = [report(frames=frames, fast_forward_time=0)
+                  for frames in (625, 626, 627)]
+        for name, text in (("work-p95", "work-p95<=-5"),
+                           ("fast-forward", "fast-forward>=+5")):
+            with self.subTest(text):
+                status, output = run_files(fps, normal, "--claim", text)
+                self.assertEqual(status, 0)
+                self.assertIn(f"\nclaim={text}% not measured (not every "
+                              f"run has {name})\n", output)
 
         for text in ("fps>=+3", "throughput>+3", "throughput>=-100",
                      "throughput>=3x", "throughput>=+3 "):
