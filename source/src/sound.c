@@ -289,11 +289,17 @@ void sound_diagnostic_audio_enable(u32 enabled)
   sound_diagnostic_audio_hash = STATE_HASH_FNV_BASIS;
 }
 
-// The hash of the samples mixed since the last call; starts the next one.
-u32 sound_diagnostic_audio_take(void)
+// Mixes the PSG channels up to cpu_ticks, then returns the hash of the
+// samples mixed since the last call and starts the next one. The audio
+// thread asks for extra updates (gbc_sound_update) at host times, so
+// only a take that renders up to its own tick ends every frame's hash at
+// the same sample; this also brings SOUNDCNT_X up to that tick.
+u32 sound_diagnostic_audio_take(u32 cpu_ticks)
 {
-  u32 hash = sound_diagnostic_audio_hash;
+  u32 hash;
 
+  update_gbc_sound(cpu_ticks);
+  hash = sound_diagnostic_audio_hash;
   sound_diagnostic_audio_hash = STATE_HASH_FNV_BASIS;
   return hash;
 }

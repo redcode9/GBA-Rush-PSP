@@ -72,7 +72,7 @@ void sound_link_wait_end(u32 cpu_ticks);
 u32 sound_audio_underrun_count(void);
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 void sound_diagnostic_audio_enable(u32 enabled);
-u32 sound_diagnostic_audio_take(void);
+u32 sound_diagnostic_audio_take(u32 cpu_ticks);
 #endif
 
 void sound_write_mem_savestate(SceUID savestate_file);
