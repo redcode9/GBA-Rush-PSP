@@ -1076,11 +1076,9 @@ static void main_phase_update_gba(void)
    decides whether the new frame is sampled (never without a capture). */
 static void main_perf_phase_frame(void)
 {
-  if(perf_phase_sampling)
-    main_phase_update_gba();
+  if(perf_phase_sampling) main_phase_update_gba();
   perf_phase_sampling = perf_monitor_phase_begin_frame();
-  if(perf_phase_sampling)
-    perf_phase_gba_start = sceKernelGetSystemTimeLow();
+  if(perf_phase_sampling) perf_phase_gba_start = sceKernelGetSystemTimeLow();
 }
 
 /* The hardware scheduler. The dynarec calls it when a slice of

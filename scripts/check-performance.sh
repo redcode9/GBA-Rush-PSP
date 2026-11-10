@@ -52,19 +52,23 @@ then
   exit 1
 fi
 
-# Inside update_gba the phase timers read the clock only on sampled frames:
-# a clock read or a main_phase_ timer there tests perf_phase_sampling on
-# its own line. The renderer time, taken under perf_monitor_active(), is
-# the one exception.
-gba_body=$(awk '/^u32 update_gba/ { inside = 1 }
-  inside { print }
-  inside && /^}/ { exit }' source/src/main.c)
-unguarded=$(printf '%s\n' "$gba_body" | \
-  grep -E 'sceKernelGetSystemTime|main_phase_' | \
-  grep -v 'perf_phase_sampling' | grep -v 'renderer_start' || true)
-if [ -z "$gba_body" ] || [ -n "$unguarded" ]
+# In update_gba and main_perf_phase_frame, which it calls every frame, the
+# phase timers read the clock only on sampled frames: a clock read or a
+# main_phase_ timer there tests perf_phase_sampling on its own line. The
+# renderer time is the one exception: its start read follows
+# if(perf_monitor_active()) and its end read if(renderer_start != 0).
+if ! awk '/^(static void main_perf_phase_frame|u32 update_gba)\(/ {
+    inside = 1; found++ }
+  inside && /sceKernelGetSystemTime|main_phase_/ &&
+    !/perf_phase_sampling/ &&
+    !(/renderer_start = / && prev1 ~ /if\(perf_monitor_active\(\)\)/) &&
+    !(/- renderer_start\)/ && prev2 ~ /if\(renderer_start != 0\)/) { bad++ }
+  inside { prev2 = prev1; prev1 = $0 }
+  inside && /^}/ { inside = 0 }
+  END { exit (found != 2 || bad) }' source/src/main.c
 then
-  echo "update_gba reads the clock outside the phase sampling flag" >&2
+  echo "update_gba reads the clock outside the phase sampling flag" \
+    "(or it or main_perf_phase_frame is missing)" >&2
   exit 1
 fi
 
