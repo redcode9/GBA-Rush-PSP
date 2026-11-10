@@ -284,6 +284,40 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         self.assertEqual([status.lower() for status in statuses],
                          decoder.AUTORUN_STATUS)
 
+    def test_decodes_net_fault_counters(self):
+        # The ad-hoc worker logs counters 13-15 to the network ring; new
+        # counter kinds keep the file at version 6.
+        record = struct.pack(">QIIHBBIII", 110, 0, 1, 16, 2, 13,
+                             2, 0x89ABCDEF, 0)
+        snapshot = decoder.parse_snapshot(fixture_v6(record=record))
+
+        self.assertEqual(snapshot["version"], 6)
+        self.assertEqual(snapshot["records"][0]["source"], "network")
+        self.assertEqual(snapshot["records"][0]["event"], "link-counters")
+        self.assertEqual(decoder.describe(snapshot["records"][0]),
+                         "net-fault-profile=noisy seed=0x89ABCDEF")
+        self.assertEqual(
+            decoder.describe({"event": "link-counters", "flags": 13,
+                              "values": [6, 1, 0]}),
+            "net-fault-profile=6 seed=0x00000001")
+        self.assertEqual(
+            decoder.describe({"event": "link-counters", "flags": 14,
+                              "values": [41, 230, 12]}),
+            "fault-out-lost/delayed/duplicated=41/230/12")
+        self.assertEqual(
+            decoder.describe({"event": "link-counters", "flags": 15,
+                              "values": [7, 198, 3]}),
+            "fault-in-lost/delayed/duplicated=7/198/3")
+
+    def test_net_fault_profiles_match_the_c_table(self):
+        text = (Path(__file__).parents[1] / "source" / "src" /
+                "net_fault.c").read_text()
+        table = re.search(
+            r"net_fault_profiles\[NET_FAULT_PROFILE_COUNT\] =\s*\{(.*?)\n\};",
+            text, re.S)
+        self.assertEqual(re.findall(r'\{ "([a-z]+)"', table.group(1)),
+                         decoder.NET_FAULT_PROFILES)
+
     def test_exact_renderer_names_match_the_c_enum(self):
         header = (Path(__file__).parents[1] / "source" / "src" /
                   "video_me.h").read_text()

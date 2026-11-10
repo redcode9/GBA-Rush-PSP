@@ -96,7 +96,13 @@ LINK_COUNTERS = {
     8: "frames/frames-drawn/vblank-wait-us",
     9: "me-frames/frames-late/me-busy-us-per-frame",
     10: "log-us-per-frame/log-words-per-frame/full-resends",
+    # Diagnostic profile, network ring: what the ad-hoc worker's simulated
+    # networks did in one session (13 names the profile).
+    14: "fault-out-lost/delayed/duplicated",
+    15: "fault-in-lost/delayed/duplicated",
 }
+# net_fault_profiles in source/src/net_fault.c, in order: counters kind 13.
+NET_FAULT_PROFILES = ["lan", "adhoc", "noisy", "outage", "terrible", "dropouts"]
 # The CPU core a start or reset chose (CPU_CORE_* in source/src/main.h);
 # logs from before the option say classic.
 CPU_CORES = ["classic", "new"]
@@ -266,6 +272,11 @@ def describe(record: dict[str, Any]) -> str:
         return (
             f"cpu-core={_name(CPU_CORES, value0)} blocks-compiled={value1} "
             f"code-flushes={value2}"
+        )
+    if event == "link-counters" and flags == 13:
+        return (
+            f"net-fault-profile={_name(NET_FAULT_PROFILES, value0)} "
+            f"seed=0x{value1:08X}"
         )
     if event == "link-counters":
         return f"{LINK_COUNTERS.get(flags, f'counters-{flags}')}={value0}/{value1}/{value2}"
