@@ -155,12 +155,13 @@ Each test has four fields:
   Add a `dir.ini` holding only `rom_directory = missing`, with no
   `missing/` folder, and start again: the warning must call
   `rom_directory` invalid, and the colours must still be the picked ones.
-  Then delete `PSP/GAME/GBARushPSP/`, install 1.4.2 there with
-  `gba_bios.bin` and a game with a battery save beside the EBOOT and no
-  `dir.ini`, and on 1.4.2 save in the game and save a savestate. Extract
-  the candidate's release ZIP over it and start that game: it must load
-  its save, and the savestate must be listed and load. Do all of this on
-  each model.
+  Copy the `logs/` folder beside the EBOOT off the PSP: it is the
+  evidence of these starts. Then delete `PSP/GAME/GBARushPSP/`, install
+  1.4.2 there with `gba_bios.bin` and a game with a battery save beside
+  the EBOOT and no `dir.ini`, and on 1.4.2 save in the game and save a
+  savestate. Extract the candidate's release ZIP over it and start that
+  game: it must load its save, and the savestate must be listed and load.
+  Do all of this on each model.
 
 ### install-ms-root
 
@@ -182,8 +183,9 @@ Each test has four fields:
   over USB and extract the release ZIP, not the `-diag` one, with the
   drive itself as the destination (Windows' Extract All proposes a folder
   named after the ZIP), replacing the files already there. For the clean
-  install, start from storage with no `PSP/GAME/GBARushPSP/` folder. For
-  the upgrade, use a 1.4.3 install in `PSP/GAME/GBARushPSP/` with
+  install, start from storage with no `PSP/GAME/GBARushPSP/` folder, and
+  copy its `logs/` folder off the PSP before you replace that install.
+  For the upgrade, use a 1.4.3 install in `PSP/GAME/GBARushPSP/` with
   `gba_bios.bin`, a `dir.ini`, settings changed in the menu, and a game
   with a battery save and a savestate made on 1.4.3. Before extracting,
   note the size and modification time of its `.sav`, `.svs`, `.cfg` and
