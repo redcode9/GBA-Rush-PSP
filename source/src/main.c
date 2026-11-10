@@ -1891,11 +1891,19 @@ int main_autorun_start(void)
     return main_autorun_fail(AUTORUN_ERROR_TRACE);
   if(main_autorun.hash[0] != '\0')
   {
+    AutorunError error = AUTORUN_OK;
+
     /* The replay started without hashes: their array did not fit. */
     if(input_diagnostic_trace_hashes() == NULL)
+      error = AUTORUN_ERROR_NO_HASH_MEMORY;
+    /* The replay would end before that frame and flip nothing. */
+    else if(main_autorun.perturb &&
+            main_autorun.perturb_frame > input_diagnostic_trace_duration())
+      error = AUTORUN_ERROR_PERTURB_PAST_TRACE;
+    if(error != AUTORUN_OK)
     {
       input_diagnostic_trace_cancel();
-      return main_autorun_fail(AUTORUN_ERROR_NO_HASH_MEMORY);
+      return main_autorun_fail(error);
     }
     if(main_autorun.perturb)
       input_diagnostic_trace_hashes_perturb(main_autorun.perturb_frame);

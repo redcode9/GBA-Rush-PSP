@@ -39,7 +39,8 @@ static const char *const autorun_config_error_names[] =
   "needs-trace",
   "needs-hash",
   "no-hash-memory",
-  "hash"
+  "hash",
+  "perturb-past-trace"
 };
 
 static const char *const autorun_config_status_names[] =
@@ -52,7 +53,7 @@ static const char *const autorun_config_status_names[] =
 
 typedef char autorun_config_error_names_check
  [(sizeof(autorun_config_error_names) / sizeof(autorun_config_error_names[0])
-   == AUTORUN_ERROR_HASH + 1) ? 1 : -1];
+   == AUTORUN_ERROR_PERTURB_PAST_TRACE + 1) ? 1 : -1];
 
 enum
 {
@@ -302,7 +303,7 @@ int autorun_config_parse(const char *text, size_t size, const char *build_id,
 
 const char *autorun_config_error_name(AutorunError error)
 {
-  if((unsigned int)error > (unsigned int)AUTORUN_ERROR_HASH)
+  if((unsigned int)error > (unsigned int)AUTORUN_ERROR_PERTURB_PAST_TRACE)
     return "invalid";
   return autorun_config_error_names[error];
 }

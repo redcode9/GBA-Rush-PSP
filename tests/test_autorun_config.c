@@ -267,8 +267,10 @@ static void test_result_text(void)
   assert(strcmp(autorun_config_error_name(AUTORUN_ERROR_NO_HASH_MEMORY),
    "no-hash-memory") == 0);
   assert(strcmp(autorun_config_error_name(AUTORUN_ERROR_HASH), "hash") == 0);
+  assert(strcmp(autorun_config_error_name(AUTORUN_ERROR_PERTURB_PAST_TRACE),
+   "perturb-past-trace") == 0);
   assert(strcmp(autorun_config_error_name(
-   (AutorunError)(AUTORUN_ERROR_HASH + 1)), "invalid") == 0);
+   (AutorunError)(AUTORUN_ERROR_PERTURB_PAST_TRACE + 1)), "invalid") == 0);
   assert(strcmp(autorun_config_error_name((AutorunError)99), "invalid")
    == 0);
 }

@@ -45,7 +45,8 @@
  *   perturb=<n>      decimal, below frames: flips one IWRAM bit at frame n
  *                    of the replay (0 is its first), so the hashes of this
  *                    run must differ from an unperturbed one's from there
- *                    on. Needs hash.
+ *                    on. Needs hash. The run fails at the start when the
+ *                    trace ends before frame n.
  *
  * Not keys yet: the network fault profile and the power events come with
  * the code that uses them (the ad-hoc fault knobs, the power event
@@ -110,7 +111,9 @@ typedef enum
   /* Set by main.c: the hashes did not fit in memory at the start, or
      were not written at the end. */
   AUTORUN_ERROR_NO_HASH_MEMORY,
-  AUTORUN_ERROR_HASH
+  AUTORUN_ERROR_HASH,
+  /* Set by main.c: perturb= is past the trace's last frame. */
+  AUTORUN_ERROR_PERTURB_PAST_TRACE
 } AutorunError;
 
 /* Logged as values, like AutorunError. */

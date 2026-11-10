@@ -252,11 +252,12 @@ int gui_trace_replay_file(const char *name) { strcpy(traced, name); return trace
 static StateHashLog hash_log;
 static char hashed[MAX_PATH];
 static int hashes_attached, hash_result, cancels, perturbs;
-static u32 perturb_frame;
+static u32 perturb_frame, trace_duration;
 const StateHashLog *input_diagnostic_trace_hashes(void) {
   return hashes_attached ? &hash_log : NULL;
 }
 void input_diagnostic_trace_cancel(void) { cancels++; hashes_attached = 0; }
+u32 input_diagnostic_trace_duration(void) { return trace_duration; }
 void input_diagnostic_trace_hashes_perturb(u32 frame) {
   assert(hashes_attached); perturbs++; perturb_frame = frame;
 }
@@ -279,7 +280,7 @@ static void clear_test(void) {
   file_exists = 1; read_error = 0; load_result = trace_result = 1;
   results = events = flushes = quits = resets = 0;
   hashes_attached = hash_result = 1; cancels = perturbs = 0;
-  perturb_frame = 0; hashed[0] = '\0';
+  perturb_frame = 0; trace_duration = 9; hashed[0] = '\0';
   result[0] = loaded[0] = traced[0] = gamepak_filename[0] = '\0';
   gamepak_file_size = 1;
   main_autorun_running = main_autorun_frames = 0;
@@ -396,6 +397,18 @@ int main(void) {
   assert(cancels == 1 && perturbs == 0 && quits == 1 && flushes == 1);
   assert(gamepak_filename[0] == '\0' && gamepak_file_size == 0);
   expect(AUTORUN_STATUS_FAILED, "no-hash-memory", 0, 0);
+
+  /* perturb= at the trace's last frame flips; past it nothing would. */
+  clear_test(); trace_duration = 4;
+  assert(start(HEAD "rom=a.gba\ntrace=t.gbit\nframes=9\nhash=h.gbsh\n"
+               "perturb=4\n"));
+  assert(perturbs == 1 && perturb_frame == 4 && cancels == 0);
+  clear_test(); trace_duration = 3;
+  assert(start(HEAD "rom=a.gba\ntrace=t.gbit\nframes=9\nexit=1\n"
+               "hash=h.gbsh\nperturb=4\n") == 0);
+  assert(cancels == 1 && perturbs == 0 && quits == 1 && flushes == 1);
+  assert(gamepak_filename[0] == '\0' && gamepak_file_size == 0);
+  expect(AUTORUN_STATUS_FAILED, "perturb-past-trace", 0, 0);
   puts("diagnostic autorun regressions passed");
   return 0;
 }
