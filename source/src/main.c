@@ -258,6 +258,15 @@ u32 interval_skipped_frames = 0;
 u32 fps_window_frames = 0;
 u32 vblank_count = 0;
 
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+/* The unbound benchmark's arms in diagnostic builds, kept from one start to
+   the next: render 0 skips every bench frame as frameskip does, so no
+   renderer draws a line, presents or flips (the Exact renderer on the
+   Media Engine included); audio 0 sets sound_bench_audio_off. */
+static u8 main_perf_bench_render = 1;
+static u8 main_perf_bench_audio = 1;
+#endif
+
 /* The first init_main flushes both translation caches; later ROM loads
    flush the read-only one and clear the RAM block metadata instead. */
 static u8 caches_inited = 0;
@@ -1550,7 +1559,10 @@ static void synchronize(void)
   // set each frame, as the start cleared it. The counts stay at 0, so
   // pacing restarts from now once the bench ends. Before the last frame is
   // recorded, which stops the capture, the stop work of main_perf_stop
-  // runs: the end memory sample and the core profile's stop.
+  // runs: the end memory sample and the core profile's stop. Diagnostic
+  // builds set the bench's arms here each frame (render off: every frame
+  // skipped; audio off: no samples written) and drop the audio one at the
+  // first frame end after the bench, however it ended.
   if(perf_monitor_bench_running())
   {
     if(perf_monitor_bench_frames_left() == 1)
@@ -1561,13 +1573,21 @@ static void synchronize(void)
 #endif
     }
     sound_set_fast_forward(1);
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+    skip_next_frame = !main_perf_bench_render;
+    sound_bench_audio_off = !main_perf_bench_audio;
+#else
     skip_next_frame = 0;
+#endif
     real_frame_count = 0;
     virtual_frame_count = 0;
     num_skipped_frames = 0;
     frameskip_counter = 0;
     return;
   }
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+  sound_bench_audio_off = 0;
+#endif
 
   // The bench stopped its capture after its last frame: its report is
   // written once, outside the measured frames, and pacing starts again.
@@ -2428,6 +2448,10 @@ static int main_perf_begin(u32 bench_frames)
     identity.psp_vsync = 0;
     identity.frameskip_type = FRAMESKIP_NONE;
     identity.frameskip_value = 0;
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+    identity.bench_render = main_perf_bench_render;
+    identity.bench_audio = main_perf_bench_audio;
+#endif
   }
   perf_monitor_set_identity(&identity);
 
@@ -2451,12 +2475,16 @@ int main_perf_start(void)
 /* The unbound benchmark, refused during a link: fast-forward stops, and
    synchronize() runs MAIN_PERF_BENCH_FRAMES frames without pacing, then
    saves the report. */
-int main_perf_bench_start(void)
+int main_perf_bench_start(u32 render, u32 audio)
 {
   if(main_link_active())
     return 0;
 
   main_fast_forward_stop();
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+  main_perf_bench_render = render != 0;
+  main_perf_bench_audio = audio != 0;
+#endif
   return main_perf_begin(MAIN_PERF_BENCH_FRAMES);
 }
 
