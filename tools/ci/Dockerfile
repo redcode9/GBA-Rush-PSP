@@ -18,8 +18,9 @@ ARG UBUNTU=ubuntu@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce
 # the live package lists are dropped, so every later apt call, CBMC's
 # dependencies included, reads the snapshot. The sources name the snapshot
 # itself: APT::Snapshot learns the snapshot server from the Release files
-# apt has cached and reads the live archive when it has none. After
-# apt-get update each stage fails unless the snapshot is the only source
+# apt has cached and reads the live archive when it has none. The psp and
+# cbmc stages fail if apt-get update cannot fetch an index, which would
+# leave that suite out, or if the snapshot is not the only source
 # apt-cache lists.
 ARG UBUNTU_SNAPSHOT=20261109T000000Z
 
@@ -38,7 +39,7 @@ RUN apt-get update \
 # the container's root, so Git is told to trust it.
 FROM base AS psp
 ARG UBUNTU_SNAPSHOT
-RUN apt-get update \
+RUN apt-get update --error-on=any \
  && apt-cache policy | grep -qF "://snapshot.ubuntu.com/ubuntu/$UBUNTU_SNAPSHOT" \
  && ! apt-cache policy | grep '://' | grep -vF "://snapshot.ubuntu.com/ubuntu/$UBUNTU_SNAPSHOT" \
  && apt-get install -y --no-install-recommends curl gcc-14 \
@@ -58,7 +59,7 @@ FROM base AS cbmc
 ARG CBMC_VERSION=6.11.0
 ARG CBMC_SHA256=b3721aa541038384d7801ea3aeabbcddc3e8845ac8f1cbff637cf8dec7481ac8
 ARG UBUNTU_SNAPSHOT
-RUN apt-get update \
+RUN apt-get update --error-on=any \
  && apt-cache policy | grep -qF "://snapshot.ubuntu.com/ubuntu/$UBUNTU_SNAPSHOT" \
  && ! apt-cache policy | grep '://' | grep -vF "://snapshot.ubuntu.com/ubuntu/$UBUNTU_SNAPSHOT" \
  && apt-get install -y --no-install-recommends curl gcc \
