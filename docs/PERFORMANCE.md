@@ -154,7 +154,9 @@ run ends with the trace's last frame instead of after 3600 frames.
 `bench-frames` is then the trace's length in frames, which bounds the run,
 and the report says `bench-input=trace` with the trace's checksum. With no
 trace held, or one that does not match the ROM, the benchmark runs
-without input as above.
+without input as above. Do not press the FPS display hotkey during a trace
+benchmark: that frame skips the trace, so its keys reach the game one frame
+late and the run no longer ends in the same state.
 
 compare-benchmarks requires the same `bench-*` values in every run, and
 reads a report without them (from an older build) as paced, so a benchmark
