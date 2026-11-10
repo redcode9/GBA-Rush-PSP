@@ -22,10 +22,10 @@
 
 - [ ] **UI-7.2** — Sharp bilinear come terzo filtro a 150% e USER · M, 2,5 gg · dipende da: UI-7.1, F-127 o, se lo spike PPSSPP fallisce, ENG-6.6 · PSP: sì · aspetta: ENG-6.6 (`wip/replay-oracle`)
 - [ ] **UI-7.3** — Filtro LCD a griglia, a punti e a scanline · M, 2,5 gg · dipende da: UI-7.2, UI-10.1, F-127 o, se lo spike PPSSPP fallisce, ENG-6.6 · PSP: sì · aspetta: ENG-6.6 (`wip/replay-oracle`)
-- [ ] **UI-8.1** — Modulo puro ui_batch e rasterizzatore di riferimento · M, 3 gg · dipende da: — · PSP: no · **subito** · _in parte: manca la verifica della CI_
+- [x] **UI-8.1** — Modulo puro ui_batch e rasterizzatore di riferimento · M, 3 gg · dipende da: — · PSP: no · **subito** · _CI verde su b8e9dec (run 42724932969): make check e make test-sanitize_
 - [ ] **UI-8.2** — Backend PSP del batch per rettangoli, immagini e pulizia · M, 2,5 gg · dipende da: UI-8.1, UI-8.4, F-127 o, se lo spike PPSSPP fallisce, ENG-6.6 · PSP: sì · aspetta: ENG-6.6 (`wip/replay-oracle`); il gate di UI-8 aspetta anche PRF-4.1 per F-027 (`wip/platform`) e il tempo di frame del menu misurato su PSP-1000
 - [ ] **UI-8.3** — Interpolazioni a passi fissi e 'Riduci movimento' · S, 1 gg · dipende da: UI-8.2 · PSP: no
-- [ ] **UI-8.4** — Golden per lingua e tema in make check · M, 2 gg · dipende da: UI-8.1 · PSP: no · _in parte: manca la verifica della CI_
+- [x] **UI-8.4** — Golden per lingua e tema in make check · M, 2 gg · dipende da: UI-8.1 · PSP: no · _CI verde su b8e9dec (run 42724932969): make check e make test-sanitize_
 - [ ] **UI-8.5** — Testo come sprite dalla cache dei glifi · M, 3 gg · dipende da: UI-8.2 · PSP: sì
 - [ ] **UI-9.2** — Atlante anti-aliasing latino generato al build · M, 3 gg · dipende da: UI-8.5, F-027 · PSP: sì · aspetta: PRF-4.1 per F-027 (`wip/platform`)
 - [ ] **UI-9.3** — CJK anti-aliasing con ripiego bitmap · M, 3 gg · dipende da: UI-9.2 · PSP: sì
