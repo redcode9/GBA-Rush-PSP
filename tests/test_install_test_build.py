@@ -67,11 +67,11 @@ class InstallTestBuildTest(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def make_zip(self, version, names):
+    def make_zip(self, version, names, folder="GBARushPSP"):
         path = self.root / "dist" / f"GBA-Rush-PSP-{version}.zip"
         with zipfile.ZipFile(path, "w") as archive:
             for name in names:
-                archive.writestr(f"GBA-Rush-PSP-{version}/GBARushPSP/{name}",
+                archive.writestr(f"GBA-Rush-PSP-{version}/{folder}/{name}",
                                  b"new " + name.encode())
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         Path(f"{path}.sha256").write_text(f"{digest}  {path.name}\n")
@@ -116,6 +116,27 @@ class InstallTestBuildTest(unittest.TestCase):
             if line.startswith("  would run: rm -f ")
         }
         self.assertEqual(removed, REMOVABLE | {"media_engine.prx"})
+
+    def test_a_diagnostic_zip_goes_into_the_test_build_folder(self):
+        diagnostic = self.make_zip(
+            "0.0.0-diag", ("EBOOT.PBP", "exception.prx", "media_engine.prx"),
+            folder="GBARushPSP-DIAG")
+        result = self.run_script(zip_path=diagnostic)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        copies = [action for action in self.actions(result)
+                  if action.startswith("cp -X ")]
+        self.assertEqual(len(copies), 3, copies)
+        for action in copies:
+            source, target = action[len("cp -X "):].split(" ", 1)
+            self.assertIn("/GBARushPSP-DIAG/", source)
+            self.assertTrue(target.startswith(f"{self.volumes}/{CARD}/"),
+                            target)
+
+    def test_a_zip_without_a_build_folder_stops(self):
+        other = self.make_zip("0.0.0-other", ("EBOOT.PBP",), folder="Other")
+        result = self.run_script(zip_path=other)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no GBARushPSP/ or GBARushPSP-DIAG/", result.stderr)
 
     def test_a_worktree_archives_into_the_main_checkout(self):
         # Removing a worktree deletes its ignored artifacts/ folder, which

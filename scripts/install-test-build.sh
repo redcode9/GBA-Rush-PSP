@@ -16,7 +16,9 @@ set -eu
 #
 # Usage: sh scripts/install-test-build.sh [--dry-run] [--no-media-engine]
 #          [--folder NAME] [--rom FILE]... ZIP
-#   ZIP                 a zip from make package; ZIP.sha256 must match it
+#   ZIP                 a zip from make package, release or PROFILE=diagnostic
+#                       (its GBARushPSP-DIAG/ goes into the same folder);
+#                       ZIP.sha256 must match it
 #   --dry-run           print what would change; write nothing
 #   --no-media-engine   leave media_engine.prx off the card (it is archived
 #                       first), so the Exact renderer draws on the main
@@ -120,8 +122,18 @@ ini_value()
 
 (cd "$(dirname "$zip")" && sha256 -c "$(basename "$zip").sha256")
 unzip -q "$zip" -d "$work/zip"
-set -- "$work"/zip/*/GBARushPSP
-build=$1
+build=
+for candidate in "$work"/zip/*/GBARushPSP "$work"/zip/*/GBARushPSP-DIAG
+do
+  if [ -d "$candidate" ]; then
+    build=$candidate
+    break
+  fi
+done
+if [ -z "$build" ]; then
+  echo "The zip has no GBARushPSP/ or GBARushPSP-DIAG/ folder" >&2
+  exit 1
+fi
 if [ -n "$folder" ] && [ ! -f "$build/media_engine.prx" ]; then
   media_engine=0
 fi
@@ -132,7 +144,7 @@ fi
 for file in $files
 do
   if [ ! -f "$build/$file" ]; then
-    echo "The zip has no GBARushPSP/$file" >&2
+    echo "The zip has no $(basename "$build")/$file" >&2
     exit 1
   fi
 done
