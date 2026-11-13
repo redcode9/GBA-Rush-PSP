@@ -26,6 +26,7 @@
  * the global, per-game and directory settings files. */
 
 #include "common.h"
+#include "test_session.h"
 #include "boxart.h"   // carousel / boxart support
 #include "config_store.h"
 #include "menu_layout.h"
@@ -3041,6 +3042,10 @@ static u32 action_savestate_slot(u32 slot)
   u32 result;
   u32 old_slot = savestate_slot;
 
+  /* The game holds a test session's state, not the player's. */
+  if (slot == AUTO_SAVESTATE_SLOT && TEST_SESSION_RAN())
+    return 0;
+
   savestate_slot = slot;
   current_screen = copy_screen();
   get_savestate_filename(savestate_slot, savestate_filename);
@@ -3818,6 +3823,7 @@ static void menu_refresh_language(void)
    locals and nested functions so they can share this frame's state. */
 u32 menu(void)
 {
+  TEST_SESSION_STOP();
 
   main_fast_forward_stop();
   fast_forward_profile_option = NULL;

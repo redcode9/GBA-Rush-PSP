@@ -25,6 +25,7 @@
 // memory_map_read/write directly and calls back into these handlers.
 
 #include "common.h"
+#include "test_session.h"
 #include "perf_monitor.h"
 #include "open_bios.h"
 
@@ -3339,6 +3340,10 @@ static u32 save_backup(char *name)
 // saves once WRITE_BACKUP_DELAY frames pass without a new backup write.
 void update_backup(void)
 {
+  /* The game holds a test session's state, not the player's. */
+  if (TEST_SESSION_RAN())
+    backup_update = WRITE_BACKUP_DELAY + 1;
+
   if (backup_update != (WRITE_BACKUP_DELAY + 1))
     backup_update--;
 
@@ -3352,6 +3357,9 @@ void update_backup(void)
 // Saves a pending backup write now instead of after the delay.
 void update_backup_immediately(void)
 {
+  if (TEST_SESSION_RAN())
+    backup_update = WRITE_BACKUP_DELAY + 1;
+
   if (backup_update != (WRITE_BACKUP_DELAY + 1))
   {
     save_backup(backup_filename);
