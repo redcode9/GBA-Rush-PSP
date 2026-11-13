@@ -36,6 +36,7 @@
 #include "psp_adhoc.h"
 #include "runtime_log_psp.h"
 #include "sound_math.h"
+#include "test_session.h"
 #include "video_me.h"
 
 // Main thread params; on the PSP a lower priority number runs first.
@@ -1156,8 +1157,9 @@ u32 update_gba(void)
           // Transition from vrefresh to vblank (lines 160-227)
           dispstat |= 0x01;
 
-          // The menu or a state load replaced the machine; drop this pass
-          if (update_input() != 0)
+          // The menu, a state load or the test session replaced the
+          // machine; drop this pass
+          if (TEST_SESSION_FRAME() != 0 || update_input() != 0)
           {
             main_follow_cpu_core();
             continue;
@@ -1781,8 +1783,14 @@ int user_main(int argc, char *argv[])
   gamepak_filename[0] = 0;
   gamepak_file_size = 0;
 
+  /* Priority 0: the diagnostic build's hardware test session, if
+     accepted */
+  if (TEST_SESSION_START())
+  {
+    prepared_by_menu = rom_loaded = 1;
+  }
   /* Priority 1: launcher or file manager passed a ROM path */
-  if (argc > 1)
+  else if (argc > 1)
   {
     if (load_gamepak((char *)argv[1]) < 0)
     {
@@ -1897,6 +1905,8 @@ void quit(void)
 {
   if(!__sync_bool_compare_and_swap(&quit_started, 0, 1))
     return;
+
+  TEST_SESSION_STOP();
 
   main_fast_forward_stop();
   main_link_disconnect(MAIN_LINK_END_USER);

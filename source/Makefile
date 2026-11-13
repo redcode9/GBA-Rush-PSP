@@ -25,7 +25,7 @@ EXTRA_TARGETS = EBOOT.PBP
 
 # Headers that every main object is rebuilt on when they change.
 COMMON_FILE = \
- common.h build_profile.h adhoc_peer.h codebreaker.h dynarec_worklist.h fast_forward_audio.h fast_forward_policy.h gba_sio.h gba_ppu.h gba_ppu_log.h video_me.h link_audio_wait.h link_cable.h link_net.h power_lifecycle.h runtime_log.h runtime_log_psp.h runtime_log_store.h sound_math.h video_adaptive.h video_mosaic.h perf_metrics.h perf_monitor.h perf_report.h menu_model.h menu_layout.h menu_catalog.h config_model.h config_store.h psp_adhoc.h \
+ common.h build_profile.h test_session.h adhoc_peer.h codebreaker.h dynarec_worklist.h fast_forward_audio.h fast_forward_policy.h gba_sio.h gba_ppu.h gba_ppu_log.h video_me.h link_audio_wait.h link_cable.h link_net.h power_lifecycle.h runtime_log.h runtime_log_psp.h runtime_log_store.h sound_math.h video_adaptive.h video_mosaic.h perf_metrics.h perf_monitor.h perf_report.h menu_model.h menu_layout.h menu_catalog.h config_model.h config_store.h psp_adhoc.h \
  cpu.h memory.h video.h psp_video.h input.h sound.h main.h message.h mh_print.h gui.h zip.h png.h \
  ku_bridge.h exception.h ch_print.h \
  arm_core.h arm_ir.h arm_mips.h arm_gba.h
@@ -121,7 +121,7 @@ PSP_EBOOT_ICON = res/ICON0-diag.png
 PSP_EBOOT_PIC1 = res/PIC1-diag.png
 PSP_EBOOT_TITLE = GBA Rush PSP [DIAG]
 COMMON_FILE += input_trace.h
-MAINOBJS += input_trace.o
+MAINOBJS += input_trace.o test_session.o
 else
 $(error PROFILE must be release or diagnostic, not '$(PROFILE)')
 endif

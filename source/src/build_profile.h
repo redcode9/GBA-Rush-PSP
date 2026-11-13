@@ -25,6 +25,8 @@
 #elif defined(GBA_RUSH_PROFILE_DIAGNOSTIC)
 #define GBA_RUSH_PROFILE_NAME "diagnostic"
 #define ENABLE_DIAGNOSTIC_INPUT_TRACE
+/* The hardware test session (test_session.c). */
+#define ENABLE_DIAGNOSTIC_TEST_SESSION
 
 #elif defined(GBA_RUSH_PROFILE_RELEASE)
 #define GBA_RUSH_PROFILE_NAME "release"
@@ -44,6 +46,9 @@
 #endif
 #if defined(ENABLE_DIAGNOSTIC_USB)
 #error "ENABLE_DIAGNOSTIC_USB (USB pass-through) is a diagnostic feature: build it with make PROFILE=diagnostic"
+#endif
+#if defined(ENABLE_DIAGNOSTIC_TEST_SESSION)
+#error "ENABLE_DIAGNOSTIC_TEST_SESSION (hardware test session) is a diagnostic feature: build it with make PROFILE=diagnostic"
 #endif
 #if defined(ENABLE_DIAGNOSTIC_CORE_PROFILE)
 #error "ENABLE_DIAGNOSTIC_CORE_PROFILE (new core profile) is a diagnostic feature: build it with make PROFILE=diagnostic"

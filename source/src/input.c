@@ -24,6 +24,7 @@
    repeat. */
 
 #include "common.h"
+#include "test_session.h"
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 #include "input_trace.h"
@@ -395,7 +396,7 @@ u32 update_input(void)
   last_buttons = buttons;
 
   main_fast_forward_input(non_repeat_buttons & fast_forward_button_mask,
-   buttons & fast_forward_button_mask);
+   (buttons & fast_forward_button_mask) | TEST_SESSION_FAST_FORWARD());
 
   if ((enable_home_menu != 0) && ((non_repeat_buttons & PSP_CTRL_HOME) != 0))
     return menu();
@@ -458,6 +459,8 @@ u32 update_input(void)
    (u16)new_key);
   diagnostic_trace_frame++;
 #endif
+
+  new_key |= TEST_SESSION_GBA_KEYS();
 
   // Only a newly pressed key can trigger the keypad IRQ
   if ((new_key | gba_keys_held) != gba_keys_held)

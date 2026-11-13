@@ -45,6 +45,8 @@ typedef uint32_t u32;
 #define MSG_ERR_LOAD_GAMEPACK 0
 #define MSG_AUTO_SAVESTATE_LOAD_PROMPT 1
 #define RUNTIME_LOG_FLUSH_START 1
+/* The release build's value: no hardware test session. */
+#define TEST_SESSION_START() 0
 const char *messages[] = {"load error", "restore state"};
 #define MSG messages
 char gamepak_filename[512];

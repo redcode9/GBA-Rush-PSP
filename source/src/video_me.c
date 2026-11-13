@@ -29,6 +29,7 @@
 
 #include "common.h"
 #include "gba_ppu_log.h"
+#include "test_session.h"
 #include "video_me.h"
 
 /* The handshake may take this long, in 5 ms steps. */
@@ -186,13 +187,16 @@ static int healthy(void)
   }
   if(read != last_read || read == writer.published)
     stalled_frames = 0;
-  else if(++stalled_frames >= STALLED_FRAMES)
+  /* A Media Engine kept drawing far behind (TEST_SESSION_KEEPS_SLOW_ME)
+     moves the read count only once per long batch. */
+  else if(++stalled_frames >= (TEST_SESSION_KEEPS_SLOW_ME() ?
+   STALLED_FRAMES * 60 : STALLED_FRAMES))
   {
     give_up(VIDEO_ME_STOPPED);
     return 0;
   }
   last_read = read;
-  if(late_in_a_row >= LATE_FRAMES)
+  if(!TEST_SESSION_KEEPS_SLOW_ME() && late_in_a_row >= LATE_FRAMES)
   {
     give_up(VIDEO_ME_TOO_SLOW);
     return 0;
@@ -202,7 +206,7 @@ static int healthy(void)
 
 int video_me_frame_begin(int exact)
 {
-  if(!exact)
+  if(!exact || TEST_SESSION_EXACT_CPU())
   {
     drawing = 0;
     return 0;
