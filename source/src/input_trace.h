@@ -71,6 +71,9 @@ typedef struct
   uint16_t last_recorded_keys;
   uint8_t game_code[INPUT_TRACE_GAME_CODE_SIZE];
   uint8_t rom_revision;
+  /* The checksum field of the trace's file: set when a recording finishes
+     or a file is loaded, and kept when a replay restarts. */
+  uint32_t checksum;
   InputTraceState state;
   InputTraceError error;
 } InputTrace;
@@ -98,11 +101,22 @@ int input_trace_begin_replay_from_header(InputTrace *trace,
  const uint8_t *encoded, size_t encoded_size,
  const uint8_t header[INPUT_TRACE_IDENTITY_SIZE], uint32_t file_size,
  uint32_t start_frame);
+/* Replays a trace held in memory (READY, REPLAYING or FINISHED) again from
+   its first event at start_frame, once its game code and revision match
+   the cartridge header. Returns the frames the replay applies (at most
+   UINT32_MAX), or 0: with no such trace, or on a mismatch, which puts the
+   trace in ERROR. */
+uint32_t input_trace_restart_replay(InputTrace *trace,
+ const uint8_t header[INPUT_TRACE_IDENTITY_SIZE], uint32_t file_size,
+ uint32_t start_frame);
 /* Called once per frame: records physical_keys while recording, returns the
    replayed keys while replaying, and physical_keys otherwise. A replay
    turns INPUT_TRACE_FINISHED once frame passes start_frame +
    duration_frames. */
 uint16_t input_trace_apply(InputTrace *trace, uint32_t frame,
  uint16_t physical_keys);
+/* 1 when frame is the last one a replay applies, start_frame +
+   duration_frames: the unbound benchmark ends with that frame. */
+int input_trace_replay_last_frame(const InputTrace *trace, uint32_t frame);
 
 #endif /* INPUT_TRACE_H */

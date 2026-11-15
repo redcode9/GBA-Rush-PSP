@@ -50,6 +50,10 @@ typedef struct
   u64 me_busy_us;
   u64 log_us;
   u32 log_frames;
+  /* The Media Engine's cycle counter (half its clock) and the main
+     processor's microseconds over the same stretches: its clock rate. */
+  u64 me_clock_ticks;
+  u64 me_clock_us;
   /* Words written into the log, and how often it was all sent again. */
   u32 log_words;
   u32 resends;
@@ -78,6 +82,8 @@ void video_me_present_finish(void);
 
 VideoMeState video_me_state(void);
 void video_me_counters(VideoMeCounters *counters);
+/* The clock just changed: the next busy-time stretch starts here. */
+void video_me_clock_changed(void);
 /* A processor exception on the Media Engine: cause and address, or 0. */
 void video_me_fault(u32 *cause, u32 *address);
 
