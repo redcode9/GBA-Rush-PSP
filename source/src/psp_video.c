@@ -765,9 +765,9 @@ void video_resolution_large(void)
 {
 }
 
-/* Called before gameplay starts or resumes: applies the screen scale
- * option and restarts the adaptive governor. */
-void video_resolution_small(void)
+/* Applies the screen scale option and restarts the adaptive governor;
+ * clear also blanks the draw buffer. */
+static void apply_screen_scale(int clear)
 {
   u32 gameplay_filter = option_screen_filter;
 
@@ -785,13 +785,32 @@ void video_resolution_small(void)
 
   sceGuStart(GU_DIRECT, display_list);
 
-  sceGuClearColor(0);
-  sceGuClear(GU_COLOR_BUFFER_BIT | GU_FAST_CLEAR_BIT);
+  if(clear)
+  {
+    sceGuClearColor(0);
+    sceGuClear(GU_COLOR_BUFFER_BIT | GU_FAST_CLEAR_BIT);
+  }
 
   sceGuTexFilter(gameplay_filter, gameplay_filter);
 
   sceGuFinish();
   video_ge_sync_direct();
+}
+
+/* Called before gameplay starts or resumes: applies the screen scale
+ * option on a cleared draw buffer. */
+void video_resolution_small(void)
+{
+  apply_screen_scale(1);
+}
+
+/* In game (the Video cycle shortcut): the new scale takes the next frame
+ * and the draw buffer is kept, since a link wait can run this after the
+ * frame was presented and before it is shown. The 100% and 150% GU lists
+ * clear each frame, and 16:9 covers the whole screen. */
+void video_apply_screen_scale(void)
+{
+  apply_screen_scale(0);
 }
 
 /* Picks the presenter (update_screen) for option_screen_scale. */

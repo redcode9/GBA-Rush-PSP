@@ -388,6 +388,48 @@
   // MSG_A_PAD_MENU_HELP_2
   FONT_BTN_CIRCLE_GBK ":Menu principale   " FONT_BTN_CROSS_GBK ":Esci",
 
+  // MSG_TURBO_MENU
+  "Configurazione turbo",
+
+  // MSG_TURBO_A_SPEED
+  "Velocita` turbo A : %s",
+
+  // MSG_TURBO_A_MODE
+  "Modalita` turbo A : %s",
+
+  // MSG_TURBO_B_SPEED
+  "Velocita` turbo B : %s",
+
+  // MSG_TURBO_B_MODE
+  "Modalita` turbo B : %s",
+
+  // MSG_TURBO_L_SPEED
+  "Velocita` turbo L : %s",
+
+  // MSG_TURBO_L_MODE
+  "Modalita` turbo L : %s",
+
+  // MSG_TURBO_R_SPEED
+  "Velocita` turbo R : %s",
+
+  // MSG_TURBO_R_MODE
+  "Modalita` turbo R : %s",
+
+  // MSG_TURBO_SPEED_30
+  "30/s",
+
+  // MSG_TURBO_SPEED_15
+  "15/s",
+
+  // MSG_TURBO_SPEED_10
+  "10/s",
+
+  // MSG_TURBO_ON
+  "Turbo %c: attivo",
+
+  // MSG_TURBO_OFF
+  "Turbo %c: spento",
+
   // MSG_CHEAT_MENU_TITLE
   "Opzioni trucchi",
 
@@ -903,6 +945,15 @@
   // MSG_BROWSER_ALL_GAMES
   "--- Tutti i Giochi ---",
 
+  // MSG_BROWSER_EMPTY_TITLE
+  "Nessun gioco trovato",
+
+  // MSG_BROWSER_EMPTY_HINT
+  "Copia i file .gba o .zip in:",
+
+  // MSG_FIRST_RUN_MENU_HINT
+  "HOME: menu, oppure tieni START+SELECT",
+
   // MSG_MAIN_MENU_LINK
   "Cavo link",
 
@@ -1152,6 +1203,10 @@
   "Riproduce la traccia salvata per il gioco",
   // MSG_TRACE_HELP_CANCEL
   "Ferma l'operazione di tracciamento",
+  // MSG_DIAGNOSTICS_PIN_TOAST
+  "Fissa un avviso di prova",
+  // MSG_DIAGNOSTICS_HELP_PIN_TOAST
+  "Tiene un avviso a schermo fino al riavvio, per misurarne il costo",
   // MSG_TRACE_SAVED
   "Traccia input salvata",
   // MSG_TRACE_FAILED

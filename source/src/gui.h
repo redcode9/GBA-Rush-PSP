@@ -47,6 +47,7 @@ s32 save_theme_config(void);
 s32 load_theme_config(void);
 
 s32 load_dir_cfg(char *file_name);
+void set_default_directories(void);
 
 u32 menu(void);
 
@@ -62,6 +63,10 @@ void menu_diagnostics_write_report(void);
 void load_recent_roms(void);
 void add_recent_rom(const char *filename);
 
+/* Shows MSG[msg_id], formatted with printf arguments, as a 3 s toast. */
+void toast_show(u32 msg_id, ...);
+/* Steps the screen scale through the Video cycle shortcut's modes. */
+void menu_cycle_video_mode(void);
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 /* Replays a .gbit from the current frame: 2 when it also loaded its .svs,
    1 without one, 0 on a failure, -1 when the .svs is missing or another. */

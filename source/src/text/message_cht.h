@@ -388,6 +388,48 @@
   // MSG_A_PAD_MENU_HELP_2
   FONT_BTN_CIRCLE_GBK ":主選單   " FONT_BTN_CROSS_GBK ":退出",
 
+  // MSG_TURBO_MENU
+  "連發設定",
+
+  // MSG_TURBO_A_SPEED
+  "連發 A 速度 : %s",
+
+  // MSG_TURBO_A_MODE
+  "連發 A 模式 : %s",
+
+  // MSG_TURBO_B_SPEED
+  "連發 B 速度 : %s",
+
+  // MSG_TURBO_B_MODE
+  "連發 B 模式 : %s",
+
+  // MSG_TURBO_L_SPEED
+  "連發 L 速度 : %s",
+
+  // MSG_TURBO_L_MODE
+  "連發 L 模式 : %s",
+
+  // MSG_TURBO_R_SPEED
+  "連發 R 速度 : %s",
+
+  // MSG_TURBO_R_MODE
+  "連發 R 模式 : %s",
+
+  // MSG_TURBO_SPEED_30
+  "30次/秒",
+
+  // MSG_TURBO_SPEED_15
+  "15次/秒",
+
+  // MSG_TURBO_SPEED_10
+  "10次/秒",
+
+  // MSG_TURBO_ON
+  "連發 %c: 開",
+
+  // MSG_TURBO_OFF
+  "連發 %c: 關",
+
   // MSG_CHEAT_MENU_TITLE
   "作弊選項",
 
@@ -904,6 +946,15 @@
   // MSG_BROWSER_ALL_GAMES
   "--- 所有遊戲 ---",
 
+  // MSG_BROWSER_EMPTY_TITLE
+  "找不到遊戲",
+
+  // MSG_BROWSER_EMPTY_HINT
+  "請將 .gba 或 .zip 檔案複製到:",
+
+  // MSG_FIRST_RUN_MENU_HINT
+  "HOME: 選單，或長按 START+SELECT",
+
   // MSG_MAIN_MENU_LINK
   "連線線纜",
 
@@ -1155,6 +1206,10 @@
   "Replay the saved trace for this game",
   // MSG_TRACE_HELP_CANCEL
   "Stop the active trace operation",
+  // MSG_DIAGNOSTICS_PIN_TOAST
+  "Pin a test toast",
+  // MSG_DIAGNOSTICS_HELP_PIN_TOAST
+  "Keep a toast on screen until the game resets, to measure its cost",
   // MSG_TRACE_SAVED
   "Input trace saved",
   // MSG_TRACE_FAILED

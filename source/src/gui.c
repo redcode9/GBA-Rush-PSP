@@ -25,6 +25,8 @@
  * screens are nested functions), the status bar, and loading and saving of
  * the global, per-game and directory settings files. */
 
+#include <stdarg.h>
+
 #include "common.h"
 #include "boxart.h"   // carousel / boxart support
 #include "config_store.h"
@@ -32,6 +34,7 @@
 #include "menu_layout.h"
 #include "menu_model.h"
 #include "psp_adhoc.h"
+#include "toast.h"
 
 extern u32 option_swap_confirm_buttons;
 
@@ -100,8 +103,9 @@ static u16 get_preset_color(u32 theme, u32 item_index)
     return 0;
 }
 
-/* Load preset theme (0-8, else 0) into the menu colours, and delete the
-   custom colours file so it cannot override the preset. */
+/* Load preset theme (0-8, else 0) into the menu colours. Boot calls it
+   before load_theme_config(), so it must leave tempgba_theme.cfg alone.
+   tests/test_theme_boot.py compiles this function alone. */
 static void apply_theme(u32 theme)
 {
     if (theme >= 9) theme = 0;
@@ -117,13 +121,17 @@ static void apply_theme(u32 theme)
     color_batt_normal   = theme_presets[theme].batt_normal;
     color_batt_low      = theme_presets[theme].batt_low;
     color_batt_charg    = theme_presets[theme].batt_charg;
+}
 
-    /* When a preset is chosen, delete custom theme so preset isn't overridden on boot */
-    {
-        char path[MAX_PATH];
-        sprintf(path, "%s%s", main_path, GPSP_THEME_FILENAME);
-        sceIoRemove(path);
-    }
+/* A preset picked in the menu replaces the custom colours: delete their
+   file so they do not come back at the next boot. */
+static void select_theme_preset(u32 theme)
+{
+    char path[MAX_PATH];
+
+    sprintf(path, "%s%s", main_path, GPSP_THEME_FILENAME);
+    sceIoRemove(path);
+    apply_theme(theme);
 }
 
 
@@ -206,6 +214,8 @@ static const char *fast_forward_speed_options[FAST_FORWARD_SPEED_COUNT];
 static const char *fast_forward_presentation_options[
  FAST_FORWARD_PRESENTATION_COUNT];
 static const char *fast_forward_audio_options[FAST_FORWARD_AUDIO_COUNT];
+static const char *turbo_speed_options[3];
+static const char *turbo_mode_options[2];
 
 /* Point the option value labels at the current language's MSG strings; run
    on every menu() entry and again after a language change. */
@@ -281,6 +291,13 @@ static void init_choice_arrays(void)
      MSG[MSG_FF_AUDIO_SILENT];
     fast_forward_audio_options[FAST_FORWARD_AUDIO_ACCELERATED] =
      MSG[MSG_FF_AUDIO_ACCELERATED];
+
+    // In the order of input_model.h's INPUT_MODEL_TURBO_*
+    turbo_speed_options[0] = MSG[MSG_TURBO_SPEED_30];
+    turbo_speed_options[1] = MSG[MSG_TURBO_SPEED_15];
+    turbo_speed_options[2] = MSG[MSG_TURBO_SPEED_10];
+    turbo_mode_options[0] = MSG[MSG_FF_HOLD];
+    turbo_mode_options[1] = MSG[MSG_FF_TOGGLE];
 
     image_format_options[0] = MSG[MSG_FMT_PNG];
     image_format_options[1] = MSG[MSG_FMT_BMP];
@@ -781,6 +798,22 @@ void print_swap_aware(const char *src, u32 x, u32 y, u16 color, u16 bg)
     copy_swap_aware(src, buf, sizeof(buf));
 
     print_string_gbk(buf, x, y, color, bg);
+}
+
+/* Queues MSG[msg_id], formatted with the arguments, as a 3 s toast that
+   synchronize() draws in game. Every message table is GBK, Japanese too. */
+void toast_show(u32 msg_id, ...)
+{
+    /* Longer than a toast, so the ring's cut, which never splits a
+       double-byte character, comes before vsnprintf's. */
+    char text[TOAST_TEXT_SIZE * 2];
+    va_list args;
+
+    va_start(args, msg_id);
+    vsnprintf(text, sizeof(text), MSG[msg_id], args);
+    va_end(args);
+
+    toast_push(text, 3000000, 0, sceKernelGetSystemTimeLow());
 }
 
 /* ------------------------------------------------------------------
@@ -1882,12 +1915,26 @@ static int sort_function(const void *dest_str_ptr, const void *src_str_ptr)
   return strcmp(dest_str, src_str);
 }
 
+/* gba_bios.bin often sits next to the games but is never one, so the
+   browser leaves it out whatever its case. */
+static int is_listed_rom(const char *name)
+{
+  return strcasecmp(name, "gba_bios.bin") != 0;
+}
+
+/* View the ROM browser opens in, 0 list or 1 carousel. Only memory changes
+   when SELECT switches it; quit() saves it with the other settings. */
+static u32 option_browser_view = 0;
+
 /* Modal file browser for files ending in one of the NULL-terminated
    wildcards. Starts in default_dir_name (or the current directory) and
    chdir()s as the user navigates. On success copies the bare file name to
    result, leaves the current directory set to its folder and returns 0;
-   returns -1 if the user backs out. show_recent adds the recent ROMs list.
-   SELECT toggles between the list view and the carousel view. */
+   returns -1 if the user backs out. show_recent marks the ROM browser: it
+   adds the recent ROMs list and the card for a folder with no games.
+   SELECT toggles between the list view and the carousel view. Opened on
+   dir_roms it starts in option_browser_view and keeps it up to date; the
+   savestate and cheat browsers always start in the list. */
 s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 show_recent)
 {
   char current_dir_name[MAX_PATH];
@@ -1939,11 +1986,13 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
   /* ------------------------------------------------------------------
      Carousel mode state
      ------------------------------------------------------------------ */
-  u32 carousel_mode = 0;        /* 0 = list view, 1 = carousel view */
+  u32 carousel_mode =           /* 0 = list view, 1 = carousel view */
+   (default_dir_name == dir_roms) ? option_browser_view : 0;
   u32 prev_select_state = 0;    /* For edge-detecting SELECT button */
   u32 carousel_sel = 0;         /* Unified selection: dirs first, then files */
   u32 total_items = 0;          /* num_dirs + num_files */
   u32 browsing_savestates = 0;  /* 1 = wildcards are .svs, use savestate screenshots */
+  u32 library_empty;            /* ROM browser: no games listed here */
 
   auto void filelist_term(void);
   auto void malloc_error(void);
@@ -2067,7 +2116,8 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
       }
       else
       {
-        if ((ext_pos = strrchr(current_file.d_name, '.')) != NULL)
+        if ((ext_pos = strrchr(current_file.d_name, '.')) != NULL &&
+         is_listed_rom(current_file.d_name))
         {
           for (i = 0; wildcards[i] != NULL; i++)
           {
@@ -2109,6 +2159,10 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
 
     qsort((void *)file_list, num[FILE_LIST], sizeof(char *), sort_function);
     qsort((void *)dir_list,  num[DIR_LIST],  sizeof(char *), sort_function);
+
+    /* Subfolders do not hide the card: the default ROM folder is the
+       install folder, which always holds the emulator's own logs/. */
+    library_empty = show_recent && num[FILE_LIST] == 0;
 
 
     current_dir_length = strlen(current_dir_name);
@@ -2496,6 +2550,21 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
         }
       }
 
+      /* Empty ROM folder: say where the games go, at the top of the file
+         list (below the recent games) or above the carousel's covers. */
+      if (library_empty)
+      {
+        u32 card_y = FILE_LIST_POS_Y + (carousel_mode ? 0 : file_list_y_offset);
+
+        print_string_gbk(MSG[MSG_BROWSER_EMPTY_TITLE], FILE_LIST_POS_X, card_y,
+         color_active_item, BG_NO_FILL);
+        print_string_gbk(MSG[MSG_BROWSER_EMPTY_HINT], FILE_LIST_POS_X,
+         card_y + (FONTHEIGHT * 2), color_help_text, BG_NO_FILL);
+        print_string_clipped(current_dir_name, FILE_LIST_POS_X,
+         card_y + (FONTHEIGHT * 3), color_inactive_item, BG_NO_FILL,
+         SCROLL_FILE_MAX_CHARS);
+      }
+
       __draw_volume_status(1);
       flip_screen(1);
 
@@ -2532,6 +2601,8 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
               cursor_row[DIR_LIST] = 0;
             }
           }
+          if (default_dir_name == dir_roms)
+            option_browser_view = carousel_mode;
           /* Clear the old boxart state when switching modes */
           current_boxart_rom[0] = '\0';
           boxart_free();
@@ -3292,7 +3363,7 @@ static void reload_cheats_page(void)
 /* Global array of all menus — filled on each menu() call (the tables live
    in its stack frame, so it is only valid while menu() runs), then used by
    file-scope refresh to avoid nested functions. */
-#define MAX_MENUS 16
+#define MAX_MENUS 17
 static MenuType *all_menus[MAX_MENUS];
 static u32 num_all_menus = 0;
 static char diagnostics_status_line[96];
@@ -3356,6 +3427,16 @@ static void menu_fast_forward_bind_options(void)
 static void menu_fast_forward_changed(void)
 {
   main_fast_forward_apply_settings();
+}
+
+/* The screen scale tempgba.cfg keeps, which a game with no .cfg starts
+   with. The Video menu sets it along with option_screen_scale; the Video
+   cycle shortcut changes only the running game's scale. */
+static u32 global_screen_scale = SCALED_16X9_AUTO;
+
+static void menu_screen_scale_changed(void)
+{
+  global_screen_scale = option_screen_scale;
 }
 
 static void menu_fast_forward_override_changed(void)
@@ -3530,6 +3611,9 @@ static void menu_backup_warning(void)
     if(!backup_write_warning)
         return;
     backup_write_warning = 0;
+    /* update_gba opens the menu for it without update_input, which stops
+       turbo on its own ways in. */
+    input_turbo_stop();
 
     while(get_pad_input(0x0001FFFF) != 0)
     {
@@ -3982,6 +4066,19 @@ static void menu_trace_save_hashes(void)
     snprintf(diagnostics_report_line, sizeof(diagnostics_report_line), "%s",
      MSG[saved ? MSG_TRACE_HASHES_SAVED : MSG_TRACE_FAILED]);
 }
+
+/* build_profile.h switches the pinned toast on with the input trace, whose
+   rows it joins. The first-run hint, the toast that lasts longest, gets a
+   duration toast_current() never reaches: it stays until reset_gba() (a ROM
+   load) clears it, so perf reports with and without it show what drawing a
+   toast costs. */
+#ifdef ENABLE_DIAGNOSTIC_PINNED_TOAST
+static void menu_diagnostics_pin_toast(void)
+{
+    toast_push(MSG[MSG_FIRST_RUN_MENU_HINT], 0xFFFFFFFFu, 0,
+     sceKernelGetSystemTimeLow());
+}
+#endif
 #endif
 
 /* A link session needs a game: loading another one closes the link.
@@ -4780,6 +4877,7 @@ u32 menu(void)
   void menu_graphics_default(void)
   {
     option_screen_scale = SCALED_16X9_AUTO;
+    global_screen_scale = SCALED_16X9_AUTO;
     option_screen_mag = 170;
     option_screen_filter = FILTER_BILINEAR;
     option_video_renderer = VIDEO_RENDERER_NEW;
@@ -5563,13 +5661,13 @@ u32 menu(void)
 
   void menu_passive_theme(void)
   {
-    apply_theme(option_theme);
+    select_theme_preset(option_theme);
   }
 
   void menu_theme_default(void)
   {
     option_theme = 0;
-    apply_theme(option_theme);
+    select_theme_preset(option_theme);
   }
 
   /* ------------------------------------------------------------------
@@ -5633,7 +5731,7 @@ u32 menu(void)
      Magnification takes 201 values (0-200 %). */
   MenuOptionType graphics_options[] =
   {
-    STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_0], scale_options, &option_screen_scale, SCREEN_SCALE_COUNT, MSG_OPTION_MENU_HELP_0, 0, MSG_OPTION_MENU_0),
+    STRING_SELECTION_OPTION(menu_screen_scale_changed, MSG[MSG_OPTION_MENU_0], scale_options, &option_screen_scale, SCREEN_SCALE_COUNT, MSG_OPTION_MENU_HELP_0, 0, MSG_OPTION_MENU_0),
     NUMERIC_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_1], &option_screen_mag, 201, MSG_OPTION_MENU_HELP_1, 1,MSG_TOOLTIP_MAGNIFICATION, MSG_OPTION_MENU_1),
     STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_2], on_off_options, &option_screen_filter, 2, MSG_OPTION_MENU_HELP_2, 2, MSG_OPTION_MENU_2),
 
@@ -5785,6 +5883,24 @@ u32 menu(void)
 
   MAKE_MENU(analog_config, NULL, NULL);
 
+  /* Speed and mode of turbo A, B, L and R; rebuild_fast_forward_button_mask
+     hands each change to the turbo inputs. */
+  MenuOptionType turbo_options[] =
+  {
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_A_SPEED], turbo_speed_options, &option_turbo_speed[0], 3, MSG_PAD_MENU_HELP_0, 0, MSG_TURBO_A_SPEED),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_A_MODE], turbo_mode_options, &option_turbo_mode[0], 2, MSG_PAD_MENU_HELP_0, 1, MSG_TURBO_A_MODE),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_B_SPEED], turbo_speed_options, &option_turbo_speed[1], 3, MSG_PAD_MENU_HELP_0, 3, MSG_TURBO_B_SPEED),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_B_MODE], turbo_mode_options, &option_turbo_mode[1], 2, MSG_PAD_MENU_HELP_0, 4, MSG_TURBO_B_MODE),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_L_SPEED], turbo_speed_options, &option_turbo_speed[2], 3, MSG_PAD_MENU_HELP_0, 6, MSG_TURBO_L_SPEED),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_L_MODE], turbo_mode_options, &option_turbo_mode[2], 2, MSG_PAD_MENU_HELP_0, 7, MSG_TURBO_L_MODE),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_R_SPEED], turbo_speed_options, &option_turbo_speed[3], 3, MSG_PAD_MENU_HELP_0, 9, MSG_TURBO_R_SPEED),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_R_MODE], turbo_mode_options, &option_turbo_mode[3], 2, MSG_PAD_MENU_HELP_0, 10, MSG_TURBO_R_MODE),
+
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_PAD_MENU_12], MSG_PAD_MENU_HELP_1, 12, MSG_PAD_MENU_12)
+  };
+
+  MAKE_MENU(turbo, NULL, NULL);
+
   MenuOptionType link_options[] =
   {
     ACTION_OPTION(NULL, NULL, link_status_line, MSG_LINK_MENU_HELP_STATUS, 0, 0),
@@ -5830,7 +5946,8 @@ u32 menu(void)
   {
     SUBMENU_OPTION(&gamepad_config_menu, MSG[MSG_MAIN_MENU_5], MSG_MAIN_MENU_HELP_5, 0, MSG_MAIN_MENU_5),
     SUBMENU_OPTION(&analog_config_menu, MSG[MSG_MAIN_MENU_6], MSG_MAIN_MENU_HELP_6, 1, MSG_MAIN_MENU_6),
-    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 3, MSG_OPTION_MENU_11)
+    SUBMENU_OPTION(&turbo_menu, MSG[MSG_TURBO_MENU], MSG_MAIN_MENU_HELP_5, 2, MSG_TURBO_MENU),
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 4, MSG_OPTION_MENU_11)
   };
 
   MAKE_MENU(controls, NULL, NULL);
@@ -5854,7 +5971,10 @@ u32 menu(void)
     ACTION_OPTION(menu_trace_finish_save, NULL, MSG[MSG_TRACE_FINISH_SAVE], MSG_TRACE_HELP_FINISH_SAVE, 11 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_TRACE_FINISH_SAVE),
     ACTION_OPTION(menu_trace_replay, NULL, MSG[MSG_TRACE_REPLAY], MSG_TRACE_HELP_REPLAY, 12 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_TRACE_REPLAY),
     ACTION_OPTION(menu_trace_cancel, NULL, MSG[MSG_TRACE_CANCEL], MSG_TRACE_HELP_CANCEL, 13 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_TRACE_CANCEL),
-    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 15 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_OPTION_MENU_11)
+#ifdef ENABLE_DIAGNOSTIC_PINNED_TOAST
+    ACTION_OPTION(menu_diagnostics_pin_toast, NULL, MSG[MSG_DIAGNOSTICS_PIN_TOAST], MSG_DIAGNOSTICS_HELP_PIN_TOAST, 15 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_DIAGNOSTICS_PIN_TOAST),
+#endif
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 17 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_OPTION_MENU_11)
 #else
     ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 8 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_OPTION_MENU_11)
 #endif
@@ -5888,6 +6008,11 @@ u32 menu(void)
   diagnostics_options[9 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[10 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[11 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+#ifdef ENABLE_DIAGNOSTIC_PINNED_TOAST
+  /* Without a game, the next ROM load's reset_gba() would drop the pin. */
+  diagnostics_options[12 + DIAGNOSTICS_BENCH_ARM_ROWS].available_function = menu_game_available;
+  diagnostics_options[12 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+#endif
 #endif
 
   MAKE_MENU(diagnostics, NULL, NULL);
@@ -5945,6 +6070,7 @@ u32 menu(void)
   all_menus[13] = &diagnostics_menu;
   all_menus[14] = &exit_menu;
   all_menus[15] = &performance_advanced_menu;
+  all_menus[16] = &turbo_menu;
   num_all_menus = MAX_MENUS;
 
   savestate_menu.parent = &main_menu;
@@ -5960,6 +6086,7 @@ u32 menu(void)
   cheats_misc_menu.parent = &game_menu;
   gamepad_config_menu.parent = &controls_menu;
   analog_config_menu.parent = &controls_menu;
+  turbo_menu.parent = &controls_menu;
   custom_colors_menu.parent = &theme_menu;
   performance_advanced_menu.parent = &emulator_menu;
 
@@ -6098,6 +6225,10 @@ u32 menu(void)
       submenu_gamepad();
     if (current_menu == &analog_config_menu)
       submenu_analog();
+    if (current_menu == &turbo_menu)
+    {
+      DRAW_TITLE_PAD_GBK(MSG_TURBO_MENU);
+    }
     if (current_menu == &cheats_misc_menu)
       submenu_cheats_misc();
     if (current_menu == &link_menu)
@@ -6916,13 +7047,13 @@ static int config_paths(char *primary, char *temporary, char *recovery)
   return result >= 0 && result < MAX_PATH;
 }
 
-/* Global settings <-> ConfigModel. The per-game fast forward override is
-   never stored globally. */
+/* Global settings <-> ConfigModel. The per-game fast forward override and
+   the scale the Video cycle shortcut picks are never stored globally. */
 static void capture_global_config(ConfigModel *model)
 {
   u32 i;
 
-  model->screen_scale = option_screen_scale;
+  model->screen_scale = global_screen_scale;
   model->screen_magnification = option_screen_mag;
   model->screen_filter = option_screen_filter;
   model->show_fps = psp_fps_debug;
@@ -6952,18 +7083,28 @@ static void capture_global_config(ConfigModel *model)
   model->fast_forward_presentation = option_fast_forward_presentation;
   model->fast_forward_audio = option_fast_forward_audio;
   model->cpu_core = option_cpu_core;
+  model->browser_view = option_browser_view;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     model->gamepad[i] = gamepad_config_map[i];
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    model->shortcut[i] = option_shortcut[i];
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    model->turbo_speed[i] = option_turbo_speed[i];
+    model->turbo_mode[i] = option_turbo_mode[i];
+  }
 }
 
-/* Inverse of capture_global_config(), then the side effects: button mask,
-   preset theme (apply_theme()) and fast forward settings. */
+/* Inverse of capture_global_config(), then the side effects: button mask
+   and turbo inputs, shortcut chords, preset theme (apply_theme()) and
+   fast forward settings. */
 static void apply_global_config(const ConfigModel *model)
 {
   u32 i;
   int has_menu_button = 0;
 
   option_screen_scale = model->screen_scale;
+  global_screen_scale = model->screen_scale;
   option_screen_mag = model->screen_magnification;
   option_screen_filter = model->screen_filter;
   psp_fps_debug = model->show_fps;
@@ -6992,6 +7133,7 @@ static void apply_global_config(const ConfigModel *model)
   option_fast_forward_presentation = model->fast_forward_presentation;
   option_fast_forward_audio = model->fast_forward_audio;
   option_cpu_core = model->cpu_core;
+  option_browser_view = model->browser_view;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
   {
     gamepad_config_map[i] = model->gamepad[i];
@@ -7001,7 +7143,15 @@ static void apply_global_config(const ConfigModel *model)
   /* Without HOME there must be a way into the menu: put it on Triangle. */
   if(!enable_home_menu && !has_menu_button)
     gamepad_config_map[0] = BUTTON_ID_MENU;
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    option_turbo_speed[i] = model->turbo_speed[i];
+    option_turbo_mode[i] = model->turbo_mode[i];
+  }
   rebuild_fast_forward_button_mask();
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    option_shortcut[i] = model->shortcut[i];
+  rebuild_shortcut_chords();
   apply_theme(option_theme);
   main_fast_forward_reset_game_settings();
 }
@@ -7072,8 +7222,9 @@ static int config_companion_paths(const char *primary, char *temporary,
 }
 
 /* Per-game files (<dir_cfg>/<rom>.cfg) use the same format but only carry
-   video, frameskip, clock, volume, fast forward and button settings; the
-   remaining fields are written as defaults and ignored on load. */
+   video, frameskip, clock, volume, fast forward, button, shortcut and
+   turbo settings; the remaining fields are written as defaults and
+   ignored on load. */
 static void capture_game_config(ConfigModel *model)
 {
   u32 i;
@@ -7094,6 +7245,13 @@ static void capture_game_config(ConfigModel *model)
   model->fast_forward_audio = option_game_fast_forward_audio;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     model->gamepad[i] = gamepad_config_map[i];
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    model->shortcut[i] = option_shortcut[i];
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    model->turbo_speed[i] = option_turbo_speed[i];
+    model->turbo_mode[i] = option_turbo_mode[i];
+  }
 }
 
 /* Per-game counterpart of apply_global_config(). */
@@ -7123,7 +7281,15 @@ static void apply_game_config(const ConfigModel *model)
   }
   if(!enable_home_menu && !has_menu_button)
     gamepad_config_map[0] = BUTTON_ID_MENU;
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    option_turbo_speed[i] = model->turbo_speed[i];
+    option_turbo_mode[i] = model->turbo_mode[i];
+  }
   rebuild_fast_forward_button_mask();
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    option_shortcut[i] = model->shortcut[i];
+  rebuild_shortcut_chords();
   main_fast_forward_apply_settings();
 }
 
@@ -7201,6 +7367,35 @@ s32 save_config_file(void)
   return return_value;
 }
 
+/* The Video cycle shortcut: 16:9 Auto, 100% GU, 150% GU, 16:9 Sharp and
+   back to 16:9 Auto, where any other mode also goes. The new presenter
+   takes the next frame, a toast names the mode and only the game's .cfg
+   keeps it: global_screen_scale stays as the Video menu left it. */
+void menu_cycle_video_mode(void)
+{
+  static const u8 cycle[] = { SCALED_16X9_AUTO, SCALED_NONE, SCALED_X15_GU,
+   SCALED_16X9_SHARP };
+  u32 next = SCALED_16X9_AUTO;
+  u32 i;
+
+  for(i = 0; i + 1 < sizeof(cycle); i++)
+  {
+    if(option_screen_scale == cycle[i])
+      next = cycle[i + 1];
+  }
+
+  option_screen_scale = next;
+  video_apply_screen_scale();
+
+  /* The names hold '%' ("100% GU"), so they are not a format; they follow
+     the SCALED_ order, as in scale_options. The newest name drops what is
+     still queued, so the toast always names the mode on screen. */
+  toast_clear();
+  toast_push(MSG[MSG_SCN_SCALED_NONE + next], 3000000, 0,
+   sceKernelGetSystemTimeLow());
+  save_game_config_file();
+}
+
 
 /*-----------------------------------------------------------------------------
   Load Config Files
@@ -7216,6 +7411,7 @@ s32 load_game_config_file(void)
   if(load_game_config_atomic(game_config_path) == 0)
     return 0;
 
+  option_screen_scale = global_screen_scale;
   option_frameskip_type = FRAMESKIP_AUTO;
   option_frameskip_value = 9;
   option_clock_speed = PSP_CLOCK_333;
@@ -7231,10 +7427,33 @@ s32 load_config_file(void)
 }
 
 
+/* Folders used when there is no dir.ini: all of them are main_path, as in
+   1.4.2, so existing saves and states are still found, except ROMs, which
+   come from <main_path>roms/ when that folder exists.
+   tests/test_startup.py compiles this function alone. */
+void set_default_directories(void)
+{
+  SceUID roms_dir;
+
+  strcpy(dir_save,  main_path);
+  strcpy(dir_state, main_path);
+  strcpy(dir_cfg,   main_path);
+  strcpy(dir_snap,  main_path);
+  strcpy(dir_cheat, main_path);
+  strcpy(dir_boxart, main_path);
+  strcpy(dir_boxart_folders, main_path);
+
+  if ((snprintf(dir_roms, MAX_PATH, "%sroms/", main_path) < MAX_PATH) &&
+   ((roms_dir = sceIoDopen(dir_roms)) >= 0))
+    sceIoDclose(roms_dir);
+  else
+    strcpy(dir_roms, main_path);
+}
+
 /* Read the "name = path" directory settings. Relative paths are taken from
    main_path; a missing or unopenable directory falls back to main_path with
    an on-screen warning. Returns 0 if the file was read, -1 if it is absent
-   (every directory is then main_path). */
+   (every directory is then empty: the caller sets the defaults). */
 s32 load_dir_cfg(char *file_name)
 {
   char current_line[256];
@@ -7359,15 +7578,5 @@ s32 load_dir_cfg(char *file_name)
     return 0;
   }
 
-  // set launch directory
-  strcpy(dir_roms,  main_path);
-  strcpy(dir_save,  main_path);
-  strcpy(dir_state, main_path);
-  strcpy(dir_cfg,   main_path);
-  strcpy(dir_snap,  main_path);
-  strcpy(dir_cheat, main_path);
-  strcpy(dir_boxart, main_path);
-  strcpy(dir_boxart_folders, main_path);
-  apply_theme(option_theme);
   return -1;
 }

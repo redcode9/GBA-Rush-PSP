@@ -28,6 +28,7 @@ VideoAdaptiveQuality video_active_quality(void);
 
 void video_resolution_large(void);
 void video_resolution_small(void);
+void video_apply_screen_scale(void);
 #ifdef ENABLE_DIAGNOSTIC_AUTORUN
 void video_presenter_names(const char **presenter, const char **filter);
 #endif

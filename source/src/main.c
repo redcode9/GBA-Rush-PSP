@@ -37,6 +37,7 @@
 #include "psp_adhoc.h"
 #include "runtime_log_psp.h"
 #include "sound_math.h"
+#include "toast.h"
 #include "video_me.h"
 #ifdef ENABLE_DIAGNOSTIC_AUTORUN
 #include "autorun_config.h"
@@ -308,7 +309,7 @@ int main(int argc, char *argv[]);
 int user_main(int argc, char *argv[]);
 
 static void init_main(void);
-static void setup_main(const char *eboot_path);
+static u32 setup_main(const char *eboot_path);
 static void load_setting_cfg(void);
 static void load_bios_file(void);
 
@@ -1349,6 +1350,8 @@ u32 update_gba(void)
           // Transition from vrefresh to vblank (lines 160-227)
           dispstat |= 0x01;
 
+          input_frame_tick();
+
           // The menu or a state load replaced the machine; drop this pass.
           // A failed .sav write opens the menu, which shows its warning;
           // not during a link session, which the warning would hold up, nor
@@ -1591,6 +1594,7 @@ static void synchronize(void)
   u32 used_frameskip_type  = option_frameskip_type;
   u32 used_frameskip_value = option_frameskip_value;
   int link_slept;
+  const Toast *toast;
 
   fps_window_frames++;
 
@@ -1654,6 +1658,19 @@ static void synchronize(void)
          (long)frames_drawn, drawn_on, core);
       }
       print_string(print_buffer, 0, 0, COLOR15_WHITE, COLOR15_BLACK);
+    }
+
+    // the current toast, below the fps and fast-forward lines; it expires
+    // in real time, so frameskip and fast-forward do not stretch it
+    toast = toast_current(sceKernelGetSystemTimeLow());
+    if (toast != NULL)
+    {
+      if (toast->sjis)
+        print_string(toast->text, X_POS_CENTER, 24, COLOR15_WHITE,
+         COLOR15_BLACK);
+      else
+        print_swap_aware(toast->text, X_POS_CENTER, 24, COLOR15_WHITE,
+         COLOR15_BLACK);
     }
   }
 
@@ -1887,8 +1904,10 @@ static void init_main(void)
 }
 
 
-/* dir.ini names the ROM, save, state and other folders; a missing or bad
-   file is reported but not fatal. */
+/* dir.ini names the ROM, save, state and other folders. It is optional:
+   without it the defaults apply silently; a dir.ini naming folders that do
+   not exist is reported by load_dir_cfg().
+   tests/test_startup.py compiles this function alone. */
 static void load_setting_cfg(void)
 {
   char filename[MAX_FILE];
@@ -1896,10 +1915,7 @@ static void load_setting_cfg(void)
   sprintf(filename, "%sdir.ini", main_path);
 
   if (load_dir_cfg(filename) < 0)
-  {
-    sprintf(filename, MSG[MSG_ERR_LOAD_DIR_INI], main_path);
-    error_msg(filename, CONFIRMATION_CONT);
-  }
+    set_default_directories();
 }
 
 /* Loads gba_bios.bin from the emulator folder; without a usable one,
@@ -1990,10 +2006,14 @@ static void main_memory_hold(void)
 #endif
 
 /* One-time startup: platform services, settings, BIOS, sound and the
-   power callbacks. The power lock keeps the PSP from suspending meanwhile. */
-static void setup_main(const char *eboot_path)
+   power callbacks. The power lock keeps the PSP from suspending meanwhile.
+   Returns 1 when tempgba.cfg did not load, which only a regular quit
+   writes: a first run. tests/test_startup.py extracts this function by
+   its exact signature. */
+static u32 setup_main(const char *eboot_path)
 {
   FastForwardSettings fast_forward_settings;
+  u32 first_run;
 
   scePowerLock(0);
 
@@ -2033,7 +2053,7 @@ static void setup_main(const char *eboot_path)
   /* Kernel-mode controls are disabled for PPSSPP compatibility. */
   enable_home_menu = 1;
 
-  load_config_file();
+  first_run = load_config_file() < 0;
   /* The file browser and the menu without a game run at this clock too. */
   set_cpu_clock(option_clock_speed);
   rebuild_fast_forward_button_mask();
@@ -2060,6 +2080,7 @@ static void setup_main(const char *eboot_path)
   setup_callbacks();
 
   scePowerUnlock(0);
+  return first_run;
 }
 
 /* True when path exists and is a regular file (not a directory). */
@@ -2369,9 +2390,10 @@ int user_main(int argc, char *argv[])
   const char *file_ext[] = { ".zip", ".gba", ".bin", ".agb", ".gbz", NULL };
   u32 rom_loaded = 0;
   u32 prepared_by_menu = 0;
+  u32 first_run;
   s32 load_result;
 
-  setup_main((argc > 0 && argv[0] != NULL) ? argv[0] : NULL);
+  first_run = setup_main((argc > 0 && argv[0] != NULL) ? argv[0] : NULL);
 
   gamepak_filename[0] = 0;
   gamepak_file_size = 0;
@@ -2452,6 +2474,12 @@ int user_main(int argc, char *argv[])
       reset_gba();
       maybe_load_auto_savestate();
     }
+
+    /* Queued after reset_gba() empties the ring and after the auto-state
+       prompt, so the game shows the whole 6 s. */
+    if (first_run)
+      toast_push(MSG[MSG_FIRST_RUN_MENU_HINT], 6000000, 0,
+       sceKernelGetSystemTimeLow());
 
     sceImposeSetHomePopup(enable_home_menu ^ 1);
 
@@ -2547,13 +2575,15 @@ void quit(void)
   sceKernelExitGame();
 }
 
-/* Resets the GBA with the loaded ROM. Ends fast-forward, benchmark capture,
-   input traces and the link first; flushes the runtime log if the ROM
-   changed. */
+/* Resets the GBA with the loaded ROM. Drops queued toasts, ends
+   fast-forward, benchmark capture, input traces and the link first; flushes
+   the runtime log if the ROM changed. Every ROM load goes through here,
+   menu_load_file included. */
 void reset_gba(void)
 {
   u32 new_identity = 0;
 
+  toast_clear();
   main_fast_forward_stop();
 #ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
   main_alloc_trace_take();
@@ -2663,6 +2693,7 @@ static void psp_sleep_loop(void)
   runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_SUSPEND, cpu_ticks, 0,
    (u32)gba_link.status, main_adhoc_state_value(), sleep_flag);
   main_fast_forward_stop();
+  input_turbo_stop();
 #ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
   main_alloc_trace_take();
 #endif

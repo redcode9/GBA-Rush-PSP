@@ -42,13 +42,19 @@ one, GBA Rush PSP uses the open-source BIOS built into the EBOOT.
 
 ## Install and upgrade
 
-Copy the release folder to `PSP/GAME/GBARushPSP/`. If you have a dump of your
-own GBA BIOS, add it as `gba_bios.bin`:
+Extract the release ZIP at the root of the Memory Stick (`ms0:`, or the
+internal storage `ef0:` of a PSP Go): it creates `PSP/GAME/GBARushPSP/` with
+the emulator and, in `docs/`, this documentation. Put your games in `roms/`
+or beside the EBOOT, and if you have a dump of your own GBA BIOS, add it as
+`gba_bios.bin`:
 
 ```text
 PSP/GAME/GBARushPSP/
 ├── EBOOT.PBP
 ├── exception.prx
+├── media_engine.prx
+├── docs/
+├── roms/             (optional)
 └── gba_bios.bin      (optional)
 ```
 
@@ -65,13 +71,39 @@ you have savestates made with it. Each BIOS keeps its own automatic savestate
 (`<rom>_auto.svs` with `gba_bios.bin`, `<rom>_auto-builtin.svs` with the
 built-in BIOS), so switching never overwrites the other one.
 
-Start GBA Rush PSP from the PSP Game menu and select a ROM. A `dir.ini` beside
-the EBOOT can point ROMs, saves, states, screenshots, cheats and box art to
-separate directories.
+Start GBA Rush PSP from the PSP Game menu and select a ROM. The ROM browser
+opens in `roms/` when that folder exists, otherwise in the EBOOT folder;
+saves, savestates and the other files stay in the EBOOT folder. An optional
+`dir.ini` beside the EBOOT can point ROMs, saves, states, screenshots, cheats
+and box art to separate directories.
 
-To upgrade, replace only `EBOOT.PBP` and `exception.prx`. Keep the BIOS, ROMs,
-saves, savestates, cheat lists and configuration files. Back up important save
-data before an update.
+To upgrade, extract the new release ZIP at the root in the same way and let it
+replace the existing files. The ZIP holds only the programs and the
+documentation, so the BIOS, ROMs, saves, savestates, cheat lists and
+configuration files stay as they are. Back up important save data before an
+update.
+
+## Controls
+
+HOME opens the emulator menu. Holding **START+SELECT** for half a second opens
+it too, for systems where HOME does not reach the emulator. The hold never
+quits the game, and it does not count while a button mapped to GBA A or B is
+held, so A+B+START+SELECT still resets games that use it. The game receives
+START and SELECT during the hold and may open its own pause screen.
+
+HOME opens the menu as soon as it is pressed, even with A or B held. If HOME
+shows the system's quit screen instead of the emulator menu, leave that screen
+without quitting and use the hold.
+
+**SELECT+L** saves to the current savestate slot and **SELECT+R** loads it,
+with the usual confirmation. Hold SELECT, then press L or R: the game does not
+receive that L or R while it stays held. Pressing L or R first and SELECT
+after does nothing.
+
+Shortcuts act on the press that completes them, with no added delay, so a
+longer sequence stops there: SELECT, then L, then R saves as soon as L is
+pressed. They are kept with the settings and in each game's settings. The
+single-button mappings in the controls menu work as before.
 
 ## Fast-forward
 
@@ -207,11 +239,14 @@ make package VERSION=1.4.3
 ```
 
 The package command creates a reproducible ZIP and SHA-256 checksum under
-`dist/`, then verifies the archive manifest. The archive includes the license
-notices (with the built-in BIOS notes in `source/bios/README.md`), installation
-guide and current link test checklist. It never includes `gba_bios.bin`, ROMs,
-saves, settings or cheat databases. The command needs a Git tag named after the
-version and no uncommitted changes in `source/`: the corresponding source ZIP,
+`dist/`, laid out to extract at the root of the Memory Stick, then verifies
+the archive manifest. The archive includes the license notices (with the
+built-in BIOS notes in `source/bios/README.md`), installation guide and
+current link test checklist. It never includes `gba_bios.bin`, ROMs, saves,
+savestates, settings, `dir.ini` or cheat databases: the check refuses an
+archive with a BIOS, ROM, save, savestate, settings file or `dir.ini`. The
+command needs a Git tag named after the version and no uncommitted changes
+in `source/`: the corresponding source ZIP,
 `dist/GBA-Rush-PSP-<version>-source.zip`, is made from that tag.
 
 ### Performance comparison

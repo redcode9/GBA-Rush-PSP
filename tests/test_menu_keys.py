@@ -18,6 +18,9 @@ STUBS = r'''
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include "input_chord.c"
+#include "input_model.c"
+#include "message.h"
 typedef uint32_t u32;
 typedef uint16_t u16;
 typedef int SceUID;
@@ -57,7 +60,7 @@ static u32 fast_forward_button_mask;
 u32 gba_keys_held;
 u32 tilt_sensorX, tilt_sensorY, enable_tilt_sensor;
 u32 option_analog_sensitivity, option_enable_analog, enable_home_menu = 1;
-u32 psp_fps_debug, rapidfire_flag = 1;
+u32 psp_fps_debug;
 u32 gamepad_config_map[16] = { BUTTON_ID_NONE, BUTTON_ID_B, BUTTON_ID_A };
 const u32 button_psp_mask_to_config[16] = { 0, PSP_CTRL_CIRCLE, PSP_CTRL_CROSS };
 const u32 button_id_to_gba_mask[BUTTON_ID_MENU] = {
@@ -71,6 +74,17 @@ u32 action_savestate(void) { hotkey_calls++; return 0; }
 void main_perf_bench_cancel(void) { }
 int perf_monitor_bench_running(void) { return 0; }
 static void trigger_key(u32 keys_down) { (void)keys_down; }
+/* No shortcut chords and no turbo inputs: update_input's chord and turbo
+   steps run with nothing to fire. */
+static InputChordState shortcut_chords;
+static u32 shortcut_fast_forward_held, shortcut_block_inputs, stick_held;
+static InputModelTurbo turbo_inputs[INPUT_MODEL_INPUTS];
+static InputModelTurboState turbo_state;
+static u32 turbo_frame;
+u32 sceKernelGetSystemTimeLow(void) { return 0; }
+void menu_cycle_video_mode(void) { }
+void toast_clear(void) { }
+void toast_show(u32 msg_id, ...) { (void)msg_id; }
 '''
 
 SCENARIOS = r'''
@@ -118,6 +132,9 @@ class MenuKeysTests(unittest.TestCase):
     def test_keys_held_at_menu_close(self):
         # The real input.c functions, compiled between the stubs and scenarios.
         source = STUBS
+        source += function("source/src/input.c",
+                           "static u32 buttons_to_inputs(u32 buttons)")
+        source += function("source/src/input.c", "void input_turbo_stop(void)")
         source += function("source/src/input.c",
                            "void input_hold_until_released(u32 buttons)")
         source += function("source/src/input.c", "u32 update_input(void)")

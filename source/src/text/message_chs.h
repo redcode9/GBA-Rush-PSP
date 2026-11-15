@@ -388,6 +388,48 @@
   // MSG_A_PAD_MENU_HELP_2
   FONT_BTN_CIRCLE_GBK ":主菜单   " FONT_BTN_CROSS_GBK ":退出",
 
+  // MSG_TURBO_MENU
+  "连发设置",
+
+  // MSG_TURBO_A_SPEED
+  "连发 A 速度 : %s",
+
+  // MSG_TURBO_A_MODE
+  "连发 A 模式 : %s",
+
+  // MSG_TURBO_B_SPEED
+  "连发 B 速度 : %s",
+
+  // MSG_TURBO_B_MODE
+  "连发 B 模式 : %s",
+
+  // MSG_TURBO_L_SPEED
+  "连发 L 速度 : %s",
+
+  // MSG_TURBO_L_MODE
+  "连发 L 模式 : %s",
+
+  // MSG_TURBO_R_SPEED
+  "连发 R 速度 : %s",
+
+  // MSG_TURBO_R_MODE
+  "连发 R 模式 : %s",
+
+  // MSG_TURBO_SPEED_30
+  "30次/秒",
+
+  // MSG_TURBO_SPEED_15
+  "15次/秒",
+
+  // MSG_TURBO_SPEED_10
+  "10次/秒",
+
+  // MSG_TURBO_ON
+  "连发 %c: 开",
+
+  // MSG_TURBO_OFF
+  "连发 %c: 关",
+
   // MSG_CHEAT_MENU_TITLE
   "作弊选项",
 
@@ -903,6 +945,15 @@
   // MSG_BROWSER_ALL_GAMES
   "--- 所有游戏 ---",
 
+  // MSG_BROWSER_EMPTY_TITLE
+  "未找到游戏",
+
+  // MSG_BROWSER_EMPTY_HINT
+  "请将 .gba 或 .zip 文件复制到:",
+
+  // MSG_FIRST_RUN_MENU_HINT
+  "HOME: 菜单，或长按 START+SELECT",
+
   // MSG_MAIN_MENU_LINK
   "联机线",
 
@@ -1154,6 +1205,10 @@
   "Replay the saved trace for this game",
   // MSG_TRACE_HELP_CANCEL
   "Stop the active trace operation",
+  // MSG_DIAGNOSTICS_PIN_TOAST
+  "Pin a test toast",
+  // MSG_DIAGNOSTICS_HELP_PIN_TOAST
+  "Keep a toast on screen until the game resets, to measure its cost",
   // MSG_TRACE_SAVED
   "Input trace saved",
   // MSG_TRACE_FAILED

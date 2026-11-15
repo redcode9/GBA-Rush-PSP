@@ -86,6 +86,11 @@ typedef enum
 
 
 extern u32 gamepad_config_map[16];
+/* CONFIG_MODEL_SHORTCUT_COUNT chord masks; see input.c. */
+extern u32 option_shortcut[];
+/* Speed and mode of turbo A, B, L and R; see input.c. */
+extern u32 option_turbo_speed[];
+extern u32 option_turbo_mode[];
 
 extern u32 enable_tilt_sensor;
 extern u32 tilt_sensorX;
@@ -95,7 +100,10 @@ void init_input(void);
 void init_input_kernel(void);
 
 u32 update_input(void);
+void input_frame_tick(void);
+void input_turbo_stop(void);
 void rebuild_fast_forward_button_mask(void);
+void rebuild_shortcut_chords(void);
 
 u32 get_pad_input(u32 mask);
 void input_hold_until_released(u32 buttons);

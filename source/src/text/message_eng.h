@@ -388,6 +388,48 @@
   // MSG_A_PAD_MENU_HELP_2
   FONT_BTN_CIRCLE_GBK ":Main menu   " FONT_BTN_CROSS_GBK ":Exit",
 
+  // MSG_TURBO_MENU
+  "Turbo config",
+
+  // MSG_TURBO_A_SPEED
+  "Turbo A speed : %s",
+
+  // MSG_TURBO_A_MODE
+  "Turbo A mode  : %s",
+
+  // MSG_TURBO_B_SPEED
+  "Turbo B speed : %s",
+
+  // MSG_TURBO_B_MODE
+  "Turbo B mode  : %s",
+
+  // MSG_TURBO_L_SPEED
+  "Turbo L speed : %s",
+
+  // MSG_TURBO_L_MODE
+  "Turbo L mode  : %s",
+
+  // MSG_TURBO_R_SPEED
+  "Turbo R speed : %s",
+
+  // MSG_TURBO_R_MODE
+  "Turbo R mode  : %s",
+
+  // MSG_TURBO_SPEED_30
+  "30/s",
+
+  // MSG_TURBO_SPEED_15
+  "15/s",
+
+  // MSG_TURBO_SPEED_10
+  "10/s",
+
+  // MSG_TURBO_ON
+  "Turbo %c: on",
+
+  // MSG_TURBO_OFF
+  "Turbo %c: off",
+
   // MSG_CHEAT_MENU_TITLE
   "Cheats options",
 
@@ -903,6 +945,15 @@
   // MSG_BROWSER_ALL_GAMES
   "--- All Games ---",
 
+  // MSG_BROWSER_EMPTY_TITLE
+  "No games found",
+
+  // MSG_BROWSER_EMPTY_HINT
+  "Copy .gba or .zip files to:",
+
+  // MSG_FIRST_RUN_MENU_HINT
+  "HOME: menu, or hold START+SELECT",
+
   // MSG_MAIN_MENU_LINK
   "Link cable",
 
@@ -1152,6 +1203,10 @@
   "Replay the saved trace for this game",
   // MSG_TRACE_HELP_CANCEL
   "Stop the active trace operation",
+  // MSG_DIAGNOSTICS_PIN_TOAST
+  "Pin a test toast",
+  // MSG_DIAGNOSTICS_HELP_PIN_TOAST
+  "Keep a toast on screen until the game resets, to measure its cost",
   // MSG_TRACE_SAVED
   "Input trace saved",
   // MSG_TRACE_FAILED

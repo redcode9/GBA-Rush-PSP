@@ -5,11 +5,13 @@ set -eu
 # Keeps the performance instrumentation cheap enough to leave on: sampling
 # never allocates or touches files, and the report is only formatted and
 # written outside the emulation hot paths, where the memory probe never runs.
+# The toast ring is read on every presented frame, so it follows the same
+# rule.
 
 if grep -Eq 'FILE_|sceIo|malloc\(|calloc\(|realloc\(|free\(' \
-  source/src/perf_metrics.c source/src/perf_monitor.c
+  source/src/perf_metrics.c source/src/perf_monitor.c source/src/toast.c
 then
-  echo "Performance sampling performs allocation or file access" >&2
+  echo "Performance sampling or the toast ring performs allocation or file access" >&2
   exit 1
 fi
 
@@ -87,13 +89,14 @@ fi
 # costs no more than before. A story that adds a read on purpose updates
 # these counts: main.c went from 5 to 14 with the phase timers (7 lines)
 # and their calibration (2), then to 16 with the preemption calibration,
-# which runs once per capture.
+# which runs once per capture, then to 18 with the toasts: one read per
+# presented frame in synchronize and one for the first-run hint.
 main_reads=$(grep -c sceKernelGetSystemTimeLow source/src/main.c || true)
 video_reads=$(grep -c sceKernelGetSystemTimeLow source/src/psp_video.c || true)
-if [ "$main_reads" != 16 ] || [ "$video_reads" != 9 ]
+if [ "$main_reads" != 18 ] || [ "$video_reads" != 9 ]
 then
   echo "sceKernelGetSystemTimeLow lines changed (main.c $main_reads," \
-    "psp_video.c $video_reads; pinned at 16 and 9 in" \
+    "psp_video.c $video_reads; pinned at 18 and 9 in" \
     "scripts/check-performance.sh)" >&2
   exit 1
 fi
@@ -172,6 +175,15 @@ then
   echo "sound.c runs FIFO or DMA code under the audio-off bench arm" \
     "(or the arm is not in sound_timer and the PSG render, or the PSG" \
     "arm no longer steps the channel)" >&2
+  exit 1
+fi
+
+# The screenshot encoder fills the caller's buffer with memory from the
+# caller's allocator: it opens no file and allocates nothing itself.
+if grep -Eq 'FILE_|sceIo|(^|[^[:alnum:]_])(malloc|calloc|realloc|free)\(' \
+  source/src/png_write.c
+then
+  echo "The PNG writer opens files or allocates memory itself" >&2
   exit 1
 fi
 

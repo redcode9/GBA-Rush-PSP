@@ -157,7 +157,6 @@ typedef u32 FIXED08_24;
 #include "libpower/psppower.h"
 
 #include "zip.h"
-#include "png.h"
 
 #include "message.h"
 
