@@ -4,9 +4,9 @@
 package-release.sh runs it on the release profile. It fails when the ELF
 holds a diagnostic-only string or lacks the version or the build id, or
 when its load image leaves less startup heap on the PSP-1000 than
-docs/RAM-BUDGET.md allows. Until that document gives those numbers the
-heap is only reported. If scripts/check-layout.py exists it runs too: a
-failure there is a warning, or an error with --strict.
+docs/RAM-BUDGET.md allows. Until that document gives those numbers only
+the load image is reported. If scripts/check-layout.py exists it runs
+too: a failure there is a warning, or an error with --strict.
 """
 
 import argparse

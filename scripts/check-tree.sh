@@ -5,9 +5,9 @@ set -eu
 # make tree-check, part of make check: whitespace errors, the source-level
 # guard scripts, the syntax of every script (check-scripts.sh), no forbidden
 # word (check-names.py), a host test for every pure module
-# (check-module-tests.sh), the CBMC gate's inputs (CBMC itself runs only in
-# make check-cbmc), maintained docs, and no ROMs, saves or build output in
-# Git.
+# (check-module-tests.sh), the age of the last upstream review (a warning
+# only), the CBMC gate's inputs (CBMC itself runs only in make check-cbmc),
+# maintained docs, and no ROMs, saves or build output in Git.
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "Source tree checks require a Git checkout." >&2
@@ -32,6 +32,8 @@ done
 sh scripts/check-scripts.sh
 "${PYTHON:-python3}" scripts/check-names.py
 sh scripts/check-module-tests.sh
+# An overdue review only warns; move this call to check-docs.sh when it exists.
+sh scripts/upstream-review.sh --check-age
 if ! grep -q -- '--unwinding-assertions' scripts/check-cbmc.sh; then
   echo "CBMC gate must check complete unwinding" >&2
   exit 1

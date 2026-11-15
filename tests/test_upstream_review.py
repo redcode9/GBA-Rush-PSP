@@ -124,7 +124,8 @@ class CheckAgeTest(unittest.TestCase):
         return (self.REVIEWED + datetime.timedelta(days=days)).isoformat()
 
     def test_review_up_to_45_days_old_gives_no_warning(self):
-        for days in (0, 44, 45):
+        # -1: a review dated a day after today, east of UTC, is CI's tomorrow.
+        for days in (-1, 0, 44, 45):
             with self.subTest(days=days):
                 result = self.check_age(self.after(days))
                 self.assertEqual((result.returncode, result.stdout, result.stderr),
@@ -137,6 +138,23 @@ class CheckAgeTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn(f"Warning: the last upstream review, on 2025-12-20, is "
                               f"{days} days old", result.stderr)
+
+    def test_08_and_09_are_decimal(self):
+        # Shell arithmetic reads a leading 0 as octal, where 08 and 09 are errors.
+        result = self.check_age("2026-09-08", "2026-08-09")
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
+        result = self.check_age("2026-09-23", "2026-08-08")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("on 2026-08-08, is 46 days old", result.stderr)
+
+    def test_review_after_tomorrow_fails(self):
+        # A wrong year would otherwise silence the warning for a year or more.
+        for days in (-2, -365):
+            with self.subTest(days=days):
+                result = self.check_age(self.after(days))
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("The last upstream review, on 2025-12-20, is after today",
+                              result.stderr)
 
     def test_unparsable_date_fails(self):
         for reviewed in ("2026-13-01", "2026-11-32", "5 Nov 2026", ""):
@@ -155,6 +173,10 @@ class CheckAgeTest(unittest.TestCase):
         result = subprocess.run(["sh", str(SCRIPT), "--check-age", "--today",
                                  reviewed.group(1)], capture_output=True, text=True)
         self.assertEqual((result.returncode, result.stderr), (0, ""))
+
+    def test_make_check_runs_the_age_check(self):
+        self.assertRegex((ROOT / "scripts" / "check-tree.sh").read_text(encoding="utf-8"),
+                         r"(?m)^sh scripts/upstream-review\.sh --check-age$")
 
 
 if __name__ == "__main__":

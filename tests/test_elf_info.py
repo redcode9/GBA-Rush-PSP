@@ -73,6 +73,11 @@ class RamBudgetTest(unittest.TestCase):
         self.assertIsNone(elf_info.ram_budget(self.path))
         # Other tickets write the document before PRF-4.2 measures these.
         self.assertIsNone(self.budget("# RAM budget\n\nVolatile memory: ok\n"))
+        # Only lines that start at the first column count (PRF-4.2's Cosa),
+        # so a list or prose that names a key leaves the gate off.
+        self.assertIsNone(self.budget("- " + IMAGE_LINE + "  " + HEAP_LINE))
+        self.assertIsNone(self.budget(
+         "The line psp1000-min-startup-heap-bytes: <bytes> is the floor.\n"))
 
     def test_reads_both_numbers(self):
         self.assertEqual(self.budget("# RAM budget\n\n```\n" + IMAGE_LINE

@@ -12,7 +12,7 @@ USE_KERNEL_LIBC = 1
 USE_KERNEL_LIBS = 1
 
 INCDIR =
-CFLAGS = -Os -G0 -Wall -nostartfiles -march=allegrex -mfp32 -mgp32 -mlong32 -mabi=eabi
+CFLAGS = -Os -G0 -Wall -Werror -nostartfiles -march=allegrex -mfp32 -mgp32 -mlong32 -mabi=eabi
 CXXFLAGS = $(CFLAGS) -fno-exceptions -fno-rtti
 ASFLAGS = $(CFLAGS)
 

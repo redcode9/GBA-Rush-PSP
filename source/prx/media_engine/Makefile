@@ -14,8 +14,8 @@ USE_KERNEL_LIBC = 1
 USE_KERNEL_LIBS = 1
 
 INCDIR =
-CFLAGS = -Os -G0 -Wall -Wextra -march=allegrex -mfp32 -mgp32 -mlong32 \
- -mabi=eabi
+CFLAGS = -Os -G0 -Wall -Wextra -Werror -march=allegrex -mfp32 -mgp32 \
+ -mlong32 -mabi=eabi
 ASFLAGS = $(CFLAGS)
 LDFLAGS = -nostartfiles
 LIBS =

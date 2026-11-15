@@ -45,8 +45,10 @@ make artifact-smoke VERSION=1.4.3
 ```
 
 CI (`.github/workflows/check.yml`) runs on every push, tag and pull request
-in the images of `tools/ci/Dockerfile` (Ubuntu pinned by digest, with the
-pspdev that `scripts/setup-dev.sh` pins): `make check`,
+in the images of `tools/ci/Dockerfile` (Ubuntu pinned by digest and its
+packages, apart from ca-certificates and the OpenSSL it pulls in, by an
+archive snapshot, with the pspdev that `scripts/setup-dev.sh` pins):
+`make check`,
 `make test-sanitize`, `make check-cbmc`, both build profiles and
 `make package` under a local `ci-<sha>` tag, keeping the EBOOT and its
 manifest as artifacts. A tag also runs `make artifact-smoke` and checks that
@@ -54,7 +56,15 @@ a rebuild gives the manifest's build id; a tag without a suffix must pass
 `make release-gate CHANNEL=stable` on the manifest of its newest rc,
 downloaded from that rc's GitHub prerelease. The job summary shows whether
 two consecutive release builds gave the same EBOOT and, on a stable tag,
-whether the rebuild gave the rc's. To run a step as CI does:
+whether the rebuild gave the rc's. Three clean builds of commit 715b1c4
+(before the release and diagnostic profiles), in two checkouts at different
+paths, gave a byte-identical `EBOOT.PBP` (sha256 starting `7c4d7b06ec22`),
+PRX files and package zip; the release profile is compared only by CI's
+two builds, in one checkout, which for commit 5c53880 gave the same
+`EBOOT.PBP` (sha256 starting `653c1028aa6a`) in both the push and the pull
+request run. If two builds of one tree differ, the cause goes in
+`docs/DESIGN-DECISIONS.md`. To run a step as CI does (the images are amd64,
+emulated on an arm64 host):
 
 ```sh
 docker build --build-context scripts=scripts --target psp -t gba-rush-ci tools/ci
@@ -170,8 +180,9 @@ this tree descends from. Give one day a month to its review: update a clone of
 it, run `sh scripts/upstream-review.sh <clone>`, record a decision for each
 commit it lists in the [upstream register](docs/UPSTREAM.md), then set the
 register's last reviewed commit to the one the script reached and its last
-review to that day's date. `sh scripts/upstream-review.sh --check-age` warns
-when the last review is more than 45 days old.
+review to that day's date. `make check` runs
+`sh scripts/upstream-review.sh --check-age`, which warns when the last review
+is more than 45 days old.
 
 ## Testing changes
 
