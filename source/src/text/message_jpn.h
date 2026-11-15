@@ -546,6 +546,12 @@
   // MSG_SEARCHING_BACKUP_ID
   "BACKUP ID を検索中",
 
+  // MSG_LOADING_STAGE_READ
+  "ROM を読み込み中",
+
+  // MSG_LOADING_STAGE_UNZIP
+  "ZIP を展開中",
+
   // main.c
   // MSG_GBA_SLEEP_MODE
   "スリープモード",
@@ -564,6 +570,9 @@
 
   // MSG_ERR_LOAD_GAMEPACK
   "ゲームファイルを読み込めませんでした.",
+
+  // MSG_ERR_ZIP_CORRUPT
+  "ZIP ファイルが壊れているか、不完全です.",
 
   // MSG_ERR_OPEN_GAMEPACK
   "ゲームファイルを開くことができませんでした.",

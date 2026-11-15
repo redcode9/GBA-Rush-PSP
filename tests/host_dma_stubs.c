@@ -9,8 +9,9 @@
 // A few stubs have behavior. The system clock: host_stub_set_time() arms
 // two timestamps, so the first sceKernelGetSystemTimeLow() call of a
 // transfer returns t0 and the second returns t1, giving a deterministic
-// measured DMA duration of (t1 - t0) microseconds. The ROM file reads used
-// by the paged ROM test, controlled by host_stub_rom_io(). And for
+// measured DMA duration of (t1 - t0) microseconds. The ROM file reads: the
+// ROM the test put in gamepak_rom for load_gamepak(), or the paged ROM
+// test's pattern once host_stub_rom_io() is called. And for
 // load_gamepak(): the ROM file size (host_stub_file_length()), the answers
 // of the yes/no prompts (host_stub_yesno()) and a working change_ext().
 // And the runtime log, which keeps the last SAVE_LOAD, SAVE_WRITE and
@@ -47,6 +48,12 @@ uint32_t sceKernelGetSystemTimeLow(void)
 uint64_t ticker(void)
 {
   return host_stub_t1;
+}
+
+/* load_gamepak()'s stage times, all 0 ms in these tests. */
+uint64_t sceKernelGetSystemTimeWide(void)
+{
+  return 0;
 }
 
 /* --- Runtime log --------------------------------------------------------- */
@@ -115,6 +122,15 @@ int host_stub_save_load(uint8_t *flags, uint32_t values[3])
   return host_save_loads;
 }
 
+/* load_gamepak()'s stage times, not checked here. */
+void runtime_log_load_stages(uint64_t start_us,
+ const uint64_t end_us[RUNTIME_LOG_LOAD_STAGE_COUNT], uint32_t value[3])
+{
+  (void)start_us;
+  (void)end_us;
+  value[0] = value[1] = value[2] = 0;
+}
+
 /* --- Data symbols -------------------------------------------------------- */
 
 uint32_t reg[64] = { 0 };
@@ -156,14 +172,19 @@ int psp_fclose(void *file)
   return 0;
 }
 
-/* Fake ROM file: every byte of 32 KiB page n reads as n + 1. A negative
-   read limit fails every read; a smaller one makes reads short. */
+/* Fake ROM file. Until host_stub_rom_io() is called it holds the ROM the
+   test put in gamepak_rom, so load_gamepak()'s whole-ROM read succeeds and
+   leaves it as it is. After that every byte of 32 KiB page n reads as
+   n + 1; a negative read limit fails every read; a smaller one makes
+   reads short. */
 static int64_t host_rom_offset;
+static int host_rom_paged;
 static int host_rom_limit = -1;
 static int host_rom_seek_fails;
 
 void host_stub_rom_io(int read_limit, int seek_fails)
 {
+  host_rom_paged = 1;
   host_rom_limit = read_limit;
   host_rom_seek_fails = seek_fails;
 }
@@ -183,6 +204,8 @@ int64_t sceIoLseek(int fd, int64_t offset, int whence)
 int sceIoRead(int fd, void *buf, int size)
 {
   (void)fd;
+  if(!host_rom_paged)
+    return size;
   if(host_rom_limit < 0)
     return -1;
   if(size > host_rom_limit)
@@ -351,6 +374,8 @@ void gbc_sound_wave_pattern_ram16(void) {}
 void input_read_savestate(void) {}
 void input_write_mem_savestate(void) {}
 void load_file_zip(void) {}
+/* zip.h's loading popup callback; NULL, as when gui.c is not linked. */
+void (*rom_load_progress)(void) = NULL;
 void main_read_savestate(void) {}
 void main_write_mem_savestate(void) {}
 void load_game_config_file(void) {}

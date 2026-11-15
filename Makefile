@@ -64,6 +64,8 @@ HOST_TEST_DYNAREC_WORKLIST = $(HOST_BUILD_DIR)/test_dynarec_worklist
 HOST_TEST_SOUND_MATH = $(HOST_BUILD_DIR)/test_sound_math
 HOST_TEST_EVENT_QUEUE = $(HOST_BUILD_DIR)/test_event_queue
 HOST_TEST_RUNTIME_LOG = $(HOST_BUILD_DIR)/test_runtime_log
+HOST_TEST_ZIP_ROM = $(HOST_BUILD_DIR)/test_zip_rom
+HOST_TEST_LOAD_PROGRESS = $(HOST_BUILD_DIR)/test_load_progress
 HOST_TEST_SAVESTATE_TRAILER = $(HOST_BUILD_DIR)/test_savestate_trailer
 HOST_TEST_ARM_CORE = $(HOST_BUILD_DIR)/test_arm_core
 HOST_TEST_CORE_PROFILE = $(HOST_BUILD_DIR)/test_core_profile
@@ -103,7 +105,8 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
  $(HOST_TEST_EVENT_QUEUE) \
- $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_SAVESTATE_TRAILER) \
+ $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ZIP_ROM) $(HOST_TEST_LOAD_PROGRESS) \
+ $(HOST_TEST_SAVESTATE_TRAILER) \
  $(HOST_TEST_ARM_CORE) $(HOST_TEST_CORE_PROFILE) \
  $(HOST_TEST_HW_PROBE) $(HOST_TEST_MEM_STATS) \
  $(HOST_TEST_ROM_RUN) \
@@ -136,6 +139,8 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_sound_math \
  $(HOST_SANITIZE_DIR)/test_event_queue \
  $(HOST_SANITIZE_DIR)/test_runtime_log \
+ $(HOST_SANITIZE_DIR)/test_zip_rom \
+ $(HOST_SANITIZE_DIR)/test_load_progress \
  $(HOST_SANITIZE_DIR)/test_savestate_trailer \
  $(HOST_SANITIZE_DIR)/test_arm_core \
  $(HOST_SANITIZE_DIR)/test_core_profile \
@@ -186,6 +191,8 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_SOUND_MATH)
 	$(HOST_TEST_EVENT_QUEUE)
 	$(HOST_TEST_RUNTIME_LOG)
+	$(HOST_TEST_ZIP_ROM)
+	$(HOST_TEST_LOAD_PROGRESS)
 	$(HOST_TEST_SAVESTATE_TRAILER)
 	$(HOST_TEST_ARM_CORE)
 	$(HOST_TEST_CORE_PROFILE)
@@ -252,6 +259,8 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_sound_math
 	$(HOST_SANITIZE_DIR)/test_event_queue
 	$(HOST_SANITIZE_DIR)/test_runtime_log
+	$(HOST_SANITIZE_DIR)/test_zip_rom
+	$(HOST_SANITIZE_DIR)/test_load_progress
 	$(HOST_SANITIZE_DIR)/test_savestate_trailer
 	$(HOST_SANITIZE_DIR)/test_arm_core
 	$(HOST_SANITIZE_DIR)/test_core_profile
@@ -304,6 +313,12 @@ $(HOST_TEST_RUNTIME_LOG): tests/test_runtime_log.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -DZLIB_CONST -Isource/src \
 	 tests/test_runtime_log.c source/src/runtime_log.c \
 	 source/src/runtime_log_store.c -lz -o $@
+
+$(HOST_TEST_ZIP_ROM): tests/test_zip_rom.c source/src/zip_rom.c \
+ source/src/zip_rom.h source/src/zlib/zlib.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -DZLIB_CONST -Isource/src \
+	 tests/test_zip_rom.c source/src/zip_rom.c -lz -o $@
 
 # Bundled zlib header, host libz and ZLIB_CONST, as for test_runtime_log.
 $(HOST_TEST_SAVESTATE_TRAILER): tests/test_savestate_trailer.c \
@@ -485,6 +500,12 @@ $(HOST_TEST_EVENT_QUEUE): tests/test_event_queue.c source/src/event_queue.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_event_queue.c source/src/event_queue.c -o $@
 
+$(HOST_TEST_LOAD_PROGRESS): tests/test_load_progress.c \
+ source/src/load_progress.c source/src/load_progress.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_load_progress.c source/src/load_progress.c -o $@
+
 $(HOST_TEST_ARM_CORE): tests/test_arm_core.c $(ARM_CORE_SOURCES) \
  $(ARM_CORE_HEADERS)
 	mkdir -p $(HOST_BUILD_DIR)
@@ -643,6 +664,13 @@ $(HOST_SANITIZE_DIR)/test_runtime_log: tests/test_runtime_log.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -DZLIB_CONST -Isource/src tests/test_runtime_log.c \
 	 source/src/runtime_log.c source/src/runtime_log_store.c -lz -o $@
+
+$(HOST_SANITIZE_DIR)/test_zip_rom: tests/test_zip_rom.c \
+ source/src/zip_rom.c source/src/zip_rom.h source/src/zlib/zlib.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -DZLIB_CONST -Isource/src tests/test_zip_rom.c source/src/zip_rom.c \
+	 -lz -o $@
 
 $(HOST_SANITIZE_DIR)/test_savestate_trailer: tests/test_savestate_trailer.c \
  source/src/savestate_trailer.c source/src/savestate_trailer.h \
@@ -823,6 +851,13 @@ $(HOST_SANITIZE_DIR)/test_event_queue: tests/test_event_queue.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_event_queue.c source/src/event_queue.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_load_progress: tests/test_load_progress.c \
+ source/src/load_progress.c source/src/load_progress.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_load_progress.c source/src/load_progress.c \
+	 -o $@
 
 $(HOST_SANITIZE_DIR)/test_arm_core: tests/test_arm_core.c \
  $(ARM_CORE_SOURCES) $(ARM_CORE_HEADERS)

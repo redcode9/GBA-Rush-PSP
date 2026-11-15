@@ -27,6 +27,15 @@
   Where the Media Engine cannot be used, as on official firmware or in an
   emulator, Exact draws on the main processor and is slower than New. With
   Show FPS on, the counter ends in ME or CPU to tell which.
+- While a ROM loads, the loading popup shows the file name, whether it is
+  reading the ROM or unpacking the ZIP, the KiB read so far and a bar that
+  follows the whole read, for `.zip` archives and for loose ROMs that fit in
+  memory. A loose ROM too large to load whole, which is read in pages while
+  the game runs, still shows only "Now Loading...".
+- The runtime log records how long each ROM load takes, stage by stage:
+  opening the file, reading or unpacking the ROM, loading the game's
+  settings, searching its backup ID and reading its `.sav`. Loads that fail
+  are recorded too, and `tools/decode_runtime_log.py` prints the times.
 - Before a link session starts, the game's save is written and a copy of it
   is kept as `<rom>.sav.link1`; the two copies before it move to `.link2`
   and `.link3`. If the save cannot be written or copied, the session does
@@ -184,6 +193,17 @@
 - Closing the menu no longer waits for every button to be released, so a
   button still held never delays standby. A button held as the menu closes
   reaches neither the game nor the hotkeys until it is released.
+- A damaged or truncated `.zip` no longer hangs the loader or starts a broken
+  game: the ROM's size and CRC32 are checked, and the file browser says the
+  ZIP file is damaged or incomplete. An encrypted `.zip`, or one whose first
+  file is not a `.gba`, `.agb` or `.bin` ROM, gets the same message.
+- A `.zip` written in streaming mode, with its sizes after the data, now
+  loads when its ROM is compressed (deflated) and those sizes are not in
+  the ZIP64 format. Any other `.zip` written that way, such as one with an
+  uncompressed (stored) ROM, gets the damaged or incomplete message, like
+  an encrypted one.
+- A `.gba` file that cannot be read in full now fails to load instead of
+  starting the game from part of the ROM.
 
 ## 1.4.3 - 2026-11-02
 

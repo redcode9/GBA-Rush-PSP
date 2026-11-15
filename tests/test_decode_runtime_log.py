@@ -160,6 +160,23 @@ class RuntimeLogDecoderTests(unittest.TestCase):
             decoder.print_snapshot(snapshot)
         self.assertIn(" build=0123456789ab-dirty\n", output.getvalue())
 
+    def test_decodes_rom_load_stages(self):
+        # Every half above 255 and the read above 65535, so a narrower mask fails.
+        values = (70000, 1200 << 16 | 300, 65535 << 16 | 4000)
+        expected = ("open=1200ms read=70000ms config=300ms "
+                    "backup-id=65535ms sav=4000ms")
+        self.assertEqual(
+            decoder.describe({"event": "rom-load-stages", "flags": 0,
+                              "values": list(values)}), expected)
+        snapshot = decoder.parse_snapshot(fixture_v6(
+            struct.pack(">QIIHBBIII", 110, 7, 1, 32, 1, 0, *values)))
+
+        self.assertEqual(snapshot["records"][0]["event"], "rom-load-stages")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            decoder.print_snapshot(snapshot)
+        self.assertRegex(output.getvalue(), rf" rom-load-stages +{expected}\n")
+
     def test_build_id_may_fill_its_field(self):
         snapshot = decoder.parse_snapshot(fixture_v6(build_id=b"B" * 24))
 

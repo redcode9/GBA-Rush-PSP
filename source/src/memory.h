@@ -266,6 +266,9 @@ SaveStoreResult load_backup(char *name, SaveTag tag, u32 retry);
 // .sav and to play without saving. Load errors are -1, or -2 from
 // load_file_zip() for a ROM larger than the ROM buffer.
 #define LOAD_GAMEPAK_CANCELLED (-3)
+// load_gamepak() result, from load_file_zip(), for a damaged, truncated or
+// unsupported .zip, or a read error inside it.
+#define LOAD_GAMEPAK_ZIP_DAMAGED (-4)
 
 // The .sav and savestate file I/O: gui.c's sceIo binding on the PSP, a
 // fake in tests.

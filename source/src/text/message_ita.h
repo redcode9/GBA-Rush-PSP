@@ -546,6 +546,12 @@
   // MSG_SEARCHING_BACKUP_ID
   "Ricerca ID BACKUP",
 
+  // MSG_LOADING_STAGE_READ
+  "Lettura ROM",
+
+  // MSG_LOADING_STAGE_UNZIP
+  "Estrazione ZIP",
+
   // main.c
   // MSG_GBA_SLEEP_MODE
   "MODALITA RIPOSO",
@@ -564,6 +570,9 @@
 
   // MSG_ERR_LOAD_GAMEPACK
   "Impossibile caricare il file di gioco.",
+
+  // MSG_ERR_ZIP_CORRUPT
+  "Il file ZIP e` danneggiato o incompleto.",
 
   // MSG_ERR_OPEN_GAMEPACK
   "Impossibile aprire il file di gioco.",

@@ -546,6 +546,12 @@
   // MSG_SEARCHING_BACKUP_ID
   "搜尋備份 ID",
 
+  // MSG_LOADING_STAGE_READ
+  "正在讀取 ROM",
+
+  // MSG_LOADING_STAGE_UNZIP
+  "正在解壓 ZIP",
+
   // main.c
   // MSG_GBA_SLEEP_MODE
   "睡眠模式",
@@ -564,6 +570,9 @@
 
   // MSG_ERR_LOAD_GAMEPACK
   "無法載入遊戲檔案.",
+
+  // MSG_ERR_ZIP_CORRUPT
+  "ZIP 檔案已損壞或不完整.",
 
   // MSG_ERR_OPEN_GAMEPACK
   "無法開啟遊戲檔案.",

@@ -62,6 +62,7 @@ EVENTS = {
     29: "save-write",
     30: "save-link-copy",
     31: "power-bits",
+    32: "rom-load-stages",
 }
 FLUSH_REASONS = {
     1: "start",
@@ -306,6 +307,12 @@ def describe(record: dict[str, Any]) -> str:
         return (
             f"bits=0x{value0:08X} ({names or '-'}) callback={value1} "
             f"outcome={_name(POWER_OUTCOMES, value2)}"
+        )
+    # runtime_log_load_stages() in source/src/runtime_log.c packs the times.
+    if event == "rom-load-stages":
+        return (
+            f"open={value1 >> 16}ms read={value0}ms config={value1 & 0xFFFF}ms "
+            f"backup-id={value2 >> 16}ms sav={value2 & 0xFFFF}ms"
         )
     # Earlier versions belong to a retired link design; show raw values.
     if event not in LINK_EVENTS or record.get("version", 5) < 5:
