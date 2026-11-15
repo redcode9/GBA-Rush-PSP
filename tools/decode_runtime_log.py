@@ -7,6 +7,7 @@ import argparse
 import binascii
 import json
 import struct
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
@@ -56,6 +57,15 @@ EVENTS = {
     23: "link-stream-metrics",
     24: "link-timeout",
     25: "link-benchmark",
+    26: "memory-stats",
+    27: "save-load",
+    28: "savestate-repair",
+    29: "save-write",
+    30: "save-link-copy",
+    31: "power-bits",
+    32: "rom-load-stages",
+    33: "diag-autorun",
+    34: "name-probe",
 }
 FLUSH_REASONS = {
     1: "start",
@@ -72,7 +82,7 @@ LINK_STATUS = ["off", "waiting", "connected", "incompatible", "peer-left", "lost
 LINK_MODES = ["none", "lockstep", "pokemon"]
 LINK_ENDS = [
     "none", "user", "suspend", "rom-change", "peer-left", "lost",
-    "incompatible", "network",
+    "incompatible", "network", "save-failed",
 ]
 ADHOC_STATES = [
     "stopped", "starting", "hosting", "searching", "connecting", "connected",
@@ -83,6 +93,10 @@ ADHOC_PHASES = [
     "control-init", "create-group", "scan", "join-group", "group-wait",
     "peer-list", "socket", "send", "receive", "group-lost",
 ]
+# Counter records by kind; describe() spells out 11 (Exact renderer),
+# 12 (CPU core), 13 (simulated network profile), 18 (requested and
+# read-back CPU and bus clocks) and 19 (requested and measured Media Engine
+# clock).
 LINK_COUNTERS = {
     0: "rtt-us/rtt-max-us/resends",
     1: "datagrams-sent/received/rejected",
@@ -95,7 +109,13 @@ LINK_COUNTERS = {
     8: "frames/frames-drawn/vblank-wait-us",
     9: "me-frames/frames-late/me-busy-us-per-frame",
     10: "log-us-per-frame/log-words-per-frame/full-resends",
+    # Diagnostic profile, network ring: what the ad-hoc worker's simulated
+    # networks did in one session (13 names the profile).
+    14: "fault-out-lost/delayed/duplicated",
+    15: "fault-in-lost/delayed/duplicated",
 }
+# net_fault_profiles in source/src/net_fault.c, in order: counters kind 13.
+NET_FAULT_PROFILES = ["lan", "adhoc", "noisy", "outage", "terrible", "dropouts"]
 # The CPU core a start or reset chose (CPU_CORE_* in source/src/main.h);
 # logs from before the option say classic.
 CPU_CORES = ["classic", "new"]
@@ -106,10 +126,75 @@ EXACT_RENDERER = [
     "cpu-no-answer", "cpu-stopped", "cpu-fault", "cpu-too-slow",
     "cpu-no-memory",
 ]
+# Where main.c measured the memory (MemStatsPoint in source/src/mem_stats.h).
+MEMORY_POINTS = [
+    "none", "boot", "rom-load", "link-start", "capture-start", "capture-stop",
+]
+# save-load, from memory.c's load_backup(): the load's SaveStoreResult
+# (source/src/save_store.h), then SaveType and SaveTag
+# (source/src/save_format.h). save-write, from memory.c's save_backup():
+# the write's SaveStoreResult, microseconds, bytes and try number.
+# save-link-copy, from memory.c's backup_push_link_copy(): the pre-link
+# copy's SaveStoreResult, microseconds and bytes.
+SAVE_RESULTS = [
+    "ok", "not-found", "failed", "write-failed", "verify-failed",
+    "backup-failed", "promote-failed", "restore-failed",
+]
+SAVE_TYPES = ["sram", "flash", "eeprom", "none"]
+SAVE_TAGS = ["none", "eeprom", "sram", "flash64", "flash128"]
+# savestate-repair, from memory.c's memory_read_savestate(): the fields
+# save_format_sanitize() brought back in range, by SAVE_FIX_* bit
+# (source/src/save_format.h), then the SaveType after the repair.
+SAVE_FIXES = [
+    "type", "sram-size", "flash-size", "flash-bank", "eeprom-size",
+    "eeprom-mode", "eeprom-address-length", "eeprom-address",
+    "eeprom-counter",
+]
+# power-bits: one PSP power callback's raw bits (PSP_POWER_CB_* in
+# source/src/libpower/psppower.h), its number since boot (a gap means
+# callbacks were lost; 0 on a timeout record) and the power_lifecycle
+# outcome when logged (POWER_LIFECYCLE_ENTRY_* and
+# POWER_LIFECYCLE_SWITCH_EXPIRED in source/src/power_lifecycle.h).
+POWER_BITS = {
+    0x80000000: "switch",
+    0x00080000: "standby",
+    0x00040000: "resume-complete",
+    0x00020000: "resuming",
+    0x00010000: "suspending",
+}
+POWER_OUTCOMES = ["none", "entered-by-switch", "entered-by-suspending", "switch-timed-out"]
+# The diagnostic autorun's outcome: AutorunStatus and the AutorunError
+# tokens of source/src/autorun_config.c, in enum order.
+AUTORUN_STATUS = ["ignored", "failed", "started", "done"]
+AUTORUN_REASONS = [
+    "none", "too-large", "not-text", "line-too-long", "version", "syntax",
+    "unknown-key", "duplicate-key", "bad-value", "build-missing",
+    "build-mismatch", "build-unknown", "needs-rom", "needs-frames", "read",
+    "rom", "trace", "needs-trace", "needs-hash", "no-hash-memory", "hash",
+    "perturb-past-trace", "testpat-alone",
+]
 LINK_EVENTS = {
     "link-command", "link-state", "link-pause-end", "link-error",
     "link-counters", "menu-presence", "power-suspend", "power-resume",
 }
+# Name-probe records (RUNTIME_LOG_EVENT_NAME_PROBE in source/src/runtime_log.h):
+# flags bits 7-6 are the part, bits 5-0 the chunk index or, in the header
+# part, the kind (0 an entry, 1 the end of the probe, 2 its end after a
+# failed sceIoDread). A chunk is the 12 bytes of the three values, big-endian.
+NAME_PROBE_PARTS = ["header", "name", "fat", "open"]
+# Header kinds that end the probe, with the PSP call whose result value0 is.
+NAME_PROBE_ENDS = {1: "end dopen", 2: "stopped dread"}
+# Open record i holds the results labelled [3 * i, 3 * i + 3); record 1's
+# third value is unused.
+NAME_PROBE_OPENS = ["name", "alias-a", "alias-b", "long-a", "long-b"]
+NAME_PROBE_NOT_TRIED = 0xFFFFFFFF
+NAME_PROBE_ENCODINGS = ("utf-8", "shift_jis", "gbk")
+# The FAT private record: layout A has the 8.3 alias at 0 and the long name
+# at 13; layout B a little-endian size word, the alias at 4 and the long
+# name at 20.
+FAT_LAYOUT_A_LONG_NAME = 13
+FAT_LAYOUT_B_ALIAS = 4
+FAT_LAYOUT_B_LONG_NAME = 20
 
 
 def _crc32(data: bytes) -> int:
@@ -133,6 +218,45 @@ def _rom_code(identity: int) -> str:
     if all(32 <= byte < 127 for byte in raw):
         return raw.decode("ascii", "replace")
     return f"0x{identity:08X}"
+
+
+def _chunk(values: list[int]) -> bytes:
+    """The 12 bytes a name-probe chunk carries."""
+    return b"".join(value.to_bytes(4, "big") for value in values)
+
+
+def _open_result(value: int) -> int | str:
+    """A name-probe sceIoOpen result: the signed fd or PSP error, or not-tried."""
+    return "not-tried" if value == NAME_PROBE_NOT_TRIED else _signed(value)
+
+
+def _open_text(value: int | str) -> str:
+    if isinstance(value, str):
+        return value
+    return f"fd {value}" if value >= 0 else f"error 0x{value & 0xFFFFFFFF:08X}"
+
+
+def _open_results(records: dict[int, list[int]]) -> dict[str, int | str]:
+    """The labelled results of an entry's open records, keyed by index."""
+    return {
+        label: _open_result(value)
+        for index in sorted(records)
+        for label, value in zip(NAME_PROBE_OPENS[3 * index:3 * index + 3],
+                                records[index])
+    }
+
+
+def _name_views(raw: bytes) -> dict[str, str]:
+    """A name's bytes as hex and as text in each candidate encoding."""
+    views = {"hex": raw.hex()}
+    for encoding in NAME_PROBE_ENCODINGS:
+        views[encoding] = raw.decode(encoding, "replace")
+    return views
+
+
+def _field(data: bytes, start: int, end: int | None = None) -> bytes:
+    """The bytes of data[start:end] up to the first NUL."""
+    return data[start:end].split(b"\0", 1)[0]
 
 
 def parse_snapshot(data: bytes, path: str = "<memory>") -> dict[str, Any]:
@@ -218,6 +342,76 @@ def describe(record: dict[str, Any]) -> str:
         )
     if event == "log-flush":
         return f"reason={FLUSH_REASONS.get(value0, value0)} main={value1} network={value2}"
+    if event == "memory-stats":
+        # Two records per measurement, values in KiB (mem_stats_encode).
+        # heap-free counts only free space newlib has already taken from the
+        # system; heap-largest is the largest block malloc still gives.
+        # kernel-total is sceKernelTotalFreeMemSize, kernel-largest
+        # sceKernelMaxFreeMemSize: the perf report's kernel-free-low is the
+        # lowest kernel-largest of a capture.
+        point = f"point={_name(MEMORY_POINTS, flags >> 1)}"
+        if flags & 1:
+            return (
+                f"{point} kernel-total={value0}KiB kernel-largest={value1}KiB "
+                f"rom-buffer={value2}KiB rom-pages={value2 // 32}"
+            )
+        return f"{point} image={value0}KiB heap-free={value1}KiB heap-largest={value2}KiB"
+    if event == "save-load":
+        return (
+            f"result={_name(SAVE_RESULTS, flags)} file-size={value0} "
+            f"write-size={value1} type={_name(SAVE_TYPES, value2 & 0xFF)} "
+            f"tag={_name(SAVE_TAGS, value2 >> 8 & 0xFF)} "
+            f"mismatch={bool(value2 >> 16 & 1)}"
+        )
+    if event == "save-write":
+        return (
+            f"result={_name(SAVE_RESULTS, flags)} duration-us={value0} "
+            f"bytes={value1} attempt={value2}"
+        )
+    if event == "save-link-copy":
+        return (
+            f"result={_name(SAVE_RESULTS, flags)} duration-us={value0} "
+            f"bytes={value1}"
+        )
+    if event == "savestate-repair":
+        fixed = [name for bit, name in enumerate(SAVE_FIXES) if value0 >> bit & 1]
+        unknown = value0 >> len(SAVE_FIXES) << len(SAVE_FIXES)
+        if unknown:
+            fixed.append(f"0x{unknown:X}")
+        return f"fixed={','.join(fixed)} type={_name(SAVE_TYPES, value1)}"
+    if event == "power-bits":
+        names = "|".join(name for bit, name in POWER_BITS.items() if value0 & bit)
+        return (
+            f"bits=0x{value0:08X} ({names or '-'}) callback={value1} "
+            f"outcome={_name(POWER_OUTCOMES, value2)}"
+        )
+    # runtime_log_load_stages() in source/src/runtime_log.c packs the times.
+    if event == "rom-load-stages":
+        return (
+            f"open={value1 >> 16}ms read={value0}ms config={value1 & 0xFFFF}ms "
+            f"backup-id={value2 >> 16}ms sav={value2 & 0xFFFF}ms"
+        )
+    if event == "diag-autorun":
+        return (
+            f"status={_name(AUTORUN_STATUS, flags)} "
+            f"reason={_name(AUTORUN_REASONS, value0)} line={value1} "
+            f"frames={value2}"
+        )
+    if event == "name-probe":
+        part, index = flags >> 6, flags & 0x3F
+        if part == 0 and index == 0:
+            return f"entry={value0} name-bytes={value1} fat-bytes={value2}"
+        if part == 0 and index in NAME_PROBE_ENDS:
+            return (
+                f"{NAME_PROBE_ENDS[index]}={_signed(value0)}/0x{value0:08X} "
+                f"seen={value1} logged={value2}"
+            )
+        if part == 3:
+            return "open " + " ".join(
+                f"{label}={_open_text(value)}"
+                for label, value in _open_results({index: record["values"]}).items()
+            )
+        return f"{NAME_PROBE_PARTS[part]} chunk={index} bytes={_chunk(record['values']).hex()}"
     # Earlier versions belong to a retired link design; show raw values.
     if event not in LINK_EVENTS or record.get("version", 5) < 5:
         return f"flags=0x{flags:02X} values={value0}/{value1}/{value2}"
@@ -250,6 +444,28 @@ def describe(record: dict[str, Any]) -> str:
             f"cpu-core={_name(CPU_CORES, value0)} blocks-compiled={value1} "
             f"code-flushes={value2}"
         )
+    if event == "link-counters" and flags == 13:
+        return (
+            f"net-fault-profile={_name(NET_FAULT_PROFILES, value0)} "
+            f"seed=0x{value1:08X}"
+        )
+    if event == "link-counters" and flags == 18:
+        cpu, bus = _signed(value1), _signed(value2)
+        # The firmware reports whole MHz (333 reads back 333, its bus 166).
+        mismatch = abs(cpu - value0) > 1 or abs(bus - value0 // 2) > 1
+        return (
+            f"cpu-clock requested={value0}MHz cpu={cpu}MHz bus={bus}MHz"
+            + (" MISMATCH" if mismatch else "")
+        )
+    if event == "link-counters" and flags == 19:
+        # Measured only while the Media Engine draws (Exact renderer).
+        if not value2:
+            return f"me-clock requested={value0}MHz me=unmeasured"
+        return (
+            f"me-clock requested={value0}MHz me={value1}MHz "
+            f"over={value2 / 1000:.1f}s"
+            + (" MISMATCH" if abs(value1 - value0) > 1 else "")
+        )
     if event == "link-counters":
         return f"{LINK_COUNTERS.get(flags, f'counters-{flags}')}={value0}/{value1}/{value2}"
     if event == "menu-presence":
@@ -263,6 +479,103 @@ def describe(record: dict[str, Any]) -> str:
         f"audio={_signed(value0)} link={_name(LINK_STATUS, value1)} "
         f"adhoc={_name(ADHOC_STATES, value2)}"
     )
+
+
+def _probe_bytes(chunks: dict[int, bytes], length: int | None) -> tuple[bytes, bool]:
+    """Join a part's chunks, zero-filling missing ones, trimmed to length.
+
+    Without the header, length is unknown and every chunk seen is kept.
+    Returns the bytes and whether every chunk was there.
+    """
+    count = (length + 11) // 12 if length is not None else max(chunks, default=-1) + 1
+    data = b"".join(chunks.get(index, bytes(12)) for index in range(count))
+    complete = all(index in chunks for index in range(count))
+    return (data[:length] if length is not None else data), complete
+
+
+def name_probe_entries(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """Rebuild the entries of the file-name probe from a snapshot's records.
+
+    Main-ring name-probe records are read in ordinal order: each entry header
+    starts an entry, which collects the chunks and open results after it.
+    An entry is "complete": False when the ring overwrote any of its records
+    (its header too: then its index and lengths are None).
+    """
+    records = sorted(
+        (record for record in snapshot["records"]
+         if record["event"] == "name-probe" and record["source"] == "main"),
+        key=lambda record: record["ordinal"],
+    )
+    raw_entries: list[dict[str, Any]] = []
+    current = None
+    for record in records:
+        part, index = record["flags"] >> 6, record["flags"] & 0x3F
+        values = record["values"]
+        if part == 0:
+            current = None
+            if index == 0:
+                current = {"index": values[0], "name_length": values[1],
+                           "fat_length": values[2], "name": {}, "fat": {},
+                           "open": {}}
+                raw_entries.append(current)
+            continue
+        if current is None:
+            current = {"index": None, "name_length": None, "fat_length": None,
+                       "name": {}, "fat": {}, "open": {}}
+            raw_entries.append(current)
+        if part == 3:
+            current["open"][index] = values
+        else:
+            current[NAME_PROBE_PARTS[part]][index] = _chunk(values)
+
+    entries = []
+    for raw in raw_entries:
+        name, name_complete = _probe_bytes(raw["name"], raw["name_length"])
+        fat, fat_complete = _probe_bytes(raw["fat"], raw["fat_length"])
+        opened = raw["open"]
+        entries.append({
+            "index": raw["index"],
+            "complete": (raw["index"] is not None and name_complete
+                         and fat_complete and {0, 1} <= opened.keys()),
+            "name": _name_views(name),
+            "fat_hex": fat.hex(),
+            "layout_a": {
+                "alias": _name_views(_field(fat, 0, FAT_LAYOUT_A_LONG_NAME)),
+                "long_name": _name_views(_field(fat, FAT_LAYOUT_A_LONG_NAME)),
+            },
+            "layout_b": {
+                "size": (int.from_bytes(fat[:4], "little")
+                         if len(fat) >= 4 else None),
+                "alias": _name_views(
+                    _field(fat, FAT_LAYOUT_B_ALIAS, FAT_LAYOUT_B_LONG_NAME)),
+                "long_name": _name_views(_field(fat, FAT_LAYOUT_B_LONG_NAME)),
+            },
+            "open": _open_results(opened) if opened else None,
+        })
+    return entries
+
+
+def _print_name_views(label: str, views: dict[str, str]) -> None:
+    print(
+        f"      {label:16} {views['hex'] or '-'} "
+        + " ".join(f"{encoding}={views[encoding]!r}" for encoding in NAME_PROBE_ENCODINGS)
+    )
+
+
+def print_name_probe(entries: list[dict[str, Any]]) -> None:
+    """Print the rebuilt name-probe entries after a snapshot's records."""
+    for entry in entries:
+        index = "?" if entry["index"] is None else entry["index"]
+        print(f"  name-probe entry {index}{'' if entry['complete'] else ' (incomplete)'}")
+        _print_name_views("d_name", entry["name"])
+        _print_name_views("A alias@0", entry["layout_a"]["alias"])
+        _print_name_views("A long@13", entry["layout_a"]["long_name"])
+        print(f"      {'B size@0':16} {entry['layout_b']['size']}")
+        _print_name_views("B alias@4", entry["layout_b"]["alias"])
+        _print_name_views("B long@20", entry["layout_b"]["long_name"])
+        if entry["open"] is not None:
+            print("      open             " + " ".join(
+                f"{label}={_open_text(value)}" for label, value in entry["open"].items()))
 
 
 def iter_log_paths(arguments: Iterable[str]) -> list[Path]:
@@ -288,7 +601,8 @@ def header_line(snapshot: dict[str, Any]) -> str:
 
 
 def print_snapshot(snapshot: dict[str, Any]) -> None:
-    """Print one snapshot as text: its header line, then every record."""
+    """Print one snapshot as text: its header line, every record, then the
+    rebuilt name-probe entries."""
     print(header_line(snapshot))
     for record in snapshot["records"]:
         elapsed = record["elapsed_us"]
@@ -297,6 +611,7 @@ def print_snapshot(snapshot: dict[str, Any]) -> None:
             f"  {time_text} {record['source']:7} "
             f"{record['event']:23} {describe(record)}"
         )
+    print_name_probe(name_probe_entries(snapshot))
 
 
 def print_summary(snapshot: dict[str, Any]) -> None:
@@ -350,11 +665,16 @@ def main() -> int:
     output.add_argument("--json", action="store_true", help="write machine-readable JSON")
     output.add_argument("--summary", action="store_true", help="write a concise diagnostic summary")
     args = parser.parse_args()
+    # Decoded file names may not fit the console's encoding.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="backslashreplace")
     snapshots = [
         parse_snapshot(path.read_bytes(), str(path))
         for path in iter_log_paths(args.paths)
     ]
     if args.json:
+        for snapshot in snapshots:
+            snapshot["name_probe"] = name_probe_entries(snapshot)
         print(json.dumps(snapshots, indent=2))
     else:
         for index, snapshot in enumerate(snapshots):

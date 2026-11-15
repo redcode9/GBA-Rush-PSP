@@ -388,6 +388,48 @@
   // MSG_A_PAD_MENU_HELP_2
   FONT_BTN_CIRCLE_GBK ":主菜单   " FONT_BTN_CROSS_GBK ":退出",
 
+  // MSG_TURBO_MENU
+  "连发设置",
+
+  // MSG_TURBO_A_SPEED
+  "连发 A 速度 : %s",
+
+  // MSG_TURBO_A_MODE
+  "连发 A 模式 : %s",
+
+  // MSG_TURBO_B_SPEED
+  "连发 B 速度 : %s",
+
+  // MSG_TURBO_B_MODE
+  "连发 B 模式 : %s",
+
+  // MSG_TURBO_L_SPEED
+  "连发 L 速度 : %s",
+
+  // MSG_TURBO_L_MODE
+  "连发 L 模式 : %s",
+
+  // MSG_TURBO_R_SPEED
+  "连发 R 速度 : %s",
+
+  // MSG_TURBO_R_MODE
+  "连发 R 模式 : %s",
+
+  // MSG_TURBO_SPEED_30
+  "30次/秒",
+
+  // MSG_TURBO_SPEED_15
+  "15次/秒",
+
+  // MSG_TURBO_SPEED_10
+  "10次/秒",
+
+  // MSG_TURBO_ON
+  "连发 %c: 开",
+
+  // MSG_TURBO_OFF
+  "连发 %c: 关",
+
   // MSG_CHEAT_MENU_TITLE
   "作弊选项",
 
@@ -417,6 +459,27 @@
 
   // MSG_CHEAT_MENU_HELP_3
   FONT_CURSOR_LEFT_GBK FONT_CURSOR_RIGHT_GBK ":切换页面   " FONT_BTN_CROSS_GBK ":退出",
+
+  // MSG_CHEAT_LOAD_DONE
+  "%s\n已加载 %lu 个作弊码",
+
+  // MSG_CHEAT_LOAD_FAILED_AT_LINE
+  "作弊文件加载失败，第 %lu 行:\n%s",
+
+  // MSG_CHEAT_LOAD_FAILED
+  "作弊文件加载失败:\n%s",
+
+  // MSG_CHEAT_REASON_OPEN
+  "无法访问文件",
+
+  // MSG_CHEAT_REASON_CAPACITY
+  "作弊码数量超出支持上限",
+
+  // MSG_CHEAT_REASON_EMPTY
+  "文件为空",
+
+  // MSG_CHEAT_REASON_FORMAT
+  "格式无效",
 
   // MSG_NON_LOAD_GAME
   "游戏未加载",
@@ -504,6 +567,8 @@
 
   // MSG_SCN_SCALED_16X9_AUTO
   "16:9 Auto",
+  // MSG_SCN_SCALED_INT2
+  "2x 整数 (裁剪)",
 
   // MSG_LANG_JAPANESE
   "日语",
@@ -546,6 +611,12 @@
   // MSG_SEARCHING_BACKUP_ID
   "搜索备份 ID",
 
+  // MSG_LOADING_STAGE_READ
+  "正在读取 ROM",
+
+  // MSG_LOADING_STAGE_UNZIP
+  "正在解压 ZIP",
+
   // main.c
   // MSG_GBA_SLEEP_MODE
   "SLEEP MODE",
@@ -565,8 +636,19 @@
   // MSG_ERR_LOAD_GAMEPACK
   "无法加载游戏文件.",
 
+  // MSG_ERR_ZIP_CORRUPT
+  "ZIP 文件已损坏或不完整.",
+
   // MSG_ERR_OPEN_GAMEPACK
   "无法打开游戏文件.",
+  // MSG_SAVE_READ_RETRY
+  "无法读取游戏存档. 重试?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "不保存继续游戏? 存档文件保持不变.",
+  // MSG_SAVE_WRITE_FAILED
+  "无法写入游戏存档.\n存档仍然保留, 稍后将再次尝试.",
+  // MSG_SAVE_WRITE_RETRY
+  "存档未写入: 重试?",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "无法启动回调线程.",
@@ -886,6 +968,15 @@
   // MSG_BROWSER_ALL_GAMES
   "--- 所有游戏 ---",
 
+  // MSG_BROWSER_EMPTY_TITLE
+  "未找到游戏",
+
+  // MSG_BROWSER_EMPTY_HINT
+  "请将 .gba 或 .zip 文件复制到:",
+
+  // MSG_FIRST_RUN_MENU_HINT
+  "HOME: 菜单，或长按 START+SELECT",
+
   // MSG_MAIN_MENU_LINK
   "联机线",
 
@@ -910,6 +1001,9 @@
   // MSG_LINK_MENU_DISCONNECT
   "断开连接",
 
+  // MSG_LINK_MENU_RESTORE
+  "恢复联机前的存档",
+
   // MSG_LINK_MENU_HELP_STATUS
   "当前联机状态",
 
@@ -921,6 +1015,18 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "关闭当前联机会话",
+
+  // MSG_LINK_MENU_HELP_RESTORE
+  "恢复联机前复制的游戏存档",
+
+  // MSG_LINK_RESTORE_CONFIRM
+  "恢复%s的存档? 游戏将重新启动",
+
+  // MSG_LINK_RESTORE_NONE
+  "没有联机前复制的存档",
+
+  // MSG_LINK_RESTORE_FAILED
+  "无法恢复游戏存档",
 
   // MSG_LINK_STATUS_NO_GAME
   "未加载游戏",
@@ -979,6 +1085,9 @@
   // MSG_LINK_REASON_ROM_CHANGE
   "游戏已更改",
 
+  // MSG_LINK_REASON_SAVE_FAILED
+  "无法写入游戏存档",
+
 
   // MSG_CATEGORY_CONTINUE
   "Continue",
@@ -1025,6 +1134,16 @@
   "Measure and report emulator behavior",
   // MSG_CATEGORY_HELP_EXIT
   "Sleep or close the emulator",
+  // MSG_MAIN_STATUS_SLOTS
+  "%lu/10",
+  // MSG_MAIN_STATUS_SLOTS_AUTO
+  "%lu/10 + AUTO",
+  // MSG_MAIN_STATUS_CHEATS
+  "已启用 %lu 个作弊码",
+  // MSG_MAIN_STATUS_LINKED
+  "已连接: %s",
+  // MSG_MAIN_STATUS_WAITING
+  "等待中",
 
   // MSG_DIAGNOSTICS_TITLE
   "Diagnostics",
@@ -1056,6 +1175,30 @@
   "Report saved",
   // MSG_DIAGNOSTICS_REPORT_FAILED
   "Report could not be saved",
+  // MSG_DIAGNOSTICS_NAME_PROBE
+  "Log file name encoding",
+  // MSG_DIAGNOSTICS_HELP_NAME_PROBE
+  "Logs the names in name-probe beside the EBOOT",
+  // MSG_DIAGNOSTICS_NAME_PROBE_DONE
+  "%lu of %lu names logged",
+  // MSG_DIAGNOSTICS_NAME_PROBE_FAILED
+  "Probe failed: name-probe folder or log",
+  // MSG_DIAGNOSTICS_BENCH
+  "Unbound benchmark",
+  // MSG_DIAGNOSTICS_HELP_BENCH
+  "Load the slot, run 3600 frames unpaced, save the report",
+  // MSG_DIAGNOSTICS_BENCH_LINK
+  "Benchmark refused: a link session is open",
+  // MSG_DIAGNOSTICS_BENCH_NO_STATE
+  "Benchmark refused: no usable state in the current slot",
+  // MSG_DIAGNOSTICS_BENCH_RENDER_OFF
+  "Unbound benchmark, rendering off",
+  // MSG_DIAGNOSTICS_HELP_BENCH_RENDER_OFF
+  "The same run without drawing or showing any frame",
+  // MSG_DIAGNOSTICS_BENCH_AUDIO_OFF
+  "Unbound benchmark, audio off",
+  // MSG_DIAGNOSTICS_HELP_BENCH_AUDIO_OFF
+  "The same run without writing any sound sample",
   // MSG_UNAVAILABLE_CURRENT_STATE
   "Unavailable in the current state",
 
@@ -1103,10 +1246,22 @@
   "Replay the saved trace for this game",
   // MSG_TRACE_HELP_CANCEL
   "Stop the active trace operation",
+  // MSG_DIAGNOSTICS_PIN_TOAST
+  "Pin a test toast",
+  // MSG_DIAGNOSTICS_HELP_PIN_TOAST
+  "Keep a toast on screen until the game resets, to measure its cost",
   // MSG_TRACE_SAVED
   "Input trace saved",
   // MSG_TRACE_FAILED
   "Input trace operation failed",
+  // MSG_TRACE_STATE_MISMATCH
+  "Trace savestate missing or changed",
+  // MSG_TRACE_RTC_WARNING
+  "RTC game: replay hashes may diverge",
+  // MSG_TRACE_NO_HASHES
+  "Replay runs without state hashes",
+  // MSG_TRACE_HASHES_SAVED
+  "Replay state hashes saved",
 
   // MSG_FF_PROFILE_LABEL
   "Fast-forward profile : %s",

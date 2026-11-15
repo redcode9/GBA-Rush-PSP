@@ -2478,7 +2478,7 @@ Il gruppo copre misura e velocità: metodo A/B, strumentazione, benchmark, budge
 - **Cosa:** `--baseline` e `--candidate` accettano da 3 a N report ciascuno, anche in numero diverso (`nargs='+'` con `MIN_RUNS = 3`). Per ogni metrica si stampano mediana, minimo, massimo e il verdetto di un test di permutazione esatto unilaterale sui valori per run; se il test non può decidere, l'esito dice "non decidibile, servono circa N run per braccio". Le soglie di FAIL restano identiche. `scripts/check-performance.sh:34` controlla `MIN_RUNS` invece di `nargs=3`; `CONTRIBUTING.md:68-75` spiega il verdetto.
 - **File:** `scripts/compare-benchmarks.py`, `scripts/check-performance.sh`, `tests/test_compare_benchmarks.py`, `CONTRIBUTING.md`
 - **Test:** `test_exact_permutation_complete_separation_3v3` (p=0,05); `test_overlap_is_undecided_with_runs_needed`; `test_unequal_run_counts_4v3`; `test_fewer_than_three_runs_rejected` (codice 2); `test_legacy_v6_fixtures_same_pass_fail`; `make check`.
-- **Accettazione:** i fixture v6 esistenti danno lo stesso PASS/FAIL di oggi; con intervalli sovrapposti il verdetto non afferma mai una differenza; meno di 3 run per braccio esce con codice 2; solo libreria standard.
+- **Accettazione:** i fixture v6 esistenti danno lo stesso PASS/FAIL di oggi; fino a 4+3 run per braccio, con intervalli sovrapposti il verdetto non afferma mai una differenza; meno di 3 run per braccio esce con codice 2; solo libreria standard.
 - **Licenza:** codice nuovo GPL-2.0-or-later.
 
 #### PRF-1.2 — Gate sugli estremi: p99, massimo robusto, work p95, frame oltre 1,5× budget al minuto · S, 1 gg · dipende da: PRF-1.1, PRF-2.1, ENG-1.6 · PSP: no
@@ -3404,9 +3404,9 @@ Il gruppo copre primo avvio e pacchetto, notifiche, scorciatoie e input, screens
 - **Accettazione:** Dopo un riavvio i colori scelti con il selettore sono ancora attivi, con e senza dir.ini; Cambiare preset dal menu Interfaccia scarta i colori personalizzati come oggi; make check e make test-sanitize verdi
 
 #### UI-1.3 — Libreria vuota spiegata e gba_bios.bin nascosto · S, 1 gg · dipende da: — · PSP: sì
-- **Cosa:** In load_file (gui.c:1830), gba_bios.bin non entra più nell'elenco dei giochi. Se la cartella non contiene giochi né sottocartelle (la voce della cartella superiore non conta), al posto della lista compare una scheda: 'Nessun gioco trovato', poi 'Copia file .gba o .zip in:' e il percorso tagliato con print_string_clipped, nelle 5 lingue. Nuove voci MSG_BROWSER_EMPTY_TITLE e MSG_BROWSER_EMPTY_HINT in message.h e nei 5 message_*.h, nello stesso ordine.
+- **Cosa:** In load_file (gui.c:1830), gba_bios.bin non entra più nell'elenco dei giochi. Se la cartella non contiene giochi, al posto della lista compare una scheda (le sottocartelle non la nascondono: la cartella delle ROM predefinita è quella d'installazione, che contiene sempre logs/; la colonna delle cartelle resta): 'Nessun gioco trovato', poi 'Copia file .gba o .zip in:' e il percorso tagliato con print_string_clipped, nelle 5 lingue. Nuove voci MSG_BROWSER_EMPTY_TITLE e MSG_BROWSER_EMPTY_HINT in message.h e nei 5 message_*.h, nello stesso ordine.
 - **File:** `source/src/gui.c` (load_file: elenco circa gui.c:1960-2050, disegno gui.c:2349-2404), `source/src/message.h`, `source/src/text/message_jpn.h`, `source/src/text/message_eng.h`, `source/src/text/message_chs.h`, `source/src/text/message_cht.h`, `source/src/text/message_ita.h`, `tests/test_browser_text.py`, `CHANGELOG.md`
-- **Test:** tests/test_browser_text.py: estrae il nuovo filtro is_listed_rom e verifica che gba_bios.bin sia escluso con qualsiasi combinazione di maiuscole, mentre gli altri .bin restano; scripts/check-messages.sh; Hardware: una cartella vuota mostra la scheda in giapponese, cinese e italiano senza glifi mancanti
+- **Test:** tests/test_browser_text.py: estrae il nuovo filtro is_listed_rom e verifica che gba_bios.bin sia escluso con qualsiasi combinazione di maiuscole, mentre gli altri .bin restano; scripts/check-messages.sh; Hardware: una cartella vuota e un'installazione pulita (senza roms/ né dir.ini, con solo logs/) mostrano la scheda in giapponese, cinese e italiano senza glifi mancanti
 - **Accettazione:** gba_bios.bin non compare mai nella lista; Una cartella senza giochi mostra una scheda leggibile nelle 5 lingue, con il percorso; Le cartelle con giochi si comportano come prima, in lista e nel carosello
 - **Licenza:** codice nuovo GPL-2.0-or-later.
 
@@ -6186,6 +6186,8 @@ Il gruppo copre tre cose: come rilasciamo (gate, prerelease, manifest, sorgente)
 
 > **2026-11-04:** ENG-10.4: SOA-1.3 la estende (vedi «Riconciliazione con il nuovo core e il renderer»).
 
+> **2026-11-10:** ENG-10.3 ha la sua accettazione, ma la voce del Test «build con devkitARM in CI, con immagine fissata» non è coperta: `.github/workflows/check.yml` (ENG-2.5) non ha un job per `make test-roms` e le immagini di `tools/ci/Dockerfile` non hanno un compilatore ARM, quindi in CI le ROM di test non si costruiscono. Resta da aggiungere quel job, in un'immagine fissata per digest (il workflow è di `wip/release-and-ci`), oppure la decisione dell'utente che bastano il ramo `DEVKITARM` e le corse in mGBA registrate, la stessa domanda di SAV-2.6.
+
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
 | consigliato | 1.6 (ENG-10.1 in 1.4.4; ENG-10.4 in 1.5) | 4,5 gg | SAV-2.6 (solo ENG-10.3) |
@@ -6533,6 +6535,8 @@ Il gruppo copre tre cose: come rilasciamo (gate, prerelease, manifest, sorgente)
 - **Licenza:** codice nuovo GPL-2.0-or-later.
 
 ### ENG-17 — Documentazione di ingegneria: mappa dei test, architettura, decisioni, debug
+
+> **2026-11-10:** `docs/DESIGN-DECISIONS.md` c'è già in main, dalla CMP-4.1, con la voce «Guest PC above 0FFFFFFFh»: ENG-17.3 la adotta, con un id ADR, invece di creare il file da capo.
 
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|

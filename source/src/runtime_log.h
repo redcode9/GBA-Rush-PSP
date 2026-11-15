@@ -13,7 +13,9 @@
  * Runtime diagnostic log. Events are 32-byte records kept in fixed rings in
  * memory (main, network and critical sources) and encoded into a "GBRL"
  * snapshot when runtime_log_psp.c flushes. tools/decode_runtime_log.py
- * reads the files; enum values and record layouts are part of the format.
+ * reads the files. The record layout and the meaning of existing enum
+ * values are the format; a value added at the end of an enum keeps the
+ * version, and older decoders show it as a number.
  */
 
 #ifndef RUNTIME_LOG_H
@@ -77,8 +79,65 @@ typedef enum
   RUNTIME_LOG_EVENT_LINK_FAILURE,
   RUNTIME_LOG_EVENT_LINK_STREAM_METRICS,
   RUNTIME_LOG_EVENT_LINK_TIMEOUT,
-  RUNTIME_LOG_EVENT_LINK_BENCHMARK
+  RUNTIME_LOG_EVENT_LINK_BENCHMARK,
+  /* Two records per measurement, packed by mem_stats_encode. */
+  RUNTIME_LOG_EVENT_MEMORY_STATS,
+  RUNTIME_LOG_EVENT_SAVE_LOAD,
+  RUNTIME_LOG_EVENT_SAVESTATE_REPAIR,
+  RUNTIME_LOG_EVENT_SAVE_WRITE,
+  RUNTIME_LOG_EVENT_SAVE_LINK_COPY,
+  RUNTIME_LOG_EVENT_POWER_BITS,
+  RUNTIME_LOG_EVENT_ROM_LOAD_STAGES,
+  /* Diagnostic profile: the autorun file's outcome (autorun_config.h). */
+  RUNTIME_LOG_EVENT_DIAG_AUTORUN,
+  RUNTIME_LOG_EVENT_NAME_PROBE
 } RuntimeLogEventType;
+
+/* NAME_PROBE records, written by Diagnostics for each entry of the
+   name-probe folder: flags bits 7-6 are the part, bits 5-0 the chunk index
+   (or, in the header part, the kind). A chunk carries 12 bytes in value0..2,
+   value0's top byte first, zero-padded at the end.
+   - header, kind ENTRY: entry index in directory order, d_name length,
+     length of the FAT private record bytes logged;
+   - NAME chunks: the raw d_name bytes;
+   - FAT chunks: the raw private record, which the firmware fills in one of
+     two layouts (8.3 alias at 0 and long name at 13, or a size word, the
+     alias at 4 and the long name at 20), so both are covered;
+   - OPEN, index 0: the sceIoOpen result with d_name, the alias at 0 and
+     the alias at 4; index 1: with the long name at 13, the long name at 20,
+     then 0. Each is an fd (closed at once), a PSP error or NOT_TRIED;
+   - header, kind END: sceIoDopen result, entries seen, entries logged;
+   - header, kind STOPPED, in END's place when sceIoDread failed: that
+     error, entries seen, entries logged. */
+#define RUNTIME_LOG_NAME_PROBE_HEADER 0u
+#define RUNTIME_LOG_NAME_PROBE_NAME 1u
+#define RUNTIME_LOG_NAME_PROBE_FAT 2u
+#define RUNTIME_LOG_NAME_PROBE_OPEN 3u
+#define RUNTIME_LOG_NAME_PROBE_ENTRY 0u
+#define RUNTIME_LOG_NAME_PROBE_END 1u
+#define RUNTIME_LOG_NAME_PROBE_STOPPED 2u
+#define RUNTIME_LOG_NAME_PROBE_FLAGS(part, index) \
+ ((uint8_t)(((part) << 6) | ((index) & 0x3Fu)))
+#define RUNTIME_LOG_NAME_PROBE_CHUNK_SIZE 12u
+/* Longest name logged from d_name or from either long-name field; at most
+   23 chunks, which fits the 6-bit chunk index. */
+#define RUNTIME_LOG_NAME_PROBE_MAX_NAME 255u
+/* Not a PSP error (those are 0x80xxxxxx) nor an fd: the open was skipped
+   because the name was empty or the path did not fit. */
+#define RUNTIME_LOG_NAME_PROBE_NOT_TRIED (-1)
+/* sceIoOpen results per entry, in the OPEN order above. */
+#define RUNTIME_LOG_NAME_PROBE_OPENS 5u
+
+/* load_gamepak()'s stages, in the order it runs them. */
+typedef enum
+{
+  RUNTIME_LOG_LOAD_OPEN,
+  RUNTIME_LOG_LOAD_READ,
+  RUNTIME_LOG_LOAD_CONFIG,
+  RUNTIME_LOG_LOAD_BACKUP_ID,
+  RUNTIME_LOG_LOAD_SAV,
+  RUNTIME_LOG_LOAD_STAGE_COUNT
+} RuntimeLogLoadStage;
 
 typedef enum
 {
@@ -145,6 +204,29 @@ size_t runtime_log_ring_snapshot(const RuntimeLogRing *ring,
 /* Records overwritten since init because the ring was full, whether or not
    a flush had already saved them; stops at UINT_MAX. */
 uint32_t runtime_log_ring_dropped(const RuntimeLogRing *ring);
+/* Emits one name-probe entry (see NAME_PROBE above), all or nothing: the
+   header, the d_name chunks (name is a buffer of name_size bytes, read up to
+   its NUL), the FAT chunks and the open results. Returns the records
+   emitted, or 0 with nothing emitted when they would exceed record_budget. */
+size_t runtime_log_name_probe_entry(RuntimeLogRing *ring,
+ uint64_t timestamp_us, uint32_t index, const uint8_t *name,
+ size_t name_size, const uint8_t *fat_record, size_t fat_capacity,
+ const int32_t open_result[RUNTIME_LOG_NAME_PROBE_OPENS],
+ size_t record_budget);
+/* Emits the probe's last record: STOPPED with dread_result when the last
+   sceIoDread failed, otherwise END with dopen_result (dread_result is 0
+   when the listing ended or never started). */
+void runtime_log_name_probe_end(RuntimeLogRing *ring, uint64_t timestamp_us,
+ int32_t dopen_result, int32_t dread_result, uint32_t seen,
+ uint32_t logged);
+/* The values of a ROM_LOAD_STAGES record, in ms: value[0] the read,
+   value[1] open << 16 | config, value[2] backup id << 16 | .sav; each
+   16-bit half stops at 65535. Stage i runs from the end of stage i - 1
+   (start_us for the first) to end_us[i]. A 0 end, a 0 begin or an end
+   before its begin counts 0 ms, so every stage after one that did not run
+   is 0. */
+void runtime_log_load_stages(uint64_t start_us,
+ const uint64_t end_us[RUNTIME_LOG_LOAD_STAGE_COUNT], uint32_t value[3]);
 int runtime_log_encode(const RuntimeLogRing *main_ring,
  const RuntimeLogRing *network_ring, const RuntimeLogRing *critical_ring,
  const RuntimeLogMetadata *metadata, uint8_t *output, size_t capacity,

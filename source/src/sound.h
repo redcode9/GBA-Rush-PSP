@@ -31,6 +31,14 @@ extern u32 sound_pause;
 extern u32 gbc_sound_update;
 void update_gbc_sound(u32 cpu_ticks);
 
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+/* The audio-off arm of the unbound benchmark, set by main.c for the
+   bench's frames: sound_timer and update_gbc_sound write no samples into
+   the ring, while the FIFO, its DMA requests and the PSG channels advance
+   as always. Distinct from sound_on, which the game controls. */
+extern u8 sound_bench_audio_off;
+#endif
+
 void sound_timer(FIXED08_24 frequency_step, u8 channel);
 void adjust_direct_sound_buffer(u8 channel, u32 cpu_ticks);
 
@@ -70,6 +78,10 @@ void sound_power_resume_finish(u32 cpu_ticks, int audio_result);
 void sound_link_wait_begin(void);
 void sound_link_wait_end(u32 cpu_ticks);
 u32 sound_audio_underrun_count(void);
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+void sound_diagnostic_audio_enable(u32 enabled);
+u32 sound_diagnostic_audio_take(u32 cpu_ticks);
+#endif
 
 void sound_write_mem_savestate(SceUID savestate_file);
 void sound_read_savestate(SceUID savestate_file);

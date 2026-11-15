@@ -120,8 +120,13 @@ ini_value()
 
 (cd "$(dirname "$zip")" && sha256 -c "$(basename "$zip").sha256")
 unzip -q "$zip" -d "$work/zip"
-set -- "$work"/zip/*/GBARushPSP
-build=$1
+# make package zips extract at the Memory Stick root; the 1.4.2 and 1.4.3
+# zips hold GBA-Rush-PSP-<version>/GBARushPSP.
+build=$work/zip/PSP/GAME/GBARushPSP
+if [ ! -d "$build" ]; then
+  set -- "$work"/zip/*/GBARushPSP
+  build=$1
+fi
 if [ -n "$folder" ] && [ ! -f "$build/media_engine.prx" ]; then
   media_engine=0
 fi

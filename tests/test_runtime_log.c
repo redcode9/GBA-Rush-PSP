@@ -377,6 +377,49 @@ static void test_version_five_still_validates(void)
   assert(!runtime_log_validate(old, old_size, NULL, NULL, NULL, NULL));
 }
 
+/* A memory measurement is two MEMORY_STATS records in the main ring
+   (flags = point << 1 | part, KiB values, see mem_stats.h). They encode
+   with their type and flags intact, and the format stays version 6. */
+static void test_memory_stats_records(void)
+{
+  uint8_t encoded[RUNTIME_LOG_MAX_FILE_SIZE];
+  RuntimeLogMetadata metadata;
+  RuntimeLogRing main_ring;
+  RuntimeLogRing network_ring;
+  RuntimeLogRing critical_ring;
+  uint16_t main_count = 0;
+  const uint8_t *record;
+  size_t written = 0;
+
+  /* Appended after LINK_BENCHMARK; decode_runtime_log.py names 26. */
+  assert(RUNTIME_LOG_EVENT_MEMORY_STATS == 26);
+  memset(&metadata, 0, sizeof(metadata));
+  runtime_log_ring_init(&main_ring, RUNTIME_LOG_SOURCE_MAIN);
+  runtime_log_ring_init(&network_ring, RUNTIME_LOG_SOURCE_NETWORK);
+  runtime_log_ring_init(&critical_ring, RUNTIME_LOG_SOURCE_CRITICAL);
+  runtime_log_ring_emit(&main_ring, 110, 7, RUNTIME_LOG_EVENT_MEMORY_STATS,
+   2, 3072, 1024, 8192);
+  runtime_log_ring_emit(&main_ring, 110, 7, RUNTIME_LOG_EVENT_MEMORY_STATS,
+   3, 20480, 12288, 32768);
+  assert(runtime_log_encode(&main_ring, &network_ring, &critical_ring,
+   &metadata, encoded, sizeof(encoded), &written));
+  assert(written == RUNTIME_LOG_HEADER_SIZE + 2u * RUNTIME_LOG_RECORD_SIZE);
+  assert(runtime_log_validate(encoded, written, NULL, &main_count, NULL,
+   NULL));
+  assert(main_count == 2);
+  assert(read_u16(encoded + 4) == 6u);
+
+  /* Type at 16, source at 18, flags at 19, values from 20. */
+  record = encoded + RUNTIME_LOG_HEADER_SIZE;
+  assert(read_u16(record + 16) == RUNTIME_LOG_EVENT_MEMORY_STATS);
+  assert(record[18] == RUNTIME_LOG_SOURCE_MAIN && record[19] == 2u);
+  assert(read_u32(record + 20) == 3072u && read_u32(record + 28) == 8192u);
+  record += RUNTIME_LOG_RECORD_SIZE;
+  assert(read_u16(record + 16) == RUNTIME_LOG_EVENT_MEMORY_STATS);
+  assert(record[19] == 3u);
+  assert(read_u32(record + 24) == 12288u && read_u32(record + 28) == 32768u);
+}
+
 /* NULL arguments are rejected. The encode call fails on its NULL critical
    ring before the one-byte-short buffer is checked, so that limit is not
    covered here. */
@@ -435,6 +478,284 @@ static void test_maximum_current_snapshot_size(void)
   assert(critical_count == RUNTIME_LOG_CRITICAL_CAPACITY);
 }
 
+/* The 12 bytes a name-probe chunk carries, value0's top byte first. */
+static void probe_chunk_bytes(const RuntimeLogRecord *record, uint8_t *bytes)
+{
+  unsigned int index;
+
+  for(index = 0; index < 12u; index++)
+    bytes[index] = (uint8_t)(record->value[index / 4u] >>
+     (24u - 8u * (index % 4u)));
+}
+
+/* Logs one probe entry into a fresh main ring and checks every record:
+   header, d_name chunks, FAT chunks with zero padding, open results.
+   Returns the FAT length the header reports. */
+static uint32_t check_probe_entry(const uint8_t *name, size_t name_size,
+ size_t name_length, const uint8_t *fat, size_t fat_capacity)
+{
+  static const int32_t opened[RUNTIME_LOG_NAME_PROBE_OPENS] = {
+   3, (int32_t)0x80010002u, RUNTIME_LOG_NAME_PROBE_NOT_TRIED, 4,
+   (int32_t)0x80020001u };
+  RuntimeLogRecord records[RUNTIME_LOG_RING_CAPACITY];
+  RuntimeLogRing ring;
+  uint8_t bytes[12];
+  size_t name_chunks = (name_length + 11u) / 12u;
+  size_t fat_chunks;
+  size_t count;
+  size_t chunk;
+  size_t index;
+  size_t offset;
+  uint32_t fat_length;
+
+  runtime_log_ring_init(&ring, RUNTIME_LOG_SOURCE_MAIN);
+  count = runtime_log_name_probe_entry(&ring, 500, 7, name, name_size, fat,
+   fat_capacity, opened, RUNTIME_LOG_RING_CAPACITY);
+  assert(count == ring.next_ordinal);
+  assert(runtime_log_ring_snapshot(&ring, records,
+   RUNTIME_LOG_RING_CAPACITY) == count);
+
+  assert(records[0].type == RUNTIME_LOG_EVENT_NAME_PROBE);
+  assert(records[0].flags == 0x00u);
+  assert(records[0].emulated_cycle == 0u);
+  assert(records[0].timestamp_us == 500u);
+  assert(records[0].value[0] == 7u);
+  assert(records[0].value[1] == name_length);
+  fat_length = records[0].value[2];
+  fat_chunks = (fat_length + 11u) / 12u;
+  assert(count == 3u + name_chunks + fat_chunks);
+
+  for(chunk = 0; chunk < name_chunks; chunk++)
+  {
+    assert(records[1 + chunk].flags == (0x40u | chunk));
+    probe_chunk_bytes(&records[1 + chunk], bytes);
+    for(index = 0; index < 12u; index++)
+    {
+      offset = chunk * 12u + index;
+      assert(bytes[index] == (offset < name_length ? name[offset] : 0u));
+    }
+  }
+  for(chunk = 0; chunk < fat_chunks; chunk++)
+  {
+    assert(records[1 + name_chunks + chunk].flags == (0x80u | chunk));
+    probe_chunk_bytes(&records[1 + name_chunks + chunk], bytes);
+    for(index = 0; index < 12u; index++)
+    {
+      offset = chunk * 12u + index;
+      assert(bytes[index] == (offset < fat_length ? fat[offset] : 0u));
+    }
+  }
+  assert(records[count - 2u].flags == 0xC0u);
+  assert(records[count - 2u].value[0] == 3u);
+  assert(records[count - 2u].value[1] == 0x80010002u);
+  assert(records[count - 2u].value[2] == 0xFFFFFFFFu);
+  assert(records[count - 1u].flags == 0xC1u);
+  assert(records[count - 1u].value[0] == 4u);
+  assert(records[count - 1u].value[1] == 0x80020001u);
+  assert(records[count - 1u].value[2] == 0u);
+  return fat_length;
+}
+
+/* d_name lengths around the 12-byte chunk edges, up to the longest name;
+   bytes above 0x7F (UTF-8, Shift-JIS, GBK) are logged as they are. */
+static void test_name_probe_chunks_d_name(void)
+{
+  static const size_t lengths[] = { 0u, 11u, 12u, 13u, 255u };
+  uint8_t name[256];
+  uint8_t fat[1044];
+  size_t test;
+  size_t index;
+
+  memset(fat, 0, sizeof(fat));
+  for(test = 0; test < sizeof(lengths) / sizeof(lengths[0]); test++)
+  {
+    memset(name, 0, sizeof(name));
+    for(index = 0; index < lengths[test]; index++)
+      name[index] = (uint8_t)(0x81u + index % 120u);
+    /* An empty record still covers layout B's alias field. */
+    assert(check_probe_entry(name, sizeof(name), lengths[test], fat,
+     sizeof(fat)) == 20u);
+  }
+  /* A d_name with no NUL stops at the longest name logged. */
+  memset(name, 'n', sizeof(name));
+  assert(check_probe_entry(name, sizeof(name), 255u, fat,
+   sizeof(fat)) == 20u);
+  /* Nor does it read past name_size. */
+  assert(check_probe_entry(name, 5u, 5u, fat, sizeof(fat)) == 20u);
+}
+
+/* The FAT bytes logged reach the end of both layouts' long names. */
+static void test_name_probe_fat_layouts(void)
+{
+  static const uint8_t name[] = "game.gba";
+  uint8_t fat[1044];
+
+  /* Layout A: alias at 0, a 30-byte long name at 13. */
+  memset(fat, 0, sizeof(fat));
+  memcpy(fat, "ABCDEF~1.GBA", 12);
+  memset(fat + 13, 0xE3, 30);
+  assert(check_probe_entry(name, sizeof(name), 8u, fat, sizeof(fat)) ==
+   43u);
+
+  /* Layout B: size word, alias at 4, a 40-byte long name at 20. */
+  memset(fat, 0, sizeof(fat));
+  fat[0] = 0x14;
+  fat[1] = 0x04;
+  memcpy(fat + 4, "ABCDEF~1.GBA", 12);
+  memset(fat + 20, 0xC3, 40);
+  assert(check_probe_entry(name, sizeof(name), 8u, fat, sizeof(fat)) ==
+   60u);
+
+  /* No NUL anywhere: each long name stops at 255 bytes, layout B's ends
+     later; a short buffer stops at its end. */
+  memset(fat, 'L', sizeof(fat));
+  assert(check_probe_entry(name, sizeof(name), 8u, fat, sizeof(fat)) ==
+   20u + 255u);
+  assert(check_probe_entry(name, sizeof(name), 8u, fat, 100u) == 100u);
+  assert(check_probe_entry(name, sizeof(name), 8u, fat, 10u) == 10u);
+  assert(check_probe_entry(name, sizeof(name), 8u, NULL, 0u) == 0u);
+}
+
+/* An entry that does not fit the budget emits nothing; one that fits
+   exactly is logged whole. */
+static void test_name_probe_budget(void)
+{
+  static const int32_t opened[RUNTIME_LOG_NAME_PROBE_OPENS] = { 0 };
+  RuntimeLogRing ring;
+  uint8_t name[256];
+  uint8_t fat[1044];
+
+  memset(name, 0, sizeof(name));
+  memcpy(name, "13-byte-name!", 13);
+  memset(fat, 0, sizeof(fat));
+  runtime_log_ring_init(&ring, RUNTIME_LOG_SOURCE_MAIN);
+  runtime_log_ring_emit(&ring, 1, 0, RUNTIME_LOG_EVENT_LOG_FLUSH, 0, 0, 0, 0);
+  /* Header, 2 name chunks, 2 FAT chunks, 2 open records. */
+  assert(runtime_log_name_probe_entry(&ring, 2, 0, name, sizeof(name), fat,
+   sizeof(fat), opened, 6) == 0u);
+  assert(ring.next_ordinal == 1u);
+  assert(runtime_log_name_probe_entry(&ring, 2, 0, name, sizeof(name), fat,
+   sizeof(fat), opened, 7) == 7u);
+  assert(ring.next_ordinal == 8u);
+  assert(runtime_log_name_probe_entry(NULL, 2, 0, name, sizeof(name), fat,
+   sizeof(fat), opened, 7) == 0u);
+}
+
+/* The last record says how the listing ended: END with the sceIoDopen
+   result, or STOPPED with the sceIoDread error. */
+static void test_name_probe_end(void)
+{
+  RuntimeLogRecord records[3];
+  RuntimeLogRing ring;
+
+  /* Appended after the other events with no version change (R1). */
+  assert(RUNTIME_LOG_EVENT_NAME_PROBE == 34);
+  runtime_log_ring_init(&ring, RUNTIME_LOG_SOURCE_MAIN);
+  runtime_log_name_probe_end(&ring, 9, 7, 0, 4, 3);
+  runtime_log_name_probe_end(&ring, 9, (int32_t)0x80010002u, 0, 0, 0);
+  runtime_log_name_probe_end(&ring, 9, 7, (int32_t)0x80010013u, 2, 1);
+  assert(runtime_log_ring_snapshot(&ring, records, 3) == 3u);
+  assert(records[0].type == RUNTIME_LOG_EVENT_NAME_PROBE);
+  assert(records[0].flags == 0x01u);
+  assert(records[0].value[0] == 7u && records[0].value[1] == 4u &&
+   records[0].value[2] == 3u);
+  assert(records[1].flags == 0x01u && records[1].value[0] == 0x80010002u);
+  assert(records[2].flags == 0x02u);
+  assert(records[2].value[0] == 0x80010013u && records[2].value[1] == 2u &&
+   records[2].value[2] == 1u);
+}
+
+/* The snapshot file holds a chunk's bytes in their original order. */
+static void test_name_probe_bytes_in_file_order(void)
+{
+  static const int32_t opened[RUNTIME_LOG_NAME_PROBE_OPENS] = { 0 };
+  /* 12 bytes: one chunk. */
+  static const uint8_t name[] = "\xE6\x97\xA5\xE6\x9C\xAC-ABCDE";
+  uint8_t encoded[RUNTIME_LOG_MAX_FILE_SIZE];
+  RuntimeLogMetadata metadata;
+  RuntimeLogRing main_ring;
+  RuntimeLogRing network_ring;
+  RuntimeLogRing critical_ring;
+  size_t written = 0;
+
+  memset(&metadata, 0, sizeof(metadata));
+  runtime_log_ring_init(&main_ring, RUNTIME_LOG_SOURCE_MAIN);
+  runtime_log_ring_init(&network_ring, RUNTIME_LOG_SOURCE_NETWORK);
+  runtime_log_ring_init(&critical_ring, RUNTIME_LOG_SOURCE_CRITICAL);
+  assert(runtime_log_name_probe_entry(&main_ring, 2, 0, name, sizeof(name),
+   NULL, 0, opened, 8) == 4u);
+  assert(runtime_log_encode(&main_ring, &network_ring, &critical_ring,
+   &metadata, encoded, sizeof(encoded), &written));
+  /* The second record is the d_name chunk; its values start at 20. */
+  assert(memcmp(encoded + RUNTIME_LOG_HEADER_SIZE +
+   RUNTIME_LOG_RECORD_SIZE + 20u, name, 12) == 0);
+  assert(encoded[RUNTIME_LOG_HEADER_SIZE + RUNTIME_LOG_RECORD_SIZE + 19u] ==
+   0x40u);
+}
+
+/* ROM_LOAD_STAGES is added after the last event with no version change.
+   Each stage counts from the end of the one before, in whole ms; a 16-bit
+   half stops at 65535 without touching its neighbour; a stage that did not
+   run zeroes itself and every later one. The values survive encoding. */
+static void test_load_stages(void)
+{
+  /* Open 12 ms, read 500, config 3.5, backup id 99.5, .sav 9. */
+  static const uint64_t ends[RUNTIME_LOG_LOAD_STAGE_COUNT] =
+   { 13000u, 513000u, 516500u, 616000u, 625000u };
+  /* Open, read and .sav take 70 s. */
+  static const uint64_t long_ends[RUNTIME_LOG_LOAD_STAGE_COUNT] =
+   { 70001000u, 140001000u, 140004500u, 140104000u, 210104000u };
+  uint64_t end[RUNTIME_LOG_LOAD_STAGE_COUNT];
+  uint8_t encoded[RUNTIME_LOG_MAX_FILE_SIZE];
+  const uint8_t *record = encoded + RUNTIME_LOG_HEADER_SIZE;
+  RuntimeLogMetadata metadata;
+  RuntimeLogRing main_ring;
+  RuntimeLogRing network_ring;
+  RuntimeLogRing critical_ring;
+  uint16_t main_count = 0;
+  uint32_t value[3];
+  size_t written = 0;
+
+  assert(RUNTIME_LOG_EVENT_ROM_LOAD_STAGES == 32);
+
+  runtime_log_load_stages(1000u, long_ends, value);
+  assert(value[0] == 70000u);
+  assert(value[1] == ((0xFFFFu << 16) | 3u));
+  assert(value[2] == ((99u << 16) | 0xFFFFu));
+
+  memcpy(end, ends, sizeof(end));
+  end[RUNTIME_LOG_LOAD_OPEN] = 0;
+  runtime_log_load_stages(1000u, end, value);
+  assert(value[0] == 0 && value[1] == 0 && value[2] == 0);
+  memcpy(end, ends, sizeof(end));
+  end[RUNTIME_LOG_LOAD_CONFIG] = 0;
+  runtime_log_load_stages(1000u, end, value);
+  assert(value[0] == 500u && value[1] == (12u << 16) && value[2] == 0);
+  runtime_log_load_stages(0, ends, value);
+  assert(value[0] == 0 && value[1] == 0 && value[2] == 0);
+
+  runtime_log_load_stages(1000u, ends, value);
+  assert(value[0] == 500u);
+  assert(value[1] == ((12u << 16) | 3u));
+  assert(value[2] == ((99u << 16) | 9u));
+
+  memset(&metadata, 0, sizeof(metadata));
+  runtime_log_ring_init(&main_ring, RUNTIME_LOG_SOURCE_MAIN);
+  runtime_log_ring_init(&network_ring, RUNTIME_LOG_SOURCE_NETWORK);
+  runtime_log_ring_init(&critical_ring, RUNTIME_LOG_SOURCE_CRITICAL);
+  runtime_log_ring_emit(&main_ring, 626000u, 0,
+   RUNTIME_LOG_EVENT_ROM_LOAD_STAGES, 0, value[0], value[1], value[2]);
+  assert(runtime_log_encode(&main_ring, &network_ring, &critical_ring,
+   &metadata, encoded, sizeof(encoded), &written));
+  assert(runtime_log_validate(encoded, written, NULL, &main_count, NULL,
+   NULL));
+  assert(main_count == 1);
+  assert(read_u16(record + 16) == 32u);
+  assert(read_u32(record + 20) == 500u);
+  assert(read_u32(record + 24) == ((12u << 16) | 3u));
+  assert(read_u32(record + 28) == ((99u << 16) | 9u));
+}
+
 static void test_store_preserves_previous_log_on_failed_promote(void)
 {
   static const uint8_t updated[] = { 4, 5, 6 };
@@ -491,8 +812,15 @@ int main(void)
   test_snapshot_at_ordinal_limit_is_bounded();
   test_encode_and_validate();
   test_version_five_still_validates();
+  test_memory_stats_records();
   test_invalid_arguments();
   test_maximum_current_snapshot_size();
+  test_name_probe_chunks_d_name();
+  test_name_probe_fat_layouts();
+  test_name_probe_budget();
+  test_name_probe_end();
+  test_name_probe_bytes_in_file_order();
+  test_load_stages();
   test_store_preserves_previous_log_on_failed_promote();
   test_store_rotates_four_sessions();
   puts("Runtime log tests passed");

@@ -9,6 +9,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -28,6 +29,8 @@ START = 1_790_000_000
 RC = START + DAY
 DIGEST = "0123456789ab" + "cd" * 26
 OTHER_DIGEST = "ba9876543210" + "dc" * 26
+BUILD_ID = "5e1f0c2a9b3d"
+OLD_BUILD_ID = "c0ffee123456"
 
 CATALOG = """\
 # Hardware tests
@@ -128,11 +131,32 @@ class Repo:
         self.write("docs/HARDWARE-RESULTS.md",
                    "# Results\n\n" + RESULTS_HEADER + "".join(rows))
 
-    def manifest(self, version="1.4.4-rc.1", digest=DIGEST):
+    def manifest(self, version="1.4.4-rc.1", digest=DIGEST, build_id=BUILD_ID):
+        """build_id None leaves the key out."""
         self.dist.mkdir(exist_ok=True)
+        content = {"format": release_gate.release_manifest.MANIFEST_FORMAT,
+                   "files": {"EBOOT.PBP": {"sha256": digest}}}
+        if build_id is not None:
+            content["build_id"] = build_id
         (self.dist / f"GBA-Rush-PSP-{version}.manifest.json").write_text(
-         json.dumps({"format": release_gate.release_manifest.MANIFEST_FORMAT,
-                     "files": {"EBOOT.PBP": {"sha256": digest}}}))
+         json.dumps(content))
+
+    def bench(self, version, game, frames, build_id=BUILD_ID):
+        """One PSP-1000 report per frames value (emulated frames in 10 s) in
+        the archive: benchmarks/psp-1000/<game>-r0/<version>/run-N.txt."""
+        values = {"state": "stopped",
+                  **dict.fromkeys(release_gate.compare_benchmarks.MATCH_FIELDS,
+                                  "0"),
+                  "game-code": game, "version": version, "build-id": build_id,
+                  "duration-us": "10000000", "skipped-frames": "0",
+                  "audio-underruns": "0", "frame-time-p95-us": "17000",
+                  "frame-time-p99-us": "18000", "frame-time-max-us": "20000",
+                  "ge-wait-p95-us": "500"}
+        for index, count in enumerate(frames):
+            values["emulated-frames"] = str(count)
+            self.write(f"benchmarks/psp-1000/{game}-r0/{version}/run-{index}.txt",
+                       "".join(f"{key}={value}\n"
+                               for key, value in values.items()))
 
     def gate(self, version="1.4.4", channel="stable", now=RC + 8 * DAY):
         return release_gate.gate(version, channel, self.root, self.dist, now)
@@ -170,6 +194,9 @@ class StableGateTest(ScratchRepoTest):
          row("link-a", "PSP-2000 + PSP-1000"),
          row("perf-baseline-5", "PSP-1000",
              evidence="PASS, throughput=59.70 fps (+1.20%)"))
+        for game in ("BPRE", "AXVE"):
+            self.repo.bench("1.4.3", game, [600] * 3, OLD_BUILD_ID)
+            self.repo.bench("1.4.4", game, [600] * 3)
         self.assertEqual(self.repo.gate(), [])
         notes = self.repo.notes()
         self.assertIn(f"EBOOT.PBP sha256: {DIGEST}.", notes)
@@ -178,8 +205,110 @@ class StableGateTest(ScratchRepoTest):
         self.assertIn("- link-a: PSP-2000 + PSP-1000 (6.61 PRO-C)", notes)
         self.assertIn("- perf-baseline-5: PSP-1000 (6.61 PRO-C); "
                       "compare-benchmarks: PASS, throughput=59.70 fps "
-                      "(+1.20%)", notes)
+                      "(+1.20%); PSP-1000 against 1.4.3: 0/AXVE-r0 PASS, "
+                      "0/BPRE-r0 PASS\n", notes)
         self.assertIn("Not required for this release: other-a.", notes)
+
+    def perf_candidate(self):
+        """An rc of a release that requires perf-baseline-5, with a pass row
+        for it and a two-game PSP-1000 baseline of 1.4.3."""
+        self.rc()
+        self.repo.release(tests="save-a, perf-baseline-5")
+        self.repo.results(row("save-a", "PSP-1000"), row("save-a", "PSP-3000"),
+                          row("perf-baseline-5", "PSP-1000"))
+        for game in ("BPRE", "AXVE"):
+            self.repo.bench("1.4.3", game, [600] * 3, OLD_BUILD_ID)
+
+    def test_a_stable_release_needs_a_pass_on_the_psp_1000_set(self):
+        self.perf_candidate()
+        self.repo.bench("1.4.4", "AXVE", [600] * 3)
+        self.repo.bench("1.4.4", "BPRE", [500] * 3)
+        self.assertEqual(self.repo.gate(), [
+         "performance on PSP-1000 against 1.4.3: FAIL groups=2 failed=1 "
+         "missing=0",
+         "performance on PSP-1000: group 0/AXVE-r0 PASS",
+         "performance on PSP-1000: group 0/BPRE-r0 FAIL: throughput "
+         "regression exceeds 2%"])
+        self.assertFalse((self.repo.dist / "RELEASE-NOTES-1.4.4.md").exists())
+        # A prerelease does not compare.
+        self.assertEqual(self.repo.gate(channel="prerelease"), [])
+
+    def test_a_baseline_group_without_candidate_reports_fails(self):
+        self.perf_candidate()
+        # No candidate report at all: every group is missing.
+        self.assertEqual(self.repo.gate(), [
+         "performance on PSP-1000 against 1.4.3: FAIL groups=2 failed=0 "
+         "missing=2",
+         "performance on PSP-1000: group 0/AXVE-r0 MISSING: no candidate "
+         "reports",
+         "performance on PSP-1000: group 0/BPRE-r0 MISSING: no candidate "
+         "reports"])
+        self.repo.bench("1.4.4", "BPRE", [600] * 3)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            status = release_gate.main(
+             ["--version", "1.4.4", "--channel", "stable",
+              "--repo", str(self.repo.root), "--dist", str(self.repo.dist),
+              "--now", str(RC + 8 * DAY)])
+        self.assertEqual(status, 1)
+        self.assertIn("  performance on PSP-1000: group 0/AXVE-r0 MISSING",
+                      stderr.getvalue())
+        self.assertIn("  performance on PSP-1000: group 0/BPRE-r0 PASS",
+                      stderr.getvalue())
+
+    def test_the_baseline_is_the_newest_release_in_the_archive(self):
+        self.perf_candidate()
+        # 1.4.4 ships without PSP-1000 reports, like a hotfix that does not
+        # require perf-baseline-5: the 1.5.0 candidate compares with 1.4.3.
+        self.repo.commit(RC + 8 * DAY, "1.4.4")
+        self.repo.release("1.5.0", tests="save-a, perf-baseline-5")
+        self.repo.manifest("1.5.0-rc.1")
+        self.rc(when=RC + 9 * DAY, tag="1.5.0-rc.1")
+        for game in ("BPRE", "AXVE"):
+            self.repo.bench("1.5.0", game, [600] * 3)
+        self.assertEqual(self.repo.gate("1.5.0", now=RC + 17 * DAY), [])
+        self.assertIn("PSP-1000 against 1.4.3: 0/AXVE-r0 PASS, 0/BPRE-r0 "
+                      "PASS\n", self.repo.notes("1.5.0"))
+        # Once 1.4.4 has reports, they are the baseline.
+        for game in ("BPRE", "AXVE"):
+            self.repo.bench("1.4.4", game, [600] * 3, OLD_BUILD_ID)
+        self.assertEqual(self.repo.gate("1.5.0", now=RC + 17 * DAY), [])
+        self.assertIn("PSP-1000 against 1.4.4: ", self.repo.notes("1.5.0"))
+
+    def test_the_candidate_reports_must_come_from_the_rc_build(self):
+        self.perf_candidate()
+        self.repo.bench("1.4.4", "AXVE", [600] * 3)
+        self.repo.bench("1.4.4", "BPRE", [600] * 3)
+        # One run of another build is enough to refuse its group.
+        self.repo.bench("1.4.4", "BPRE", [600], build_id="0badc0ffee00")
+        self.assertEqual(self.repo.gate(), [
+         "performance on PSP-1000: group 0/BPRE-r0 has 1.4.4 reports without "
+         f"build-id={BUILD_ID} of the rc manifest"])
+        self.repo.bench("1.4.4", "BPRE", [600] * 3)
+        self.repo.manifest(build_id=None)
+        self.assertEqual(self.repo.gate(), [
+         "performance on PSP-1000: no build_id in the rc manifest to tie the "
+         "1.4.4 reports to its EBOOT"])
+        self.repo.manifest()
+        self.assertEqual(self.repo.gate(), [])
+
+    def test_a_missing_baseline_or_a_short_group_is_a_problem(self):
+        self.perf_candidate()
+        self.repo.bench("1.4.4", "AXVE", [600] * 3)
+        self.repo.bench("1.4.4", "BPRE", [600] * 2)
+        # The short group fails without hiding the other group's result.
+        self.assertEqual(self.repo.gate(), [
+         "performance on PSP-1000 against 1.4.3: FAIL groups=2 failed=1 "
+         "missing=0",
+         "performance on PSP-1000: group 0/AXVE-r0 PASS",
+         "performance on PSP-1000: group 0/BPRE-r0 FAIL: at least 3 reports "
+         "per build are needed"])
+        for game in ("BPRE", "AXVE"):
+            shutil.rmtree(self.repo.root / "benchmarks" / "psp-1000" /
+                          f"{game}-r0" / "1.4.3")
+        self.assertEqual(self.repo.gate(), [
+         "performance on PSP-1000: no earlier release has reports in "
+         "benchmarks/psp-1000"])
 
     def test_a_missing_row_names_the_test_and_the_model_class(self):
         self.rc()

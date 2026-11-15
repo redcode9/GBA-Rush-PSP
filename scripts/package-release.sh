@@ -6,6 +6,8 @@ set -eu
 # exception.prx and media_engine.prx plus the documentation (make package). The archive is
 # reproducible: every file gets the last commit's time (or
 # SOURCE_DATE_EPOCH) and zip -X leaves out extra file attributes.
+# Its root is PSP/GAME/GBARushPSP/, with the documentation under docs/, so
+# extracting it at the root of ms0: or ef0: installs or upgrades in place.
 # Next to it go the build manifest (scripts/release_manifest.py: commit,
 # build id, compiler, flags and the SHA-256 of every built file), the
 # corresponding source (dist/GBA-Rush-PSP-VERSION-source.zip, git archive
@@ -88,7 +90,7 @@ fi
 
 release_name="GBA-Rush-PSP-$version$suffix"
 release_root="dist/$release_name"
-install_root="$release_root/$install_folder"
+install_root="$release_root/PSP/GAME/$install_folder"
 archive="dist/$release_name.zip"
 checksum="$archive.sha256"
 manifest="dist/$release_name.manifest.json"
@@ -128,12 +130,12 @@ cp source/exception.prx "$install_root/exception.prx"
 cp source/media_engine.prx "$install_root/media_engine.prx"
 for document in $documentation_files
 do
-  mkdir -p "$release_root/$(dirname "$document")"
-  cp "$document" "$release_root/$document"
+  mkdir -p "$install_root/docs/$(dirname "$document")"
+  cp "$document" "$install_root/docs/$document"
 done
 
 find "$release_root" -exec env TZ=UTC touch -t "$archive_timestamp" {} +
-(cd dist && TZ=UTC zip -q -X -D -r "$release_name.zip" "$release_name")
+(cd "$release_root" && TZ=UTC zip -q -X -D -r "../$release_name.zip" PSP)
 
 sha256() {
   if command -v shasum >/dev/null 2>&1; then

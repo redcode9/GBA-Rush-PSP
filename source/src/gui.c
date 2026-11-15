@@ -25,12 +25,18 @@
  * screens are nested functions), the status bar, and loading and saving of
  * the global, per-game and directory settings files. */
 
+#include <stdarg.h>
+
 #include "common.h"
+#include "art_filter.h"
 #include "boxart.h"   // carousel / boxart support
 #include "config_store.h"
+#include "load_progress.h"
 #include "menu_layout.h"
 #include "menu_model.h"
 #include "psp_adhoc.h"
+#include "runtime_log_psp.h"
+#include "toast.h"
 
 extern u32 option_swap_confirm_buttons;
 
@@ -99,8 +105,9 @@ static u16 get_preset_color(u32 theme, u32 item_index)
     return 0;
 }
 
-/* Load preset theme (0-8, else 0) into the menu colours, and delete the
-   custom colours file so it cannot override the preset. */
+/* Load preset theme (0-8, else 0) into the menu colours. Boot calls it
+   before load_theme_config(), so it must leave tempgba_theme.cfg alone.
+   tests/test_theme_boot.py compiles this function alone. */
 static void apply_theme(u32 theme)
 {
     if (theme >= 9) theme = 0;
@@ -116,13 +123,17 @@ static void apply_theme(u32 theme)
     color_batt_normal   = theme_presets[theme].batt_normal;
     color_batt_low      = theme_presets[theme].batt_low;
     color_batt_charg    = theme_presets[theme].batt_charg;
+}
 
-    /* When a preset is chosen, delete custom theme so preset isn't overridden on boot */
-    {
-        char path[MAX_PATH];
-        sprintf(path, "%s%s", main_path, GPSP_THEME_FILENAME);
-        sceIoRemove(path);
-    }
+/* A preset picked in the menu replaces the custom colours: delete their
+   file so they do not come back at the next boot. */
+static void select_theme_preset(u32 theme)
+{
+    char path[MAX_PATH];
+
+    sprintf(path, "%s%s", main_path, GPSP_THEME_FILENAME);
+    sceIoRemove(path);
+    apply_theme(theme);
 }
 
 
@@ -205,6 +216,8 @@ static const char *fast_forward_speed_options[FAST_FORWARD_SPEED_COUNT];
 static const char *fast_forward_presentation_options[
  FAST_FORWARD_PRESENTATION_COUNT];
 static const char *fast_forward_audio_options[FAST_FORWARD_AUDIO_COUNT];
+static const char *turbo_speed_options[3];
+static const char *turbo_mode_options[2];
 
 /* Point the option value labels at the current language's MSG strings; run
    on every menu() entry and again after a language change. */
@@ -217,6 +230,7 @@ static void init_choice_arrays(void)
     scale_options[4] = MSG[MSG_SCN_SCALED_16X9_GU];
     scale_options[5] = MSG[MSG_SCN_SCALED_16X9_SHARP];
     scale_options[6] = MSG[MSG_SCN_SCALED_16X9_AUTO];
+    scale_options[7] = MSG[MSG_SCN_SCALED_INT2];
 
     frameskip_options[0] = MSG[MSG_AUTO];
     frameskip_options[1] = MSG[MSG_MANUAL];
@@ -280,6 +294,13 @@ static void init_choice_arrays(void)
      MSG[MSG_FF_AUDIO_SILENT];
     fast_forward_audio_options[FAST_FORWARD_AUDIO_ACCELERATED] =
      MSG[MSG_FF_AUDIO_ACCELERATED];
+
+    // In the order of input_model.h's INPUT_MODEL_TURBO_*
+    turbo_speed_options[0] = MSG[MSG_TURBO_SPEED_30];
+    turbo_speed_options[1] = MSG[MSG_TURBO_SPEED_15];
+    turbo_speed_options[2] = MSG[MSG_TURBO_SPEED_10];
+    turbo_mode_options[0] = MSG[MSG_FF_HOLD];
+    turbo_mode_options[1] = MSG[MSG_FF_TOGGLE];
 
     image_format_options[0] = MSG[MSG_FMT_PNG];
     image_format_options[1] = MSG[MSG_FMT_BMP];
@@ -782,6 +803,22 @@ void print_swap_aware(const char *src, u32 x, u32 y, u16 color, u16 bg)
     print_string_gbk(buf, x, y, color, bg);
 }
 
+/* Queues MSG[msg_id], formatted with the arguments, as a 3 s toast that
+   synchronize() draws in game. Every message table is GBK, Japanese too. */
+void toast_show(u32 msg_id, ...)
+{
+    /* Longer than a toast, so the ring's cut, which never splits a
+       double-byte character, comes before vsnprintf's. */
+    char text[TOAST_TEXT_SIZE * 2];
+    va_list args;
+
+    va_start(args, msg_id);
+    vsnprintf(text, sizeof(text), MSG[msg_id], args);
+    va_end(args);
+
+    toast_push(text, 3000000, 0, sceKernelGetSystemTimeLow());
+}
+
 /* ------------------------------------------------------------------
    Scrolling text helpers — ping-pong character-stepped
    ------------------------------------------------------------------ */
@@ -937,6 +974,61 @@ static void print_string_clipped(const char *str, u32 x, u32 y, u16 color, u16 b
     else
         print_string_gbk(buf, x, y, color, bg);
 }
+
+/* Name columns that fit the 260-pixel loading popup of load_gamepak(). */
+#define ROM_LOAD_NAME_MAX_CHARS 40
+
+/* The inside of the loading popup into the back buffer: title, file name,
+   bar, step and "x / y KiB". Only the inside is filled: drawing the whole
+   popup again would dim the screen around it once more on every frame. */
+static void draw_rom_load_popup(const char *name, u32 stage_msg, u32 done, u32 total)
+{
+    char kib[32];
+    u32 name_len = strlen(name);
+
+    if (name_len > ROM_LOAD_NAME_MAX_CHARS)
+        name_len = ROM_LOAD_NAME_MAX_CHARS;
+    load_progress_text(kib, sizeof(kib), done, total);
+
+    /* The popup's own background, as draw_popup_frame_auto() fills it. */
+    draw_box_fill(110, 96, 369, 190, color15_lighten(color_bg, 10));
+    print_string_gbk(MSG[MSG_LOADING_ROM], X_POS_CENTER, 100, color_active_item, BG_NO_FILL);
+    print_string_clipped(name, (PSP_SCREEN_WIDTH - name_len * FONTWIDTH) / 2, 118,
+        color_active_item, BG_NO_FILL, ROM_LOAD_NAME_MAX_CHARS);
+    draw_box_line(136, 136, 344, 169, COLOR15_WHITE);
+    draw_box_line(137, 137, 343, 168, COLOR15_WHITE);
+    draw_box_fill(140, 140, 140 + load_progress_bar(done, total, 200), 165, COLOR15_WHITE);
+    print_string_gbk(MSG[stage_msg], 136, 176, color_active_item, BG_NO_FILL);
+    print_string_gbk(kib, 345 - strlen(kib) * FONTWIDTH, 176, color_active_item, BG_NO_FILL);
+}
+
+/* rom_load_progress (zip.h): redraws the loading popup after the reads and
+   inflate steps load_progress_due() picks, over 20 times per second. No vsync
+   wait, so the popup costs little of the load time. */
+static void draw_rom_load_progress(const char *name, u32 stage_msg, u32 done, u32 total)
+{
+    static LoadProgressState state;
+    const char *slash = strrchr(name, '/');
+
+    if (!load_progress_due(&state, sceKernelGetSystemTimeWide(), done, total))
+        return;
+
+    if (slash != NULL)
+        name = slash + 1;
+
+    draw_rom_load_popup(name, stage_msg, done, total);
+    flip_screen(0);
+
+    /* load_gamepak() prints its next line into the other buffer: give it
+       the full bar too, once that buffer has left the screen. */
+    if (total != 0 && done >= total)
+    {
+        sceDisplayWaitVblankStart();
+        draw_rom_load_popup(name, stage_msg, done, total);
+    }
+}
+
+RomLoadProgress rom_load_progress = draw_rom_load_progress;
 
 /* One frame of run_color_picker(): the saturation/value grid at hue h, the
    hue bar, old and new swatches and the theme preview. cx, cy and hue_seg
@@ -1826,12 +1918,26 @@ static int sort_function(const void *dest_str_ptr, const void *src_str_ptr)
   return strcmp(dest_str, src_str);
 }
 
+/* gba_bios.bin often sits next to the games but is never one, so the
+   browser leaves it out whatever its case. */
+static int is_listed_rom(const char *name)
+{
+  return strcasecmp(name, "gba_bios.bin") != 0;
+}
+
+/* View the ROM browser opens in, 0 list or 1 carousel. Only memory changes
+   when SELECT switches it; quit() saves it with the other settings. */
+static u32 option_browser_view = 0;
+
 /* Modal file browser for files ending in one of the NULL-terminated
    wildcards. Starts in default_dir_name (or the current directory) and
    chdir()s as the user navigates. On success copies the bare file name to
    result, leaves the current directory set to its folder and returns 0;
-   returns -1 if the user backs out. show_recent adds the recent ROMs list.
-   SELECT toggles between the list view and the carousel view. */
+   returns -1 if the user backs out. show_recent marks the ROM browser: it
+   adds the recent ROMs list and the card for a folder with no games.
+   SELECT toggles between the list view and the carousel view. Opened on
+   dir_roms it starts in option_browser_view and keeps it up to date; the
+   savestate and cheat browsers always start in the list. */
 s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 show_recent)
 {
   char current_dir_name[MAX_PATH];
@@ -1883,11 +1989,13 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
   /* ------------------------------------------------------------------
      Carousel mode state
      ------------------------------------------------------------------ */
-  u32 carousel_mode = 0;        /* 0 = list view, 1 = carousel view */
+  u32 carousel_mode =           /* 0 = list view, 1 = carousel view */
+   (default_dir_name == dir_roms) ? option_browser_view : 0;
   u32 prev_select_state = 0;    /* For edge-detecting SELECT button */
   u32 carousel_sel = 0;         /* Unified selection: dirs first, then files */
   u32 total_items = 0;          /* num_dirs + num_files */
   u32 browsing_savestates = 0;  /* 1 = wildcards are .svs, use savestate screenshots */
+  u32 library_empty;            /* ROM browser: no games listed here */
 
   auto void filelist_term(void);
   auto void malloc_error(void);
@@ -2011,7 +2119,8 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
       }
       else
       {
-        if ((ext_pos = strrchr(current_file.d_name, '.')) != NULL)
+        if ((ext_pos = strrchr(current_file.d_name, '.')) != NULL &&
+         is_listed_rom(current_file.d_name))
         {
           for (i = 0; wildcards[i] != NULL; i++)
           {
@@ -2053,6 +2162,10 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
 
     qsort((void *)file_list, num[FILE_LIST], sizeof(char *), sort_function);
     qsort((void *)dir_list,  num[DIR_LIST],  sizeof(char *), sort_function);
+
+    /* Subfolders do not hide the card: the default ROM folder is the
+       install folder, which always holds the emulator's own logs/. */
+    library_empty = show_recent && num[FILE_LIST] == 0;
 
 
     current_dir_length = strlen(current_dir_name);
@@ -2440,6 +2553,21 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
         }
       }
 
+      /* Empty ROM folder: say where the games go, at the top of the file
+         list (below the recent games) or above the carousel's covers. */
+      if (library_empty)
+      {
+        u32 card_y = FILE_LIST_POS_Y + (carousel_mode ? 0 : file_list_y_offset);
+
+        print_string_gbk(MSG[MSG_BROWSER_EMPTY_TITLE], FILE_LIST_POS_X, card_y,
+         color_active_item, BG_NO_FILL);
+        print_string_gbk(MSG[MSG_BROWSER_EMPTY_HINT], FILE_LIST_POS_X,
+         card_y + (FONTHEIGHT * 2), color_help_text, BG_NO_FILL);
+        print_string_clipped(current_dir_name, FILE_LIST_POS_X,
+         card_y + (FONTHEIGHT * 3), color_inactive_item, BG_NO_FILL,
+         SCROLL_FILE_MAX_CHARS);
+      }
+
       __draw_volume_status(1);
       flip_screen(1);
 
@@ -2476,6 +2604,8 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
               cursor_row[DIR_LIST] = 0;
             }
           }
+          if (default_dir_name == dir_roms)
+            option_browser_view = carousel_mode;
           /* Clear the old boxart state when switching modes */
           current_boxart_rom[0] = '\0';
           boxart_free();
@@ -2994,7 +3124,9 @@ void auto_savestate_sleep(void)
 }
 
 /* Nonzero if the slot's .svs is in dir_state; the slot menu backs up to the
-   auto slot only when there is a state to load. */
+   auto slot only when there is a state to load. A save cut between the
+   store's two renames left only a .bak and .tmp: recovered first, as the
+   load will. */
 static u32 savestate_file_exists(u32 slot)
 {
     char savestate_filename[MAX_FILE];
@@ -3002,8 +3134,107 @@ static u32 savestate_file_exists(u32 slot)
     SceIoStat stat;
 
     get_savestate_filename(slot, savestate_filename);
+    save_store_recover(backup_io, dir_state, savestate_filename);
     snprintf(savestate_path, sizeof(savestate_path), "%s%s", dir_state, savestate_filename);
     return (sceIoGetstat(savestate_path, &stat) >= 0);
+}
+
+/* Numbered slots 0-9 with a file, and whether the auto slot has one, for
+   the Save and Load row of the main menu. Counted when the main menu is
+   entered, never per frame: each check is a file system stat. */
+static u32 menu_status_slots;
+static u32 menu_status_auto;
+
+static void menu_status_count_states(void)
+{
+  u32 slot;
+
+  menu_status_slots = 0;
+  menu_status_auto = 0;
+  if (gamepak_filename[0] == '\0')
+    return;
+
+  for (slot = 0; slot < AUTO_SAVESTATE_SLOT; slot++)
+    menu_status_slots += savestate_file_exists(slot);
+  menu_status_auto = savestate_file_exists(AUTO_SAVESTATE_SLOT);
+}
+
+/* Save and Load page thumbnails: each slot's .svs preview shrunk to 60x40.
+   A slot's state goes back to unknown (0) when its file may have changed,
+   and unknown slots are read one per frame while the page is open. */
+#define SAVESTATE_THUMB_W        60
+#define SAVESTATE_THUMB_H        40
+#define SAVESTATE_THUMB_UNKNOWN  0
+#define SAVESTATE_THUMB_LOADED   1
+#define SAVESTATE_THUMB_EMPTY    2
+
+static u16 savestate_thumbs[SAVESTATE_SLOT_COUNT][SAVESTATE_THUMB_W * SAVESTATE_THUMB_H];
+static u8 savestate_thumb_state[SAVESTATE_SLOT_COUNT];
+
+/* Reads the first unknown slot's 240x160 preview into scratch (one 76.8 KB
+   read) and shrinks it into the slot's thumbnail. A missing or short file
+   leaves the slot empty. */
+static void savestate_thumbs_load_next(u16 *scratch)
+{
+  char savestate_filename[MAX_FILE];
+  char savestate_path[MAX_PATH];
+  SceUID fd;
+  u32 slot;
+  u32 loaded = 0;
+
+  for (slot = 0; slot < SAVESTATE_SLOT_COUNT; slot++)
+    if (savestate_thumb_state[slot] == SAVESTATE_THUMB_UNKNOWN)
+      break;
+  if (slot == SAVESTATE_SLOT_COUNT)
+    return;
+
+  get_savestate_filename(slot, savestate_filename);
+  snprintf(savestate_path, sizeof(savestate_path), "%s%s", dir_state, savestate_filename);
+
+  scePowerLock(0);
+  fd = sceIoOpen(savestate_path, PSP_O_RDONLY, 0);
+  if (fd >= 0)
+  {
+    loaded = (sceIoRead(fd, scratch, GBA_SCREEN_SIZE) == (s32)GBA_SCREEN_SIZE);
+    sceIoClose(fd);
+  }
+  scePowerUnlock(0);
+
+  if (loaded)
+    art_filter_box_shrink(scratch, GBA_SCREEN_WIDTH, GBA_SCREEN_HEIGHT,
+     GBA_SCREEN_WIDTH, savestate_thumbs[slot], SAVESTATE_THUMB_W,
+     SAVESTATE_THUMB_H, SAVESTATE_THUMB_W);
+  savestate_thumb_state[slot] = loaded ? SAVESTATE_THUMB_LOADED : SAVESTATE_THUMB_EMPTY;
+}
+
+/* The 11 thumbnails as a 4x3 grid centred in the 240x160 screenshot panel,
+   each tagged with its slot. Slots without a thumbnail (yet) are blank
+   framed cells; the selected slot gets a frame in the active item color. */
+static void savestate_thumbs_draw(u32 selected_slot)
+{
+  u32 slot;
+
+  for (slot = 0; slot < SAVESTATE_SLOT_COUNT; slot++)
+  {
+    u16 x = SCREEN_IMAGE_POS_X + (slot % 4) * SAVESTATE_THUMB_W;
+    u16 y = SCREEN_IMAGE_POS_Y + ((GBA_SCREEN_HEIGHT - 3 * SAVESTATE_THUMB_H) / 2) +
+     (slot / 4) * SAVESTATE_THUMB_H;
+    char tag[8];
+
+    if (savestate_thumb_state[slot] == SAVESTATE_THUMB_LOADED)
+      blit_to_screen(savestate_thumbs[slot], SAVESTATE_THUMB_W, SAVESTATE_THUMB_H, x, y);
+    else
+      draw_box_line(x, y, x + SAVESTATE_THUMB_W - 1, y + SAVESTATE_THUMB_H - 1, color_inactive_item);
+
+    if (slot == AUTO_SAVESTATE_SLOT)
+      strcpy(tag, "AUTO");
+    else
+      sprintf(tag, "%d", (int)slot);
+    print_string(tag, x + 2, y + 2, COLOR15_WHITE, COLOR15_BLACK);
+
+    if (slot == selected_slot)
+      draw_box_line(x, y, x + SAVESTATE_THUMB_W - 1, y + SAVESTATE_THUMB_H - 1, color_active_item);
+  }
 }
 
 
@@ -3016,6 +3247,18 @@ u32 action_loadstate(void)
   return load_state(savestate_filename);
 }
 
+/* The current screen for a state's preview, or NULL with the heap
+   exhausted: the state then gets a blank one instead of the emulator
+   quitting. */
+static u16 *copy_state_preview(void)
+{
+  u16 *screen = (u16 *)malloc(GBA_SCREEN_SIZE);
+
+  if (screen != NULL)
+    copy_screen(screen);
+  return screen;
+}
+
 /* Hotkey save to savestate_slot after a confirmation; the current screen is
    stored in the state as its preview. */
 u32 action_savestate(void)
@@ -3024,7 +3267,7 @@ u32 action_savestate(void)
   u16 *current_screen;
   u32 result;
 
-  current_screen = copy_screen();
+  current_screen = copy_state_preview();
 
   get_savestate_filename(savestate_slot, savestate_filename);
   result = save_state(savestate_filename, current_screen);
@@ -3042,7 +3285,7 @@ static u32 action_savestate_slot(u32 slot)
   u32 old_slot = savestate_slot;
 
   savestate_slot = slot;
-  current_screen = copy_screen();
+  current_screen = copy_state_preview();
   get_savestate_filename(savestate_slot, savestate_filename);
   result = save_state_silent(savestate_filename, current_screen);
   free(current_screen);
@@ -3065,7 +3308,8 @@ static u32 action_loadstate_slot(u32 slot)
 }
 
 /* Nonzero if the auto-slot .svs can be opened; maybe_load_auto_savestate()
-   offers a resume only then. */
+   offers a resume only then. A cut save is recovered first, as the load
+   would. */
 static u32 auto_savestate_exists(void)
 {
   char savestate_filename[MAX_FILE];
@@ -3075,6 +3319,7 @@ static u32 auto_savestate_exists(void)
 
   savestate_slot = AUTO_SAVESTATE_SLOT;
   get_savestate_filename(AUTO_SAVESTATE_SLOT, savestate_filename);
+  save_store_recover(backup_io, dir_state, savestate_filename);
   snprintf(savestate_path, sizeof(savestate_path), "%s%s", dir_state, savestate_filename);
   FILE_OPEN(fd, savestate_path, READ);
   savestate_slot = old_slot;
@@ -3094,11 +3339,21 @@ static u32 ram_dynarec_policy_menu_prev = ~(u32)0;
    spelled out because tests/test_startup.py compiles this function alone. */
 void maybe_load_auto_savestate(void)
 {
+  char rom_name[MAX_FILE];
+  u32 answer;
+
   if (gamepak_filename[0] == '\0' || main_link_active() ||
       !auto_savestate_exists())
     return;
 
-  if (yesno_dialog(MSG[MSG_AUTO_SAVESTATE_LOAD_PROMPT]) == 0)
+  /* No ROM counts as loaded at the prompt: main_power_save_if_pending would
+     otherwise write the AUTO state from the machine just reset. */
+  strcpy(rom_name, gamepak_filename);
+  gamepak_filename[0] = '\0';
+  answer = yesno_dialog(MSG[MSG_AUTO_SAVESTATE_LOAD_PROMPT]);
+  strcpy(gamepak_filename, rom_name);
+
+  if (answer == 0)
     action_loadstate_slot(10);
 }
 
@@ -3209,7 +3464,7 @@ static void reload_cheats_page(void)
 /* Global array of all menus — filled on each menu() call (the tables live
    in its stack frame, so it is only valid while menu() runs), then used by
    file-scope refresh to avoid nested functions. */
-#define MAX_MENUS 16
+#define MAX_MENUS 17
 static MenuType *all_menus[MAX_MENUS];
 static u32 num_all_menus = 0;
 static char diagnostics_status_line[96];
@@ -3273,6 +3528,16 @@ static void menu_fast_forward_bind_options(void)
 static void menu_fast_forward_changed(void)
 {
   main_fast_forward_apply_settings();
+}
+
+/* The screen scale tempgba.cfg keeps, which a game with no .cfg starts
+   with. The Video menu sets it along with option_screen_scale; the Video
+   cycle shortcut changes only the running game's scale. */
+static u32 global_screen_scale = SCALED_16X9_AUTO;
+
+static void menu_screen_scale_changed(void)
+{
+  global_screen_scale = option_screen_scale;
 }
 
 static void menu_fast_forward_override_changed(void)
@@ -3345,7 +3610,7 @@ static void menu_diagnostics_stop(void)
 
 /* Write the perf report and show its file name, or the failure, on the
    status row. */
-static void menu_diagnostics_write_report(void)
+void menu_diagnostics_write_report(void)
 {
     char report_path[MAX_PATH];
     const char *filename;
@@ -3366,18 +3631,251 @@ static void menu_diagnostics_write_report(void)
      "%s: %.56s", MSG[MSG_DIAGNOSTICS_REPORT_SAVED], filename);
 }
 
+/* File-name encoding probe: the private FAT record the firmware fills for
+   each entry, 4-byte aligned and large enough for both layouts (a size
+   word, 16-byte alias and 1024-byte long name is the larger). */
+static u32 name_probe_fat_record[1044 / 4];
+/* Records one probe may use: the main ring holds 128, and the end record
+   and the flush record must not push its first ones out. */
+#define NAME_PROBE_RECORD_BUDGET 112u
+
+/* sceIoOpen result for <directory>/<name>, where name is a field of
+   name_size bytes that may lack its NUL: the fd, closed at once, or the PSP
+   error; RUNTIME_LOG_NAME_PROBE_NOT_TRIED for an empty name or a path that
+   does not fit. */
+static int32_t menu_name_probe_open(const char *directory, const void *name,
+ size_t name_size)
+{
+  char path[MAX_PATH];
+  const char *end = memchr(name, '\0', name_size);
+  size_t name_length = end != NULL ?
+   (size_t)(end - (const char *)name) : name_size;
+  SceUID file;
+  int length;
+
+  if(name_length == 0)
+    return RUNTIME_LOG_NAME_PROBE_NOT_TRIED;
+  length = snprintf(path, sizeof(path), "%s/%.*s", directory,
+   (int)name_length, (const char *)name);
+  if(length < 0 || (size_t)length >= sizeof(path))
+    return RUNTIME_LOG_NAME_PROBE_NOT_TRIED;
+  file = sceIoOpen(path, PSP_O_RDONLY, 0);
+  if(file >= 0)
+    sceIoClose(file);
+  return (int32_t)file;
+}
+
+/* Logs every entry of <main_path>name-probe to the runtime log (see
+   RUNTIME_LOG_EVENT_NAME_PROBE in runtime_log.h) and writes the log at once,
+   so the raw names each firmware returns can be compared. Entries past the
+   record budget are counted but not logged. */
+static void menu_diagnostics_name_probe(void)
+{
+  SceIoDirent entry;
+  char directory[MAX_PATH];
+  const u8 *fat_record = (const u8 *)name_probe_fat_record;
+  int32_t opened[RUNTIME_LOG_NAME_PROBE_OPENS];
+  size_t budget = NAME_PROBE_RECORD_BUDGET;
+  size_t written;
+  SceUID dir;
+  u32 seen = 0;
+  u32 logged = 0;
+  int dread = 0;
+  int saved;
+  int length;
+
+  length = snprintf(directory, sizeof(directory), "%sname-probe",
+   main_path);
+  if(length < 0 || (size_t)length >= sizeof(directory))
+  {
+    snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+     "%s", MSG[MSG_DIAGNOSTICS_NAME_PROBE_FAILED]);
+    return;
+  }
+
+  scePowerLock(0);
+  dir = sceIoDopen(directory);
+  if(dir >= 0)
+  {
+    while(1)
+    {
+      memset(&entry, 0, sizeof(entry));
+      memset(name_probe_fat_record, 0, sizeof(name_probe_fat_record));
+      name_probe_fat_record[0] = sizeof(name_probe_fat_record);
+      /* void *: older SDKs declare d_private as void *, newer ones as
+         SceIoFatDirentPrivate *, and the probe reads it as raw bytes. */
+      entry.d_private = (void *)name_probe_fat_record;
+      /* 0 ends the listing; a PSP error stops it and goes in the log. */
+      dread = sceIoDread(dir, &entry);
+      if(dread <= 0)
+        break;
+      if(strcmp(entry.d_name, ".") == 0 || strcmp(entry.d_name, "..") == 0)
+        continue;
+
+      if(budget != 0)
+      {
+        /* d_name, the 8.3 alias of each layout, then each layout's long
+           name, which may differ from d_name. */
+        opened[0] = menu_name_probe_open(directory, entry.d_name,
+         sizeof(entry.d_name));
+        opened[1] = menu_name_probe_open(directory, fat_record, 13);
+        opened[2] = menu_name_probe_open(directory, fat_record + 4, 16);
+        opened[3] = menu_name_probe_open(directory, fat_record + 13,
+         sizeof(name_probe_fat_record) - 13);
+        opened[4] = menu_name_probe_open(directory, fat_record + 20,
+         sizeof(name_probe_fat_record) - 20);
+        written = runtime_log_psp_name_probe_entry(seen,
+         (const uint8_t *)entry.d_name, sizeof(entry.d_name), fat_record,
+         sizeof(name_probe_fat_record), opened, budget);
+        if(written == 0)
+          budget = 0;
+        else
+        {
+          budget -= written;
+          logged++;
+        }
+      }
+      seen++;
+    }
+    sceIoDclose(dir);
+  }
+  runtime_log_psp_name_probe_end(dir, dread, seen, logged);
+  saved = runtime_log_psp_flush(RUNTIME_LOG_FLUSH_MENU);
+  scePowerUnlock(0);
+
+  if(dir < 0 || dread < 0 || !saved)
+    snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+     "%s", MSG[MSG_DIAGNOSTICS_NAME_PROBE_FAILED]);
+  else
+    snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+     MSG[MSG_DIAGNOSTICS_NAME_PROBE_DONE], (unsigned long)logged,
+     (unsigned long)seen);
+}
+
+/* Set when the benchmark loaded its slot: menu() then returns to the game
+   at once and reports the new machine state, as a slot load does. */
+static u8 diagnostics_bench_loaded;
+
+/* Unbound benchmark: loads the current slot as the slot menu does, backing
+   up the progress a numbered slot replaces to the auto slot and asking
+   first, and starts the run. A link or a slot without a state refuses it,
+   with the reason on the status row. render or audio 0 picks an arm. */
+static void menu_diagnostics_bench_arm(u32 render, u32 audio)
+{
+    char filename[MAX_FILE];
+    const char *reason = NULL;
+
+    diagnostics_report_line[0] = '\0';
+    if(main_link_active())
+        reason = MSG[MSG_DIAGNOSTICS_BENCH_LINK];
+    else if(!savestate_file_exists(savestate_slot))
+        reason = MSG[MSG_DIAGNOSTICS_BENCH_NO_STATE];
+    if(reason != NULL)
+    {
+        snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+         "%s", reason);
+        return;
+    }
+
+    if(savestate_slot < AUTO_SAVESTATE_SLOT)
+        action_savestate_slot(AUTO_SAVESTATE_SLOT);
+    get_savestate_filename(savestate_slot, filename);
+    /* A No leaves the game as it was; load_state shows its own errors. */
+    if(!load_state(filename))
+        return;
+
+    diagnostics_bench_loaded = 1;
+    main_perf_bench_start(render, audio);
+}
+
+static void menu_diagnostics_bench(void)
+{
+    menu_diagnostics_bench_arm(1, 1);
+}
+
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+/* The same benchmark without the rendering, or without the sound samples:
+   the difference in throughput is what that work costs. */
+static void menu_diagnostics_bench_render_off(void)
+{
+    menu_diagnostics_bench_arm(0, 1);
+}
+
+static void menu_diagnostics_bench_audio_off(void)
+{
+    menu_diagnostics_bench_arm(1, 0);
+}
+
+/* Their two rows, below the Unbound benchmark row. */
+#define DIAGNOSTICS_BENCH_ARM_ROWS 2
+#else
+#define DIAGNOSTICS_BENCH_ARM_ROWS 0
+#endif
+
+/* The menu's last .sav write before the game goes away (exit, suspend,
+   another ROM). While it fails, the player may try again or go on
+   without it. */
+static void menu_flush_backup(void)
+{
+    while(!update_backup_immediately())
+    {
+        if(yesno_dialog(MSG[MSG_SAVE_WRITE_RETRY]) != 0)
+            break;
+    }
+}
+
+/* The warning of the game's first failed periodic .sav write, shown once
+   the menu is up. It waits for the buttons held in the game to be released
+   so they cannot dismiss it unseen. shortcut: a stick held with analog
+   input on still can; F-045's toast will replace this popup. */
+static void menu_backup_warning(void)
+{
+    if(!backup_write_warning)
+        return;
+    backup_write_warning = 0;
+    /* update_gba opens the menu for it without update_input, which stops
+       turbo on its own ways in. */
+    input_turbo_stop();
+
+    while(get_pad_input(0x0001FFFF) != 0)
+    {
+        main_power_service();
+        main_link_pump();
+        sceKernelDelayThread(5000);
+    }
+    clear_screen(COLOR32_BLACK);
+    error_msg(MSG[MSG_SAVE_WRITE_FAILED], CONFIRMATION_CONT);
+}
+
 static void menu_quit_action(void)
 {
     if(menu_game_available())
         action_savestate_slot(AUTO_SAVESTATE_SLOT);
+    menu_flush_backup();
     quit();
 }
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
-/* <main_path>traces/input-<game code>-r<version>.gbit, named from the GBA
-   cartridge header: game code at 0xAC, software version at 0xBC; the header
-   is 0xC0 bytes long. */
-static int menu_trace_path(char *path, size_t path_size, int create_directory)
+/* Bytes menu_trace_file_crc32() reads at a time. */
+#define MENU_TRACE_CRC_CHUNK 0x8000U
+
+/* A new recording's .svs. It replaces the trace's .svs only once the new
+   .gbit is written, so a cancelled or failed recording keeps the saved
+   pair. A reset or suspend while recording may leave it behind; the next
+   start overwrites it. */
+#define MENU_TRACE_PENDING_STATE ".new.svs"
+
+/* Set when a trace start saved, or a replay loaded, the machine at this
+   frame: menu() then reports a resume, as after a state load, so both
+   runs continue from the .svs the same way. */
+static int menu_trace_resume;
+
+/* <main_path>traces/input-<game code>-r<version><extension> (".gbit",
+   ".svs" or MENU_TRACE_PENDING_STATE), named from the GBA cartridge header:
+   game code at 0xAC, software version at 0xBC; the header is 0xC0 bytes
+   long. */
+static int menu_trace_path(char *path, size_t path_size, int create_directory,
+ const char *extension)
 {
     char directory[MAX_PATH];
     char game_code[5];
@@ -3396,17 +3894,84 @@ static int menu_trace_path(char *path, size_t path_size, int create_directory)
        sceIoMkdir(directory, 0777) < 0)
         return 0;
 
+    /* gamepak_header, not the paged ROM: the .gbit and .svs names must
+       match whatever ROM page is loaded. */
     for(i = 0; i < 4; i++)
     {
-        u8 value = gamepak_rom[0xAC + i];
+        u8 value = gamepak_header[0xAC + i];
         game_code[i] = ((value >= 'A' && value <= 'Z') ||
                         (value >= '0' && value <= '9')) ? (char)value : '_';
     }
     game_code[4] = '\0';
 
-    result = snprintf(path, path_size, "%s/input-%s-r%u.gbit", directory,
-     game_code, (unsigned int)gamepak_rom[0xBC]);
+    result = snprintf(path, path_size, "%s/input-%s-r%u%s", directory,
+     game_code, (unsigned int)gamepak_header[0xBC], extension);
     return result >= 0 && (size_t)result < path_size;
+}
+
+/* CRC-32 and size of the file at path, read in chunks; fails on a read
+   error or a file larger than any companion .svs. */
+static int menu_trace_file_crc32(const char *path, u32 *crc, u32 *size)
+{
+    u8 *buffer;
+    SceUID file;
+    uLong value = crc32(0L, Z_NULL, 0);
+    u32 total = 0;
+    s32 result = 0;
+
+    FILE_OPEN(file, path, READ);
+    if(!FILE_CHECK_VALID(file))
+        return 0;
+
+    buffer = (u8 *)safe_malloc(MENU_TRACE_CRC_CHUNK);
+    while(total <= INPUT_TRACE_MAX_STATE_SIZE &&
+          (result = FILE_READ(file, buffer, MENU_TRACE_CRC_CHUNK)) > 0)
+    {
+        value = crc32(value, buffer, (uInt)result);
+        total += (u32)result;
+    }
+    free(buffer);
+    FILE_CLOSE(file);
+
+    if(result < 0 || total > INPUT_TRACE_MAX_STATE_SIZE)
+        return 0;
+    *crc = (u32)value;
+    *size = total;
+    return 1;
+}
+
+/* Saves the machine to the .svs at path when screen is set, else loads
+   it. save_state_silent() and load_state_silent() name files inside
+   dir_state, so dir_state points at the traces folder for the call. */
+static u32 menu_trace_state_io(const char *path, u16 *screen)
+{
+    char saved_dir_state[MAX_PATH];
+    char name[MAX_FILE];
+    const char *slash = strrchr(path, '/');
+    size_t directory_length;
+    u32 result;
+
+    if(slash == NULL || strlen(slash + 1) >= sizeof(name))
+        return 0;
+    directory_length = (size_t)(slash + 1 - path);
+    if(directory_length >= sizeof(dir_state))
+        return 0;
+
+    strcpy(name, slash + 1);
+    strcpy(saved_dir_state, dir_state);
+    memcpy(dir_state, path, directory_length);
+    dir_state[directory_length] = '\0';
+    result = screen != NULL ? save_state_silent(name, screen) :
+     load_state_silent(name);
+    strcpy(dir_state, saved_dir_state);
+    return result;
+}
+
+/* Wall clock in Unix seconds (UTC): ticker() counts microseconds from
+   year 1, 62135596800 seconds before 1970. */
+static u32 menu_trace_rtc_base(void)
+{
+    return (u32)(ticker() / 1000000U - 62135596800ULL);
 }
 
 /* Repeats FILE_WRITE until all size bytes are out; 0 on an error or a
@@ -3440,6 +4005,15 @@ static int menu_trace_read_all(SceUID file, u8 *data, size_t size)
     return 1;
 }
 
+/* Deletes the pending .svs of a recording that will not be saved. */
+static void menu_trace_discard_pending(void)
+{
+    char path[MAX_PATH];
+
+    if(menu_trace_path(path, sizeof(path), 0, MENU_TRACE_PENDING_STATE))
+        sceIoRemove(path);
+}
+
 static int menu_trace_start_available(void)
 {
     InputTraceState state = input_diagnostic_trace_state();
@@ -3468,22 +4042,58 @@ static int menu_trace_cancel_available(void)
     return input_diagnostic_trace_state() != INPUT_TRACE_IDLE;
 }
 
+/* Saves the machine to the pending .svs, then records from this frame
+   with that .svs named in the trace. Savestates are off during a link
+   session, so recording is too. */
 static void menu_trace_start(void)
 {
+    char path[MAX_PATH];
+    u16 *screen;
+    u32 crc = 0;
+    u32 size = 0;
+    u32 message_id = MSG_TRACE_FAILED;
+    int success = 0;
+
     diagnostics_report_line[0] = '\0';
-    if(!input_diagnostic_trace_begin_record())
+    if(main_link_active())
+    {
+        message_id = MSG_LINK_SAVESTATE_BLOCKED;
+        goto finish;
+    }
+    if(!menu_trace_path(path, sizeof(path), 1, MENU_TRACE_PENDING_STATE))
+        goto finish;
+
+    /* NULL with the heap exhausted: menu_trace_state_io would load. */
+    screen = copy_state_preview();
+    success = screen != NULL && menu_trace_state_io(path, screen) != 0;
+    free(screen);
+    success = success && menu_trace_file_crc32(path, &crc, &size) &&
+     input_diagnostic_trace_begin_record() &&
+     input_diagnostic_trace_set_companion(crc, size, menu_trace_rtc_base());
+    if(!success)
+    {
+        input_diagnostic_trace_cancel();
+        sceIoRemove(path);
+    }
+    else
+        menu_trace_resume = 1;
+
+finish:
+    if(!success)
         snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
-         "%s", MSG[MSG_TRACE_FAILED]);
+         "%s", MSG[message_id]);
 }
 
-/* Stop recording and save the trace to menu_trace_path(); the status row
-   reports saved or failed. */
+/* Stop recording and save the trace to menu_trace_path(). Once the .gbit
+   is written the pending .svs replaces the old one; on a failure it is
+   deleted instead. The status row reports saved or failed. */
 static void menu_trace_finish_save(void)
 {
     u8 *encoded;
     size_t capacity;
     size_t written;
     char path[MAX_PATH];
+    char state_path[MAX_PATH];
     SceUID file;
     int success = 0;
 
@@ -3493,7 +4103,7 @@ static void menu_trace_finish_save(void)
     capacity = input_diagnostic_trace_max_encoded_size();
     encoded = (u8 *)safe_malloc(capacity);
     if(!input_diagnostic_trace_encode(encoded, capacity, &written) ||
-       !menu_trace_path(path, sizeof(path), 1))
+       !menu_trace_path(path, sizeof(path), 1, ".gbit"))
     {
         free(encoded);
         goto finish;
@@ -3509,29 +4119,52 @@ static void menu_trace_finish_save(void)
     }
     free(encoded);
 
+    if(success)
+    {
+        success = menu_trace_path(path, sizeof(path), 0,
+         MENU_TRACE_PENDING_STATE) &&
+         menu_trace_path(state_path, sizeof(state_path), 0, ".svs");
+        if(success)
+        {
+            sceIoRemove(state_path);
+            success = sceIoRename(path, state_path) >= 0;
+        }
+    }
+
 finish:
+    if(!success)
+        menu_trace_discard_pending();
     snprintf(diagnostics_report_line, sizeof(diagnostics_report_line), "%s",
      MSG[success ? MSG_TRACE_SAVED : MSG_TRACE_FAILED]);
 }
 
-/* Start replaying this ROM's saved trace; only a failure is reported. */
-static void menu_trace_replay(void)
+/* Starts replaying the trace at gbit_path from the current frame. A
+   version 2 trace first loads the .svs of the same name and refuses a
+   missing or different one. Returns 2 when it loaded that .svs, 1 when the
+   replay started without one, 0 on a failure and -1 when the .svs is
+   missing or not the one the trace names. Leaves menu_trace_resume alone:
+   the diagnostic autorun calls it outside the menu. */
+int gui_trace_replay_file(const char *gbit_path)
 {
     char path[MAX_PATH];
     SceIoStat stat;
     SceUID file;
     u8 *encoded;
+    StateHashRecord *records = NULL;
     size_t size;
+    u32 capacity;
+    u32 crc = 0;
+    u32 state_size = 0;
     int success = 0;
 
-    if(!menu_trace_path(path, sizeof(path), 0) ||
-       sceIoGetstat(path, &stat) < 0 || stat.st_size <= 0 ||
+    if(strlen(gbit_path) >= sizeof(path) ||
+       sceIoGetstat(gbit_path, &stat) < 0 || stat.st_size <= 0 ||
        (u64)stat.st_size > input_diagnostic_trace_max_encoded_size())
-        goto finish;
+        return 0;
 
     size = (size_t)stat.st_size;
     encoded = (u8 *)safe_malloc(size);
-    FILE_OPEN(file, path, READ);
+    FILE_OPEN(file, gbit_path, READ);
     if(FILE_CHECK_VALID(file))
     {
         success = menu_trace_read_all(file, encoded, size);
@@ -3540,11 +4173,59 @@ static void menu_trace_replay(void)
     if(success)
         success = input_diagnostic_trace_begin_replay(encoded, size);
     free(encoded);
-
-finish:
     if(!success)
+        return 0;
+
+    /* One state hash record per replayed frame. Plain malloc: without
+       the memory the replay runs on, without hashes. */
+    capacity = input_diagnostic_trace_duration() + 1;
+    if(capacity != 0 && capacity <= SIZE_MAX / sizeof(StateHashRecord))
+        records = (StateHashRecord *)malloc(capacity *
+         sizeof(StateHashRecord));
+    if(records != NULL)
+        input_diagnostic_trace_hashes_attach(records, capacity);
+
+    if(input_diagnostic_trace_version() < 2)
+        return 1;
+
+    /* The trace starts at the current frame, so the state loads now. */
+    change_ext((char *)gbit_path, path, ".svs");
+    if(!menu_trace_file_crc32(path, &crc, &state_size) ||
+       !input_diagnostic_trace_check_state(crc, state_size))
+    {
+        input_diagnostic_trace_cancel();
+        return -1;
+    }
+    if(menu_trace_state_io(path, NULL) == 0)
+    {
+        input_diagnostic_trace_cancel();
+        return 0;
+    }
+    return 2;
+}
+
+/* Start replaying this ROM's saved trace (gui_trace_replay_file()); the
+   status row says when the state hashes did not fit in memory, or on a
+   game that uses the RTC warns that the replay may diverge. */
+static void menu_trace_replay(void)
+{
+    char path[MAX_PATH];
+    int result = 0;
+
+    if(menu_trace_path(path, sizeof(path), 0, ".gbit"))
+        result = gui_trace_replay_file(path);
+    if(result == 2)
+        menu_trace_resume = 1;
+
+    if(result <= 0)
         snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
-         "%s", MSG[MSG_TRACE_FAILED]);
+         "%s", MSG[result < 0 ? MSG_TRACE_STATE_MISMATCH : MSG_TRACE_FAILED]);
+    else if(input_diagnostic_trace_hashes() == NULL)
+        snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+         "%s", MSG[MSG_TRACE_NO_HASHES]);
+    else if(memory_rtc_active())
+        snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+         "%s", MSG[MSG_TRACE_RTC_WARNING]);
     else
         diagnostics_report_line[0] = '\0';
 }
@@ -3552,29 +4233,153 @@ finish:
 static void menu_trace_cancel(void)
 {
     input_diagnostic_trace_cancel();
+    menu_trace_discard_pending();
     diagnostics_report_line[0] = '\0';
 }
+
+/* Writes the replay's state hashes to path as GBSH text (state_hash.h),
+   then frees them, written or not. 0 when there are none or on an error.
+   shortcut: whole text in one buffer (~90 B/frame), fails cleanly on very
+   long traces; add chunked export if a corpus trace needs it. */
+int gui_trace_write_hashes(const char *path)
+{
+    const StateHashLog *hashes = input_diagnostic_trace_hashes();
+    char *text = NULL;
+    size_t size = 0;
+    size_t written = 0;
+    SceUID file;
+    int success = 0;
+
+    if(hashes != NULL)
+        size = state_hash_text_size(hashes, NULL, 0);
+    if(size != 0)
+        text = (char *)malloc(size);
+    if(text != NULL &&
+       state_hash_export(hashes, NULL, 0, text, size, &written))
+    {
+        FILE_OPEN(file, path, WRITE);
+        if(FILE_CHECK_VALID(file))
+        {
+            success = menu_trace_write_all(file, (const u8 *)text, written);
+            FILE_CLOSE(file);
+            if(!success)
+                sceIoRemove(path);
+        }
+    }
+    free(text);
+    input_diagnostic_trace_hashes_free();
+    return success;
+}
+
+/* At menu entry: a finished replay's hashes go to the .gbsh beside this
+   ROM's trace, and the status row says whether they were saved. */
+static void menu_trace_save_hashes(void)
+{
+    char path[MAX_PATH];
+    int saved;
+
+    if(input_diagnostic_trace_state() != INPUT_TRACE_FINISHED ||
+       input_diagnostic_trace_hashes() == NULL)
+        return;
+    saved = menu_trace_path(path, sizeof(path), 1, ".gbsh") &&
+     gui_trace_write_hashes(path);
+    /* No path: drop them too, so the failure shows once. */
+    input_diagnostic_trace_hashes_free();
+    snprintf(diagnostics_report_line, sizeof(diagnostics_report_line), "%s",
+     MSG[saved ? MSG_TRACE_HASHES_SAVED : MSG_TRACE_FAILED]);
+}
+
+/* build_profile.h switches the pinned toast on with the input trace, whose
+   rows it joins. The first-run hint, the toast that lasts longest, gets a
+   duration toast_current() never reaches: it stays until reset_gba() (a ROM
+   load) clears it, so perf reports with and without it show what drawing a
+   toast costs. */
+#ifdef ENABLE_DIAGNOSTIC_PINNED_TOAST
+static void menu_diagnostics_pin_toast(void)
+{
+    toast_push(MSG[MSG_FIRST_RUN_MENU_HINT], 0xFFFFFFFFu, 0,
+     sceKernelGetSystemTimeLow());
+}
+#endif
 #endif
 
 /* A link session needs a game: loading another one closes the link.
-   Starting a session pins the CPU at 333 MHz; when it fails or ends, the
-   menu's usual 222 MHz is restored. */
+   Starting a session pins the CPU at 333 MHz; main_link_start and
+   main_link_close restore the configured clock when it fails or ends. */
 static void menu_link_host_action(void)
 {
-    if (gamepak_filename[0] == '\0' || !main_link_host())
-        set_cpu_clock(PSP_CLOCK_222);
+    if (gamepak_filename[0] != '\0')
+        main_link_host();
 }
 
 static void menu_link_join_action(void)
 {
-    if (gamepak_filename[0] == '\0' || !main_link_join())
-        set_cpu_clock(PSP_CLOCK_222);
+    if (gamepak_filename[0] != '\0')
+        main_link_join();
 }
 
 static void menu_link_disconnect_action(void)
 {
     main_link_disconnect(MAIN_LINK_END_USER);
-    set_cpu_clock(PSP_CLOCK_222);
+}
+
+static int menu_link_restore_available(void)
+{
+    return menu_game_available() && !main_link_active();
+}
+
+/* SceIoStat's leading fields, as boxart.c mirrors them: newlib's
+   <sys/stat.h> makes st_mtime a macro, so that field cannot be named. */
+typedef struct
+{
+    SceMode mode;
+    unsigned int attr;
+    SceOff size;
+    ScePspDateTime ctime;
+    ScePspDateTime atime;
+    ScePspDateTime mtime;
+} MenuIoStat;
+
+/* Offers each pre-link save of this game (<rom>.sav.link1 to .link3),
+   newest first, with the time it was copied: O restores that one, X
+   offers the next. Returns 1 once a copy is the .sav and the save in RAM,
+   for the menu to restart the game, which no write of the old save can
+   then undo. Never during a link session, which the restart would end. */
+static u32 menu_link_restore(void)
+{
+    char path[MAX_PATH];
+    char when[40];
+    char text[128];
+    SceIoStat stat;
+    MenuIoStat *times = (MenuIoStat *)&stat;
+    u32 generation;
+    u32 offered = 0;
+
+    if(main_link_active() || !menu_game_available())
+        return 0;
+
+    for(generation = 1; generation <= 3; generation++)
+    {
+        snprintf(path, sizeof(path), "%s%s.link%u", dir_save,
+         backup_filename, (unsigned int)generation);
+        if(sceIoGetstat(path, &stat) < 0)
+            continue;
+        offered = 1;
+        get_timestamp_string(when, MSG_STATE_MENU_DATE_FMT_0, &times->mtime,
+         sceRtcGetDayOfWeek(times->mtime.year, times->mtime.month,
+          times->mtime.day));
+        snprintf(text, sizeof(text), MSG[MSG_LINK_RESTORE_CONFIRM], when);
+        if(yesno_dialog(text) != 0)
+            continue;
+        if(restore_backup_link_copy(generation))
+            return 1;
+        error_msg(MSG[MSG_LINK_RESTORE_FAILED], CONFIRMATION_CONT);
+        return 0;
+    }
+
+    if(!offered)
+        error_msg(MSG[MSG_LINK_RESTORE_NONE], CONFIRMATION_CONT);
+    return 0;
 }
 
 /* The other console's four-letter game code, safe to print. */
@@ -3812,6 +4617,76 @@ static void menu_refresh_language(void)
    In-game menu
    ------------------------------------------------------------------ */
 
+/* Background of the menu screens: the paused game, in its screen mode, under
+   a veil of the theme background strong enough to keep text readable on
+   light themes. A plain fill when no game is loaded or video is asleep. */
+static void menu_draw_background(void)
+{
+  if (gamepak_filename[0] == 0 || !video_present_paused_frame())
+  {
+    clear_screen(COLOR15_TO_32(color_bg));
+    return;
+  }
+
+  /* COLOR15_TO_32 is 0xAABBGGRR, as draw_box_alpha takes; alpha 0xC0. */
+  draw_box_alpha(0, 0, PSP_SCREEN_WIDTH - 1, PSP_SCREEN_HEIGHT - 1,
+   (COLOR15_TO_32(color_bg) & 0x00FFFFFF) | 0xC0000000);
+}
+
+/* Status at the right end of a main menu row, after its label: the state
+   slots in use, the active cheats, or the link session. Other rows, and
+   every row while no game is loaded, show none. Reads RAM only. */
+static void menu_draw_main_status(u32 category, const char *label, s16 y)
+{
+  char status[64];
+  char code[5];
+  size_t start = 0;
+  size_t columns;
+  u32 active = 0;
+  u32 index;
+
+  if (gamepak_filename[0] == '\0' || label == NULL)
+    return;
+
+  switch (category)
+  {
+    case MSG_CATEGORY_SAVE_LOAD:
+      snprintf(status, sizeof(status), MSG[menu_status_auto ?
+       MSG_MAIN_STATUS_SLOTS_AUTO : MSG_MAIN_STATUS_SLOTS],
+       (unsigned long)menu_status_slots);
+      break;
+
+    case MSG_CATEGORY_GAME:
+      for (index = 0; index < num_cheats; index++)
+        active += cheats[index].cheat_active != 0;
+      snprintf(status, sizeof(status), MSG[MSG_MAIN_STATUS_CHEATS],
+       (unsigned long)active);
+      break;
+
+    case MSG_CATEGORY_LINK_CABLE:
+      if (main_link_connected())
+      {
+        menu_link_peer_code(code);
+        snprintf(status, sizeof(status), MSG[MSG_MAIN_STATUS_LINKED], code);
+      }
+      else if (main_link_active())
+        snprintf(status, sizeof(status), "%s", MSG[MSG_MAIN_STATUS_WAITING]);
+      else
+        return;
+      break;
+
+    default:
+      return;
+  }
+
+  /* One byte is one font column, so byte lengths are column counts. */
+  columns = menu_layout_status_columns(strlen(label), strlen(status),
+   SCROLL_MENU_MAX_CHARS, 2, &start);
+  if (columns != 0)
+    print_menu_line_clipped(status, (s16)(MENU_LIST_POS_X + start * FONTWIDTH),
+     y, color_tooltip_text, BG_NO_FILL, (u32)columns);
+}
+
 /* Runs the menu until the user leaves it. Returns 1 when it leaves through
    an action on the emulated machine (ROM load, reset, savestate save or
    load), 0 on a plain resume. The menu tables and screen handlers below are
@@ -3821,6 +4696,9 @@ u32 menu(void)
 
   main_fast_forward_stop();
   fast_forward_profile_option = NULL;
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  menu_trace_save_hashes();
+#endif
 
   init_choice_arrays();
   u32 i;
@@ -3840,6 +4718,7 @@ u32 menu(void)
   u16 *savestate_screen = NULL;
 
   u32 savestate_action = 0;     // slot rows: 0 = load, 1 = save
+  u32 delete_key_held = 0;      // Triangle down on a slot row
   static char savestate_timestamps[SAVESTATE_SLOT_COUNT][40];
 
   char time_str[40];
@@ -3949,7 +4828,7 @@ u32 menu(void)
     if (!first_load)
     {
       main_link_disconnect(MAIN_LINK_END_SUSPEND);
-      update_backup_immediately();
+      menu_flush_backup();
       auto_savestate_sleep();
       sleep_auto_saved = 1;
     }
@@ -3967,25 +4846,29 @@ u32 menu(void)
     if (!first_load)
     {
       main_link_disconnect(MAIN_LINK_END_ROM_CHANGE);
-      update_backup_immediately();
+      menu_flush_backup();
       /* Auto-save current game to the auto slot before loading new ROM */
       action_savestate_slot(AUTO_SAVESTATE_SLOT);
     }
 
-    if (load_file(file_ext, filename_buffer, dir_roms, 1) == 0)
+    while (load_file(file_ext, filename_buffer, dir_roms, 1) == 0)
     {
-      if (load_gamepak(filename_buffer) < 0)
+      s32 load_result = load_gamepak(filename_buffer);
+
+      /* Refusing the unreadable-save prompts goes back to the list */
+      if (load_result == LOAD_GAMEPAK_CANCELLED)
+      {
+        gamepak_file_none();
+        continue;
+      }
+
+      if (load_result < 0)
       {
         clear_screen(COLOR32_BLACK);
-        error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+        error_msg(MSG[load_result == LOAD_GAMEPAK_ZIP_DAMAGED ? MSG_ERR_ZIP_CORRUPT : MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
 
         gamepak_file_none();
-
-        menu_init();
-        choose_menu(current_menu);
-        counter = 0;
-
-        return;
+        break;
       }
 
       reset_gba();
@@ -3998,13 +4881,12 @@ u32 menu(void)
 
       return_value = 1;
       repeat = 0;
+      return;
     }
-    else
-    {
-      menu_init();
-      choose_menu(current_menu);
-      counter = 0;
-    }
+
+    menu_init();
+    choose_menu(current_menu);
+    counter = 0;
   }
 
   void menu_reset(void)
@@ -4019,17 +4901,19 @@ u32 menu(void)
     }
   }
 
-  /* Show the selected slot's screenshot and refresh its timestamp row. */
+  /* Refresh the selected slot's timestamp row; with no game loaded, also
+     show its screenshot. With a game, the page shows the thumbnails and the
+     other pages keep the game frame, since savestate_screen is only scratch. */
   void menu_change_state(void)
   {
     get_savestate_filename(savestate_slot, filename_buffer);
-    get_savestate_info(filename_buffer, savestate_screen, line_buffer);
+    get_savestate_info(filename_buffer, first_load ? savestate_screen : NULL, line_buffer);
     if (savestate_slot == AUTO_SAVESTATE_SLOT)
       sprintf(savestate_timestamps[savestate_slot], "AUTO: %s", line_buffer);
     else
       sprintf(savestate_timestamps[savestate_slot], "%d: %s", (int)savestate_slot, line_buffer);
 
-    screen_image_ptr = savestate_screen;
+    screen_image_ptr = first_load ? savestate_screen : current_screen;
   }
 
   u32 menu_save_state(void)
@@ -4038,10 +4922,12 @@ u32 menu(void)
       return 0;
 
     get_savestate_filename(savestate_slot, filename_buffer);
+    /* A failed save may already have truncated the file. */
+    savestate_thumb_state[savestate_slot] = SAVESTATE_THUMB_UNKNOWN;
     if (save_state(filename_buffer, current_screen) == 0)
       return 0;
 
-    get_savestate_info(filename_buffer, savestate_screen, line_buffer);
+    get_savestate_info(filename_buffer, NULL, line_buffer);
     sprintf(savestate_timestamps[savestate_slot], "%d: %s", (int)savestate_slot, line_buffer);
     return 1;
   }
@@ -4127,8 +5013,10 @@ u32 menu(void)
                      MSG[MSG_LOAD_STATE_FILE]);
             if (yesno_dialog(dialog_msg) == 0)
             {
-                /* Auto-save current progress before loading */
-                action_savestate_slot(AUTO_SAVESTATE_SLOT);
+                /* Auto-save current progress before loading, unless the
+                   chosen file is that AUTO state, which it would replace */
+                if (slot_parsed != AUTO_SAVESTATE_SLOT)
+                    action_savestate_slot(AUTO_SAVESTATE_SLOT);
                 if (load_state_silent(filename_buffer) != 0)
                 {
                     return_value = 1;
@@ -4163,7 +5051,7 @@ u32 menu(void)
                 if (!first_load)
                 {
                     save_game_config_file();
-                    update_backup_immediately();
+                    menu_flush_backup();
                     action_savestate_slot(AUTO_SAVESTATE_SLOT);
                 }
 
@@ -4202,10 +5090,15 @@ u32 menu(void)
                        load_gamepak() needs CWD to be the ROM directory */
                     chdir(dir_roms);
 
-                    if (load_gamepak(rom_file) < 0)
+                    s32 load_result = load_gamepak(rom_file);
+
+                    if (load_result < 0)
                     {
-                        clear_screen(COLOR32_BLACK);
-                        error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+                        if (load_result != LOAD_GAMEPAK_CANCELLED)
+                        {
+                            clear_screen(COLOR32_BLACK);
+                            error_msg(MSG[load_result == LOAD_GAMEPAK_ZIP_DAMAGED ? MSG_ERR_ZIP_CORRUPT : MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+                        }
                         gamepak_file_none();
                         /* Reopen file browser after error */
                         file_browser_repeat = 1;
@@ -4239,12 +5132,14 @@ u32 menu(void)
         counter = 0;
       }
     }
+
+    /* The auto slot may have been written, or another ROM loaded. */
+    memset(savestate_thumb_state, SAVESTATE_THUMB_UNKNOWN, sizeof(savestate_thumb_state));
   }
 
   void menu_delete_state(void)
   {
     char savestate_filename[MAX_FILE];
-    char savestate_path[MAX_PATH];
     char confirm_msg[80];
 
     if (first_load || current_option_num >= SAVESTATE_SLOT_COUNT)
@@ -4257,8 +5152,8 @@ u32 menu(void)
     /* yesno_dialog: returns 0 = confirmed (O), 1 = cancel (X) */
     if (yesno_dialog(confirm_msg) == 0)
     {
-      snprintf(savestate_path, sizeof(savestate_path), "%s%s", dir_state, savestate_filename);
-      sceIoRemove(savestate_path);
+      /* With its .bak, .tmp and .orig, which a load would otherwise recover. */
+      save_store_remove(backup_io, dir_state, savestate_filename);
 
       /* Refresh timestamp to empty */
       if (savestate_slot == AUTO_SAVESTATE_SLOT)
@@ -4269,18 +5164,14 @@ u32 menu(void)
                  (int)savestate_slot,
                  MSG[(date_format == 0) ? MSG_STATE_MENU_DATE_NONE_0 : MSG_STATE_MENU_DATE_NONE_1]);
 
-      /* Refresh screenshot to blank */
-      memset(savestate_screen, 0, GBA_SCREEN_SIZE);
-      print_string_ext_gbk(MSG[MSG_STATE_MENU_STATE_NONE], X_POS_CENTER, 74,
-                         COLOR15_WHITE, BG_NO_FILL, savestate_screen, GBA_SCREEN_WIDTH);
-
-      screen_image_ptr = savestate_screen;
+      savestate_thumb_state[savestate_slot] = SAVESTATE_THUMB_UNKNOWN;
     }
   }
 
   void menu_graphics_default(void)
   {
     option_screen_scale = SCALED_16X9_AUTO;
+    global_screen_scale = SCALED_16X9_AUTO;
     option_screen_mag = 170;
     option_screen_filter = FILTER_BILINEAR;
     option_video_renderer = VIDEO_RENDERER_NEW;
@@ -4387,69 +5278,37 @@ u32 menu(void)
         refresh_cheat_format_strings();
         reload_cheats_page();
 
-        if(option_language == LANGUAGE_ITALIAN)
-          snprintf(status_message, sizeof(status_message), "%s\n%lu trucchi caricati",
-                   loaded_cheat_filename, (unsigned long)num_cheats);
-        else
-          snprintf(status_message, sizeof(status_message), "%s\n%lu cheats loaded",
-                   loaded_cheat_filename, (unsigned long)num_cheats);
+        snprintf(status_message, sizeof(status_message),
+                 MSG[MSG_CHEAT_LOAD_DONE],
+                 loaded_cheat_filename, (unsigned long)num_cheats);
       }
       else
       {
         const char *reason;
 
-        if(option_language == LANGUAGE_ITALIAN)
+        switch(load_result)
         {
-          switch(load_result)
-          {
-            case CHEAT_LOAD_ERROR_OPEN:
-              reason = "file non accessibile";
-              break;
-            case CHEAT_LOAD_ERROR_CAPACITY:
-              reason = "lista oltre la capacita supportata";
-              break;
-            case CHEAT_LOAD_ERROR_EMPTY:
-              reason = "file vuoto";
-              break;
-            default:
-              reason = "formato non valido";
-              break;
-          }
-
-          if(error_line)
-            snprintf(status_message, sizeof(status_message),
-                     "Caricamento trucchi fallito alla riga %lu:\n%s",
-                     (unsigned long)error_line, reason);
-          else
-            snprintf(status_message, sizeof(status_message),
-                     "Caricamento trucchi fallito:\n%s", reason);
+          case CHEAT_LOAD_ERROR_OPEN:
+            reason = MSG[MSG_CHEAT_REASON_OPEN];
+            break;
+          case CHEAT_LOAD_ERROR_CAPACITY:
+            reason = MSG[MSG_CHEAT_REASON_CAPACITY];
+            break;
+          case CHEAT_LOAD_ERROR_EMPTY:
+            reason = MSG[MSG_CHEAT_REASON_EMPTY];
+            break;
+          default:
+            reason = MSG[MSG_CHEAT_REASON_FORMAT];
+            break;
         }
+
+        if(error_line)
+          snprintf(status_message, sizeof(status_message),
+                   MSG[MSG_CHEAT_LOAD_FAILED_AT_LINE],
+                   (unsigned long)error_line, reason);
         else
-        {
-          switch(load_result)
-          {
-            case CHEAT_LOAD_ERROR_OPEN:
-              reason = "file is not accessible";
-              break;
-            case CHEAT_LOAD_ERROR_CAPACITY:
-              reason = "list exceeds supported capacity";
-              break;
-            case CHEAT_LOAD_ERROR_EMPTY:
-              reason = "file is empty";
-              break;
-            default:
-              reason = "invalid format";
-              break;
-          }
-
-          if(error_line)
-            snprintf(status_message, sizeof(status_message),
-                     "Cheat load failed at line %lu:\n%s",
-                     (unsigned long)error_line, reason);
-          else
-            snprintf(status_message, sizeof(status_message),
-                     "Cheat load failed:\n%s", reason);
-        }
+          snprintf(status_message, sizeof(status_message),
+                   MSG[MSG_CHEAT_LOAD_FAILED], reason);
 
         reload_cheats_page();
       }
@@ -4551,6 +5410,11 @@ u32 menu(void)
       menu_init_flag = 0;
     }
 
+    /* With a game loaded the panel shows the thumbnails instead of
+       savestate_screen, which then holds the preview being read. */
+    if (!first_load)
+      savestate_thumbs_load_next(savestate_screen);
+
     if (current_option_num < SAVESTATE_SLOT_COUNT)
     {
       if (savestate_slot != current_option_num)
@@ -4621,9 +5485,10 @@ u32 menu(void)
      GBA_RUSH_BUILD_ID);
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
     {
+      InputTraceState trace_state = input_diagnostic_trace_state();
       u32 trace_state_message;
 
-      switch(input_diagnostic_trace_state())
+      switch(trace_state)
       {
         case INPUT_TRACE_RECORDING:
           trace_state_message = MSG_TRACE_STATE_RECORDING;
@@ -4648,6 +5513,14 @@ u32 menu(void)
        sizeof(diagnostics_trace_status_line), MSG[MSG_TRACE_STATUS_FORMAT],
        MSG[trace_state_message],
        (unsigned long)input_diagnostic_trace_event_count());
+
+      /* A game may first use the RTC after its replay started, past the
+         check in menu_trace_replay(). */
+      if((trace_state == INPUT_TRACE_REPLAYING ||
+          trace_state == INPUT_TRACE_FINISHED) &&
+         diagnostics_report_line[0] == '\0' && memory_rtc_active())
+        snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+         "%s", MSG[MSG_TRACE_RTC_WARNING]);
     }
 #endif
   }
@@ -5020,6 +5893,9 @@ u32 menu(void)
         case MAIN_LINK_END_ROM_CHANGE:
           reason = MSG[MSG_LINK_REASON_ROM_CHANGE];
           break;
+        case MAIN_LINK_END_SAVE_FAILED:
+          reason = MSG[MSG_LINK_REASON_SAVE_FAILED];
+          break;
         case MAIN_LINK_END_NETWORK:
           status = MSG[MSG_LINK_STATUS_ERROR];
           reason = MSG[MSG_LINK_REASON_TRANSPORT];
@@ -5052,13 +5928,13 @@ u32 menu(void)
 
   void menu_passive_theme(void)
   {
-    apply_theme(option_theme);
+    select_theme_preset(option_theme);
   }
 
   void menu_theme_default(void)
   {
     option_theme = 0;
-    apply_theme(option_theme);
+    select_theme_preset(option_theme);
   }
 
   /* ------------------------------------------------------------------
@@ -5122,7 +5998,7 @@ u32 menu(void)
      Magnification takes 201 values (0-200 %). */
   MenuOptionType graphics_options[] =
   {
-    STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_0], scale_options, &option_screen_scale, SCREEN_SCALE_COUNT, MSG_OPTION_MENU_HELP_0, 0, MSG_OPTION_MENU_0),
+    STRING_SELECTION_OPTION(menu_screen_scale_changed, MSG[MSG_OPTION_MENU_0], scale_options, &option_screen_scale, SCREEN_SCALE_COUNT, MSG_OPTION_MENU_HELP_0, 0, MSG_OPTION_MENU_0),
     NUMERIC_SELECTION_OPTION_TT(NULL, MSG[MSG_OPTION_MENU_1], &option_screen_mag, 201, MSG_OPTION_MENU_HELP_1, 1,MSG_TOOLTIP_MAGNIFICATION, MSG_OPTION_MENU_1),
     STRING_SELECTION_OPTION(NULL, MSG[MSG_OPTION_MENU_2], on_off_options, &option_screen_filter, 2, MSG_OPTION_MENU_HELP_2, 2, MSG_OPTION_MENU_2),
 
@@ -5274,6 +6150,24 @@ u32 menu(void)
 
   MAKE_MENU(analog_config, NULL, NULL);
 
+  /* Speed and mode of turbo A, B, L and R; rebuild_fast_forward_button_mask
+     hands each change to the turbo inputs. */
+  MenuOptionType turbo_options[] =
+  {
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_A_SPEED], turbo_speed_options, &option_turbo_speed[0], 3, MSG_PAD_MENU_HELP_0, 0, MSG_TURBO_A_SPEED),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_A_MODE], turbo_mode_options, &option_turbo_mode[0], 2, MSG_PAD_MENU_HELP_0, 1, MSG_TURBO_A_MODE),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_B_SPEED], turbo_speed_options, &option_turbo_speed[1], 3, MSG_PAD_MENU_HELP_0, 3, MSG_TURBO_B_SPEED),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_B_MODE], turbo_mode_options, &option_turbo_mode[1], 2, MSG_PAD_MENU_HELP_0, 4, MSG_TURBO_B_MODE),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_L_SPEED], turbo_speed_options, &option_turbo_speed[2], 3, MSG_PAD_MENU_HELP_0, 6, MSG_TURBO_L_SPEED),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_L_MODE], turbo_mode_options, &option_turbo_mode[2], 2, MSG_PAD_MENU_HELP_0, 7, MSG_TURBO_L_MODE),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_R_SPEED], turbo_speed_options, &option_turbo_speed[3], 3, MSG_PAD_MENU_HELP_0, 9, MSG_TURBO_R_SPEED),
+    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_R_MODE], turbo_mode_options, &option_turbo_mode[3], 2, MSG_PAD_MENU_HELP_0, 10, MSG_TURBO_R_MODE),
+
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_PAD_MENU_12], MSG_PAD_MENU_HELP_1, 12, MSG_PAD_MENU_12)
+  };
+
+  MAKE_MENU(turbo, NULL, NULL);
+
   MenuOptionType link_options[] =
   {
     ACTION_OPTION(NULL, NULL, link_status_line, MSG_LINK_MENU_HELP_STATUS, 0, 0),
@@ -5283,6 +6177,7 @@ u32 menu(void)
     ACTION_OPTION(menu_link_host_action, NULL, MSG[MSG_LINK_MENU_CREATE], MSG_LINK_MENU_HELP_CREATE, 4, MSG_LINK_MENU_CREATE),
     ACTION_OPTION(menu_link_join_action, NULL, MSG[MSG_LINK_MENU_JOIN], MSG_LINK_MENU_HELP_JOIN, 5, MSG_LINK_MENU_JOIN),
     ACTION_OPTION(menu_link_disconnect_action, NULL, MSG[MSG_LINK_MENU_DISCONNECT], MSG_LINK_MENU_HELP_DISCONNECT, 7, MSG_LINK_MENU_DISCONNECT),
+    ACTION_OPTION(NULL, NULL, MSG[MSG_LINK_MENU_RESTORE], MSG_LINK_MENU_HELP_RESTORE, 9, MSG_LINK_MENU_RESTORE),
 
     ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 11, MSG_OPTION_MENU_11)
   };
@@ -5290,6 +6185,8 @@ u32 menu(void)
   link_options[0].behavior_flags = MENU_OPTION_PASSIVE_ROW;
   link_options[1].behavior_flags = MENU_OPTION_PASSIVE_ROW;
   link_options[2].behavior_flags = MENU_OPTION_PASSIVE_ROW;
+  link_options[6].available_function = menu_link_restore_available;
+  link_options[6].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
 
   MAKE_MENU(link, NULL, NULL);
 
@@ -5316,7 +6213,8 @@ u32 menu(void)
   {
     SUBMENU_OPTION(&gamepad_config_menu, MSG[MSG_MAIN_MENU_5], MSG_MAIN_MENU_HELP_5, 0, MSG_MAIN_MENU_5),
     SUBMENU_OPTION(&analog_config_menu, MSG[MSG_MAIN_MENU_6], MSG_MAIN_MENU_HELP_6, 1, MSG_MAIN_MENU_6),
-    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 3, MSG_OPTION_MENU_11)
+    SUBMENU_OPTION(&turbo_menu, MSG[MSG_TURBO_MENU], MSG_MAIN_MENU_HELP_5, 2, MSG_TURBO_MENU),
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 4, MSG_OPTION_MENU_11)
   };
 
   MAKE_MENU(controls, NULL, NULL);
@@ -5329,15 +6227,24 @@ u32 menu(void)
     ACTION_OPTION(menu_diagnostics_start, NULL, MSG[MSG_DIAGNOSTICS_START], MSG_DIAGNOSTICS_HELP_START, 3, MSG_DIAGNOSTICS_START),
     ACTION_OPTION(menu_diagnostics_stop, NULL, MSG[MSG_DIAGNOSTICS_STOP], MSG_DIAGNOSTICS_HELP_STOP, 4, MSG_DIAGNOSTICS_STOP),
     ACTION_OPTION(menu_diagnostics_write_report, NULL, MSG[MSG_DIAGNOSTICS_SAVE_REPORT], MSG_DIAGNOSTICS_HELP_SAVE_REPORT, 5, MSG_DIAGNOSTICS_SAVE_REPORT),
+    ACTION_OPTION(menu_diagnostics_bench, NULL, MSG[MSG_DIAGNOSTICS_BENCH], MSG_DIAGNOSTICS_HELP_BENCH, 6, MSG_DIAGNOSTICS_BENCH),
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+    ACTION_OPTION(menu_diagnostics_bench_render_off, NULL, MSG[MSG_DIAGNOSTICS_BENCH_RENDER_OFF], MSG_DIAGNOSTICS_HELP_BENCH_RENDER_OFF, 7, MSG_DIAGNOSTICS_BENCH_RENDER_OFF),
+    ACTION_OPTION(menu_diagnostics_bench_audio_off, NULL, MSG[MSG_DIAGNOSTICS_BENCH_AUDIO_OFF], MSG_DIAGNOSTICS_HELP_BENCH_AUDIO_OFF, 8, MSG_DIAGNOSTICS_BENCH_AUDIO_OFF),
+#endif
+    ACTION_OPTION(menu_diagnostics_name_probe, NULL, MSG[MSG_DIAGNOSTICS_NAME_PROBE], MSG_DIAGNOSTICS_HELP_NAME_PROBE, 7 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_DIAGNOSTICS_NAME_PROBE),
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
-    ACTION_OPTION(NULL, NULL, diagnostics_trace_status_line, MSG_DIAGNOSTICS_HELP_STATUS, 8, 0),
-    ACTION_OPTION(menu_trace_start, NULL, MSG[MSG_TRACE_START], MSG_TRACE_HELP_START, 10, MSG_TRACE_START),
-    ACTION_OPTION(menu_trace_finish_save, NULL, MSG[MSG_TRACE_FINISH_SAVE], MSG_TRACE_HELP_FINISH_SAVE, 11, MSG_TRACE_FINISH_SAVE),
-    ACTION_OPTION(menu_trace_replay, NULL, MSG[MSG_TRACE_REPLAY], MSG_TRACE_HELP_REPLAY, 12, MSG_TRACE_REPLAY),
-    ACTION_OPTION(menu_trace_cancel, NULL, MSG[MSG_TRACE_CANCEL], MSG_TRACE_HELP_CANCEL, 13, MSG_TRACE_CANCEL),
-    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 15, MSG_OPTION_MENU_11)
+    ACTION_OPTION(NULL, NULL, diagnostics_trace_status_line, MSG_DIAGNOSTICS_HELP_STATUS, 9 + DIAGNOSTICS_BENCH_ARM_ROWS, 0),
+    ACTION_OPTION(menu_trace_start, NULL, MSG[MSG_TRACE_START], MSG_TRACE_HELP_START, 11 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_TRACE_START),
+    ACTION_OPTION(menu_trace_finish_save, NULL, MSG[MSG_TRACE_FINISH_SAVE], MSG_TRACE_HELP_FINISH_SAVE, 12 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_TRACE_FINISH_SAVE),
+    ACTION_OPTION(menu_trace_replay, NULL, MSG[MSG_TRACE_REPLAY], MSG_TRACE_HELP_REPLAY, 13 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_TRACE_REPLAY),
+    ACTION_OPTION(menu_trace_cancel, NULL, MSG[MSG_TRACE_CANCEL], MSG_TRACE_HELP_CANCEL, 14 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_TRACE_CANCEL),
+#ifdef ENABLE_DIAGNOSTIC_PINNED_TOAST
+    ACTION_OPTION(menu_diagnostics_pin_toast, NULL, MSG[MSG_DIAGNOSTICS_PIN_TOAST], MSG_DIAGNOSTICS_HELP_PIN_TOAST, 16 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_DIAGNOSTICS_PIN_TOAST),
+#endif
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 18 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_OPTION_MENU_11)
 #else
-    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 7, MSG_OPTION_MENU_11)
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 9 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_OPTION_MENU_11)
 #endif
   };
 
@@ -5348,19 +6255,32 @@ u32 menu(void)
   diagnostics_options[3].available_function = menu_diagnostics_start_available;
   diagnostics_options[4].available_function = menu_diagnostics_stop_available;
   diagnostics_options[5].available_function = menu_diagnostics_report_available;
+  diagnostics_options[6].available_function = menu_diagnostics_start_available;
   diagnostics_options[3].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[4].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[5].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
-#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
-  diagnostics_options[6].behavior_flags = MENU_OPTION_PASSIVE_ROW;
-  diagnostics_options[7].available_function = menu_trace_start_available;
-  diagnostics_options[8].available_function = menu_trace_finish_available;
-  diagnostics_options[9].available_function = menu_trace_replay_available;
-  diagnostics_options[10].available_function = menu_trace_cancel_available;
+  diagnostics_options[6].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+  diagnostics_options[7].available_function = menu_diagnostics_start_available;
+  diagnostics_options[8].available_function = menu_diagnostics_start_available;
   diagnostics_options[7].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[8].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
-  diagnostics_options[9].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
-  diagnostics_options[10].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+#endif
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  diagnostics_options[8 + DIAGNOSTICS_BENCH_ARM_ROWS].behavior_flags = MENU_OPTION_PASSIVE_ROW;
+  diagnostics_options[9 + DIAGNOSTICS_BENCH_ARM_ROWS].available_function = menu_trace_start_available;
+  diagnostics_options[10 + DIAGNOSTICS_BENCH_ARM_ROWS].available_function = menu_trace_finish_available;
+  diagnostics_options[11 + DIAGNOSTICS_BENCH_ARM_ROWS].available_function = menu_trace_replay_available;
+  diagnostics_options[12 + DIAGNOSTICS_BENCH_ARM_ROWS].available_function = menu_trace_cancel_available;
+  diagnostics_options[9 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[10 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[11 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[12 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+#ifdef ENABLE_DIAGNOSTIC_PINNED_TOAST
+  /* Without a game, the next ROM load's reset_gba() would drop the pin. */
+  diagnostics_options[13 + DIAGNOSTICS_BENCH_ARM_ROWS].available_function = menu_game_available;
+  diagnostics_options[13 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+#endif
 #endif
 
   MAKE_MENU(diagnostics, NULL, NULL);
@@ -5418,6 +6338,7 @@ u32 menu(void)
   all_menus[13] = &diagnostics_menu;
   all_menus[14] = &exit_menu;
   all_menus[15] = &performance_advanced_menu;
+  all_menus[16] = &turbo_menu;
   num_all_menus = MAX_MENUS;
 
   savestate_menu.parent = &main_menu;
@@ -5433,6 +6354,7 @@ u32 menu(void)
   cheats_misc_menu.parent = &game_menu;
   gamepad_config_menu.parent = &controls_menu;
   analog_config_menu.parent = &controls_menu;
+  turbo_menu.parent = &controls_menu;
   custom_colors_menu.parent = &theme_menu;
   performance_advanced_menu.parent = &emulator_menu;
 
@@ -5444,6 +6366,13 @@ u32 menu(void)
     if (new_menu == NULL)
       new_menu = current_menu != NULL && current_menu->parent != NULL ?
        current_menu->parent : &main_menu;
+
+    /* Pages under it can save, load or delete states, and loading a ROM
+       writes the auto slot, so recount on every return to the main menu. */
+    if (new_menu == &main_menu)
+      menu_status_count_states();
+    if (new_menu == &savestate_menu)
+      memset(savestate_thumb_state, SAVESTATE_THUMB_UNKNOWN, sizeof(savestate_thumb_state));
 
     current_menu = new_menu;
     build_legacy_menu_model(&navigation_model, navigation_rows, new_menu);
@@ -5461,7 +6390,8 @@ u32 menu(void)
   sound_pause = 1;
 
 
-  current_screen = copy_screen();
+  current_screen = (u16 *)safe_malloc(GBA_SCREEN_SIZE);
+  copy_screen(current_screen);
   savestate_screen = (u16 *)safe_malloc(GBA_SCREEN_SIZE);
 
   if (gamepak_filename[0] == 0)
@@ -5487,8 +6417,9 @@ u32 menu(void)
 
   video_resolution_large();
   if(!main_link_active())
-    set_cpu_clock(PSP_CLOCK_222);
+    set_cpu_clock(option_clock_speed);
   choose_menu(&main_menu);
+  menu_backup_warning();
 
   /* One iteration per frame: draw the screen, then handle one input. */
   while (repeat)
@@ -5503,7 +6434,7 @@ u32 menu(void)
       preview_language = option_language;
     }
 
-    clear_screen(COLOR15_TO_32(color_bg));
+    menu_draw_background();
 
     if ((counter % 30) == 0)
 	{
@@ -5531,7 +6462,10 @@ u32 menu(void)
     }
     else
     {
-        blit_to_screen(screen_image_ptr, GBA_SCREEN_WIDTH, GBA_SCREEN_HEIGHT, SCREEN_IMAGE_POS_X, SCREEN_IMAGE_POS_Y);
+        if (current_menu == &savestate_menu && !first_load)
+          savestate_thumbs_draw(current_option_num);
+        else
+          blit_to_screen(screen_image_ptr, GBA_SCREEN_WIDTH, GBA_SCREEN_HEIGHT, SCREEN_IMAGE_POS_X, SCREEN_IMAGE_POS_Y);
         // --- Border around game screenshot ---
         draw_box_line(SCREEN_IMAGE_POS_X - 1, SCREEN_IMAGE_POS_Y - 1,
                       SCREEN_IMAGE_POS_X + GBA_SCREEN_WIDTH, SCREEN_IMAGE_POS_Y + GBA_SCREEN_HEIGHT,
@@ -5569,6 +6503,10 @@ u32 menu(void)
       submenu_gamepad();
     if (current_menu == &analog_config_menu)
       submenu_analog();
+    if (current_menu == &turbo_menu)
+    {
+      DRAW_TITLE_PAD_GBK(MSG_TURBO_MENU);
+    }
     if (current_menu == &cheats_misc_menu)
       submenu_cheats_misc();
     if (current_menu == &link_menu)
@@ -5646,6 +6584,11 @@ u32 menu(void)
                             (s16)option_y,
                             option_color, BG_NO_FILL, SCROLL_MENU_MAX_CHARS, -1);
         }
+
+        if (current_menu == &main_menu)
+          menu_draw_main_status(display_option->display_msg,
+                                display_option->display_string,
+                                (s16)option_y);
       }
     }
 
@@ -5705,18 +6648,21 @@ u32 menu(void)
     flip_screen(1);
 
 
-    /* Triangle: delete savestate when in savestate menu */
+    /* Triangle: delete savestate when in savestate menu. The dialog opens
+       on release, so the held button cannot reopen it, and the loop keeps
+       serving power events while the button is down. */
     if (current_menu == &savestate_menu && !first_load && current_option_num < SAVESTATE_SLOT_COUNT)
     {
       if (get_pad_input(PSP_CTRL_TRIANGLE) != 0)
+        delete_key_held = 1;
+      else if (delete_key_held != 0)
       {
-        /* Wait for release BEFORE opening the dialog, so the held
-           button doesn't leak into yesno_dialog's input loop. */
-        while (get_pad_input(PSP_CTRL_TRIANGLE) != 0)
-          sceKernelDelayThread(5000);
+        delete_key_held = 0;
         menu_delete_state();
       }
     }
+    else
+      delete_key_held = 0;
 
     gui_action = get_gui_input();
 
@@ -5839,6 +6785,12 @@ u32 menu(void)
               if (current_menu == &custom_colors_menu)
                 color_picker_item_index = current_option_num;
               current_option->action_function();
+              if (diagnostics_bench_loaded)
+              {
+                diagnostics_bench_loaded = 0;
+                return_value = 1;
+                repeat = 0;
+              }
             }
             else
             {
@@ -5861,6 +6813,12 @@ u32 menu(void)
                 if(current_option->line_number == 0)
                   menu_suspend();
               }
+              else if(current_menu == &link_menu)
+              {
+                /* The restored save is in RAM: the game restarts on it. */
+                if(current_option->line_number == 9 && menu_link_restore())
+                  menu_reset();
+              }
               else if (current_menu == &savestate_menu)
               {
                 switch (current_option->line_number)
@@ -5881,6 +6839,7 @@ u32 menu(void)
                           get_savestate_filename(AUTO_SAVESTATE_SLOT, filename_buffer);
                           get_savestate_info(filename_buffer, NULL, line_buffer);
                           sprintf(savestate_timestamps[AUTO_SAVESTATE_SLOT], "AUTO: %s", line_buffer);
+                          savestate_thumb_state[AUTO_SAVESTATE_SLOT] = SAVESTATE_THUMB_UNKNOWN;
                         }
                       }
                       if ((savestate_action != 0 ? menu_save_state() : menu_load_state()) != 0)
@@ -5934,6 +6893,14 @@ u32 menu(void)
 
   } /* end while */
 
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  if(menu_trace_resume)
+  {
+    menu_trace_resume = 0;
+    return_value = 1;
+  }
+#endif
+
   /* Keep menu presence visible until all blocking resume work is complete. */
   main_link_pump();
 
@@ -5945,9 +6912,9 @@ u32 menu(void)
   if (gamepak_file_large == GAMEPAK_FILE_MENU_CLOSED)
     gamepak_file_reopen();
 
-  /* Wait for every button up to HOME (PSP_CTRL bits 0-16) to be released so
-     the press that closed the menu does not reach the game. */
-  while (get_pad_input(0x0001FFFF) != 0);
+  /* Buttons up to HOME (PSP_CTRL bits 0-16) still held reach neither the
+     game nor the hotkeys until released; closing never waits for them. */
+  input_hold_until_released(get_pad_input(0x0001FFFF));
 
   menu_term();
 
@@ -5987,10 +6954,10 @@ static void update_status_string_gbk(char *time_str, char *batt_str, u16 *color_
 
   char batt_icon[4][4] =
   {
-    FONT_BATTERY0_GBK "\0", // empty
-    FONT_BATTERY1_GBK "\0",
-    FONT_BATTERY2_GBK "\0",
-    FONT_BATTERY3_GBK "\0", // full
+    FONT_BATTERY0_GBK, // empty
+    FONT_BATTERY1_GBK,
+    FONT_BATTERY2_GBK,
+    FONT_BATTERY3_GBK, // full
   };
 
   sceRtcGetCurrentClockLocalTime(&current_time);
@@ -6081,8 +7048,64 @@ static void get_timestamp_string(char *buffer, u16 msg_id, ScePspDateTime *msg_t
   Save Config Files
 -----------------------------------------------------------------------------*/
 
-/* ConfigStoreIo callbacks: config_store.c's save-to-temp, validate, rename
-   sequence carried out with sceIo calls. Each returns nonzero on success. */
+/* ConfigStoreIo and SaveStoreIo callbacks: the settings file and the .sav
+   share these sceIo calls. Unless noted, each returns nonzero on success;
+   every negative sceIo result counts as a failure, and none allocates. */
+
+/* SaveStoreIo open_write: creates or truncates path; a negative handle on
+   failure. */
+static int32_t save_io_open_write(void *context, const char *path)
+{
+  (void)context;
+  return sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+}
+
+/* Writes all of data, looping over short writes: size, or 0 on failure. */
+static int save_io_write(void *context, int32_t file, const uint8_t *data,
+ size_t size)
+{
+  size_t total = 0;
+  int result;
+
+  (void)context;
+  while(total < size)
+  {
+    result = sceIoWrite(file, data + total, (SceSize)(size - total));
+    if(result <= 0)
+      return 0;
+    total += (size_t)result;
+  }
+  return (int)size;
+}
+
+/* A failed close may have lost data. */
+static int save_io_close(void *context, int32_t file)
+{
+  (void)context;
+  return sceIoClose(file) >= 0;
+}
+
+/* Syncs the device of path up to its ':', e.g. "ms0:" or "ef0:"; a path
+   without one is on main_path's device. */
+static int save_io_flush(void *context, const char *path)
+{
+  char device[8];
+  const char *separator;
+  size_t length;
+
+  (void)context;
+  if(strchr(path, ':') == NULL)
+    path = main_path;
+  separator = strchr(path, ':');
+  if(separator == NULL)
+    return 0;
+  length = (size_t)(separator - path) + 1;
+  if(length >= sizeof(device))
+    return 0;
+  memcpy(device, path, length);
+  device[length] = '\0';
+  return sceIoSync(device, 0) >= 0;
+}
 
 /* Fails if the file holds more than capacity bytes. */
 static int config_io_read(void *context, const char *path, uint8_t *data,
@@ -6118,55 +7141,35 @@ static int config_io_read(void *context, const char *path, uint8_t *data,
   return 1;
 }
 
-/* Writes the whole buffer, looping over short writes; 0 on any failure. */
+/* Writes the whole buffer; 0 if the open, a write or the close fails. */
 static int config_io_write(void *context, const char *path,
  const uint8_t *data, size_t size)
 {
-  SceUID file;
-  size_t total = 0;
+  int32_t file = save_io_open_write(context, path);
+  int written;
 
-  (void)context;
-  FILE_OPEN(file, path, WRITE);
-  if(!FILE_CHECK_VALID(file))
+  if(file < 0)
     return 0;
-  while(total < size)
-  {
-    s32 result = FILE_WRITE(file, data + total, size - total);
-    if(result <= 0)
-    {
-      FILE_CLOSE(file);
-      return 0;
-    }
-    total += (size_t)result;
-  }
-  FILE_CLOSE(file);
-  return 1;
+  written = save_io_write(context, file, data, size);
+  return save_io_close(context, file) && (size_t)written == size;
 }
 
 /* Sync the device that holds main_path, e.g. "ms0:". */
 static int config_io_flush(void *context)
 {
-  char device[8];
-  const char *separator;
-  size_t length;
-
-  (void)context;
-  separator = strchr(main_path, ':');
-  if(separator == NULL)
-    return 0;
-  length = (size_t)(separator - main_path) + 1;
-  if(length >= sizeof(device))
-    return 0;
-  memcpy(device, main_path, length);
-  device[length] = '\0';
-  return sceIoSync(device, 0) >= 0;
+  return save_io_flush(context, main_path);
 }
 
+/* Renames source to target, then checks both names: target there, source
+   gone. */
 static int config_io_move(void *context, const char *source,
  const char *target)
 {
+  SceIoStat stat;
+
   (void)context;
-  return sceIoRename(source, target) >= 0;
+  return sceIoRename(source, target) >= 0 &&
+         sceIoGetstat(target, &stat) >= 0 && sceIoGetstat(source, &stat) < 0;
 }
 
 /* Removing a file that does not exist counts as success. */
@@ -6199,6 +7202,119 @@ static const ConfigStoreIo config_store_io =
   config_io_exists
 };
 
+/* SaveStoreIo exists. A .sav that does not stat while its folder does not
+   open either counts as present: the device is gone, not the file, so the
+   load fails and asks instead of starting a blank cartridge that the first
+   save would write over the real file. */
+static int save_io_exists(void *context, const char *path)
+{
+  SceIoStat stat;
+  char folder[MAX_PATH];
+  const char *slash;
+  size_t length;
+  SceUID dir;
+
+  (void)context;
+  if(sceIoGetstat(path, &stat) >= 0)
+    return 1;
+
+  slash = strrchr(path, '/');
+  if(slash == NULL)
+    return 0;
+  length = (size_t)(slash - path) + 1;
+  if(length >= sizeof(folder))
+    return 1;
+  memcpy(folder, path, length);
+  folder[length] = '\0';
+
+  dir = sceIoDopen(folder);
+  if(dir < 0)
+    return 1;
+  sceIoDclose(dir);
+  return 0;
+}
+
+/* SaveStoreIo read: up to capacity bytes from the start of the file, and
+   the file's whole length. A read error just stops early, and
+   save_store_load() treats the short count as a failure. */
+static int save_io_read(void *context, const char *path, uint8_t *data,
+ size_t capacity, size_t *size, size_t *file_size)
+{
+  SceUID file;
+  SceOff length;
+  size_t wanted;
+  size_t total = 0;
+  s32 result;
+
+  (void)context;
+  FILE_OPEN(file, path, READ);
+  if(!FILE_CHECK_VALID(file))
+    return 0;
+
+  length = FILE_SEEK(file, 0, SEEK_END);
+  if(length < 0 || FILE_SEEK(file, 0, SEEK_SET) != 0)
+  {
+    FILE_CLOSE(file);
+    return 0;
+  }
+
+  wanted = ((u64)length < capacity) ? (size_t)length : capacity;
+  while(total < wanted)
+  {
+    result = FILE_READ(file, data + total, wanted - total);
+    if(result <= 0)
+      break;
+    total += (size_t)result;
+  }
+  FILE_CLOSE(file);
+
+  *size = total;
+  *file_size = (size_t)length;
+  return 1;
+}
+
+/* SaveStoreIo crc32: reads path to its end in 16 KiB blocks. The block is
+   static, so only the emulator and menu thread may call this. */
+static int save_io_crc32(void *context, const char *path, uint32_t *crc,
+ size_t *size)
+{
+  static u8 block[16 * 1024];
+  SceUID file;
+  uLong value = crc32(0L, Z_NULL, 0);
+  size_t total = 0;
+  int result;
+
+  (void)context;
+  file = sceIoOpen(path, PSP_O_RDONLY, 0);
+  if(file < 0)
+    return 0;
+  while((result = sceIoRead(file, block, sizeof(block))) > 0)
+  {
+    value = crc32(value, block, (uInt)result);
+    total += (size_t)result;
+  }
+  if(sceIoClose(file) < 0 || result < 0)
+    return 0;
+  *crc = (uint32_t)value;
+  *size = total;
+  return 1;
+}
+
+/* memory.c's .sav I/O, sharing move and remove with the settings file. */
+const SaveStoreIo gui_save_store_io =
+{
+  NULL,
+  save_io_exists,
+  save_io_read,
+  save_io_open_write,
+  save_io_write,
+  save_io_close,
+  save_io_flush,
+  config_io_move,
+  config_io_remove,
+  save_io_crc32
+};
+
 /* tempgba.cfg plus its .tmp (write target) and .bak (last good) siblings. */
 static int config_paths(char *primary, char *temporary, char *recovery)
 {
@@ -6215,13 +7331,13 @@ static int config_paths(char *primary, char *temporary, char *recovery)
   return result >= 0 && result < MAX_PATH;
 }
 
-/* Global settings <-> ConfigModel. The per-game fast forward override is
-   never stored globally. */
+/* Global settings <-> ConfigModel. The per-game fast forward override and
+   the scale the Video cycle shortcut picks are never stored globally. */
 static void capture_global_config(ConfigModel *model)
 {
   u32 i;
 
-  model->screen_scale = option_screen_scale;
+  model->screen_scale = global_screen_scale;
   model->screen_magnification = option_screen_mag;
   model->screen_filter = option_screen_filter;
   model->show_fps = psp_fps_debug;
@@ -6251,18 +7367,28 @@ static void capture_global_config(ConfigModel *model)
   model->fast_forward_presentation = option_fast_forward_presentation;
   model->fast_forward_audio = option_fast_forward_audio;
   model->cpu_core = option_cpu_core;
+  model->browser_view = option_browser_view;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     model->gamepad[i] = gamepad_config_map[i];
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    model->shortcut[i] = option_shortcut[i];
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    model->turbo_speed[i] = option_turbo_speed[i];
+    model->turbo_mode[i] = option_turbo_mode[i];
+  }
 }
 
-/* Inverse of capture_global_config(), then the side effects: button mask,
-   preset theme (apply_theme()) and fast forward settings. */
+/* Inverse of capture_global_config(), then the side effects: button mask
+   and turbo inputs, shortcut chords, preset theme (apply_theme()) and
+   fast forward settings. */
 static void apply_global_config(const ConfigModel *model)
 {
   u32 i;
   int has_menu_button = 0;
 
   option_screen_scale = model->screen_scale;
+  global_screen_scale = model->screen_scale;
   option_screen_mag = model->screen_magnification;
   option_screen_filter = model->screen_filter;
   psp_fps_debug = model->show_fps;
@@ -6291,6 +7417,7 @@ static void apply_global_config(const ConfigModel *model)
   option_fast_forward_presentation = model->fast_forward_presentation;
   option_fast_forward_audio = model->fast_forward_audio;
   option_cpu_core = model->cpu_core;
+  option_browser_view = model->browser_view;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
   {
     gamepad_config_map[i] = model->gamepad[i];
@@ -6300,7 +7427,15 @@ static void apply_global_config(const ConfigModel *model)
   /* Without HOME there must be a way into the menu: put it on Triangle. */
   if(!enable_home_menu && !has_menu_button)
     gamepad_config_map[0] = BUTTON_ID_MENU;
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    option_turbo_speed[i] = model->turbo_speed[i];
+    option_turbo_mode[i] = model->turbo_mode[i];
+  }
   rebuild_fast_forward_button_mask();
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    option_shortcut[i] = model->shortcut[i];
+  rebuild_shortcut_chords();
   apply_theme(option_theme);
   main_fast_forward_reset_game_settings();
 }
@@ -6371,8 +7506,9 @@ static int config_companion_paths(const char *primary, char *temporary,
 }
 
 /* Per-game files (<dir_cfg>/<rom>.cfg) use the same format but only carry
-   video, frameskip, clock, volume, fast forward and button settings; the
-   remaining fields are written as defaults and ignored on load. */
+   video, frameskip, clock, volume, fast forward, button, shortcut and
+   turbo settings; the remaining fields are written as defaults and
+   ignored on load. */
 static void capture_game_config(ConfigModel *model)
 {
   u32 i;
@@ -6393,6 +7529,13 @@ static void capture_game_config(ConfigModel *model)
   model->fast_forward_audio = option_game_fast_forward_audio;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     model->gamepad[i] = gamepad_config_map[i];
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    model->shortcut[i] = option_shortcut[i];
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    model->turbo_speed[i] = option_turbo_speed[i];
+    model->turbo_mode[i] = option_turbo_mode[i];
+  }
 }
 
 /* Per-game counterpart of apply_global_config(). */
@@ -6422,7 +7565,15 @@ static void apply_game_config(const ConfigModel *model)
   }
   if(!enable_home_menu && !has_menu_button)
     gamepad_config_map[0] = BUTTON_ID_MENU;
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    option_turbo_speed[i] = model->turbo_speed[i];
+    option_turbo_mode[i] = model->turbo_mode[i];
+  }
   rebuild_fast_forward_button_mask();
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    option_shortcut[i] = model->shortcut[i];
+  rebuild_shortcut_chords();
   main_fast_forward_apply_settings();
 }
 
@@ -6500,6 +7651,35 @@ s32 save_config_file(void)
   return return_value;
 }
 
+/* The Video cycle shortcut: 16:9 Auto, 100% GU, 150% GU, 16:9 Sharp and
+   back to 16:9 Auto, where any other mode also goes. The new presenter
+   takes the next frame, a toast names the mode and only the game's .cfg
+   keeps it: global_screen_scale stays as the Video menu left it. */
+void menu_cycle_video_mode(void)
+{
+  static const u8 cycle[] = { SCALED_16X9_AUTO, SCALED_NONE, SCALED_X15_GU,
+   SCALED_16X9_SHARP };
+  u32 next = SCALED_16X9_AUTO;
+  u32 i;
+
+  for(i = 0; i + 1 < sizeof(cycle); i++)
+  {
+    if(option_screen_scale == cycle[i])
+      next = cycle[i + 1];
+  }
+
+  option_screen_scale = next;
+  video_apply_screen_scale();
+
+  /* The names hold '%' ("100% GU"), so they are not a format; they follow
+     the SCALED_ order, as in scale_options. The newest name drops what is
+     still queued, so the toast always names the mode on screen. */
+  toast_clear();
+  toast_push(MSG[MSG_SCN_SCALED_NONE + next], 3000000, 0,
+   sceKernelGetSystemTimeLow());
+  save_game_config_file();
+}
+
 
 /*-----------------------------------------------------------------------------
   Load Config Files
@@ -6515,6 +7695,7 @@ s32 load_game_config_file(void)
   if(load_game_config_atomic(game_config_path) == 0)
     return 0;
 
+  option_screen_scale = global_screen_scale;
   option_frameskip_type = FRAMESKIP_AUTO;
   option_frameskip_value = 9;
   option_clock_speed = PSP_CLOCK_333;
@@ -6530,10 +7711,33 @@ s32 load_config_file(void)
 }
 
 
+/* Folders used when there is no dir.ini: all of them are main_path, as in
+   1.4.2, so existing saves and states are still found, except ROMs, which
+   come from <main_path>roms/ when that folder exists.
+   tests/test_startup.py compiles this function alone. */
+void set_default_directories(void)
+{
+  SceUID roms_dir;
+
+  strcpy(dir_save,  main_path);
+  strcpy(dir_state, main_path);
+  strcpy(dir_cfg,   main_path);
+  strcpy(dir_snap,  main_path);
+  strcpy(dir_cheat, main_path);
+  strcpy(dir_boxart, main_path);
+  strcpy(dir_boxart_folders, main_path);
+
+  if ((snprintf(dir_roms, MAX_PATH, "%sroms/", main_path) < MAX_PATH) &&
+   ((roms_dir = sceIoDopen(dir_roms)) >= 0))
+    sceIoDclose(roms_dir);
+  else
+    strcpy(dir_roms, main_path);
+}
+
 /* Read the "name = path" directory settings. Relative paths are taken from
    main_path; a missing or unopenable directory falls back to main_path with
    an on-screen warning. Returns 0 if the file was read, -1 if it is absent
-   (every directory is then main_path). */
+   (every directory is then empty: the caller sets the defaults). */
 s32 load_dir_cfg(char *file_name)
 {
   char current_line[256];
@@ -6658,15 +7862,5 @@ s32 load_dir_cfg(char *file_name)
     return 0;
   }
 
-  // set launch directory
-  strcpy(dir_roms,  main_path);
-  strcpy(dir_save,  main_path);
-  strcpy(dir_state, main_path);
-  strcpy(dir_cfg,   main_path);
-  strcpy(dir_snap,  main_path);
-  strcpy(dir_cheat, main_path);
-  strcpy(dir_boxart, main_path);
-  strcpy(dir_boxart_folders, main_path);
-  apply_theme(option_theme);
   return -1;
 }

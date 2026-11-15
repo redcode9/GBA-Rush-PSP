@@ -27,6 +27,69 @@
   Where the Media Engine cannot be used, as on official firmware or in an
   emulator, Exact draws on the main processor and is slower than New. With
   Show FPS on, the counter ends in ME or CPU to tell which.
+- Shortcuts: SELECT+L saves to the current savestate slot and SELECT+R loads
+  it, as the quick save and load buttons do, and holding START+SELECT for
+  half a second opens the menu, also where HOME does not reach the emulator.
+  The hold never quits the game and does not count while A or B is held, so
+  A+B+START+SELECT still resets the game; START and SELECT reach the game
+  during the hold. A shortcut acts on the press that completes it, and the L
+  or R that completes it is kept from the game while it stays held.
+  Shortcuts are saved with the settings and with each game's settings;
+  settings from 1.4.x start with these defaults. Single-button mappings work
+  as before.
+- Controls > Turbo config sets, for each rapid-fire button (A, B, L and R),
+  the speed (30, 15 or 10 presses per second) and the mode. Hold fires while
+  the button is held; Toggle starts firing on one press and stops on the
+  next, with a "Turbo A: on" or "Turbo A: off" notice. The settings are
+  saved globally and with each game's settings. Settings from 1.4.x start at
+  30 presses per second in Hold mode, as before.
+- A ROM folder with no games shows "No games found" and the folder to copy
+  .gba or .zip files to, in the list and in the carousel; its subfolders
+  stay listed.
+- On a fresh install the first game shows, for 6 seconds, a notice naming
+  both ways into the menu: "HOME: menu, or hold START+SELECT". It comes back
+  at each start until the emulator has been closed once from the Exit menu,
+  which saves the settings file.
+- In the diagnostic build, Diagnostics > Pin a test toast keeps a notice on
+  screen until the game is reset, to measure what drawing notices costs. It
+  is available once a game is loaded.
+- While a ROM loads, the loading popup shows the file name, whether it is
+  reading the ROM or unpacking the ZIP, the KiB read so far and a bar that
+  follows the whole read, for `.zip` archives and for loose ROMs that fit in
+  memory. A loose ROM too large to load whole, which is read in pages while
+  the game runs, still shows only "Now Loading...".
+- The runtime log records how long each ROM load takes, stage by stage:
+  opening the file, reading or unpacking the ROM, loading the game's
+  settings, searching its backup ID and reading its `.sav`. Loads that fail
+  are recorded too, and `tools/decode_runtime_log.py` prints the times.
+- Before a link session starts, the game's save is written and a copy of it
+  is kept as `<rom>.sav.link1`; the two copies before it move to `.link2`
+  and `.link3`. If the save cannot be written or copied, the session does
+  not start and the Link menu says why.
+- Link > Restore pre-link save puts one of those copies back, chosen by its
+  date and time. The current save is kept as `<rom>.sav.bak`, and the game
+  restarts on the restored save. The item is not available during a
+  session.
+- The runtime log records how every `.sav` was read (its size, the save
+  chip chosen and whether they disagree), how long every save write took,
+  whether it worked and how many tries it needed, how long the save copy
+  made before a link session took and whether it worked, and which save
+  fields of a damaged savestate were repaired on load.
+- A new Video > Display mode, 2x integer (crop): every GBA pixel becomes an
+  exact 2x2 block and rows 12-147 of the game fill the screen. It always uses
+  nearest sampling, whatever the screen filter says.
+- The main menu shows a live status next to Save and Load (the state slots
+  in use and whether the AUTO slot exists), Game (how many cheats are on) and
+  Link Cable (the other console's game code, or waiting).
+- The Save and Load page shows thumbnails of all 11 slots (0-9 and AUTO)
+  with the selected slot framed. They appear one per frame as the page opens.
+- Diagnostics > Log file name encoding, to find out how a firmware stores
+  file names that are not ASCII: it goes through the `name-probe` folder
+  beside the EBOOT and writes each name to the runtime log as the PSP
+  reports it, with the long name and 8.3 alias the firmware keeps for it and
+  whether the file opens by each of them, then shows how many names it
+  logged. `tools/decode_runtime_log.py` shows each name in hex and as
+  UTF-8, Shift-JIS and GBK text.
 - The Diagnostics page shows the version and the build id, an id of the
   exact source the EBOOT was built from, ending in `-dirty` when that source
   had uncommitted changes. Performance reports, runtime logs and the
@@ -45,12 +108,66 @@
   its own icons and installs in `PSP/GAME/GBARushPSP-DIAG`, so it keeps its
   own settings, saves and logs and never touches the regular install. The
   regular build contains none of its diagnostic code.
+- The runtime log records the memory when GBA Rush PSP starts, each time a
+  game is loaded or reset, before a link session starts and when a
+  performance measurement starts and stops: the size of the program, the
+  free heap and its largest block, the free system memory and its largest
+  block, and the size of the ROM buffer. Performance reports give the lowest
+  free heap, largest heap block and largest system memory block measured
+  during the capture (`heap-free-low`, `heap-largest-low`,
+  `kernel-free-low`).
+- The diagnostic build can hold back memory from startup, to imitate a PSP
+  with less memory in an emulator: write the amount in KiB (at most 65536)
+  in `memory-hold.txt` beside the EBOOT. Beside each performance report it
+  also saves the emulator's last 256 memory allocations and frees as
+  `perf-<time>-alloc.txt`.
+- The diagnostic build can run a test with nobody at the console: a
+  `diag-autorun.txt` beside the EBOOT that names the build's id starts a
+  ROM, can replay an input trace for a number of frames and quit, and
+  writes the outcome to `diag-autorun.result` and to the runtime log. A
+  file written for another build is ignored. The same file can instead
+  show colour bars through every screen scale and filter, to photograph
+  the screen, or put the wireless link on a simulated bad network that
+  loses, delays and duplicates packets, which the runtime log records.
+- In the diagnostic build, replaying an input trace records a hash of the
+  emulated machine for every frame and saves them beside the trace as a
+  `.gbsh` file, so `tools/state_hash_diff.py` can show the first frame and
+  the part of the machine where two replays differ.
 - On GitHub, bug, game and link reports open as forms that ask for the
   version, the PSP model and firmware, the steps and the `logs/` folder, and
   warn not to attach ROMs, BIOS files or saves that are not your own.
+- `docs/PERFORMANCE.md` explains how to compare the speed of two builds and
+  holds a table of measured baselines for each PSP model and game, generated
+  by `scripts/perf-table.py` from the reports archived under `benchmarks/`.
+  No baselines are archived yet.
+- `scripts/compare-benchmarks.py --baseline-dir DIR --candidate-dir DIR`
+  compares folders of reports: the reports of each game, revision and PSP
+  model are compared as a group of their own, and the result shows PASS or
+  FAIL for every group. A group the baseline has but the candidate lacks is
+  reported as missing and fails the comparison.
+- Diagnostics > Unbound benchmark loads the current save state slot and
+  runs 3600 frames as fast as the PSP can: nothing waits for the VBlank,
+  VSync or the audio, and the game gets no input. The capture then stops by
+  itself, its report is saved and the game returns to its normal speed. A
+  link refuses the benchmark. The diagnostic build adds two rows that run it
+  with rendering or audio off, and replays the input trace it holds instead
+  of giving no input, ending the run with the trace.
+- Performance reports also record each frame's work time without the waits,
+  the frames that were late, over budget or run during a lockstep link, the
+  local time the capture started, the time of the main emulation phases on
+  one frame in 11, and how often the emulation thread was preempted while
+  working or waiting. `docs/PERFORMANCE.md` explains every key.
+- `scripts/compare-benchmarks.py --order-check` tells whether the runs of the
+  two builds alternated, `--strict` fails when they did not, and
+  `--claim 'throughput>=+3'` says whether a claim written before the runs
+  holds. `docs/PERFORMANCE.md` describes the measurement protocol they serve.
 
 ### Changed
 
+- The game stays visible full screen behind the menu, in its display mode,
+  under a veil of the theme's background colour.
+- The Italian menu writes accented letters (è, più, modalità) instead of a
+  backtick after the vowel or no accent at all.
 - A savestate loads only with the BIOS it was saved with, `gba_bios.bin` or
   the built-in one; otherwise a message says which one it needs, instead of
   loading a game that would crash. Savestates from earlier versions count as
@@ -60,12 +177,143 @@
   so it never overwrites the `<rom>_auto.svs` made with `gba_bios.bin`.
 - The `bios_rom_hack_39` and `bios_rom_hack_2C` options of `game_config.txt`
   apply only to `gba_bios.bin`.
+- The release ZIP extracts at the root of the Memory Stick (`ms0:`, or
+  `ef0:` on a PSP Go): it installs or upgrades `PSP/GAME/GBARushPSP/` in one
+  step, with the documentation in its `docs/` folder. The ZIP never contains
+  saves, savestates, settings, `dir.ini`, ROMs or a BIOS, so an upgrade keeps
+  them.
+- The ROM browser reopens in the view last chosen with SELECT, list or
+  carousel, also after a restart; the choice is saved with the other
+  settings when the emulator exits. The savestate and cheat browsers still
+  open in the list, and settings from 1.4.x start in the list.
+- With the analog stick as d-pad, a direction is released a little nearer
+  the centre than where it is pressed, so a stick resting near the
+  sensitivity threshold no longer flickers. Tilt games are unchanged.
+- A game with no settings of its own starts in the display mode last chosen
+  in the Video menu, no longer in the one of the game played before it.
+- The menu and the file browser run at the configured CPU clock (333 MHz by
+  default) instead of 222 MHz: after a ROM loads (at 333 MHz) or a link
+  session ends, the PSP returns to the configured clock instead of 222 MHz,
+  and it sets that clock again when it resumes from sleep. The runtime log
+  records the requested clock and the CPU and bus clocks the PSP reports each
+  time the clock is set and, when the Exact renderer draws on the Media
+  Engine, the Media Engine clock it measured under each requested clock.
+- A `.sav` whose size does not match its save chip is written back at the
+  chip's size the next time the game saves: SRAM 32 or 64 KB, Flash 64 or
+  128 KB, EEPROM 512 bytes or 8 KB. The file as it was is kept once, as
+  `<rom>.sav.orig`.
+- In the diagnostic build, starting an input recording also saves
+  a savestate beside the trace in `traces/`, and replaying the trace loads
+  it first, so a recording replays from where it began even after the
+  console is restarted, without loading a state by hand. A trace whose
+  savestate is missing or has changed is refused. On games with a
+  real-time clock the replay warns that it may not match the recording.
+  Traces recorded by earlier versions still replay. A recording does not
+  start during a link session.
 - A stable release is published only after the hardware tests it requires
   have passed, with the EBOOT being released, on a PSP-1000 and on a second
   model, and after at least 7 days as a prerelease (3 days for a fix of
   lost data). Its release notes list what was validated, on which consoles,
   and its known limits; a build not yet tested on hardware is published as
   a prerelease.
+- A stable release that requires the `perf-baseline-5` hardware test is
+  published only when its PSP-1000 reports, archived under `benchmarks/`
+  with the build id of its release candidate, pass
+  `scripts/compare-benchmarks.py` against those of the newest earlier
+  release there for every game; a game without reports fails.
+- `scripts/compare-benchmarks.py` takes three or more reports per build, and
+  the two builds may have different counts. PASS and FAIL work as before; for
+  each metric it also shows the median, lowest and highest run of both builds
+  and says whether the runs show a clear difference or how many runs per
+  build would be needed to tell.
+- `scripts/compare-benchmarks.py` also fails a build whose frame-time p99
+  rises more than 5%, whose frame-time maximum is above 1.5 times the
+  baseline's in two or more runs, or, with reports that have the new keys,
+  whose work-time p95 rises more than 5% or whose frames over 1.5 times the
+  budget per minute rise by more than max(1, 20%). A frame-time p95 rise of
+  exactly 5%, and a throughput or fast-forward drop of exactly 2%, now pass.
+  It refuses reports captured during a lockstep link, unless `--allow-link`
+  is given and every run of both builds was in lockstep, and never compares
+  the unbound benchmark with a capture the player ran.
+
+### Fixed
+
+- A 64 KB `.sav` of an SRAM game is no longer written back as a 1-byte file
+  the first time the game saves. Saves already cut by earlier versions
+  cannot be recovered.
+- A `.sav` that exists but cannot be read is never written over. The
+  emulator asks whether to read it again or to play without saving; while
+  playing without saving, nothing is written to the file until another ROM
+  is loaded.
+- A `.sav` larger than 128 KB no longer overruns memory: its first 128 KB
+  are loaded.
+- The save type comes from the ROM's save library string, and the file size
+  no longer overrides it, so a `.sav` of another size, such as a 128 KB file
+  for a game with 64 KB Flash, loads with the chip the game expects.
+- A damaged savestate can no longer make the save memory read or write
+  outside its buffer.
+- Load State File on the running game's `<rom>_auto.svs` loads that state
+  instead of first overwriting it with the game in progress.
+- Putting the PSP to sleep while the resume question is open no longer
+  replaces the AUTO state.
+- Games with an 8 KB EEPROM that save before ever reading it no longer lose
+  the save.
+- A power cut while the `.sav` is being written no longer loses the save:
+  the previous one is kept as `<rom>.sav.bak` and restored at the next
+  start.
+- A save that cannot be written, for example on a full Memory Stick, is no
+  longer lost: the game keeps it in memory and tries again, the menu opens
+  once to say so, and before exiting, suspending or changing game the menu
+  asks whether to try again.
+- Saving a state no longer needs 512 KB of free memory: when memory runs
+  out, the state is saved without its preview picture instead of quitting.
+  A power cut while a state is being saved keeps the previous state, as a
+  `.svs.bak` file.
+- Pressing the power switch now always parks the game safely for standby,
+  even when the PSP reports only the switch; if standby does not follow
+  within 2 seconds, the game resumes with its sound and ROM. The runtime log
+  records what the PSP reports at each power event.
+- Closing the menu no longer waits for every button to be released, so a
+  button still held never delays standby. A button held as the menu closes
+  reaches neither the game nor the hotkeys until it is released.
+- A damaged or truncated `.zip` no longer hangs the loader or starts a broken
+  game: the ROM's size and CRC32 are checked, and the file browser says the
+  ZIP file is damaged or incomplete. An encrypted `.zip`, or one whose first
+  file is not a `.gba`, `.agb` or `.bin` ROM, gets the same message.
+- A `.zip` written in streaming mode, with its sizes after the data, now
+  loads when its ROM is compressed (deflated) and those sizes are not in
+  the ZIP64 format. Any other `.zip` written that way, such as one with an
+  uncompressed (stored) ROM, gets the damaged or incomplete message, like
+  an encrypted one.
+- A `.gba` file that cannot be read in full now fails to load instead of
+  starting the game from part of the ROM.
+- The emulator no longer shows an error at startup when `dir.ini` is
+  missing: `dir.ini` is optional. Without it, ROMs are listed from the
+  `roms/` folder next to `EBOOT.PBP` when that folder exists, otherwise from
+  the emulator's folder; saves, savestates, cheats and the other files stay
+  in the emulator's folder as before, so existing saves are still found. A
+  `dir.ini` that names a folder that does not exist still shows its warning.
+- Custom menu colours chosen with the colour picker are kept when the
+  emulator restarts, with or without `dir.ini`; every start used to reset
+  them to the selected preset. Choosing a preset or Default theme in the
+  menu still discards them.
+- `gba_bios.bin` is no longer listed as a game in the ROM browser.
+- Two rapid-fire buttons held together now both fire; before, one stayed
+  held and the other never pressed. Rapid fire follows the game's frames, so
+  it no longer speeds up during link-cable waits. Opening the menu, loading
+  a state or putting the PSP to sleep stops rapid fire; a button still held
+  fires again after it is pressed again.
+
+### Known issues
+
+- Settings saved by this version cannot be read by 1.4.x: going back to
+  1.4.x resets every setting to its default, and 1.4.x overwrites the
+  settings file when it exits.
+
+### Fixed
+
+- The messages shown after loading a cheat file are translated into every
+  menu language; the Japanese and Chinese menus showed them in English.
 
 ## 1.4.3 - 2026-11-02
 

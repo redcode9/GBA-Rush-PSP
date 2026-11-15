@@ -25,8 +25,8 @@ EXTRA_TARGETS = EBOOT.PBP
 
 # Headers that every main object is rebuilt on when they change.
 COMMON_FILE = \
- common.h build_profile.h adhoc_peer.h codebreaker.h dynarec_worklist.h fast_forward_audio.h fast_forward_policy.h gba_sio.h gba_ppu.h gba_ppu_log.h video_me.h link_audio_wait.h link_cable.h link_net.h power_lifecycle.h runtime_log.h runtime_log_psp.h runtime_log_store.h sound_math.h video_adaptive.h video_mosaic.h perf_metrics.h perf_monitor.h perf_report.h menu_model.h menu_layout.h menu_catalog.h config_model.h config_store.h psp_adhoc.h \
- cpu.h memory.h video.h psp_video.h input.h sound.h main.h message.h mh_print.h gui.h zip.h png.h \
+ common.h build_profile.h adhoc_peer.h codebreaker.h dynarec_worklist.h fast_forward_audio.h fast_forward_policy.h gba_sio.h gba_ppu.h gba_ppu_log.h video_me.h link_audio_wait.h link_cable.h link_net.h power_lifecycle.h mem_stats.h rewind_ring.h runtime_log.h runtime_log_psp.h runtime_log_store.h sound_math.h video_adaptive.h video_mosaic.h perf_metrics.h perf_monitor.h perf_report.h menu_model.h menu_layout.h art_filter.h menu_catalog.h config_model.h config_store.h save_format.h save_store.h psp_adhoc.h state_hash.h toast.h input_chord.h input_model.h \
+ cpu.h memory.h video.h psp_video.h input.h sound.h main.h message.h mh_print.h gui.h zip.h zip_rom.h load_progress.h png_write.h \
  ku_bridge.h exception.h ch_print.h \
  arm_core.h arm_ir.h arm_mips.h arm_gba.h
 
@@ -35,17 +35,24 @@ MESSAGE_FILE = \
  src/text/message_cht.h src/text/message_ita.h
 
 MAINOBJS = \
- cpu.o memory.o gba_ppu.o gba_ppu_log.o video_me.o video_dispatch_state.o video_dispatch.o video_cc_wrap.o video_old_wrap.o psp_video.o input.o sound.o main.o message.o mh_print.o gui.o zip.o png.o \
+ cpu.o memory.o gba_ppu.o gba_ppu_log.o video_me.o video_dispatch_state.o video_dispatch.o video_cc_wrap.o video_old_wrap.o psp_video.o input.o sound.o main.o message.o mh_print.o gui.o zip.o zip_rom.o load_progress.o png_write.o \
  mips_stub.o video_blend_mips.o \
  arm_decode.o arm_interp.o arm_mips.o arm_gba.o \
  ku_bridge.o exception.o cheats.o codebreaker.o ch_print.o \
- adhoc_peer.o boxart.o dynarec_worklist.o fast_forward_audio.o fast_forward_policy.o gba_sio.o link_audio_wait.o link_cable.o link_net.o power_lifecycle.o runtime_log.o runtime_log_psp.o runtime_log_store.o sound_math.o video_adaptive.o perf_metrics.o perf_monitor.o perf_report.o menu_model.o menu_layout.o menu_catalog.o config_model.o config_store.o psp_adhoc.o
+ adhoc_peer.o boxart.o dynarec_worklist.o fast_forward_audio.o fast_forward_policy.o gba_sio.o link_audio_wait.o link_cable.o link_net.o power_lifecycle.o mem_stats.o rewind_ring.o runtime_log.o runtime_log_psp.o runtime_log_store.o sound_math.o video_adaptive.o perf_metrics.o perf_monitor.o perf_report.o menu_model.o menu_layout.o art_filter.o menu_catalog.o config_model.o config_store.o save_format.o save_store.o psp_adhoc.o state_hash.o toast.o input_chord.o input_model.o
 
 # make DIAGNOSTIC_CORE_PROFILE=1 samples where the new core spends its time
 # during a benchmark capture and writes it beside the report (arm_gba.c).
 ifneq ($(DIAGNOSTIC_CORE_PROFILE),)
 COMMON_FILE += core_profile.h
 MAINOBJS += core_profile.o
+endif
+
+# make DIAGNOSTIC_HW_PROBE=1 times scratchpad, caches and RAM at startup and
+# writes hw-probe.txt beside the EBOOT.
+ifneq ($(DIAGNOSTIC_HW_PROBE),)
+COMMON_FILE += hw_probe.h
+MAINOBJS += hw_probe.o hw_probe_psp.o
 endif
 
 # The bundled zlib in src/zlib (VPATH finds its sources).
@@ -109,6 +116,27 @@ ifneq ($(PROFILE),diagnostic)
 $(error DIAGNOSTIC_CORE_PROFILE=1 asks for PROFILE=diagnostic, not PROFILE=$(PROFILE))
 endif
 endif
+# So is the memory system probe.
+ifneq ($(DIAGNOSTIC_HW_PROBE),)
+PROFILE ?= diagnostic
+ifneq ($(PROFILE),diagnostic)
+$(error DIAGNOSTIC_HW_PROBE=1 asks for PROFILE=diagnostic, not PROFILE=$(PROFILE))
+endif
+endif
+# make PADDING_PROBE_BYTES=N links src/padding_probe.c, about N bytes of code
+# and N of BSS that nothing uses, for the padding experiment in
+# docs/PERFORMANCE.md; 0 links it empty. A diagnostic build only.
+ifneq ($(PADDING_PROBE_BYTES),)
+PROFILE ?= diagnostic
+ifneq ($(PROFILE),diagnostic)
+$(error PADDING_PROBE_BYTES asks for PROFILE=diagnostic, not PROFILE=$(PROFILE))
+endif
+# Linked first and kept out of LTO, so its code and BSS come before the
+# whole core: the LTO output goes where the first LTO object was.
+MAINOBJS := padding_probe.o $(MAINOBJS)
+padding_probe.o: CFLAGS += -fno-lto
+CFLAGS += -DPADDING_PROBE_BYTES=$(PADDING_PROBE_BYTES)
+endif
 PROFILE ?= release
 
 ifeq ($(PROFILE),release)
@@ -121,8 +149,11 @@ CFLAGS += -DGBA_RUSH_PROFILE_DIAGNOSTIC
 PSP_EBOOT_ICON = res/ICON0-diag.png
 PSP_EBOOT_PIC1 = res/PIC1-diag.png
 PSP_EBOOT_TITLE = GBA Rush PSP [DIAG]
-COMMON_FILE += input_trace.h
-MAINOBJS += input_trace.o
+COMMON_FILE += input_trace.h autorun_config.h net_fault.h
+MAINOBJS += input_trace.o autorun_config.o net_fault.o
+# The allocation trace (alloc_trace_psp.c) sees every malloc and free.
+MAINOBJS += alloc_trace_psp.o
+LDFLAGS += -Wl,--wrap=malloc,--wrap=free
 else
 $(error PROFILE must be release or diagnostic, not '$(PROFILE)')
 endif
@@ -130,6 +161,12 @@ endif
 # include it (scripts/check-profiles.sh allows this one line).
 ifneq ($(DIAGNOSTIC_CORE_PROFILE),)
 CFLAGS += -DENABLE_DIAGNOSTIC_CORE_PROFILE
+endif
+# Defined here too: the probe takes 4 MiB and times the memory system at
+# every start, so PROFILE=diagnostic alone leaves it out (check-profiles.sh
+# allows this line as well).
+ifneq ($(DIAGNOSTIC_HW_PROBE),)
+CFLAGS += -DENABLE_DIAGNOSTIC_HW_PROBE
 endif
 
 CXXFLAGS =
@@ -151,10 +188,13 @@ $(C_ONLY_OBJS): CFLAGS += -Wbad-function-cast -Wmissing-prototypes
 $(filter-out $(OBJZ) $(OBJG),$(C_ONLY_OBJS)): CFLAGS += -Werror
 $(OBJZ) $(OBJG): CFLAGS += -Wno-old-style-definition
 $(MAINOBJS): $(COMMON_FILE)
-# A new build id, profile or core profile setting rebuilds the objects: the
-# stamp is rewritten only when the configuration it records changes.
+# A new build id, profile, core profile, probe or padding setting rebuilds
+# the objects: the stamp is rewritten only when the configuration it records
+# changes.
 BUILD_CONFIG = $(strip $(BUILD_ID) $(PROFILE) \
- $(if $(DIAGNOSTIC_CORE_PROFILE),core-profile))
+ $(if $(DIAGNOSTIC_CORE_PROFILE),core-profile) \
+ $(if $(DIAGNOSTIC_HW_PROBE),hw-probe) \
+ $(if $(PADDING_PROBE_BYTES),padding-$(PADDING_PROBE_BYTES)))
 $(MAINOBJS): build-config.stamp
 build-config.stamp: FORCE
 	@if [ "$$(cat $@ 2>/dev/null)" != '$(BUILD_CONFIG)' ]; then \
@@ -176,6 +216,9 @@ video_cc_wrap.o: src/video_cc.cc
 video_old_wrap.o: src/video.c
 # memory.c embeds the built-in BIOS from this header.
 memory.o: src/open_bios.h
+# --wrap has had linker bugs with wrappers defined in LTO objects, so the
+# diagnostic profile's malloc and free wrappers stay a plain object.
+alloc_trace_psp.o: CFLAGS += -fno-lto
 
 INCDIR = SDK/include src src/zlib src/libpower
 LIBDIR = SDK/lib

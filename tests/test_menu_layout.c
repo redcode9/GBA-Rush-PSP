@@ -91,6 +91,40 @@ static void test_text_bounds(void)
   }
 }
 
+/* Main menu row status in a 36-column row: right-aligned when it fits,
+   cut after a two-column gap when it does not, nothing when the label
+   leaves no room or the status is empty. */
+static void test_status_columns(void)
+{
+  size_t start = 99;
+
+  /* "Game" + "2 cheats on": fits, ends at column 36. */
+  assert(menu_layout_status_columns(4, 11, 36, 2, &start) == 11);
+  assert(start == 25);
+  /* Fits exactly: label 13 + gap 2 + status 21 = 36. */
+  assert(menu_layout_status_columns(13, 21, 36, 2, &start) == 21);
+  assert(start == 15);
+  /* One column too long: cut to 21, starting right after the gap. */
+  assert(menu_layout_status_columns(13, 22, 36, 2, &start) == 21);
+  assert(start == 15);
+  /* One column of room left after the gap. */
+  assert(menu_layout_status_columns(33, 12, 36, 2, &start) == 1);
+  assert(start == 35);
+
+  start = 99;
+  /* The gap alone fills the row, the label fills it, or is wider. */
+  assert(menu_layout_status_columns(34, 12, 36, 2, &start) == 0);
+  assert(menu_layout_status_columns(36, 12, 36, 2, &start) == 0);
+  assert(menu_layout_status_columns(40, 12, 36, 2, &start) == 0);
+  assert(menu_layout_status_columns(4, 0, 36, 2, &start) == 0);
+  assert(menu_layout_status_columns(4, 12, 0, 2, &start) == 0);
+  assert(menu_layout_status_columns(4, 12, 36, 2, NULL) == 0);
+  assert(start == 99);
+  /* No gap: the status may touch the label. */
+  assert(menu_layout_status_columns(30, 12, 36, 0, &start) == 6);
+  assert(start == 30);
+}
+
 /* Runs every layout and clipping case; a failing assert aborts the run. */
 int main(void)
 {
@@ -98,6 +132,7 @@ int main(void)
   test_bottom_selection_scrolls();
   test_sparse_and_invalid_rows();
   test_text_bounds();
+  test_status_columns();
   puts("menu layout tests passed");
   return 0;
 }

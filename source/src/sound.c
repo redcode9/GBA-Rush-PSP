@@ -30,6 +30,9 @@
 #include "link_audio_wait.h"
 #include "perf_monitor.h"
 #include "sound_math.h"
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+#include "state_hash.h"
+#endif
 
 
 // s16 entries in one interleaved stereo PSP output block.
@@ -177,6 +180,9 @@ static u32 sound_fast_forward_audio_started = 0;
 static u64 sound_fast_forward_starvation_since = 0;
 
 #define SOUND_OPERATION_TIMEOUT 500000u
+/* Power path: the audio thread holds sound_sema for one 800-sample output,
+   about 17 ms. */
+#define SOUND_POWER_TIMEOUT 50000u
 #define SOUND_RECOVERY_RETRY_US 250000u
 
 u32 sound_buffer_base = 0;
@@ -187,6 +193,9 @@ static u64 delta_ticks(u32 ticks, u32 last_ticks);
 static void sound_reset_fifo(u8 channel);
 
 u8 sound_on = 0;
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+u8 sound_bench_audio_off = 0;
+#endif
 
 u8 master_enable = 0;
 u8 gbc_sound_wave_update = 0;
@@ -272,6 +281,35 @@ u32 gbc_sound_last_cpu_ticks = 0;
 u32 gbc_sound_partial_ticks = 0;
 
 FIXED08_24 gbc_sound_tick_step;
+
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+// Replay state hashes (input.c): a running hash of every mixed sample,
+// taken once per emulated frame.
+static u32 sound_diagnostic_audio_on = 0;
+static u32 sound_diagnostic_audio_hash = STATE_HASH_FNV_BASIS;
+
+// 1 starts a new running hash, 0 stops hashing.
+void sound_diagnostic_audio_enable(u32 enabled)
+{
+  sound_diagnostic_audio_on = enabled;
+  sound_diagnostic_audio_hash = STATE_HASH_FNV_BASIS;
+}
+
+// Mixes the PSG channels up to cpu_ticks, then returns the hash of the
+// samples mixed since the last call and starts the next one, so every
+// frame's hash ends at the same sample; this also brings SOUNDCNT_X up to
+// that tick. Mixing is split only at emulated ticks: while hashing, the
+// audio thread asks for no updates of its own (sound_update_thread).
+u32 sound_diagnostic_audio_take(u32 cpu_ticks)
+{
+  u32 hash;
+
+  update_gbc_sound(cpu_ticks);
+  hash = sound_diagnostic_audio_hash;
+  sound_diagnostic_audio_hash = STATE_HASH_FNV_BASIS;
+  return hash;
+}
+#endif
 
 
 // SOUND1CNT_H / SOUND2CNT_L / SOUND4CNT_L: length (bits 0-5), duty (6-7),
@@ -619,7 +657,13 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
 
   next_sample = ds->fifo[fifo_base] * 256;
 
+  // The audio-off bench arm takes the silent path below, which advances
+  // the same as the others.
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+  if (sound_on == 1 && !sound_bench_audio_off)
+#else
   if (sound_on == 1)
+#endif
   {
     if (ds->volume == DIRECT_SOUND_VOLUME_50)
     {
@@ -778,6 +822,23 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
   GBC_SOUND_RENDER_SAMPLE_RIGHT();                                            \
   GBC_SOUND_RENDER_SAMPLE_LEFT();                                             \
 
+#define GBC_SOUND_RENDER_SAMPLE_NULL()                                        \
+
+// The audio-off bench arm: a channel that plays steps its sample position
+// and its length, envelope and sweep counters as usual, writing nothing.
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+#define GBC_SOUND_RENDER_BENCH_ARM(type, sample_length, envelope_op, sweep_op) \
+  if (sound_bench_audio_off && gs->status != GBC_SOUND_INACTIVE)              \
+  {                                                                           \
+    GBC_SOUND_RENDER_##type(NULL, sample_length, envelope_op, sweep_op);      \
+  }                                                                           \
+  else                                                                        \
+
+#else
+#define GBC_SOUND_RENDER_BENCH_ARM(type, sample_length, envelope_op, sweep_op) \
+
+#endif
+
 #define GBC_SOUND_RENDER_SAMPLES(type, sample_length, envelope_op, sweep_op)  \
   for (i = 0; i < buffer_ticks; i++)                                          \
   {                                                                           \
@@ -831,6 +892,7 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
                                                                               \
   UPDATE_VOLUME(envelope_op);                                                 \
                                                                               \
+  GBC_SOUND_RENDER_BENCH_ARM(type, sample_length, envelope_op, sweep_op)      \
   switch (gs->status)                                                         \
   {                                                                           \
     case GBC_SOUND_INACTIVE:                                                  \
@@ -944,7 +1006,7 @@ int sound_take_fast_forward_fallback(void)
 // audio thread and releases the output channel.
 void sound_power_suspend(void)
 {
-  SceUInt timeout = SOUND_OPERATION_TIMEOUT;
+  SceUInt timeout = SOUND_POWER_TIMEOUT;
 
   sound_fast_forward = 0;
   sound_fast_forward_factor = 1;
@@ -961,11 +1023,12 @@ void sound_power_suspend(void)
   }
 }
 
-// Power callback thread, on resume: reserves the output channel again.
-// The result (< 0 on failure) goes to sound_power_resume_finish().
+// Power callback thread on resume, or the main thread when a switch-only
+// entry times out: reserves the output channel again. The result (< 0 on
+// failure) goes to sound_power_resume_finish().
 int sound_power_resume(void)
 {
-  SceUInt timeout = SOUND_OPERATION_TIMEOUT;
+  SceUInt timeout = SOUND_POWER_TIMEOUT;
   int result;
 
   if(sound_sema < 0 || sceKernelWaitSema(sound_sema, 1, &timeout) < 0)
@@ -1207,6 +1270,14 @@ void update_gbc_sound(u32 cpu_ticks)
   pIO_REG(REG_SOUNDCNT_X) = sound_status;
 
   gbc_sound_last_cpu_ticks = cpu_ticks;
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  // The entries just mixed, before the index passes them: the audio
+  // thread reads (and zeroes) only entries behind it, so reading them
+  // later, from input.c, would race with it.
+  if (sound_diagnostic_audio_on != 0)
+    sound_diagnostic_audio_hash = state_hash_ring(sound_diagnostic_audio_hash,
+     sound_buffer, RING_BUFFER_SIZE, gbc_sound_buffer_index, buffer_ticks << 1);
+#endif
   gbc_sound_buffer_index = (gbc_sound_buffer_index + (buffer_ticks << 1)) % RING_BUFFER_SIZE;
 
   sound_thread_wakeup();
@@ -1351,7 +1422,15 @@ static int sound_update_thread(SceSize args, void *argp)
         else if(now - sound_fast_forward_starvation_since >= 100000)
           sound_fast_forward_fallback_pending = 1;
       }
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+      // Not while a replay hashes audio: a PSG register write applies back
+      // to the last update, so an update at a host time changes the samples
+      // themselves. The next emulated update (a write, the VBlank) wakes it.
+      if (sound_diagnostic_audio_on == 0)
+        gbc_sound_update = 1;
+#else
       gbc_sound_update = 1;
+#endif
       sound_sleep = 1;
       sceKernelSleepThread();
 
