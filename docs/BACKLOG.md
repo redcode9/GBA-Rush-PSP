@@ -2478,7 +2478,7 @@ Il gruppo copre misura e velocità: metodo A/B, strumentazione, benchmark, budge
 - **Cosa:** `--baseline` e `--candidate` accettano da 3 a N report ciascuno, anche in numero diverso (`nargs='+'` con `MIN_RUNS = 3`). Per ogni metrica si stampano mediana, minimo, massimo e il verdetto di un test di permutazione esatto unilaterale sui valori per run; se il test non può decidere, l'esito dice "non decidibile, servono circa N run per braccio". Le soglie di FAIL restano identiche. `scripts/check-performance.sh:34` controlla `MIN_RUNS` invece di `nargs=3`; `CONTRIBUTING.md:68-75` spiega il verdetto.
 - **File:** `scripts/compare-benchmarks.py`, `scripts/check-performance.sh`, `tests/test_compare_benchmarks.py`, `CONTRIBUTING.md`
 - **Test:** `test_exact_permutation_complete_separation_3v3` (p=0,05); `test_overlap_is_undecided_with_runs_needed`; `test_unequal_run_counts_4v3`; `test_fewer_than_three_runs_rejected` (codice 2); `test_legacy_v6_fixtures_same_pass_fail`; `make check`.
-- **Accettazione:** i fixture v6 esistenti danno lo stesso PASS/FAIL di oggi; con intervalli sovrapposti il verdetto non afferma mai una differenza; meno di 3 run per braccio esce con codice 2; solo libreria standard.
+- **Accettazione:** i fixture v6 esistenti danno lo stesso PASS/FAIL di oggi; fino a 4+3 run per braccio, con intervalli sovrapposti il verdetto non afferma mai una differenza; meno di 3 run per braccio esce con codice 2; solo libreria standard.
 - **Licenza:** codice nuovo GPL-2.0-or-later.
 
 #### PRF-1.2 — Gate sugli estremi: p99, massimo robusto, work p95, frame oltre 1,5× budget al minuto · S, 1 gg · dipende da: PRF-1.1, PRF-2.1, ENG-1.6 · PSP: no

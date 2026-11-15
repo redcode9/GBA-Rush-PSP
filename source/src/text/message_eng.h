@@ -567,6 +567,14 @@
 
   // MSG_ERR_OPEN_GAMEPACK
   "Could not open the game file.",
+  // MSG_SAVE_READ_RETRY
+  "The save file cannot be read. Try again?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "Play without saving? The file stays as it is.",
+  // MSG_SAVE_WRITE_FAILED
+  "The save file could not be written.\nThe game keeps it and tries again.",
+  // MSG_SAVE_WRITE_RETRY
+  "Save not written: try again?",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "Could not start the callback thread.",
@@ -910,6 +918,9 @@
   // MSG_LINK_MENU_DISCONNECT
   "Disconnect",
 
+  // MSG_LINK_MENU_RESTORE
+  "Restore pre-link save",
+
   // MSG_LINK_MENU_HELP_STATUS
   "Current link cable state",
 
@@ -921,6 +932,18 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "Close the current link session",
+
+  // MSG_LINK_MENU_HELP_RESTORE
+  "Put back a save copied before a link",
+
+  // MSG_LINK_RESTORE_CONFIRM
+  "Restore save of %s? Game restarts.",
+
+  // MSG_LINK_RESTORE_NONE
+  "No save was copied before a link session.",
+
+  // MSG_LINK_RESTORE_FAILED
+  "The save could not be restored.",
 
   // MSG_LINK_STATUS_NO_GAME
   "No game loaded",
@@ -978,6 +1001,9 @@
 
   // MSG_LINK_REASON_ROM_CHANGE
   "Game changed",
+
+  // MSG_LINK_REASON_SAVE_FAILED
+  "Save could not be written",
 
   // MSG_CATEGORY_CONTINUE
   "Continue",
@@ -1055,6 +1081,22 @@
   "Report saved",
   // MSG_DIAGNOSTICS_REPORT_FAILED
   "Report could not be saved",
+  // MSG_DIAGNOSTICS_BENCH
+  "Unbound benchmark",
+  // MSG_DIAGNOSTICS_HELP_BENCH
+  "Load the slot, run 3600 frames unpaced, save the report",
+  // MSG_DIAGNOSTICS_BENCH_LINK
+  "Benchmark refused: a link session is open",
+  // MSG_DIAGNOSTICS_BENCH_NO_STATE
+  "Benchmark refused: no usable state in the current slot",
+  // MSG_DIAGNOSTICS_BENCH_RENDER_OFF
+  "Unbound benchmark, rendering off",
+  // MSG_DIAGNOSTICS_HELP_BENCH_RENDER_OFF
+  "The same run without drawing or showing any frame",
+  // MSG_DIAGNOSTICS_BENCH_AUDIO_OFF
+  "Unbound benchmark, audio off",
+  // MSG_DIAGNOSTICS_HELP_BENCH_AUDIO_OFF
+  "The same run without writing any sound sample",
   // MSG_UNAVAILABLE_CURRENT_STATE
   "Unavailable in the current state",
 

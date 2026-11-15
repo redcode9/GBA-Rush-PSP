@@ -1,0 +1,40 @@
+# Benchmark archive
+
+Raw performance reports of published GBA Rush PSP releases, one directory
+per console model, game and release:
+
+```text
+benchmarks/<model>/<game-code>-r<revision>/<version>/<run>.txt
+```
+
+- `<model>` is `psp-1000`, `psp-2000`, `psp-3000` or `psp-go`, and must
+  match the reports' `psp-model` (the `kuKernelGetModel()` value): 0 for
+  `psp-1000`, 1 for `psp-2000`, 2, 3, 6 or 8 for `psp-3000`, 4 for
+  `psp-go`.
+- `<game-code>-r<revision>` is the report's `game-code` and `rom-revision`,
+  for example `BPRE-r0`.
+- `<version>` is the report's `version`, for example `1.4.3`.
+- `<run>.txt` is a report saved from Diagnostics > Start measurement,
+  unchanged. Every run in one directory must share the settings
+  `scripts/compare-benchmarks.py` checks (`MATCH_FIELDS`).
+
+Rules:
+
+- Only `.txt` reports and `.md` notes; `scripts/check-tree.sh` fails on any
+  other file here. Never add ROMs, saves, save states or BIOS files.
+- Only reports from the `EBOOT.PBP` of a published release package. Write
+  the sha256 of that `EBOOT.PBP` in the commit that adds the reports.
+- A candidate's reports come from the `EBOOT.PBP` of its newest rc package
+  and carry its build id: `make release-gate CHANNEL=stable` checks their
+  `build-id` against that rc's manifest. The build id names the `source/`
+  tree only, so the gate cannot tell a diagnostic or local build of the
+  same tree from the packaged one.
+- Keep only the baselines of each release; development builds are compared
+  with `scripts/compare-benchmarks.py` and not archived.
+
+After adding or removing reports, regenerate the table in
+`docs/PERFORMANCE.md`:
+
+```sh
+python3 scripts/perf-table.py --update docs/PERFORMANCE.md
+```
