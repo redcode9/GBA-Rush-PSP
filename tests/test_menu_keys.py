@@ -68,6 +68,8 @@ u32 menu(void) { menu_calls++; return 1; }
 void main_fast_forward_input(u32 pressed, u32 held) { (void)pressed; (void)held; }
 u32 action_loadstate(void) { hotkey_calls++; return 0; }
 u32 action_savestate(void) { hotkey_calls++; return 0; }
+void main_perf_bench_cancel(void) { }
+int perf_monitor_bench_running(void) { return 0; }
 static void trigger_key(u32 keys_down) { (void)keys_down; }
 '''
 
