@@ -50,6 +50,10 @@ static void *draw_frame;
 static u32 present_pending;
 /* Set during sleep and shutdown so blit_gu/blit_sharp queue nothing. */
 static u32 present_blocked;
+/* Set while video_present_paused_frame() runs the presenter, so the menu's
+   backdrop adds nothing to a perf capture: no presented frame, no dcache
+   writeback or GE sync sample. */
+static u32 presenting_paused_frame;
 /* One-shot: wait for the next present right away (set after resume). */
 static u32 synchronous_present;
 /* Time spent in the last video_sync_present() wait. */
@@ -91,8 +95,10 @@ static void generate_display_list(float scale_x, float scale_y,
 static void blit_gu(void);
 static void blit_sharp(void);
 static void blit_sw(void);
-static int draw_scaled_slices(u32 source_width, u32 source_height,
- u32 destination_width, u32 destination_height, u32 slice_width);
+static void generate_int2_display_list(void);
+static int draw_scaled_slices(u32 source_top, u32 source_width,
+ u32 source_height, u32 destination_width, u32 destination_height,
+ u32 slice_width);
 static void apply_adaptive_quality(void);
 static VideoAdaptiveQuality selected_manual_quality(void);
 static u32 selected_texture_filter(void);
@@ -195,7 +201,7 @@ void draw_popup_frame_auto(int x, int y, int w, int h)
 /* Waits for a GU_DIRECT list to finish, timed when perf capture is on. */
 static void video_ge_sync_direct(void)
 {
-  int measuring = perf_monitor_active();
+  int measuring = perf_monitor_active() && !presenting_paused_frame;
   u32 sync_start;
 
   if(measuring)
@@ -211,7 +217,7 @@ static void video_ge_sync_direct(void)
 /* Flushes CPU-drawn pixels (screen_texture) so the GE reads fresh data. */
 static void video_dcache_writeback(void)
 {
-  int measuring = perf_monitor_active();
+  int measuring = perf_monitor_active() && !presenting_paused_frame;
   u32 writeback_start;
 
   if(measuring)
@@ -502,6 +508,18 @@ static void generate_display_list(float scale_x, float scale_y,
   sceGuFinish();
 }
 
+/* Records display_list_0 for the 2x integer scale: GBA rows 12-147, each
+ * pixel doubled, fill the 480x272 screen. Every vertex stays on screen
+ * (no negative y stored in a u16) and nothing is left to clear. */
+static void generate_int2_display_list(void)
+{
+  sceGuStart(GU_CALL, display_list_0);
+  draw_scaled_slices((GBA_SCREEN_HEIGHT - PSP_SCREEN_HEIGHT / 2) / 2,
+   GBA_SCREEN_WIDTH, PSP_SCREEN_HEIGHT / 2, PSP_SCREEN_WIDTH,
+   PSP_SCREEN_HEIGHT, SLICE);
+  sceGuFinish();
+}
+
 /* Quality that the fixed screen options amount to; the governor holds it
  * while 16:9 auto is off. */
 static VideoAdaptiveQuality selected_manual_quality(void)
@@ -509,16 +527,21 @@ static VideoAdaptiveQuality selected_manual_quality(void)
   if(option_screen_scale == SCALED_16X9_SHARP)
     return VIDEO_ADAPTIVE_QUALITY_SHARP;
 
-  if(option_screen_filter == FILTER_NEAREST)
+  if(option_screen_scale == SCALED_INT2 ||
+     option_screen_filter == FILTER_NEAREST)
     return VIDEO_ADAPTIVE_QUALITY_CRISP;
 
   return VIDEO_ADAPTIVE_QUALITY_SMOOTH;
 }
 
 /* The GU filter for the frame: FILTER_NEAREST/BILINEAR equal GU_NEAREST/
- * GU_LINEAR, and 16:9 auto forces nearest while at CRISP. */
+ * GU_LINEAR. 2x integer always uses nearest, and 16:9 auto does while at
+ * CRISP. */
 static u32 selected_texture_filter(void)
 {
+  if(option_screen_scale == SCALED_INT2)
+    return GU_NEAREST;
+
   if(option_screen_scale == SCALED_16X9_AUTO &&
      adaptive_video.quality == VIDEO_ADAPTIVE_QUALITY_CRISP)
     return GU_NEAREST;
@@ -573,7 +596,7 @@ static void blit_gu(void)
   sceGuFinish();
   present_pending = 1;
 
-  if(selected_texture_filter() == GU_NEAREST)
+  if(!presenting_paused_frame && selected_texture_filter() == GU_NEAREST)
     perf_monitor_record_quality_presented(0);
 
   if(synchronous_present)
@@ -583,10 +606,12 @@ static void blit_gu(void)
   }
 }
 
-/* Draws the bound texture's top-left source rectangle stretched to the
- * destination size at (0, 0). Returns 0 if the GU ran out of list memory. */
-static int draw_scaled_slices(u32 source_width, u32 source_height,
- u32 destination_width, u32 destination_height, u32 slice_width)
+/* Draws the bound texture's source rectangle starting at row source_top,
+ * column 0, stretched to the destination size at (0, 0). Returns 0 if the
+ * GU ran out of list memory. */
+static int draw_scaled_slices(u32 source_top, u32 source_width,
+ u32 source_height, u32 destination_width, u32 destination_height,
+ u32 slice_width)
 {
   u32 source_x;
   u32 vertex_count = 2 * ((source_width + slice_width - 1) / slice_width);
@@ -606,12 +631,12 @@ static int draw_scaled_slices(u32 source_width, u32 source_height,
       source_end = source_width;
 
     vertex[0].u = (u16)source_x;
-    vertex[0].v = 0;
+    vertex[0].v = (u16)source_top;
     vertex[0].x = (u16)((source_x * destination_width) / source_width);
     vertex[0].y = 0;
 
     vertex[1].u = (u16)source_end;
-    vertex[1].v = (u16)source_height;
+    vertex[1].v = (u16)(source_top + source_height);
     vertex[1].x = (u16)((source_end * destination_width) / source_width);
     vertex[1].y = (u16)destination_height;
     vertex += 2;
@@ -658,7 +683,7 @@ static void blit_sharp(void)
   sceGuTexFunc(GU_TFX_REPLACE, GU_TCC_RGB);
   sceGuTexFlush();
 
-  first_pass_ok = draw_scaled_slices(GBA_SCREEN_WIDTH, GBA_SCREEN_HEIGHT,
+  first_pass_ok = draw_scaled_slices(0, GBA_SCREEN_WIDTH, GBA_SCREEN_HEIGHT,
    SHARP_ACTIVE_WIDTH, SHARP_ACTIVE_HEIGHT, SLICE);
 
   sceGuTexFlush();
@@ -672,7 +697,7 @@ static void blit_sharp(void)
    SHARP_TEXTURE_WIDTH, sharp_texture);
   sceGuTexFilter(GU_LINEAR, GU_LINEAR);
 
-  second_pass_ok = draw_scaled_slices(SHARP_ACTIVE_WIDTH,
+  second_pass_ok = draw_scaled_slices(0, SHARP_ACTIVE_WIDTH,
    SHARP_ACTIVE_HEIGHT, PSP_SCREEN_WIDTH, PSP_SCREEN_HEIGHT, SLICE);
 
   sceGuTexImage(0, 256, 256, GBA_LINE_SIZE, screen_texture);
@@ -684,7 +709,8 @@ static void blit_sharp(void)
   if(first_pass_ok && second_pass_ok)
   {
     present_pending = 1;
-    perf_monitor_record_quality_presented(1);
+    if(!presenting_paused_frame)
+      perf_monitor_record_quality_presented(1);
   }
   else
   {
@@ -760,6 +786,22 @@ static void blit_sw(void)
   }
 }
 
+/* Draws the paused game into the back buffer with the presenter picked at
+   gameplay entry, as the menu's backdrop, and waits for the GE so the menu
+   can draw on top. Returns 0 without drawing while presents are blocked
+   (sleep, shutdown). */
+int video_present_paused_frame(void)
+{
+  if(present_blocked)
+    return 0;
+
+  presenting_paused_frame = 1;
+  (*update_screen)();
+  presenting_paused_frame = 0;
+  video_sync_present();
+  return 1;
+}
+
 /* Called at startup and when entering the menu; nothing to do on PSP. */
 void video_resolution_large(void)
 {
@@ -769,7 +811,7 @@ void video_resolution_large(void)
  * clear also blanks the draw buffer. */
 static void apply_screen_scale(int clear)
 {
-  u32 gameplay_filter = option_screen_filter;
+  u32 gameplay_filter;
 
   video_sync_present();
   adaptive_has_last_frame_time = 0;
@@ -778,10 +820,7 @@ static void apply_screen_scale(int clear)
    option_screen_scale == SCALED_16X9_AUTO,
    selected_manual_quality());
   set_gba_resolution();
-
-  if(option_screen_scale == SCALED_16X9_AUTO &&
-     adaptive_video.quality == VIDEO_ADAPTIVE_QUALITY_CRISP)
-    gameplay_filter = GU_NEAREST;
+  gameplay_filter = selected_texture_filter();
 
   sceGuStart(GU_DIRECT, display_list);
 
@@ -847,6 +886,11 @@ static void set_gba_resolution(void)
 
     case SCALED_16X9_SHARP:
       update_screen = blit_sharp;
+      break;
+
+    case SCALED_INT2:
+      generate_int2_display_list();
+      update_screen = blit_gu;
       break;
 
     case SCALED_16X9_AUTO:

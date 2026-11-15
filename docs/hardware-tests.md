@@ -477,13 +477,14 @@ Each test has four fields:
 
 - Models: PSP-1000
 - Minutes: 20
-- Pass: each of the 14 modes passes on its own when its photo shows eight
+- Pass: each of the 16 modes passes on its own when its photo shows eight
   bars of equal width, left to right white, black, red, green, blue,
   yellow, cyan and magenta, at the size of its scale (none 240x160,
   x15-gu and x15-sw 360x240, user 408x272, the three 16:9 scales the
-  whole 480x272 screen).
+  whole 480x272 screen, int2 the whole screen too, rows 12-147 of the
+  frame with every pixel a sharp 2x2 block in both of its modes).
   The EBOOT exits by itself and `diag-autorun.result` says `status=done`
-  and `frames=8400`, followed by one `testpat=<mode> used=<presenter>/<filter>`
+  and `frames=9600`, followed by one `testpat=<mode> used=<presenter>/<filter>`
   line per mode. The bars are stored in GU_PSM_5551 with red in the low
   bits (0x7FFF, 0x0000, 0x001F, 0x03E0, 0x7C00, 0x03FF, 0x7FE0, 0x7C1F):
   red and blue trading places means a swapped channel.
@@ -492,10 +493,10 @@ Each test has four fields:
   `version=1`, `build=<id>` (the build id the Diagnostics page shows) and
   `testpat=all`, and start the EBOOT without touching the console. Each
   mode stays about 10 seconds, in the order `source/src/autorun_config.h`
-  gives (none, x15-gu, x15-sw, user, 16x9-gu, 16x9-sharp, 16x9-auto, each
-  nearest then linear): photograph each one straight on, then keep the
+  gives (none, x15-gu, x15-sw, user, 16x9-gu, 16x9-sharp, 16x9-auto, int2,
+  each nearest then linear): photograph each one straight on, then keep the
   result file with the photos. Record one row per mode in
-  `docs/HARDWARE-RESULTS.md`, 14 in all, each with Test id
+  `docs/HARDWARE-RESULTS.md`, 16 in all, each with Test id
   `ge-testpat-photo` and in Evidence the mode name (such as
   `16x9-sharp-linear`), its photo file and `diag-autorun.result`.
 

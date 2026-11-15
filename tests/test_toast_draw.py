@@ -84,7 +84,7 @@ class ToastDrawTests(unittest.TestCase):
         self.assertRegex(menu, r"#ifdef ENABLE_DIAGNOSTIC_PINNED_TOAST\s+"
                                r"ACTION_OPTION\(menu_diagnostics_pin_toast,")
         # With the bench arm, trace and pin blocks on (the code before
-        # #else, as in the diagnostic build), the pin is option 12 after the
+        # #else, as in the diagnostic build), the pin is option 13 after the
         # arm rows, which the availability line names by index, and no two
         # rows share a screen line.
         arms = int(re.search(r"#define DIAGNOSTICS_BENCH_ARM_ROWS (\d+)",
@@ -94,11 +94,11 @@ class ToastDrawTests(unittest.TestCase):
                           r"( \+ DIAGNOSTICS_BENCH_ARM_ROWS)?, \w+\)",
                           rows[:rows.index("#else")])
         self.assertEqual([name for name, _, _ in rows].index("menu_diagnostics_pin_toast"),
-                         12 + arms)
+                         13 + arms)
         lines = [int(line) + (arms if shifted else 0) for _, line, shifted in rows]
         self.assertEqual(len(set(lines)), len(lines))
         self.assertRegex(menu, r"#ifdef ENABLE_DIAGNOSTIC_PINNED_TOAST\s+[^#]*"
-                               r"diagnostics_options\[12 \+ DIAGNOSTICS_BENCH_ARM_ROWS\]"
+                               r"diagnostics_options\[13 \+ DIAGNOSTICS_BENCH_ARM_ROWS\]"
                                r"\.available_function = menu_game_available;")
 
     def test_toast_drawn_on_presented_frames_only(self):

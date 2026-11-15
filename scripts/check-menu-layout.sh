@@ -4,8 +4,8 @@ set -eu
 
 # Source-level checks of the main menu in gui.c, which host tests do not
 # compile: the category order (the same order test_menu_model.c checks in
-# menu_catalog.c) and that menu text is drawn through the clipped,
-# viewport-bounded helpers.
+# menu_catalog.c), that menu text is drawn through the clipped,
+# viewport-bounded helpers, and that the paused game is the background.
 
 expected='MSG_CATEGORY_CONTINUE
 MSG_CATEGORY_SAVE_LOAD
@@ -57,6 +57,33 @@ fi
 if grep -q 'print_string.*guide_line' source/src/gui.c ||
    grep -q 'print_string_gbk.*guide_line' source/src/gui.c; then
   echo "Contextual guide text bypasses bounded rendering." >&2
+  exit 1
+fi
+
+# The menu shows the paused game behind its rows, from one top-level
+# function that other full-screen cards can reuse.
+if ! grep -q '^static void menu_draw_background(void)' source/src/gui.c ||
+   ! grep -q '^    menu_draw_background();' source/src/gui.c ||
+   ! grep -q 'video_present_paused_frame()' source/src/gui.c; then
+  echo "The menu does not draw the paused game behind its rows." >&2
+  exit 1
+fi
+
+# The main menu row status is drawn every frame: it reads RAM only (the
+# state slots are counted when the main menu is entered) and is cut to the
+# room left after the label.
+status_body=$(awk '
+  /^static void menu_draw_main_status\(/ { inside = 1 }
+  inside { print }
+  inside && /^}/ { exit }
+' source/src/gui.c)
+if [ -z "$status_body" ] ||
+   printf '%s\n' "$status_body" |
+    grep -qE 'sceIo|savestate_file_exists|get_savestate_info' ||
+   ! printf '%s\n' "$status_body" | grep -q 'menu_layout_status_columns' ||
+   ! grep -q 'menu_draw_main_status(display_option->display_msg' \
+    source/src/gui.c; then
+  echo "The main menu row status is missing, unbounded or reads files." >&2
   exit 1
 fi
 

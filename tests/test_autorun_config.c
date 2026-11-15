@@ -190,7 +190,8 @@ static const char *const testpat_modes[AUTORUN_TESTPAT_MODES] =
   "none-nearest", "none-linear", "x15-gu-nearest", "x15-gu-linear",
   "x15-sw-nearest", "x15-sw-linear", "user-nearest", "user-linear",
   "16x9-gu-nearest", "16x9-gu-linear", "16x9-sharp-nearest",
-  "16x9-sharp-linear", "16x9-auto-nearest", "16x9-auto-linear"
+  "16x9-sharp-linear", "16x9-auto-nearest", "16x9-auto-linear",
+  "int2-nearest", "int2-linear"
 };
 
 static void test_testpat_key(void)

@@ -460,6 +460,27 @@
   // MSG_CHEAT_MENU_HELP_3
   FONT_CURSOR_LEFT_GBK FONT_CURSOR_RIGHT_GBK ":切換頁面   " FONT_BTN_CROSS_GBK ":退出",
 
+  // MSG_CHEAT_LOAD_DONE
+  "%s\n已載入 %lu 個作弊碼",
+
+  // MSG_CHEAT_LOAD_FAILED_AT_LINE
+  "作弊檔載入失敗，第 %lu 行:\n%s",
+
+  // MSG_CHEAT_LOAD_FAILED
+  "作弊檔載入失敗:\n%s",
+
+  // MSG_CHEAT_REASON_OPEN
+  "無法存取檔案",
+
+  // MSG_CHEAT_REASON_CAPACITY
+  "作弊碼數量超出支援上限",
+
+  // MSG_CHEAT_REASON_EMPTY
+  "檔案為空",
+
+  // MSG_CHEAT_REASON_FORMAT
+  "格式無效",
+
   // MSG_NON_LOAD_GAME
   "遊戲尚未載入",
 
@@ -546,6 +567,8 @@
 
   // MSG_SCN_SCALED_16X9_AUTO
   "16:9 Auto",
+  // MSG_SCN_SCALED_INT2
+  "2x 整數 (裁切)",
 
   // MSG_LANG_JAPANESE
   "日本語",
@@ -1112,6 +1135,16 @@
   "Measure and report emulator behavior",
   // MSG_CATEGORY_HELP_EXIT
   "Sleep or close the emulator",
+  // MSG_MAIN_STATUS_SLOTS
+  "%lu/10",
+  // MSG_MAIN_STATUS_SLOTS_AUTO
+  "%lu/10 + AUTO",
+  // MSG_MAIN_STATUS_CHEATS
+  "已啟用 %lu 個作弊碼",
+  // MSG_MAIN_STATUS_LINKED
+  "已連接: %s",
+  // MSG_MAIN_STATUS_WAITING
+  "等待中",
 
   // MSG_DIAGNOSTICS_TITLE
   "Diagnostics",
@@ -1143,6 +1176,14 @@
   "Report saved",
   // MSG_DIAGNOSTICS_REPORT_FAILED
   "Report could not be saved",
+  // MSG_DIAGNOSTICS_NAME_PROBE
+  "Log file name encoding",
+  // MSG_DIAGNOSTICS_HELP_NAME_PROBE
+  "Logs the names in name-probe beside the EBOOT",
+  // MSG_DIAGNOSTICS_NAME_PROBE_DONE
+  "%lu of %lu names logged",
+  // MSG_DIAGNOSTICS_NAME_PROBE_FAILED
+  "Probe failed: name-probe folder or log",
   // MSG_DIAGNOSTICS_BENCH
   "Unbound benchmark",
   // MSG_DIAGNOSTICS_HELP_BENCH

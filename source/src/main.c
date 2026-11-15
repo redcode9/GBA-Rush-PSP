@@ -2169,7 +2169,8 @@ static int main_autorun_fail(AutorunError error)
 typedef char main_testpat_modes_check
  [(SCALED_NONE == 0 && SCALED_X15_GU == 1 && SCALED_X15_SW == 2 &&
    SCALED_USER == 3 && SCALED_16X9_GU == 4 && SCALED_16X9_SHARP == 5 &&
-   SCALED_16X9_AUTO == 6 && SCREEN_SCALE_COUNT == AUTORUN_TESTPAT_SCALES &&
+   SCALED_16X9_AUTO == 6 && SCALED_INT2 == 7 &&
+   SCREEN_SCALE_COUNT == AUTORUN_TESTPAT_SCALES &&
    FILTER_NEAREST == 0 && FILTER_BILINEAR == 1) ? 1 : -1];
 
 /* Eight bars 30 pixels wide, in screen_texture's GU_PSM_5551 with red in

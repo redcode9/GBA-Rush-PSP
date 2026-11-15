@@ -67,6 +67,7 @@ HOST_TEST_CONFIG_STORE = $(HOST_BUILD_DIR)/test_config_store
 HOST_TEST_FAST_FORWARD = $(HOST_BUILD_DIR)/test_fast_forward_policy
 HOST_TEST_FAST_FORWARD_AUDIO = $(HOST_BUILD_DIR)/test_fast_forward_audio
 HOST_TEST_VIDEO_MOSAIC = $(HOST_BUILD_DIR)/test_video_mosaic
+HOST_TEST_ART_FILTER = $(HOST_BUILD_DIR)/test_art_filter
 HOST_TEST_DYNAREC_WORKLIST = $(HOST_BUILD_DIR)/test_dynarec_worklist
 HOST_TEST_SOUND_MATH = $(HOST_BUILD_DIR)/test_sound_math
 HOST_TEST_REWIND_RING = $(HOST_BUILD_DIR)/test_rewind_ring
@@ -93,6 +94,12 @@ ROM_RUN_DEPS = tests/core/rom_run.c $(ROM_RUN_SOURCES) $(ARM_CORE_HEADERS) \
  source/src/open_bios.h
 HOST_TEST_GBA_PPU = $(HOST_BUILD_DIR)/test_gba_ppu
 HOST_TEST_GBA_PPU_LOG = $(HOST_BUILD_DIR)/test_gba_ppu_log
+HOST_TEST_UI_BATCH = $(HOST_BUILD_DIR)/test_ui_batch
+# tests/ui_raster.c draws the batch's commands for the hashes.
+UI_BATCH_SOURCES = tests/test_ui_batch.c source/src/ui_batch.c \
+ tests/ui_raster.c
+UI_BATCH_HEADERS = source/src/ui_batch.h tests/ui_raster.h
+HOST_TEST_GBK_GLYPHS = $(HOST_BUILD_DIR)/test_gbk_glyphs
 HOST_TEST_PNG_WRITE = $(HOST_BUILD_DIR)/test_png_write
 # The PNG writer's test links the bundled zlib, built apart with -w (zlib
 # 1.2.8 has old-style definitions). Z_SOLO leaves out zlib's file I/O and
@@ -120,6 +127,7 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_INPUT_MODEL) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE) $(HOST_TEST_FAST_FORWARD) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
+ $(HOST_TEST_ART_FILTER) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
  $(HOST_TEST_REWIND_RING) \
  $(HOST_TEST_EVENT_QUEUE) \
@@ -128,7 +136,8 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_ARM_CORE) $(HOST_TEST_CORE_PROFILE) \
  $(HOST_TEST_HW_PROBE) $(HOST_TEST_MEM_STATS) \
  $(HOST_TEST_ROM_RUN) \
- $(HOST_TEST_GBA_PPU) $(HOST_TEST_GBA_PPU_LOG) $(HOST_TEST_PNG_WRITE) \
+ $(HOST_TEST_GBA_PPU) $(HOST_TEST_GBA_PPU_LOG) $(HOST_TEST_UI_BATCH) \
+ $(HOST_TEST_GBK_GLYPHS) $(HOST_TEST_PNG_WRITE) \
  $(HOST_TEST_SAVE_FORMAT) \
  $(HOST_TEST_SAVE_STORE) $(HOST_TEST_MEMORY_BACKUP) $(HOST_TEST_EEPROM) \
  $(HOST_TEST_UPSTREAM_AW_RELAY)
@@ -160,6 +169,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_fast_forward_policy \
  $(HOST_SANITIZE_DIR)/test_fast_forward_audio \
  $(HOST_SANITIZE_DIR)/test_video_mosaic \
+ $(HOST_SANITIZE_DIR)/test_art_filter \
  $(HOST_SANITIZE_DIR)/test_dynarec_worklist \
  $(HOST_SANITIZE_DIR)/test_sound_math \
  $(HOST_SANITIZE_DIR)/test_rewind_ring \
@@ -175,6 +185,8 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_rom_run \
  $(HOST_SANITIZE_DIR)/test_gba_ppu \
  $(HOST_SANITIZE_DIR)/test_gba_ppu_log \
+ $(HOST_SANITIZE_DIR)/test_ui_batch \
+ $(HOST_SANITIZE_DIR)/test_gbk_glyphs \
  $(HOST_SANITIZE_DIR)/test_png_write \
  $(HOST_SANITIZE_DIR)/test_save_format \
  $(HOST_SANITIZE_DIR)/test_save_store \
@@ -220,6 +232,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_FAST_FORWARD)
 	$(HOST_TEST_FAST_FORWARD_AUDIO)
 	$(HOST_TEST_VIDEO_MOSAIC)
+	$(HOST_TEST_ART_FILTER)
 	$(HOST_TEST_DYNAREC_WORKLIST)
 	$(HOST_TEST_SOUND_MATH)
 	$(HOST_TEST_REWIND_RING)
@@ -235,6 +248,8 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_ROM_RUN)
 	$(HOST_TEST_GBA_PPU)
 	$(HOST_TEST_GBA_PPU_LOG)
+	$(HOST_TEST_UI_BATCH)
+	$(HOST_TEST_GBK_GLYPHS)
 	$(HOST_TEST_PNG_WRITE)
 	$(HOST_TEST_SAVE_FORMAT)
 	$(HOST_TEST_SAVE_STORE)
@@ -243,9 +258,10 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_UPSTREAM_AW_RELAY)
 
 # Python tests. test_startup, test_browser_text, test_menu_keys,
-# test_save_io, test_open_bios, test_theme_boot, test_toast_draw and
-# test_input_shortcuts also compile functions cut out of main.c, gui.c,
-# input.c and memory.c with HOST_CC; test_check_scripts and
+# test_save_io, test_open_bios, test_theme_boot, test_toast_draw,
+# test_input_shortcuts and test_ui_golden also compile functions cut out
+# of main.c, gui.c, input.c, memory.c and psp_video.c with HOST_CC;
+# test_check_scripts and
 # test_check_names run their scripts on scratch Git trees.
 test-tools:
 	$(PYTHON) -m unittest tests/test_compare_benchmarks.py \
@@ -267,10 +283,11 @@ test-tools:
 	 tests/test_decode_test_rom.py tests/test_gen_shift_table.py \
 	 tests/test_make_bios_vectors.py tests/test_install_test_build.py \
 	 tests/test_read_test_screen.py \
-	 tests/test_state_hash_diff.py
+	 tests/test_state_hash_diff.py tests/test_ui_golden.py
 
 # The link cable test runs fewer network profiles (--quick) under the
-# sanitizers, where it is much slower.
+# sanitizers, where it is much slower. The menu goldens build their
+# screens with the sanitizer flags too.
 test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_codebreaker
 	$(HOST_SANITIZE_DIR)/test_gba_sio
@@ -300,6 +317,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_fast_forward_policy
 	$(HOST_SANITIZE_DIR)/test_fast_forward_audio
 	$(HOST_SANITIZE_DIR)/test_video_mosaic
+	$(HOST_SANITIZE_DIR)/test_art_filter
 	$(HOST_SANITIZE_DIR)/test_dynarec_worklist
 	$(HOST_SANITIZE_DIR)/test_sound_math
 	$(HOST_SANITIZE_DIR)/test_rewind_ring
@@ -315,6 +333,10 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_rom_run
 	$(HOST_SANITIZE_DIR)/test_gba_ppu
 	$(HOST_SANITIZE_DIR)/test_gba_ppu_log
+	$(HOST_SANITIZE_DIR)/test_ui_batch
+	UI_GOLDEN_CFLAGS='$(HOST_SANITIZE_FLAGS)' $(PYTHON) -m unittest \
+	 tests/test_ui_golden.py
+	$(HOST_SANITIZE_DIR)/test_gbk_glyphs
 	$(HOST_SANITIZE_DIR)/test_png_write
 	$(HOST_SANITIZE_DIR)/test_save_format
 	$(HOST_SANITIZE_DIR)/test_save_store
@@ -567,6 +589,12 @@ $(HOST_TEST_VIDEO_MOSAIC): tests/test_video_mosaic.c source/src/video_mosaic.h
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_video_mosaic.c -o $@
 
+$(HOST_TEST_ART_FILTER): tests/test_art_filter.c source/src/art_filter.c \
+ source/src/art_filter.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_art_filter.c source/src/art_filter.c -o $@
+
 $(HOST_TEST_DYNAREC_WORKLIST): tests/test_dynarec_worklist.c \
  source/src/dynarec_worklist.c source/src/dynarec_worklist.h
 	mkdir -p $(HOST_BUILD_DIR)
@@ -646,6 +674,17 @@ $(HOST_TEST_GBA_PPU_LOG): $(GBA_PPU_LOG_SOURCES) $(GBA_PPU_LOG_HEADERS)
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -pthread -Wall -Wextra -Werror -Isource/src \
 	 $(GBA_PPU_LOG_SOURCES) -o $@
+
+$(HOST_TEST_UI_BATCH): $(UI_BATCH_SOURCES) $(UI_BATCH_HEADERS)
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src -Itests \
+	 $(UI_BATCH_SOURCES) -o $@
+
+# gbkfont.c is the menu font's bitmap array, included by the test.
+$(HOST_TEST_GBK_GLYPHS): tests/test_gbk_glyphs.c source/src/gbkfont.c
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_gbk_glyphs.c -o $@
 
 $(HOST_TEST_PNG_WRITE): tests/test_png_write.c source/src/png_write.c \
  source/src/png_write.h $(PNG_WRITE_ZLIB_SOURCES) source/src/zlib/zlib.h
@@ -974,6 +1013,12 @@ $(HOST_SANITIZE_DIR)/test_video_mosaic: tests/test_video_mosaic.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_video_mosaic.c -o $@
 
+$(HOST_SANITIZE_DIR)/test_art_filter: tests/test_art_filter.c \
+ source/src/art_filter.c source/src/art_filter.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_art_filter.c source/src/art_filter.c -o $@
+
 $(HOST_SANITIZE_DIR)/test_dynarec_worklist: tests/test_dynarec_worklist.c \
  source/src/dynarec_worklist.c source/src/dynarec_worklist.h
 	mkdir -p $(HOST_SANITIZE_DIR)
@@ -1046,6 +1091,17 @@ $(HOST_SANITIZE_DIR)/test_gba_ppu_log: $(GBA_PPU_LOG_SOURCES) \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -pthread -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src $(GBA_PPU_LOG_SOURCES) -o $@
+
+$(HOST_SANITIZE_DIR)/test_ui_batch: $(UI_BATCH_SOURCES) $(UI_BATCH_HEADERS)
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src -Itests $(UI_BATCH_SOURCES) -o $@
+
+$(HOST_SANITIZE_DIR)/test_gbk_glyphs: tests/test_gbk_glyphs.c \
+ source/src/gbkfont.c
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_gbk_glyphs.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_png_write: tests/test_png_write.c \
  source/src/png_write.c source/src/png_write.h $(PNG_WRITE_ZLIB_SOURCES) \

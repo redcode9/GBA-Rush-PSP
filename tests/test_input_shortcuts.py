@@ -858,7 +858,8 @@ class InputShortcutTests(unittest.TestCase):
     def test_video_cycle_keeps_the_presented_frame(self):
         source = SCALE_STUBS.replace("@SRC@", SRC).replace("@SCALED@",
                                                             scaled_defines())
-        for signature in ("static void apply_screen_scale(int clear)",
+        for signature in ("static u32 selected_texture_filter(void)",
+                          "static void apply_screen_scale(int clear)",
                           "void video_resolution_small(void)",
                           "void video_apply_screen_scale(void)"):
             source += function("source/src/psp_video.c", signature)

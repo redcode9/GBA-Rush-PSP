@@ -75,6 +75,21 @@
   whether it worked and how many tries it needed, how long the save copy
   made before a link session took and whether it worked, and which save
   fields of a damaged savestate were repaired on load.
+- A new Video > Display mode, 2x integer (crop): every GBA pixel becomes an
+  exact 2x2 block and rows 12-147 of the game fill the screen. It always uses
+  nearest sampling, whatever the screen filter says.
+- The main menu shows a live status next to Save and Load (the state slots
+  in use and whether the AUTO slot exists), Game (how many cheats are on) and
+  Link Cable (the other console's game code, or waiting).
+- The Save and Load page shows thumbnails of all 11 slots (0-9 and AUTO)
+  with the selected slot framed. They appear one per frame as the page opens.
+- Diagnostics > Log file name encoding, to find out how a firmware stores
+  file names that are not ASCII: it goes through the `name-probe` folder
+  beside the EBOOT and writes each name to the runtime log as the PSP
+  reports it, with the long name and 8.3 alias the firmware keeps for it and
+  whether the file opens by each of them, then shows how many names it
+  logged. `tools/decode_runtime_log.py` shows each name in hex and as
+  UTF-8, Shift-JIS and GBK text.
 - The Diagnostics page shows the version and the build id, an id of the
   exact source the EBOOT was built from, ending in `-dirty` when that source
   had uncommitted changes. Performance reports, runtime logs and the
@@ -145,6 +160,10 @@
 
 ### Changed
 
+- The game stays visible full screen behind the menu, in its display mode,
+  under a veil of the theme's background colour.
+- The Italian menu writes accented letters (è, più, modalità) instead of a
+  backtick after the vowel or no accent at all.
 - A savestate loads only with the BIOS it was saved with, `gba_bios.bin` or
   the built-in one; otherwise a message says which one it needs, instead of
   loading a game that would crash. Savestates from earlier versions count as
@@ -286,6 +305,11 @@
 - Settings saved by this version cannot be read by 1.4.x: going back to
   1.4.x resets every setting to its default, and 1.4.x overwrites the
   settings file when it exits.
+
+### Fixed
+
+- The messages shown after loading a cheat file are translated into every
+  menu language; the Japanese and Chinese menus showed them in English.
 
 ## 1.4.3 - 2026-11-02
 

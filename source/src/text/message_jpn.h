@@ -460,6 +460,27 @@
   // MSG_CHEAT_MENU_HELP_3
   FONT_CURSOR_LEFT_GBK FONT_CURSOR_RIGHT_GBK ":ページを変更   " FONT_BTN_CROSS_GBK ":終了",
 
+  // MSG_CHEAT_LOAD_DONE
+  "%s\n%lu 件のチートを読み込みました",
+
+  // MSG_CHEAT_LOAD_FAILED_AT_LINE
+  "チートの読み込みに失敗しました (%lu 行目):\n%s",
+
+  // MSG_CHEAT_LOAD_FAILED
+  "チートの読み込みに失敗しました:\n%s",
+
+  // MSG_CHEAT_REASON_OPEN
+  "ファイルにアクセスできません",
+
+  // MSG_CHEAT_REASON_CAPACITY
+  "チートの数が上限を超えています",
+
+  // MSG_CHEAT_REASON_EMPTY
+  "ファイルが空です",
+
+  // MSG_CHEAT_REASON_FORMAT
+  "形式が正しくありません",
+
   // MSG_NON_LOAD_GAME
   "ゲームが読み込まれていません",
 
@@ -546,6 +567,8 @@
 
   // MSG_SCN_SCALED_16X9_AUTO
   "16:9 Auto",
+  // MSG_SCN_SCALED_INT2
+  "2x 整数倍 (トリミング)",
 
   // MSG_LANG_JAPANESE
   "日本語",
@@ -1111,6 +1134,16 @@
   "Measure and report emulator behavior",
   // MSG_CATEGORY_HELP_EXIT
   "Sleep or close the emulator",
+  // MSG_MAIN_STATUS_SLOTS
+  "%lu/10",
+  // MSG_MAIN_STATUS_SLOTS_AUTO
+  "%lu/10 + AUTO",
+  // MSG_MAIN_STATUS_CHEATS
+  "%lu 件のチートが有効",
+  // MSG_MAIN_STATUS_LINKED
+  "接続済み: %s",
+  // MSG_MAIN_STATUS_WAITING
+  "待機中",
 
   // MSG_DIAGNOSTICS_TITLE
   "Diagnostics",
@@ -1142,6 +1175,14 @@
   "Report saved",
   // MSG_DIAGNOSTICS_REPORT_FAILED
   "Report could not be saved",
+  // MSG_DIAGNOSTICS_NAME_PROBE
+  "Log file name encoding",
+  // MSG_DIAGNOSTICS_HELP_NAME_PROBE
+  "Logs the names in name-probe beside the EBOOT",
+  // MSG_DIAGNOSTICS_NAME_PROBE_DONE
+  "%lu of %lu names logged",
+  // MSG_DIAGNOSTICS_NAME_PROBE_FAILED
+  "Probe failed: name-probe folder or log",
   // MSG_DIAGNOSTICS_BENCH
   "Unbound benchmark",
   // MSG_DIAGNOSTICS_HELP_BENCH

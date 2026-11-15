@@ -60,7 +60,8 @@ typedef char autorun_config_error_names_check
 static const char *const
  autorun_config_testpat_scales[AUTORUN_TESTPAT_SCALES] =
 {
-  "none", "x15-gu", "x15-sw", "user", "16x9-gu", "16x9-sharp", "16x9-auto"
+  "none", "x15-gu", "x15-sw", "user", "16x9-gu", "16x9-sharp", "16x9-auto",
+  "int2"
 };
 
 static const char *const autorun_config_testpat_filters[2] =

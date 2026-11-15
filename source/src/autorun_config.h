@@ -55,9 +55,9 @@
  *                    every one in turn, AUTORUN_TESTPAT_HOLD_FRAMES each,
  *                    then the EBOOT quits. <mode> is <scale>-<filter>: the
  *                    scale is none, x15-gu, x15-sw, user, 16x9-gu,
- *                    16x9-sharp or 16x9-auto (SCALED_NONE..SCALED_16X9_AUTO
+ *                    16x9-sharp, 16x9-auto or int2 (SCALED_NONE..SCALED_INT2
  *                    in main.h; user is shown at 170%), the filter nearest
- *                    or linear. all runs the 14 modes in that order, each
+ *                    or linear. all runs the 16 modes in that order, each
  *                    scale with nearest first. Goes with no other key but
  *                    version and build.
  *   net_profile=<name>  a simulated network (net_fault.h) for the ad-hoc
@@ -116,7 +116,7 @@
 
 /* testpat= mode m is scale m / 2 (a SCALED_* value) with filter m % 2
    (FILTER_NEAREST, FILTER_BILINEAR). */
-#define AUTORUN_TESTPAT_SCALES 7U
+#define AUTORUN_TESTPAT_SCALES 8U
 #define AUTORUN_TESTPAT_MODES (AUTORUN_TESTPAT_SCALES * 2U)
 #define AUTORUN_TESTPAT_ALL AUTORUN_TESTPAT_MODES
 #define AUTORUN_TESTPAT_SCALE(mode) ((mode) / 2U)

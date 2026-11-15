@@ -373,7 +373,8 @@ def screen_defines():
 # Host stand-ins for what the autorun block calls. The file is read back in
 # pieces of at most 1000 bytes, each result file is kept whole, and quit()
 # returns instead of exiting. The presenter names follow psp_video.c: x15-sw
-# scales on the CPU, 16x9-sharp and 16x9-auto (at its start) are sharp.
+# scales on the CPU, 16x9-sharp and 16x9-auto (at its start) are sharp, and
+# int2 always samples nearest.
 AUTORUN_STUBS = r'''
 #include <assert.h>
 #include <stdint.h>
@@ -510,10 +511,11 @@ static void present(void) { presents++; }
 void (*update_screen)(void) = present;
 void flip_screen(u32 vsync) { assert(vsync == 1 && flips < presents); flips++; }
 void video_presenter_names(const char **presenter, const char **filter) {
-  u32 sharp = option_screen_scale >= 5;
+  u32 sharp = option_screen_scale == 5 || option_screen_scale == 6;
   *presenter = option_screen_scale == 2 ? "sw" : sharp ? "sharp" : "gu";
   *filter = option_screen_scale == 2 ? "none" :
-   sharp || option_screen_filter == 0 ? "nearest" : "linear";
+   sharp || option_screen_scale == 7 || option_screen_filter == 0 ?
+   "nearest" : "linear";
 }
 static const NetFaultProfile *fault_profile;
 static int fault_sets;
@@ -749,7 +751,9 @@ int main(void) {
      "testpat=16x9-sharp-nearest used=sharp/nearest\n",
      "testpat=16x9-sharp-linear used=sharp/nearest\n",
      "testpat=16x9-auto-nearest used=sharp/nearest\n",
-     "testpat=16x9-auto-linear used=sharp/nearest\n" };
+     "testpat=16x9-auto-linear used=sharp/nearest\n",
+     "testpat=int2-nearest used=gu/nearest\n",
+     "testpat=int2-linear used=gu/nearest\n" };
     u32 shown;
 
     snprintf(text, sizeof(text), "version=1\nbuild=abc123\nstatus=%s\n"

@@ -460,6 +460,27 @@
   // MSG_CHEAT_MENU_HELP_3
   FONT_CURSOR_LEFT_GBK FONT_CURSOR_RIGHT_GBK ":Change page   " FONT_BTN_CROSS_GBK ":Exit",
 
+  // MSG_CHEAT_LOAD_DONE
+  "%s\n%lu cheats loaded",
+
+  // MSG_CHEAT_LOAD_FAILED_AT_LINE
+  "Cheat load failed at line %lu:\n%s",
+
+  // MSG_CHEAT_LOAD_FAILED
+  "Cheat load failed:\n%s",
+
+  // MSG_CHEAT_REASON_OPEN
+  "file is not accessible",
+
+  // MSG_CHEAT_REASON_CAPACITY
+  "list exceeds supported capacity",
+
+  // MSG_CHEAT_REASON_EMPTY
+  "file is empty",
+
+  // MSG_CHEAT_REASON_FORMAT
+  "invalid format",
+
   // MSG_NON_LOAD_GAME
   "Game is not loaded",
 
@@ -546,6 +567,8 @@
 
   // MSG_SCN_SCALED_16X9_AUTO
   "16:9 Auto",
+  // MSG_SCN_SCALED_INT2
+  "2x integer (crop)",
 
   // MSG_LANG_JAPANESE
   "日本語",
@@ -1110,6 +1133,16 @@
   "Measure and report emulator behavior",
   // MSG_CATEGORY_HELP_EXIT
   "Sleep or close the emulator",
+  // MSG_MAIN_STATUS_SLOTS
+  "%lu/10",
+  // MSG_MAIN_STATUS_SLOTS_AUTO
+  "%lu/10 + AUTO",
+  // MSG_MAIN_STATUS_CHEATS
+  "%lu cheats on",
+  // MSG_MAIN_STATUS_LINKED
+  "linked: %s",
+  // MSG_MAIN_STATUS_WAITING
+  "waiting",
 
   // MSG_DIAGNOSTICS_TITLE
   "Diagnostics",
@@ -1141,6 +1174,14 @@
   "Report saved",
   // MSG_DIAGNOSTICS_REPORT_FAILED
   "Report could not be saved",
+  // MSG_DIAGNOSTICS_NAME_PROBE
+  "Log file name encoding",
+  // MSG_DIAGNOSTICS_HELP_NAME_PROBE
+  "Logs the names in name-probe beside the EBOOT",
+  // MSG_DIAGNOSTICS_NAME_PROBE_DONE
+  "%lu of %lu names logged",
+  // MSG_DIAGNOSTICS_NAME_PROBE_FAILED
+  "Probe failed: name-probe folder or log",
   // MSG_DIAGNOSTICS_BENCH
   "Unbound benchmark",
   // MSG_DIAGNOSTICS_HELP_BENCH
