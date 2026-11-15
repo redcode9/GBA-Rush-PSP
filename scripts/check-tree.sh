@@ -61,4 +61,15 @@ if [ -n "$tracked" ]; then
   exit 1
 fi
 
+git ls-files -- benchmarks | while IFS= read -r path
+do
+  case "$path" in
+    benchmarks/*.txt|benchmarks/*.md) ;;
+    *)
+      echo "Only .txt reports and .md notes go in benchmarks/: $path" >&2
+      exit 1
+      ;;
+  esac
+done
+
 echo "Source tree checks passed"

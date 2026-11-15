@@ -588,6 +588,12 @@
   // MSG_SEARCHING_BACKUP_ID
   "Ricerca ID BACKUP",
 
+  // MSG_LOADING_STAGE_READ
+  "Lettura ROM",
+
+  // MSG_LOADING_STAGE_UNZIP
+  "Estrazione ZIP",
+
   // main.c
   // MSG_GBA_SLEEP_MODE
   "MODALITA RIPOSO",
@@ -607,8 +613,19 @@
   // MSG_ERR_LOAD_GAMEPACK
   "Impossibile caricare il file di gioco.",
 
+  // MSG_ERR_ZIP_CORRUPT
+  "Il file ZIP e` danneggiato o incompleto.",
+
   // MSG_ERR_OPEN_GAMEPACK
   "Impossibile aprire il file di gioco.",
+  // MSG_SAVE_READ_RETRY
+  "Il salvataggio non si legge. Riprovare?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "Giocare senza salvare? Il file resta com'e`.",
+  // MSG_SAVE_WRITE_FAILED
+  "Impossibile scrivere il salvataggio.\nIl gioco lo conserva e riprova tra poco.",
+  // MSG_SAVE_WRITE_RETRY
+  "Salvataggio non scritto: riprovare?",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "Impossibile avviare il thread di callback.",
@@ -961,6 +978,9 @@
   // MSG_LINK_MENU_DISCONNECT
   "Disconnetti",
 
+  // MSG_LINK_MENU_RESTORE
+  "Ripristina salvataggio pre-link",
+
   // MSG_LINK_MENU_HELP_STATUS
   "Stato attuale del cavo link",
 
@@ -972,6 +992,18 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "Chiudi la sessione link attuale",
+
+  // MSG_LINK_MENU_HELP_RESTORE
+  "Torna a un salvataggio di prima del link",
+
+  // MSG_LINK_RESTORE_CONFIRM
+  "Tornare al %s? Il gioco riparte.",
+
+  // MSG_LINK_RESTORE_NONE
+  "Nessun salvataggio copiato prima di un link.",
+
+  // MSG_LINK_RESTORE_FAILED
+  "Impossibile ripristinare il salvataggio.",
 
   // MSG_LINK_STATUS_NO_GAME
   "Nessun gioco caricato",
@@ -1029,6 +1061,9 @@
 
   // MSG_LINK_REASON_ROM_CHANGE
   "Gioco cambiato",
+
+  // MSG_LINK_REASON_SAVE_FAILED
+  "Salvataggio non scritto",
 
   // MSG_CATEGORY_CONTINUE
   "Continua",
@@ -1106,6 +1141,22 @@
   "Rapporto salvato",
   // MSG_DIAGNOSTICS_REPORT_FAILED
   "Impossibile salvare il rapporto",
+  // MSG_DIAGNOSTICS_BENCH
+  "Benchmark senza limite",
+  // MSG_DIAGNOSTICS_HELP_BENCH
+  "Carica lo slot, 3600 frame senza attese, salva il rapporto",
+  // MSG_DIAGNOSTICS_BENCH_LINK
+  "Benchmark rifiutato: sessione link aperta",
+  // MSG_DIAGNOSTICS_BENCH_NO_STATE
+  "Benchmark rifiutato: nessuno stato valido nello slot attuale",
+  // MSG_DIAGNOSTICS_BENCH_RENDER_OFF
+  "Benchmark senza limite, video spento",
+  // MSG_DIAGNOSTICS_HELP_BENCH_RENDER_OFF
+  "Lo stesso benchmark, senza disegnare i frame",
+  // MSG_DIAGNOSTICS_BENCH_AUDIO_OFF
+  "Benchmark senza limite, audio spento",
+  // MSG_DIAGNOSTICS_HELP_BENCH_AUDIO_OFF
+  "Lo stesso benchmark, senza scrivere campioni audio",
   // MSG_UNAVAILABLE_CURRENT_STATE
   "Non disponibile nello stato attuale",
 
@@ -1160,6 +1211,14 @@
   "Traccia input salvata",
   // MSG_TRACE_FAILED
   "Operazione sulla traccia non riuscita",
+  // MSG_TRACE_STATE_MISMATCH
+  "Stato della traccia mancante o diverso",
+  // MSG_TRACE_RTC_WARNING
+  "Gioco con RTC: gli hash possono divergere",
+  // MSG_TRACE_NO_HASHES
+  "Riproduzione senza hash dello stato",
+  // MSG_TRACE_HASHES_SAVED
+  "Hash dello stato salvati",
 
   // MSG_FF_PROFILE_LABEL
   "Profilo avanti veloce: %s",

@@ -146,7 +146,9 @@ typedef enum
   MAIN_LINK_END_PEER_LEFT,
   MAIN_LINK_END_LOST,
   MAIN_LINK_END_INCOMPATIBLE,
-  MAIN_LINK_END_NETWORK
+  MAIN_LINK_END_NETWORK,
+  /* The .sav could not be flushed or copied: the session did not start. */
+  MAIN_LINK_END_SAVE_FAILED
 } MainLinkEnd;
 
 extern LinkCable gba_link;
@@ -170,6 +172,10 @@ void main_fast_forward_apply_settings(void);
 void main_fast_forward_reset_game_settings(void);
 
 int main_perf_start(void);
+/* render or audio 0 run a diagnostic arm (ENABLE_DIAGNOSTIC_BENCH_ARMS);
+   other builds always run the whole benchmark. */
+int main_perf_bench_start(u32 render, u32 audio);
+void main_perf_bench_cancel(void);
 int main_perf_stop(void);
 void main_perf_snapshot(PerfMetricsSnapshot *snapshot);
 int main_perf_write_report(char *output_path, size_t output_path_size);
@@ -180,6 +186,14 @@ u32 update_gba(void);
 
 void reset_gba(void);
 void quit(void);
+
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+/* The diagnostic autorun file (autorun_config.h): 1 when it loaded and
+   reset its ROM, which user_main then runs at once; 0 for a normal start. */
+int main_autorun_start(void);
+/* Once per emulated frame, from update_gba at VBlank. */
+void main_autorun_frame(void);
+#endif
 
 void error_msg(const char *text, u8 confirm);
 /* Shows text and waits: returns 0 on the confirm button (O, or X with

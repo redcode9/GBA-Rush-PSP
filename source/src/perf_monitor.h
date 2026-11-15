@@ -32,6 +32,21 @@ int perf_monitor_start(uint64_t now_us);
 int perf_monitor_stop(uint64_t now_us);
 void perf_monitor_invalidate(uint64_t now_us);
 int perf_monitor_active(void);
+/* The unbound benchmark: bench_start starts a capture, or returns 0 while
+   one runs or for 0 frames, that stops itself once it has recorded frames
+   frames. Its duration is then the sum of their frame times, which run back
+   to back, so the menu exit before the first is left out. A stop before
+   that, or an invalidate, cuts it short and marks it unusable. take_done
+   returns 1 once after a bench reached its count; a new start drops it.
+   frames_left is the frames still to record, 0 unless a bench runs: at 1
+   the next recorded frame ends the capture. end_with_frame makes the frame
+   under way a running bench's last, as when the trace it replays ends:
+   frames_left turns 1 and the bench is done when that frame is recorded. */
+int perf_monitor_bench_start(uint64_t now_us, uint32_t frames);
+int perf_monitor_bench_running(void);
+uint32_t perf_monitor_bench_frames_left(void);
+int perf_monitor_bench_take_done(void);
+void perf_monitor_bench_end_with_frame(void);
 /* Length of the last capture, set by stop or invalidate; 0 while a capture
    is running. */
 uint64_t perf_monitor_duration_us(void);
@@ -61,6 +76,22 @@ typedef struct
   uint8_t rom_title[12];
   uint8_t game_code[4];
   uint32_t rom_revision;
+  /* Local wall time (RTC) the capture started, set when has_capture_time.
+     It only orders runs: the RTC can jump, so never use it for a duration. */
+  uint32_t has_capture_time;
+  uint32_t capture_year;
+  uint32_t capture_month;
+  uint32_t capture_day;
+  uint32_t capture_hour;
+  uint32_t capture_minute;
+  uint32_t capture_second;
+  /* The report's bench-* keys (PERF_REPORT_BENCH_* in perf_report.h). */
+  uint32_t bench_mode;
+  uint32_t bench_frames;
+  uint32_t bench_render;
+  uint32_t bench_audio;
+  uint32_t bench_input;
+  uint32_t bench_trace_checksum;
 } PerfMonitorIdentity;
 
 void perf_monitor_set_identity(const PerfMonitorIdentity *identity);
@@ -91,5 +122,20 @@ void perf_monitor_record_dma(int bits32, uint32_t elements, uint32_t dma_us,
 void perf_monitor_record_gamepak_evict_scan(uint32_t us);
 void perf_monitor_record_gamepak_rom_io(uint32_t seek_us, uint32_t read_us,
  uint32_t bytes_read, int read_error);
+void perf_monitor_record_link_lockstep_frame(void);
+/* Phase timers (main.c): begin_frame returns whether the frame starting
+   now is sampled, and 0 when no capture runs. */
+int perf_monitor_phase_begin_frame(void);
+void perf_monitor_phase_add(PerfMetricsPhase phase, uint32_t us);
+void perf_monitor_record_probe_calibration(uint32_t elapsed_us,
+ uint32_t reads);
+/* Preemption counts (main.c): wanted is 0 without a capture or once the
+   kernel refused a read, which unavailable reports. */
+int perf_monitor_preempt_wanted(void);
+void perf_monitor_preempt_sample(PerfMetricsPreemptPoint point,
+ uint32_t thread_count, uint32_t intr_count);
+void perf_monitor_preempt_unavailable(void);
+void perf_monitor_record_preempt_calibration(uint32_t elapsed_us,
+ uint32_t calls);
 
 #endif /* PERF_MONITOR_H */

@@ -83,18 +83,23 @@ class ToastDrawTests(unittest.TestCase):
         menu = function("source/src/gui.c", "u32 menu(void)")
         self.assertRegex(menu, r"#ifdef ENABLE_DIAGNOSTIC_PINNED_TOAST\s+"
                                r"ACTION_OPTION\(menu_diagnostics_pin_toast,")
-        # With the trace and pin blocks on (the code before #else), the pin
-        # is option 11, which the availability line names by index, and no
-        # two rows share a screen line.
+        # With the bench arm, trace and pin blocks on (the code before
+        # #else, as in the diagnostic build), the pin is option 12 after the
+        # arm rows, which the availability line names by index, and no two
+        # rows share a screen line.
+        arms = int(re.search(r"#define DIAGNOSTICS_BENCH_ARM_ROWS (\d+)",
+                             (Path(SRC) / "gui.c").read_text()).group(1))
         rows = menu[menu.index("MenuOptionType diagnostics_options[] ="):]
-        rows = re.findall(r"ACTION(?:_SUBMENU)?_OPTION\((\w+),.*, (\d+), \w+\)",
+        rows = re.findall(r"ACTION(?:_SUBMENU)?_OPTION\((\w+),.*, (\d+)"
+                          r"( \+ DIAGNOSTICS_BENCH_ARM_ROWS)?, \w+\)",
                           rows[:rows.index("#else")])
-        self.assertEqual([name for name, _ in rows].index("menu_diagnostics_pin_toast"), 11)
-        lines = [line for _, line in rows]
+        self.assertEqual([name for name, _, _ in rows].index("menu_diagnostics_pin_toast"),
+                         12 + arms)
+        lines = [int(line) + (arms if shifted else 0) for _, line, shifted in rows]
         self.assertEqual(len(set(lines)), len(lines))
         self.assertRegex(menu, r"#ifdef ENABLE_DIAGNOSTIC_PINNED_TOAST\s+[^#]*"
-                               r"diagnostics_options\[11\]\.available_function"
-                               r" = menu_game_available;")
+                               r"diagnostics_options\[12 \+ DIAGNOSTICS_BENCH_ARM_ROWS\]"
+                               r"\.available_function = menu_game_available;")
 
     def test_toast_drawn_on_presented_frames_only(self):
         # synchronize() cannot be built on the host: the only toast_current()

@@ -79,6 +79,9 @@ void main_fast_forward_input(u32 pressed, u32 held)
 u32 menu(void) { menus++; return 7; }
 u32 action_loadstate(void) { loads++; return 0; }
 u32 action_savestate(void) { saves++; return 0; }
+int bench_cancels;
+void main_perf_bench_cancel(void) { bench_cancels++; }
+int perf_monitor_bench_running(void) { return 0; }
 int video_cycles;
 void menu_cycle_video_mode(void) { video_cycles++; }
 static u32 toast_ids[8];
@@ -310,6 +313,28 @@ int main(void)
   read_pad(0, 16);
   read_pad(SEL, 16);
   assert(read_pad(SEL | LT, 16) == 0 && saves == 1);
+  read_pad(0, 16);
+
+  /* A chord's save and load end a running benchmark, as the save and
+     load buttons do. */
+  bench_cancels = saves = loads = 0;
+  read_pad(SEL, 16);
+  assert(read_pad(SEL | LT, 16) == 0 && saves == 1 && bench_cancels == 1);
+  read_pad(0, 16);
+  read_pad(SEL, 16);
+  assert(read_pad(SEL | RT, 16) == 1 && loads == 1 && bench_cancels == 2);
+  read_pad(0, 16);
+
+  /* Keys held as the menu closed are up for the chords too: SELECT still
+     held from the menu completes no chord, and L reaches the game. */
+  input_hold_until_released(SEL);
+  read_pad(SEL, 16);
+  assert(read_pad(SEL | LT, 16) == 0 && saves == 1 && game_has(GBA_L));
+  assert(!game_has(GBA_SELECT));
+  read_pad(0, 16);
+  read_pad(SEL, 16);
+  assert(read_pad(SEL | LT, 16) == 0 && saves == 2);
+  read_pad(0, 16);
 
   puts("update_input shortcuts passed");
   return 0;
@@ -845,7 +870,7 @@ class InputShortcutTests(unittest.TestCase):
         update = function("source/src/main.c", "u32 update_gba(void)")
         self.assertEqual(update.count("input_frame_tick();"), 1)
         self.assertLess(update.index("input_frame_tick();"),
-                        update.index("if (update_input() != 0)"))
+                        update.index("update_input() != 0"))
         link = function("source/src/main.c",
                         "static int main_link_service(IRQ_TYPE *irq_raised)")
         self.assertIn("update_input()", link)

@@ -30,6 +30,7 @@
 
 #include "common.h"
 #include "fast_forward_policy.h"
+#include "mem_stats.h"
 #include "perf_monitor.h"
 #include "perf_report.h"
 #include "power_lifecycle.h"
@@ -38,6 +39,12 @@
 #include "sound_math.h"
 #include "toast.h"
 #include "video_me.h"
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+#include "autorun_config.h"
+#endif
+#ifdef ENABLE_DIAGNOSTIC_HW_PROBE
+#include "hw_probe.h"
+#endif
 
 // Main thread params; on the PSP a lower priority number runs first.
 // 32 is 0x20, so MAIN_LINK_LOCKSTEP_PRIORITY (0x77) is lower.
@@ -259,6 +266,30 @@ u32 interval_skipped_frames = 0;
 u32 fps_window_frames = 0;
 u32 vblank_count = 0;
 
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+/* The unbound benchmark's arms in diagnostic builds, kept from one start to
+   the next: render 0 skips every bench frame as frameskip does, so no
+   renderer draws a line, presents or flips (the Exact renderer on the
+   Media Engine included); audio 0 sets sound_bench_audio_off. */
+static u8 main_perf_bench_render = 1;
+static u8 main_perf_bench_audio = 1;
+#endif
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+/* Set when the unbound benchmark starts replaying the held input trace. */
+static u8 main_perf_bench_trace;
+#endif
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+/* Set while a diagnostic autorun's frames= limit is counting. */
+static u32 main_autorun_running;
+#else
+#define main_autorun_running 0
+#endif
+
+/* Set when a capture starts in the menu, where the clock option can still
+   change: the clock and preemption reads are priced once menu() restores
+   the game clock. */
+static u8 main_perf_calibrate_pending;
+
 /* The first init_main flushes both translation caches; later ROM loads
    flush the read-only one and clear the RAM block metadata instead. */
 static u8 caches_inited = 0;
@@ -294,6 +325,13 @@ static void psp_sleep_loop(void);
 static void main_power_save_if_pending(void);
 static void main_power_reopen_gamepak(void);
 static void main_link_close(MainLinkEnd reason);
+static void main_perf_calibrate(void);
+
+/* The clock last asked of set_cpu_clock, in MHz (0 before the first call),
+   and the Media Engine's counters when it was asked. */
+static u32 main_clock_requested_mhz;
+static VideoMeCounters main_clock_me_start;
+static void main_log_me_clock(void);
 
 /* The clock call under the NID newer firmware exports; setup_main picks
    which one to use. */
@@ -743,8 +781,77 @@ static int main_link_service(IRQ_TYPE *irq_raised)
   return restart;
 }
 
+/* ---- Memory measurements ----------------------------------------------
+ * Two MEMORY_STATS records (mem_stats.c) at startup, ROM load, link start
+ * and capture start and stop. The largest block probe allocates, so it
+ * runs only there, on the emulator thread: never in update_gba or the
+ * power callback. */
+
+/* Linker script symbols. _ftext, the start of .text, is where the PRX image
+   begins; exception.c already links against it. */
+extern int _ftext;
+extern char _end[];
+
+/* The lowest of the capture's start and stop measurements, for its report. */
+static MemStats main_perf_memory;
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+/* The allocation trace when the capture ended, for its report. */
+static MemStatsTraceEntry main_alloc_trace[MEM_STATS_TRACE_CAPACITY];
+static size_t main_alloc_trace_count;
+
+/* Called wherever a capture ends, stopped or invalidated, so its report
+   never carries another capture's trace. */
+static void main_alloc_trace_take(void)
+{
+  if(perf_monitor_active())
+    main_alloc_trace_count = alloc_trace_snapshot(main_alloc_trace,
+     MEM_STATS_TRACE_CAPACITY);
+}
+#endif
+
+static void *main_memory_alloc(size_t size, void *context)
+{
+  /* volatile: once inlined, a malloc only tested for NULL and freed can be
+     folded away (clang -O2, GCC 15 -fmalloc-dce), and the probe would always
+     report its limit. */
+  void *volatile block = malloc(size);
+
+  (void)context;
+  return block;
+}
+
+static void main_memory_release(void *block, void *context)
+{
+  (void)context;
+  free(block);
+}
+
+static MemStats main_memory_sample(MemStatsPoint point)
+{
+  /* Read before the probe, which can grow newlib's arena. */
+  struct mallinfo heap = mallinfo();
+  MemStats stats;
+  uint8_t flags[2];
+  uint32_t values[2][3];
+  u32 part;
+
+  stats.image = (u32)((uintptr_t)_end - (uintptr_t)&_ftext);
+  stats.heap_free = (u32)heap.fordblks;
+  stats.heap_largest = mem_stats_largest_block(main_memory_alloc,
+   main_memory_release, NULL, 64u << 20);
+  stats.kernel_free = (u32)sceKernelTotalFreeMemSize();
+  stats.kernel_largest = (u32)sceKernelMaxFreeMemSize();
+  stats.rom_buffer = gamepak_ram_buffer_size;
+  mem_stats_encode(&stats, point, flags, values);
+  for(part = 0; part < 2; part++)
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_MEMORY_STATS, cpu_ticks,
+     flags[part], values[part][0], values[part][1], values[part][2]);
+  return stats;
+}
+
 /* Hosts or joins after stopping fast-forward and any earlier session.
-   0 if WLAN is off or the SIO or the network could not be started. */
+   0 if WLAN is off, the .sav could not be written and copied, or the SIO
+   or the network could not be started. */
 static int main_link_start(int host)
 {
   char game[4] = { 0, 0, 0, 0 };
@@ -768,6 +875,19 @@ static int main_link_start(int host)
   runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COMMAND, cpu_ticks,
    (u8)(host != 0), ((u32)(u8)game[0] << 24) | ((u32)(u8)game[1] << 16) |
    ((u32)(u8)game[2] << 8) | (u8)game[3], 0, 0);
+  /* Before the network modules load. */
+  main_memory_sample(MEM_STATS_LINK_START);
+
+  /* No session starts with a .sav write pending: write it, then keep it as
+     the newest pre-link copy. With no save, or with writes blocked ('play
+     without saving'), neither writes anything and the link starts. */
+  if(!update_backup_immediately() || !backup_push_link_copy())
+  {
+    gba_link_end = MAIN_LINK_END_SAVE_FAILED;
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_ERROR, cpu_ticks,
+     (u8)MAIN_LINK_END_SAVE_FAILED, 0, 0, 0);
+    return 0;
+  }
 
   /* Pin the clock before the network starts; changing it later can
      disturb the WLAN. */
@@ -872,7 +992,10 @@ void main_link_pump(void)
 
 /* menu() reports leaving (0) and resuming (1) the game. Each change is
    logged, the runtime log is flushed when the menu opens, and the core
-   profile of diagnostic builds skips the menu. */
+   profile of diagnostic builds skips the menu. Opening the menu ends a
+   running unbound benchmark, whose frames must run back to back; resuming
+   calibrates a capture the menu started, at the game clock menu() has
+   restored by then. */
 void main_link_set_gameplay_active(int active)
 {
   u8 value = active != 0;
@@ -880,6 +1003,10 @@ void main_link_set_gameplay_active(int active)
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_pause(!value);
 #endif
+  if(!value)
+    main_perf_bench_cancel();
+  else if(main_perf_calibrate_pending)
+    main_perf_calibrate();
   if(gba_link_gameplay_active == value)
     return;
   gba_link_gameplay_active = value;
@@ -953,13 +1080,14 @@ static void main_fast_forward_update_sound(void)
 }
 
 /* Called from update_input every frame with the fast-forward button's new
-   press and held state. Fast-forward is unavailable during a link session. */
+   press and held state. Fast-forward is unavailable during a link session
+   and the unbound benchmark. */
 void main_fast_forward_input(u32 pressed, u32 held)
 {
   int was_active;
   FastForwardSpeed was_speed;
 
-  if(main_link_active())
+  if(main_link_active() || perf_monitor_bench_running())
   {
     if(fast_forward_policy_active(&fast_forward_policy))
       main_fast_forward_stop();
@@ -1041,6 +1169,70 @@ void main_fast_forward_reset_game_settings(void)
   main_fast_forward_apply_settings();
 }
 
+/* Phase timers of a capture: update_gba reads the clock only while
+   perf_phase_sampling is set, during the frames perf_monitor samples.
+   Otherwise each timed site costs one test of the flag. */
+static u8 perf_phase_sampling;
+static u32 perf_phase_gba_start;
+
+static void main_phase_scanline(void)
+{
+  u32 start = sceKernelGetSystemTimeLow();
+
+  update_scanline();
+  perf_monitor_phase_add(PERF_METRICS_PHASE_SCANLINE,
+   sceKernelGetSystemTimeLow() - start);
+}
+
+/* The PSG channels (update_gbc_sound). */
+static void main_phase_gbc_sound(void)
+{
+  u32 start = sceKernelGetSystemTimeLow();
+
+  update_gbc_sound(cpu_ticks);
+  perf_monitor_phase_add(PERF_METRICS_PHASE_GBC_SOUND,
+   sceKernelGetSystemTimeLow() - start);
+}
+
+/* update_gba's time since its entry, or since the sampled frame began. */
+static void main_phase_update_gba(void)
+{
+  perf_monitor_phase_add(PERF_METRICS_PHASE_UPDATE_GBA,
+   sceKernelGetSystemTimeLow() - perf_phase_gba_start);
+}
+
+/* At each frame start: ends a sampled frame's update_gba time, then
+   decides whether the new frame is sampled (never without a capture). */
+static void main_perf_phase_frame(void)
+{
+  if(perf_phase_sampling) main_phase_update_gba();
+  perf_phase_sampling = perf_monitor_phase_begin_frame();
+  if(perf_phase_sampling) perf_phase_gba_start = sceKernelGetSystemTimeLow();
+}
+
+/* The kernel's run status of the calling thread, the emulation thread
+   here; < 0 where the firmware or PPSSPP refuses the call. */
+static int main_perf_preempt_read(SceKernelThreadRunStatus *status)
+{
+  status->size = sizeof(*status);
+  return sceKernelReferThreadRunStatus(sceKernelGetThreadId(), status);
+}
+
+/* During a capture, gives the preemption counts at the end of a frame's
+   work or of its waits; a refused read turns them off for the capture. */
+static void main_perf_preempt_sample(PerfMetricsPreemptPoint point)
+{
+  SceKernelThreadRunStatus status;
+
+  if(!perf_monitor_preempt_wanted())
+    return;
+  if(main_perf_preempt_read(&status) < 0)
+    perf_monitor_preempt_unavailable();
+  else
+    perf_monitor_preempt_sample(point, status.threadPreemptCount,
+     status.intrPreemptCount);
+}
+
 /* The hardware scheduler. The dynarec calls it when a slice of
    reg[EXECUTE_CYCLES] cycles has run: it advances serial, timers, LCD timing
    and DMA by that amount, raises IRQs, and returns the length of the next
@@ -1054,6 +1246,7 @@ u32 update_gba(void)
   GbaSioEvent sio_event;
 
   perf_monitor_record_gba_update_entry();
+  if(perf_phase_sampling) perf_phase_gba_start = sceKernelGetSystemTimeLow();
 
   /* One pass per timed event until the CPU is running. A `continue` (the
      menu or the link service replaced the machine state) goes straight to
@@ -1083,7 +1276,7 @@ u32 update_gba(void)
 
     if (gbc_sound_update != 0)
     {
-      update_gbc_sound(cpu_ticks);
+      perf_phase_sampling ? main_phase_gbc_sound() : update_gbc_sound(cpu_ticks);
       gbc_sound_update = 0;
     }
 
@@ -1110,7 +1303,7 @@ u32 update_gba(void)
         if ((dispstat & 0x01) == 0)
         {
           if (!skip_next_frame)
-            update_scanline();
+            perf_phase_sampling ? main_phase_scanline() : update_scanline();
 
           // If in visible area also fire HDMA
           for (i = 0; i < 4; i++)
@@ -1159,12 +1352,22 @@ u32 update_gba(void)
 
           input_frame_tick();
 
-          // The menu or a state load replaced the machine; drop this pass
-          if (update_input() != 0)
+          // The menu or a state load replaced the machine; drop this pass.
+          // A failed .sav write opens the menu, which shows its warning;
+          // not during a link session, which the warning would hold up, nor
+          // during an autorun's frames=, where nobody would close it: the
+          // warning stays set for the menu after the run.
+          if ((update_input() != 0) ||
+              (backup_write_warning && !main_link_active() &&
+               !main_autorun_running && (menu() != 0)))
           {
             main_follow_cpu_core();
             continue;
           }
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+          /* Here, not in update_input: link waits call that too. */
+          main_autorun_frame();
+#endif
 
           if (!skip_next_frame)
           {
@@ -1180,7 +1383,7 @@ u32 update_gba(void)
                sceKernelGetSystemTimeLow() - renderer_start);
           }
 
-          update_gbc_sound(cpu_ticks);
+          perf_phase_sampling ? main_phase_gbc_sound() : update_gbc_sound(cpu_ticks);
           gbc_sound_update = 0;
 
           // Reload the BG2/BG3 affine reference points from BG2X/Y and
@@ -1215,6 +1418,7 @@ u32 update_gba(void)
 
           u32 draw_this_frame = skip_next_frame ^ 0x01;
 
+          main_perf_preempt_sample(PERF_METRICS_PREEMPT_WORK_END);
           synchronize();
           synchronize_sound();
 
@@ -1223,13 +1427,15 @@ u32 update_gba(void)
           if (draw_this_frame != 0)
           {
             video_present_finish();
-            flip_screen(option_psp_vsync);
+            flip_screen(perf_monitor_bench_running() ? 0 : option_psp_vsync);
           }
 
           video_adaptive_frame_complete(draw_this_frame == 0, 0);
+          main_perf_preempt_sample(PERF_METRICS_PREEMPT_WAIT_END);
 
           vcount = 0;
           video_dispatch_frame_begin();
+          main_perf_phase_frame();
         }
 
         if (vcount == (dispstat >> 8))
@@ -1351,6 +1557,7 @@ u32 update_gba(void)
   }
   while (reg[CPU_HALT_STATE] != CPU_ACTIVE);
 
+  if(perf_phase_sampling) main_phase_update_gba();
   return reg[EXECUTE_CYCLES];
 }
 
@@ -1400,6 +1607,7 @@ static void synchronize(void)
     {
       used_frameskip_type = FRAMESKIP_AUTO;
       used_frameskip_value = MAIN_LINK_FRAMESKIP_RUN;
+      perf_monitor_record_link_lockstep_frame();
     }
   }
 
@@ -1486,6 +1694,56 @@ static void synchronize(void)
         print_string_gbk(main_fast_forward_status(), 0, 0, COLOR15_WHITE,
          COLOR15_BLACK);
     }
+  }
+
+  // Unbound benchmark: draw every frame and never wait. Sound runs as in
+  // muted fast-forward, mixed then dropped while the audio thread sleeps;
+  // set each frame, as the start cleared it. The counts stay at 0, so
+  // pacing restarts from now once the bench ends. Before the last frame is
+  // recorded, which stops the capture, the stop work of main_perf_stop
+  // runs: the end memory sample, the allocation trace and the core
+  // profile's stop. The largest-block probe never runs in update_gba
+  // (shortcut: the bench's heap-*-low keys come from its start sample
+  // only; take a stop sample after the bench if a run must show a leak).
+  // Diagnostic builds set the bench's arms here each frame (render off:
+  // every frame skipped; audio off: no samples written) and drop the audio
+  // one at the first frame end after the bench, however it ended.
+  if(perf_monitor_bench_running())
+  {
+    if(perf_monitor_bench_frames_left() == 1)
+    {
+      perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+      main_alloc_trace_take();
+#endif
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+      arm_gba_profile_stop();
+#endif
+    }
+    sound_set_fast_forward(1);
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+    skip_next_frame = !main_perf_bench_render;
+    sound_bench_audio_off = !main_perf_bench_audio;
+#else
+    skip_next_frame = 0;
+#endif
+    real_frame_count = 0;
+    virtual_frame_count = 0;
+    num_skipped_frames = 0;
+    frameskip_counter = 0;
+    return;
+  }
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+  sound_bench_audio_off = 0;
+#endif
+
+  // The bench stopped its capture after its last frame: its report is
+  // written once, outside the measured frames, and pacing starts again.
+  if(perf_monitor_bench_take_done())
+  {
+    menu_diagnostics_write_report();
+    real_frame_count = 0;
+    virtual_frame_count = 0;
   }
 
   if(main_fast_forward_active())
@@ -1710,6 +1968,43 @@ static void find_main_path(const char *eboot_path)
     }
 }
 
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+/* Never freed; volatile keeps the compiler from dropping the malloc. */
+static void *volatile main_memory_held;
+/* The KiB memory-hold.txt asked for; 0 when missing or unparsable. */
+static unsigned long main_memory_hold_kib;
+
+/* Holds the KiB written in memory-hold.txt beside the EBOOT (decimal, at
+   most 65536) until exit, to imitate a console with less memory in PPSSPP,
+   which is not a proof. A missing or unreadable file holds nothing. */
+static void main_memory_hold(void)
+{
+  char path[MAX_PATH];
+  char text[16];
+  char *end;
+  unsigned long kib;
+  SceUID file;
+  int length;
+
+  length = snprintf(path, sizeof(path), "%smemory-hold.txt", main_path);
+  if(main_path[0] == '\0' || length < 0 || (size_t)length >= sizeof(path))
+    return;
+  FILE_OPEN(file, path, READ);
+  if(!FILE_CHECK_VALID(file))
+    return;
+  length = FILE_READ(file, text, sizeof(text) - 1);
+  FILE_CLOSE(file);
+  if(length <= 0)
+    return;
+  text[length] = '\0';
+  kib = strtoul(text, &end, 10);
+  main_memory_hold_kib = kib;
+  if(end == text || kib == 0 || kib > 65536)
+    return;
+  main_memory_held = malloc((size_t)kib << 10);
+}
+#endif
+
 /* One-time startup: platform services, settings, BIOS, sound and the
    power callbacks. The power lock keeps the PSP from suspending meanwhile.
    Returns 1 when tempgba.cfg did not load, which only a regular quit
@@ -1744,6 +2039,11 @@ static u32 setup_main(const char *eboot_path)
 
   find_main_path(eboot_path);
   runtime_log_psp_init(main_path[0] != '\0' ? main_path : NULL);
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+  /* Before the ROM buffer and the probe take their share of the heap. */
+  alloc_trace_start();
+  main_memory_hold();
+#endif
 
   sceKernelRegisterSubIntrHandler(PSP_VBLANK_INT, 0, vblank_interrupt_handler, NULL);
   sceKernelEnableSubIntr(PSP_VBLANK_INT, 0);
@@ -1754,6 +2054,8 @@ static u32 setup_main(const char *eboot_path)
   enable_home_menu = 1;
 
   first_run = load_config_file() < 0;
+  /* The file browser and the menu without a game run at this clock too. */
+  set_cpu_clock(option_clock_speed);
   rebuild_fast_forward_button_mask();
   load_theme_config();
   load_recent_roms();
@@ -1764,7 +2066,12 @@ static u32 setup_main(const char *eboot_path)
   load_setting_cfg();
   load_bios_file();
 
+#ifdef ENABLE_DIAGNOSTIC_HW_PROBE
+  hw_probe_psp_run(main_path);
+#endif
+  backup_io = &gui_save_store_io;
   init_gamepak_buffer();
+  main_memory_sample(MEM_STATS_BOOT);
 
   sound_pause = 1;
   set_sound_volume();
@@ -1787,6 +2094,293 @@ static int path_is_regular_file(const char *path)
   return FIO_S_ISREG(stats.st_mode) != 0;
 }
 
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+/* ---- Diagnostic autorun ------------------------------------------------
+ * <main_path>diag-autorun.txt (its format is in autorun_config.h) starts a
+ * ROM without the browser, the menu or the auto-state prompt, can replay a
+ * trace and can quit after a number of frames. diag-autorun.result and a
+ * runtime log event say what happened; without the file nothing is
+ * written. */
+
+static AutorunConfig main_autorun;
+static u32 main_autorun_frames;
+/* What diag-autorun.result holds after its six lines: a testpat= line for
+   each mode shown so far. */
+static char main_testpat_lines[AUTORUN_TESTPAT_MODES *
+ AUTORUN_CONFIG_TESTPAT_LINE_SIZE];
+static size_t main_testpat_length;
+
+/* Writes diag-autorun.result and logs the same outcome. */
+static void main_autorun_report(AutorunStatus status, AutorunError error,
+ u32 line)
+{
+  char path[MAX_PATH];
+  char text[AUTORUN_CONFIG_RESULT_SIZE];
+  size_t length;
+  SceUID file;
+  int result;
+
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_DIAG_AUTORUN, cpu_ticks, (u8)status,
+   (u32)error, line, main_autorun_frames);
+  /* No game start follows to save the log: store the reason now, in case
+     the EBOOT is killed in the browser. */
+  if(status == AUTORUN_STATUS_IGNORED || status == AUTORUN_STATUS_FAILED)
+    runtime_log_psp_flush(RUNTIME_LOG_FLUSH_START);
+
+  length = autorun_config_result(GBA_RUSH_BUILD_ID, status, error, line,
+   main_autorun_frames, text, sizeof(text));
+  result = snprintf(path, sizeof(path), "%sdiag-autorun.result", main_path);
+  if(length == 0 || result < 0 || (size_t)result >= sizeof(path))
+    return;
+
+  FILE_OPEN(file, path, WRITE);
+  if(FILE_CHECK_VALID(file))
+  {
+    FILE_WRITE(file, text, length);
+    if(main_testpat_length != 0)
+      FILE_WRITE(file, main_testpat_lines, main_testpat_length);
+    FILE_CLOSE(file);
+  }
+}
+
+/* A path from the autorun file: one without a device (no ':') is relative
+   to the EBOOT folder. */
+static int main_autorun_path(char *path, size_t path_size, const char *name)
+{
+  int result = snprintf(path, path_size, "%s%s",
+   strchr(name, ':') == NULL ? main_path : "", name);
+
+  return result >= 0 && (size_t)result < path_size;
+}
+
+/* The ROM, the trace or its hashes did not start: exit=1 quits, else the
+   startup goes on as usual with no game loaded. */
+static int main_autorun_fail(AutorunError error)
+{
+  main_autorun_report(AUTORUN_STATUS_FAILED, error, 0);
+  if(main_autorun.exit_when_done)
+    quit();
+  gamepak_filename[0] = 0;
+  gamepak_file_size = 0;
+  return 0;
+}
+
+/* testpat= mode m is scale m / 2 with filter m % 2 (autorun_config.h). */
+typedef char main_testpat_modes_check
+ [(SCALED_NONE == 0 && SCALED_X15_GU == 1 && SCALED_X15_SW == 2 &&
+   SCALED_USER == 3 && SCALED_16X9_GU == 4 && SCALED_16X9_SHARP == 5 &&
+   SCALED_16X9_AUTO == 6 && SCREEN_SCALE_COUNT == AUTORUN_TESTPAT_SCALES &&
+   FILTER_NEAREST == 0 && FILTER_BILINEAR == 1) ? 1 : -1];
+
+/* Eight bars 30 pixels wide, in screen_texture's GU_PSM_5551 with red in
+   the low bits: white, black, red, green, blue, yellow, cyan, magenta. No
+   bar at an edge is black, so the black border cannot hide one. A
+   red/blue swap shows as the third and fifth bars trading colours. */
+static const u16 main_testpat_bars[8] =
+{
+  0x7FFF, 0x0000, 0x001F, 0x03E0, 0x7C00, 0x03FF, 0x7FE0, 0x7C1F
+};
+
+/* testpat=: no ROM runs. The bars go through the presenter of each mode
+   asked for, AUTORUN_TESTPAT_HOLD_FRAMES each, and after each mode the
+   result names the presenter and filter psp_video.c really used. The
+   user's screen options are put back before quit(), which saves them. */
+static void main_autorun_testpat(void)
+{
+  u32 saved_scale = option_screen_scale;
+  u32 saved_filter = option_screen_filter;
+  u32 saved_mag = option_screen_mag;
+  u32 mode = main_autorun.testpat_mode;
+  u32 last = mode;
+  u32 x, y, frame;
+
+  if(mode == AUTORUN_TESTPAT_ALL)
+  {
+    mode = 0;
+    last = AUTORUN_TESTPAT_MODES - 1;
+  }
+  main_autorun_report(AUTORUN_STATUS_STARTED, AUTORUN_OK, 0);
+
+  /* Every presenter writes the dcache back before the GE reads these. */
+  video_sync_present();
+  for(y = 0; y < GBA_SCREEN_HEIGHT; y++)
+  {
+    for(x = 0; x < GBA_SCREEN_WIDTH; x++)
+      screen_texture[y * GBA_LINE_SIZE + x] =
+       main_testpat_bars[x / (GBA_SCREEN_WIDTH / 8)];
+  }
+  /* The factory magnification, so every photo of user is alike. */
+  option_screen_mag = 170;
+
+  for(; mode <= last; mode++)
+  {
+    const char *presenter;
+    const char *filter;
+
+    option_screen_scale = AUTORUN_TESTPAT_SCALE(mode);
+    option_screen_filter = AUTORUN_TESTPAT_FILTER(mode);
+    video_resolution_small();
+    for(frame = 0; frame < AUTORUN_TESTPAT_HOLD_FRAMES; frame++)
+    {
+      /* No button is pressed for minutes: keep the backlight on and Auto
+         Sleep away (PSP_POWER_TICK_DISPLAY holds the backlight only). */
+      scePowerTick(PSP_POWER_TICK_ALL);
+      (*update_screen)();
+      flip_screen(1);
+    }
+    main_autorun_frames += AUTORUN_TESTPAT_HOLD_FRAMES;
+
+    /* Asked after the frames: blit_sharp falls back to the GU presenter
+       when the GE list runs out. */
+    video_presenter_names(&presenter, &filter);
+    main_testpat_length += autorun_config_testpat_line(mode, presenter,
+     filter, main_testpat_lines + main_testpat_length,
+     sizeof(main_testpat_lines) - main_testpat_length);
+    main_autorun_report(mode == last ? AUTORUN_STATUS_DONE :
+     AUTORUN_STATUS_STARTED, AUTORUN_OK, 0);
+  }
+
+  option_screen_scale = saved_scale;
+  option_screen_filter = saved_filter;
+  option_screen_mag = saved_mag;
+  quit();
+}
+
+/* Reads diag-autorun.txt. Returns 1 when its ROM is loaded and reset (and
+   its trace started), so user_main runs it at once; 0 otherwise, when
+   nothing in the file applies. testpat= quits from here. */
+int main_autorun_start(void)
+{
+  /* One byte over the limit tells a file that is too large. */
+  char text[AUTORUN_CONFIG_MAX_SIZE + 1];
+  char path[MAX_PATH];
+  SceUID file;
+  size_t size = 0;
+  int result;
+  int loaded;
+
+  result = snprintf(path, sizeof(path), "%sdiag-autorun.txt", main_path);
+  if(result < 0 || (size_t)result >= sizeof(path))
+    return 0;
+  FILE_OPEN(file, path, READ);
+  if(!FILE_CHECK_VALID(file))
+    return 0;
+  while(size < sizeof(text) &&
+        (result = FILE_READ(file, text + size, sizeof(text) - size)) > 0)
+    size += (size_t)result;
+  FILE_CLOSE(file);
+
+  if(result < 0)
+  {
+    main_autorun_report(AUTORUN_STATUS_IGNORED, AUTORUN_ERROR_READ, 0);
+    return 0;
+  }
+  if(!autorun_config_parse(text, size, GBA_RUSH_BUILD_ID, &main_autorun))
+  {
+    main_autorun_report(AUTORUN_STATUS_IGNORED, main_autorun.error,
+     main_autorun.error_line);
+    return 0;
+  }
+#ifdef ENABLE_DIAGNOSTIC_NET_INJECTION
+  /* Before any link starts, so every session of this run gets it. */
+  psp_adhoc_set_fault(main_autorun.net_profile);
+#endif /* ENABLE_DIAGNOSTIC_NET_INJECTION */
+  if(main_autorun.testpat)
+  {
+    main_autorun_testpat();
+    return 0;
+  }
+  if(main_autorun.rom[0] == '\0')
+  {
+    /* A file for this build with nothing to start. */
+    main_autorun_report(AUTORUN_STATUS_STARTED, AUTORUN_OK, 0);
+    return 0;
+  }
+
+  /* load_gamepak() reads the extension after the last '.'. A .sav that
+     will not read fails the ROM here, instead of the dialogs that wait for
+     a button nobody presses. */
+  dialogs_unattended = 1;
+  loaded = main_autorun_path(path, sizeof(path), main_autorun.rom) &&
+   strrchr(path, '.') != NULL && load_gamepak(path) > 0;
+  dialogs_unattended = 0;
+  if(!loaded)
+    return main_autorun_fail(AUTORUN_ERROR_ROM);
+  reset_gba();
+  if(main_autorun.trace[0] != '\0')
+  {
+    int replay = 0;
+
+    /* A .svs made with the other BIOS fails the trace here, instead of
+       showing a popup that waits for a button nobody presses. */
+    dialogs_unattended = 1;
+    if(main_autorun_path(path, sizeof(path), main_autorun.trace))
+      replay = gui_trace_replay_file(path);
+    dialogs_unattended = 0;
+    if(replay <= 0)
+      return main_autorun_fail(AUTORUN_ERROR_TRACE);
+  }
+  if(main_autorun.hash[0] != '\0')
+  {
+    AutorunError error = AUTORUN_OK;
+
+    /* The replay started without hashes: their array did not fit. */
+    if(input_diagnostic_trace_hashes() == NULL)
+      error = AUTORUN_ERROR_NO_HASH_MEMORY;
+    /* The replay would end before that frame and flip nothing. */
+    else if(main_autorun.perturb &&
+            main_autorun.perturb_frame > input_diagnostic_trace_duration())
+      error = AUTORUN_ERROR_PERTURB_PAST_TRACE;
+    if(error != AUTORUN_OK)
+    {
+      input_diagnostic_trace_cancel();
+      return main_autorun_fail(error);
+    }
+    if(main_autorun.perturb)
+      input_diagnostic_trace_hashes_perturb(main_autorun.perturb_frame);
+  }
+
+  main_autorun_running = main_autorun.frames != 0;
+  main_autorun_report(AUTORUN_STATUS_STARTED, AUTORUN_OK, 0);
+  return 1;
+}
+
+/* Called by update_gba once per emulated frame, at VBlank: after frames=N
+   frames from the ROM's start the run is done, hash= gets the replay's
+   state hashes (once, at the end of the run), and exit=1 quits. A replay
+   cancelled before then (a suspend does that) fails the run at once. */
+void main_autorun_frame(void)
+{
+  char path[MAX_PATH];
+  AutorunError error = AUTORUN_OK;
+  InputTraceState trace;
+
+  if(!main_autorun_running)
+    return;
+  /* Nobody presses a button during the run: keep Auto Sleep from
+     suspending the PSP, about once a second. */
+  if(main_autorun_frames % 60 == 0)
+    scePowerTick(PSP_POWER_TICK_ALL);
+
+  trace = input_diagnostic_trace_state();
+  if(main_autorun.trace[0] != '\0' && trace != INPUT_TRACE_REPLAYING &&
+     trace != INPUT_TRACE_FINISHED)
+    error = AUTORUN_ERROR_TRACE;
+  else if(++main_autorun_frames < main_autorun.frames)
+    return;
+  else if(main_autorun.hash[0] != '\0' &&
+          (!main_autorun_path(path, sizeof(path), main_autorun.hash) ||
+           !gui_trace_write_hashes(path)))
+    error = AUTORUN_ERROR_HASH;
+
+  main_autorun_running = 0;
+  main_autorun_report(error == AUTORUN_OK ? AUTORUN_STATUS_DONE :
+   AUTORUN_STATUS_FAILED, error, 0);
+  if(main_autorun.exit_when_done)
+    quit();
+}
+#endif
+
 /* Picks the ROM (a path argument, then roms/game.gba, then the browser or
    menu) and runs it in the dynarec, which never returns; else quits.
    tests/test_startup.py extracts this function by its exact signature. */
@@ -1797,19 +2391,31 @@ int user_main(int argc, char *argv[])
   u32 rom_loaded = 0;
   u32 prepared_by_menu = 0;
   u32 first_run;
+  s32 load_result;
 
   first_run = setup_main((argc > 0 && argv[0] != NULL) ? argv[0] : NULL);
 
   gamepak_filename[0] = 0;
   gamepak_file_size = 0;
 
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+  /* A diag-autorun.txt that loaded and reset its ROM skips the launch
+     orders below, the menu and the auto-state prompt. */
+  if (main_autorun_start())
+    prepared_by_menu = rom_loaded = 1;
+  else
+#endif
   /* Priority 1: launcher or file manager passed a ROM path */
   if (argc > 1)
   {
-    if (load_gamepak((char *)argv[1]) < 0)
+    load_result = load_gamepak((char *)argv[1]);
+    if (load_result < 0)
     {
-      clear_screen(COLOR32_BLACK);
-      error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_QUIT);
+      if (load_result != LOAD_GAMEPAK_CANCELLED)
+      {
+        clear_screen(COLOR32_BLACK);
+        error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_QUIT);
+      }
       quit();
     }
     /* Single-game bubble launch: do not update Recent ROMs */
@@ -1825,10 +2431,14 @@ int user_main(int argc, char *argv[])
 
     if (path_is_regular_file(load_filename))
     {
-      if (load_gamepak(load_filename) < 0)
+      load_result = load_gamepak(load_filename);
+      if (load_result < 0)
       {
-        clear_screen(COLOR32_BLACK);
-        error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+        if (load_result != LOAD_GAMEPAK_CANCELLED)
+        {
+          clear_screen(COLOR32_BLACK);
+          error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+        }
         prepared_by_menu = rom_loaded = menu() != 0;
       }
       else
@@ -1841,10 +2451,13 @@ int user_main(int argc, char *argv[])
     {
       prepared_by_menu = rom_loaded = menu() != 0;
     }
-    else if (load_gamepak(load_filename) < 0)
+    else if ((load_result = load_gamepak(load_filename)) < 0)
     {
-      clear_screen(COLOR32_BLACK);
-      error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+      if (load_result != LOAD_GAMEPAK_CANCELLED)
+      {
+        clear_screen(COLOR32_BLACK);
+        error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+      }
       prepared_by_menu = rom_loaded = menu() != 0;
     }
     else
@@ -1929,6 +2542,8 @@ void quit(void)
   main_fast_forward_stop();
   main_link_disconnect(MAIN_LINK_END_USER);
 
+  // One last try, never a dialog: HOME's exit callback waits only 2 s. The
+  // menu's Exit has already asked about a failed write.
   update_backup_immediately();
   save_config_file();
   {
@@ -1936,6 +2551,7 @@ void quit(void)
 
     main_log_video_counters(&session_start);
   }
+  main_log_me_clock();
   main_log_core_counters();
   runtime_log_psp_main(RUNTIME_LOG_EVENT_SESSION_END, cpu_ticks, 0,
    (u32)gba_link.status, (u32)gba_link_end, 0);
@@ -1969,6 +2585,9 @@ void reset_gba(void)
 
   toast_clear();
   main_fast_forward_stop();
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+  main_alloc_trace_take();
+#endif
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_stop();
@@ -1999,6 +2618,7 @@ void reset_gba(void)
     runtime_log_rom_identity = new_identity;
     runtime_log_rom_active = 1;
   }
+  main_memory_sample(MEM_STATS_ROM_LOAD);
   reset_sound();
 }
 
@@ -2006,6 +2626,26 @@ void reset_gba(void)
 /* ---- Power ------------------------------------------------------------
  * The power callback only records suspend and resume in psp_power_lifecycle.
  * The emulator thread acts on them here, from main_power_service. */
+
+/* power_lifecycle.c cannot include psppower.h, so it keeps copies of the
+   callback bits; they must match the PSP's. */
+typedef char MainPowerBitsCheck[
+ (PSP_POWER_CB_POWER_SWITCH == POWER_LIFECYCLE_BIT_POWER_SWITCH &&
+  PSP_POWER_CB_RESUME_COMPLETE == POWER_LIFECYCLE_BIT_RESUME_COMPLETE &&
+  PSP_POWER_CB_RESUMING == POWER_LIFECYCLE_BIT_RESUMING &&
+  PSP_POWER_CB_SUSPENDING == POWER_LIFECYCLE_BIT_SUSPENDING) ? 1 : -1];
+
+/* Logs one record per power callback not logged yet: its raw bits, its
+   number (a gap means callbacks were lost) and the entry kind now. */
+static void main_power_log_bits(void)
+{
+  uint32_t bits;
+  uint32_t number;
+
+  while(power_lifecycle_take_bits(&psp_power_lifecycle, &bits, &number))
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_BITS, cpu_ticks, 0, bits,
+     number, psp_power_lifecycle.suspended);
+}
 
 /* Writes the suspend auto-savestate once per suspend, if one was asked for. */
 static void main_power_save_if_pending(void)
@@ -2046,13 +2686,17 @@ static void main_power_reopen_gamepak(void)
 }
 
 /* Suspend is under way: stop fast-forward, video and the link, auto-save,
-   close the ROM file and flush the logs, then park until the PSP resumes. */
+   close the ROM file and flush the logs, then park until the PSP resumes,
+   or until a switch-only entry times out. */
 static void psp_sleep_loop(void)
 {
   runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_SUSPEND, cpu_ticks, 0,
    (u32)gba_link.status, main_adhoc_state_value(), sleep_flag);
   main_fast_forward_stop();
   input_turbo_stop();
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+  main_alloc_trace_take();
+#endif
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_stop();
@@ -2075,11 +2719,21 @@ static void psp_sleep_loop(void)
 
   runtime_log_psp_flush(RUNTIME_LOG_FLUSH_SUSPEND);
 
+  /* A switch-only entry gets its 2 s after the park work, however long the
+     save and the link teardown took, and one that lands later in this park
+     gets its own 2 s. The state test keeps parking if an entry lands between
+     the timeout and the sleep_flag store below. */
+  power_lifecycle_start_switch_clock(&psp_power_lifecycle,
+   sceKernelGetSystemTimeWide());
   do
   {
     sceKernelDelayThread(100 * 1000);
+    if(power_lifecycle_expire_switch(&psp_power_lifecycle,
+     sceKernelGetSystemTimeWide()))
+      sleep_flag = 0;
   }
-  while (sleep_flag != 0);
+  while (sleep_flag != 0 ||
+   power_lifecycle_state(&psp_power_lifecycle) == POWER_LIFECYCLE_SUSPENDED);
 }
 
 /* Polled by the emulator thread from update_gba, menus and link waits.
@@ -2093,9 +2747,13 @@ void main_power_service(void)
   if(exit_requested && !quit_started)
     quit();
 
+  main_power_log_bits();
   state = power_lifecycle_state(&psp_power_lifecycle);
   if(sleep_flag != 0 || state == POWER_LIFECYCLE_SUSPENDED)
+  {
     psp_sleep_loop();
+    main_power_log_bits();
+  }
 
   state = power_lifecycle_state(&psp_power_lifecycle);
   if(state != POWER_LIFECYCLE_RUNNING)
@@ -2115,11 +2773,20 @@ void main_power_service(void)
 
   main_power_reopen_gamepak();
   video_power_resume();
+  /* A switch-only entry timed out, so the callback reserved no audio. */
+  if(audio_result == POWER_LIFECYCLE_AUDIO_NOT_RESERVED)
+  {
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_BITS, cpu_ticks, 0, 0, 0,
+     POWER_LIFECYCLE_SWITCH_EXPIRED);
+    audio_result = sound_power_resume();
+  }
   sound_power_resume_finish(cpu_ticks, audio_result);
   sleep_auto_saved = 0;
   runtime_log_psp_main(RUNTIME_LOG_EVENT_POWER_RESUME, cpu_ticks,
    (u8)(audio_result >= 0), (u32)audio_result,
    (u32)gba_link.status, main_adhoc_state_value());
+  /* The firmware may wake at another clock; the link closed on suspend. */
+  set_cpu_clock(option_clock_speed);
 }
 
 
@@ -2153,14 +2820,20 @@ static int exit_callback(int arg1, int arg2, void *common)
    main_power_service. */
 static int power_callback(int unknown, int powerInfo, void *arg)
 {
-  if ((powerInfo & PSP_POWER_CB_SUSPENDING) != 0)
+  /* Bit 31 is POWER_SWITCH, so work on the unsigned bits. */
+  u32 bits = (u32)powerInfo;
+  u32 action;
+
+  power_lifecycle_note_bits(&psp_power_lifecycle, bits);
+  action = power_lifecycle_classify(bits);
+  if ((action & POWER_LIFECYCLE_ENTRY_MASK) != 0)
   {
     sound_power_suspend();
     power_lifecycle_suspend(&psp_power_lifecycle,
-     gamepak_filename[0] != '\0');
+     action & POWER_LIFECYCLE_ENTRY_MASK, gamepak_filename[0] != '\0');
     sleep_flag = 1;
   }
-  if ((powerInfo & PSP_POWER_CB_RESUME_COMPLETE) != 0)
+  if ((action & POWER_LIFECYCLE_ACTION_RESUME) != 0)
   {
     if(power_lifecycle_state(&psp_power_lifecycle) ==
        POWER_LIFECYCLE_SUSPENDED)
@@ -2228,10 +2901,10 @@ u64 ticker(void)
   return current_ticks;
 }
 
-/* The configured CPU clock in MHz, for the benchmark report. */
-static u32 main_perf_clock_mhz(void)
+/* A PSP_CLOCK_* value in MHz; anything else is 222. */
+static u32 main_clock_mhz(u32 psp_clock)
 {
-  switch(option_clock_speed)
+  switch(psp_clock)
   {
     case PSP_CLOCK_333:
       return 333;
@@ -2248,18 +2921,72 @@ static u32 main_perf_clock_mhz(void)
  * The diagnostics menu starts and stops a capture; perf_monitor.c collects
  * it and perf_report.c formats the report written here. */
 
-/* Starts a capture and pins the settings it runs under for the report. */
-int main_perf_start(void)
+/* Times PERF_METRICS_PROBE_CALIBRATION_READS clock reads made back to
+   back, for the cost of one read of the phase timers. */
+static void main_perf_calibrate_probe(void)
+{
+  u32 first = sceKernelGetSystemTimeLow();
+  u32 last = first;
+  u32 i;
+
+  for(i = 1; i < PERF_METRICS_PROBE_CALIBRATION_READS; i++)
+    last = sceKernelGetSystemTimeLow();
+  perf_monitor_record_probe_calibration(last - first,
+   PERF_METRICS_PROBE_CALIBRATION_READS);
+}
+
+/* Times PERF_METRICS_PREEMPT_CALIBRATION_CALLS preemption reads, the cost
+   each frame of the capture pays twice; a refused read turns them off. */
+static void main_perf_calibrate_preempt(void)
+{
+  SceKernelThreadRunStatus status;
+  u32 start = sceKernelGetSystemTimeLow();
+  u32 i;
+
+  for(i = 0; i < PERF_METRICS_PREEMPT_CALIBRATION_CALLS; i++)
+  {
+    if(main_perf_preempt_read(&status) < 0)
+    {
+      perf_monitor_preempt_unavailable();
+      return;
+    }
+  }
+  perf_monitor_record_preempt_calibration(sceKernelGetSystemTimeLow() -
+   start, PERF_METRICS_PREEMPT_CALIBRATION_CALLS);
+}
+
+/* Prices both reads for a capture started in the menu, when the game
+   resumes: its time falls in the seed frame video_reset_frame_timing left
+   unrecorded. A capture stopped before then gets no calibration. */
+static void main_perf_calibrate(void)
+{
+  main_perf_calibrate_pending = 0;
+  if(!perf_monitor_active())
+    return;
+  main_perf_calibrate_probe();
+  main_perf_calibrate_preempt();
+}
+
+/* Frames the unbound benchmark runs: about a minute of GBA time. */
+#define MAIN_PERF_BENCH_FRAMES 3600U
+
+/* Starts a capture and pins the settings it runs under for the report:
+   the unbound benchmark when bench_frames is not 0, else one the player
+   paces. */
+static int main_perf_begin(u32 bench_frames)
 {
   FastForwardSettings fast_forward_settings;
   PerfMonitorIdentity identity;
+  ScePspDateTime date = { 0 };
+  u64 now = sceKernelGetSystemTimeWide();
 
-  if(!perf_monitor_start(sceKernelGetSystemTimeWide()))
+  if(!(bench_frames != 0 ? perf_monitor_bench_start(now, bench_frames) :
+     perf_monitor_start(now)))
     return 0;
 
   fast_forward_settings = main_fast_forward_settings();
   memset(&identity, 0, sizeof(identity));
-  identity.clock_mhz = main_perf_clock_mhz();
+  identity.clock_mhz = main_clock_mhz(option_clock_speed);
   identity.psp_vsync = option_psp_vsync;
   identity.renderer = option_video_renderer;
   identity.scale = option_screen_scale;
@@ -2285,9 +3012,53 @@ int main_perf_start(void)
      sizeof(identity.game_code));
     identity.rom_revision = gamepak_header[0xBC];
   }
+  /* Wall time only orders the runs (compare-benchmarks --order-check): the
+     RTC can jump, so it never times anything. */
+  if(sceRtcGetCurrentClockLocalTime(&date) >= 0)
+  {
+    identity.has_capture_time = 1;
+    identity.capture_year = date.year;
+    identity.capture_month = date.month;
+    identity.capture_day = date.day;
+    identity.capture_hour = date.hour;
+    identity.capture_minute = date.minute;
+    identity.capture_second = date.second;
+  }
+  identity.bench_mode = bench_frames != 0 ? PERF_REPORT_BENCH_UNBOUND :
+   PERF_REPORT_BENCH_PACED;
+  identity.bench_frames = bench_frames;
+  identity.bench_render = 1;
+  identity.bench_audio = 1;
+  identity.bench_input = bench_frames != 0 ? PERF_REPORT_BENCH_INPUT_NONE :
+   PERF_REPORT_BENCH_INPUT_PAD;
+  if(bench_frames != 0)
+  {
+    /* What the benchmark runs under, whatever the options say. */
+    identity.psp_vsync = 0;
+    identity.frameskip_type = FRAMESKIP_NONE;
+    identity.frameskip_value = 0;
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+    identity.bench_render = main_perf_bench_render;
+    identity.bench_audio = main_perf_bench_audio;
+#endif
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+    if(main_perf_bench_trace)
+    {
+      identity.bench_input = PERF_REPORT_BENCH_INPUT_TRACE;
+      identity.bench_trace_checksum = input_diagnostic_trace_checksum();
+    }
+#endif
+  }
   perf_monitor_set_identity(&identity);
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+  main_alloc_trace_count = 0;
+#endif
 
+  main_perf_memory = main_memory_sample(MEM_STATS_CAPTURE_START);
   perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
+  /* The first frame start of the new capture decides the sampling. */
+  perf_phase_sampling = 0;
+  main_perf_calibrate_pending = 1;
   video_reset_frame_timing();
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_start();
@@ -2295,11 +3066,67 @@ int main_perf_start(void)
   return 1;
 }
 
+int main_perf_start(void)
+{
+  return main_perf_begin(0);
+}
+
+/* The unbound benchmark, refused during a link: fast-forward stops, and
+   synchronize() runs MAIN_PERF_BENCH_FRAMES frames without pacing, then
+   saves the report. */
+int main_perf_bench_start(u32 render, u32 audio)
+{
+  u32 frames = MAIN_PERF_BENCH_FRAMES;
+
+  if(main_link_active())
+    return 0;
+
+  main_fast_forward_stop();
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+  main_perf_bench_render = render != 0;
+  main_perf_bench_audio = audio != 0;
+#endif
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  /* A held input trace replays from the bench's first frame instead of no
+     input. Its length bounds the bench, and update_input ends the bench
+     with the trace's last frame. */
+  frames = input_diagnostic_trace_begin_bench();
+  main_perf_bench_trace = frames != 0;
+  if(!main_perf_bench_trace)
+    frames = MAIN_PERF_BENCH_FRAMES;
+#endif
+  return main_perf_begin(frames);
+}
+
+/* Ends a running unbound benchmark as unusable: the menu or a state hotkey
+   would put its time in one of the frames. */
+void main_perf_bench_cancel(void)
+{
+  if(!perf_monitor_bench_running())
+    return;
+
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+  main_alloc_trace_take();
+#endif
+  perf_monitor_invalidate(sceKernelGetSystemTimeWide());
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+  arm_gba_profile_stop();
+#endif
+}
+
 int main_perf_stop(void)
 {
+  MemStats stop;
+
   if(!perf_monitor_active())
     return 0;
 
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+  /* Before the stop sample's own malloc and free calls. */
+  main_alloc_trace_take();
+#endif
+  stop = main_memory_sample(MEM_STATS_CAPTURE_STOP);
+  mem_stats_keep_lowest(&main_perf_memory, &stop);
   perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_stop();
@@ -2349,6 +3176,56 @@ static void main_perf_write_core_profile(const char *report_path)
   if(!FILE_CHECK_VALID(file))
     return;
   if(!main_perf_write_all(file, profile, (u32)length))
+  {
+    FILE_CLOSE(file);
+    sceIoRemove(path);
+    return;
+  }
+  FILE_CLOSE(file);
+}
+#endif
+
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+/* The emulator thread's last malloc and free calls before the capture
+   ended, beside its report as perf-<local time>-alloc.txt. */
+static void main_perf_write_alloc_trace(const char *report_path)
+{
+  /* The first line, then at most 50 characters per entry. */
+  static char text[96 + MEM_STATS_TRACE_CAPACITY * 50];
+  char path[MAX_PATH];
+  size_t stem = strlen(report_path) - 4;
+  size_t length;
+  size_t i;
+  SceUID file;
+
+  if(stem + sizeof("-alloc.txt") > sizeof(path))
+    return;
+  memcpy(path, report_path, stem);
+  strcpy(path + stem, "-alloc.txt");
+  /* A hold lowers every memory figure of the report, so say if one ran. */
+  length = (size_t)snprintf(text, sizeof(text),
+   "alloc-trace entries=%u thread=emulator memory-hold-kib=%lu held-kib=%lu\n",
+   (unsigned)main_alloc_trace_count, main_memory_hold_kib,
+   main_memory_held != NULL ? main_memory_hold_kib : 0ul);
+  for(i = 0; i < main_alloc_trace_count && length < sizeof(text); i++)
+  {
+    const MemStatsTraceEntry *entry = &main_alloc_trace[i];
+
+    if(entry->size == MEM_STATS_TRACE_FREE)
+      length += (size_t)snprintf(text + length, sizeof(text) - length,
+       "free caller=0x%08x at=0x%08x\n", (unsigned)entry->caller,
+       (unsigned)entry->pointer);
+    else
+      length += (size_t)snprintf(text + length, sizeof(text) - length,
+       "malloc %u caller=0x%08x at=0x%08x\n", (unsigned)entry->size,
+       (unsigned)entry->caller, (unsigned)entry->pointer);
+  }
+  if(length >= sizeof(text))
+    return;
+  FILE_OPEN(file, path, WRITE);
+  if(!FILE_CHECK_VALID(file))
+    return;
+  if(!main_perf_write_all(file, text, (u32)length))
   {
     FILE_CLOSE(file);
     sceIoRemove(path);
@@ -2412,6 +3289,9 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
   metadata.gamepak_file_size = identity.gamepak_file_size;
   metadata.gamepak_ram_buffer_size = identity.gamepak_ram_buffer_size;
   metadata.gamepak_ram_pages = identity.gamepak_ram_pages;
+  metadata.heap_free_low = main_perf_memory.heap_free;
+  metadata.heap_largest_low = main_perf_memory.heap_largest;
+  metadata.kernel_free_low = main_perf_memory.kernel_largest;
   if(identity.gamepak_file_size >= 0xC0U)
   {
     metadata.rom_title = identity.rom_title;
@@ -2420,6 +3300,19 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
     metadata.game_code_length = 4;
     metadata.rom_revision = identity.rom_revision;
   }
+  metadata.has_capture_time = identity.has_capture_time;
+  metadata.capture_year = identity.capture_year;
+  metadata.capture_month = identity.capture_month;
+  metadata.capture_day = identity.capture_day;
+  metadata.capture_hour = identity.capture_hour;
+  metadata.capture_minute = identity.capture_minute;
+  metadata.capture_second = identity.capture_second;
+  metadata.bench_mode = identity.bench_mode;
+  metadata.bench_frames = identity.bench_frames;
+  metadata.bench_render = identity.bench_render;
+  metadata.bench_audio = identity.bench_audio;
+  metadata.bench_input = identity.bench_input;
+  metadata.bench_trace_checksum = identity.bench_trace_checksum;
   metadata.duration_us = perf_monitor_duration_us();
 
   report_length = perf_report_format(report, sizeof(report), &metadata,
@@ -2464,6 +3357,9 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   main_perf_write_core_profile(filename);
 #endif
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+  main_perf_write_alloc_trace(filename);
+#endif
 
   if(output_path != NULL && output_path_size != 0)
   {
@@ -2497,8 +3393,9 @@ void change_ext(char *src, char *buffer, const char *extension)
   }
 }
 
-/* Shows text in a popup until any button is pressed. confirm only adds
-   the continue or quit hint; callers do the quitting themselves. */
+/* Shows text in a popup until any button is pressed, keeping an open link
+   session alive meanwhile. confirm only adds the continue or quit hint;
+   callers do the quitting themselves. */
 void error_msg(const char *text, u8 confirm)
 {
   char text_buff[512];
@@ -2530,6 +3427,7 @@ void error_msg(const char *text, u8 confirm)
   while (gui_action == CURSOR_NONE)
   {
     gui_action = get_gui_input();
+    main_link_pump();
   }
 }
 
@@ -2567,34 +3465,44 @@ u32 yesno_dialog(const char *text)
 }
 
 
-/* Sets PLL, CPU and bus clocks in MHz; the bus runs at half the CPU. */
+/* The Media Engine's clock since the last clock change, as LINK_COUNTERS
+   record 19: the clock requested then, the clock its cycle counter
+   measured and the milliseconds measured. Nothing if it did not draw. */
+static void main_log_me_clock(void)
+{
+  VideoMeCounters now;
+  u64 ticks, us;
+
+  video_me_counters(&now);
+  ticks = now.me_clock_ticks - main_clock_me_start.me_clock_ticks;
+  us = now.me_clock_us - main_clock_me_start.me_clock_us;
+  main_clock_me_start = now;
+  /* Its cycle counter runs at half the clock: MHz = 2 * ticks / us. */
+  if(us != 0)
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 19,
+     main_clock_requested_mhz, (u32)((2 * ticks + us / 2) / us),
+     (u32)(us / 1000));
+}
+
+/* Sets PLL, CPU and bus clocks in MHz; the bus runs at half the CPU. Every
+   path calls it, so the log shows the clock of each one: the requested
+   clock and the CPU and bus clocks the firmware reports, as LINK_COUNTERS
+   record 18, after the Media Engine's clock at the previous request.
+   Emulator thread only, like every main-ring write. */
 int set_cpu_clock(u32 psp_clock)
 {
   int ret = -1;
+  u32 mhz = main_clock_mhz(psp_clock);
 
+  main_log_me_clock();
   if (__scePowerSetClockFrequency != NULL)
-  {
-    switch (psp_clock)
-    {
-      case PSP_CLOCK_333:
-        ret = (*__scePowerSetClockFrequency)(333, 333, 166);
-        break;
+    ret = (*__scePowerSetClockFrequency)(mhz, mhz, mhz / 2);
+  video_me_clock_changed();
 
-      case PSP_CLOCK_300:
-        ret = (*__scePowerSetClockFrequency)(300, 300, 150);
-        break;
-
-      case PSP_CLOCK_266:
-        ret = (*__scePowerSetClockFrequency)(266, 266, 133);
-        break;
-
-      default:
-      case PSP_CLOCK_222:
-        ret = (*__scePowerSetClockFrequency)(222, 222, 111);
-        break;
-    }
-  }
-
+  main_clock_requested_mhz = mhz;
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_COUNTERS, cpu_ticks, 18,
+   mhz, (u32)scePowerGetCpuClockFrequencyInt(),
+   (u32)scePowerGetBusClockFrequencyInt());
   return ret;
 }
 
@@ -2661,7 +3569,7 @@ void *safe_malloc(size_t size)
 
 // main.c's savestate block: guest clock, LCD phase, IRQ entry delay and
 // timers. READ loads it from savestate_file; WRITE_MEM appends it to the
-// in-memory savestate at write_mem_ptr and ignores savestate_file.
+// savestate being written (savestate_write_mem) and ignores savestate_file.
 #define MAIN_SAVESTATE_BODY(type)                                             \
 {                                                                             \
   FILE_##type##_VARIABLE(savestate_file, cpu_ticks);                          \

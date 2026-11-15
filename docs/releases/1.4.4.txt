@@ -5,9 +5,12 @@
 # (wire-unchanged, wire-extended or bump) and mixed-pair (what a pair with an
 # earlier release loses; needed with wire-extended).
 
-# The SAV-1.8 read matrix, the SAV-2.7 trade and EXT-1 join this list once
-# the catalog has their ids.
-tests: save-sram-roundtrip, save-powerloss-10x, sleep-auto-20x, menu-every-page, boot-no-dir-ini, install-ms-root
+tests: save-sram-roundtrip, save-powerloss-10x, sleep-auto-20x, menu-every-page
+tests: save-read-matrix
+tests: save-eeprom8k-wfirst
+tests: save-powerloss-100x, save-card-full, save-trade-fr-emerald
+tests: savestate-load-auto-file, sleep-resume-question
+tests: boot-no-dir-ini, install-ms-root
 
 # 1.4.4 fixes saves that earlier releases lose.
 hotfix-data: yes
