@@ -26,9 +26,18 @@
 #define PERF_REPORT_VERSION 7U
 
 /* Worst-case report length in bytes, including the terminating NUL. */
-#define PERF_REPORT_CAPACITY 3449U
+#define PERF_REPORT_CAPACITY 4821U
 /* The longest build-id value written; a longer id is cut. */
 #define PERF_REPORT_BUILD_ID_MAX 23U
+
+/* bench-mode= and bench-input= values: a capture the player paces with the
+   pad, or the unbound benchmark, which gives the game no input or, in
+   diagnostic builds, replays an input trace. */
+#define PERF_REPORT_BENCH_PACED 0U
+#define PERF_REPORT_BENCH_UNBOUND 1U
+#define PERF_REPORT_BENCH_INPUT_PAD 0U
+#define PERF_REPORT_BENCH_INPUT_NONE 1U
+#define PERF_REPORT_BENCH_INPUT_TRACE 2U
 
 typedef struct
 {
@@ -73,6 +82,24 @@ typedef struct
   uint32_t heap_free_low;
   uint32_t heap_largest_low;
   uint32_t kernel_free_low;
+  /* capture-local-time, empty unless has_capture_time is set. */
+  uint32_t has_capture_time;
+  uint32_t capture_year;
+  uint32_t capture_month;
+  uint32_t capture_day;
+  uint32_t capture_hour;
+  uint32_t capture_minute;
+  uint32_t capture_second;
+  /* bench-*: the mode and input above, the benchmark's frame count (0 when
+     paced), and whether frames were rendered and audio mixed. */
+  uint32_t bench_mode;
+  uint32_t bench_frames;
+  uint32_t bench_render;
+  uint32_t bench_audio;
+  uint32_t bench_input;
+  /* bench-trace-checksum: the replayed trace's file checksum, written only
+     with bench-input=trace. */
+  uint32_t bench_trace_checksum;
 } PerfReportMetadata;
 
 /* Returns the report length, or -1 (and an empty string) if it does not

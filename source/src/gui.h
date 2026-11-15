@@ -51,6 +51,9 @@ extern u32 savestate_slot;
 u32 action_loadstate(void);
 u32 action_savestate(void);
 void maybe_load_auto_savestate(void);
+/* Saves the perf report and shows the result on the Diagnostics page;
+   main.c calls it when the unbound benchmark ends. */
+void menu_diagnostics_write_report(void);
 /* Recent ROMs list (recent.cfg): read at boot, updated after each load. */
 void load_recent_roms(void);
 void add_recent_rom(const char *filename);

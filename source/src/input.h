@@ -108,6 +108,8 @@ int input_diagnostic_trace_encode(u8 *output, size_t output_size,
  size_t *written);
 int input_diagnostic_trace_begin_replay(const u8 *encoded,
  size_t encoded_size);
+u32 input_diagnostic_trace_begin_bench(void);
+u32 input_diagnostic_trace_checksum(void);
 void input_diagnostic_trace_cancel(void);
 InputTraceState input_diagnostic_trace_state(void);
 InputTraceError input_diagnostic_trace_error(void);

@@ -13,7 +13,12 @@ only when, for the EBOOT.PBP of that manifest:
 - nothing under source/ changed since that tag;
 - if the link code changed since the previous release, the release file
   declares the link status, and a changed protocol constant has a link test
-  that passed.
+  that passed;
+- if the release requires perf-baseline-5, the PSP-1000 reports of the
+  manifest's build id under benchmarks/psp-1000/*/<version> pass
+  scripts/compare-benchmarks.py against those of the newest earlier release
+  in that archive, in every group (title x model) of that release; a group
+  without candidate reports fails.
 Both channels fail when a commit message since the previous release holds a
 forbidden word (scripts/check-names.py); otherwise the prerelease channel
 always passes. Both write dist/RELEASE-NOTES-<version>.md; the CHANGELOG
@@ -45,6 +50,7 @@ def load(name, file):
 
 hardware_session = load("hardware_session", "hardware-session.py")
 check_names = load("check_names", "check-names.py")
+compare_benchmarks = load("compare_benchmarks", "compare-benchmarks.py")
 
 CHANNELS = ("stable", "prerelease")
 RELEASE_KEYS = ("tests", "hotfix-data", "known-limit", "link", "mixed-pair")
@@ -274,6 +280,67 @@ def link_problems(repo, version, release, passed):
     return problems
 
 
+def performance_problems(repo, version, build_id):
+    """(problems, results) of the PSP-1000 comparison of the archive's
+    <version> reports, which must carry build_id, with those of the newest
+    earlier release in the archive (a release that did not require
+    perf-baseline-5 may have none); results names every baseline group's
+    verdict."""
+    archive = pathlib.Path(repo) / "benchmarks" / "psp-1000"
+    earlier = [tag for tag in release_tags(repo)
+               if version_key(tag) < version_key(version)
+               and any(archive.glob(f"*/{tag}"))]
+    if not earlier:
+        return ["performance on PSP-1000: no earlier release has reports in "
+                "benchmarks/psp-1000"], []
+    previous = earlier[-1]
+    try:
+        baseline = compare_benchmarks.collect_groups(
+         *sorted(archive.glob(f"*/{previous}")))
+        candidate = compare_benchmarks.collect_groups(
+         *sorted(archive.glob(f"*/{version}")))
+    except ValueError as error:
+        return [f"performance on PSP-1000: {error}"], []
+    problems = []
+    if build_id is None:
+        problems.append(f"performance on PSP-1000: no build_id in the rc "
+                        f"manifest to tie the {version} reports to its EBOOT")
+    for key, reports in sorted(candidate.items()):
+        # shortcut: the build id names the source/ tree, so a diagnostic or
+        # local build of the rc tree also matches; tie the reports to the
+        # manifest's EBOOT sha256 once a report can carry it.
+        if build_id is not None and any(report.get("build-id") != build_id
+                                        for report in reports):
+            problems.append(
+             f"performance on PSP-1000: group "
+             f"{compare_benchmarks.group_name(key)} has {version} reports "
+             f"without build-id={build_id} of the rc manifest")
+    results, failed, missing = [], 0, 0
+    for key in sorted(baseline):
+        name = compare_benchmarks.group_name(key)
+        if key not in candidate:
+            missing += 1
+            results.append(f"{name} MISSING: no candidate reports")
+            continue
+        try:
+            failures = compare_benchmarks.compare(baseline[key],
+                                                  candidate[key])["failures"]
+        except ValueError as error:
+            # A lost run or a changed setting fails its group without
+            # hiding the other groups' results.
+            failures = [str(error)]
+        failed += bool(failures)
+        results.append(f"{name} " + (f"FAIL: {'; '.join(failures)}"
+                                     if failures else "PASS"))
+    if failed or missing:
+        problems.append(f"performance on PSP-1000 against {previous}: FAIL "
+                        f"groups={len(results)} failed={failed} "
+                        f"missing={missing}")
+        problems += [f"performance on PSP-1000: group {result}"
+                     for result in results]
+    return problems, [f"PSP-1000 against {previous}: " + ", ".join(results)]
+
+
 def link_section(repo, version, release, facts):
     """The "Links with" lines: the earlier releases whose protocol constants
     match the candidate's and that no "no link" fact excludes, the others,
@@ -303,7 +370,8 @@ def link_section(repo, version, release, facts):
     return lines
 
 
-def notes(version, channel, digest, release, tests, catalog, passed, links):
+def notes(version, channel, digest, release, tests, catalog, passed, links,
+          performance=()):
     lines = [f"# GBA Rush PSP {version}", "", f"Channel: {channel}."]
     if digest:
         lines.append(f"EBOOT.PBP sha256: {digest}.")
@@ -316,7 +384,7 @@ def notes(version, channel, digest, release, tests, catalog, passed, links):
          f"{row['Model']} ({row['Firmware/CFW']})" for row in rows))
         if test_id == "perf-baseline-5":
             line += "; compare-benchmarks: " + "; ".join(
-             row["Evidence"] for row in rows)
+             [row["Evidence"] for row in rows] + list(performance))
         lines.append(line)
     if not validated:
         lines.append("Nothing yet: this build has not been through its "
@@ -368,30 +436,38 @@ def gate(version, channel, repo, dist, now):
                          .read_text(encoding="utf-8"))
     problems = name_problems(repo, version)
     tags = rc_tags(repo, version)
-    digest = None
+    digest = build_id = None
     if tags:
         manifest = dist / f"GBA-Rush-PSP-{tags[0][0]}.manifest.json"
         if manifest.is_file():
+            content = release_manifest.read_manifest(manifest)
             try:
-                digest = release_manifest.read_manifest(manifest)["files"][
-                 "EBOOT.PBP"]["sha256"]
+                digest = content["files"]["EBOOT.PBP"]["sha256"]
             except (KeyError, TypeError):
                 raise ValueError(f"{manifest} has no EBOOT.PBP sha256") \
                  from None
+            build_id = content.get("build_id")
         elif channel == "stable":
             problems.append(f"{manifest} not found: package the rc with "
                             f"make package VERSION={tags[0][0]}")
     passed = [row for row in rows if digest and row["Result"] == "pass"
               and row["EBOOT sha256"] == digest[:12]]
+    performance = []
     if channel == "stable":
         problems += required_test_problems(tests, catalog, passed, digest)
         problems += candidate_problems(repo, version, release, now)
         problems += link_problems(repo, version, release, passed)
+        # Only a release that requires the measurement: a hotfix without
+        # perf-baseline-5 adds no reports, and the next release compares
+        # with the newest one that did.
+        if "perf-baseline-5" in tests:
+            found, performance = performance_problems(repo, version, build_id)
+            problems += found
     if not problems:
         dist.mkdir(parents=True, exist_ok=True)
         (dist / f"RELEASE-NOTES-{version}.md").write_text(
          notes(version, channel, digest, release, tests, catalog, passed,
-               link_section(repo, version, release, facts)),
+               link_section(repo, version, release, facts), performance),
          encoding="utf-8", newline="\n")
     return problems
 

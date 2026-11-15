@@ -222,6 +222,240 @@ static void test_capture_identity_survives_rom_change(void)
   assert(memcmp(&saved, &replacement, sizeof(saved)) == 0);
 }
 
+/* Lockstep frames reach the session's metrics only while it runs. */
+static void test_link_lockstep_frame_wrapper(void)
+{
+  perf_monitor_init();
+  perf_monitor_record_link_lockstep_frame();
+  assert(snapshot().link_lockstep_frames == 0);
+  assert(perf_monitor_start(0));
+  perf_monitor_record_link_lockstep_frame();
+  assert(perf_monitor_stop(100));
+  perf_monitor_record_link_lockstep_frame();
+  assert(snapshot().link_lockstep_frames == 1);
+}
+
+/* The phase wrappers reach the session's metrics: no sampling without a
+   capture, each phase in its own total, and the calibrated read cost. */
+static void test_phase_wrappers(void)
+{
+  PerfMetricsSnapshot result;
+  unsigned frame;
+
+  perf_monitor_init();
+  assert(!perf_monitor_phase_begin_frame());
+  assert(perf_monitor_start(0));
+  perf_monitor_record_probe_calibration(63, 64);
+  for(frame = 1; frame < PERF_METRICS_PHASE_STRIDE; frame++)
+  {
+    assert(!perf_monitor_phase_begin_frame());
+    perf_monitor_record_frame(16000, 0, 0, 0);
+  }
+  assert(perf_monitor_phase_begin_frame());
+  perf_monitor_phase_add(PERF_METRICS_PHASE_UPDATE_GBA, 9000);
+  perf_monitor_phase_add(PERF_METRICS_PHASE_SCANLINE, 3000);
+  perf_monitor_phase_add(PERF_METRICS_PHASE_GBC_SOUND, 400);
+  perf_monitor_record_frame(16000, 0, 0, 0);
+  assert(!perf_monitor_phase_begin_frame());
+  assert(perf_monitor_stop(100));
+
+  result = snapshot();
+  assert(result.phase_sampled_frames == 1);
+  assert(result.phase_update_gba_us == 5600);
+  assert(result.phase_scanline_us == 3000);
+  assert(result.phase_gbc_sound_us == 400);
+  assert(result.phase_work_us == 16000);
+  assert(result.probe_read_ns == 1000);
+  assert(result.probe_reads == 6);
+  assert(result.frame_time_samples == 10);
+}
+
+/* The preemption wrappers reach the session's metrics: nothing wanted
+   without a capture, a frame from its work and wait ends, the call cost,
+   and a refused read turning them off for the rest of the capture. */
+static void test_preempt_wrappers(void)
+{
+  PerfMetricsSnapshot result;
+
+  perf_monitor_init();
+  assert(!perf_monitor_preempt_wanted());
+  assert(perf_monitor_start(0));
+  assert(perf_monitor_preempt_wanted());
+  perf_monitor_record_preempt_calibration(32, 16);
+  perf_monitor_preempt_sample(PERF_METRICS_PREEMPT_WAIT_END, 10, 20);
+  perf_monitor_preempt_sample(PERF_METRICS_PREEMPT_WORK_END, 13, 21);
+  perf_monitor_preempt_sample(PERF_METRICS_PREEMPT_WAIT_END, 15, 25);
+  perf_monitor_preempt_unavailable();
+  assert(!perf_monitor_preempt_wanted());
+  assert(perf_monitor_active());
+  assert(perf_monitor_stop(100));
+
+  result = snapshot();
+  assert(result.preempt_available == 0);
+  assert(result.preempt_work_thread == 3);
+  assert(result.preempt_work_intr == 1);
+  assert(result.preempt_wait_thread == 2);
+  assert(result.preempt_wait_intr == 4);
+  assert(result.preempt_max_per_frame == 10);
+  assert(result.preempt_frames[5] == 1);
+  assert(result.preempt_call_ns == 2000);
+}
+
+/* A bench stops its own capture at its frame count. Its duration is the
+   sum of the frame times, not the wall time since the start, and the done
+   flag is taken once. */
+static void test_bench_counts_frames_and_stops(void)
+{
+  PerfMetricsSnapshot result;
+
+  perf_monitor_init();
+  assert(!perf_monitor_bench_start(1000, 0));
+  assert(!perf_monitor_active());
+  assert(perf_monitor_bench_start(1000, 3));
+  assert(perf_monitor_active());
+  assert(perf_monitor_bench_running());
+  assert(perf_monitor_bench_frames_left() == 3);
+  assert(!perf_monitor_bench_take_done());
+
+  perf_monitor_record_frame(10000, 0, 0, 0);
+  perf_monitor_record_frame(12000, 0, 0, 0);
+  assert(perf_monitor_active());
+  assert(perf_monitor_bench_running());
+  assert(!perf_monitor_bench_take_done());
+  /* At 1 left main.c takes the stop's memory sample, which still counts. */
+  assert(perf_monitor_bench_frames_left() == 1);
+  perf_monitor_observe_memory_available(4096);
+  perf_monitor_record_frame(14000, 0, 0, 0);
+  assert(!perf_monitor_active());
+  assert(!perf_monitor_bench_running());
+  assert(perf_monitor_bench_frames_left() == 0);
+  assert(perf_monitor_duration_us() == 36000);
+
+  perf_monitor_record_frame(16000, 0, 0, 0);
+  result = snapshot();
+  assert(result.state == PERF_METRICS_STOPPED);
+  assert(result.emulated_frames == 3);
+  assert(result.presented_frames == 3);
+  assert(result.has_memory_sample);
+  assert(result.memory_low_water == 4096);
+  assert(!perf_monitor_stop(900000));
+  assert(perf_monitor_duration_us() == 36000);
+
+  assert(perf_monitor_bench_take_done());
+  assert(!perf_monitor_bench_take_done());
+
+  /* A second bench counts its frames and time from zero again. */
+  assert(perf_monitor_bench_start(2000, 2));
+  assert(perf_monitor_bench_frames_left() == 2);
+  perf_monitor_record_frame(9000, 0, 1, 0);
+  assert(perf_monitor_bench_running());
+  assert(perf_monitor_bench_frames_left() == 1);
+  perf_monitor_record_frame(1000, 0, 0, 0);
+  assert(snapshot().state == PERF_METRICS_STOPPED);
+  assert(snapshot().emulated_frames == 2);
+  assert(snapshot().skipped_frames == 1);
+  assert(perf_monitor_duration_us() == 10000);
+  assert(perf_monitor_bench_take_done());
+}
+
+/* A bench never starts over a running capture, its own included, and a
+   capture started after a bench finished drops the unsaved done flag. */
+static void test_bench_refused_while_capture_active(void)
+{
+  perf_monitor_init();
+  assert(perf_monitor_start(100));
+  assert(!perf_monitor_bench_start(200, 3600));
+  assert(!perf_monitor_bench_running());
+  perf_monitor_record_frame(16667, 0, 0, 0);
+  assert(perf_monitor_active());
+  assert(perf_monitor_stop(300));
+  assert(snapshot().state == PERF_METRICS_STOPPED);
+  assert(snapshot().emulated_frames == 1);
+  assert(perf_monitor_duration_us() == 200);
+
+  assert(perf_monitor_bench_start(400, 3600));
+  assert(!perf_monitor_bench_start(500, 3600));
+  assert(!perf_monitor_start(500));
+  assert(perf_monitor_bench_running());
+
+  perf_monitor_init();
+  assert(perf_monitor_bench_start(0, 1));
+  perf_monitor_record_frame(16667, 0, 0, 0);
+  assert(perf_monitor_start(50000));
+  assert(!perf_monitor_bench_take_done());
+  perf_monitor_record_frame(16667, 0, 0, 0);
+  assert(perf_monitor_active());
+}
+
+/* A bench cut short by a reset, a ROM change, a suspend or a stop from the
+   menu is invalidated, ends, and is never reported as done. */
+static void test_bench_cut_short_is_invalidated(void)
+{
+  perf_monitor_init();
+  assert(perf_monitor_bench_start(1000, 3600));
+  perf_monitor_record_frame(16667, 0, 0, 0);
+  perf_monitor_invalidate(5000);
+  assert(!perf_monitor_bench_running());
+  assert(perf_monitor_bench_frames_left() == 0);
+  assert(!perf_monitor_bench_take_done());
+  assert(snapshot().state == PERF_METRICS_INVALIDATED);
+  assert(perf_monitor_duration_us() == 4000);
+
+  assert(perf_monitor_bench_start(10000, 3600));
+  perf_monitor_record_frame(16667, 0, 0, 0);
+  assert(perf_monitor_stop(30000));
+  assert(!perf_monitor_bench_running());
+  assert(!perf_monitor_bench_take_done());
+  assert(snapshot().state == PERF_METRICS_INVALIDATED);
+  assert(snapshot().emulated_frames == 1);
+  assert(perf_monitor_duration_us() == 20000);
+  assert(!perf_monitor_stop(40000));
+}
+
+/* A bench replaying a trace ends with the trace's last frame, before its
+   frame count: that frame is recorded and the bench is done as at its
+   count. A second call in the same frame changes nothing, and the call
+   leaves a capture the player paces, or no capture, alone. */
+static void test_bench_ends_with_frame(void)
+{
+  perf_monitor_init();
+  perf_monitor_bench_end_with_frame();
+  assert(!perf_monitor_active());
+  assert(perf_monitor_bench_start(1000, 3600));
+  perf_monitor_record_frame(10000, 0, 0, 0);
+  perf_monitor_record_frame(11000, 0, 0, 0);
+  assert(perf_monitor_bench_frames_left() == 3598);
+  perf_monitor_bench_end_with_frame();
+  perf_monitor_bench_end_with_frame();
+  assert(perf_monitor_bench_running());
+  assert(perf_monitor_bench_frames_left() == 1);
+  perf_monitor_record_frame(12000, 0, 0, 0);
+  assert(!perf_monitor_bench_running());
+  assert(!perf_monitor_active());
+  assert(snapshot().state == PERF_METRICS_STOPPED);
+  assert(snapshot().emulated_frames == 3);
+  assert(perf_monitor_duration_us() == 33000);
+  perf_monitor_bench_end_with_frame();
+  assert(perf_monitor_bench_take_done());
+  assert(!perf_monitor_bench_take_done());
+
+  /* At its first frame the bench records just that one. */
+  assert(perf_monitor_bench_start(2000, 3600));
+  perf_monitor_bench_end_with_frame();
+  perf_monitor_record_frame(9000, 0, 0, 0);
+  assert(snapshot().state == PERF_METRICS_STOPPED);
+  assert(snapshot().emulated_frames == 1);
+  assert(perf_monitor_bench_take_done());
+
+  assert(perf_monitor_start(5000));
+  perf_monitor_bench_end_with_frame();
+  perf_monitor_record_frame(16667, 0, 0, 0);
+  perf_monitor_record_frame(16667, 0, 0, 0);
+  assert(perf_monitor_active());
+  assert(perf_monitor_bench_frames_left() == 0);
+  assert(!perf_monitor_bench_take_done());
+}
+
 /* Runs every session case; a failing assert aborts the run. */
 int main(void)
 {
@@ -229,6 +463,13 @@ int main(void)
   test_events_and_watermarks();
   test_wait_and_frame_wrappers();
   test_capture_identity_survives_rom_change();
+  test_link_lockstep_frame_wrapper();
+  test_phase_wrappers();
+  test_preempt_wrappers();
+  test_bench_counts_frames_and_stops();
+  test_bench_refused_while_capture_active();
+  test_bench_cut_short_is_invalidated();
+  test_bench_ends_with_frame();
   puts("Performance monitor tests passed");
   return 0;
 }

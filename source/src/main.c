@@ -262,6 +262,23 @@ u32 interval_skipped_frames = 0;
 u32 fps_window_frames = 0;
 u32 vblank_count = 0;
 
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+/* The unbound benchmark's arms in diagnostic builds, kept from one start to
+   the next: render 0 skips every bench frame as frameskip does, so no
+   renderer draws a line, presents or flips (the Exact renderer on the
+   Media Engine included); audio 0 sets sound_bench_audio_off. */
+static u8 main_perf_bench_render = 1;
+static u8 main_perf_bench_audio = 1;
+#endif
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+/* Set when the unbound benchmark starts replaying the held input trace. */
+static u8 main_perf_bench_trace;
+#endif
+
+/* Set when a capture starts in the menu, which runs at 222 MHz: the clock
+   and preemption reads are priced once menu() restores the game clock. */
+static u8 main_perf_calibrate_pending;
+
 /* The first init_main flushes both translation caches; later ROM loads
    flush the read-only one and clear the RAM block metadata instead. */
 static u8 caches_inited = 0;
@@ -297,6 +314,7 @@ static void psp_sleep_loop(void);
 static void main_power_save_if_pending(void);
 static void main_power_reopen_gamepak(void);
 static void main_link_close(MainLinkEnd reason);
+static void main_perf_calibrate(void);
 
 /* The clock last asked of set_cpu_clock, in MHz (0 before the first call),
    and the Media Engine's counters when it was asked. */
@@ -951,7 +969,10 @@ void main_link_pump(void)
 
 /* menu() reports leaving (0) and resuming (1) the game. Each change is
    logged, the runtime log is flushed when the menu opens, and the core
-   profile of diagnostic builds skips the menu. */
+   profile of diagnostic builds skips the menu. Opening the menu ends a
+   running unbound benchmark, whose frames must run back to back; resuming
+   calibrates a capture the menu started, at the game clock menu() has
+   restored by then. */
 void main_link_set_gameplay_active(int active)
 {
   u8 value = active != 0;
@@ -959,6 +980,10 @@ void main_link_set_gameplay_active(int active)
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_pause(!value);
 #endif
+  if(!value)
+    main_perf_bench_cancel();
+  else if(main_perf_calibrate_pending)
+    main_perf_calibrate();
   if(gba_link_gameplay_active == value)
     return;
   gba_link_gameplay_active = value;
@@ -1032,13 +1057,14 @@ static void main_fast_forward_update_sound(void)
 }
 
 /* Called from update_input every frame with the fast-forward button's new
-   press and held state. Fast-forward is unavailable during a link session. */
+   press and held state. Fast-forward is unavailable during a link session
+   and the unbound benchmark. */
 void main_fast_forward_input(u32 pressed, u32 held)
 {
   int was_active;
   FastForwardSpeed was_speed;
 
-  if(main_link_active())
+  if(main_link_active() || perf_monitor_bench_running())
   {
     if(fast_forward_policy_active(&fast_forward_policy))
       main_fast_forward_stop();
@@ -1120,6 +1146,70 @@ void main_fast_forward_reset_game_settings(void)
   main_fast_forward_apply_settings();
 }
 
+/* Phase timers of a capture: update_gba reads the clock only while
+   perf_phase_sampling is set, during the frames perf_monitor samples.
+   Otherwise each timed site costs one test of the flag. */
+static u8 perf_phase_sampling;
+static u32 perf_phase_gba_start;
+
+static void main_phase_scanline(void)
+{
+  u32 start = sceKernelGetSystemTimeLow();
+
+  update_scanline();
+  perf_monitor_phase_add(PERF_METRICS_PHASE_SCANLINE,
+   sceKernelGetSystemTimeLow() - start);
+}
+
+/* The PSG channels (update_gbc_sound). */
+static void main_phase_gbc_sound(void)
+{
+  u32 start = sceKernelGetSystemTimeLow();
+
+  update_gbc_sound(cpu_ticks);
+  perf_monitor_phase_add(PERF_METRICS_PHASE_GBC_SOUND,
+   sceKernelGetSystemTimeLow() - start);
+}
+
+/* update_gba's time since its entry, or since the sampled frame began. */
+static void main_phase_update_gba(void)
+{
+  perf_monitor_phase_add(PERF_METRICS_PHASE_UPDATE_GBA,
+   sceKernelGetSystemTimeLow() - perf_phase_gba_start);
+}
+
+/* At each frame start: ends a sampled frame's update_gba time, then
+   decides whether the new frame is sampled (never without a capture). */
+static void main_perf_phase_frame(void)
+{
+  if(perf_phase_sampling) main_phase_update_gba();
+  perf_phase_sampling = perf_monitor_phase_begin_frame();
+  if(perf_phase_sampling) perf_phase_gba_start = sceKernelGetSystemTimeLow();
+}
+
+/* The kernel's run status of the calling thread, the emulation thread
+   here; < 0 where the firmware or PPSSPP refuses the call. */
+static int main_perf_preempt_read(SceKernelThreadRunStatus *status)
+{
+  status->size = sizeof(*status);
+  return sceKernelReferThreadRunStatus(sceKernelGetThreadId(), status);
+}
+
+/* During a capture, gives the preemption counts at the end of a frame's
+   work or of its waits; a refused read turns them off for the capture. */
+static void main_perf_preempt_sample(PerfMetricsPreemptPoint point)
+{
+  SceKernelThreadRunStatus status;
+
+  if(!perf_monitor_preempt_wanted())
+    return;
+  if(main_perf_preempt_read(&status) < 0)
+    perf_monitor_preempt_unavailable();
+  else
+    perf_monitor_preempt_sample(point, status.threadPreemptCount,
+     status.intrPreemptCount);
+}
+
 /* The hardware scheduler. The dynarec calls it when a slice of
    reg[EXECUTE_CYCLES] cycles has run: it advances serial, timers, LCD timing
    and DMA by that amount, raises IRQs, and returns the length of the next
@@ -1133,6 +1223,7 @@ u32 update_gba(void)
   GbaSioEvent sio_event;
 
   perf_monitor_record_gba_update_entry();
+  if(perf_phase_sampling) perf_phase_gba_start = sceKernelGetSystemTimeLow();
 
   /* One pass per timed event until the CPU is running. A `continue` (the
      menu or the link service replaced the machine state) goes straight to
@@ -1162,7 +1253,7 @@ u32 update_gba(void)
 
     if (gbc_sound_update != 0)
     {
-      update_gbc_sound(cpu_ticks);
+      perf_phase_sampling ? main_phase_gbc_sound() : update_gbc_sound(cpu_ticks);
       gbc_sound_update = 0;
     }
 
@@ -1189,7 +1280,7 @@ u32 update_gba(void)
         if ((dispstat & 0x01) == 0)
         {
           if (!skip_next_frame)
-            update_scanline();
+            perf_phase_sampling ? main_phase_scanline() : update_scanline();
 
           // If in visible area also fire HDMA
           for (i = 0; i < 4; i++)
@@ -1257,7 +1348,7 @@ u32 update_gba(void)
                sceKernelGetSystemTimeLow() - renderer_start);
           }
 
-          update_gbc_sound(cpu_ticks);
+          perf_phase_sampling ? main_phase_gbc_sound() : update_gbc_sound(cpu_ticks);
           gbc_sound_update = 0;
 
           // Reload the BG2/BG3 affine reference points from BG2X/Y and
@@ -1292,6 +1383,7 @@ u32 update_gba(void)
 
           u32 draw_this_frame = skip_next_frame ^ 0x01;
 
+          main_perf_preempt_sample(PERF_METRICS_PREEMPT_WORK_END);
           synchronize();
           synchronize_sound();
 
@@ -1300,13 +1392,15 @@ u32 update_gba(void)
           if (draw_this_frame != 0)
           {
             video_present_finish();
-            flip_screen(option_psp_vsync);
+            flip_screen(perf_monitor_bench_running() ? 0 : option_psp_vsync);
           }
 
           video_adaptive_frame_complete(draw_this_frame == 0, 0);
+          main_perf_preempt_sample(PERF_METRICS_PREEMPT_WAIT_END);
 
           vcount = 0;
           video_dispatch_frame_begin();
+          main_perf_phase_frame();
         }
 
         if (vcount == (dispstat >> 8))
@@ -1428,6 +1522,7 @@ u32 update_gba(void)
   }
   while (reg[CPU_HALT_STATE] != CPU_ACTIVE);
 
+  if(perf_phase_sampling) main_phase_update_gba();
   return reg[EXECUTE_CYCLES];
 }
 
@@ -1476,6 +1571,7 @@ static void synchronize(void)
     {
       used_frameskip_type = FRAMESKIP_AUTO;
       used_frameskip_value = MAIN_LINK_FRAMESKIP_RUN;
+      perf_monitor_record_link_lockstep_frame();
     }
   }
 
@@ -1549,6 +1645,50 @@ static void synchronize(void)
         print_string_gbk(main_fast_forward_status(), 0, 0, COLOR15_WHITE,
          COLOR15_BLACK);
     }
+  }
+
+  // Unbound benchmark: draw every frame and never wait. Sound runs as in
+  // muted fast-forward, mixed then dropped while the audio thread sleeps;
+  // set each frame, as the start cleared it. The counts stay at 0, so
+  // pacing restarts from now once the bench ends. Before the last frame is
+  // recorded, which stops the capture, the stop work of main_perf_stop
+  // runs: the end memory sample and the core profile's stop. Diagnostic
+  // builds set the bench's arms here each frame (render off: every frame
+  // skipped; audio off: no samples written) and drop the audio one at the
+  // first frame end after the bench, however it ended.
+  if(perf_monitor_bench_running())
+  {
+    if(perf_monitor_bench_frames_left() == 1)
+    {
+      perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+      arm_gba_profile_stop();
+#endif
+    }
+    sound_set_fast_forward(1);
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+    skip_next_frame = !main_perf_bench_render;
+    sound_bench_audio_off = !main_perf_bench_audio;
+#else
+    skip_next_frame = 0;
+#endif
+    real_frame_count = 0;
+    virtual_frame_count = 0;
+    num_skipped_frames = 0;
+    frameskip_counter = 0;
+    return;
+  }
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+  sound_bench_audio_off = 0;
+#endif
+
+  // The bench stopped its capture after its last frame: its report is
+  // written once, outside the measured frames, and pacing starts again.
+  if(perf_monitor_bench_take_done())
+  {
+    menu_diagnostics_write_report();
+    real_frame_count = 0;
+    virtual_frame_count = 0;
   }
 
   if(main_fast_forward_active())
@@ -2355,13 +2495,67 @@ static u32 main_clock_mhz(u32 psp_clock)
  * The diagnostics menu starts and stops a capture; perf_monitor.c collects
  * it and perf_report.c formats the report written here. */
 
-/* Starts a capture and pins the settings it runs under for the report. */
-int main_perf_start(void)
+/* Times PERF_METRICS_PROBE_CALIBRATION_READS clock reads made back to
+   back, for the cost of one read of the phase timers. */
+static void main_perf_calibrate_probe(void)
+{
+  u32 first = sceKernelGetSystemTimeLow();
+  u32 last = first;
+  u32 i;
+
+  for(i = 1; i < PERF_METRICS_PROBE_CALIBRATION_READS; i++)
+    last = sceKernelGetSystemTimeLow();
+  perf_monitor_record_probe_calibration(last - first,
+   PERF_METRICS_PROBE_CALIBRATION_READS);
+}
+
+/* Times PERF_METRICS_PREEMPT_CALIBRATION_CALLS preemption reads, the cost
+   each frame of the capture pays twice; a refused read turns them off. */
+static void main_perf_calibrate_preempt(void)
+{
+  SceKernelThreadRunStatus status;
+  u32 start = sceKernelGetSystemTimeLow();
+  u32 i;
+
+  for(i = 0; i < PERF_METRICS_PREEMPT_CALIBRATION_CALLS; i++)
+  {
+    if(main_perf_preempt_read(&status) < 0)
+    {
+      perf_monitor_preempt_unavailable();
+      return;
+    }
+  }
+  perf_monitor_record_preempt_calibration(sceKernelGetSystemTimeLow() -
+   start, PERF_METRICS_PREEMPT_CALIBRATION_CALLS);
+}
+
+/* Prices both reads for a capture started in the menu, when the game
+   resumes: its time falls in the seed frame video_reset_frame_timing left
+   unrecorded. A capture stopped before then gets no calibration. */
+static void main_perf_calibrate(void)
+{
+  main_perf_calibrate_pending = 0;
+  if(!perf_monitor_active())
+    return;
+  main_perf_calibrate_probe();
+  main_perf_calibrate_preempt();
+}
+
+/* Frames the unbound benchmark runs: about a minute of GBA time. */
+#define MAIN_PERF_BENCH_FRAMES 3600U
+
+/* Starts a capture and pins the settings it runs under for the report:
+   the unbound benchmark when bench_frames is not 0, else one the player
+   paces. */
+static int main_perf_begin(u32 bench_frames)
 {
   FastForwardSettings fast_forward_settings;
   PerfMonitorIdentity identity;
+  ScePspDateTime date = { 0 };
+  u64 now = sceKernelGetSystemTimeWide();
 
-  if(!perf_monitor_start(sceKernelGetSystemTimeWide()))
+  if(!(bench_frames != 0 ? perf_monitor_bench_start(now, bench_frames) :
+     perf_monitor_start(now)))
     return 0;
 
   fast_forward_settings = main_fast_forward_settings();
@@ -2392,6 +2586,43 @@ int main_perf_start(void)
      sizeof(identity.game_code));
     identity.rom_revision = gamepak_header[0xBC];
   }
+  /* Wall time only orders the runs (compare-benchmarks --order-check): the
+     RTC can jump, so it never times anything. */
+  if(sceRtcGetCurrentClockLocalTime(&date) >= 0)
+  {
+    identity.has_capture_time = 1;
+    identity.capture_year = date.year;
+    identity.capture_month = date.month;
+    identity.capture_day = date.day;
+    identity.capture_hour = date.hour;
+    identity.capture_minute = date.minute;
+    identity.capture_second = date.second;
+  }
+  identity.bench_mode = bench_frames != 0 ? PERF_REPORT_BENCH_UNBOUND :
+   PERF_REPORT_BENCH_PACED;
+  identity.bench_frames = bench_frames;
+  identity.bench_render = 1;
+  identity.bench_audio = 1;
+  identity.bench_input = bench_frames != 0 ? PERF_REPORT_BENCH_INPUT_NONE :
+   PERF_REPORT_BENCH_INPUT_PAD;
+  if(bench_frames != 0)
+  {
+    /* What the benchmark runs under, whatever the options say. */
+    identity.psp_vsync = 0;
+    identity.frameskip_type = FRAMESKIP_NONE;
+    identity.frameskip_value = 0;
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+    identity.bench_render = main_perf_bench_render;
+    identity.bench_audio = main_perf_bench_audio;
+#endif
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+    if(main_perf_bench_trace)
+    {
+      identity.bench_input = PERF_REPORT_BENCH_INPUT_TRACE;
+      identity.bench_trace_checksum = input_diagnostic_trace_checksum();
+    }
+#endif
+  }
   perf_monitor_set_identity(&identity);
 #ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
   main_alloc_trace_count = 0;
@@ -2399,11 +2630,59 @@ int main_perf_start(void)
 
   main_perf_memory = main_memory_sample(MEM_STATS_CAPTURE_START);
   perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
+  /* The first frame start of the new capture decides the sampling. */
+  perf_phase_sampling = 0;
+  main_perf_calibrate_pending = 1;
   video_reset_frame_timing();
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_start();
 #endif
   return 1;
+}
+
+int main_perf_start(void)
+{
+  return main_perf_begin(0);
+}
+
+/* The unbound benchmark, refused during a link: fast-forward stops, and
+   synchronize() runs MAIN_PERF_BENCH_FRAMES frames without pacing, then
+   saves the report. */
+int main_perf_bench_start(u32 render, u32 audio)
+{
+  u32 frames = MAIN_PERF_BENCH_FRAMES;
+
+  if(main_link_active())
+    return 0;
+
+  main_fast_forward_stop();
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+  main_perf_bench_render = render != 0;
+  main_perf_bench_audio = audio != 0;
+#endif
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  /* A held input trace replays from the bench's first frame instead of no
+     input. Its length bounds the bench, and update_input ends the bench
+     with the trace's last frame. */
+  frames = input_diagnostic_trace_begin_bench();
+  main_perf_bench_trace = frames != 0;
+  if(!main_perf_bench_trace)
+    frames = MAIN_PERF_BENCH_FRAMES;
+#endif
+  return main_perf_begin(frames);
+}
+
+/* Ends a running unbound benchmark as unusable: the menu or a state hotkey
+   would put its time in one of the frames. */
+void main_perf_bench_cancel(void)
+{
+  if(!perf_monitor_bench_running())
+    return;
+
+  perf_monitor_invalidate(sceKernelGetSystemTimeWide());
+#ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
+  arm_gba_profile_stop();
+#endif
 }
 
 int main_perf_stop(void)
@@ -2592,6 +2871,19 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
     metadata.game_code_length = 4;
     metadata.rom_revision = identity.rom_revision;
   }
+  metadata.has_capture_time = identity.has_capture_time;
+  metadata.capture_year = identity.capture_year;
+  metadata.capture_month = identity.capture_month;
+  metadata.capture_day = identity.capture_day;
+  metadata.capture_hour = identity.capture_hour;
+  metadata.capture_minute = identity.capture_minute;
+  metadata.capture_second = identity.capture_second;
+  metadata.bench_mode = identity.bench_mode;
+  metadata.bench_frames = identity.bench_frames;
+  metadata.bench_render = identity.bench_render;
+  metadata.bench_audio = identity.bench_audio;
+  metadata.bench_input = identity.bench_input;
+  metadata.bench_trace_checksum = identity.bench_trace_checksum;
   metadata.duration_us = perf_monitor_duration_us();
 
   report_length = perf_report_format(report, sizeof(report), &metadata,
