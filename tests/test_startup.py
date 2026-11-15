@@ -254,6 +254,8 @@ typedef int SceUID;
 char main_path[MAX_PATH] = "ms0:/GAME/";
 char gamepak_filename[MAX_PATH];
 u32 cpu_ticks, gamepak_file_size;
+/* main.c declares it outside the autorun block, for update_gba. */
+static u32 main_autorun_running;
 static char file_text[8192], result[2048], loaded[MAX_PATH], traced[MAX_PATH];
 static size_t file_size, file_at, result_length;
 static int file_exists, read_error, open_files, load_result, trace_result;

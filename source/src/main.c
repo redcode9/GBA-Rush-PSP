@@ -277,6 +277,12 @@ static u8 main_perf_bench_audio = 1;
 /* Set when the unbound benchmark starts replaying the held input trace. */
 static u8 main_perf_bench_trace;
 #endif
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+/* Set while a diagnostic autorun's frames= limit is counting. */
+static u32 main_autorun_running;
+#else
+#define main_autorun_running 0
+#endif
 
 /* Set when a capture starts in the menu, where the clock option can still
    change: the clock and preemption reads are priced once menu() restores
@@ -1345,10 +1351,12 @@ u32 update_gba(void)
 
           // The menu or a state load replaced the machine; drop this pass.
           // A failed .sav write opens the menu, which shows its warning;
-          // not during a link session, which the warning would hold up.
+          // not during a link session, which the warning would hold up, nor
+          // during an autorun's frames=, where nobody would close it: the
+          // warning stays set for the menu after the run.
           if ((update_input() != 0) ||
               (backup_write_warning && !main_link_active() &&
-               (menu() != 0)))
+               !main_autorun_running && (menu() != 0)))
           {
             main_follow_cpu_core();
             continue;
@@ -2074,8 +2082,6 @@ static int path_is_regular_file(const char *path)
  * written. */
 
 static AutorunConfig main_autorun;
-/* Set while a frames= limit is counting. */
-static u32 main_autorun_running;
 static u32 main_autorun_frames;
 /* What diag-autorun.result holds after its six lines: a testpat= line for
    each mode shown so far. */
