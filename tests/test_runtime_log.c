@@ -377,6 +377,49 @@ static void test_version_five_still_validates(void)
   assert(!runtime_log_validate(old, old_size, NULL, NULL, NULL, NULL));
 }
 
+/* A memory measurement is two MEMORY_STATS records in the main ring
+   (flags = point << 1 | part, KiB values, see mem_stats.h). They encode
+   with their type and flags intact, and the format stays version 6. */
+static void test_memory_stats_records(void)
+{
+  uint8_t encoded[RUNTIME_LOG_MAX_FILE_SIZE];
+  RuntimeLogMetadata metadata;
+  RuntimeLogRing main_ring;
+  RuntimeLogRing network_ring;
+  RuntimeLogRing critical_ring;
+  uint16_t main_count = 0;
+  const uint8_t *record;
+  size_t written = 0;
+
+  /* Appended after LINK_BENCHMARK; decode_runtime_log.py names 26. */
+  assert(RUNTIME_LOG_EVENT_MEMORY_STATS == 26);
+  memset(&metadata, 0, sizeof(metadata));
+  runtime_log_ring_init(&main_ring, RUNTIME_LOG_SOURCE_MAIN);
+  runtime_log_ring_init(&network_ring, RUNTIME_LOG_SOURCE_NETWORK);
+  runtime_log_ring_init(&critical_ring, RUNTIME_LOG_SOURCE_CRITICAL);
+  runtime_log_ring_emit(&main_ring, 110, 7, RUNTIME_LOG_EVENT_MEMORY_STATS,
+   2, 3072, 1024, 8192);
+  runtime_log_ring_emit(&main_ring, 110, 7, RUNTIME_LOG_EVENT_MEMORY_STATS,
+   3, 20480, 12288, 32768);
+  assert(runtime_log_encode(&main_ring, &network_ring, &critical_ring,
+   &metadata, encoded, sizeof(encoded), &written));
+  assert(written == RUNTIME_LOG_HEADER_SIZE + 2u * RUNTIME_LOG_RECORD_SIZE);
+  assert(runtime_log_validate(encoded, written, NULL, &main_count, NULL,
+   NULL));
+  assert(main_count == 2);
+  assert(read_u16(encoded + 4) == 6u);
+
+  /* Type at 16, source at 18, flags at 19, values from 20. */
+  record = encoded + RUNTIME_LOG_HEADER_SIZE;
+  assert(read_u16(record + 16) == RUNTIME_LOG_EVENT_MEMORY_STATS);
+  assert(record[18] == RUNTIME_LOG_SOURCE_MAIN && record[19] == 2u);
+  assert(read_u32(record + 20) == 3072u && read_u32(record + 28) == 8192u);
+  record += RUNTIME_LOG_RECORD_SIZE;
+  assert(read_u16(record + 16) == RUNTIME_LOG_EVENT_MEMORY_STATS);
+  assert(record[19] == 3u);
+  assert(read_u32(record + 24) == 12288u && read_u32(record + 28) == 32768u);
+}
+
 /* NULL arguments are rejected. The encode call fails on its NULL critical
    ring before the one-byte-short buffer is checked, so that limit is not
    covered here. */
@@ -435,6 +478,69 @@ static void test_maximum_current_snapshot_size(void)
   assert(critical_count == RUNTIME_LOG_CRITICAL_CAPACITY);
 }
 
+/* ROM_LOAD_STAGES is added after the last event with no version change.
+   Each stage counts from the end of the one before, in whole ms; a 16-bit
+   half stops at 65535 without touching its neighbour; a stage that did not
+   run zeroes itself and every later one. The values survive encoding. */
+static void test_load_stages(void)
+{
+  /* Open 12 ms, read 500, config 3.5, backup id 99.5, .sav 9. */
+  static const uint64_t ends[RUNTIME_LOG_LOAD_STAGE_COUNT] =
+   { 13000u, 513000u, 516500u, 616000u, 625000u };
+  /* Open, read and .sav take 70 s. */
+  static const uint64_t long_ends[RUNTIME_LOG_LOAD_STAGE_COUNT] =
+   { 70001000u, 140001000u, 140004500u, 140104000u, 210104000u };
+  uint64_t end[RUNTIME_LOG_LOAD_STAGE_COUNT];
+  uint8_t encoded[RUNTIME_LOG_MAX_FILE_SIZE];
+  const uint8_t *record = encoded + RUNTIME_LOG_HEADER_SIZE;
+  RuntimeLogMetadata metadata;
+  RuntimeLogRing main_ring;
+  RuntimeLogRing network_ring;
+  RuntimeLogRing critical_ring;
+  uint16_t main_count = 0;
+  uint32_t value[3];
+  size_t written = 0;
+
+  assert(RUNTIME_LOG_EVENT_ROM_LOAD_STAGES == 32);
+
+  runtime_log_load_stages(1000u, long_ends, value);
+  assert(value[0] == 70000u);
+  assert(value[1] == ((0xFFFFu << 16) | 3u));
+  assert(value[2] == ((99u << 16) | 0xFFFFu));
+
+  memcpy(end, ends, sizeof(end));
+  end[RUNTIME_LOG_LOAD_OPEN] = 0;
+  runtime_log_load_stages(1000u, end, value);
+  assert(value[0] == 0 && value[1] == 0 && value[2] == 0);
+  memcpy(end, ends, sizeof(end));
+  end[RUNTIME_LOG_LOAD_CONFIG] = 0;
+  runtime_log_load_stages(1000u, end, value);
+  assert(value[0] == 500u && value[1] == (12u << 16) && value[2] == 0);
+  runtime_log_load_stages(0, ends, value);
+  assert(value[0] == 0 && value[1] == 0 && value[2] == 0);
+
+  runtime_log_load_stages(1000u, ends, value);
+  assert(value[0] == 500u);
+  assert(value[1] == ((12u << 16) | 3u));
+  assert(value[2] == ((99u << 16) | 9u));
+
+  memset(&metadata, 0, sizeof(metadata));
+  runtime_log_ring_init(&main_ring, RUNTIME_LOG_SOURCE_MAIN);
+  runtime_log_ring_init(&network_ring, RUNTIME_LOG_SOURCE_NETWORK);
+  runtime_log_ring_init(&critical_ring, RUNTIME_LOG_SOURCE_CRITICAL);
+  runtime_log_ring_emit(&main_ring, 626000u, 0,
+   RUNTIME_LOG_EVENT_ROM_LOAD_STAGES, 0, value[0], value[1], value[2]);
+  assert(runtime_log_encode(&main_ring, &network_ring, &critical_ring,
+   &metadata, encoded, sizeof(encoded), &written));
+  assert(runtime_log_validate(encoded, written, NULL, &main_count, NULL,
+   NULL));
+  assert(main_count == 1);
+  assert(read_u16(record + 16) == 32u);
+  assert(read_u32(record + 20) == 500u);
+  assert(read_u32(record + 24) == ((12u << 16) | 3u));
+  assert(read_u32(record + 28) == ((99u << 16) | 9u));
+}
+
 static void test_store_preserves_previous_log_on_failed_promote(void)
 {
   static const uint8_t updated[] = { 4, 5, 6 };
@@ -491,8 +597,10 @@ int main(void)
   test_snapshot_at_ordinal_limit_is_bounded();
   test_encode_and_validate();
   test_version_five_still_validates();
+  test_memory_stats_records();
   test_invalid_arguments();
   test_maximum_current_snapshot_size();
+  test_load_stages();
   test_store_preserves_previous_log_on_failed_promote();
   test_store_rotates_four_sessions();
   puts("Runtime log tests passed");

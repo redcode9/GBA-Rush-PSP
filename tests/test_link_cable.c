@@ -26,6 +26,7 @@
 
 #include "gba_sio.h"
 #include "link_cable.h"
+#include "net_fault.h"
 
 static int failures;
 
@@ -45,17 +46,8 @@ static int failures;
 #define TICK_US 100u               /* simulation step of the wall clock */
 #define SERVICE_CYCLES 16384u      /* main.c MAIN_LINK_SERVICE_CYCLES */
 
-static uint32_t rng_state;
-
 /* The simulated wall clock only moves forward, across runs too. */
 static uint64_t sim_clock;
-
-/* Linear congruential generator; the low bits are weak, so drop them. */
-static uint32_t rng(void)
-{
-  rng_state = rng_state * 1664525u + 1013904223u;
-  return rng_state >> 8;
-}
 
 /* ---- Simulated console ------------------------------------------------ */
 
@@ -220,77 +212,28 @@ static void timer_stop(Console *console)
 
 /* ---- Simulated network ------------------------------------------------ */
 
-typedef struct
-{
-  const char *name;
-  uint32_t latency_us;
-  uint32_t jitter_us;
-  uint32_t loss_percent;
-  uint32_t duplicate_percent;
-  /* Window, from the start of the run, in which every datagram is lost,
-  and the period it repeats with (0 for once). */
-  uint64_t outage_start_us;
-  uint64_t outage_end_us;
-  uint64_t outage_period_us;
-} NetProfile;
-
-/* A datagram on its way to console `to`. */
-typedef struct
-{
-  uint8_t data[LINK_NET_MAX_DATAGRAM];
-  size_t size;
-  uint64_t arrival;
-  int to;
-} Flight;
-
+/* Outage windows count from the start of each run; the generator carries
+   on across runs until a test seeds it again. */
 #define MAX_FLIGHTS 4096u
-static Flight flights[MAX_FLIGHTS];
-static unsigned int flight_count;
-static uint64_t run_start;
+static NetFaultFlight flights[MAX_FLIGHTS];
+static NetFault network;
 
-/* Random jitter on each copy also reorders datagrams. */
-static void network_send(const NetProfile *net, int to, const uint8_t *data,
- size_t size, uint64_t now)
+/* The first five of net_fault_profiles; the sixth is the dropouts one. */
+#define STEADY_PROFILES 5u
+
+typedef struct
 {
-  unsigned int copies = 1;
-  uint64_t since = now - run_start;
+  Console **consoles;
+  uint64_t now;
+} Delivery;
 
-  if(net->outage_period_us != 0)
-    since %= net->outage_period_us;
-  if(since >= net->outage_start_us && since < net->outage_end_us)
-    return;
-  if(rng() % 100u < net->loss_percent)
-    return;
-  if(rng() % 100u < net->duplicate_percent)
-    copies = 2;
-  while(copies-- != 0 && flight_count < MAX_FLIGHTS)
-  {
-    Flight *flight = &flights[flight_count++];
-
-    memcpy(flight->data, data, size);
-    flight->size = size;
-    flight->to = to;
-    flight->arrival = now + net->latency_us +
-     (net->jitter_us != 0 ? rng() % net->jitter_us : 0u);
-  }
-}
-
-/* Hands every datagram whose arrival time has come to its console. */
-static void network_deliver(Console *consoles[2], uint64_t now)
+/* Hands a datagram whose arrival time has come to its console. */
+static void network_receive(void *context, const NetFaultFlight *flight)
 {
-  unsigned int i = 0;
+  const Delivery *delivery = context;
 
-  while(i < flight_count)
-  {
-    if(flights[i].arrival <= now)
-    {
-      link_cable_receive(&consoles[flights[i].to]->cable, flights[i].data,
-       flights[i].size, now);
-      flights[i] = flights[--flight_count];
-    }
-    else
-      i++;
-  }
+  link_cable_receive(&delivery->consoles[flight->to]->cable, flight->data,
+   flight->size, delivery->now);
 }
 
 typedef int (*DoneFunction)(Console *consoles[2]);
@@ -303,19 +246,22 @@ static int never_done(Console *consoles[2])
 }
 
 /* Runs both consoles until done() or for limit_us. Returns the time used. */
-static uint64_t run_link(Console *consoles[2], const NetProfile *net,
+static uint64_t run_link(Console *consoles[2], const NetFaultProfile *net,
  uint64_t limit_us, DoneFunction done)
 {
   uint64_t start = sim_clock;
   uint64_t now = sim_clock;
+  Delivery delivery;
   int side;
 
-  flight_count = 0;
-  run_start = start;
+  delivery.consoles = consoles;
+  network.profile = net;
+  net_fault_restart(&network, start);
   while(now - start < limit_us && !done(consoles))
   {
     now += TICK_US;
-    network_deliver(consoles, now);
+    delivery.now = now;
+    net_fault_deliver(&network, now, network_receive, &delivery);
     for(side = 0; side < 2; side++)
     {
       uint8_t datagram[LINK_NET_MAX_DATAGRAM];
@@ -329,7 +275,7 @@ static uint64_t run_link(Console *consoles[2], const NetProfile *net,
       size = link_cable_build(&consoles[side]->cable, datagram,
        sizeof(datagram), consoles[side]->cycle, now);
       if(size != 0)
-        network_send(net, 1 - side, datagram, size, now);
+        net_fault_send(&network, 1 - side, datagram, size, now);
     }
   }
   sim_clock = now;
@@ -1385,7 +1331,8 @@ static PokemonGame pokemon_games[2];
 /* Plays one case over `net` and checks that both games finish every
    session without link errors, verify all blocks, process the same key
    frames and keep the room delay under ROOM_DELAY_LIMIT. */
-static void run_pokemon_case(const PokemonCase *test, const NetProfile *net)
+static void run_pokemon_case(const PokemonCase *test,
+ const NetFaultProfile *net)
 {
   Console host;
   Console joiner;
@@ -1397,8 +1344,9 @@ static void run_pokemon_case(const PokemonCase *test, const NetProfile *net)
   int tuples_match;
 
   memset(pokemon_games, 0, sizeof(pokemon_games));
-  rng_state = 0xC0FFEEu ^ (uint32_t)strlen(test->name) ^
-   (net->latency_us << 4) ^ net->loss_percent;
+  net_fault_init(&network, net, flights, MAX_FLIGHTS,
+   0xC0FFEEu ^ (uint32_t)strlen(test->name) ^ (net->latency_us << 4) ^
+   net->loss_percent);
   a->seed = 11;
   b->seed = 29;
   a->peerSeed = b->seed;
@@ -1469,13 +1417,14 @@ static int joiner_waits_in_room(Console *consoles[2])
    joiner must not stay stuck waiting for a frame that will never come. */
 static void test_pokemon_peer_closes_in_room(void)
 {
-  static const NetProfile net = { "adhoc", 3000u, 4000u, 3u, 1u, 0u, 0u, 0u };
+  static const NetFaultProfile net =
+   { "adhoc", 3000u, 4000u, 3u, 1u, 0u, 0u, 0u, 0u };
   Console host;
   Console joiner;
   Console *consoles[2] = { &host, &joiner };
 
   memset(pokemon_games, 0, sizeof(pokemon_games));
-  rng_state = 0xC105EDu;
+  net_fault_init(&network, &net, flights, MAX_FLIGHTS, 0xC105EDu);
   pokemon_games[0].seed = 11;
   pokemon_games[1].seed = 29;
   pokemon_games[0].openFrame = 30;
@@ -1500,16 +1449,6 @@ static void test_pokemon_peer_closes_in_room(void)
    "keeps running");
 }
 
-/* Latency, jitter (us), loss and duplicate (%), outage window (us). */
-static const NetProfile net_profiles[] =
-{
-  { "lan",       1500u,  1000u,  0u, 0u, 0u, 0u, 0u },
-  { "adhoc",     3000u,  4000u,  3u, 1u, 0u, 0u, 0u },
-  { "noisy",     8000u, 15000u, 15u, 5u, 0u, 0u, 0u },
-  { "outage",    3000u,  4000u,  3u, 1u, 3000000u, 3400000u, 0u },
-  { "terrible", 20000u, 40000u, 30u, 10u, 0u, 0u, 0u }
-};
-
 /* Game codes: BPRE/BPRI FireRed (US/Italian), BPGE LeafGreen, BPEE Emerald,
    AXVE Ruby. 0.80 speed stands for a PSP-1000 that cannot hold full speed. */
 static void test_pokemon_trades(void)
@@ -1528,18 +1467,16 @@ static void test_pokemon_trades(void)
     { "host freezes",           "BPGE", "BPRE", 1.00, 1.00, 30, 30, 2,
       0, 1300, 250 }
   };
-  /* Radio dropouts of a quarter second, after which a burst of frames
-     arrives at once. */
-  static const NetProfile dropouts =
-   { "dropouts", 3000u, 4000u, 3u, 1u, 0u, 250000u, 1300000u };
   size_t c;
   size_t n;
 
-  for(n = 0; n < sizeof(net_profiles) / sizeof(net_profiles[0]); n++)
+  for(n = 0; n < STEADY_PROFILES; n++)
     for(c = 0; c < sizeof(cases) / sizeof(cases[0]); c++)
-      run_pokemon_case(&cases[c], &net_profiles[n]);
+      run_pokemon_case(&cases[c], &net_fault_profiles[n]);
+  /* Radio dropouts of a quarter second, after which a burst of frames
+     arrives at once. */
   for(c = 0; c < sizeof(cases) / sizeof(cases[0]); c++)
-    run_pokemon_case(&cases[c], &dropouts);
+    run_pokemon_case(&cases[c], &net_fault_profiles[5]);
   test_pokemon_peer_closes_in_room();
 }
 
@@ -1660,7 +1597,7 @@ static int lockstep_done(Console *consoles[2])
    lockstep_of(consoles[1])->transfers >= 3000u;
 }
 
-static void test_lockstep_multiplayer(const NetProfile *net,
+static void test_lockstep_multiplayer(const NetFaultProfile *net,
  uint32_t words_per_frame, double host_speed, double joiner_speed)
 {
   Console host;
@@ -1670,7 +1607,8 @@ static void test_lockstep_multiplayer(const NetProfile *net,
   double fps;
 
   memset(lockstep_games, 0, sizeof(lockstep_games));
-  rng_state = 0xBEEFu ^ net->latency_us;
+  net_fault_init(&network, net, flights, MAX_FLIGHTS,
+   0xBEEFu ^ net->latency_us);
   lockstep_games[0].master = 1;
   lockstep_games[0].next_word = 1;
   lockstep_games[0].words_per_frame = words_per_frame;
@@ -1825,7 +1763,7 @@ static const Guest normal_guest =
   normal_vblank
 };
 
-static void test_lockstep_normal(const NetProfile *net, int eight_bit)
+static void test_lockstep_normal(const NetFaultProfile *net, int eight_bit)
 {
   Console host;
   Console joiner;
@@ -1833,7 +1771,8 @@ static void test_lockstep_normal(const NetProfile *net, int eight_bit)
   uint64_t elapsed;
 
   memset(lockstep_games, 0, sizeof(lockstep_games));
-  rng_state = 0xFACEu ^ net->latency_us;
+  net_fault_init(&network, net, flights, MAX_FLIGHTS,
+   0xFACEu ^ net->latency_us);
   lockstep_games[0].master = 1;
   lockstep_games[0].next_word = 1;
   lockstep_games[0].words_per_frame = 4;
@@ -1880,11 +1819,14 @@ static void test_mode_selection_and_roles(void)
 
 static void test_session_lifecycle(void)
 {
-  static const NetProfile net = { "lan", 1500u, 1000u, 0u, 0u, 0u, 0u, 0u };
+  static const NetFaultProfile net =
+   { "lan", 1500u, 1000u, 0u, 0u, 0u, 0u, 0u, 0u };
   Console a;
   Console b;
   Console *consoles[2] = { &a, &b };
 
+  /* Seed 0: no other test has run the network yet. */
+  net_fault_init(&network, &net, flights, MAX_FLIGHTS, 0u);
   /* A Pokemon game and another game fall back to lockstep. */
   console_init(&a, 0, 1, "BPRE", &idle_guest, NULL, 1.0);
   console_init(&b, 1, 0, "AMKE", &idle_guest, NULL, 1.0);
@@ -1910,8 +1852,8 @@ static void test_session_lifecycle(void)
 
   /* A peer that disappears is detected, and the guest is released. */
   {
-    static const NetProfile dead = { "dead", 1500u, 0u, 0u, 0u, 300000u,
-     100000000u, 0u };
+    static const NetFaultProfile dead = { "dead", 1500u, 0u, 0u, 0u, 300000u,
+     100000000u, 0u, 0u };
 
     console_init(&a, 0, 1, "BPRE", &idle_guest, NULL, 1.0);
     console_init(&b, 1, 0, "BPRE", &idle_guest, NULL, 1.0);
@@ -1934,17 +1876,17 @@ int main(int argc, char **argv)
   test_pokemon_trades();
 
   /* --quick (the sanitizer build) runs lockstep on two profiles only. */
-  for(n = 0; n < sizeof(net_profiles) / sizeof(net_profiles[0]); n++)
+  for(n = 0; n < STEADY_PROFILES; n++)
   {
     if(quick && n > 1)
       break;
-    test_lockstep_multiplayer(&net_profiles[n], 1, 1.0, 1.0);
-    test_lockstep_multiplayer(&net_profiles[n], 4, 1.0, 0.85);
+    test_lockstep_multiplayer(&net_fault_profiles[n], 1, 1.0, 1.0);
+    test_lockstep_multiplayer(&net_fault_profiles[n], 4, 1.0, 0.85);
     /* A fast joiner reaches the pacing limit while the host waits for its
        reply; the joiner must still be able to answer. */
-    test_lockstep_multiplayer(&net_profiles[n], 9, 1.0, 1.1);
-    test_lockstep_normal(&net_profiles[n], 0);
-    test_lockstep_normal(&net_profiles[n], 1);
+    test_lockstep_multiplayer(&net_fault_profiles[n], 9, 1.0, 1.1);
+    test_lockstep_normal(&net_fault_profiles[n], 0);
+    test_lockstep_normal(&net_fault_profiles[n], 1);
   }
 
   if(failures != 0)

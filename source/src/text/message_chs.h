@@ -546,6 +546,12 @@
   // MSG_SEARCHING_BACKUP_ID
   "搜索备份 ID",
 
+  // MSG_LOADING_STAGE_READ
+  "正在读取 ROM",
+
+  // MSG_LOADING_STAGE_UNZIP
+  "正在解压 ZIP",
+
   // main.c
   // MSG_GBA_SLEEP_MODE
   "SLEEP MODE",
@@ -565,8 +571,19 @@
   // MSG_ERR_LOAD_GAMEPACK
   "无法加载游戏文件.",
 
+  // MSG_ERR_ZIP_CORRUPT
+  "ZIP 文件已损坏或不完整.",
+
   // MSG_ERR_OPEN_GAMEPACK
   "无法打开游戏文件.",
+  // MSG_SAVE_READ_RETRY
+  "无法读取游戏存档. 重试?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "不保存继续游戏? 存档文件保持不变.",
+  // MSG_SAVE_WRITE_FAILED
+  "无法写入游戏存档.\n存档仍然保留, 稍后将再次尝试.",
+  // MSG_SAVE_WRITE_RETRY
+  "存档未写入: 重试?",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "无法启动回调线程.",
@@ -910,6 +927,9 @@
   // MSG_LINK_MENU_DISCONNECT
   "断开连接",
 
+  // MSG_LINK_MENU_RESTORE
+  "恢复联机前的存档",
+
   // MSG_LINK_MENU_HELP_STATUS
   "当前联机状态",
 
@@ -921,6 +941,18 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "关闭当前联机会话",
+
+  // MSG_LINK_MENU_HELP_RESTORE
+  "恢复联机前复制的游戏存档",
+
+  // MSG_LINK_RESTORE_CONFIRM
+  "恢复%s的存档? 游戏将重新启动",
+
+  // MSG_LINK_RESTORE_NONE
+  "没有联机前复制的存档",
+
+  // MSG_LINK_RESTORE_FAILED
+  "无法恢复游戏存档",
 
   // MSG_LINK_STATUS_NO_GAME
   "未加载游戏",
@@ -978,6 +1010,9 @@
 
   // MSG_LINK_REASON_ROM_CHANGE
   "游戏已更改",
+
+  // MSG_LINK_REASON_SAVE_FAILED
+  "无法写入游戏存档",
 
 
   // MSG_CATEGORY_CONTINUE
@@ -1056,6 +1091,22 @@
   "Report saved",
   // MSG_DIAGNOSTICS_REPORT_FAILED
   "Report could not be saved",
+  // MSG_DIAGNOSTICS_BENCH
+  "Unbound benchmark",
+  // MSG_DIAGNOSTICS_HELP_BENCH
+  "Load the slot, run 3600 frames unpaced, save the report",
+  // MSG_DIAGNOSTICS_BENCH_LINK
+  "Benchmark refused: a link session is open",
+  // MSG_DIAGNOSTICS_BENCH_NO_STATE
+  "Benchmark refused: no usable state in the current slot",
+  // MSG_DIAGNOSTICS_BENCH_RENDER_OFF
+  "Unbound benchmark, rendering off",
+  // MSG_DIAGNOSTICS_HELP_BENCH_RENDER_OFF
+  "The same run without drawing or showing any frame",
+  // MSG_DIAGNOSTICS_BENCH_AUDIO_OFF
+  "Unbound benchmark, audio off",
+  // MSG_DIAGNOSTICS_HELP_BENCH_AUDIO_OFF
+  "The same run without writing any sound sample",
   // MSG_UNAVAILABLE_CURRENT_STATE
   "Unavailable in the current state",
 
@@ -1107,6 +1158,14 @@
   "Input trace saved",
   // MSG_TRACE_FAILED
   "Input trace operation failed",
+  // MSG_TRACE_STATE_MISMATCH
+  "Trace savestate missing or changed",
+  // MSG_TRACE_RTC_WARNING
+  "RTC game: replay hashes may diverge",
+  // MSG_TRACE_NO_HASHES
+  "Replay runs without state hashes",
+  // MSG_TRACE_HASHES_SAVED
+  "Replay state hashes saved",
 
   // MSG_FF_PROFILE_LABEL
   "Fast-forward profile : %s",

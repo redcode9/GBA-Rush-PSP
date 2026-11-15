@@ -546,6 +546,12 @@
   // MSG_SEARCHING_BACKUP_ID
   "BACKUP ID を検索中",
 
+  // MSG_LOADING_STAGE_READ
+  "ROM を読み込み中",
+
+  // MSG_LOADING_STAGE_UNZIP
+  "ZIP を展開中",
+
   // main.c
   // MSG_GBA_SLEEP_MODE
   "スリープモード",
@@ -565,8 +571,19 @@
   // MSG_ERR_LOAD_GAMEPACK
   "ゲームファイルを読み込めませんでした.",
 
+  // MSG_ERR_ZIP_CORRUPT
+  "ZIP ファイルが壊れているか、不完全です.",
+
   // MSG_ERR_OPEN_GAMEPACK
   "ゲームファイルを開くことができませんでした.",
+  // MSG_SAVE_READ_RETRY
+  "セーブデータを読み込めません. 再試行する?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "セーブせずにプレイする? ファイルはそのままです.",
+  // MSG_SAVE_WRITE_FAILED
+  "セーブデータを書き込めませんでした.\nデータは保持され, 後で再試行します.",
+  // MSG_SAVE_WRITE_RETRY
+  "セーブデータを書き込めません. 再試行する?",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "コールバックスレッドを起動できませんでした.",
@@ -910,6 +927,9 @@
   // MSG_LINK_MENU_DISCONNECT
   "切断",
 
+  // MSG_LINK_MENU_RESTORE
+  "通信前のセーブに戻す",
+
   // MSG_LINK_MENU_HELP_STATUS
   "現在の通信状態",
 
@@ -921,6 +941,18 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "現在の通信を終了します",
+
+  // MSG_LINK_MENU_HELP_RESTORE
+  "通信の前にコピーしたセーブに戻します",
+
+  // MSG_LINK_RESTORE_CONFIRM
+  "%sに戻す? ゲームを再起動します",
+
+  // MSG_LINK_RESTORE_NONE
+  "通信前にコピーしたセーブはありません",
+
+  // MSG_LINK_RESTORE_FAILED
+  "セーブデータを復元できませんでした",
 
   // MSG_LINK_STATUS_NO_GAME
   "ゲームが読み込まれていません",
@@ -978,6 +1010,9 @@
 
   // MSG_LINK_REASON_ROM_CHANGE
   "ゲームが変更されました",
+
+  // MSG_LINK_REASON_SAVE_FAILED
+  "セーブデータを書き込めませんでした",
 
 
   // MSG_CATEGORY_CONTINUE
@@ -1056,6 +1091,22 @@
   "Report saved",
   // MSG_DIAGNOSTICS_REPORT_FAILED
   "Report could not be saved",
+  // MSG_DIAGNOSTICS_BENCH
+  "Unbound benchmark",
+  // MSG_DIAGNOSTICS_HELP_BENCH
+  "Load the slot, run 3600 frames unpaced, save the report",
+  // MSG_DIAGNOSTICS_BENCH_LINK
+  "Benchmark refused: a link session is open",
+  // MSG_DIAGNOSTICS_BENCH_NO_STATE
+  "Benchmark refused: no usable state in the current slot",
+  // MSG_DIAGNOSTICS_BENCH_RENDER_OFF
+  "Unbound benchmark, rendering off",
+  // MSG_DIAGNOSTICS_HELP_BENCH_RENDER_OFF
+  "The same run without drawing or showing any frame",
+  // MSG_DIAGNOSTICS_BENCH_AUDIO_OFF
+  "Unbound benchmark, audio off",
+  // MSG_DIAGNOSTICS_HELP_BENCH_AUDIO_OFF
+  "The same run without writing any sound sample",
   // MSG_UNAVAILABLE_CURRENT_STATE
   "Unavailable in the current state",
 
@@ -1107,6 +1158,14 @@
   "Input trace saved",
   // MSG_TRACE_FAILED
   "Input trace operation failed",
+  // MSG_TRACE_STATE_MISMATCH
+  "Trace savestate missing or changed",
+  // MSG_TRACE_RTC_WARNING
+  "RTC game: replay hashes may diverge",
+  // MSG_TRACE_NO_HASHES
+  "Replay runs without state hashes",
+  // MSG_TRACE_HASHES_SAVED
+  "Replay state hashes saved",
 
   // MSG_FF_PROFILE_LABEL
   "Fast-forward profile : %s",
