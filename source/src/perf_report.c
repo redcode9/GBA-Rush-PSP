@@ -105,8 +105,9 @@ static void perf_report_append(PerfReportWriter *writer,
   writer->length += (size_t)written;
 }
 
-/* Appends name=value for a 64-bit counter. The PSP's C library does not
-   print 64-bit integers with %llu, so the digits are written out here. */
+/* Appends name=value for a 64-bit counter. The PSP's C library has no
+   printf format for 64-bit integers, so the digits are written out here
+   (scripts/check-performance.sh rejects such formats in source/src). */
 static void perf_report_append_u64(PerfReportWriter *writer,
  const char *name, uint64_t value)
 {
@@ -142,10 +143,23 @@ static const char *perf_report_state_name(PerfMetricsState state)
   }
 }
 
+/* Frames by preemptions per frame, the classes of perf_metrics.h. */
+static const char *const preempt_class_keys[PERF_METRICS_PREEMPT_CLASSES] =
+{
+  "preempt-frames-0",
+  "preempt-frames-1",
+  "preempt-frames-2",
+  "preempt-frames-3-4",
+  "preempt-frames-5-8",
+  "preempt-frames-9-16",
+  "preempt-frames-17-plus"
+};
+
 int perf_report_format(char *output, size_t output_size,
  const PerfReportMetadata *metadata, const PerfMetricsSnapshot *metrics)
 {
   PerfReportWriter writer;
+  uint32_t i;
   char version[64];
   char build_id[PERF_REPORT_BUILD_ID_MAX + 1U];
   char rom_title[13];
@@ -333,6 +347,79 @@ int perf_report_format(char *output, size_t output_size,
    metrics->gamepak_rom_seek_total_us);
   perf_report_append_u64(&writer, "gamepak-rom-read-total-us",
    metrics->gamepak_rom_read_total_us);
+  perf_report_append_u64(&writer, "work-time-samples",
+   metrics->work_time_samples);
+  perf_report_append_u64(&writer, "work-time-total-us",
+   metrics->work_time_total_us);
+  perf_report_append(&writer, "work-time-max-us=%u\n",
+   metrics->work_time_max_us);
+  perf_report_append(&writer, "work-time-p50-us=%u\n",
+   metrics->work_time_p50_us);
+  perf_report_append(&writer, "work-time-p95-us=%u\n",
+   metrics->work_time_p95_us);
+  perf_report_append(&writer, "work-time-p99-us=%u\n",
+   metrics->work_time_p99_us);
+  perf_report_append_u64(&writer, "frames-work-over-budget",
+   metrics->frames_work_over_budget);
+  perf_report_append_u64(&writer, "frames-over-1-5x-budget",
+   metrics->frames_over_1_5x_budget);
+  perf_report_append_u64(&writer, "frames-late", metrics->frames_late);
+  perf_report_append_u64(&writer, "link-lockstep-frames",
+   metrics->link_lockstep_frames);
+  /* Zero-padded so that the values sort as text in time order. */
+  if(metadata->has_capture_time)
+    perf_report_append(&writer,
+     "capture-local-time=%04u-%02u-%02uT%02u:%02u:%02u\n",
+     metadata->capture_year, metadata->capture_month, metadata->capture_day,
+     metadata->capture_hour, metadata->capture_minute,
+     metadata->capture_second);
+  else
+    perf_report_append(&writer, "capture-local-time=\n");
+  /* phase-main- keeps these apart from the New core profile's phase-*
+     keys in the -core.txt file saved beside the report. */
+  perf_report_append_u64(&writer, "phase-main-sampled-frames",
+   metrics->phase_sampled_frames);
+  perf_report_append_u64(&writer, "phase-main-update-gba-us",
+   metrics->phase_update_gba_us);
+  perf_report_append_u64(&writer, "phase-main-scanline-us",
+   metrics->phase_scanline_us);
+  perf_report_append_u64(&writer, "phase-main-gbc-sound-us",
+   metrics->phase_gbc_sound_us);
+  perf_report_append_u64(&writer, "phase-main-work-us",
+   metrics->phase_work_us);
+  perf_report_append(&writer, "probe-read-ns=%u\n", metrics->probe_read_ns);
+  perf_report_append_u64(&writer, "probe-reads", metrics->probe_reads);
+  perf_report_append(&writer, "preempt-available=%d\n",
+   metrics->preempt_available != 0);
+  perf_report_append_u64(&writer, "preempt-work-thread",
+   metrics->preempt_work_thread);
+  perf_report_append_u64(&writer, "preempt-work-intr",
+   metrics->preempt_work_intr);
+  perf_report_append_u64(&writer, "preempt-wait-thread",
+   metrics->preempt_wait_thread);
+  perf_report_append_u64(&writer, "preempt-wait-intr",
+   metrics->preempt_wait_intr);
+  perf_report_append_u64(&writer, "preempt-max-per-frame",
+   metrics->preempt_max_per_frame);
+  for(i = 0; i < PERF_METRICS_PREEMPT_CLASSES; i++)
+    perf_report_append_u64(&writer, preempt_class_keys[i],
+     metrics->preempt_frames[i]);
+  perf_report_append(&writer, "preempt-call-ns=%u\n",
+   metrics->preempt_call_ns);
+  perf_report_append(&writer, "bench-mode=%s\n",
+   metadata->bench_mode == PERF_REPORT_BENCH_UNBOUND ? "unbound" : "paced");
+  perf_report_append(&writer, "bench-frames=%u\n", metadata->bench_frames);
+  perf_report_append(&writer, "bench-render=%d\n",
+   metadata->bench_render != 0);
+  perf_report_append(&writer, "bench-audio=%d\n", metadata->bench_audio != 0);
+  perf_report_append(&writer, "bench-input=%s\n",
+   metadata->bench_input == PERF_REPORT_BENCH_INPUT_TRACE ? "trace" :
+   metadata->bench_input == PERF_REPORT_BENCH_INPUT_NONE ? "none" : "pad");
+  if(metadata->bench_input == PERF_REPORT_BENCH_INPUT_TRACE)
+    perf_report_append(&writer, "bench-trace-checksum=0x%08x\n",
+     metadata->bench_trace_checksum);
+  else
+    perf_report_append(&writer, "bench-trace-checksum=\n");
 
   if(writer.failed)
   {

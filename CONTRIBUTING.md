@@ -164,13 +164,37 @@ PSP rendering, MIPS assembly, radio behavior and power callbacks need testing
 on the console as well.
 
 For performance changes, compare at least three runs per build with the same
-ROM, initial save or state, renderer, clocks and settings:
+ROM, initial save or state, renderer, clocks and settings (the two builds may
+have different run counts):
 
 ```sh
 python3 scripts/compare-benchmarks.py \
   --baseline old-1.txt old-2.txt old-3.txt \
   --candidate new-1.txt new-2.txt new-3.txt
 ```
+
+PASS and FAIL still come from the medians and their thresholds, among them a
+frame-time p95 or p99 up more than 5%, plus a frame-time max above 1.5x the
+baseline median in at least two candidate runs (one spike alone passes). When
+every run has the format 7 work fields, a work-time p95 up more than 5% or
+frames over 1.5x the budget per minute up more than max(1, 20%) fail too;
+otherwise a note says those gates were skipped. Frame and work times are
+measured in 250 us buckets, so below 5 ms a rise of a single bucket is
+already more than 5% and fails their gates. For each
+metric but the frame-time max the tool also prints the median, minimum and
+maximum of both builds and the verdict of an exact one-sided permutation test
+on the per-run values. With
+3+3 runs that test reaches p=0.05 only when every candidate run is above (or
+every one is below) every baseline run; otherwise the verdict says undecided
+and estimates how many runs per build would decide it. Overlapping ranges
+never give a difference up to 4+3 runs; with more runs they can, which is
+what larger sets are for. Above 10+10 runs the p is estimated from 20000
+seeded random picks and printed as `p~`. The side tested is the one the
+medians point to (the means when the medians tie), chosen after the runs, so
+a stated difference is only an indication until its side is declared before
+the runs with `--claim`, following the measurement protocol in
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md#measurement-protocol). Never claim
+a difference that the verdict does not state.
 
 Record the PSP model, firmware, storage, ROM hash and actual ROM-cache capacity.
 Test menu transitions, suspend, resume and exit when changing threads, audio,
@@ -291,4 +315,12 @@ refuses it); no change under
 a pair with an earlier release loses) or `bump` line. A change of
 `LINK_NET_VERSION` or `LINK_CABLE_PROTOCOL` needs `link: bump` and a passed
 link test.
+When the release requires `perf-baseline-5`, its PSP-1000 reports in
+`benchmarks/psp-1000/*/<version>`, whose `build-id` must be the manifest's,
+must pass `scripts/compare-benchmarks.py` against those of the newest earlier
+release in that archive in every group, and a group without candidate reports
+fails; a release that does not require that test, such as a hotfix, adds no
+reports, so the next release compares with the newest one that has them. The
+build id names the `source/` tree only, so measure the packaged `EBOOT.PBP`:
+the gate cannot tell it from a diagnostic or local build of the same tree.
 The notes do not replace the CHANGELOG, which stays hand-written.

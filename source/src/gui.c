@@ -3345,7 +3345,7 @@ static void menu_diagnostics_stop(void)
 
 /* Write the perf report and show its file name, or the failure, on the
    status row. */
-static void menu_diagnostics_write_report(void)
+void menu_diagnostics_write_report(void)
 {
     char report_path[MAX_PATH];
     const char *filename;
@@ -3365,6 +3365,66 @@ static void menu_diagnostics_write_report(void)
     snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
      "%s: %.56s", MSG[MSG_DIAGNOSTICS_REPORT_SAVED], filename);
 }
+
+/* Set when the benchmark loaded its slot: menu() then returns to the game
+   at once and reports the new machine state, as a slot load does. */
+static u8 diagnostics_bench_loaded;
+
+/* Unbound benchmark: loads the current slot as the slot menu does, backing
+   up the progress a numbered slot replaces to the auto slot and asking
+   first, and starts the run. A link or a slot without a state refuses it,
+   with the reason on the status row. render or audio 0 picks an arm. */
+static void menu_diagnostics_bench_arm(u32 render, u32 audio)
+{
+    char filename[MAX_FILE];
+    const char *reason = NULL;
+
+    diagnostics_report_line[0] = '\0';
+    if(main_link_active())
+        reason = MSG[MSG_DIAGNOSTICS_BENCH_LINK];
+    else if(!savestate_file_exists(savestate_slot))
+        reason = MSG[MSG_DIAGNOSTICS_BENCH_NO_STATE];
+    if(reason != NULL)
+    {
+        snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+         "%s", reason);
+        return;
+    }
+
+    if(savestate_slot < AUTO_SAVESTATE_SLOT)
+        action_savestate_slot(AUTO_SAVESTATE_SLOT);
+    get_savestate_filename(savestate_slot, filename);
+    /* A No leaves the game as it was; load_state shows its own errors. */
+    if(!load_state(filename))
+        return;
+
+    diagnostics_bench_loaded = 1;
+    main_perf_bench_start(render, audio);
+}
+
+static void menu_diagnostics_bench(void)
+{
+    menu_diagnostics_bench_arm(1, 1);
+}
+
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+/* The same benchmark without the rendering, or without the sound samples:
+   the difference in throughput is what that work costs. */
+static void menu_diagnostics_bench_render_off(void)
+{
+    menu_diagnostics_bench_arm(0, 1);
+}
+
+static void menu_diagnostics_bench_audio_off(void)
+{
+    menu_diagnostics_bench_arm(1, 0);
+}
+
+/* Their two rows, below the Unbound benchmark row. */
+#define DIAGNOSTICS_BENCH_ARM_ROWS 2
+#else
+#define DIAGNOSTICS_BENCH_ARM_ROWS 0
+#endif
 
 static void menu_quit_action(void)
 {
@@ -5329,15 +5389,20 @@ u32 menu(void)
     ACTION_OPTION(menu_diagnostics_start, NULL, MSG[MSG_DIAGNOSTICS_START], MSG_DIAGNOSTICS_HELP_START, 3, MSG_DIAGNOSTICS_START),
     ACTION_OPTION(menu_diagnostics_stop, NULL, MSG[MSG_DIAGNOSTICS_STOP], MSG_DIAGNOSTICS_HELP_STOP, 4, MSG_DIAGNOSTICS_STOP),
     ACTION_OPTION(menu_diagnostics_write_report, NULL, MSG[MSG_DIAGNOSTICS_SAVE_REPORT], MSG_DIAGNOSTICS_HELP_SAVE_REPORT, 5, MSG_DIAGNOSTICS_SAVE_REPORT),
+    ACTION_OPTION(menu_diagnostics_bench, NULL, MSG[MSG_DIAGNOSTICS_BENCH], MSG_DIAGNOSTICS_HELP_BENCH, 6, MSG_DIAGNOSTICS_BENCH),
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+    ACTION_OPTION(menu_diagnostics_bench_render_off, NULL, MSG[MSG_DIAGNOSTICS_BENCH_RENDER_OFF], MSG_DIAGNOSTICS_HELP_BENCH_RENDER_OFF, 7, MSG_DIAGNOSTICS_BENCH_RENDER_OFF),
+    ACTION_OPTION(menu_diagnostics_bench_audio_off, NULL, MSG[MSG_DIAGNOSTICS_BENCH_AUDIO_OFF], MSG_DIAGNOSTICS_HELP_BENCH_AUDIO_OFF, 8, MSG_DIAGNOSTICS_BENCH_AUDIO_OFF),
+#endif
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
-    ACTION_OPTION(NULL, NULL, diagnostics_trace_status_line, MSG_DIAGNOSTICS_HELP_STATUS, 8, 0),
-    ACTION_OPTION(menu_trace_start, NULL, MSG[MSG_TRACE_START], MSG_TRACE_HELP_START, 10, MSG_TRACE_START),
-    ACTION_OPTION(menu_trace_finish_save, NULL, MSG[MSG_TRACE_FINISH_SAVE], MSG_TRACE_HELP_FINISH_SAVE, 11, MSG_TRACE_FINISH_SAVE),
-    ACTION_OPTION(menu_trace_replay, NULL, MSG[MSG_TRACE_REPLAY], MSG_TRACE_HELP_REPLAY, 12, MSG_TRACE_REPLAY),
-    ACTION_OPTION(menu_trace_cancel, NULL, MSG[MSG_TRACE_CANCEL], MSG_TRACE_HELP_CANCEL, 13, MSG_TRACE_CANCEL),
-    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 15, MSG_OPTION_MENU_11)
+    ACTION_OPTION(NULL, NULL, diagnostics_trace_status_line, MSG_DIAGNOSTICS_HELP_STATUS, 8 + DIAGNOSTICS_BENCH_ARM_ROWS, 0),
+    ACTION_OPTION(menu_trace_start, NULL, MSG[MSG_TRACE_START], MSG_TRACE_HELP_START, 10 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_TRACE_START),
+    ACTION_OPTION(menu_trace_finish_save, NULL, MSG[MSG_TRACE_FINISH_SAVE], MSG_TRACE_HELP_FINISH_SAVE, 11 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_TRACE_FINISH_SAVE),
+    ACTION_OPTION(menu_trace_replay, NULL, MSG[MSG_TRACE_REPLAY], MSG_TRACE_HELP_REPLAY, 12 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_TRACE_REPLAY),
+    ACTION_OPTION(menu_trace_cancel, NULL, MSG[MSG_TRACE_CANCEL], MSG_TRACE_HELP_CANCEL, 13 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_TRACE_CANCEL),
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 15 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_OPTION_MENU_11)
 #else
-    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 7, MSG_OPTION_MENU_11)
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 8 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_OPTION_MENU_11)
 #endif
   };
 
@@ -5348,19 +5413,27 @@ u32 menu(void)
   diagnostics_options[3].available_function = menu_diagnostics_start_available;
   diagnostics_options[4].available_function = menu_diagnostics_stop_available;
   diagnostics_options[5].available_function = menu_diagnostics_report_available;
+  diagnostics_options[6].available_function = menu_diagnostics_start_available;
   diagnostics_options[3].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[4].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[5].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
-#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
-  diagnostics_options[6].behavior_flags = MENU_OPTION_PASSIVE_ROW;
-  diagnostics_options[7].available_function = menu_trace_start_available;
-  diagnostics_options[8].available_function = menu_trace_finish_available;
-  diagnostics_options[9].available_function = menu_trace_replay_available;
-  diagnostics_options[10].available_function = menu_trace_cancel_available;
+  diagnostics_options[6].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+  diagnostics_options[7].available_function = menu_diagnostics_start_available;
+  diagnostics_options[8].available_function = menu_diagnostics_start_available;
   diagnostics_options[7].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[8].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
-  diagnostics_options[9].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
-  diagnostics_options[10].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+#endif
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  diagnostics_options[7 + DIAGNOSTICS_BENCH_ARM_ROWS].behavior_flags = MENU_OPTION_PASSIVE_ROW;
+  diagnostics_options[8 + DIAGNOSTICS_BENCH_ARM_ROWS].available_function = menu_trace_start_available;
+  diagnostics_options[9 + DIAGNOSTICS_BENCH_ARM_ROWS].available_function = menu_trace_finish_available;
+  diagnostics_options[10 + DIAGNOSTICS_BENCH_ARM_ROWS].available_function = menu_trace_replay_available;
+  diagnostics_options[11 + DIAGNOSTICS_BENCH_ARM_ROWS].available_function = menu_trace_cancel_available;
+  diagnostics_options[8 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[9 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[10 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[11 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
 #endif
 
   MAKE_MENU(diagnostics, NULL, NULL);
@@ -5839,6 +5912,12 @@ u32 menu(void)
               if (current_menu == &custom_colors_menu)
                 color_picker_item_index = current_option_num;
               current_option->action_function();
+              if (diagnostics_bench_loaded)
+              {
+                diagnostics_bench_loaded = 0;
+                return_value = 1;
+                repeat = 0;
+              }
             }
             else
             {
