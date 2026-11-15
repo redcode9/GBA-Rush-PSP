@@ -76,13 +76,19 @@ then
 fi
 
 # A held key must not delay standby: every gui.c loop that waits on the
-# pad calls main_power_service within its first three lines, and
-# update_input masks keys held at menu close until release.
+# pad has a braced body that calls main_power_service before its first
+# closing brace, and update_input masks keys held at menu close until
+# release.
 if awk '
-  /while[[:space:]]*\([[:space:]!(]*get_pad_input\(/ { if (left) bad = 1; left = 4 }
-  left && /main_power_service\(/ { left = 0 }
-  left && !--left { bad = 1 }
-  END { exit !(bad || left) }
+  /while[[:space:]]*\([[:space:]!(]*get_pad_input\(/ {
+    if (wait) bad = 1
+    wait = 1; braced = /\{/; next
+  }
+  wait && !braced && !/^[[:space:]]*\{/ { bad = 1 }
+  wait { braced = 1 }
+  wait && /main_power_service\(/ { wait = 0 }
+  wait && /^[[:space:]]*\}/ { bad = 1; wait = 0 }
+  END { exit !(bad || wait) }
 ' source/src/gui.c || \
    ! body '/^u32 menu(void)/,/^static void update_status_string/p' \
   source/src/gui.c | grep -Eq 'input_hold_until_released\('
