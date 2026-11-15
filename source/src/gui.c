@@ -4018,6 +4018,7 @@ u32 menu(void)
   u16 *savestate_screen = NULL;
 
   u32 savestate_action = 0;     // slot rows: 0 = load, 1 = save
+  u32 delete_key_held = 0;      // Triangle down on a slot row
   static char savestate_timestamps[SAVESTATE_SLOT_COUNT][40];
 
   char time_str[40];
@@ -5913,18 +5914,21 @@ u32 menu(void)
     flip_screen(1);
 
 
-    /* Triangle: delete savestate when in savestate menu */
+    /* Triangle: delete savestate when in savestate menu. The dialog opens
+       on release, so the held button cannot reopen it, and the loop keeps
+       serving power events while the button is down. */
     if (current_menu == &savestate_menu && !first_load && current_option_num < SAVESTATE_SLOT_COUNT)
     {
       if (get_pad_input(PSP_CTRL_TRIANGLE) != 0)
+        delete_key_held = 1;
+      else if (delete_key_held != 0)
       {
-        /* Wait for release BEFORE opening the dialog, so the held
-           button doesn't leak into yesno_dialog's input loop. */
-        while (get_pad_input(PSP_CTRL_TRIANGLE) != 0)
-          sceKernelDelayThread(5000);
+        delete_key_held = 0;
         menu_delete_state();
       }
     }
+    else
+      delete_key_held = 0;
 
     gui_action = get_gui_input();
 
@@ -6165,9 +6169,9 @@ u32 menu(void)
   if (gamepak_file_large == GAMEPAK_FILE_MENU_CLOSED)
     gamepak_file_reopen();
 
-  /* Wait for every button up to HOME (PSP_CTRL bits 0-16) to be released so
-     the press that closed the menu does not reach the game. */
-  while (get_pad_input(0x0001FFFF) != 0);
+  /* Buttons up to HOME (PSP_CTRL bits 0-16) still held reach neither the
+     game nor the hotkeys until released; closing never waits for them. */
+  input_hold_until_released(get_pad_input(0x0001FFFF));
 
   menu_term();
 

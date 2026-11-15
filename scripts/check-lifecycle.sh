@@ -75,6 +75,27 @@ then
   fail "Menu clock transitions are not guarded by link state"
 fi
 
+# A held key must not delay standby: every gui.c loop that waits on the
+# pad has a braced body that calls main_power_service before its first
+# closing brace, and update_input masks keys held at menu close until
+# release.
+if awk '
+  /while[[:space:]]*\([[:space:]!(]*get_pad_input\(/ {
+    if (wait) bad = 1
+    wait = 1; braced = /\{/; next
+  }
+  wait && !braced && !/^[[:space:]]*\{/ { bad = 1 }
+  wait { braced = 1 }
+  wait && /main_power_service\(/ { wait = 0 }
+  wait && /^[[:space:]]*\}/ { bad = 1; wait = 0 }
+  END { exit !(bad || wait) }
+' source/src/gui.c || \
+   ! body '/^u32 menu(void)/,/^static void update_status_string/p' \
+  source/src/gui.c | grep -Eq 'input_hold_until_released\('
+then
+  fail "Menu waits for a key release instead of masking held keys"
+fi
+
 # Game, menu, browser and resume run at the configured clock; only a link
 # session and ROM loading pin 333 MHz, and only quit() lowers it, after
 # the last log flush.
@@ -210,13 +231,34 @@ if grep -Eq 'sceAudioOutput2' source/src/sound.c
 then
   fail "SRC audio lifecycle calls the Output2 API family"
 fi
-audio_power_body=$(body \
-  '/^void sound_power_suspend/,/^void sound_power_resume_finish/p' \
-  source/src/sound.c)
-if ! printf '%s\n' "$audio_power_body" | grep -Eq 'SOUND_OPERATION_TIMEOUT' || \
-   ! printf '%s\n' "$audio_power_body" | grep -Eq 'sceKernelWaitSema'
+# sound_power_suspend and sound_power_resume each wait for the audio thread
+# once, in an if and with the power deadline, never with the audio thread's
+# own; timeout is never changed after its declaration.
+for fn in 'void sound_power_suspend' 'int sound_power_resume'
+do
+  audio_power_body=$(body "/^$fn(void)/,/^}/p" source/src/sound.c)
+  if ! printf '%s\n' "$audio_power_body" | \
+       grep -Fq 'SceUInt timeout = SOUND_POWER_TIMEOUT;' || \
+     [ "$(printf '%s\n' "$audio_power_body" | \
+          grep -Fc 'sceKernelWaitSema(')" -ne 1 ] || \
+     ! printf '%s\n' "$audio_power_body" | grep -Eq \
+       '^[[:space:]]*if[[:space:]]*\(.*sceKernelWaitSema\(sound_sema, 1, &timeout\)' || \
+     printf '%s\n' "$audio_power_body" | grep -Fq 'SOUND_OPERATION_TIMEOUT' || \
+     printf '%s\n' "$audio_power_body" | \
+       sed 's/SceUInt timeout = SOUND_POWER_TIMEOUT;//' | grep -Eq \
+       -e '(^|[^[:alnum:]_])timeout[[:space:]]*(([-+*/%&|^]|<<|>>)?=([^=]|$)|\+\+|--)' \
+       -e '(\+\+|--)[[:space:]]*timeout'
+  then
+    fail "${fn#* } does not wait for audio with the 50 ms power deadline"
+  fi
+done
+# The power callback waits for the audio thread at most 50 ms.
+sound_power_timeout=$(sed -n \
+  's/^#define SOUND_POWER_TIMEOUT[[:space:]]*\([0-9][0-9]*\).*/\1/p' \
+  source/src/sound.c | head -n 1)
+if [ -z "$sound_power_timeout" ] || [ "$sound_power_timeout" -gt 50000 ]
 then
-  fail "Audio suspend and resume are not serialized with a deadline"
+  fail "SOUND_POWER_TIMEOUT exceeds 50 ms"
 fi
 if ! body '/^void synchronize_sound/,/^void update_gbc_sound/p' \
   source/src/sound.c | grep -Eq 'SOUND_OPERATION_TIMEOUT'

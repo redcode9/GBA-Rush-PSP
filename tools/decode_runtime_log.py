@@ -61,6 +61,7 @@ EVENTS = {
     28: "savestate-repair",
     29: "save-write",
     30: "save-link-copy",
+    31: "power-bits",
 }
 FLUSH_REASONS = {
     1: "start",
@@ -138,6 +139,19 @@ SAVE_FIXES = [
     "eeprom-mode", "eeprom-address-length", "eeprom-address",
     "eeprom-counter",
 ]
+# power-bits: one PSP power callback's raw bits (PSP_POWER_CB_* in
+# source/src/libpower/psppower.h), its number since boot (a gap means
+# callbacks were lost; 0 on a timeout record) and the power_lifecycle
+# outcome when logged (POWER_LIFECYCLE_ENTRY_* and
+# POWER_LIFECYCLE_SWITCH_EXPIRED in source/src/power_lifecycle.h).
+POWER_BITS = {
+    0x80000000: "switch",
+    0x00080000: "standby",
+    0x00040000: "resume-complete",
+    0x00020000: "resuming",
+    0x00010000: "suspending",
+}
+POWER_OUTCOMES = ["none", "entered-by-switch", "entered-by-suspending", "switch-timed-out"]
 LINK_EVENTS = {
     "link-command", "link-state", "link-pause-end", "link-error",
     "link-counters", "menu-presence", "power-suspend", "power-resume",
@@ -287,6 +301,12 @@ def describe(record: dict[str, Any]) -> str:
         if unknown:
             fixed.append(f"0x{unknown:X}")
         return f"fixed={','.join(fixed)} type={_name(SAVE_TYPES, value1)}"
+    if event == "power-bits":
+        names = "|".join(name for bit, name in POWER_BITS.items() if value0 & bit)
+        return (
+            f"bits=0x{value0:08X} ({names or '-'}) callback={value1} "
+            f"outcome={_name(POWER_OUTCOMES, value2)}"
+        )
     # Earlier versions belong to a retired link design; show raw values.
     if event not in LINK_EVENTS or record.get("version", 5) < 5:
         return f"flags=0x{flags:02X} values={value0}/{value1}/{value2}"

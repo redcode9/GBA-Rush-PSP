@@ -177,6 +177,13 @@
   out, the state is saved without its preview picture instead of quitting.
   A power cut while a state is being saved keeps the previous state, as a
   `.svs.bak` file.
+- Pressing the power switch now always parks the game safely for standby,
+  even when the PSP reports only the switch; if standby does not follow
+  within 2 seconds, the game resumes with its sound and ROM. The runtime log
+  records what the PSP reports at each power event.
+- Closing the menu no longer waits for every button to be released, so a
+  button still held never delays standby. A button held as the menu closes
+  reaches neither the game nor the hotkeys until it is released.
 
 ## 1.4.3 - 2026-11-02
 

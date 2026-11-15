@@ -496,6 +496,44 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         unknown = max([*decoder.LINK_COUNTERS, 12]) + 1
         self.assertEqual(counters(unknown), f"counters-{unknown}=1/2/3")
 
+    def test_decodes_power_bits_record(self):
+        # Patch the first record of the v3 fixture into a version 5
+        # power-bits record and refresh both checksums.
+        data = bytearray(fixture_v3())
+        struct.pack_into(">H", data, 4, 5)
+        struct.pack_into(">HBBIII", data, 64 + 16, 31, 1, 0,
+                         0x80001080, 2, 2)
+        struct.pack_into(">I", data, 56, binascii.crc32(data[64:]) & 0xFFFFFFFF)
+        struct.pack_into(">I", data, 60, binascii.crc32(data[:60]) & 0xFFFFFFFF)
+        record = decoder.parse_snapshot(data)["records"][0]
+
+        self.assertEqual(record["event"], "power-bits")
+        self.assertEqual(
+            decoder.describe(record),
+            "bits=0x80001080 (switch) callback=2 "
+            "outcome=entered-by-suspending")
+        # A wake callback that carries the switch, as its own record.
+        self.assertEqual(
+            decoder.describe({"event": "power-bits", "flags": 0,
+                              "values": [0x80040000, 4, 0]}),
+            "bits=0x80040000 (switch|resume-complete) callback=4 "
+            "outcome=none")
+        self.assertEqual(
+            decoder.describe({"event": "power-bits", "flags": 0,
+                              "values": [0, 0, 3]}),
+            "bits=0x00000000 (-) callback=0 outcome=switch-timed-out")
+        # The same record in a version 6 log, the format builds write now.
+        data = bytearray(fixture_v6())
+        struct.pack_into(">HBBIII", data, 96 + 16, 31, 1, 0,
+                         0x80001080, 2, 2)
+        struct.pack_into(">I", data, 88, binascii.crc32(data[96:]) & 0xFFFFFFFF)
+        struct.pack_into(">I", data, 92, binascii.crc32(data[:92]) & 0xFFFFFFFF)
+        record = decoder.parse_snapshot(bytes(data))["records"][0]
+        self.assertEqual(
+            decoder.describe(record),
+            "bits=0x80001080 (switch) callback=2 "
+            "outcome=entered-by-suspending")
+
     def test_exact_renderer_names_match_the_c_enum(self):
         header = (Path(__file__).parents[1] / "source" / "src" /
                   "video_me.h").read_text()
