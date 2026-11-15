@@ -4,7 +4,7 @@ set -eu
 
 # Keeps the performance instrumentation cheap enough to leave on: sampling
 # never allocates or touches files, and the report is only formatted and
-# written outside the emulation hot paths.
+# written outside the emulation hot paths, where the memory probe never runs.
 
 if grep -Eq 'FILE_|sceIo|malloc\(|calloc\(|realloc\(|free\(' \
   source/src/perf_metrics.c source/src/perf_monitor.c
@@ -13,11 +13,11 @@ then
   exit 1
 fi
 
-if grep -Eq 'perf_report_format|main_perf_write_report' \
+if grep -Eq 'perf_report_format|main_perf_write_report|mem_stats_largest_block' \
   source/src/cpu.c source/src/memory.c source/src/psp_video.c \
   source/src/sound.c source/src/video_dispatch.c
 then
-  echo "A performance report is formatted or written from a hot module" >&2
+  echo "A performance report or the memory probe runs in a hot module" >&2
   exit 1
 fi
 
@@ -33,10 +33,10 @@ guarded_writes=$(printf '%s\n' "$update_body" | \
   grep -B2 'menu_diagnostics_write_report' | \
   grep -c 'perf_monitor_bench_take_done()' || true)
 if printf '%s\n' "$update_body" | \
-  grep -Eq 'perf_report_format|main_perf_write_report' || \
+  grep -Eq 'perf_report_format|main_perf_write_report|mem_stats_largest_block|main_memory_sample' || \
   [ "$bench_writes" != 1 ] || [ "$guarded_writes" != 1 ]
 then
-  echo "A performance report is formatted or written from update_gba" \
+  echo "A performance report or the memory probe runs in update_gba" \
     "(beyond the benchmark's one save after perf_monitor_bench_take_done)" >&2
   exit 1
 fi
@@ -84,9 +84,9 @@ then
   exit 1
 fi
 
-# The menu runs at 222 MHz, so a capture started there is calibrated when
-# the game resumes: main_perf_begin only sets the pending flag, the two
-# calibrations run only from main_perf_calibrate, which only
+# The clock option can change in the menu, so a capture started there is
+# calibrated when the game resumes: main_perf_begin only sets the pending
+# flag, the two calibrations run only from main_perf_calibrate, which only
 # main_link_set_gameplay_active calls, and menu() restores
 # option_clock_speed before main_link_set_gameplay_active(1). A function
 # starts at a column-0 line with a ( and no ;.

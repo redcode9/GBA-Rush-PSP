@@ -41,6 +41,19 @@
   its own icons and installs in `PSP/GAME/GBARushPSP-DIAG`, so it keeps its
   own settings, saves and logs and never touches the regular install. The
   regular build contains none of its diagnostic code.
+- The runtime log records the memory when GBA Rush PSP starts, each time a
+  game is loaded or reset, before a link session starts and when a
+  performance measurement starts and stops: the size of the program, the
+  free heap and its largest block, the free system memory and its largest
+  block, and the size of the ROM buffer. Performance reports give the lowest
+  free heap, largest heap block and largest system memory block measured
+  during the capture (`heap-free-low`, `heap-largest-low`,
+  `kernel-free-low`).
+- The diagnostic build can hold back memory from startup, to imitate a PSP
+  with less memory in an emulator: write the amount in KiB (at most 65536)
+  in `memory-hold.txt` beside the EBOOT. Beside each performance report it
+  also saves the emulator's last 256 memory allocations and frees as
+  `perf-<time>-alloc.txt`.
 - On GitHub, bug, game and link reports open as forms that ask for the
   version, the PSP model and firmware, the steps and the `logs/` folder, and
   warn not to attach ROMs, BIOS files or saves that are not your own.
@@ -81,6 +94,13 @@
   so it never overwrites the `<rom>_auto.svs` made with `gba_bios.bin`.
 - The `bios_rom_hack_39` and `bios_rom_hack_2C` options of `game_config.txt`
   apply only to `gba_bios.bin`.
+- The menu and the file browser run at the configured CPU clock (333 MHz by
+  default) instead of 222 MHz: after a ROM loads (at 333 MHz) or a link
+  session ends, the PSP returns to the configured clock instead of 222 MHz,
+  and it sets that clock again when it resumes from sleep. The runtime log
+  records the requested clock and the CPU and bus clocks the PSP reports each
+  time the clock is set and, when the Exact renderer draws on the Media
+  Engine, the Media Engine clock it measured under each requested clock.
 - A stable release is published only after the hardware tests it requires
   have passed, with the EBOOT being released, on a PSP-1000 and on a second
   model, and after at least 7 days as a prerelease (3 days for a fix of

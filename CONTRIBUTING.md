@@ -74,7 +74,8 @@ The optional desktop launcher has its own
 `psp-build`, `package` and `artifact-smoke` use the release profile, the EBOOT
 players get, unless given `PROFILE=diagnostic`. The diagnostic profile adds
 the features that `source/src/build_profile.h` switches on (today the input
-trace; `DIAGNOSTIC_CORE_PROFILE=1` adds the New core's profile), is titled
+trace; `DIAGNOSTIC_CORE_PROFILE=1` adds the New core's profile and
+`DIAGNOSTIC_HW_PROBE=1` the memory system probe), is titled
 "GBA Rush PSP [DIAG]" with its own icon, and is packaged as
 `dist/GBA-Rush-PSP-<version>-diag.zip`, with its manifest and
 `dist/SHA256SUMS-diag`, for the folder `PSP/GAME/GBARushPSP-DIAG/`:
@@ -83,6 +84,13 @@ trace; `DIAGNOSTIC_CORE_PROFILE=1` adds the New core's profile), is titled
 make -j4 psp-build PROFILE=diagnostic
 make package VERSION=1.4.3 PROFILE=diagnostic
 ```
+
+The diagnostic profile also traces the emulator thread's last 256 `malloc`
+and `free` calls into `perf-<time>-alloc.txt` beside each benchmark report,
+and holds from startup the KiB written in `memory-hold.txt` beside the EBOOT
+(at most 65536), to imitate a console with less memory in PPSSPP, which is
+not a proof. The first line of each `-alloc.txt` gives the KiB asked for
+(`memory-hold-kib`) and the KiB actually held (`held-kib`).
 
 Switching profile rebuilds every object. A release build given an
 `ENABLE_DIAGNOSTIC_*` macro stops with an `#error`, and

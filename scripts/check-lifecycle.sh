@@ -57,6 +57,53 @@ then
   fail "Menu clock transitions are not guarded by link state"
 fi
 
+# Game, menu, browser and resume run at the configured clock; only a link
+# session and ROM loading pin 333 MHz, and only quit() lowers it, after
+# the last log flush.
+other_clocks=$(git grep -ohE --untracked 'set_cpu_clock\([^)]*\)' -- source/src | \
+  grep -Ev '\((option_clock_speed|u32 psp_clock)\)$' | sort | tr '\n' ' ')
+if [ "$other_clocks" != "set_cpu_clock(PSP_CLOCK_222) \
+set_cpu_clock(PSP_CLOCK_333) set_cpu_clock(PSP_CLOCK_333) " ] || \
+   ! body '/^void quit(void)/,/^}/p' source/src/main.c | \
+  grep -Eq 'set_cpu_clock\(PSP_CLOCK_222\)'
+then
+  fail "A path runs at a clock other than the configured one"
+fi
+
+# Each |-separated step appears in the main.c range, in that order.
+in_order()
+{
+  body "$1" source/src/main.c | awk -v steps="$2" '
+    BEGIN { n = split(steps, step, "|"); i = 1 }
+    i <= n && index($0, step[i]) { i++ }
+    END { exit i <= n }
+  '
+}
+
+# Every clock change logs the Media Engine's clock at the request it ran
+# under, sets the bus at half the CPU, starts a new Media Engine stretch,
+# and logs the clock asked for with the CPU and bus clocks read back; quit
+# logs the last stretch before the exit flush.
+if ! in_order '/^int set_cpu_clock(u32 psp_clock)/,/^}/p' \
+     'main_log_me_clock();|(mhz, mhz, mhz / 2);|video_me_clock_changed();|main_clock_requested_mhz = mhz;|cpu_ticks, 18,' || \
+   ! in_order '/^void quit(void)/,/^}/p' \
+     'main_log_me_clock();|runtime_log_psp_flush(RUNTIME_LOG_FLUSH_EXIT);'
+then
+  fail "A clock change or quit does not set or log the clocks in order"
+fi
+
+# The configured clock is applied before the file browser, on resume and
+# when a link fails to start.
+if ! in_order '/^static void setup_main(/,/^}/p' \
+     'load_config_file();|set_cpu_clock(option_clock_speed);' || \
+   ! in_order '/^void main_power_service(void)/,/^}/p' \
+     'power_lifecycle_take_resume(|set_cpu_clock(option_clock_speed);' || \
+   ! in_order '/^static int main_link_start(int host)/,/^}/p' \
+     'if(!psp_adhoc_start(host))|set_cpu_clock(option_clock_speed);|return 0;'
+then
+  fail "The configured clock is not applied at startup, on resume or after a failed link"
+fi
+
 # The PSP never time-slices equal priorities: the network stack and the
 # link worker must run above the emulator thread (32), or reception stops.
 for name in PSP_ADHOC_STACK_PRIORITY PSP_ADHOC_CONTROL_PRIORITY \

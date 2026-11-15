@@ -89,11 +89,10 @@ def fixture_v3() -> bytes:
     return bytes(header) + payload
 
 
-def fixture_v6(build_id: bytes = b"0123456789ab-dirty") -> bytes:
+def fixture_v6(build_id: bytes = b"0123456789ab-dirty",
+               record: bytes = struct.pack(
+                   ">QIIHBBIII", 110, 7, 1, 18, 1, 0, 2, 1, 0)) -> bytes:
     """Version 6 log: the 96-byte header with a build id, one record."""
-    record = struct.pack(
-        ">QIIHBBIII", 110, 7, 1, 18, 1, 0, 2, 1, 0
-    )
     header = bytearray(96)
     struct.pack_into(
         ">4sHHHHHHIIIIIIQQ", header, 0, b"GBRL", 6, 96, 32, 0, 1, 0,
@@ -246,6 +245,126 @@ class RuntimeLogDecoderTests(unittest.TestCase):
             decoder.describe({"event": "link-counters", "flags": 12,
                               "values": [1, 8116, 2]}),
             "cpu-core=new blocks-compiled=8116 code-flushes=2")
+
+    def test_describes_cpu_clock_records(self):
+        main_c = (Path(__file__).parents[1] / "source" / "src" /
+                  "main.c").read_text(encoding="utf-8")
+        # Requested, then CPU, then bus, as the decoder reads them.
+        self.assertRegex(
+            main_c,
+            r"cpu_ticks, 18,\s+mhz, "
+            r"\(u32\)scePowerGetCpuClockFrequencyInt\(\),\s+"
+            r"\(u32\)scePowerGetBusClockFrequencyInt\(\)\);")
+        cases = [
+            ([333, 333, 166], "requested=333MHz cpu=333MHz bus=166MHz"),
+            ([222, 222, 111], "requested=222MHz cpu=222MHz bus=111MHz"),
+            ([333, 332, 167], "requested=333MHz cpu=332MHz bus=167MHz"),
+            ([333, 331, 166],
+             "requested=333MHz cpu=331MHz bus=166MHz MISMATCH"),
+            ([333, 333, 164],
+             "requested=333MHz cpu=333MHz bus=164MHz MISMATCH"),
+            ([333, 222, 111],
+             "requested=333MHz cpu=222MHz bus=111MHz MISMATCH"),
+            ([333, 300, 166],
+             "requested=333MHz cpu=300MHz bus=166MHz MISMATCH"),
+            ([333, 333, 111],
+             "requested=333MHz cpu=333MHz bus=111MHz MISMATCH"),
+            ([333, 0x8002013A, 166],
+             "requested=333MHz cpu=-2147352262MHz bus=166MHz MISMATCH"),
+        ]
+        for values, expected in cases:
+            with self.subTest(values=values):
+                self.assertEqual(
+                    decoder.describe({"event": "link-counters", "flags": 18,
+                                      "values": values}),
+                    "cpu-clock " + expected)
+
+    def test_describes_me_clock_records(self):
+        main_c = (Path(__file__).parents[1] / "source" / "src" /
+                  "main.c").read_text(encoding="utf-8")
+        # Requested MHz, then 2 * counter ticks / us rounded, then ms.
+        self.assertRegex(
+            main_c,
+            r"cpu_ticks, 19,\s+main_clock_requested_mhz, "
+            r"\(u32\)\(\(2 \* ticks \+ us / 2\) / us\),\s+"
+            r"\(u32\)\(us / 1000\)\);")
+        cases = [
+            ([333, 333, 61234], "requested=333MHz me=333MHz over=61.2s"),
+            ([222, 222, 2000], "requested=222MHz me=222MHz over=2.0s"),
+            ([333, 332, 1000], "requested=333MHz me=332MHz over=1.0s"),
+            ([333, 334, 1000], "requested=333MHz me=334MHz over=1.0s"),
+            ([333, 331, 1000],
+             "requested=333MHz me=331MHz over=1.0s MISMATCH"),
+            ([333, 335, 1000],
+             "requested=333MHz me=335MHz over=1.0s MISMATCH"),
+            ([333, 222, 5000],
+             "requested=333MHz me=222MHz over=5.0s MISMATCH"),
+            # Under a millisecond is too short to trust.
+            ([333, 333, 0], "requested=333MHz me=unmeasured"),
+        ]
+        for values, expected in cases:
+            with self.subTest(values=values):
+                self.assertEqual(
+                    decoder.describe({"event": "link-counters", "flags": 19,
+                                      "values": values}),
+                    "me-clock " + expected)
+
+    def test_describes_memory_stats_records(self):
+        # flags = point << 1 | part; values in KiB.
+        cases = [
+            (2, [3072, 1024, 8192],
+             "point=boot image=3072KiB heap-free=1024KiB heap-largest=8192KiB"),
+            (3, [20480, 12288, 32768],
+             "point=boot kernel-total=20480KiB kernel-largest=12288KiB "
+             "rom-buffer=32768KiB rom-pages=1024"),
+            (11, [0, 0, 4096],
+             "point=capture-stop kernel-total=0KiB kernel-largest=0KiB "
+             "rom-buffer=4096KiB rom-pages=128"),
+            (14, [1, 2, 3],
+             "point=7 image=1KiB heap-free=2KiB heap-largest=3KiB"),
+        ]
+        for flags, values, expected in cases:
+            with self.subTest(flags=flags):
+                self.assertEqual(
+                    decoder.describe({"event": "memory-stats", "flags": flags,
+                                      "values": values}),
+                    expected)
+
+    def test_decodes_memory_stats_in_a_version_six_log(self):
+        record = struct.pack(
+            ">QIIHBBIII", 110, 7, 1, 26, 1, 5, 21504, 12288, 16384)
+        snapshot = decoder.parse_snapshot(fixture_v6(record=record))
+
+        self.assertEqual(snapshot["records"][0]["event"], "memory-stats")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            decoder.print_snapshot(snapshot)
+        self.assertIn(
+            "memory-stats            point=rom-load kernel-total=21504KiB "
+            "kernel-largest=12288KiB rom-buffer=16384KiB rom-pages=512\n",
+            output.getvalue())
+
+    # A bad merge of event types appended by two branches shows up here.
+    def test_event_names_match_the_c_enum(self):
+        header = (Path(__file__).parents[1] / "source" / "src" /
+                  "runtime_log.h").read_text()
+        body = header.split("typedef enum", 2)[2].split("} RuntimeLogEventType;")[0]
+        names = re.findall(r"^\s*RUNTIME_LOG_EVENT_(\w+)", body, re.M)
+        self.assertIn("RUNTIME_LOG_EVENT_SESSION_START = 1", body)
+        self.assertEqual(
+            decoder.EVENTS,
+            {index: name.lower().replace("_", "-")
+             for index, name in enumerate(names, 1)})
+
+    def test_memory_points_match_the_c_enum(self):
+        header = (Path(__file__).parents[1] / "source" / "src" /
+                  "mem_stats.h").read_text()
+        body = header.split("typedef enum", 1)[1].split("} MemStatsPoint;")[0]
+        names = re.findall(r"^\s*MEM_STATS_(\w+)", body, re.M)
+        self.assertIn("MEM_STATS_BOOT = 1", body)
+        self.assertEqual(
+            decoder.MEMORY_POINTS,
+            ["none"] + [name.lower().replace("_", "-") for name in names])
 
     def test_exact_renderer_names_match_the_c_enum(self):
         header = (Path(__file__).parents[1] / "source" / "src" /
