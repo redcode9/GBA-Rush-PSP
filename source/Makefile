@@ -25,7 +25,7 @@ EXTRA_TARGETS = EBOOT.PBP
 
 # Headers that every main object is rebuilt on when they change.
 COMMON_FILE = \
- common.h build_profile.h adhoc_peer.h codebreaker.h dynarec_worklist.h fast_forward_audio.h fast_forward_policy.h gba_sio.h gba_ppu.h gba_ppu_log.h video_me.h link_audio_wait.h link_cable.h link_net.h power_lifecycle.h mem_stats.h runtime_log.h runtime_log_psp.h runtime_log_store.h sound_math.h video_adaptive.h video_mosaic.h perf_metrics.h perf_monitor.h perf_report.h menu_model.h menu_layout.h menu_catalog.h config_model.h config_store.h save_format.h save_store.h psp_adhoc.h state_hash.h \
+ common.h build_profile.h adhoc_peer.h codebreaker.h dynarec_worklist.h fast_forward_audio.h fast_forward_policy.h gba_sio.h gba_ppu.h gba_ppu_log.h video_me.h link_audio_wait.h link_cable.h link_net.h power_lifecycle.h mem_stats.h rewind_ring.h runtime_log.h runtime_log_psp.h runtime_log_store.h sound_math.h video_adaptive.h video_mosaic.h perf_metrics.h perf_monitor.h perf_report.h menu_model.h menu_layout.h menu_catalog.h config_model.h config_store.h save_format.h save_store.h psp_adhoc.h state_hash.h \
  cpu.h memory.h video.h psp_video.h input.h sound.h main.h message.h mh_print.h gui.h zip.h zip_rom.h load_progress.h png.h \
  ku_bridge.h exception.h ch_print.h \
  arm_core.h arm_ir.h arm_mips.h arm_gba.h
@@ -39,7 +39,7 @@ MAINOBJS = \
  mips_stub.o video_blend_mips.o \
  arm_decode.o arm_interp.o arm_mips.o arm_gba.o \
  ku_bridge.o exception.o cheats.o codebreaker.o ch_print.o \
- adhoc_peer.o boxart.o dynarec_worklist.o fast_forward_audio.o fast_forward_policy.o gba_sio.o link_audio_wait.o link_cable.o link_net.o power_lifecycle.o mem_stats.o runtime_log.o runtime_log_psp.o runtime_log_store.o sound_math.o video_adaptive.o perf_metrics.o perf_monitor.o perf_report.o menu_model.o menu_layout.o menu_catalog.o config_model.o config_store.o save_format.o save_store.o psp_adhoc.o state_hash.o
+ adhoc_peer.o boxart.o dynarec_worklist.o fast_forward_audio.o fast_forward_policy.o gba_sio.o link_audio_wait.o link_cable.o link_net.o power_lifecycle.o mem_stats.o rewind_ring.o runtime_log.o runtime_log_psp.o runtime_log_store.o sound_math.o video_adaptive.o perf_metrics.o perf_monitor.o perf_report.o menu_model.o menu_layout.o menu_catalog.o config_model.o config_store.o save_format.o save_store.o psp_adhoc.o state_hash.o
 
 # make DIAGNOSTIC_CORE_PROFILE=1 samples where the new core spends its time
 # during a benchmark capture and writes it beside the report (arm_gba.c).
