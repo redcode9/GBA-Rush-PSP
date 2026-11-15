@@ -10,9 +10,9 @@
 ## 1.5
 
 - [x] **ENG-8.3** — Test di proprietà sulla macchina a stati power · S, 0,5 gg · dipende da: SAV-7.6 · PSP: no · _CI verde su 19a06b1 (run 42722774446): test_power_lifecycle passa in `make check` e in `make test-sanitize` con ASan di gcc_
-- [ ] **SAV-7.1** — Finestra di sospensione senza allocazioni né dialoghi · S, 1 gg · dipende da: SAV-2.5 · PSP: sì · aspetta: SAV-2.5 (`wip/save-store`)
-- [ ] **SAV-7.2** — Batteria in sospeso scritta per prima alla sospensione · S, 0,5 gg · dipende da: SAV-2.3 · PSP: sì · aspetta: SAV-2.3 (`wip/save-store`)
-- [ ] **SAV-7.3** — POWER tenuto durante l'avvio e la chiusura del link · S, 0,5 gg · dipende da: SAV-3.2 · PSP: sì · aspetta: SAV-3.2 (`wip/save-store`)
+- [ ] **SAV-7.1** — Finestra di sospensione senza allocazioni né dialoghi · S, 1 gg · dipende da: SAV-2.5 · PSP: sì · **subito**: il codice di SAV-2.5 è in main (ef98f28)
+- [ ] **SAV-7.2** — Batteria in sospeso scritta per prima alla sospensione · S, 0,5 gg · dipende da: SAV-2.3 · PSP: sì · **subito**: SAV-2.3 è in main (ef98f28)
+- [ ] **SAV-7.3** — POWER tenuto durante l'avvio e la chiusura del link · S, 0,5 gg · dipende da: SAV-3.2 · PSP: sì · **subito**: SAV-3.2 è in main (ef98f28)
 - [ ] **SAV-7.5** — Matrice hardware di sospensione e ripresa · M, 2,5 gg · dipende da: SAV-7.1, SAV-7.2, SAV-7.3, SAV-7.6, SAV-2.6 · PSP: sì
 - [ ] **SAV-7.6** — Ingresso in standby con ogni combinazione di bit e chiusura del menu senza attese · S, 1 gg · dipende da: — · PSP: sì · **subito** · _codice pronto (5a65e63), manca la prova su PSP_
 - [ ] **SAV-8.1** — Esperimento: il POWER aspetta l'unlock? · S, 1 gg · dipende da: SAV-7.5 · PSP: sì
