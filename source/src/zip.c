@@ -87,7 +87,7 @@ s32 load_file_zip(char *filename)
 
   // An empty ROM must fail here: load_gamepak()'s callers take 0 as success.
   if (result != ZIP_ROM_OK || rom_size == 0)
-    return -3;
+    return LOAD_GAMEPAK_ZIP_DAMAGED;
 
   // The bytes after the entry (the central directory) are never read: show
   // the full bar before the game starts.

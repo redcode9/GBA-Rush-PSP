@@ -34,15 +34,16 @@
  * (Panasonic 64 KiB, Sanyo 128 KiB), writes only clearing bits. The .sav
  * file gets the chip as GBA Rush would have last saved it: as it stood
  * once 10 frames had passed without a write, so stopping in the middle of
- * a write is a power cut that keeps the previous state.
+ * a write is a power cut that keeps the previous state. The ROM starts in
+ * system mode with the stacks the BIOS sets up, as GBA Rush starts it.
  *
  * Not modelled: sound, serial, keys (none held), the PPU, HBlank and
  * VCOUNT IRQs, DMA0-2, DMA start modes other than immediate and DMA
- * timing, open bus outside the BIOS (reads 0), STOP, cycle-exact
- * interrupt entry (an IRQ raised during a block waits for its end), a
- * timer IRQ waking a halt before the next VBlank, the time the BIOS
- * itself takes, and EEPROM bit by bit (it is handled per DMA request, the
- * way the ROMs use it).
+ * timing, open bus outside the BIOS (reads 0, as do addresses past the
+ * I/O registers, from 4000400h), STOP, cycle-exact interrupt entry (an
+ * IRQ raised during a block waits for its end), a timer IRQ waking a halt
+ * before the next VBlank, the time the BIOS itself takes, and EEPROM bit
+ * by bit (it is handled per DMA request, the way the ROMs use it).
  *
  * Usage: rom_run [--bios FILE] [--frames N] [--save FILE] [--screen FILE]
  *        ROM
@@ -465,10 +466,14 @@ static void io_write16(uint32_t reg, uint32_t value)
     dma3();
 }
 
+/* The registers end at 40003FEh; past them nothing answers (open bus,
+   read as 0). */
 static uint32_t io_read(uint32_t address, unsigned size)
 {
   uint32_t reg = address & 0x3FE;
 
+  if((address & 0xFFFFFF) >= 0x400)
+    return 0;
   if(size == 4)
     return io_read16(reg) | io_read16(reg + 2) << 16;
   if(size == 2)
@@ -480,6 +485,8 @@ static void io_write(uint32_t address, unsigned size, uint32_t value)
 {
   uint32_t reg = address & 0x3FE;
 
+  if((address & 0xFFFFFF) >= 0x400)
+    return;
   if(size == 4)
   {
     io_write16(reg, value);
@@ -850,7 +857,12 @@ int main(int argc, char **argv)
   core.map[0x7] = (ArmRegion){ oam, oam, 0x3FF };
   for(i = 0x8; i <= 0xC; i++)
     core.map[i] = (ArmRegion){ rom, NULL, rom_size - 1 };
-  /* Started directly, as GBA Rush does unless "Boot from BIOS" is on. */
+  /* Started directly, as GBA Rush does unless "Boot from BIOS" is on:
+     system mode with the stacks the BIOS would have set up. */
+  *arm_core_register(&core, ARM_MODE_IRQ, 13) = 0x03007FA0;
+  *arm_core_register(&core, ARM_MODE_SUPERVISOR, 13) = 0x03007FE0;
+  arm_core_set_cpsr(&core, 0x1F);
+  core.v[13] = 0x03007F00;
   core.v[15] = 0x08000000;
 
   run((long long)frames * FRAME_CYCLES);

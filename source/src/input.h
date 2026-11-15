@@ -97,6 +97,7 @@ u32 update_input(void);
 void rebuild_fast_forward_button_mask(void);
 
 u32 get_pad_input(u32 mask);
+void input_hold_until_released(u32 buttons);
 
 GUI_ACTION_TYPE get_gui_input(void);
 GUI_ACTION_TYPE get_gui_input_fs_hold(u32 button_id);
@@ -108,6 +109,8 @@ int input_diagnostic_trace_encode(u8 *output, size_t output_size,
  size_t *written);
 int input_diagnostic_trace_begin_replay(const u8 *encoded,
  size_t encoded_size);
+u32 input_diagnostic_trace_begin_bench(void);
+u32 input_diagnostic_trace_checksum(void);
 void input_diagnostic_trace_cancel(void);
 InputTraceState input_diagnostic_trace_state(void);
 InputTraceError input_diagnostic_trace_error(void);

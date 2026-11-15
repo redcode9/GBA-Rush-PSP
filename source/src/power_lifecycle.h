@@ -20,6 +20,35 @@
 
 #include <stdint.h>
 
+/* Power callback bits, copied from libpower/psppower.h (PSP only); main.c
+   checks at compile time that the two agree. */
+#define POWER_LIFECYCLE_BIT_POWER_SWITCH 0x80000000u
+#define POWER_LIFECYCLE_BIT_RESUME_COMPLETE 0x00040000u
+#define POWER_LIFECYCLE_BIT_RESUMING 0x00020000u
+#define POWER_LIFECYCLE_BIT_SUSPENDING 0x00010000u
+
+/* How a suspend was entered, kept in PowerLifecycle.suspended (0 while
+   running). A switch-only entry becomes a SUSPENDING one if that follows. */
+#define POWER_LIFECYCLE_ENTRY_SWITCH 1u
+#define POWER_LIFECYCLE_ENTRY_SUSPENDING 2u
+#define POWER_LIFECYCLE_ENTRY_MASK 3u
+/* power_lifecycle_classify() ORs this onto the entry kind on resume. */
+#define POWER_LIFECYCLE_ACTION_RESUME 4u
+/* Runtime log outcome of a switch-only entry that timed out; 0-2 are the
+   entry kinds above. */
+#define POWER_LIFECYCLE_SWITCH_EXPIRED 3u
+
+/* A switch-only entry with neither SUSPENDING nor RESUME_COMPLETE after it
+   ends after this long, measured by the emulator thread. */
+#define POWER_LIFECYCLE_SWITCH_TIMEOUT_US 2000000u
+/* audio_result of a resume the callback did not do (the switch timed out):
+   the emulator thread must reserve the audio channel itself. PSP error
+   codes never take this value. */
+#define POWER_LIFECYCLE_AUDIO_NOT_RESERVED INT32_MIN
+/* Raw callback words kept until the emulator thread logs them; the slot the
+   next callback writes is never trusted, so up to 15 wait safely. */
+#define POWER_LIFECYCLE_RAW_SLOTS 16u
+
 typedef enum
 {
   POWER_LIFECYCLE_RUNNING,
@@ -29,24 +58,53 @@ typedef enum
 
 typedef struct
 {
-  /* Written by the power callback. */
+  /* Written by the power callback; power_lifecycle_expire_switch also
+     writes suspended (by compare-and-swap), audio_result and
+     resume_sequence (by atomic add) from the emulator thread. */
   volatile uint32_t suspended;
   volatile uint32_t save_sequence;
   volatile uint32_t resume_sequence;
   volatile int32_t audio_result;
+  /* Written by the power callback only: each callback's raw bits, in the
+     slot of its index, and the callbacks counted since init. */
+  volatile uint32_t raw_bits[POWER_LIFECYCLE_RAW_SLOTS];
+  volatile uint32_t raw_callbacks;
   /* Written by the emulator thread. */
   uint32_t handled_save_sequence;
   uint32_t handled_resume_sequence;
+  uint32_t taken_callbacks;
+  /* The switch-only timeout's clock: its start, and resume_sequence then. */
+  uint64_t switch_clock_us;
+  uint32_t switch_clock_sequence;
 } PowerLifecycle;
 
 void power_lifecycle_init(PowerLifecycle *lifecycle);
-/* Power callback side. audio_result is what reopening audio returned. */
-void power_lifecycle_suspend(PowerLifecycle *lifecycle, int request_save);
+/* Power callback side. classify() turns callback bits into an entry kind
+   (or 0) plus POWER_LIFECYCLE_ACTION_RESUME. suspend() takes that entry
+   kind; audio_result is what reopening audio returned. */
+uint32_t power_lifecycle_classify(uint32_t bits);
+void power_lifecycle_suspend(PowerLifecycle *lifecycle, uint32_t entry,
+ int request_save);
 void power_lifecycle_resume(PowerLifecycle *lifecycle, int audio_result);
+void power_lifecycle_note_bits(PowerLifecycle *lifecycle, uint32_t bits);
 /* Emulator thread side. The take functions return 1 once per event. */
 PowerLifecycleState power_lifecycle_state(const PowerLifecycle *lifecycle);
 int power_lifecycle_take_save(PowerLifecycle *lifecycle);
 int power_lifecycle_take_resume(PowerLifecycle *lifecycle,
  int *audio_result);
+/* Starts the switch-only timeout at now_us, when a park begins. */
+void power_lifecycle_start_switch_clock(PowerLifecycle *lifecycle,
+ uint64_t now_us);
+/* Ends a switch-only entry once the timeout has passed on that clock, as a
+   resume with POWER_LIFECYCLE_AUDIO_NOT_RESERVED. Returns 1 if it did. If an
+   entry ended since the clock started, it restarts the clock instead, so a
+   switch entry that lands later in the same park gets its own timeout. */
+int power_lifecycle_expire_switch(PowerLifecycle *lifecycle, uint64_t now_us);
+/* Takes the oldest callback not taken yet: stores its raw bits and its
+   number (the first callback is 1) and returns 1, or returns 0 if there is
+   none. Callbacks overwritten before they were taken leave a gap in the
+   numbers. */
+int power_lifecycle_take_bits(PowerLifecycle *lifecycle, uint32_t *bits,
+ uint32_t *number);
 
 #endif /* POWER_LIFECYCLE_H */

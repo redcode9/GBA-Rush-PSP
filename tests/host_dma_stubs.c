@@ -1,18 +1,27 @@
-// Host link stubs for tests/test_perf_dma_probe.c.
+// Host link stubs for tests/test_perf_dma_probe.c,
+// tests/test_memory_backup.c and tests/test_eeprom.c.
 //
 // memory.c is compiled on the host against the real PSP SDK headers (see
 // the test_perf_dma_probe Makefile target). Everything memory.c references
 // outside its own translation unit is stubbed here so the production
-// dma_transfer() path can be exercised in a host test.
+// dma_transfer() and save paths can be exercised in a host test.
 //
-// Two stubs have behavior. The system clock: host_stub_set_time() arms two
-// timestamps, so the first sceKernelGetSystemTimeLow() call of a transfer
-// returns t0 and the second returns t1, giving a deterministic measured DMA
-// duration of (t1 - t0) microseconds. And the ROM file reads used by the
-// paged ROM test, controlled by host_stub_rom_io().
+// A few stubs have behavior. The system clock: host_stub_set_time() arms
+// two timestamps, so the first sceKernelGetSystemTimeLow() call of a
+// transfer returns t0 and the second returns t1, giving a deterministic
+// measured DMA duration of (t1 - t0) microseconds. The ROM file reads: the
+// ROM the test put in gamepak_rom for load_gamepak(), or the paged ROM
+// test's pattern once host_stub_rom_io() is called. And for
+// load_gamepak(): the ROM file size (host_stub_file_length()), the answers
+// of the yes/no prompts (host_stub_yesno()) and a working change_ext().
+// And the runtime log, which keeps the last SAVE_LOAD, SAVE_WRITE and
+// SAVE_LINK_COPY events (host_stub_save_load(), host_stub_save_write(),
+// host_stub_save_link_copy()).
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "runtime_log_psp.h"
 
 /* --- Controllable system clock ------------------------------------------ */
 
@@ -41,10 +50,85 @@ uint64_t ticker(void)
   return host_stub_t1;
 }
 
-/* load_gamepak()'s stage times; the DMA test never loads a ROM. */
+/* load_gamepak()'s stage times, all 0 ms in these tests. */
 uint64_t sceKernelGetSystemTimeWide(void)
 {
   return 0;
+}
+
+/* --- Runtime log --------------------------------------------------------- */
+
+static int host_save_loads;
+static uint8_t host_save_load_flags;
+static uint32_t host_save_load_values[3];
+static int host_save_writes;
+static uint8_t host_save_write_flags;
+static uint32_t host_save_write_values[3];
+static int host_save_link_copies;
+static uint8_t host_save_link_copy_flags;
+static uint32_t host_save_link_copy_values[3];
+
+void runtime_log_psp_main(RuntimeLogEventType type, uint32_t emulated_cycle,
+ uint8_t flags, uint32_t value0, uint32_t value1, uint32_t value2)
+{
+  (void)emulated_cycle;
+  if(type == RUNTIME_LOG_EVENT_SAVE_WRITE)
+  {
+    host_save_writes++;
+    host_save_write_flags = flags;
+    host_save_write_values[0] = value0;
+    host_save_write_values[1] = value1;
+    host_save_write_values[2] = value2;
+  }
+  if(type == RUNTIME_LOG_EVENT_SAVE_LINK_COPY)
+  {
+    host_save_link_copies++;
+    host_save_link_copy_flags = flags;
+    host_save_link_copy_values[0] = value0;
+    host_save_link_copy_values[1] = value1;
+    host_save_link_copy_values[2] = value2;
+  }
+  if(type != RUNTIME_LOG_EVENT_SAVE_LOAD)
+    return;
+  host_save_loads++;
+  host_save_load_flags = flags;
+  host_save_load_values[0] = value0;
+  host_save_load_values[1] = value1;
+  host_save_load_values[2] = value2;
+}
+
+/* SAVE_WRITE events so far; the last one's flags and values. */
+int host_stub_save_write(uint8_t *flags, uint32_t values[3])
+{
+  *flags = host_save_write_flags;
+  memcpy(values, host_save_write_values, sizeof(host_save_write_values));
+  return host_save_writes;
+}
+
+/* SAVE_LINK_COPY events so far; the last one's flags and values. */
+int host_stub_save_link_copy(uint8_t *flags, uint32_t values[3])
+{
+  *flags = host_save_link_copy_flags;
+  memcpy(values, host_save_link_copy_values,
+   sizeof(host_save_link_copy_values));
+  return host_save_link_copies;
+}
+
+/* SAVE_LOAD events so far; the last one's flags and values. */
+int host_stub_save_load(uint8_t *flags, uint32_t values[3])
+{
+  *flags = host_save_load_flags;
+  memcpy(values, host_save_load_values, sizeof(host_save_load_values));
+  return host_save_loads;
+}
+
+/* load_gamepak()'s stage times, not checked here. */
+void runtime_log_load_stages(uint64_t start_us,
+ const uint64_t end_us[RUNTIME_LOG_LOAD_STAGE_COUNT], uint32_t value[3])
+{
+  (void)start_us;
+  (void)end_us;
+  value[0] = value[1] = value[2] = 0;
 }
 
 /* --- Data symbols -------------------------------------------------------- */
@@ -65,10 +149,13 @@ uint8_t *memory_map_read[8 * 1024] = { 0 };
 uint8_t *memory_map_write[8 * 1024] = { 0 };
 uint32_t option_boot_mode = 0;
 uint32_t option_language = 0;
+uint32_t option_clock_speed = 3;
 uint32_t savestate_slot = 0;
 char dir_save[512] = { 0 };
 char dir_state[512] = { 0 };
 char main_path[512] = { 0 };
+/* The MSG strings: never read, only passed to the stubs below. */
+const char *message[5][1024] = { { 0 } };
 
 /* --- File I/O (only the paged ROM reads are reached) --------------------- */
 
@@ -85,14 +172,19 @@ int psp_fclose(void *file)
   return 0;
 }
 
-/* Fake ROM file: every byte of 32 KiB page n reads as n + 1. A negative
-   read limit fails every read; a smaller one makes reads short. */
+/* Fake ROM file. Until host_stub_rom_io() is called it holds the ROM the
+   test put in gamepak_rom, so load_gamepak()'s whole-ROM read succeeds and
+   leaves it as it is. After that every byte of 32 KiB page n reads as
+   n + 1; a negative read limit fails every read; a smaller one makes
+   reads short. */
 static int64_t host_rom_offset;
+static int host_rom_paged;
 static int host_rom_limit = -1;
 static int host_rom_seek_fails;
 
 void host_stub_rom_io(int read_limit, int seek_fails)
 {
+  host_rom_paged = 1;
   host_rom_limit = read_limit;
   host_rom_seek_fails = seek_fails;
 }
@@ -112,6 +204,8 @@ int64_t sceIoLseek(int fd, int64_t offset, int whence)
 int sceIoRead(int fd, void *buf, int size)
 {
   (void)fd;
+  if(!host_rom_paged)
+    return size;
   if(host_rom_limit < 0)
     return -1;
   if(size > host_rom_limit)
@@ -129,10 +223,70 @@ int sceIoWrite(int fd, const void *buf, int size)
   return -1;
 }
 
+/* The ROM size load_gamepak() reads; the .sav goes through backup_io. */
+static int host_file_length;
+
+void host_stub_file_length(int length)
+{
+  host_file_length = length;
+}
+
 int file_length(const char *path)
 {
   (void)path;
-  return 0;
+  return host_file_length;
+}
+
+/* main.c's: replaces the extension after the last dot. */
+void change_ext(const char *src, char *buffer, const char *extension)
+{
+  char *dot;
+
+  strcpy(buffer, src);
+  dot = strrchr(buffer, '.');
+  if(dot != NULL)
+    strcpy(dot, extension);
+}
+
+/* Scripted yes/no prompts: 0 is yes, as in main.c. Past the script every
+   prompt answers no. Each prompt also notes whether a ROM counted as
+   loaded (memory.c's gamepak_filename), which a suspend there would save
+   an AUTO state for. */
+extern char gamepak_filename[];
+static const unsigned *host_yesno_answers;
+static int host_yesno_count;
+static int host_yesno_asked;
+static int host_yesno_saw_rom;
+
+void host_stub_yesno(const unsigned *answers, int count)
+{
+  host_yesno_answers = answers;
+  host_yesno_count = count;
+  host_yesno_asked = 0;
+  host_yesno_saw_rom = 0;
+}
+
+int host_stub_yesno_asked(void)
+{
+  return host_yesno_asked;
+}
+
+int host_stub_yesno_saw_rom(void)
+{
+  return host_yesno_saw_rom;
+}
+
+unsigned yesno_dialog(const char *text)
+{
+  (void)text;
+  if(gamepak_filename[0] != '\0')
+    host_yesno_saw_rom = 1;
+  if(host_yesno_asked >= host_yesno_count)
+  {
+    host_yesno_asked++;
+    return 1;
+  }
+  return host_yesno_answers[host_yesno_asked++];
 }
 
 void *safe_malloc(size_t size)
@@ -201,7 +355,6 @@ void arm_gba_written(uint32_t address, uint32_t size)
 /* --- Emulation support (never reached by the DMA test path) --------------- */
 
 void add_smc_gate(void) {}
-void change_ext(void) {}
 void clear_cheats(void) {}
 void clear_metadata_area(void) {}
 void cpu_read_savestate(void) {}
@@ -227,14 +380,11 @@ void main_read_savestate(void) {}
 void main_write_mem_savestate(void) {}
 void load_game_config_file(void) {}
 int main_link_active(void) { return 0; }
-void message(void) {}
 void partial_clear_metadata(void) {}
 void print_string(void) {}
 void print_string_gbk(void) {}
 void quit(void) {}
 void rebuild_fast_forward_button_mask(void) {}
-void runtime_log_load_stages(void) {}
-void runtime_log_psp_main(void) {}
 void set_cpu_clock(void) {}
 void sound_control_high(void) {}
 void sound_control_low(void) {}
@@ -248,4 +398,3 @@ void sound_write_mem_savestate(void) {}
 void video_io_written(void) {}
 void video_read_savestate(void) {}
 void video_write_mem_savestate(void) {}
-void yesno_dialog(void) {}
