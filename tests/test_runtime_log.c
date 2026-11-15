@@ -377,6 +377,49 @@ static void test_version_five_still_validates(void)
   assert(!runtime_log_validate(old, old_size, NULL, NULL, NULL, NULL));
 }
 
+/* A memory measurement is two MEMORY_STATS records in the main ring
+   (flags = point << 1 | part, KiB values, see mem_stats.h). They encode
+   with their type and flags intact, and the format stays version 6. */
+static void test_memory_stats_records(void)
+{
+  uint8_t encoded[RUNTIME_LOG_MAX_FILE_SIZE];
+  RuntimeLogMetadata metadata;
+  RuntimeLogRing main_ring;
+  RuntimeLogRing network_ring;
+  RuntimeLogRing critical_ring;
+  uint16_t main_count = 0;
+  const uint8_t *record;
+  size_t written = 0;
+
+  /* Appended after LINK_BENCHMARK; decode_runtime_log.py names 26. */
+  assert(RUNTIME_LOG_EVENT_MEMORY_STATS == 26);
+  memset(&metadata, 0, sizeof(metadata));
+  runtime_log_ring_init(&main_ring, RUNTIME_LOG_SOURCE_MAIN);
+  runtime_log_ring_init(&network_ring, RUNTIME_LOG_SOURCE_NETWORK);
+  runtime_log_ring_init(&critical_ring, RUNTIME_LOG_SOURCE_CRITICAL);
+  runtime_log_ring_emit(&main_ring, 110, 7, RUNTIME_LOG_EVENT_MEMORY_STATS,
+   2, 3072, 1024, 8192);
+  runtime_log_ring_emit(&main_ring, 110, 7, RUNTIME_LOG_EVENT_MEMORY_STATS,
+   3, 20480, 12288, 32768);
+  assert(runtime_log_encode(&main_ring, &network_ring, &critical_ring,
+   &metadata, encoded, sizeof(encoded), &written));
+  assert(written == RUNTIME_LOG_HEADER_SIZE + 2u * RUNTIME_LOG_RECORD_SIZE);
+  assert(runtime_log_validate(encoded, written, NULL, &main_count, NULL,
+   NULL));
+  assert(main_count == 2);
+  assert(read_u16(encoded + 4) == 6u);
+
+  /* Type at 16, source at 18, flags at 19, values from 20. */
+  record = encoded + RUNTIME_LOG_HEADER_SIZE;
+  assert(read_u16(record + 16) == RUNTIME_LOG_EVENT_MEMORY_STATS);
+  assert(record[18] == RUNTIME_LOG_SOURCE_MAIN && record[19] == 2u);
+  assert(read_u32(record + 20) == 3072u && read_u32(record + 28) == 8192u);
+  record += RUNTIME_LOG_RECORD_SIZE;
+  assert(read_u16(record + 16) == RUNTIME_LOG_EVENT_MEMORY_STATS);
+  assert(record[19] == 3u);
+  assert(read_u32(record + 24) == 12288u && read_u32(record + 28) == 32768u);
+}
+
 /* NULL arguments are rejected. The encode call fails on its NULL critical
    ring before the one-byte-short buffer is checked, so that limit is not
    covered here. */
@@ -491,6 +534,7 @@ int main(void)
   test_snapshot_at_ordinal_limit_is_bounded();
   test_encode_and_validate();
   test_version_five_still_validates();
+  test_memory_stats_records();
   test_invalid_arguments();
   test_maximum_current_snapshot_size();
   test_store_preserves_previous_log_on_failed_promote();

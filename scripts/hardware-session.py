@@ -173,7 +173,8 @@ def session_sheet(ids, catalog):
         for name in ("Steps", "Pass"):
             lines.append(textwrap.fill(
              f"{name}: {test[name]}", 78, initial_indent="    ",
-             subsequent_indent="      "))
+             subsequent_indent="      ", break_long_words=False,
+             break_on_hyphens=False))
         lines.append("")
     lines.append("Record each run in docs/HARDWARE-RESULTS.md: "
                  + " | ".join(RESULTS_HEADER))

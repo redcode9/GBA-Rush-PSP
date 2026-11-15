@@ -2994,7 +2994,9 @@ void auto_savestate_sleep(void)
 }
 
 /* Nonzero if the slot's .svs is in dir_state; the slot menu backs up to the
-   auto slot only when there is a state to load. */
+   auto slot only when there is a state to load. A save cut between the
+   store's two renames left only a .bak and .tmp: recovered first, as the
+   load will. */
 static u32 savestate_file_exists(u32 slot)
 {
     char savestate_filename[MAX_FILE];
@@ -3002,6 +3004,7 @@ static u32 savestate_file_exists(u32 slot)
     SceIoStat stat;
 
     get_savestate_filename(slot, savestate_filename);
+    save_store_recover(backup_io, dir_state, savestate_filename);
     snprintf(savestate_path, sizeof(savestate_path), "%s%s", dir_state, savestate_filename);
     return (sceIoGetstat(savestate_path, &stat) >= 0);
 }
@@ -3016,6 +3019,18 @@ u32 action_loadstate(void)
   return load_state(savestate_filename);
 }
 
+/* The current screen for a state's preview, or NULL with the heap
+   exhausted: the state then gets a blank one instead of the emulator
+   quitting. */
+static u16 *copy_state_preview(void)
+{
+  u16 *screen = (u16 *)malloc(GBA_SCREEN_SIZE);
+
+  if (screen != NULL)
+    copy_screen(screen);
+  return screen;
+}
+
 /* Hotkey save to savestate_slot after a confirmation; the current screen is
    stored in the state as its preview. */
 u32 action_savestate(void)
@@ -3024,7 +3039,7 @@ u32 action_savestate(void)
   u16 *current_screen;
   u32 result;
 
-  current_screen = copy_screen();
+  current_screen = copy_state_preview();
 
   get_savestate_filename(savestate_slot, savestate_filename);
   result = save_state(savestate_filename, current_screen);
@@ -3042,7 +3057,7 @@ static u32 action_savestate_slot(u32 slot)
   u32 old_slot = savestate_slot;
 
   savestate_slot = slot;
-  current_screen = copy_screen();
+  current_screen = copy_state_preview();
   get_savestate_filename(savestate_slot, savestate_filename);
   result = save_state_silent(savestate_filename, current_screen);
   free(current_screen);
@@ -3065,7 +3080,8 @@ static u32 action_loadstate_slot(u32 slot)
 }
 
 /* Nonzero if the auto-slot .svs can be opened; maybe_load_auto_savestate()
-   offers a resume only then. */
+   offers a resume only then. A cut save is recovered first, as the load
+   would. */
 static u32 auto_savestate_exists(void)
 {
   char savestate_filename[MAX_FILE];
@@ -3075,6 +3091,7 @@ static u32 auto_savestate_exists(void)
 
   savestate_slot = AUTO_SAVESTATE_SLOT;
   get_savestate_filename(AUTO_SAVESTATE_SLOT, savestate_filename);
+  save_store_recover(backup_io, dir_state, savestate_filename);
   snprintf(savestate_path, sizeof(savestate_path), "%s%s", dir_state, savestate_filename);
   FILE_OPEN(fd, savestate_path, READ);
   savestate_slot = old_slot;
@@ -3094,11 +3111,21 @@ static u32 ram_dynarec_policy_menu_prev = ~(u32)0;
    spelled out because tests/test_startup.py compiles this function alone. */
 void maybe_load_auto_savestate(void)
 {
+  char rom_name[MAX_FILE];
+  u32 answer;
+
   if (gamepak_filename[0] == '\0' || main_link_active() ||
       !auto_savestate_exists())
     return;
 
-  if (yesno_dialog(MSG[MSG_AUTO_SAVESTATE_LOAD_PROMPT]) == 0)
+  /* No ROM counts as loaded at the prompt: main_power_save_if_pending would
+     otherwise write the AUTO state from the machine just reset. */
+  strcpy(rom_name, gamepak_filename);
+  gamepak_filename[0] = '\0';
+  answer = yesno_dialog(MSG[MSG_AUTO_SAVESTATE_LOAD_PROMPT]);
+  strcpy(gamepak_filename, rom_name);
+
+  if (answer == 0)
     action_loadstate_slot(10);
 }
 
@@ -3345,7 +3372,7 @@ static void menu_diagnostics_stop(void)
 
 /* Write the perf report and show its file name, or the failure, on the
    status row. */
-static void menu_diagnostics_write_report(void)
+void menu_diagnostics_write_report(void)
 {
     char report_path[MAX_PATH];
     const char *filename;
@@ -3366,10 +3393,103 @@ static void menu_diagnostics_write_report(void)
      "%s: %.56s", MSG[MSG_DIAGNOSTICS_REPORT_SAVED], filename);
 }
 
+/* Set when the benchmark loaded its slot: menu() then returns to the game
+   at once and reports the new machine state, as a slot load does. */
+static u8 diagnostics_bench_loaded;
+
+/* Unbound benchmark: loads the current slot as the slot menu does, backing
+   up the progress a numbered slot replaces to the auto slot and asking
+   first, and starts the run. A link or a slot without a state refuses it,
+   with the reason on the status row. render or audio 0 picks an arm. */
+static void menu_diagnostics_bench_arm(u32 render, u32 audio)
+{
+    char filename[MAX_FILE];
+    const char *reason = NULL;
+
+    diagnostics_report_line[0] = '\0';
+    if(main_link_active())
+        reason = MSG[MSG_DIAGNOSTICS_BENCH_LINK];
+    else if(!savestate_file_exists(savestate_slot))
+        reason = MSG[MSG_DIAGNOSTICS_BENCH_NO_STATE];
+    if(reason != NULL)
+    {
+        snprintf(diagnostics_report_line, sizeof(diagnostics_report_line),
+         "%s", reason);
+        return;
+    }
+
+    if(savestate_slot < AUTO_SAVESTATE_SLOT)
+        action_savestate_slot(AUTO_SAVESTATE_SLOT);
+    get_savestate_filename(savestate_slot, filename);
+    /* A No leaves the game as it was; load_state shows its own errors. */
+    if(!load_state(filename))
+        return;
+
+    diagnostics_bench_loaded = 1;
+    main_perf_bench_start(render, audio);
+}
+
+static void menu_diagnostics_bench(void)
+{
+    menu_diagnostics_bench_arm(1, 1);
+}
+
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+/* The same benchmark without the rendering, or without the sound samples:
+   the difference in throughput is what that work costs. */
+static void menu_diagnostics_bench_render_off(void)
+{
+    menu_diagnostics_bench_arm(0, 1);
+}
+
+static void menu_diagnostics_bench_audio_off(void)
+{
+    menu_diagnostics_bench_arm(1, 0);
+}
+
+/* Their two rows, below the Unbound benchmark row. */
+#define DIAGNOSTICS_BENCH_ARM_ROWS 2
+#else
+#define DIAGNOSTICS_BENCH_ARM_ROWS 0
+#endif
+
+/* The menu's last .sav write before the game goes away (exit, suspend,
+   another ROM). While it fails, the player may try again or go on
+   without it. */
+static void menu_flush_backup(void)
+{
+    while(!update_backup_immediately())
+    {
+        if(yesno_dialog(MSG[MSG_SAVE_WRITE_RETRY]) != 0)
+            break;
+    }
+}
+
+/* The warning of the game's first failed periodic .sav write, shown once
+   the menu is up. It waits for the buttons held in the game to be released
+   so they cannot dismiss it unseen. shortcut: a stick held with analog
+   input on still can; F-045's toast will replace this popup. */
+static void menu_backup_warning(void)
+{
+    if(!backup_write_warning)
+        return;
+    backup_write_warning = 0;
+
+    while(get_pad_input(0x0001FFFF) != 0)
+    {
+        main_power_service();
+        main_link_pump();
+        sceKernelDelayThread(5000);
+    }
+    clear_screen(COLOR32_BLACK);
+    error_msg(MSG[MSG_SAVE_WRITE_FAILED], CONFIRMATION_CONT);
+}
+
 static void menu_quit_action(void)
 {
     if(menu_game_available())
         action_savestate_slot(AUTO_SAVESTATE_SLOT);
+    menu_flush_backup();
     quit();
 }
 
@@ -3557,24 +3677,82 @@ static void menu_trace_cancel(void)
 #endif
 
 /* A link session needs a game: loading another one closes the link.
-   Starting a session pins the CPU at 333 MHz; when it fails or ends, the
-   menu's usual 222 MHz is restored. */
+   Starting a session pins the CPU at 333 MHz; main_link_start and
+   main_link_close restore the configured clock when it fails or ends. */
 static void menu_link_host_action(void)
 {
-    if (gamepak_filename[0] == '\0' || !main_link_host())
-        set_cpu_clock(PSP_CLOCK_222);
+    if (gamepak_filename[0] != '\0')
+        main_link_host();
 }
 
 static void menu_link_join_action(void)
 {
-    if (gamepak_filename[0] == '\0' || !main_link_join())
-        set_cpu_clock(PSP_CLOCK_222);
+    if (gamepak_filename[0] != '\0')
+        main_link_join();
 }
 
 static void menu_link_disconnect_action(void)
 {
     main_link_disconnect(MAIN_LINK_END_USER);
-    set_cpu_clock(PSP_CLOCK_222);
+}
+
+static int menu_link_restore_available(void)
+{
+    return menu_game_available() && !main_link_active();
+}
+
+/* SceIoStat's leading fields, as boxart.c mirrors them: newlib's
+   <sys/stat.h> makes st_mtime a macro, so that field cannot be named. */
+typedef struct
+{
+    SceMode mode;
+    unsigned int attr;
+    SceOff size;
+    ScePspDateTime ctime;
+    ScePspDateTime atime;
+    ScePspDateTime mtime;
+} MenuIoStat;
+
+/* Offers each pre-link save of this game (<rom>.sav.link1 to .link3),
+   newest first, with the time it was copied: O restores that one, X
+   offers the next. Returns 1 once a copy is the .sav and the save in RAM,
+   for the menu to restart the game, which no write of the old save can
+   then undo. Never during a link session, which the restart would end. */
+static u32 menu_link_restore(void)
+{
+    char path[MAX_PATH];
+    char when[40];
+    char text[128];
+    SceIoStat stat;
+    MenuIoStat *times = (MenuIoStat *)&stat;
+    u32 generation;
+    u32 offered = 0;
+
+    if(main_link_active() || !menu_game_available())
+        return 0;
+
+    for(generation = 1; generation <= 3; generation++)
+    {
+        snprintf(path, sizeof(path), "%s%s.link%u", dir_save,
+         backup_filename, (unsigned int)generation);
+        if(sceIoGetstat(path, &stat) < 0)
+            continue;
+        offered = 1;
+        get_timestamp_string(when, MSG_STATE_MENU_DATE_FMT_0, &times->mtime,
+         sceRtcGetDayOfWeek(times->mtime.year, times->mtime.month,
+          times->mtime.day));
+        snprintf(text, sizeof(text), MSG[MSG_LINK_RESTORE_CONFIRM], when);
+        if(yesno_dialog(text) != 0)
+            continue;
+        if(restore_backup_link_copy(generation))
+            return 1;
+        error_msg(MSG[MSG_LINK_RESTORE_FAILED], CONFIRMATION_CONT);
+        return 0;
+    }
+
+    if(!offered)
+        error_msg(MSG[MSG_LINK_RESTORE_NONE], CONFIRMATION_CONT);
+    return 0;
 }
 
 /* The other console's four-letter game code, safe to print. */
@@ -3950,7 +4128,7 @@ u32 menu(void)
     if (!first_load)
     {
       main_link_disconnect(MAIN_LINK_END_SUSPEND);
-      update_backup_immediately();
+      menu_flush_backup();
       auto_savestate_sleep();
       sleep_auto_saved = 1;
     }
@@ -3968,25 +4146,29 @@ u32 menu(void)
     if (!first_load)
     {
       main_link_disconnect(MAIN_LINK_END_ROM_CHANGE);
-      update_backup_immediately();
+      menu_flush_backup();
       /* Auto-save current game to the auto slot before loading new ROM */
       action_savestate_slot(AUTO_SAVESTATE_SLOT);
     }
 
-    if (load_file(file_ext, filename_buffer, dir_roms, 1) == 0)
+    while (load_file(file_ext, filename_buffer, dir_roms, 1) == 0)
     {
-      if (load_gamepak(filename_buffer) < 0)
+      s32 load_result = load_gamepak(filename_buffer);
+
+      /* Refusing the unreadable-save prompts goes back to the list */
+      if (load_result == LOAD_GAMEPAK_CANCELLED)
+      {
+        gamepak_file_none();
+        continue;
+      }
+
+      if (load_result < 0)
       {
         clear_screen(COLOR32_BLACK);
         error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
 
         gamepak_file_none();
-
-        menu_init();
-        choose_menu(current_menu);
-        counter = 0;
-
-        return;
+        break;
       }
 
       reset_gba();
@@ -3999,13 +4181,12 @@ u32 menu(void)
 
       return_value = 1;
       repeat = 0;
+      return;
     }
-    else
-    {
-      menu_init();
-      choose_menu(current_menu);
-      counter = 0;
-    }
+
+    menu_init();
+    choose_menu(current_menu);
+    counter = 0;
   }
 
   void menu_reset(void)
@@ -4128,8 +4309,10 @@ u32 menu(void)
                      MSG[MSG_LOAD_STATE_FILE]);
             if (yesno_dialog(dialog_msg) == 0)
             {
-                /* Auto-save current progress before loading */
-                action_savestate_slot(AUTO_SAVESTATE_SLOT);
+                /* Auto-save current progress before loading, unless the
+                   chosen file is that AUTO state, which it would replace */
+                if (slot_parsed != AUTO_SAVESTATE_SLOT)
+                    action_savestate_slot(AUTO_SAVESTATE_SLOT);
                 if (load_state_silent(filename_buffer) != 0)
                 {
                     return_value = 1;
@@ -4164,7 +4347,7 @@ u32 menu(void)
                 if (!first_load)
                 {
                     save_game_config_file();
-                    update_backup_immediately();
+                    menu_flush_backup();
                     action_savestate_slot(AUTO_SAVESTATE_SLOT);
                 }
 
@@ -4203,10 +4386,15 @@ u32 menu(void)
                        load_gamepak() needs CWD to be the ROM directory */
                     chdir(dir_roms);
 
-                    if (load_gamepak(rom_file) < 0)
+                    s32 load_result = load_gamepak(rom_file);
+
+                    if (load_result < 0)
                     {
-                        clear_screen(COLOR32_BLACK);
-                        error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+                        if (load_result != LOAD_GAMEPAK_CANCELLED)
+                        {
+                            clear_screen(COLOR32_BLACK);
+                            error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+                        }
                         gamepak_file_none();
                         /* Reopen file browser after error */
                         file_browser_repeat = 1;
@@ -4245,7 +4433,6 @@ u32 menu(void)
   void menu_delete_state(void)
   {
     char savestate_filename[MAX_FILE];
-    char savestate_path[MAX_PATH];
     char confirm_msg[80];
 
     if (first_load || current_option_num >= SAVESTATE_SLOT_COUNT)
@@ -4258,8 +4445,8 @@ u32 menu(void)
     /* yesno_dialog: returns 0 = confirmed (O), 1 = cancel (X) */
     if (yesno_dialog(confirm_msg) == 0)
     {
-      snprintf(savestate_path, sizeof(savestate_path), "%s%s", dir_state, savestate_filename);
-      sceIoRemove(savestate_path);
+      /* With its .bak, .tmp and .orig, which a load would otherwise recover. */
+      save_store_remove(backup_io, dir_state, savestate_filename);
 
       /* Refresh timestamp to empty */
       if (savestate_slot == AUTO_SAVESTATE_SLOT)
@@ -5021,6 +5208,9 @@ u32 menu(void)
         case MAIN_LINK_END_ROM_CHANGE:
           reason = MSG[MSG_LINK_REASON_ROM_CHANGE];
           break;
+        case MAIN_LINK_END_SAVE_FAILED:
+          reason = MSG[MSG_LINK_REASON_SAVE_FAILED];
+          break;
         case MAIN_LINK_END_NETWORK:
           status = MSG[MSG_LINK_STATUS_ERROR];
           reason = MSG[MSG_LINK_REASON_TRANSPORT];
@@ -5284,6 +5474,7 @@ u32 menu(void)
     ACTION_OPTION(menu_link_host_action, NULL, MSG[MSG_LINK_MENU_CREATE], MSG_LINK_MENU_HELP_CREATE, 4, MSG_LINK_MENU_CREATE),
     ACTION_OPTION(menu_link_join_action, NULL, MSG[MSG_LINK_MENU_JOIN], MSG_LINK_MENU_HELP_JOIN, 5, MSG_LINK_MENU_JOIN),
     ACTION_OPTION(menu_link_disconnect_action, NULL, MSG[MSG_LINK_MENU_DISCONNECT], MSG_LINK_MENU_HELP_DISCONNECT, 7, MSG_LINK_MENU_DISCONNECT),
+    ACTION_OPTION(NULL, NULL, MSG[MSG_LINK_MENU_RESTORE], MSG_LINK_MENU_HELP_RESTORE, 9, MSG_LINK_MENU_RESTORE),
 
     ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 11, MSG_OPTION_MENU_11)
   };
@@ -5291,6 +5482,8 @@ u32 menu(void)
   link_options[0].behavior_flags = MENU_OPTION_PASSIVE_ROW;
   link_options[1].behavior_flags = MENU_OPTION_PASSIVE_ROW;
   link_options[2].behavior_flags = MENU_OPTION_PASSIVE_ROW;
+  link_options[6].available_function = menu_link_restore_available;
+  link_options[6].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
 
   MAKE_MENU(link, NULL, NULL);
 
@@ -5330,15 +5523,20 @@ u32 menu(void)
     ACTION_OPTION(menu_diagnostics_start, NULL, MSG[MSG_DIAGNOSTICS_START], MSG_DIAGNOSTICS_HELP_START, 3, MSG_DIAGNOSTICS_START),
     ACTION_OPTION(menu_diagnostics_stop, NULL, MSG[MSG_DIAGNOSTICS_STOP], MSG_DIAGNOSTICS_HELP_STOP, 4, MSG_DIAGNOSTICS_STOP),
     ACTION_OPTION(menu_diagnostics_write_report, NULL, MSG[MSG_DIAGNOSTICS_SAVE_REPORT], MSG_DIAGNOSTICS_HELP_SAVE_REPORT, 5, MSG_DIAGNOSTICS_SAVE_REPORT),
+    ACTION_OPTION(menu_diagnostics_bench, NULL, MSG[MSG_DIAGNOSTICS_BENCH], MSG_DIAGNOSTICS_HELP_BENCH, 6, MSG_DIAGNOSTICS_BENCH),
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+    ACTION_OPTION(menu_diagnostics_bench_render_off, NULL, MSG[MSG_DIAGNOSTICS_BENCH_RENDER_OFF], MSG_DIAGNOSTICS_HELP_BENCH_RENDER_OFF, 7, MSG_DIAGNOSTICS_BENCH_RENDER_OFF),
+    ACTION_OPTION(menu_diagnostics_bench_audio_off, NULL, MSG[MSG_DIAGNOSTICS_BENCH_AUDIO_OFF], MSG_DIAGNOSTICS_HELP_BENCH_AUDIO_OFF, 8, MSG_DIAGNOSTICS_BENCH_AUDIO_OFF),
+#endif
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
-    ACTION_OPTION(NULL, NULL, diagnostics_trace_status_line, MSG_DIAGNOSTICS_HELP_STATUS, 8, 0),
-    ACTION_OPTION(menu_trace_start, NULL, MSG[MSG_TRACE_START], MSG_TRACE_HELP_START, 10, MSG_TRACE_START),
-    ACTION_OPTION(menu_trace_finish_save, NULL, MSG[MSG_TRACE_FINISH_SAVE], MSG_TRACE_HELP_FINISH_SAVE, 11, MSG_TRACE_FINISH_SAVE),
-    ACTION_OPTION(menu_trace_replay, NULL, MSG[MSG_TRACE_REPLAY], MSG_TRACE_HELP_REPLAY, 12, MSG_TRACE_REPLAY),
-    ACTION_OPTION(menu_trace_cancel, NULL, MSG[MSG_TRACE_CANCEL], MSG_TRACE_HELP_CANCEL, 13, MSG_TRACE_CANCEL),
-    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 15, MSG_OPTION_MENU_11)
+    ACTION_OPTION(NULL, NULL, diagnostics_trace_status_line, MSG_DIAGNOSTICS_HELP_STATUS, 8 + DIAGNOSTICS_BENCH_ARM_ROWS, 0),
+    ACTION_OPTION(menu_trace_start, NULL, MSG[MSG_TRACE_START], MSG_TRACE_HELP_START, 10 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_TRACE_START),
+    ACTION_OPTION(menu_trace_finish_save, NULL, MSG[MSG_TRACE_FINISH_SAVE], MSG_TRACE_HELP_FINISH_SAVE, 11 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_TRACE_FINISH_SAVE),
+    ACTION_OPTION(menu_trace_replay, NULL, MSG[MSG_TRACE_REPLAY], MSG_TRACE_HELP_REPLAY, 12 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_TRACE_REPLAY),
+    ACTION_OPTION(menu_trace_cancel, NULL, MSG[MSG_TRACE_CANCEL], MSG_TRACE_HELP_CANCEL, 13 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_TRACE_CANCEL),
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 15 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_OPTION_MENU_11)
 #else
-    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 7, MSG_OPTION_MENU_11)
+    ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_OPTION_MENU_11], MSG_OPTION_MENU_HELP_11, 8 + DIAGNOSTICS_BENCH_ARM_ROWS, MSG_OPTION_MENU_11)
 #endif
   };
 
@@ -5349,19 +5547,27 @@ u32 menu(void)
   diagnostics_options[3].available_function = menu_diagnostics_start_available;
   diagnostics_options[4].available_function = menu_diagnostics_stop_available;
   diagnostics_options[5].available_function = menu_diagnostics_report_available;
+  diagnostics_options[6].available_function = menu_diagnostics_start_available;
   diagnostics_options[3].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[4].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[5].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
-#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
-  diagnostics_options[6].behavior_flags = MENU_OPTION_PASSIVE_ROW;
-  diagnostics_options[7].available_function = menu_trace_start_available;
-  diagnostics_options[8].available_function = menu_trace_finish_available;
-  diagnostics_options[9].available_function = menu_trace_replay_available;
-  diagnostics_options[10].available_function = menu_trace_cancel_available;
+  diagnostics_options[6].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+  diagnostics_options[7].available_function = menu_diagnostics_start_available;
+  diagnostics_options[8].available_function = menu_diagnostics_start_available;
   diagnostics_options[7].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
   diagnostics_options[8].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
-  diagnostics_options[9].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
-  diagnostics_options[10].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+#endif
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  diagnostics_options[7 + DIAGNOSTICS_BENCH_ARM_ROWS].behavior_flags = MENU_OPTION_PASSIVE_ROW;
+  diagnostics_options[8 + DIAGNOSTICS_BENCH_ARM_ROWS].available_function = menu_trace_start_available;
+  diagnostics_options[9 + DIAGNOSTICS_BENCH_ARM_ROWS].available_function = menu_trace_finish_available;
+  diagnostics_options[10 + DIAGNOSTICS_BENCH_ARM_ROWS].available_function = menu_trace_replay_available;
+  diagnostics_options[11 + DIAGNOSTICS_BENCH_ARM_ROWS].available_function = menu_trace_cancel_available;
+  diagnostics_options[8 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[9 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[10 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
+  diagnostics_options[11 + DIAGNOSTICS_BENCH_ARM_ROWS].unavailable_string = MSG_UNAVAILABLE_CURRENT_STATE;
 #endif
 
   MAKE_MENU(diagnostics, NULL, NULL);
@@ -5462,7 +5668,8 @@ u32 menu(void)
   sound_pause = 1;
 
 
-  current_screen = copy_screen();
+  current_screen = (u16 *)safe_malloc(GBA_SCREEN_SIZE);
+  copy_screen(current_screen);
   savestate_screen = (u16 *)safe_malloc(GBA_SCREEN_SIZE);
 
   if (gamepak_filename[0] == 0)
@@ -5488,8 +5695,9 @@ u32 menu(void)
 
   video_resolution_large();
   if(!main_link_active())
-    set_cpu_clock(PSP_CLOCK_222);
+    set_cpu_clock(option_clock_speed);
   choose_menu(&main_menu);
+  menu_backup_warning();
 
   /* One iteration per frame: draw the screen, then handle one input. */
   while (repeat)
@@ -5843,6 +6051,12 @@ u32 menu(void)
               if (current_menu == &custom_colors_menu)
                 color_picker_item_index = current_option_num;
               current_option->action_function();
+              if (diagnostics_bench_loaded)
+              {
+                diagnostics_bench_loaded = 0;
+                return_value = 1;
+                repeat = 0;
+              }
             }
             else
             {
@@ -5864,6 +6078,12 @@ u32 menu(void)
               {
                 if(current_option->line_number == 0)
                   menu_suspend();
+              }
+              else if(current_menu == &link_menu)
+              {
+                /* The restored save is in RAM: the game restarts on it. */
+                if(current_option->line_number == 9 && menu_link_restore())
+                  menu_reset();
               }
               else if (current_menu == &savestate_menu)
               {
@@ -6085,8 +6305,64 @@ static void get_timestamp_string(char *buffer, u16 msg_id, ScePspDateTime *msg_t
   Save Config Files
 -----------------------------------------------------------------------------*/
 
-/* ConfigStoreIo callbacks: config_store.c's save-to-temp, validate, rename
-   sequence carried out with sceIo calls. Each returns nonzero on success. */
+/* ConfigStoreIo and SaveStoreIo callbacks: the settings file and the .sav
+   share these sceIo calls. Unless noted, each returns nonzero on success;
+   every negative sceIo result counts as a failure, and none allocates. */
+
+/* SaveStoreIo open_write: creates or truncates path; a negative handle on
+   failure. */
+static int32_t save_io_open_write(void *context, const char *path)
+{
+  (void)context;
+  return sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+}
+
+/* Writes all of data, looping over short writes: size, or 0 on failure. */
+static int save_io_write(void *context, int32_t file, const uint8_t *data,
+ size_t size)
+{
+  size_t total = 0;
+  int result;
+
+  (void)context;
+  while(total < size)
+  {
+    result = sceIoWrite(file, data + total, (SceSize)(size - total));
+    if(result <= 0)
+      return 0;
+    total += (size_t)result;
+  }
+  return (int)size;
+}
+
+/* A failed close may have lost data. */
+static int save_io_close(void *context, int32_t file)
+{
+  (void)context;
+  return sceIoClose(file) >= 0;
+}
+
+/* Syncs the device of path up to its ':', e.g. "ms0:" or "ef0:"; a path
+   without one is on main_path's device. */
+static int save_io_flush(void *context, const char *path)
+{
+  char device[8];
+  const char *separator;
+  size_t length;
+
+  (void)context;
+  if(strchr(path, ':') == NULL)
+    path = main_path;
+  separator = strchr(path, ':');
+  if(separator == NULL)
+    return 0;
+  length = (size_t)(separator - path) + 1;
+  if(length >= sizeof(device))
+    return 0;
+  memcpy(device, path, length);
+  device[length] = '\0';
+  return sceIoSync(device, 0) >= 0;
+}
 
 /* Fails if the file holds more than capacity bytes. */
 static int config_io_read(void *context, const char *path, uint8_t *data,
@@ -6122,55 +6398,35 @@ static int config_io_read(void *context, const char *path, uint8_t *data,
   return 1;
 }
 
-/* Writes the whole buffer, looping over short writes; 0 on any failure. */
+/* Writes the whole buffer; 0 if the open, a write or the close fails. */
 static int config_io_write(void *context, const char *path,
  const uint8_t *data, size_t size)
 {
-  SceUID file;
-  size_t total = 0;
+  int32_t file = save_io_open_write(context, path);
+  int written;
 
-  (void)context;
-  FILE_OPEN(file, path, WRITE);
-  if(!FILE_CHECK_VALID(file))
+  if(file < 0)
     return 0;
-  while(total < size)
-  {
-    s32 result = FILE_WRITE(file, data + total, size - total);
-    if(result <= 0)
-    {
-      FILE_CLOSE(file);
-      return 0;
-    }
-    total += (size_t)result;
-  }
-  FILE_CLOSE(file);
-  return 1;
+  written = save_io_write(context, file, data, size);
+  return save_io_close(context, file) && (size_t)written == size;
 }
 
 /* Sync the device that holds main_path, e.g. "ms0:". */
 static int config_io_flush(void *context)
 {
-  char device[8];
-  const char *separator;
-  size_t length;
-
-  (void)context;
-  separator = strchr(main_path, ':');
-  if(separator == NULL)
-    return 0;
-  length = (size_t)(separator - main_path) + 1;
-  if(length >= sizeof(device))
-    return 0;
-  memcpy(device, main_path, length);
-  device[length] = '\0';
-  return sceIoSync(device, 0) >= 0;
+  return save_io_flush(context, main_path);
 }
 
+/* Renames source to target, then checks both names: target there, source
+   gone. */
 static int config_io_move(void *context, const char *source,
  const char *target)
 {
+  SceIoStat stat;
+
   (void)context;
-  return sceIoRename(source, target) >= 0;
+  return sceIoRename(source, target) >= 0 &&
+         sceIoGetstat(target, &stat) >= 0 && sceIoGetstat(source, &stat) < 0;
 }
 
 /* Removing a file that does not exist counts as success. */
@@ -6201,6 +6457,119 @@ static const ConfigStoreIo config_store_io =
   config_io_move,
   config_io_remove,
   config_io_exists
+};
+
+/* SaveStoreIo exists. A .sav that does not stat while its folder does not
+   open either counts as present: the device is gone, not the file, so the
+   load fails and asks instead of starting a blank cartridge that the first
+   save would write over the real file. */
+static int save_io_exists(void *context, const char *path)
+{
+  SceIoStat stat;
+  char folder[MAX_PATH];
+  const char *slash;
+  size_t length;
+  SceUID dir;
+
+  (void)context;
+  if(sceIoGetstat(path, &stat) >= 0)
+    return 1;
+
+  slash = strrchr(path, '/');
+  if(slash == NULL)
+    return 0;
+  length = (size_t)(slash - path) + 1;
+  if(length >= sizeof(folder))
+    return 1;
+  memcpy(folder, path, length);
+  folder[length] = '\0';
+
+  dir = sceIoDopen(folder);
+  if(dir < 0)
+    return 1;
+  sceIoDclose(dir);
+  return 0;
+}
+
+/* SaveStoreIo read: up to capacity bytes from the start of the file, and
+   the file's whole length. A read error just stops early, and
+   save_store_load() treats the short count as a failure. */
+static int save_io_read(void *context, const char *path, uint8_t *data,
+ size_t capacity, size_t *size, size_t *file_size)
+{
+  SceUID file;
+  SceOff length;
+  size_t wanted;
+  size_t total = 0;
+  s32 result;
+
+  (void)context;
+  FILE_OPEN(file, path, READ);
+  if(!FILE_CHECK_VALID(file))
+    return 0;
+
+  length = FILE_SEEK(file, 0, SEEK_END);
+  if(length < 0 || FILE_SEEK(file, 0, SEEK_SET) != 0)
+  {
+    FILE_CLOSE(file);
+    return 0;
+  }
+
+  wanted = ((u64)length < capacity) ? (size_t)length : capacity;
+  while(total < wanted)
+  {
+    result = FILE_READ(file, data + total, wanted - total);
+    if(result <= 0)
+      break;
+    total += (size_t)result;
+  }
+  FILE_CLOSE(file);
+
+  *size = total;
+  *file_size = (size_t)length;
+  return 1;
+}
+
+/* SaveStoreIo crc32: reads path to its end in 16 KiB blocks. The block is
+   static, so only the emulator and menu thread may call this. */
+static int save_io_crc32(void *context, const char *path, uint32_t *crc,
+ size_t *size)
+{
+  static u8 block[16 * 1024];
+  SceUID file;
+  uLong value = crc32(0L, Z_NULL, 0);
+  size_t total = 0;
+  int result;
+
+  (void)context;
+  file = sceIoOpen(path, PSP_O_RDONLY, 0);
+  if(file < 0)
+    return 0;
+  while((result = sceIoRead(file, block, sizeof(block))) > 0)
+  {
+    value = crc32(value, block, (uInt)result);
+    total += (size_t)result;
+  }
+  if(sceIoClose(file) < 0 || result < 0)
+    return 0;
+  *crc = (uint32_t)value;
+  *size = total;
+  return 1;
+}
+
+/* memory.c's .sav I/O, sharing move and remove with the settings file. */
+const SaveStoreIo gui_save_store_io =
+{
+  NULL,
+  save_io_exists,
+  save_io_read,
+  save_io_open_write,
+  save_io_write,
+  save_io_close,
+  save_io_flush,
+  config_io_move,
+  config_io_remove,
+  save_io_crc32
 };
 
 /* tempgba.cfg plus its .tmp (write target) and .bak (last good) siblings. */
