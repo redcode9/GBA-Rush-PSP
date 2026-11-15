@@ -80,6 +80,16 @@ typedef enum
   RUNTIME_LOG_EVENT_LINK_STREAM_METRICS,
   RUNTIME_LOG_EVENT_LINK_TIMEOUT,
   RUNTIME_LOG_EVENT_LINK_BENCHMARK,
+  /* Two records per measurement, packed by mem_stats_encode. */
+  RUNTIME_LOG_EVENT_MEMORY_STATS,
+  RUNTIME_LOG_EVENT_SAVE_LOAD,
+  RUNTIME_LOG_EVENT_SAVESTATE_REPAIR,
+  RUNTIME_LOG_EVENT_SAVE_WRITE,
+  RUNTIME_LOG_EVENT_SAVE_LINK_COPY,
+  RUNTIME_LOG_EVENT_POWER_BITS,
+  RUNTIME_LOG_EVENT_ROM_LOAD_STAGES,
+  /* Diagnostic profile: the autorun file's outcome (autorun_config.h). */
+  RUNTIME_LOG_EVENT_DIAG_AUTORUN,
   RUNTIME_LOG_EVENT_NAME_PROBE
 } RuntimeLogEventType;
 
@@ -117,6 +127,17 @@ typedef enum
 #define RUNTIME_LOG_NAME_PROBE_NOT_TRIED (-1)
 /* sceIoOpen results per entry, in the OPEN order above. */
 #define RUNTIME_LOG_NAME_PROBE_OPENS 5u
+
+/* load_gamepak()'s stages, in the order it runs them. */
+typedef enum
+{
+  RUNTIME_LOG_LOAD_OPEN,
+  RUNTIME_LOG_LOAD_READ,
+  RUNTIME_LOG_LOAD_CONFIG,
+  RUNTIME_LOG_LOAD_BACKUP_ID,
+  RUNTIME_LOG_LOAD_SAV,
+  RUNTIME_LOG_LOAD_STAGE_COUNT
+} RuntimeLogLoadStage;
 
 typedef enum
 {
@@ -198,6 +219,14 @@ size_t runtime_log_name_probe_entry(RuntimeLogRing *ring,
 void runtime_log_name_probe_end(RuntimeLogRing *ring, uint64_t timestamp_us,
  int32_t dopen_result, int32_t dread_result, uint32_t seen,
  uint32_t logged);
+/* The values of a ROM_LOAD_STAGES record, in ms: value[0] the read,
+   value[1] open << 16 | config, value[2] backup id << 16 | .sav; each
+   16-bit half stops at 65535. Stage i runs from the end of stage i - 1
+   (start_us for the first) to end_us[i]. A 0 end, a 0 begin or an end
+   before its begin counts 0 ms, so every stage after one that did not run
+   is 0. */
+void runtime_log_load_stages(uint64_t start_us,
+ const uint64_t end_us[RUNTIME_LOG_LOAD_STAGE_COUNT], uint32_t value[3]);
 int runtime_log_encode(const RuntimeLogRing *main_ring,
  const RuntimeLogRing *network_ring, const RuntimeLogRing *critical_ring,
  const RuntimeLogMetadata *metadata, uint8_t *output, size_t capacity,

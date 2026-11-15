@@ -2,7 +2,8 @@
    Current files: a 16-byte header ("GBRC", u16 version, u16 value count,
    u32 checksum, u32 payload size) then little-endian u32 values in
    model_to_values() order. Headerless files from older releases are still
-   read. Out-of-range values decode to their defaults. */
+   read. Out-of-range values, and values a shorter file does not carry,
+   decode to their defaults. */
 
 #include "config_model.h"
 
@@ -12,13 +13,17 @@
 /* decode_versioned() reads only the layouts below: bumping the version
    drops files of an older one unless it learns that layout too.
    Adding a setting: append it to model_to_values() and values_to_model()
-   (limit and default), add the default to config_model_defaults(), raise
-   CONFIG_MODEL_VALUE_COUNT in config_model.h and bump the version. Keep
-   every released layout readable (version 1 shipped in 1.3.0, version 2 in
-   1.4.0): the current pair becomes PREVIOUS_*, and each older one needs
-   its own value-count constant and a clause in decode_versioned()'s
-   version check; then update the note above decode_versioned() and the
-   migration tests in tests/test_config_model.c. Finally map it in gui.c's
+   (limit and default), add the default to config_model_defaults() and
+   raise CONFIG_MODEL_VALUE_COUNT in config_model.h. Bump the version only
+   for a release's first new setting: version 3 is not released yet, so
+   settings appended to it keep version 3, and decode_versioned() reads
+   version 3 files from CONFIG_MODEL_VERSION_3_MIN_VALUE_COUNT values up.
+   Keep every released layout readable (version 1 shipped in 1.3.0,
+   version 2 in 1.4.0): on a bump the current pair becomes PREVIOUS_*, and
+   each older one needs its own value-count constant and a clause in
+   decode_versioned()'s version check; then update the note above
+   decode_versioned() and the migration tests in
+   tests/test_config_model.c. Finally map it in gui.c's
    capture_global_config() and apply_global_config() (the game_ pair too
    only for per-game settings) and add its option_ global, menu row and
    messages. */
@@ -26,12 +31,20 @@
 #define CONFIG_MODEL_PREVIOUS_VERSION 2U
 #define CONFIG_MODEL_PREVIOUS_VALUE_COUNT 45U
 #define CONFIG_MODEL_VERSION_1_VALUE_COUNT 39U
+#define CONFIG_MODEL_VERSION_3_MIN_VALUE_COUNT 46U   /* through cpu_core */
 #define CONFIG_MODEL_CHECKSUM_OFFSET 8U
 
 static const uint32_t default_gamepad[CONFIG_MODEL_GAMEPAD_COUNT] =
 {
   11, 4, 5, 18, 6, 7, 1, 2,
   0, 3, 9, 8, 0, 1, 2, 3
+};
+
+/* The chords of input_chord_defaults: SELECT+L saves, SELECT+R loads,
+   START+SELECT (held) opens the menu; the other slots have none. */
+static const uint32_t default_shortcut[CONFIG_MODEL_SHORTCUT_COUNT] =
+{
+  0x0410, 0x0420, 0x0C00, 0, 0, 0, 0, 0
 };
 
 static void write_u16(uint8_t *output, uint16_t value)
@@ -85,6 +98,18 @@ static uint32_t valid_or_default(uint32_t value, uint32_t limit,
   return value < limit ? value : default_value;
 }
 
+/* A shortcut is 0 (none) or 1 to 4 of the 16 inputs. */
+static uint32_t valid_shortcut_or_default(uint32_t mask,
+ uint32_t default_mask)
+{
+  uint32_t keys = 0;
+  uint32_t rest;
+
+  for(rest = mask; rest != 0; rest &= rest - 1)
+    keys++;
+  return mask <= 0xFFFFU && keys <= 4 ? mask : default_mask;
+}
+
 /* Headerless files numbered the RAM dynarec setting differently: 4-6 map to
    policies 0-2, 0-1 to policies 1-2, anything else to the default (2). */
 static uint32_t decode_legacy_ram_policy(uint32_t value)
@@ -127,7 +152,10 @@ void config_model_defaults(ConfigModel *model)
   model->fast_forward_presentation = 1;
   model->fast_forward_audio = 0;
   model->cpu_core = 0;                  /* CPU_CORE_CLASSIC */
+  model->browser_view = 0;              /* list */
   memcpy(model->gamepad, default_gamepad, sizeof(model->gamepad));
+  memcpy(model->shortcut, default_shortcut, sizeof(model->shortcut));
+  /* turbo_speed and turbo_mode stay 0: 30 presses per second, Hold. */
 }
 
 /* The value index is the on-disk position: append new settings, never
@@ -168,6 +196,14 @@ static void model_to_values(const ConfigModel *model, uint32_t *values)
   values[43] = model->fast_forward_presentation;
   values[44] = model->fast_forward_audio;
   values[45] = model->cpu_core;
+  values[46] = model->browser_view;
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    values[47 + i] = model->shortcut[i];
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    values[55 + i] = model->turbo_speed[i];
+    values[59 + i] = model->turbo_mode[i];
+  }
 }
 
 /* Inverse of model_to_values(). A value outside [0, limit) takes its
@@ -209,6 +245,15 @@ static void values_to_model(const uint32_t *values, ConfigModel *model)
   model->fast_forward_presentation = valid_or_default(values[43], 3, 1);
   model->fast_forward_audio = valid_or_default(values[44], 2, 0);
   model->cpu_core = valid_or_default(values[45], 2, 0);
+  model->browser_view = valid_or_default(values[46], 2, 0);
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    model->shortcut[i] = valid_shortcut_or_default(values[47 + i],
+                                                   default_shortcut[i]);
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    model->turbo_speed[i] = valid_or_default(values[55 + i], 3, 0);
+    model->turbo_mode[i] = valid_or_default(values[59 + i], 2, 0);
+  }
 }
 
 /* Writes the current versioned format; output needs at least
@@ -238,8 +283,10 @@ int config_model_encode(const ConfigModel *model, uint8_t *output,
   return 1;
 }
 
-/* Version 1 files carry the first 39 values and version 2 files the first
-   45; the rest keep their defaults. */
+/* Version 1 files carry the first 39 values, version 2 files the first 45
+   and version 3 files from 46 up to CONFIG_MODEL_VALUE_COUNT, since builds
+   of the unreleased version 3 kept appending settings; the rest keep their
+   defaults. */
 static ConfigModelDecodeResult decode_versioned(const uint8_t *data,
  size_t size, ConfigModel *model)
 {
@@ -255,7 +302,8 @@ static ConfigModelDecodeResult decode_versioned(const uint8_t *data,
   version = read_u16(data + 4);
   value_count = read_u16(data + 6);
   if(!((version == CONFIG_MODEL_VERSION &&
-        value_count == CONFIG_MODEL_VALUE_COUNT) ||
+        value_count >= CONFIG_MODEL_VERSION_3_MIN_VALUE_COUNT &&
+        value_count <= CONFIG_MODEL_VALUE_COUNT) ||
        (version == CONFIG_MODEL_PREVIOUS_VERSION &&
         value_count == CONFIG_MODEL_PREVIOUS_VALUE_COUNT) ||
        (version == 1U &&

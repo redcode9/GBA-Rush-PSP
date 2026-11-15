@@ -52,10 +52,15 @@ class InstallTestBuildTest(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         (self.root / "dist").mkdir()
+        # Like make package: it extracts at the Memory Stick root.
         self.zip = self.make_zip(
-            "0.0.0", ("EBOOT.PBP", "exception.prx", "media_engine.prx"))
-        # Like the 1.4.2 and 1.4.3 releases: no Media Engine module.
-        self.release = self.make_zip("1.4.2", ("EBOOT.PBP", "exception.prx"))
+            "0.0.0", ("EBOOT.PBP", "exception.prx", "media_engine.prx"),
+            "PSP/GAME/GBARushPSP")
+        # Like the 1.4.2 and 1.4.3 releases: no Media Engine module, and
+        # a top folder named after the version.
+        self.release = self.make_zip(
+            "1.4.2", ("EBOOT.PBP", "exception.prx"),
+            "GBA-Rush-PSP-1.4.2/GBARushPSP")
         self.rom = self.root / "core rom.gba"
         self.rom.write_bytes(b"test rom")
         self.volumes = self.root / "Volumes"
@@ -67,12 +72,11 @@ class InstallTestBuildTest(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def make_zip(self, version, names):
+    def make_zip(self, version, names, folder):
         path = self.root / "dist" / f"GBA-Rush-PSP-{version}.zip"
         with zipfile.ZipFile(path, "w") as archive:
             for name in names:
-                archive.writestr(f"GBA-Rush-PSP-{version}/GBARushPSP/{name}",
-                                 b"new " + name.encode())
+                archive.writestr(f"{folder}/{name}", b"new " + name.encode())
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         Path(f"{path}.sha256").write_text(f"{digest}  {path.name}\n")
         return path

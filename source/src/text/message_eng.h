@@ -388,6 +388,48 @@
   // MSG_A_PAD_MENU_HELP_2
   FONT_BTN_CIRCLE_GBK ":Main menu   " FONT_BTN_CROSS_GBK ":Exit",
 
+  // MSG_TURBO_MENU
+  "Turbo config",
+
+  // MSG_TURBO_A_SPEED
+  "Turbo A speed : %s",
+
+  // MSG_TURBO_A_MODE
+  "Turbo A mode  : %s",
+
+  // MSG_TURBO_B_SPEED
+  "Turbo B speed : %s",
+
+  // MSG_TURBO_B_MODE
+  "Turbo B mode  : %s",
+
+  // MSG_TURBO_L_SPEED
+  "Turbo L speed : %s",
+
+  // MSG_TURBO_L_MODE
+  "Turbo L mode  : %s",
+
+  // MSG_TURBO_R_SPEED
+  "Turbo R speed : %s",
+
+  // MSG_TURBO_R_MODE
+  "Turbo R mode  : %s",
+
+  // MSG_TURBO_SPEED_30
+  "30/s",
+
+  // MSG_TURBO_SPEED_15
+  "15/s",
+
+  // MSG_TURBO_SPEED_10
+  "10/s",
+
+  // MSG_TURBO_ON
+  "Turbo %c: on",
+
+  // MSG_TURBO_OFF
+  "Turbo %c: off",
+
   // MSG_CHEAT_MENU_TITLE
   "Cheats options",
 
@@ -569,6 +611,12 @@
   // MSG_SEARCHING_BACKUP_ID
   "Searching BACKUP ID",
 
+  // MSG_LOADING_STAGE_READ
+  "Reading ROM",
+
+  // MSG_LOADING_STAGE_UNZIP
+  "Unpacking ZIP",
+
   // main.c
   // MSG_GBA_SLEEP_MODE
   "SLEEP MODE",
@@ -588,8 +636,19 @@
   // MSG_ERR_LOAD_GAMEPACK
   "Could not load the game file.",
 
+  // MSG_ERR_ZIP_CORRUPT
+  "The ZIP file is damaged or incomplete.",
+
   // MSG_ERR_OPEN_GAMEPACK
   "Could not open the game file.",
+  // MSG_SAVE_READ_RETRY
+  "The save file cannot be read. Try again?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "Play without saving? The file stays as it is.",
+  // MSG_SAVE_WRITE_FAILED
+  "The save file could not be written.\nThe game keeps it and tries again.",
+  // MSG_SAVE_WRITE_RETRY
+  "Save not written: try again?",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "Could not start the callback thread.",
@@ -909,6 +968,15 @@
   // MSG_BROWSER_ALL_GAMES
   "--- All Games ---",
 
+  // MSG_BROWSER_EMPTY_TITLE
+  "No games found",
+
+  // MSG_BROWSER_EMPTY_HINT
+  "Copy .gba or .zip files to:",
+
+  // MSG_FIRST_RUN_MENU_HINT
+  "HOME: menu, or hold START+SELECT",
+
   // MSG_MAIN_MENU_LINK
   "Link cable",
 
@@ -933,6 +1001,9 @@
   // MSG_LINK_MENU_DISCONNECT
   "Disconnect",
 
+  // MSG_LINK_MENU_RESTORE
+  "Restore pre-link save",
+
   // MSG_LINK_MENU_HELP_STATUS
   "Current link cable state",
 
@@ -944,6 +1015,18 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "Close the current link session",
+
+  // MSG_LINK_MENU_HELP_RESTORE
+  "Put back a save copied before a link",
+
+  // MSG_LINK_RESTORE_CONFIRM
+  "Restore save of %s? Game restarts.",
+
+  // MSG_LINK_RESTORE_NONE
+  "No save was copied before a link session.",
+
+  // MSG_LINK_RESTORE_FAILED
+  "The save could not be restored.",
 
   // MSG_LINK_STATUS_NO_GAME
   "No game loaded",
@@ -1001,6 +1084,9 @@
 
   // MSG_LINK_REASON_ROM_CHANGE
   "Game changed",
+
+  // MSG_LINK_REASON_SAVE_FAILED
+  "Save could not be written",
 
   // MSG_CATEGORY_CONTINUE
   "Continue",
@@ -1096,6 +1182,22 @@
   "%lu of %lu names logged",
   // MSG_DIAGNOSTICS_NAME_PROBE_FAILED
   "Probe failed: name-probe folder or log",
+  // MSG_DIAGNOSTICS_BENCH
+  "Unbound benchmark",
+  // MSG_DIAGNOSTICS_HELP_BENCH
+  "Load the slot, run 3600 frames unpaced, save the report",
+  // MSG_DIAGNOSTICS_BENCH_LINK
+  "Benchmark refused: a link session is open",
+  // MSG_DIAGNOSTICS_BENCH_NO_STATE
+  "Benchmark refused: no usable state in the current slot",
+  // MSG_DIAGNOSTICS_BENCH_RENDER_OFF
+  "Unbound benchmark, rendering off",
+  // MSG_DIAGNOSTICS_HELP_BENCH_RENDER_OFF
+  "The same run without drawing or showing any frame",
+  // MSG_DIAGNOSTICS_BENCH_AUDIO_OFF
+  "Unbound benchmark, audio off",
+  // MSG_DIAGNOSTICS_HELP_BENCH_AUDIO_OFF
+  "The same run without writing any sound sample",
   // MSG_UNAVAILABLE_CURRENT_STATE
   "Unavailable in the current state",
 
@@ -1142,10 +1244,22 @@
   "Replay the saved trace for this game",
   // MSG_TRACE_HELP_CANCEL
   "Stop the active trace operation",
+  // MSG_DIAGNOSTICS_PIN_TOAST
+  "Pin a test toast",
+  // MSG_DIAGNOSTICS_HELP_PIN_TOAST
+  "Keep a toast on screen until the game resets, to measure its cost",
   // MSG_TRACE_SAVED
   "Input trace saved",
   // MSG_TRACE_FAILED
   "Input trace operation failed",
+  // MSG_TRACE_STATE_MISMATCH
+  "Trace savestate missing or changed",
+  // MSG_TRACE_RTC_WARNING
+  "RTC game: replay hashes may diverge",
+  // MSG_TRACE_NO_HASHES
+  "Replay runs without state hashes",
+  // MSG_TRACE_HASHES_SAVED
+  "Replay state hashes saved",
 
   // MSG_FF_PROFILE_LABEL
   "Fast-forward profile : %s",

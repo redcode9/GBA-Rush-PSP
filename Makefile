@@ -26,21 +26,24 @@ PYTHON ?= python3
 HOST_BUILD_DIR ?= build/host
 HOST_SANITIZE_DIR ?= build/sanitize
 HOST_SANITIZE_FLAGS ?= -fsanitize=address,undefined -fno-omit-frame-pointer
-# SDK headers for the two tests that compile PSP sources (memory.c and
+# SDK headers for the tests that compile PSP sources (memory.c and
 # psp_video.c) on the host.
 PSP_SDK_INCLUDE ?= $(shell psp-config --pspsdk-path 2>/dev/null)/include
 # DIAGNOSTIC_INPUT_TRACE=1 is the old name of PROFILE=diagnostic, and
-# DIAGNOSTIC_CORE_PROFILE=1 builds that profile too (source/Makefile).
-PROFILE ?= $(if $(DIAGNOSTIC_INPUT_TRACE)$(DIAGNOSTIC_CORE_PROFILE),diagnostic,release)
+# DIAGNOSTIC_CORE_PROFILE=1, DIAGNOSTIC_HW_PROBE=1 and PADDING_PROBE_BYTES=N
+# build that profile too (source/Makefile).
+PROFILE ?= $(if $(DIAGNOSTIC_INPUT_TRACE)$(DIAGNOSTIC_CORE_PROFILE)$(DIAGNOSTIC_HW_PROBE)$(PADDING_PROBE_BYTES),diagnostic,release)
 HOST_TEST_CODEBREAKER = $(HOST_BUILD_DIR)/test_codebreaker
 HOST_TEST_GBA_SIO = $(HOST_BUILD_DIR)/test_gba_sio
 HOST_TEST_LINK_NET = $(HOST_BUILD_DIR)/test_link_net
 HOST_TEST_LINK_CABLE = $(HOST_BUILD_DIR)/test_link_cable
-# The link cable test runs the real cable, channel and SIO code together.
+# The link cable test runs the real cable, channel and SIO code together,
+# over net_fault's simulated network.
 LINK_CABLE_SOURCES = tests/test_link_cable.c source/src/link_cable.c \
- source/src/link_net.c source/src/gba_sio.c
+ source/src/link_net.c source/src/gba_sio.c source/src/net_fault.c
 LINK_CABLE_HEADERS = source/src/link_cable.h source/src/link_net.h \
- source/src/gba_sio.h
+ source/src/gba_sio.h source/src/net_fault.h
+HOST_TEST_NET_FAULT = $(HOST_BUILD_DIR)/test_net_fault
 HOST_TEST_ADHOC_PEER = $(HOST_BUILD_DIR)/test_adhoc_peer
 HOST_TEST_POWER_LIFECYCLE = $(HOST_BUILD_DIR)/test_power_lifecycle
 HOST_TEST_LINK_AUDIO_WAIT = $(HOST_BUILD_DIR)/test_link_audio_wait
@@ -52,8 +55,13 @@ HOST_TEST_PERF_MONITOR = $(HOST_BUILD_DIR)/test_perf_monitor
 HOST_TEST_PERF_DMA_PROBE = $(HOST_BUILD_DIR)/test_perf_dma_probe
 HOST_TEST_PERF_VIDEO_SENTINEL = $(HOST_BUILD_DIR)/test_perf_video_sentinel
 HOST_TEST_INPUT_TRACE = $(HOST_BUILD_DIR)/test_input_trace
+HOST_TEST_STATE_HASH = $(HOST_BUILD_DIR)/test_state_hash
+HOST_TEST_AUTORUN_CONFIG = $(HOST_BUILD_DIR)/test_autorun_config
 HOST_TEST_MENU_MODEL = $(HOST_BUILD_DIR)/test_menu_model
 HOST_TEST_MENU_LAYOUT = $(HOST_BUILD_DIR)/test_menu_layout
+HOST_TEST_TOAST = $(HOST_BUILD_DIR)/test_toast
+HOST_TEST_INPUT_CHORD = $(HOST_BUILD_DIR)/test_input_chord
+HOST_TEST_INPUT_MODEL = $(HOST_BUILD_DIR)/test_input_model
 HOST_TEST_CONFIG_MODEL = $(HOST_BUILD_DIR)/test_config_model
 HOST_TEST_CONFIG_STORE = $(HOST_BUILD_DIR)/test_config_store
 HOST_TEST_FAST_FORWARD = $(HOST_BUILD_DIR)/test_fast_forward_policy
@@ -62,10 +70,16 @@ HOST_TEST_VIDEO_MOSAIC = $(HOST_BUILD_DIR)/test_video_mosaic
 HOST_TEST_ART_FILTER = $(HOST_BUILD_DIR)/test_art_filter
 HOST_TEST_DYNAREC_WORKLIST = $(HOST_BUILD_DIR)/test_dynarec_worklist
 HOST_TEST_SOUND_MATH = $(HOST_BUILD_DIR)/test_sound_math
+HOST_TEST_REWIND_RING = $(HOST_BUILD_DIR)/test_rewind_ring
 HOST_TEST_EVENT_QUEUE = $(HOST_BUILD_DIR)/test_event_queue
 HOST_TEST_RUNTIME_LOG = $(HOST_BUILD_DIR)/test_runtime_log
+HOST_TEST_ZIP_ROM = $(HOST_BUILD_DIR)/test_zip_rom
+HOST_TEST_LOAD_PROGRESS = $(HOST_BUILD_DIR)/test_load_progress
+HOST_TEST_SAVESTATE_TRAILER = $(HOST_BUILD_DIR)/test_savestate_trailer
 HOST_TEST_ARM_CORE = $(HOST_BUILD_DIR)/test_arm_core
 HOST_TEST_CORE_PROFILE = $(HOST_BUILD_DIR)/test_core_profile
+HOST_TEST_HW_PROBE = $(HOST_BUILD_DIR)/test_hw_probe
+HOST_TEST_MEM_STATS = $(HOST_BUILD_DIR)/test_mem_stats
 # arm_mips.c is only compiled here (its tests need Unicorn: make check-core).
 ARM_CORE_SOURCES = source/src/arm_decode.c source/src/arm_interp.c \
  source/src/arm_mips.c
@@ -86,9 +100,20 @@ UI_BATCH_SOURCES = tests/test_ui_batch.c source/src/ui_batch.c \
  tests/ui_raster.c
 UI_BATCH_HEADERS = source/src/ui_batch.h tests/ui_raster.h
 HOST_TEST_GBK_GLYPHS = $(HOST_BUILD_DIR)/test_gbk_glyphs
+HOST_TEST_PNG_WRITE = $(HOST_BUILD_DIR)/test_png_write
+# The PNG writer's test links the bundled zlib, built apart with -w (zlib
+# 1.2.8 has old-style definitions). Z_SOLO leaves out zlib's file I/O and
+# default allocator: the test passes its own, which counts the peak.
+PNG_WRITE_ZLIB = adler32 crc32 deflate inffast inflate inftrees trees zutil
+PNG_WRITE_ZLIB_SOURCES = $(PNG_WRITE_ZLIB:%=source/src/zlib/%.c)
+PNG_WRITE_FLAGS = -DZ_SOLO -DZLIB_CONST
+HOST_TEST_SAVE_FORMAT = $(HOST_BUILD_DIR)/test_save_format
+HOST_TEST_SAVE_STORE = $(HOST_BUILD_DIR)/test_save_store
+HOST_TEST_MEMORY_BACKUP = $(HOST_BUILD_DIR)/test_memory_backup
+HOST_TEST_EEPROM = $(HOST_BUILD_DIR)/test_eeprom
 HOST_TEST_UPSTREAM_AW_RELAY = $(HOST_BUILD_DIR)/test_upstream_aw_relay
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
- $(HOST_TEST_LINK_NET) $(HOST_TEST_LINK_CABLE) \
+ $(HOST_TEST_LINK_NET) $(HOST_TEST_LINK_CABLE) $(HOST_TEST_NET_FAULT) \
  $(HOST_TEST_ADHOC_PEER) \
  $(HOST_TEST_POWER_LIFECYCLE) \
  $(HOST_TEST_LINK_AUDIO_WAIT) $(HOST_TEST_VIDEO_ADAPTIVE) \
@@ -96,21 +121,31 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_PERF_METRICS) $(HOST_TEST_PERF_REPORT) \
  $(HOST_TEST_PERF_MONITOR) $(HOST_TEST_PERF_DMA_PROBE) \
  $(HOST_TEST_PERF_VIDEO_SENTINEL) \
- $(HOST_TEST_INPUT_TRACE) $(HOST_TEST_MENU_MODEL) \
- $(HOST_TEST_MENU_LAYOUT) \
+ $(HOST_TEST_INPUT_TRACE) $(HOST_TEST_STATE_HASH) $(HOST_TEST_AUTORUN_CONFIG) \
+ $(HOST_TEST_MENU_MODEL) \
+ $(HOST_TEST_MENU_LAYOUT) $(HOST_TEST_TOAST) $(HOST_TEST_INPUT_CHORD) \
+ $(HOST_TEST_INPUT_MODEL) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE) $(HOST_TEST_FAST_FORWARD) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
  $(HOST_TEST_ART_FILTER) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
+ $(HOST_TEST_REWIND_RING) \
  $(HOST_TEST_EVENT_QUEUE) \
- $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_CORE_PROFILE) \
+ $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ZIP_ROM) $(HOST_TEST_LOAD_PROGRESS) \
+ $(HOST_TEST_SAVESTATE_TRAILER) \
+ $(HOST_TEST_ARM_CORE) $(HOST_TEST_CORE_PROFILE) \
+ $(HOST_TEST_HW_PROBE) $(HOST_TEST_MEM_STATS) \
  $(HOST_TEST_ROM_RUN) \
  $(HOST_TEST_GBA_PPU) $(HOST_TEST_GBA_PPU_LOG) $(HOST_TEST_UI_BATCH) \
- $(HOST_TEST_GBK_GLYPHS) $(HOST_TEST_UPSTREAM_AW_RELAY)
+ $(HOST_TEST_GBK_GLYPHS) $(HOST_TEST_PNG_WRITE) \
+ $(HOST_TEST_SAVE_FORMAT) \
+ $(HOST_TEST_SAVE_STORE) $(HOST_TEST_MEMORY_BACKUP) $(HOST_TEST_EEPROM) \
+ $(HOST_TEST_UPSTREAM_AW_RELAY)
 # The same C tests built with HOST_SANITIZE_FLAGS for make test-sanitize.
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_net \
  $(HOST_SANITIZE_DIR)/test_link_cable \
+ $(HOST_SANITIZE_DIR)/test_net_fault \
  $(HOST_SANITIZE_DIR)/test_adhoc_peer \
  $(HOST_SANITIZE_DIR)/test_power_lifecycle \
  $(HOST_SANITIZE_DIR)/test_link_audio_wait \
@@ -122,8 +157,13 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_perf_dma_probe \
  $(HOST_SANITIZE_DIR)/test_perf_video_sentinel \
  $(HOST_SANITIZE_DIR)/test_input_trace \
+ $(HOST_SANITIZE_DIR)/test_state_hash \
+ $(HOST_SANITIZE_DIR)/test_autorun_config \
  $(HOST_SANITIZE_DIR)/test_menu_model \
  $(HOST_SANITIZE_DIR)/test_menu_layout \
+ $(HOST_SANITIZE_DIR)/test_toast \
+ $(HOST_SANITIZE_DIR)/test_input_chord \
+ $(HOST_SANITIZE_DIR)/test_input_model \
  $(HOST_SANITIZE_DIR)/test_config_model \
  $(HOST_SANITIZE_DIR)/test_config_store \
  $(HOST_SANITIZE_DIR)/test_fast_forward_policy \
@@ -132,15 +172,26 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_art_filter \
  $(HOST_SANITIZE_DIR)/test_dynarec_worklist \
  $(HOST_SANITIZE_DIR)/test_sound_math \
+ $(HOST_SANITIZE_DIR)/test_rewind_ring \
  $(HOST_SANITIZE_DIR)/test_event_queue \
  $(HOST_SANITIZE_DIR)/test_runtime_log \
+ $(HOST_SANITIZE_DIR)/test_zip_rom \
+ $(HOST_SANITIZE_DIR)/test_load_progress \
+ $(HOST_SANITIZE_DIR)/test_savestate_trailer \
  $(HOST_SANITIZE_DIR)/test_arm_core \
  $(HOST_SANITIZE_DIR)/test_core_profile \
+ $(HOST_SANITIZE_DIR)/test_hw_probe \
+ $(HOST_SANITIZE_DIR)/test_mem_stats \
  $(HOST_SANITIZE_DIR)/test_rom_run \
  $(HOST_SANITIZE_DIR)/test_gba_ppu \
  $(HOST_SANITIZE_DIR)/test_gba_ppu_log \
  $(HOST_SANITIZE_DIR)/test_ui_batch \
  $(HOST_SANITIZE_DIR)/test_gbk_glyphs \
+ $(HOST_SANITIZE_DIR)/test_png_write \
+ $(HOST_SANITIZE_DIR)/test_save_format \
+ $(HOST_SANITIZE_DIR)/test_save_store \
+ $(HOST_SANITIZE_DIR)/test_memory_backup \
+ $(HOST_SANITIZE_DIR)/test_eeprom \
  $(HOST_SANITIZE_DIR)/test_upstream_aw_relay
 
 .PHONY: all check test test-tools test-sanitize test-roms check-cbmc \
@@ -157,6 +208,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_GBA_SIO)
 	$(HOST_TEST_LINK_NET)
 	$(HOST_TEST_LINK_CABLE)
+	$(HOST_TEST_NET_FAULT)
 	$(HOST_TEST_ADHOC_PEER)
 	$(HOST_TEST_POWER_LIFECYCLE)
 	$(HOST_TEST_LINK_AUDIO_WAIT)
@@ -168,8 +220,13 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_PERF_DMA_PROBE)
 	$(HOST_TEST_PERF_VIDEO_SENTINEL)
 	$(HOST_TEST_INPUT_TRACE)
+	$(HOST_TEST_STATE_HASH)
+	$(HOST_TEST_AUTORUN_CONFIG)
 	$(HOST_TEST_MENU_MODEL)
 	$(HOST_TEST_MENU_LAYOUT)
+	$(HOST_TEST_TOAST)
+	$(HOST_TEST_INPUT_CHORD)
+	$(HOST_TEST_INPUT_MODEL)
 	$(HOST_TEST_CONFIG_MODEL)
 	$(HOST_TEST_CONFIG_STORE)
 	$(HOST_TEST_FAST_FORWARD)
@@ -178,25 +235,43 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_ART_FILTER)
 	$(HOST_TEST_DYNAREC_WORKLIST)
 	$(HOST_TEST_SOUND_MATH)
+	$(HOST_TEST_REWIND_RING)
 	$(HOST_TEST_EVENT_QUEUE)
 	$(HOST_TEST_RUNTIME_LOG)
+	$(HOST_TEST_ZIP_ROM)
+	$(HOST_TEST_LOAD_PROGRESS)
+	$(HOST_TEST_SAVESTATE_TRAILER)
 	$(HOST_TEST_ARM_CORE)
 	$(HOST_TEST_CORE_PROFILE)
+	$(HOST_TEST_HW_PROBE)
+	$(HOST_TEST_MEM_STATS)
 	$(HOST_TEST_ROM_RUN)
 	$(HOST_TEST_GBA_PPU)
 	$(HOST_TEST_GBA_PPU_LOG)
 	$(HOST_TEST_UI_BATCH)
 	$(HOST_TEST_GBK_GLYPHS)
+	$(HOST_TEST_PNG_WRITE)
+	$(HOST_TEST_SAVE_FORMAT)
+	$(HOST_TEST_SAVE_STORE)
+	$(HOST_TEST_MEMORY_BACKUP)
+	$(HOST_TEST_EEPROM)
 	$(HOST_TEST_UPSTREAM_AW_RELAY)
 
-# Python tests. test_startup, test_browser_text, test_open_bios and
-# test_ui_golden also compile functions cut out of main.c, gui.c,
-# memory.c and psp_video.c with HOST_CC; test_check_scripts and
+# Python tests. test_startup, test_browser_text, test_menu_keys,
+# test_save_io, test_open_bios, test_theme_boot, test_toast_draw,
+# test_input_shortcuts and test_ui_golden also compile functions cut out
+# of main.c, gui.c, input.c, memory.c and psp_video.c with HOST_CC;
+# test_check_scripts and
 # test_check_names run their scripts on scratch Git trees.
 test-tools:
 	$(PYTHON) -m unittest tests/test_compare_benchmarks.py \
+	 tests/test_perf_table.py \
 	 tests/test_decode_runtime_log.py tests/test_startup.py \
-	 tests/test_browser_text.py tests/test_open_bios.py \
+	 tests/test_browser_text.py tests/test_menu_keys.py \
+	 tests/test_open_bios.py tests/test_save_io.py \
+	 tests/test_theme_boot.py tests/test_toast_draw.py \
+	 tests/test_input_shortcuts.py \
+	 tests/test_check_package.py \
 	 tests/test_elf_info.py tests/test_release_manifest.py \
 	 tests/test_build_profile.py tests/test_check_elf.py \
 	 tests/test_check_scripts.py \
@@ -207,7 +282,8 @@ test-tools:
 	 tests/test_upstream_review.py \
 	 tests/test_decode_test_rom.py tests/test_gen_shift_table.py \
 	 tests/test_make_bios_vectors.py tests/test_install_test_build.py \
-	 tests/test_ui_golden.py
+	 tests/test_read_test_screen.py \
+	 tests/test_state_hash_diff.py tests/test_ui_golden.py
 
 # The link cable test runs fewer network profiles (--quick) under the
 # sanitizers, where it is much slower. The menu goldens build their
@@ -217,6 +293,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_gba_sio
 	$(HOST_SANITIZE_DIR)/test_link_net
 	$(HOST_SANITIZE_DIR)/test_link_cable --quick
+	$(HOST_SANITIZE_DIR)/test_net_fault
 	$(HOST_SANITIZE_DIR)/test_adhoc_peer
 	$(HOST_SANITIZE_DIR)/test_power_lifecycle
 	$(HOST_SANITIZE_DIR)/test_link_audio_wait
@@ -228,8 +305,13 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_perf_dma_probe
 	$(HOST_SANITIZE_DIR)/test_perf_video_sentinel
 	$(HOST_SANITIZE_DIR)/test_input_trace
+	$(HOST_SANITIZE_DIR)/test_state_hash
+	$(HOST_SANITIZE_DIR)/test_autorun_config
 	$(HOST_SANITIZE_DIR)/test_menu_model
 	$(HOST_SANITIZE_DIR)/test_menu_layout
+	$(HOST_SANITIZE_DIR)/test_toast
+	$(HOST_SANITIZE_DIR)/test_input_chord
+	$(HOST_SANITIZE_DIR)/test_input_model
 	$(HOST_SANITIZE_DIR)/test_config_model
 	$(HOST_SANITIZE_DIR)/test_config_store
 	$(HOST_SANITIZE_DIR)/test_fast_forward_policy
@@ -238,10 +320,16 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_art_filter
 	$(HOST_SANITIZE_DIR)/test_dynarec_worklist
 	$(HOST_SANITIZE_DIR)/test_sound_math
+	$(HOST_SANITIZE_DIR)/test_rewind_ring
 	$(HOST_SANITIZE_DIR)/test_event_queue
 	$(HOST_SANITIZE_DIR)/test_runtime_log
+	$(HOST_SANITIZE_DIR)/test_zip_rom
+	$(HOST_SANITIZE_DIR)/test_load_progress
+	$(HOST_SANITIZE_DIR)/test_savestate_trailer
 	$(HOST_SANITIZE_DIR)/test_arm_core
 	$(HOST_SANITIZE_DIR)/test_core_profile
+	$(HOST_SANITIZE_DIR)/test_hw_probe
+	$(HOST_SANITIZE_DIR)/test_mem_stats
 	$(HOST_SANITIZE_DIR)/test_rom_run
 	$(HOST_SANITIZE_DIR)/test_gba_ppu
 	$(HOST_SANITIZE_DIR)/test_gba_ppu_log
@@ -249,6 +337,11 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	UI_GOLDEN_CFLAGS='$(HOST_SANITIZE_FLAGS)' $(PYTHON) -m unittest \
 	 tests/test_ui_golden.py
 	$(HOST_SANITIZE_DIR)/test_gbk_glyphs
+	$(HOST_SANITIZE_DIR)/test_png_write
+	$(HOST_SANITIZE_DIR)/test_save_format
+	$(HOST_SANITIZE_DIR)/test_save_store
+	$(HOST_SANITIZE_DIR)/test_memory_backup
+	$(HOST_SANITIZE_DIR)/test_eeprom
 	$(HOST_SANITIZE_DIR)/test_upstream_aw_relay
 
 $(HOST_TEST_CODEBREAKER): tests/test_codebreaker.c source/src/codebreaker.c source/src/codebreaker.h
@@ -273,6 +366,12 @@ $(HOST_TEST_LINK_CABLE): $(LINK_CABLE_SOURCES) $(LINK_CABLE_HEADERS)
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -Isource/src \
 	 $(LINK_CABLE_SOURCES) -o $@
 
+$(HOST_TEST_NET_FAULT): tests/test_net_fault.c source/src/net_fault.c \
+ source/src/net_fault.h source/src/link_net.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_net_fault.c source/src/net_fault.c -o $@
+
 $(HOST_TEST_ADHOC_PEER): tests/test_adhoc_peer.c \
  source/src/adhoc_peer.c source/src/adhoc_peer.h
 	mkdir -p $(HOST_BUILD_DIR)
@@ -289,6 +388,20 @@ $(HOST_TEST_RUNTIME_LOG): tests/test_runtime_log.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -DZLIB_CONST -Isource/src \
 	 tests/test_runtime_log.c source/src/runtime_log.c \
 	 source/src/runtime_log_store.c -lz -o $@
+
+$(HOST_TEST_ZIP_ROM): tests/test_zip_rom.c source/src/zip_rom.c \
+ source/src/zip_rom.h source/src/zlib/zlib.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -DZLIB_CONST -Isource/src \
+	 tests/test_zip_rom.c source/src/zip_rom.c -lz -o $@
+
+# Bundled zlib header, host libz and ZLIB_CONST, as for test_runtime_log.
+$(HOST_TEST_SAVESTATE_TRAILER): tests/test_savestate_trailer.c \
+ source/src/savestate_trailer.c source/src/savestate_trailer.h \
+ source/src/zlib/zlib.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -DZLIB_CONST -Isource/src \
+	 tests/test_savestate_trailer.c source/src/savestate_trailer.c -lz -o $@
 
 $(HOST_TEST_POWER_LIFECYCLE): tests/test_power_lifecycle.c \
  source/src/power_lifecycle.c source/src/power_lifecycle.h
@@ -339,6 +452,9 @@ $(HOST_TEST_PERF_MONITOR): tests/test_perf_monitor.c \
 # build); the test TU itself is built with -Wall -Wextra -Werror.
 $(HOST_TEST_PERF_DMA_PROBE): tests/test_perf_dma_probe.c tests/host_dma_stubs.c \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/runtime_log_psp.h source/src/runtime_log.h \
+ source/src/save_format.c source/src/save_format.h \
+ source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
@@ -354,7 +470,8 @@ $(HOST_TEST_PERF_DMA_PROBE): tests/test_perf_dma_probe.c tests/host_dma_stubs.c 
 	 -I source/src \
 	 tests/test_perf_dma_probe.c tests/host_dma_stubs.c \
 	 source/src/perf_monitor.c source/src/perf_metrics.c \
-	 $(HOST_BUILD_DIR)/perf_dma_memory.o -o $@
+	 source/src/save_format.c source/src/save_store.c \
+	 $(HOST_BUILD_DIR)/perf_dma_memory.o -lz -o $@
 
 # Host test for the psp_video.c frame-time timestamp sentinel
 # psp_video.c and the stub TU are compiled against the
@@ -395,6 +512,20 @@ $(HOST_TEST_INPUT_TRACE): tests/test_input_trace.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_input_trace.c source/src/input_trace.c -o $@
 
+$(HOST_TEST_STATE_HASH): tests/test_state_hash.c \
+ source/src/state_hash.c source/src/state_hash.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_state_hash.c source/src/state_hash.c -o $@
+
+$(HOST_TEST_AUTORUN_CONFIG): tests/test_autorun_config.c \
+ source/src/autorun_config.c source/src/autorun_config.h \
+ source/src/net_fault.c source/src/net_fault.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_autorun_config.c source/src/autorun_config.c \
+	 source/src/net_fault.c -o $@
+
 $(HOST_TEST_MENU_MODEL): tests/test_menu_model.c \
  source/src/menu_model.c source/src/menu_model.h \
  source/src/menu_catalog.c source/src/menu_catalog.h
@@ -407,6 +538,24 @@ $(HOST_TEST_MENU_LAYOUT): tests/test_menu_layout.c \
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_menu_layout.c source/src/menu_layout.c -o $@
+
+$(HOST_TEST_TOAST): tests/test_toast.c source/src/toast.c source/src/toast.h \
+ source/src/menu_layout.c source/src/menu_layout.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_toast.c source/src/toast.c source/src/menu_layout.c -o $@
+
+$(HOST_TEST_INPUT_CHORD): tests/test_input_chord.c source/src/input_chord.c \
+ source/src/input_chord.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_input_chord.c source/src/input_chord.c -o $@
+
+$(HOST_TEST_INPUT_MODEL): tests/test_input_model.c source/src/input_model.c \
+ source/src/input_model.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_input_model.c source/src/input_model.c -o $@
 
 $(HOST_TEST_CONFIG_MODEL): tests/test_config_model.c \
  source/src/config_model.c source/src/config_model.h
@@ -458,11 +607,23 @@ $(HOST_TEST_SOUND_MATH): tests/test_sound_math.c source/src/sound_math.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_sound_math.c source/src/sound_math.c -o $@
 
+$(HOST_TEST_REWIND_RING): tests/test_rewind_ring.c \
+ source/src/rewind_ring.c source/src/rewind_ring.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_rewind_ring.c source/src/rewind_ring.c -o $@
+
 $(HOST_TEST_EVENT_QUEUE): tests/test_event_queue.c source/src/event_queue.c \
  source/src/event_queue.h
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_event_queue.c source/src/event_queue.c -o $@
+
+$(HOST_TEST_LOAD_PROGRESS): tests/test_load_progress.c \
+ source/src/load_progress.c source/src/load_progress.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_load_progress.c source/src/load_progress.c -o $@
 
 $(HOST_TEST_ARM_CORE): tests/test_arm_core.c $(ARM_CORE_SOURCES) \
  $(ARM_CORE_HEADERS)
@@ -475,6 +636,18 @@ $(HOST_TEST_CORE_PROFILE): tests/test_core_profile.c \
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_core_profile.c source/src/core_profile.c -o $@
+
+$(HOST_TEST_HW_PROBE): tests/test_hw_probe.c source/src/hw_probe.c \
+ source/src/hw_probe.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_hw_probe.c source/src/hw_probe.c -o $@
+
+$(HOST_TEST_MEM_STATS): tests/test_mem_stats.c source/src/mem_stats.c \
+ source/src/mem_stats.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_mem_stats.c source/src/mem_stats.c -o $@
 
 $(HOST_ROM_RUN): $(ROM_RUN_DEPS)
 	mkdir -p $(HOST_BUILD_DIR)
@@ -513,6 +686,81 @@ $(HOST_TEST_GBK_GLYPHS): tests/test_gbk_glyphs.c source/src/gbkfont.c
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_gbk_glyphs.c -o $@
 
+$(HOST_TEST_PNG_WRITE): tests/test_png_write.c source/src/png_write.c \
+ source/src/png_write.h $(PNG_WRITE_ZLIB_SOURCES) source/src/zlib/zlib.h
+	mkdir -p $(HOST_BUILD_DIR)
+	for f in $(PNG_WRITE_ZLIB); do \
+	 $(HOST_CC) -std=c99 -w $(PNG_WRITE_FLAGS) -c source/src/zlib/$$f.c \
+	 -o $(HOST_BUILD_DIR)/png_zlib_$$f.o || exit 1; \
+	done
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(PNG_WRITE_FLAGS) -Isource/src \
+	 tests/test_png_write.c source/src/png_write.c \
+	 $(PNG_WRITE_ZLIB:%=$(HOST_BUILD_DIR)/png_zlib_%.o) -o $@
+
+$(HOST_TEST_SAVE_FORMAT): tests/test_save_format.c \
+ source/src/save_format.c source/src/save_format.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_save_format.c source/src/save_format.c -o $@
+
+$(HOST_TEST_SAVE_STORE): tests/test_save_store.c tests/fake_store_io.c \
+ tests/fake_store_io.h source/src/save_store.c source/src/save_store.h \
+ source/src/zlib/zlib.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_save_store.c tests/fake_store_io.c source/src/save_store.c \
+	 -lz -o $@
+
+# The real memory.c save path (load_gamepak, the unreadable-save prompt,
+# every .sav write) against tests/fake_store_io.c, built like
+# test_perf_dma_probe but into its own memory object, so make -j can build
+# both at once.
+$(HOST_TEST_MEMORY_BACKUP): tests/test_memory_backup.c \
+ tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
+ source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/runtime_log_psp.h source/src/runtime_log.h \
+ source/src/save_format.c source/src/save_format.h \
+ source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
+ source/src/perf_monitor.c source/src/perf_monitor.h \
+ source/src/perf_metrics.c source/src/perf_metrics.h \
+ tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
+ tests/host_shim/psptypes.h | psp-sdk-headers
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -O1 -w -include tests/host_shim/host_builtins.h \
+	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -DGBA_RUSH_PROFILE_RELEASE \
+	 -c source/src/memory.c -o $(HOST_BUILD_DIR)/memory_backup_memory.o
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror \
+	 -I source/src \
+	 tests/test_memory_backup.c tests/fake_store_io.c tests/host_dma_stubs.c \
+	 source/src/save_format.c source/src/save_store.c \
+	 source/src/perf_monitor.c source/src/perf_metrics.c \
+	 $(HOST_BUILD_DIR)/memory_backup_memory.o -lz -o $@
+
+# The EEPROM protocol through memory.c's DMA3, built like test_memory_backup
+# into its own memory object.
+$(HOST_TEST_EEPROM): tests/test_eeprom.c \
+ tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
+ source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/runtime_log_psp.h source/src/runtime_log.h \
+ source/src/save_format.c source/src/save_format.h \
+ source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
+ source/src/perf_monitor.c source/src/perf_monitor.h \
+ source/src/perf_metrics.c source/src/perf_metrics.h \
+ tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
+ tests/host_shim/psptypes.h | psp-sdk-headers
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -O1 -w -include tests/host_shim/host_builtins.h \
+	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -DGBA_RUSH_PROFILE_RELEASE \
+	 -c source/src/memory.c -o $(HOST_BUILD_DIR)/eeprom_memory.o
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror \
+	 -I source/src \
+	 tests/test_eeprom.c tests/fake_store_io.c tests/host_dma_stubs.c \
+	 source/src/save_format.c source/src/save_store.c \
+	 source/src/perf_monitor.c source/src/perf_metrics.c \
+	 $(HOST_BUILD_DIR)/eeprom_memory.o -lz -o $@
+
 # A model of a libretro/gpsp code path, for docs/UPSTREAM.md: no source module.
 $(HOST_TEST_UPSTREAM_AW_RELAY): tests/test_upstream_aw_relay.c
 	mkdir -p $(HOST_BUILD_DIR)
@@ -537,6 +785,12 @@ $(HOST_SANITIZE_DIR)/test_link_cable: $(LINK_CABLE_SOURCES) \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src $(LINK_CABLE_SOURCES) -o $@
 
+$(HOST_SANITIZE_DIR)/test_net_fault: tests/test_net_fault.c \
+ source/src/net_fault.c source/src/net_fault.h source/src/link_net.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_net_fault.c source/src/net_fault.c -o $@
+
 $(HOST_SANITIZE_DIR)/test_link_net: tests/test_link_net.c \
  source/src/link_net.c source/src/link_net.h
 	mkdir -p $(HOST_SANITIZE_DIR)
@@ -557,6 +811,21 @@ $(HOST_SANITIZE_DIR)/test_runtime_log: tests/test_runtime_log.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -DZLIB_CONST -Isource/src tests/test_runtime_log.c \
 	 source/src/runtime_log.c source/src/runtime_log_store.c -lz -o $@
+
+$(HOST_SANITIZE_DIR)/test_zip_rom: tests/test_zip_rom.c \
+ source/src/zip_rom.c source/src/zip_rom.h source/src/zlib/zlib.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -DZLIB_CONST -Isource/src tests/test_zip_rom.c source/src/zip_rom.c \
+	 -lz -o $@
+
+$(HOST_SANITIZE_DIR)/test_savestate_trailer: tests/test_savestate_trailer.c \
+ source/src/savestate_trailer.c source/src/savestate_trailer.h \
+ source/src/zlib/zlib.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -DZLIB_CONST -Isource/src tests/test_savestate_trailer.c \
+	 source/src/savestate_trailer.c -lz -o $@
 
 $(HOST_SANITIZE_DIR)/test_power_lifecycle: tests/test_power_lifecycle.c \
  source/src/power_lifecycle.c source/src/power_lifecycle.h
@@ -599,6 +868,9 @@ $(HOST_SANITIZE_DIR)/test_perf_report: tests/test_perf_report.c \
 $(HOST_SANITIZE_DIR)/test_perf_dma_probe: tests/test_perf_dma_probe.c \
  tests/host_dma_stubs.c \
  source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/runtime_log_psp.h source/src/runtime_log.h \
+ source/src/save_format.c source/src/save_format.h \
+ source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
  source/src/perf_monitor.c source/src/perf_monitor.h \
  source/src/perf_metrics.c source/src/perf_metrics.h \
  tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
@@ -615,7 +887,8 @@ $(HOST_SANITIZE_DIR)/test_perf_dma_probe: tests/test_perf_dma_probe.c \
 	 -I source/src \
 	 tests/test_perf_dma_probe.c tests/host_dma_stubs.c \
 	 source/src/perf_monitor.c source/src/perf_metrics.c \
-	 $(HOST_SANITIZE_DIR)/perf_dma_memory.o -o $@
+	 source/src/save_format.c source/src/save_store.c \
+	 $(HOST_SANITIZE_DIR)/perf_dma_memory.o -lz -o $@
 
 $(HOST_SANITIZE_DIR)/test_perf_video_sentinel: tests/test_perf_video_sentinel.c \
  tests/host_psp_video_stubs.c \
@@ -657,6 +930,20 @@ $(HOST_SANITIZE_DIR)/test_input_trace: tests/test_input_trace.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_input_trace.c source/src/input_trace.c -o $@
 
+$(HOST_SANITIZE_DIR)/test_state_hash: tests/test_state_hash.c \
+ source/src/state_hash.c source/src/state_hash.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_state_hash.c source/src/state_hash.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_autorun_config: tests/test_autorun_config.c \
+ source/src/autorun_config.c source/src/autorun_config.h \
+ source/src/net_fault.c source/src/net_fault.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_autorun_config.c source/src/autorun_config.c \
+	 source/src/net_fault.c -o $@
+
 $(HOST_SANITIZE_DIR)/test_menu_model: tests/test_menu_model.c \
  source/src/menu_model.c source/src/menu_model.h \
  source/src/menu_catalog.c source/src/menu_catalog.h
@@ -670,6 +957,25 @@ $(HOST_SANITIZE_DIR)/test_menu_layout: tests/test_menu_layout.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_menu_layout.c source/src/menu_layout.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_toast: tests/test_toast.c source/src/toast.c \
+ source/src/toast.h source/src/menu_layout.c source/src/menu_layout.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_toast.c source/src/toast.c \
+	 source/src/menu_layout.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_input_chord: tests/test_input_chord.c \
+ source/src/input_chord.c source/src/input_chord.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_input_chord.c source/src/input_chord.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_input_model: tests/test_input_model.c \
+ source/src/input_model.c source/src/input_model.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_input_model.c source/src/input_model.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_config_model: tests/test_config_model.c \
  source/src/config_model.c source/src/config_model.h
@@ -726,11 +1032,24 @@ $(HOST_SANITIZE_DIR)/test_sound_math: tests/test_sound_math.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_sound_math.c source/src/sound_math.c -o $@
 
+$(HOST_SANITIZE_DIR)/test_rewind_ring: tests/test_rewind_ring.c \
+ source/src/rewind_ring.c source/src/rewind_ring.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_rewind_ring.c source/src/rewind_ring.c -o $@
+
 $(HOST_SANITIZE_DIR)/test_event_queue: tests/test_event_queue.c \
  source/src/event_queue.c source/src/event_queue.h
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_event_queue.c source/src/event_queue.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_load_progress: tests/test_load_progress.c \
+ source/src/load_progress.c source/src/load_progress.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_load_progress.c source/src/load_progress.c \
+	 -o $@
 
 $(HOST_SANITIZE_DIR)/test_arm_core: tests/test_arm_core.c \
  $(ARM_CORE_SOURCES) $(ARM_CORE_HEADERS)
@@ -743,6 +1062,18 @@ $(HOST_SANITIZE_DIR)/test_core_profile: tests/test_core_profile.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_core_profile.c source/src/core_profile.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_hw_probe: tests/test_hw_probe.c \
+ source/src/hw_probe.c source/src/hw_probe.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_hw_probe.c source/src/hw_probe.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_mem_stats: tests/test_mem_stats.c \
+ source/src/mem_stats.c source/src/mem_stats.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_mem_stats.c source/src/mem_stats.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_rom_run: tests/test_rom_run.c $(ROM_RUN_DEPS)
 	mkdir -p $(HOST_SANITIZE_DIR)
@@ -772,12 +1103,85 @@ $(HOST_SANITIZE_DIR)/test_gbk_glyphs: tests/test_gbk_glyphs.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_gbk_glyphs.c -o $@
 
+$(HOST_SANITIZE_DIR)/test_png_write: tests/test_png_write.c \
+ source/src/png_write.c source/src/png_write.h $(PNG_WRITE_ZLIB_SOURCES) \
+ source/src/zlib/zlib.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	for f in $(PNG_WRITE_ZLIB); do \
+	 $(HOST_CC) -std=c99 -w $(PNG_WRITE_FLAGS) $(HOST_SANITIZE_FLAGS) \
+	 -c source/src/zlib/$$f.c -o $(HOST_SANITIZE_DIR)/png_zlib_$$f.o || exit 1; \
+	done
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(PNG_WRITE_FLAGS) \
+	 $(HOST_SANITIZE_FLAGS) -Isource/src tests/test_png_write.c \
+	 source/src/png_write.c \
+	 $(PNG_WRITE_ZLIB:%=$(HOST_SANITIZE_DIR)/png_zlib_%.o) -o $@
+
+$(HOST_SANITIZE_DIR)/test_save_format: tests/test_save_format.c \
+ source/src/save_format.c source/src/save_format.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_save_format.c source/src/save_format.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_save_store: tests/test_save_store.c \
+ tests/fake_store_io.c tests/fake_store_io.h \
+ source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_save_store.c tests/fake_store_io.c \
+	 source/src/save_store.c -lz -o $@
+
+$(HOST_SANITIZE_DIR)/test_memory_backup: tests/test_memory_backup.c \
+ tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
+ source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/runtime_log_psp.h source/src/runtime_log.h \
+ source/src/save_format.c source/src/save_format.h \
+ source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
+ source/src/perf_monitor.c source/src/perf_monitor.h \
+ source/src/perf_metrics.c source/src/perf_metrics.h \
+ tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
+ tests/host_shim/psptypes.h | psp-sdk-headers
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
+	 -include tests/host_shim/host_builtins.h \
+	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -DGBA_RUSH_PROFILE_RELEASE \
+	 -c source/src/memory.c -o $(HOST_SANITIZE_DIR)/memory_backup_memory.o
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -I source/src \
+	 tests/test_memory_backup.c tests/fake_store_io.c tests/host_dma_stubs.c \
+	 source/src/save_format.c source/src/save_store.c \
+	 source/src/perf_monitor.c source/src/perf_metrics.c \
+	 $(HOST_SANITIZE_DIR)/memory_backup_memory.o -lz -o $@
+
+$(HOST_SANITIZE_DIR)/test_eeprom: tests/test_eeprom.c \
+ tests/host_dma_stubs.c tests/fake_store_io.c tests/fake_store_io.h \
+ source/src/memory.c source/src/memory.h source/src/open_bios.h source/src/cpu.h \
+ source/src/runtime_log_psp.h source/src/runtime_log.h \
+ source/src/save_format.c source/src/save_format.h \
+ source/src/save_store.c source/src/save_store.h source/src/zlib/zlib.h \
+ source/src/perf_monitor.c source/src/perf_monitor.h \
+ source/src/perf_metrics.c source/src/perf_metrics.h \
+ tests/host_shim/malloc.h tests/host_shim/host_builtins.h \
+ tests/host_shim/psptypes.h | psp-sdk-headers
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -w $(HOST_SANITIZE_FLAGS) \
+	 -include tests/host_shim/host_builtins.h \
+	 -I source/src -I $(PSP_SDK_INCLUDE) -I tests/host_shim \
+	 -DGBA_RUSH_PROFILE_RELEASE \
+	 -c source/src/memory.c -o $(HOST_SANITIZE_DIR)/eeprom_memory.o
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -I source/src \
+	 tests/test_eeprom.c tests/fake_store_io.c tests/host_dma_stubs.c \
+	 source/src/save_format.c source/src/save_store.c \
+	 source/src/perf_monitor.c source/src/perf_metrics.c \
+	 $(HOST_SANITIZE_DIR)/eeprom_memory.o -lz -o $@
+
 $(HOST_SANITIZE_DIR)/test_upstream_aw_relay: tests/test_upstream_aw_relay.c
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 tests/test_upstream_aw_relay.c -o $@
 
-# Optional gates outside make check: the CBMC proof needs CBMC, the ROM link
+# Optional gates outside make check: the CBMC proofs need CBMC, the ROM link
 # trade needs mGBA plus your own FireRed ROM, BIOS and save, and races Mario
 # Kart: Super Circuit as well when MKSC names its ROM. check-core runs the
 # new ARM core against the SingleStepTests suite and in lockstep with mGBA

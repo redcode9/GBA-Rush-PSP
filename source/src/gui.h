@@ -25,6 +25,7 @@
 #ifndef GUI_H
 #define GUI_H
 
+#include "save_store.h"
 
 extern char dir_roms[MAX_PATH];
 extern char dir_save[MAX_PATH];
@@ -39,10 +40,14 @@ s32 load_game_config_file(void);
 s32 load_config_file(void);
 s32 save_config_file(void);
 
+/* The sceIo calls memory.c reads and writes the .sav with. */
+extern const SaveStoreIo gui_save_store_io;
+
 s32 save_theme_config(void);
 s32 load_theme_config(void);
 
 s32 load_dir_cfg(char *file_name);
+void set_default_directories(void);
 
 u32 menu(void);
 
@@ -51,9 +56,25 @@ extern u32 savestate_slot;
 u32 action_loadstate(void);
 u32 action_savestate(void);
 void maybe_load_auto_savestate(void);
+/* Saves the perf report and shows the result on the Diagnostics page;
+   main.c calls it when the unbound benchmark ends. */
+void menu_diagnostics_write_report(void);
 /* Recent ROMs list (recent.cfg): read at boot, updated after each load. */
 void load_recent_roms(void);
 void add_recent_rom(const char *filename);
+
+/* Shows MSG[msg_id], formatted with printf arguments, as a 3 s toast. */
+void toast_show(u32 msg_id, ...);
+/* Steps the screen scale through the Video cycle shortcut's modes. */
+void menu_cycle_video_mode(void);
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+/* Replays a .gbit from the current frame: 2 when it also loaded its .svs,
+   1 without one, 0 on a failure, -1 when the .svs is missing or another. */
+int gui_trace_replay_file(const char *gbit_path);
+/* Writes the replay's state hashes (.gbsh text) to path and frees them;
+   0 when there are none or the write failed. */
+int gui_trace_write_hashes(const char *path);
+#endif
 
 /* Theme colors — defined in gui.c, accessible everywhere via common.h */
 extern u16 color_bg;

@@ -88,13 +88,10 @@
 #define FILE_SEEK(filename_tag, offset, type)                                 \
   sceIoLseek(filename_tag, offset, PSP_##type)                                \
 
-// Appends to the in-memory savestate buffer at write_mem_ptr (memory.c);
+// Appends to the savestate being written (savestate_write_mem in memory.c);
 // filename_tag is unused.
 #define FILE_WRITE_MEM(filename_tag, buffer, size)                            \
-{                                                                             \
-  memcpy(write_mem_ptr, buffer, size);                                        \
-  write_mem_ptr += (size);                                                    \
-}                                                                             \
+  savestate_write_mem(buffer, size)                                           \
 
 // These must be variables, not constants.
 
@@ -160,7 +157,6 @@ typedef u32 FIXED08_24;
 #include "libpower/psppower.h"
 
 #include "zip.h"
-#include "png.h"
 
 #include "message.h"
 
