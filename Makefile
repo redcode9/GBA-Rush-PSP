@@ -64,6 +64,7 @@ HOST_TEST_DYNAREC_WORKLIST = $(HOST_BUILD_DIR)/test_dynarec_worklist
 HOST_TEST_SOUND_MATH = $(HOST_BUILD_DIR)/test_sound_math
 HOST_TEST_EVENT_QUEUE = $(HOST_BUILD_DIR)/test_event_queue
 HOST_TEST_RUNTIME_LOG = $(HOST_BUILD_DIR)/test_runtime_log
+HOST_TEST_SAVESTATE_TRAILER = $(HOST_BUILD_DIR)/test_savestate_trailer
 HOST_TEST_ARM_CORE = $(HOST_BUILD_DIR)/test_arm_core
 HOST_TEST_CORE_PROFILE = $(HOST_BUILD_DIR)/test_core_profile
 HOST_TEST_HW_PROBE = $(HOST_BUILD_DIR)/test_hw_probe
@@ -102,7 +103,8 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
  $(HOST_TEST_DYNAREC_WORKLIST) $(HOST_TEST_SOUND_MATH) \
  $(HOST_TEST_EVENT_QUEUE) \
- $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_ARM_CORE) $(HOST_TEST_CORE_PROFILE) \
+ $(HOST_TEST_RUNTIME_LOG) $(HOST_TEST_SAVESTATE_TRAILER) \
+ $(HOST_TEST_ARM_CORE) $(HOST_TEST_CORE_PROFILE) \
  $(HOST_TEST_HW_PROBE) $(HOST_TEST_MEM_STATS) \
  $(HOST_TEST_ROM_RUN) \
  $(HOST_TEST_GBA_PPU) $(HOST_TEST_GBA_PPU_LOG) $(HOST_TEST_SAVE_FORMAT) \
@@ -134,6 +136,7 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_sound_math \
  $(HOST_SANITIZE_DIR)/test_event_queue \
  $(HOST_SANITIZE_DIR)/test_runtime_log \
+ $(HOST_SANITIZE_DIR)/test_savestate_trailer \
  $(HOST_SANITIZE_DIR)/test_arm_core \
  $(HOST_SANITIZE_DIR)/test_core_profile \
  $(HOST_SANITIZE_DIR)/test_hw_probe \
@@ -183,6 +186,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_SOUND_MATH)
 	$(HOST_TEST_EVENT_QUEUE)
 	$(HOST_TEST_RUNTIME_LOG)
+	$(HOST_TEST_SAVESTATE_TRAILER)
 	$(HOST_TEST_ARM_CORE)
 	$(HOST_TEST_CORE_PROFILE)
 	$(HOST_TEST_HW_PROBE)
@@ -247,6 +251,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_sound_math
 	$(HOST_SANITIZE_DIR)/test_event_queue
 	$(HOST_SANITIZE_DIR)/test_runtime_log
+	$(HOST_SANITIZE_DIR)/test_savestate_trailer
 	$(HOST_SANITIZE_DIR)/test_arm_core
 	$(HOST_SANITIZE_DIR)/test_core_profile
 	$(HOST_SANITIZE_DIR)/test_hw_probe
@@ -298,6 +303,14 @@ $(HOST_TEST_RUNTIME_LOG): tests/test_runtime_log.c \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -DZLIB_CONST -Isource/src \
 	 tests/test_runtime_log.c source/src/runtime_log.c \
 	 source/src/runtime_log_store.c -lz -o $@
+
+# Bundled zlib header, host libz and ZLIB_CONST, as for test_runtime_log.
+$(HOST_TEST_SAVESTATE_TRAILER): tests/test_savestate_trailer.c \
+ source/src/savestate_trailer.c source/src/savestate_trailer.h \
+ source/src/zlib/zlib.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -DZLIB_CONST -Isource/src \
+	 tests/test_savestate_trailer.c source/src/savestate_trailer.c -lz -o $@
 
 $(HOST_TEST_POWER_LIFECYCLE): tests/test_power_lifecycle.c \
  source/src/power_lifecycle.c source/src/power_lifecycle.h
@@ -630,6 +643,14 @@ $(HOST_SANITIZE_DIR)/test_runtime_log: tests/test_runtime_log.c \
 	 -DZLIB_CONST -Isource/src tests/test_runtime_log.c \
 	 source/src/runtime_log.c source/src/runtime_log_store.c -lz -o $@
 
+$(HOST_SANITIZE_DIR)/test_savestate_trailer: tests/test_savestate_trailer.c \
+ source/src/savestate_trailer.c source/src/savestate_trailer.h \
+ source/src/zlib/zlib.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -DZLIB_CONST -Isource/src tests/test_savestate_trailer.c \
+	 source/src/savestate_trailer.c -lz -o $@
+
 $(HOST_SANITIZE_DIR)/test_power_lifecycle: tests/test_power_lifecycle.c \
  source/src/power_lifecycle.c source/src/power_lifecycle.h
 	mkdir -p $(HOST_SANITIZE_DIR)
@@ -908,7 +929,7 @@ $(HOST_SANITIZE_DIR)/test_upstream_aw_relay: tests/test_upstream_aw_relay.c
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 tests/test_upstream_aw_relay.c -o $@
 
-# Optional gates outside make check: the CBMC proof needs CBMC, the ROM link
+# Optional gates outside make check: the CBMC proofs need CBMC, the ROM link
 # trade needs mGBA plus your own FireRed ROM, BIOS and save, and races Mario
 # Kart: Super Circuit as well when MKSC names its ROM. check-core runs the
 # new ARM core against the SingleStepTests suite and in lockstep with mGBA
