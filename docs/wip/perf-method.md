@@ -15,7 +15,7 @@
 
 ## 1.6
 
-- [ ] **PRF-1.1** — compare-benchmarks: verdetto esatto su N≥3 run per braccio · S, 1 gg · dipende da: — · PSP: no · **subito** · _in parte: da 4+4 e 5+3 run in su il verdetto afferma una differenza anche con intervalli sovrapposti (voluto, lo spiega CONTRIBUTING.md), mentre l'accettazione lo esclude; il proprietario sceglie se limitare l'accettazione a 4+3 run o far rifiutare quelle affermazioni al codice_
+- [ ] **PRF-1.1** — compare-benchmarks: verdetto esatto su N≥3 run per braccio · S, 1 gg · dipende da: — · PSP: no · **subito** · _in parte: il proprietario ha limitato l'accettazione a 4+3 run per braccio (decisione del 2026-11-09, testo aggiornato in docs/BACKLOG.md); da 4+4 e 5+3 run in su il verdetto può affermare una differenza anche con intervalli sovrapposti, come spiega CONTRIBUTING.md; manca la verifica della CI_
 - [ ] **PRF-1.2** — Gate sugli estremi: p99, massimo robusto, work p95, frame oltre 1,5× budget al minuto · S, 1 gg · dipende da: PRF-1.1, PRF-2.1, ENG-1.6 · PSP: no · _in parte: manca la verifica della CI_
 - [ ] **PRF-1.3** — Ordine alternato verificato, ora di cattura e affermazione dichiarata prima · S, 1 gg · dipende da: PRF-1.1, PRF-2.1, ENG-1.6 · PSP: no · _in parte: manca la verifica della CI_
 - [x] **PRF-1.4** — Archivio delle baseline e tabella per modello generata · M, 2 gg · dipende da: PRF-1.1 · PSP: no
