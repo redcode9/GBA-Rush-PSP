@@ -19,173 +19,80 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-/* Loads a ROM from a .zip for load_gamepak() in memory.c. Only the first
- * entry is read, only if it is a .gba, .agb or .bin file, stored or
- * deflated, straight into gamepak_rom. */
+/* Loads a ROM from a .zip for load_gamepak() in memory.c. zip_rom.c does the
+ * work: it reads the first entry, a stored or deflated .gba, .agb or .bin
+ * file, straight into gamepak_rom and checks its size and CRC32. This file
+ * only gives it the PSP file and reports the archive bytes used to the
+ * loading popup. */
 
 #include "common.h"
+#include "zip_rom.h"
 
 
-#define ZIP_BUFFER_SIZE (128 * 1024)   // compressed input chunk size
-
-struct SZIPFileDataDescriptor
-{
-  s32 CRC32;
-  s32 CompressedSize;
-  s32 UncompressedSize;
-} __attribute__((packed));
-
-/* ZIP local file header, little-endian on disk like the PSP. */
-struct SZIPFileHeader
-{
-  char Sig[4];
-  s16 VersionToExtract;
-  s16 GeneralBitFlag;
-  s16 CompressionMethod;
-  s16 LastModFileTime;
-  s16 LastModFileDate;
-  struct SZIPFileDataDescriptor DataDescriptor;
-  s16 FilenameLength;
-  s16 ExtraFieldLength;
-}  __attribute__((packed));
-
-void draw_progress(u32 output_size, u32 total_size);
-
-
-/* Returns the ROM size in bytes, -1 on error, or -2 if the ROM does not fit
-   in gamepak_ram_buffer_size. */
-s32 load_file_zip(char *filename)
+typedef struct
 {
   SceUID fd;
-  struct SZIPFileHeader data;
-  char tmp[MAX_FILE];
-  s32 retval = -1;
-  u8 *buffer = NULL;
-  u8 *cbuffer = NULL;
-  char *ext;
+  const char *name;
+  uint32_t done;  /* archive bytes last reported to the popup */
+} ZipFile;
 
-  FILE_OPEN(fd, filename, READ);
+static int32_t zip_file_read(void *ctx, uint8_t *buf, uint32_t len)
+{
+  return FILE_READ(((ZipFile *)ctx)->fd, buf, len);
+}
 
-  if (!FILE_CHECK_VALID(fd))
+static void zip_file_progress(void *ctx, uint32_t done, uint32_t total)
+{
+  ((ZipFile *)ctx)->done = done;
+  if (rom_load_progress != NULL)
+    rom_load_progress(((ZipFile *)ctx)->name, MSG_LOADING_STAGE_UNZIP, done,
+     total);
+}
+
+s32 load_file_zip(char *filename)
+{
+  ZipFile file;
+  ZipRomIo io;
+  uint32_t rom_size = 0;
+  int result;
+
+  FILE_OPEN(file.fd, filename, READ);
+  file.name = filename;
+  file.done = 0;
+
+  if (!FILE_CHECK_VALID(file.fd))
     return -1;
 
-  FILE_READ(fd, &data, sizeof(struct SZIPFileHeader));
+  io.ctx = &file;
+  io.read = zip_file_read;
+  io.progress = zip_file_progress;
+  io.in_buf = malloc(ROM_LOAD_CHUNK_SIZE);
+  io.in_cap = ROM_LOAD_CHUNK_SIZE;
+  io.total = file_length(filename);
+  rom_load_opened_us = sceKernelGetSystemTimeWide();
 
-  // local file header signature "PK\3\4"
-  if ((data.Sig[0] != 0x50) || (data.Sig[1] != 0x4B) || (data.Sig[2] != 0x03) || (data.Sig[3] != 0x04))
+  if (io.in_buf == NULL)
   {
-    goto outcode;
+    FILE_CLOSE(file.fd);
+    return -1;
   }
 
-  /* FilenameLength/ExtraFieldLength are signed in the on-disk header.
-   * Reject negatives and names that cannot fit in tmp[MAX_FILE]. */
-  if (data.FilenameLength < 0 || data.FilenameLength >= (s16)MAX_FILE ||
-      data.ExtraFieldLength < 0)
-  {
-    goto outcode;
-  }
+  result = zip_rom_load(&io, gamepak_rom, gamepak_ram_buffer_size, &rom_size);
 
-  FILE_READ(fd, tmp, data.FilenameLength);
-  tmp[data.FilenameLength] = 0; // end string
+  free(io.in_buf);
+  FILE_CLOSE(file.fd);
 
-  if (data.ExtraFieldLength != 0)
-  {
-    FILE_SEEK(fd, data.ExtraFieldLength, SEEK_CUR);
-  }
+  if (result == ZIP_ROM_TOO_BIG)
+    return -2;
 
-  // flag bit 3: the sizes are in a data descriptor, not in this header
-  if ((data.GeneralBitFlag & 0x0008) != 0)
-  {
-    FILE_READ(fd, &data.DataDescriptor, sizeof(struct SZIPFileDataDescriptor));
-  }
+  // An empty ROM must fail here: load_gamepak()'s callers take 0 as success.
+  if (result != ZIP_ROM_OK || rom_size == 0)
+    return LOAD_GAMEPAK_ZIP_DAMAGED;
 
-  // file is too big
-  if ((u32)data.DataDescriptor.UncompressedSize > gamepak_ram_buffer_size)
-  {
-    retval = -2;
-    goto outcode;
-  }
+  // The bytes after the entry (the central directory) are never read: show
+  // the full bar before the game starts.
+  if (file.done < io.total)
+    zip_file_progress(&file, io.total, io.total);
 
-  ext = strrchr(tmp, '.');
-  if (ext == NULL)
-    goto outcode;
-  ext++;
-
-  if ((strcasecmp(ext, "bin") == 0) || (strcasecmp(ext, "gba") == 0) || (strcasecmp(ext, "agb") == 0))
-  {
-    buffer = gamepak_rom;
-
-    // ok, found
-    switch (data.CompressionMethod)
-    {
-      case 0: // Z_NO_COMPRESSION
-        retval = (u32)data.DataDescriptor.UncompressedSize;
-        FILE_READ(fd, buffer, retval);
-        break;
-
-      case 8: // Z_DEFLATED
-      {
-        z_stream stream;
-        s32 err;
-
-        if ((cbuffer = (u8 *)malloc(ZIP_BUFFER_SIZE)) == NULL)
-          break;
-        memset(cbuffer, 0, ZIP_BUFFER_SIZE);
-
-        stream.next_in   = (Bytef*)cbuffer;
-        stream.avail_in  = (u32)ZIP_BUFFER_SIZE;
-        stream.next_out  = (Bytef*)buffer;
-        stream.avail_out = data.DataDescriptor.UncompressedSize;
-        stream.zalloc    = (alloc_func)Z_NULL;
-        stream.zfree     = (free_func)Z_NULL;
-        stream.opaque    = (voidpf)Z_NULL;
-
-        // negative window bits: raw deflate data, no zlib header
-        err = inflateInit2(&stream, -MAX_WBITS);
-
-        FILE_READ(fd, cbuffer, ZIP_BUFFER_SIZE);
-
-        if (err == Z_OK)
-        {
-          retval = (u32)data.DataDescriptor.UncompressedSize;
-
-          while (err != Z_STREAM_END)
-          {
-            err = inflate(&stream, Z_SYNC_FLUSH);
-
-            if (err == Z_BUF_ERROR)
-            {
-              stream.avail_in = ZIP_BUFFER_SIZE;
-              stream.next_in  = (Bytef*)cbuffer;
-
-              FILE_READ(fd, cbuffer, ZIP_BUFFER_SIZE);
-            }
-
-            draw_progress((u32)stream.total_out, (u32)retval);
-            flip_screen(0);
-          }
-
-          err = Z_OK;
-          inflateEnd(&stream);
-        }
-
-        free(cbuffer);
-        break;
-      }
-    }
-  }
-
-outcode:
-  FILE_CLOSE(fd);
-
-  return retval;
+  return (s32)rom_size;
 }
-
-/* 200-pixel progress bar centred on the 480x272 screen. */
-void draw_progress(u32 output_size, u32 total_size)
-{
-  draw_box_line(140 - 4, 140 - 4, 340 + 4, 165 + 4, COLOR15_WHITE);
-  draw_box_line(140 - 3, 140 - 3, 340 + 3, 165 + 3, COLOR15_WHITE);
-  draw_box_fill(140, 140, 140 + ((u64)output_size * 200 / total_size), 165, COLOR15_WHITE);
-}
-

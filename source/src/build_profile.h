@@ -27,6 +27,8 @@
 #define ENABLE_DIAGNOSTIC_INPUT_TRACE
 #define ENABLE_DIAGNOSTIC_AUTORUN
 #define ENABLE_DIAGNOSTIC_NET_INJECTION
+#define ENABLE_DIAGNOSTIC_MEMORY_TRACE
+#define ENABLE_DIAGNOSTIC_BENCH_ARMS
 
 #elif defined(GBA_RUSH_PROFILE_RELEASE)
 #define GBA_RUSH_PROFILE_NAME "release"
@@ -49,6 +51,15 @@
 #endif
 #if defined(ENABLE_DIAGNOSTIC_CORE_PROFILE)
 #error "ENABLE_DIAGNOSTIC_CORE_PROFILE (new core profile) is a diagnostic feature: build it with make PROFILE=diagnostic"
+#endif
+#if defined(ENABLE_DIAGNOSTIC_HW_PROBE)
+#error "ENABLE_DIAGNOSTIC_HW_PROBE (memory system probe) is a diagnostic feature: build it with make PROFILE=diagnostic"
+#endif
+#if defined(ENABLE_DIAGNOSTIC_MEMORY_TRACE)
+#error "ENABLE_DIAGNOSTIC_MEMORY_TRACE (memory hold and allocation trace) is a diagnostic feature: build it with make PROFILE=diagnostic"
+#endif
+#if defined(ENABLE_DIAGNOSTIC_BENCH_ARMS)
+#error "ENABLE_DIAGNOSTIC_BENCH_ARMS (render-off and audio-off benchmark) is a diagnostic feature: build it with make PROFILE=diagnostic"
 #endif
 
 #else

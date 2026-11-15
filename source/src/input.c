@@ -24,6 +24,7 @@
    repeat. */
 
 #include "common.h"
+#include "perf_monitor.h"
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 #include "input_trace.h"
@@ -167,6 +168,10 @@ GUI_ACTION_TYPE cursor_repeat = CURSOR_NONE;
 u32 last_buttons = 0;
 u32 button_repeat_timestamp;
 
+/* Buttons still held when the menu closed; update_input hides each one from
+   the game and the hotkeys until it is released. */
+static u32 menu_held_buttons = 0;
+
 /* Flips on every rapid-fire key handled, so rapid-fire keys alternate
    between pressed and released from frame to frame. */
 u32 rapidfire_flag = 1;
@@ -216,6 +221,13 @@ u32 get_pad_input(u32 mask)
   }
 
   return 0;
+}
+
+/* Hides buttons (the keys held as the menu closes) from update_input until
+   each is released, so closing the menu never waits for the keys to go up. */
+void input_hold_until_released(u32 buttons)
+{
+  menu_held_buttons = buttons;
 }
 
 
@@ -453,6 +465,10 @@ u32 update_input(void)
     }
   }
 
+  // A key held since the menu closed counts as up until it is released
+  menu_held_buttons &= buttons;
+  buttons &= ~menu_held_buttons;
+
   non_repeat_buttons = (last_buttons ^ buttons) & buttons;
   last_buttons = buttons;
 
@@ -472,10 +488,12 @@ u32 update_input(void)
           return menu();
 
         case BUTTON_ID_LOADSTATE:
+          main_perf_bench_cancel();
           action_loadstate();
           return 1;
 
         case BUTTON_ID_SAVESTATE:
+          main_perf_bench_cancel();
           action_savestate();
           return 0;
 
@@ -522,8 +540,25 @@ u32 update_input(void)
   if(diagnostic_hashes.records != NULL &&
      diagnostic_trace.state == INPUT_TRACE_REPLAYING)
     input_diagnostic_trace_hash_frame();
+  // A benchmark that replays the trace ends with the trace's last frame
+  if (input_trace_replay_last_frame(&diagnostic_trace, diagnostic_trace_frame))
+    perf_monitor_bench_end_with_frame();
   diagnostic_trace_frame++;
 #endif
+
+  // The unbound benchmark runs the loaded slot with the tilt sensor centred
+  // and no keys held, or the keys of the trace it replays
+  if (perf_monitor_bench_running())
+  {
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+    if (diagnostic_trace.state != INPUT_TRACE_REPLAYING)
+      new_key = 0;
+#else
+    new_key = 0;
+#endif
+    tilt_sensorX = 0x800;
+    tilt_sensorY = 0x800;
+  }
 
   // Only a newly pressed key can trigger the keypad IRQ
   if ((new_key | gba_keys_held) != gba_keys_held)
@@ -620,6 +655,24 @@ int input_diagnostic_trace_check_state(u32 state_crc32, u32 state_size)
 u32 input_diagnostic_trace_version(void)
 {
   return diagnostic_trace.version;
+}
+
+/* The unbound benchmark replays the trace held here (just recorded, being
+   replayed or finished) from its first frame, once it matches this ROM.
+   Returns the frames the trace replays, or 0 when there is none. */
+u32 input_diagnostic_trace_begin_bench(void)
+{
+  /* The bench replays from the machine as it is, not from the trace's
+     .svs: hashes of it would be no replay to compare, and would slow it. */
+  input_diagnostic_trace_hashes_free();
+  return input_trace_restart_replay(&diagnostic_trace, gamepak_header,
+   gamepak_file_size, diagnostic_trace_frame);
+}
+
+/* The checksum field of the held trace's file, for the benchmark report. */
+u32 input_diagnostic_trace_checksum(void)
+{
+  return diagnostic_trace.checksum;
 }
 
 void input_diagnostic_trace_cancel(void)

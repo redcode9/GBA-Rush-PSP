@@ -27,6 +27,8 @@
 #define MEMORY_H
 
 #include "gba_sio.h"
+#include "save_format.h"
+#include "save_store.h"
 
 
 // The DMA enums below hold DMAxCNT_H fields as decoded: start timing
@@ -160,6 +162,8 @@ typedef enum
 
 extern char gamepak_filename[MAX_FILE];
 extern char gamepak_filename_raw[MAX_FILE];
+/* The ROM's .sav name in dir_save. */
+extern char backup_filename[MAX_FILE];
 
 /* Handle of a ROM streamed from storage (too big for its buffer), or: */
 #define GAMEPAK_FILE_NONE        (-1)  /* no ROM file open */
@@ -259,7 +263,19 @@ u8 *load_gamepak_page(u32 physical_index);
 
 s32 load_bios(char *name);
 s32 load_gamepak(char *name);
-s32 load_backup(char *name);
+SaveStoreResult load_backup(char *name, SaveTag tag, u32 retry);
+
+// load_gamepak() result when the player refused to retry an unreadable
+// .sav and to play without saving. Load errors are -1, or -2 from
+// load_file_zip() for a ROM larger than the ROM buffer.
+#define LOAD_GAMEPAK_CANCELLED (-3)
+// load_gamepak() result, from load_file_zip(), for a damaged, truncated or
+// unsupported .zip, or a read error inside it.
+#define LOAD_GAMEPAK_ZIP_DAMAGED (-4)
+
+// The .sav and savestate file I/O: gui.c's sceIo binding on the PSP, a
+// fake in tests.
+extern const SaveStoreIo *backup_io;
 
 u32 read_eeprom(void);
 u32 read_backup(u32 address);
@@ -280,17 +296,27 @@ void init_gamepak_buffer(void);
 void memory_term(void);
 
 void update_backup(void);
-void update_backup_immediately(void);
+u32 update_backup_immediately(void);
+/* Copies the backup as the newest pre-link generation; 0 if that failed. */
+u32 backup_push_link_copy(void);
+/* Restores pre-link generation 1 to 3 as the .sav and the save in RAM,
+   the old .sav kept as the .bak; 0 if that failed. Reset the game after. */
+u32 restore_backup_link_copy(u32 generation);
+/* Set by the first failed periodic .sav write of a game: the menu shows
+   the warning and clears it. */
+extern u32 backup_write_warning;
 
-extern u8 *write_mem_ptr;
+/* FILE_WRITE_MEM: appends to the savestate save_state() is writing. */
+void savestate_write_mem(const void *data, size_t size);
 
 /* Ask, then load or save savestate_filename in dir_state; the prompt names
    savestate_slot (10 is gui.c's AUTO_SAVESTATE_SLOT). Both refuse while
    the link cable is active, and load_state also refuses a savestate made
    with the other BIOS (gba_bios.bin or the built-in one), saying which one
-   it needs. The file starts with screen_capture and a ticker() timestamp,
-   which load_state skips. Returns 1 if the user confirmed and the operation
-   completed, else 0. */
+   it needs. The file starts with screen_capture (zeros if it is NULL) and
+   a ticker() timestamp, which load_state skips; save_state keeps the
+   previous file as <name>.bak.
+   Returns 1 if the user confirmed and the operation completed, else 0. */
 u32 load_state(char *savestate_filename);
 u32 save_state(char *savestate_filename, u16 *screen_capture);
 

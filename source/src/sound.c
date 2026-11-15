@@ -180,6 +180,9 @@ static u32 sound_fast_forward_audio_started = 0;
 static u64 sound_fast_forward_starvation_since = 0;
 
 #define SOUND_OPERATION_TIMEOUT 500000u
+/* Power path: the audio thread holds sound_sema for one 800-sample output,
+   about 17 ms. */
+#define SOUND_POWER_TIMEOUT 50000u
 #define SOUND_RECOVERY_RETRY_US 250000u
 
 u32 sound_buffer_base = 0;
@@ -190,6 +193,9 @@ static u64 delta_ticks(u32 ticks, u32 last_ticks);
 static void sound_reset_fifo(u8 channel);
 
 u8 sound_on = 0;
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+u8 sound_bench_audio_off = 0;
+#endif
 
 u8 master_enable = 0;
 u8 gbc_sound_wave_update = 0;
@@ -651,7 +657,13 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
 
   next_sample = ds->fifo[fifo_base] * 256;
 
+  // The audio-off bench arm takes the silent path below, which advances
+  // the same as the others.
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+  if (sound_on == 1 && !sound_bench_audio_off)
+#else
   if (sound_on == 1)
+#endif
   {
     if (ds->volume == DIRECT_SOUND_VOLUME_50)
     {
@@ -810,6 +822,23 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
   GBC_SOUND_RENDER_SAMPLE_RIGHT();                                            \
   GBC_SOUND_RENDER_SAMPLE_LEFT();                                             \
 
+#define GBC_SOUND_RENDER_SAMPLE_NULL()                                        \
+
+// The audio-off bench arm: a channel that plays steps its sample position
+// and its length, envelope and sweep counters as usual, writing nothing.
+#ifdef ENABLE_DIAGNOSTIC_BENCH_ARMS
+#define GBC_SOUND_RENDER_BENCH_ARM(type, sample_length, envelope_op, sweep_op) \
+  if (sound_bench_audio_off && gs->status != GBC_SOUND_INACTIVE)              \
+  {                                                                           \
+    GBC_SOUND_RENDER_##type(NULL, sample_length, envelope_op, sweep_op);      \
+  }                                                                           \
+  else                                                                        \
+
+#else
+#define GBC_SOUND_RENDER_BENCH_ARM(type, sample_length, envelope_op, sweep_op) \
+
+#endif
+
 #define GBC_SOUND_RENDER_SAMPLES(type, sample_length, envelope_op, sweep_op)  \
   for (i = 0; i < buffer_ticks; i++)                                          \
   {                                                                           \
@@ -863,6 +892,7 @@ void sound_timer(FIXED08_24 frequency_step, u8 channel)
                                                                               \
   UPDATE_VOLUME(envelope_op);                                                 \
                                                                               \
+  GBC_SOUND_RENDER_BENCH_ARM(type, sample_length, envelope_op, sweep_op)      \
   switch (gs->status)                                                         \
   {                                                                           \
     case GBC_SOUND_INACTIVE:                                                  \
@@ -976,7 +1006,7 @@ int sound_take_fast_forward_fallback(void)
 // audio thread and releases the output channel.
 void sound_power_suspend(void)
 {
-  SceUInt timeout = SOUND_OPERATION_TIMEOUT;
+  SceUInt timeout = SOUND_POWER_TIMEOUT;
 
   sound_fast_forward = 0;
   sound_fast_forward_factor = 1;
@@ -993,11 +1023,12 @@ void sound_power_suspend(void)
   }
 }
 
-// Power callback thread, on resume: reserves the output channel again.
-// The result (< 0 on failure) goes to sound_power_resume_finish().
+// Power callback thread on resume, or the main thread when a switch-only
+// entry times out: reserves the output channel again. The result (< 0 on
+// failure) goes to sound_power_resume_finish().
 int sound_power_resume(void)
 {
-  SceUInt timeout = SOUND_OPERATION_TIMEOUT;
+  SceUInt timeout = SOUND_POWER_TIMEOUT;
   int result;
 
   if(sound_sema < 0 || sceKernelWaitSema(sound_sema, 1, &timeout) < 0)

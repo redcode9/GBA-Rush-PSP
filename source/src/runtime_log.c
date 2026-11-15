@@ -175,6 +175,33 @@ uint32_t runtime_log_ring_dropped(const RuntimeLogRing *ring)
   return ring->dropped_records;
 }
 
+static uint32_t runtime_log_saturate(uint64_t value, uint32_t limit)
+{
+  return value > limit ? limit : (uint32_t)value;
+}
+
+void runtime_log_load_stages(uint64_t start_us,
+ const uint64_t end_us[RUNTIME_LOG_LOAD_STAGE_COUNT], uint32_t value[3])
+{
+  uint64_t ms[RUNTIME_LOG_LOAD_STAGE_COUNT];
+  uint64_t begin = start_us;
+  size_t stage;
+
+  for(stage = 0; stage < RUNTIME_LOG_LOAD_STAGE_COUNT; stage++)
+  {
+    ms[stage] = begin != 0 && end_us[stage] > begin ?
+     (end_us[stage] - begin) / 1000u : 0;
+    /* Once a stage did not run, every later one has no begin. */
+    begin = begin != 0 ? end_us[stage] : 0;
+  }
+  value[0] = runtime_log_saturate(ms[RUNTIME_LOG_LOAD_READ], UINT32_MAX);
+  value[1] = (runtime_log_saturate(ms[RUNTIME_LOG_LOAD_OPEN], 0xFFFFu) << 16) |
+   runtime_log_saturate(ms[RUNTIME_LOG_LOAD_CONFIG], 0xFFFFu);
+  value[2] =
+   (runtime_log_saturate(ms[RUNTIME_LOG_LOAD_BACKUP_ID], 0xFFFFu) << 16) |
+   runtime_log_saturate(ms[RUNTIME_LOG_LOAD_SAV], 0xFFFFu);
+}
+
 /* Record (32 bytes): 0 timestamp, 8 emulated cycle, 12 ordinal, 16 type,
    18 source, 19 flags, 20/24/28 values. */
 static void runtime_log_encode_record(uint8_t *output,

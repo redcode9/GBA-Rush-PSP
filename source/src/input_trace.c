@@ -48,21 +48,76 @@ static uint32_t input_trace_read_u32(const uint8_t *input)
    ((uint32_t)input[2] << 16) | ((uint32_t)input[3] << 24);
 }
 
-/* 32-bit FNV-1a over the whole trace, reading the checksum field as 0. */
-static uint32_t input_trace_checksum(const uint8_t *data, size_t size)
+/* 32-bit FNV-1a, continued from checksum over size more bytes. */
+static uint32_t input_trace_hash(uint32_t checksum, const uint8_t *data,
+ size_t size)
 {
-  uint32_t checksum = 2166136261U;
   size_t i;
 
   for(i = 0; i < size; i++)
   {
-    uint8_t value = data[i];
-
-    if(i >= INPUT_TRACE_CHECKSUM_OFFSET &&
-       i < INPUT_TRACE_CHECKSUM_OFFSET + sizeof(uint32_t))
-      value = 0;
-    checksum ^= value;
+    checksum ^= data[i];
     checksum *= 16777619U;
+  }
+
+  return checksum;
+}
+
+/* 32-bit FNV-1a over the whole trace (header included), reading the
+   checksum field as 0. */
+static uint32_t input_trace_checksum(const uint8_t *data, size_t size)
+{
+  static const uint8_t zero[sizeof(uint32_t)];
+  size_t after = INPUT_TRACE_CHECKSUM_OFFSET + sizeof(zero);
+  uint32_t checksum;
+
+  checksum = input_trace_hash(2166136261U, data,
+   INPUT_TRACE_CHECKSUM_OFFSET);
+  checksum = input_trace_hash(checksum, zero, sizeof(zero));
+  return input_trace_hash(checksum, data + after, size - after);
+}
+
+/* The header input_trace_encode writes, with the checksum field 0. */
+static void input_trace_write_header(const InputTrace *trace,
+ uint8_t *output)
+{
+  memset(output, 0, INPUT_TRACE_HEADER_SIZE);
+  memcpy(output, INPUT_TRACE_MAGIC, 4);
+  input_trace_write_u16(output + 4, INPUT_TRACE_VERSION);
+  input_trace_write_u16(output + 6, INPUT_TRACE_HEADER_SIZE);
+  input_trace_write_u32(output + 8, trace->event_count);
+  memcpy(output + 12, trace->game_code, sizeof(trace->game_code));
+  output[16] = trace->rom_revision;
+  input_trace_write_u32(output + 20, trace->duration_frames);
+  input_trace_write_u32(output + 28, trace->start_frame);
+  input_trace_write_u32(output + 32, trace->state_crc32);
+  input_trace_write_u32(output + 36, trace->state_size);
+  input_trace_write_u32(output + 40, trace->rtc_base_seconds);
+}
+
+static void input_trace_write_event(const InputTraceEvent *event,
+ uint8_t *output)
+{
+  input_trace_write_u32(output, event->frame_offset);
+  input_trace_write_u16(output + 4, event->keys);
+  output[6] = 0;
+  output[7] = 0;
+}
+
+/* The checksum input_trace_encode writes, without a buffer for the whole
+   trace. */
+static uint32_t input_trace_encoded_checksum(const InputTrace *trace)
+{
+  uint8_t bytes[INPUT_TRACE_HEADER_SIZE];
+  uint32_t checksum;
+  uint32_t i;
+
+  input_trace_write_header(trace, bytes);
+  checksum = input_trace_hash(2166136261U, bytes, sizeof(bytes));
+  for(i = 0; i < trace->event_count; i++)
+  {
+    input_trace_write_event(&trace->events[i], bytes);
+    checksum = input_trace_hash(checksum, bytes, INPUT_TRACE_EVENT_SIZE);
   }
 
   return checksum;
@@ -199,6 +254,7 @@ int input_trace_finish_record(InputTrace *trace, uint32_t end_frame)
     return input_trace_fail(trace, INPUT_TRACE_ERROR_ORDER);
 
   trace->duration_frames = duration;
+  trace->checksum = input_trace_encoded_checksum(trace);
   trace->state = INPUT_TRACE_READY;
   return 1;
 }
@@ -235,27 +291,10 @@ int input_trace_encode(const InputTrace *trace, uint8_t *output,
      output_size < required || written == NULL)
     return 0;
 
-  memset(output, 0, required);
-  memcpy(output, INPUT_TRACE_MAGIC, 4);
-  input_trace_write_u16(output + 4, INPUT_TRACE_VERSION);
-  input_trace_write_u16(output + 6, INPUT_TRACE_HEADER_SIZE);
-  input_trace_write_u32(output + 8, trace->event_count);
-  memcpy(output + 12, trace->game_code, sizeof(trace->game_code));
-  output[16] = trace->rom_revision;
-  input_trace_write_u32(output + 20, trace->duration_frames);
-  input_trace_write_u32(output + 28, trace->start_frame);
-  input_trace_write_u32(output + 32, trace->state_crc32);
-  input_trace_write_u32(output + 36, trace->state_size);
-  input_trace_write_u32(output + 40, trace->rtc_base_seconds);
-
+  input_trace_write_header(trace, output);
   for(i = 0; i < trace->event_count; i++)
-  {
-    uint8_t *event = output + INPUT_TRACE_HEADER_SIZE +
-     (size_t)i * INPUT_TRACE_EVENT_SIZE;
-
-    input_trace_write_u32(event, trace->events[i].frame_offset);
-    input_trace_write_u16(event + 4, trace->events[i].keys);
-  }
+    input_trace_write_event(&trace->events[i], output +
+     INPUT_TRACE_HEADER_SIZE + (size_t)i * INPUT_TRACE_EVENT_SIZE);
 
   input_trace_write_u32(output + INPUT_TRACE_CHECKSUM_OFFSET,
    input_trace_checksum(output, required));
@@ -364,6 +403,8 @@ int input_trace_begin_replay(InputTrace *trace, const uint8_t *encoded,
   trace->duration_frames = duration_frames;
   memcpy(trace->game_code, encoded + 12, sizeof(trace->game_code));
   trace->rom_revision = encoded[16];
+  trace->checksum = input_trace_read_u32(encoded +
+   INPUT_TRACE_CHECKSUM_OFFSET);
   trace->current_keys = 0;
   trace->state = INPUT_TRACE_REPLAYING;
   trace->error = INPUT_TRACE_ERROR_NONE;
@@ -412,6 +453,34 @@ int input_trace_begin_replay_from_header(InputTrace *trace,
    header + 0xAC, header[0xBC], start_frame);
 }
 
+/* The events stay as recorded or loaded, so every restart replays the same
+   keys and keeps the same checksum. */
+uint32_t input_trace_restart_replay(InputTrace *trace,
+ const uint8_t header[INPUT_TRACE_IDENTITY_SIZE], uint32_t file_size,
+ uint32_t start_frame)
+{
+  if(trace == NULL || header == NULL ||
+     file_size < INPUT_TRACE_IDENTITY_SIZE ||
+     (trace->state != INPUT_TRACE_READY &&
+      trace->state != INPUT_TRACE_REPLAYING &&
+      trace->state != INPUT_TRACE_FINISHED))
+    return 0;
+  if(memcmp(trace->game_code, header + 0xAC,
+      INPUT_TRACE_GAME_CODE_SIZE) != 0 ||
+     trace->rom_revision != header[0xBC])
+  {
+    input_trace_fail(trace, INPUT_TRACE_ERROR_IDENTITY);
+    return 0;
+  }
+
+  trace->event_cursor = 0;
+  trace->start_frame = start_frame;
+  trace->current_keys = 0;
+  trace->state = INPUT_TRACE_REPLAYING;
+  return trace->duration_frames < UINT32_MAX ?
+   trace->duration_frames + 1U : UINT32_MAX;
+}
+
 uint16_t input_trace_apply(InputTrace *trace, uint32_t frame,
  uint16_t physical_keys)
 {
@@ -443,4 +512,11 @@ uint16_t input_trace_apply(InputTrace *trace, uint32_t frame,
     trace->event_cursor++;
   }
   return trace->current_keys;
+}
+
+int input_trace_replay_last_frame(const InputTrace *trace, uint32_t frame)
+{
+  return trace != NULL && trace->state == INPUT_TRACE_REPLAYING &&
+   frame >= trace->start_frame &&
+   frame - trace->start_frame == trace->duration_frames;
 }

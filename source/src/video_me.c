@@ -79,6 +79,7 @@ static u32 sample_start;
 static u32 busy_clock;
 static u32 busy_ticks;
 static u32 busy_time;
+static u32 busy_boots;
 static int busy_known;
 
 static VideoMeState load_module(void)
@@ -158,20 +159,46 @@ static void start(void)
 /* The Media Engine's busy ticks over the last stretch, as a share of its
    clock ticks, times the main processor's time over the same stretch. A
    stretch longer than a few seconds (the menu was open) is skipped: the
-   clock goes round in 25 s at 333 MHz. */
+   clock goes round in 25 s at 333 MHz. So is one across a reboot (its
+   clock restarts on resume) or a clock change. */
 static void convert_busy_time(void)
 {
   u32 now = sceKernelGetSystemTimeLow();
   u32 clock = mailbox->reader.clock;
   u32 ticks = mailbox->reader.busy;
+  u32 boots = mailbox->reader.boots;
 
-  if(busy_known && clock != busy_clock && now - busy_time < 5000000u)
+  /* After a clock change or a skipped stretch, wait until it has finished
+     some work: its clock from before then (the menu was open) would add the
+     gap to a stretch. */
+  if(!busy_known && clock == busy_clock)
+    return;
+  if(busy_known && (boots != busy_boots || clock == busy_clock ||
+     now - busy_time >= 5000000u))
+  {
+    busy_known = 0;
+    busy_clock = clock;
+    return;
+  }
+  if(busy_known)
+  {
     counters.me_busy_us += (u64)(ticks - busy_ticks) *
      (now - busy_time) / (clock - busy_clock);
+    counters.me_clock_ticks += clock - busy_clock;
+    counters.me_clock_us += now - busy_time;
+  }
   busy_clock = clock;
   busy_ticks = ticks;
   busy_time = now;
+  busy_boots = boots;
   busy_known = 1;
+}
+
+void video_me_clock_changed(void)
+{
+  busy_known = 0;
+  if(mailbox)
+    busy_clock = mailbox->reader.clock;
 }
 
 /* Whether the Media Engine is still drawing; gives up on it if not. */
