@@ -37,11 +37,13 @@ HOST_TEST_CODEBREAKER = $(HOST_BUILD_DIR)/test_codebreaker
 HOST_TEST_GBA_SIO = $(HOST_BUILD_DIR)/test_gba_sio
 HOST_TEST_LINK_NET = $(HOST_BUILD_DIR)/test_link_net
 HOST_TEST_LINK_CABLE = $(HOST_BUILD_DIR)/test_link_cable
-# The link cable test runs the real cable, channel and SIO code together.
+# The link cable test runs the real cable, channel and SIO code together,
+# over net_fault's simulated network.
 LINK_CABLE_SOURCES = tests/test_link_cable.c source/src/link_cable.c \
- source/src/link_net.c source/src/gba_sio.c
+ source/src/link_net.c source/src/gba_sio.c source/src/net_fault.c
 LINK_CABLE_HEADERS = source/src/link_cable.h source/src/link_net.h \
- source/src/gba_sio.h
+ source/src/gba_sio.h source/src/net_fault.h
+HOST_TEST_NET_FAULT = $(HOST_BUILD_DIR)/test_net_fault
 HOST_TEST_ADHOC_PEER = $(HOST_BUILD_DIR)/test_adhoc_peer
 HOST_TEST_POWER_LIFECYCLE = $(HOST_BUILD_DIR)/test_power_lifecycle
 HOST_TEST_LINK_AUDIO_WAIT = $(HOST_BUILD_DIR)/test_link_audio_wait
@@ -53,6 +55,8 @@ HOST_TEST_PERF_MONITOR = $(HOST_BUILD_DIR)/test_perf_monitor
 HOST_TEST_PERF_DMA_PROBE = $(HOST_BUILD_DIR)/test_perf_dma_probe
 HOST_TEST_PERF_VIDEO_SENTINEL = $(HOST_BUILD_DIR)/test_perf_video_sentinel
 HOST_TEST_INPUT_TRACE = $(HOST_BUILD_DIR)/test_input_trace
+HOST_TEST_STATE_HASH = $(HOST_BUILD_DIR)/test_state_hash
+HOST_TEST_AUTORUN_CONFIG = $(HOST_BUILD_DIR)/test_autorun_config
 HOST_TEST_MENU_MODEL = $(HOST_BUILD_DIR)/test_menu_model
 HOST_TEST_MENU_LAYOUT = $(HOST_BUILD_DIR)/test_menu_layout
 HOST_TEST_CONFIG_MODEL = $(HOST_BUILD_DIR)/test_config_model
@@ -91,7 +95,7 @@ HOST_TEST_MEMORY_BACKUP = $(HOST_BUILD_DIR)/test_memory_backup
 HOST_TEST_EEPROM = $(HOST_BUILD_DIR)/test_eeprom
 HOST_TEST_UPSTREAM_AW_RELAY = $(HOST_BUILD_DIR)/test_upstream_aw_relay
 HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
- $(HOST_TEST_LINK_NET) $(HOST_TEST_LINK_CABLE) \
+ $(HOST_TEST_LINK_NET) $(HOST_TEST_LINK_CABLE) $(HOST_TEST_NET_FAULT) \
  $(HOST_TEST_ADHOC_PEER) \
  $(HOST_TEST_POWER_LIFECYCLE) \
  $(HOST_TEST_LINK_AUDIO_WAIT) $(HOST_TEST_VIDEO_ADAPTIVE) \
@@ -99,7 +103,8 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
  $(HOST_TEST_PERF_METRICS) $(HOST_TEST_PERF_REPORT) \
  $(HOST_TEST_PERF_MONITOR) $(HOST_TEST_PERF_DMA_PROBE) \
  $(HOST_TEST_PERF_VIDEO_SENTINEL) \
- $(HOST_TEST_INPUT_TRACE) $(HOST_TEST_MENU_MODEL) \
+ $(HOST_TEST_INPUT_TRACE) $(HOST_TEST_STATE_HASH) $(HOST_TEST_AUTORUN_CONFIG) \
+ $(HOST_TEST_MENU_MODEL) \
  $(HOST_TEST_MENU_LAYOUT) \
  $(HOST_TEST_CONFIG_MODEL) $(HOST_TEST_CONFIG_STORE) $(HOST_TEST_FAST_FORWARD) \
  $(HOST_TEST_FAST_FORWARD_AUDIO) $(HOST_TEST_VIDEO_MOSAIC) \
@@ -117,6 +122,7 @@ HOST_TESTS = $(HOST_TEST_CODEBREAKER) $(HOST_TEST_GBA_SIO) \
 HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_gba_sio $(HOST_SANITIZE_DIR)/test_link_net \
  $(HOST_SANITIZE_DIR)/test_link_cable \
+ $(HOST_SANITIZE_DIR)/test_net_fault \
  $(HOST_SANITIZE_DIR)/test_adhoc_peer \
  $(HOST_SANITIZE_DIR)/test_power_lifecycle \
  $(HOST_SANITIZE_DIR)/test_link_audio_wait \
@@ -128,6 +134,8 @@ HOST_SANITIZE_TESTS = $(HOST_SANITIZE_DIR)/test_codebreaker \
  $(HOST_SANITIZE_DIR)/test_perf_dma_probe \
  $(HOST_SANITIZE_DIR)/test_perf_video_sentinel \
  $(HOST_SANITIZE_DIR)/test_input_trace \
+ $(HOST_SANITIZE_DIR)/test_state_hash \
+ $(HOST_SANITIZE_DIR)/test_autorun_config \
  $(HOST_SANITIZE_DIR)/test_menu_model \
  $(HOST_SANITIZE_DIR)/test_menu_layout \
  $(HOST_SANITIZE_DIR)/test_config_model \
@@ -169,6 +177,7 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_GBA_SIO)
 	$(HOST_TEST_LINK_NET)
 	$(HOST_TEST_LINK_CABLE)
+	$(HOST_TEST_NET_FAULT)
 	$(HOST_TEST_ADHOC_PEER)
 	$(HOST_TEST_POWER_LIFECYCLE)
 	$(HOST_TEST_LINK_AUDIO_WAIT)
@@ -180,6 +189,8 @@ test: $(HOST_TESTS) test-tools
 	$(HOST_TEST_PERF_DMA_PROBE)
 	$(HOST_TEST_PERF_VIDEO_SENTINEL)
 	$(HOST_TEST_INPUT_TRACE)
+	$(HOST_TEST_STATE_HASH)
+	$(HOST_TEST_AUTORUN_CONFIG)
 	$(HOST_TEST_MENU_MODEL)
 	$(HOST_TEST_MENU_LAYOUT)
 	$(HOST_TEST_CONFIG_MODEL)
@@ -228,7 +239,8 @@ test-tools:
 	 tests/test_upstream_review.py \
 	 tests/test_decode_test_rom.py tests/test_gen_shift_table.py \
 	 tests/test_make_bios_vectors.py tests/test_install_test_build.py \
-	 tests/test_read_test_screen.py
+	 tests/test_read_test_screen.py \
+	 tests/test_state_hash_diff.py
 
 # The link cable test runs fewer network profiles (--quick) under the
 # sanitizers, where it is much slower.
@@ -237,6 +249,7 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_gba_sio
 	$(HOST_SANITIZE_DIR)/test_link_net
 	$(HOST_SANITIZE_DIR)/test_link_cable --quick
+	$(HOST_SANITIZE_DIR)/test_net_fault
 	$(HOST_SANITIZE_DIR)/test_adhoc_peer
 	$(HOST_SANITIZE_DIR)/test_power_lifecycle
 	$(HOST_SANITIZE_DIR)/test_link_audio_wait
@@ -248,6 +261,8 @@ test-sanitize: $(HOST_SANITIZE_TESTS)
 	$(HOST_SANITIZE_DIR)/test_perf_dma_probe
 	$(HOST_SANITIZE_DIR)/test_perf_video_sentinel
 	$(HOST_SANITIZE_DIR)/test_input_trace
+	$(HOST_SANITIZE_DIR)/test_state_hash
+	$(HOST_SANITIZE_DIR)/test_autorun_config
 	$(HOST_SANITIZE_DIR)/test_menu_model
 	$(HOST_SANITIZE_DIR)/test_menu_layout
 	$(HOST_SANITIZE_DIR)/test_config_model
@@ -296,6 +311,12 @@ $(HOST_TEST_LINK_CABLE): $(LINK_CABLE_SOURCES) $(LINK_CABLE_HEADERS)
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -Isource/src \
 	 $(LINK_CABLE_SOURCES) -o $@
+
+$(HOST_TEST_NET_FAULT): tests/test_net_fault.c source/src/net_fault.c \
+ source/src/net_fault.h source/src/link_net.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_net_fault.c source/src/net_fault.c -o $@
 
 $(HOST_TEST_ADHOC_PEER): tests/test_adhoc_peer.c \
  source/src/adhoc_peer.c source/src/adhoc_peer.h
@@ -436,6 +457,20 @@ $(HOST_TEST_INPUT_TRACE): tests/test_input_trace.c \
 	mkdir -p $(HOST_BUILD_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
 	 tests/test_input_trace.c source/src/input_trace.c -o $@
+
+$(HOST_TEST_STATE_HASH): tests/test_state_hash.c \
+ source/src/state_hash.c source/src/state_hash.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_state_hash.c source/src/state_hash.c -o $@
+
+$(HOST_TEST_AUTORUN_CONFIG): tests/test_autorun_config.c \
+ source/src/autorun_config.c source/src/autorun_config.h \
+ source/src/net_fault.c source/src/net_fault.h
+	mkdir -p $(HOST_BUILD_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror -Isource/src \
+	 tests/test_autorun_config.c source/src/autorun_config.c \
+	 source/src/net_fault.c -o $@
 
 $(HOST_TEST_MENU_MODEL): tests/test_menu_model.c \
  source/src/menu_model.c source/src/menu_model.h \
@@ -644,6 +679,12 @@ $(HOST_SANITIZE_DIR)/test_link_cable: $(LINK_CABLE_SOURCES) \
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src $(LINK_CABLE_SOURCES) -o $@
 
+$(HOST_SANITIZE_DIR)/test_net_fault: tests/test_net_fault.c \
+ source/src/net_fault.c source/src/net_fault.h source/src/link_net.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_net_fault.c source/src/net_fault.c -o $@
+
 $(HOST_SANITIZE_DIR)/test_link_net: tests/test_link_net.c \
  source/src/link_net.c source/src/link_net.h
 	mkdir -p $(HOST_SANITIZE_DIR)
@@ -782,6 +823,20 @@ $(HOST_SANITIZE_DIR)/test_input_trace: tests/test_input_trace.c \
 	mkdir -p $(HOST_SANITIZE_DIR)
 	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
 	 -Isource/src tests/test_input_trace.c source/src/input_trace.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_state_hash: tests/test_state_hash.c \
+ source/src/state_hash.c source/src/state_hash.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_state_hash.c source/src/state_hash.c -o $@
+
+$(HOST_SANITIZE_DIR)/test_autorun_config: tests/test_autorun_config.c \
+ source/src/autorun_config.c source/src/autorun_config.h \
+ source/src/net_fault.c source/src/net_fault.h
+	mkdir -p $(HOST_SANITIZE_DIR)
+	$(HOST_CC) -std=c99 -Wall -Wextra -Werror $(HOST_SANITIZE_FLAGS) \
+	 -Isource/src tests/test_autorun_config.c source/src/autorun_config.c \
+	 source/src/net_fault.c -o $@
 
 $(HOST_SANITIZE_DIR)/test_menu_model: tests/test_menu_model.c \
  source/src/menu_model.c source/src/menu_model.h \

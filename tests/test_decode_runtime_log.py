@@ -275,6 +275,73 @@ class RuntimeLogDecoderTests(unittest.TestCase):
                               "values": [1, 8116, 2]}),
             "cpu-core=new blocks-compiled=8116 code-flushes=2")
 
+    def test_decodes_diag_autorun_record(self):
+        # Event 33 is appended to the enum, so the file stays version 6.
+        record = struct.pack(">QIIHBBIII", 110, 7, 1, 33, 1, 0, 10, 2, 0)
+        snapshot = decoder.parse_snapshot(fixture_v6(record))
+
+        self.assertEqual(snapshot["version"], 6)
+        self.assertEqual(snapshot["records"][0]["event"], "diag-autorun")
+        self.assertEqual(
+            decoder.describe(snapshot["records"][0]),
+            "status=ignored reason=build-mismatch line=2 frames=0")
+        self.assertEqual(
+            decoder.describe({"event": "diag-autorun", "flags": 3,
+                              "values": [0, 0, 3600]}),
+            "status=done reason=none line=0 frames=3600")
+        self.assertEqual(
+            decoder.describe({"event": "diag-autorun", "flags": 9,
+                              "values": [99, 0, 0]}),
+            "status=9 reason=99 line=0 frames=0")
+
+    def test_autorun_names_match_the_c_module(self):
+        source = Path(__file__).parents[1] / "source" / "src"
+        header = (source / "autorun_config.h").read_text()
+        table = re.search(r"autorun_config_error_names\[\] =\s*\{(.*?)\};",
+                          (source / "autorun_config.c").read_text(), re.S)
+        errors = re.findall(r"^\s+(AUTORUN_(?:OK|ERROR_[A-Z_]+)),?$", header,
+                            re.M)
+        statuses = re.findall(r"^\s+AUTORUN_STATUS_([A-Z]+),?$", header, re.M)
+
+        self.assertEqual(re.findall(r'"([a-z-]+)"', table.group(1)),
+                         decoder.AUTORUN_REASONS)
+        self.assertEqual(len(errors), len(decoder.AUTORUN_REASONS))
+        self.assertEqual([status.lower() for status in statuses],
+                         decoder.AUTORUN_STATUS)
+
+    def test_decodes_net_fault_counters(self):
+        # The ad-hoc worker logs counters 13-15 to the network ring; new
+        # counter kinds keep the file at version 6.
+        record = struct.pack(">QIIHBBIII", 110, 0, 1, 16, 2, 13,
+                             2, 0x89ABCDEF, 0)
+        snapshot = decoder.parse_snapshot(fixture_v6(record))
+
+        self.assertEqual(snapshot["version"], 6)
+        self.assertEqual(snapshot["records"][0]["source"], "network")
+        self.assertEqual(snapshot["records"][0]["event"], "link-counters")
+        self.assertEqual(decoder.describe(snapshot["records"][0]),
+                         "net-fault-profile=noisy seed=0x89ABCDEF")
+        self.assertEqual(
+            decoder.describe({"event": "link-counters", "flags": 13,
+                              "values": [6, 1, 0]}),
+            "net-fault-profile=6 seed=0x00000001")
+        self.assertEqual(
+            decoder.describe({"event": "link-counters", "flags": 14,
+                              "values": [41, 230, 12]}),
+            "fault-out-lost/delayed/duplicated=41/230/12")
+        self.assertEqual(
+            decoder.describe({"event": "link-counters", "flags": 15,
+                              "values": [7, 198, 3]}),
+            "fault-in-lost/delayed/duplicated=7/198/3")
+
+    def test_net_fault_profiles_match_the_c_table(self):
+        text = (Path(__file__).parents[1] / "source" / "src" /
+                "net_fault.c").read_text()
+        table = re.search(
+            r"net_fault_profiles\[NET_FAULT_PROFILE_COUNT\] =\s*\{(.*?)\n\};",
+            text, re.S)
+        self.assertEqual(re.findall(r'\{ "([a-z]+)"', table.group(1)),
+                         decoder.NET_FAULT_PROFILES)
     def test_describes_cpu_clock_records(self):
         main_c = (Path(__file__).parents[1] / "source" / "src" /
                   "main.c").read_text(encoding="utf-8")

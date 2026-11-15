@@ -281,6 +281,23 @@ Each test has four fields:
   Trade 3 times in the Cable Club and run one Mario Kart: Super Circuit race
   in each role, the candidate hosting first.
 
+### net-fault-noisy-frlg
+
+- Models: PSP-1000, second model
+- Minutes: 30
+- Pass: with the `noisy` network profile on both PSPs a FireRed and
+  LeafGreen trade completes, and each decoded log shows a
+  `net-fault-profile=noisy` line with its seed and the `fault-out` and
+  `fault-in` lines with the datagrams lost, delayed and duplicated, some of
+  them lost.
+- Steps: build with `make psp-build PROFILE=diagnostic` and copy the EBOOT
+  to its own folder on both PSPs. Next to it write `diag-autorun.txt` as
+  `source/src/autorun_config.h` describes, with the build id that the
+  Diagnostics page shows and `net_profile=noisy`. Start FireRed on the
+  PSP-1000 and LeafGreen on the other, link with the PSP-1000 as host, enter
+  the Cable Club and trade once. Close the link from the menu, play on for a
+  few seconds, quit from the menu, and decode `logs/` on both PSPs.
+
 ## Power
 
 ### sleep-auto-20x
@@ -320,6 +337,23 @@ Each test has four fields:
 - Steps: remove `gba_bios.bin` from the emulator's folder, start 10
   different games and play each until gameplay.
 
+### diag-autorun-smoke
+
+- Models: PSP-1000
+- Minutes: 15
+- Pass: a `diag-autorun.txt` with the build's id, `rom=`, `frames=600` and
+  `exit=1` starts the game without the browser or the menu and the EBOOT
+  exits by itself, leaving `status=done` and `frames=600` in
+  `diag-autorun.result`. With another build id in the file the result says
+  `status=ignored` and `reason=build-mismatch`, the EBOOT starts as usual,
+  and the decoded log shows a `diag-autorun` event with that reason.
+- Steps: build with `make psp-build PROFILE=diagnostic` and copy the EBOOT
+  to its own folder. Next to it write `diag-autorun.txt` as
+  `source/src/autorun_config.h` describes, with the build id that the
+  Diagnostics page shows, a ROM, `frames=600` and `exit=1`, and start the
+  EBOOT. Then change one character of the build id, start the EBOOT again,
+  quit from the menu, and decode `logs/`.
+
 ## Menu
 
 ### menu-every-page
@@ -330,6 +364,34 @@ Each test has four fields:
 - Steps: with a game running, open every page of the menu and change every
   option at least once, then do the same from the file browser without a
   game.
+
+## Video
+
+### ge-testpat-photo
+
+- Models: PSP-1000
+- Minutes: 20
+- Pass: each of the 14 modes passes on its own when its photo shows eight
+  bars of equal width, left to right white, black, red, green, blue,
+  yellow, cyan and magenta, at the size of its scale (none 240x160,
+  x15-gu and x15-sw 360x240, user 408x272, the three 16:9 scales the
+  whole 480x272 screen).
+  The EBOOT exits by itself and `diag-autorun.result` says `status=done`
+  and `frames=8400`, followed by one `testpat=<mode> used=<presenter>/<filter>`
+  line per mode. The bars are stored in GU_PSM_5551 with red in the low
+  bits (0x7FFF, 0x0000, 0x001F, 0x03E0, 0x7C00, 0x03FF, 0x7FE0, 0x7C1F):
+  red and blue trading places means a swapped channel.
+- Steps: build with `make psp-build PROFILE=diagnostic` and copy the EBOOT
+  to its own folder. Next to it write `diag-autorun.txt` with the lines
+  `version=1`, `build=<id>` (the build id the Diagnostics page shows) and
+  `testpat=all`, and start the EBOOT without touching the console. Each
+  mode stays about 10 seconds, in the order `source/src/autorun_config.h`
+  gives (none, x15-gu, x15-sw, user, 16x9-gu, 16x9-sharp, 16x9-auto, each
+  nearest then linear): photograph each one straight on, then keep the
+  result file with the photos. Record one row per mode in
+  `docs/HARDWARE-RESULTS.md`, 14 in all, each with Test id
+  `ge-testpat-photo` and in Evidence the mode name (such as
+  `16x9-sharp-linear`), its photo file and `diag-autorun.result`.
 
 ## Performance
 
@@ -398,3 +460,20 @@ Each test has four fields:
 - Steps: run the third-party test suites the repository pins on the
   previous release and on the candidate, on each model, and compare the
   results of every test.
+
+### replay-hash-selfcheck
+
+- Models: PSP-1000
+- Minutes: 20
+- Pass: two replays of the same `.gbit` give `.gbsh` files that
+  `tools/state_hash_diff.py` finds identical (exit 0). A run with
+  `perturb=N` exits 1 against them, naming frame N and `iwram`.
+- Steps: build with `make psp-build PROFILE=diagnostic`. Record a trace of
+  at least 10 seconds from Diagnostics > Start input trace and save it,
+  which leaves the `.gbit` and its `.svs` in `traces/`, then copy the
+  game's `.sav` aside and put it back before each run below. Write
+  `diag-autorun.txt` with the build id, `rom=`, `trace=` that `.gbit`,
+  `frames=600`, `exit=1` and `hash=a.gbsh`, and start the EBOOT; run it
+  again with `hash=b.gbsh`, then with `hash=c.gbsh` and `perturb=300`. Each
+  `diag-autorun.result` must say `status=done`. Compare `a.gbsh` with
+  `b.gbsh`, then `a.gbsh` with `c.gbsh`, with `tools/state_hash_diff.py`.

@@ -161,9 +161,8 @@ then
 fi
 
 # Only the worker touches the network; the emulator thread never blocks on it.
-if grep -Eq 'sceNetAdhoc|sceNetInit|sceUtilityLoadNetModule' \
-  source/src/main.c source/src/gui.c source/src/link_cable.c \
-  source/src/link_net.c
+if git grep -qE --untracked 'sceNet|sceUtility(Load|Unload)NetModule' \
+  -- source/src ':(exclude)source/src/psp_adhoc.c'
 then
   fail "Network calls are made outside the ad-hoc worker"
 fi
@@ -418,6 +417,14 @@ if ! body '/^s32 load_gamepak(char \*name)/,/^}/p' source/src/memory.c | awk '
 '
 then
   fail "load_gamepak() opens a dialog while it holds the power lock"
+fi
+
+# Nobody closes the menu that shows a failed .sav write while a diagnostic
+# autorun's frames= is counting, so update_gba keeps it for after the run.
+if ! body '/^u32 update_gba(void)/,/^}/p' source/src/main.c | tr -d ' \r\n' |
+   grep -Fq 'backup_write_warning&&!main_link_active()&&!main_autorun_running&&(menu()!=0)'
+then
+  fail "update_gba opens the .sav write warning during a diagnostic autorun"
 fi
 
 # Load State File on a state of the running ROM first saves the AUTO state,

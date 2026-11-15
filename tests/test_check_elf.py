@@ -69,8 +69,9 @@ class CheckElfTest(unittest.TestCase):
         self.assertIn("not measured", out)
 
     def test_each_forbidden_string_fails(self):
-        for text in (b"diag-autorun.txt", b"traces/input-AXVE-r1.gbit",
-                     b"GBIT", b"GBA Rush PSP [DIAG]", b"hw-probe.txt",
+        for text in (b"diag-autorun.txt", b"testpat=", b"main_autorun_testpat",
+                     b"traces/input-AXVE-r1.gbit", b"GBIT",
+                     b"dropouts", b"GBA Rush PSP [DIAG]", b"hw-probe.txt",
                      b"memory-hold.txt", b"alloc-trace entries=",
                      b"__wrap_malloc"):
             with self.subTest(text=text):

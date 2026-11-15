@@ -87,7 +87,9 @@ typedef enum
   RUNTIME_LOG_EVENT_SAVE_WRITE,
   RUNTIME_LOG_EVENT_SAVE_LINK_COPY,
   RUNTIME_LOG_EVENT_POWER_BITS,
-  RUNTIME_LOG_EVENT_ROM_LOAD_STAGES
+  RUNTIME_LOG_EVENT_ROM_LOAD_STAGES,
+  /* Diagnostic profile: the autorun file's outcome (autorun_config.h). */
+  RUNTIME_LOG_EVENT_DIAG_AUTORUN
 } RuntimeLogEventType;
 
 /* load_gamepak()'s stages, in the order it runs them. */

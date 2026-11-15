@@ -63,6 +63,7 @@ EVENTS = {
     30: "save-link-copy",
     31: "power-bits",
     32: "rom-load-stages",
+    33: "diag-autorun",
 }
 FLUSH_REASONS = {
     1: "start",
@@ -91,8 +92,9 @@ ADHOC_PHASES = [
     "peer-list", "socket", "send", "receive", "group-lost",
 ]
 # Counter records by kind; describe() spells out 11 (Exact renderer),
-# 12 (CPU core), 18 (requested and read-back CPU and bus clocks) and 19
-# (requested and measured Media Engine clock).
+# 12 (CPU core), 13 (simulated network profile), 18 (requested and
+# read-back CPU and bus clocks) and 19 (requested and measured Media Engine
+# clock).
 LINK_COUNTERS = {
     0: "rtt-us/rtt-max-us/resends",
     1: "datagrams-sent/received/rejected",
@@ -105,7 +107,13 @@ LINK_COUNTERS = {
     8: "frames/frames-drawn/vblank-wait-us",
     9: "me-frames/frames-late/me-busy-us-per-frame",
     10: "log-us-per-frame/log-words-per-frame/full-resends",
+    # Diagnostic profile, network ring: what the ad-hoc worker's simulated
+    # networks did in one session (13 names the profile).
+    14: "fault-out-lost/delayed/duplicated",
+    15: "fault-in-lost/delayed/duplicated",
 }
+# net_fault_profiles in source/src/net_fault.c, in order: counters kind 13.
+NET_FAULT_PROFILES = ["lan", "adhoc", "noisy", "outage", "terrible", "dropouts"]
 # The CPU core a start or reset chose (CPU_CORE_* in source/src/main.h);
 # logs from before the option say classic.
 CPU_CORES = ["classic", "new"]
@@ -153,6 +161,16 @@ POWER_BITS = {
     0x00010000: "suspending",
 }
 POWER_OUTCOMES = ["none", "entered-by-switch", "entered-by-suspending", "switch-timed-out"]
+# The diagnostic autorun's outcome: AutorunStatus and the AutorunError
+# tokens of source/src/autorun_config.c, in enum order.
+AUTORUN_STATUS = ["ignored", "failed", "started", "done"]
+AUTORUN_REASONS = [
+    "none", "too-large", "not-text", "line-too-long", "version", "syntax",
+    "unknown-key", "duplicate-key", "bad-value", "build-missing",
+    "build-mismatch", "build-unknown", "needs-rom", "needs-frames", "read",
+    "rom", "trace", "needs-trace", "needs-hash", "no-hash-memory", "hash",
+    "perturb-past-trace", "testpat-alone",
+]
 LINK_EVENTS = {
     "link-command", "link-state", "link-pause-end", "link-error",
     "link-counters", "menu-presence", "power-suspend", "power-resume",
@@ -314,6 +332,12 @@ def describe(record: dict[str, Any]) -> str:
             f"open={value1 >> 16}ms read={value0}ms config={value1 & 0xFFFF}ms "
             f"backup-id={value2 >> 16}ms sav={value2 & 0xFFFF}ms"
         )
+    if event == "diag-autorun":
+        return (
+            f"status={_name(AUTORUN_STATUS, flags)} "
+            f"reason={_name(AUTORUN_REASONS, value0)} line={value1} "
+            f"frames={value2}"
+        )
     # Earlier versions belong to a retired link design; show raw values.
     if event not in LINK_EVENTS or record.get("version", 5) < 5:
         return f"flags=0x{flags:02X} values={value0}/{value1}/{value2}"
@@ -345,6 +369,11 @@ def describe(record: dict[str, Any]) -> str:
         return (
             f"cpu-core={_name(CPU_CORES, value0)} blocks-compiled={value1} "
             f"code-flushes={value2}"
+        )
+    if event == "link-counters" and flags == 13:
+        return (
+            f"net-fault-profile={_name(NET_FAULT_PROFILES, value0)} "
+            f"seed=0x{value1:08X}"
         )
     if event == "link-counters" and flags == 18:
         cpu, bus = _signed(value1), _signed(value2)

@@ -38,6 +38,9 @@
 #include "runtime_log_psp.h"
 #include "sound_math.h"
 #include "video_me.h"
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+#include "autorun_config.h"
+#endif
 #ifdef ENABLE_DIAGNOSTIC_HW_PROBE
 #include "hw_probe.h"
 #endif
@@ -273,6 +276,12 @@ static u8 main_perf_bench_audio = 1;
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 /* Set when the unbound benchmark starts replaying the held input trace. */
 static u8 main_perf_bench_trace;
+#endif
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+/* Set while a diagnostic autorun's frames= limit is counting. */
+static u32 main_autorun_running;
+#else
+#define main_autorun_running 0
 #endif
 
 /* Set when a capture starts in the menu, where the clock option can still
@@ -1342,14 +1351,20 @@ u32 update_gba(void)
 
           // The menu or a state load replaced the machine; drop this pass.
           // A failed .sav write opens the menu, which shows its warning;
-          // not during a link session, which the warning would hold up.
+          // not during a link session, which the warning would hold up, nor
+          // during an autorun's frames=, where nobody would close it: the
+          // warning stays set for the menu after the run.
           if ((update_input() != 0) ||
               (backup_write_warning && !main_link_active() &&
-               (menu() != 0)))
+               !main_autorun_running && (menu() != 0)))
           {
             main_follow_cpu_core();
             continue;
           }
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+          /* Here, not in update_input: link waits call that too. */
+          main_autorun_frame();
+#endif
 
           if (!skip_next_frame)
           {
@@ -2058,6 +2073,293 @@ static int path_is_regular_file(const char *path)
   return FIO_S_ISREG(stats.st_mode) != 0;
 }
 
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+/* ---- Diagnostic autorun ------------------------------------------------
+ * <main_path>diag-autorun.txt (its format is in autorun_config.h) starts a
+ * ROM without the browser, the menu or the auto-state prompt, can replay a
+ * trace and can quit after a number of frames. diag-autorun.result and a
+ * runtime log event say what happened; without the file nothing is
+ * written. */
+
+static AutorunConfig main_autorun;
+static u32 main_autorun_frames;
+/* What diag-autorun.result holds after its six lines: a testpat= line for
+   each mode shown so far. */
+static char main_testpat_lines[AUTORUN_TESTPAT_MODES *
+ AUTORUN_CONFIG_TESTPAT_LINE_SIZE];
+static size_t main_testpat_length;
+
+/* Writes diag-autorun.result and logs the same outcome. */
+static void main_autorun_report(AutorunStatus status, AutorunError error,
+ u32 line)
+{
+  char path[MAX_PATH];
+  char text[AUTORUN_CONFIG_RESULT_SIZE];
+  size_t length;
+  SceUID file;
+  int result;
+
+  runtime_log_psp_main(RUNTIME_LOG_EVENT_DIAG_AUTORUN, cpu_ticks, (u8)status,
+   (u32)error, line, main_autorun_frames);
+  /* No game start follows to save the log: store the reason now, in case
+     the EBOOT is killed in the browser. */
+  if(status == AUTORUN_STATUS_IGNORED || status == AUTORUN_STATUS_FAILED)
+    runtime_log_psp_flush(RUNTIME_LOG_FLUSH_START);
+
+  length = autorun_config_result(GBA_RUSH_BUILD_ID, status, error, line,
+   main_autorun_frames, text, sizeof(text));
+  result = snprintf(path, sizeof(path), "%sdiag-autorun.result", main_path);
+  if(length == 0 || result < 0 || (size_t)result >= sizeof(path))
+    return;
+
+  FILE_OPEN(file, path, WRITE);
+  if(FILE_CHECK_VALID(file))
+  {
+    FILE_WRITE(file, text, length);
+    if(main_testpat_length != 0)
+      FILE_WRITE(file, main_testpat_lines, main_testpat_length);
+    FILE_CLOSE(file);
+  }
+}
+
+/* A path from the autorun file: one without a device (no ':') is relative
+   to the EBOOT folder. */
+static int main_autorun_path(char *path, size_t path_size, const char *name)
+{
+  int result = snprintf(path, path_size, "%s%s",
+   strchr(name, ':') == NULL ? main_path : "", name);
+
+  return result >= 0 && (size_t)result < path_size;
+}
+
+/* The ROM, the trace or its hashes did not start: exit=1 quits, else the
+   startup goes on as usual with no game loaded. */
+static int main_autorun_fail(AutorunError error)
+{
+  main_autorun_report(AUTORUN_STATUS_FAILED, error, 0);
+  if(main_autorun.exit_when_done)
+    quit();
+  gamepak_filename[0] = 0;
+  gamepak_file_size = 0;
+  return 0;
+}
+
+/* testpat= mode m is scale m / 2 with filter m % 2 (autorun_config.h). */
+typedef char main_testpat_modes_check
+ [(SCALED_NONE == 0 && SCALED_X15_GU == 1 && SCALED_X15_SW == 2 &&
+   SCALED_USER == 3 && SCALED_16X9_GU == 4 && SCALED_16X9_SHARP == 5 &&
+   SCALED_16X9_AUTO == 6 && SCREEN_SCALE_COUNT == AUTORUN_TESTPAT_SCALES &&
+   FILTER_NEAREST == 0 && FILTER_BILINEAR == 1) ? 1 : -1];
+
+/* Eight bars 30 pixels wide, in screen_texture's GU_PSM_5551 with red in
+   the low bits: white, black, red, green, blue, yellow, cyan, magenta. No
+   bar at an edge is black, so the black border cannot hide one. A
+   red/blue swap shows as the third and fifth bars trading colours. */
+static const u16 main_testpat_bars[8] =
+{
+  0x7FFF, 0x0000, 0x001F, 0x03E0, 0x7C00, 0x03FF, 0x7FE0, 0x7C1F
+};
+
+/* testpat=: no ROM runs. The bars go through the presenter of each mode
+   asked for, AUTORUN_TESTPAT_HOLD_FRAMES each, and after each mode the
+   result names the presenter and filter psp_video.c really used. The
+   user's screen options are put back before quit(), which saves them. */
+static void main_autorun_testpat(void)
+{
+  u32 saved_scale = option_screen_scale;
+  u32 saved_filter = option_screen_filter;
+  u32 saved_mag = option_screen_mag;
+  u32 mode = main_autorun.testpat_mode;
+  u32 last = mode;
+  u32 x, y, frame;
+
+  if(mode == AUTORUN_TESTPAT_ALL)
+  {
+    mode = 0;
+    last = AUTORUN_TESTPAT_MODES - 1;
+  }
+  main_autorun_report(AUTORUN_STATUS_STARTED, AUTORUN_OK, 0);
+
+  /* Every presenter writes the dcache back before the GE reads these. */
+  video_sync_present();
+  for(y = 0; y < GBA_SCREEN_HEIGHT; y++)
+  {
+    for(x = 0; x < GBA_SCREEN_WIDTH; x++)
+      screen_texture[y * GBA_LINE_SIZE + x] =
+       main_testpat_bars[x / (GBA_SCREEN_WIDTH / 8)];
+  }
+  /* The factory magnification, so every photo of user is alike. */
+  option_screen_mag = 170;
+
+  for(; mode <= last; mode++)
+  {
+    const char *presenter;
+    const char *filter;
+
+    option_screen_scale = AUTORUN_TESTPAT_SCALE(mode);
+    option_screen_filter = AUTORUN_TESTPAT_FILTER(mode);
+    video_resolution_small();
+    for(frame = 0; frame < AUTORUN_TESTPAT_HOLD_FRAMES; frame++)
+    {
+      /* No button is pressed for minutes: keep the backlight on and Auto
+         Sleep away (PSP_POWER_TICK_DISPLAY holds the backlight only). */
+      scePowerTick(PSP_POWER_TICK_ALL);
+      (*update_screen)();
+      flip_screen(1);
+    }
+    main_autorun_frames += AUTORUN_TESTPAT_HOLD_FRAMES;
+
+    /* Asked after the frames: blit_sharp falls back to the GU presenter
+       when the GE list runs out. */
+    video_presenter_names(&presenter, &filter);
+    main_testpat_length += autorun_config_testpat_line(mode, presenter,
+     filter, main_testpat_lines + main_testpat_length,
+     sizeof(main_testpat_lines) - main_testpat_length);
+    main_autorun_report(mode == last ? AUTORUN_STATUS_DONE :
+     AUTORUN_STATUS_STARTED, AUTORUN_OK, 0);
+  }
+
+  option_screen_scale = saved_scale;
+  option_screen_filter = saved_filter;
+  option_screen_mag = saved_mag;
+  quit();
+}
+
+/* Reads diag-autorun.txt. Returns 1 when its ROM is loaded and reset (and
+   its trace started), so user_main runs it at once; 0 otherwise, when
+   nothing in the file applies. testpat= quits from here. */
+int main_autorun_start(void)
+{
+  /* One byte over the limit tells a file that is too large. */
+  char text[AUTORUN_CONFIG_MAX_SIZE + 1];
+  char path[MAX_PATH];
+  SceUID file;
+  size_t size = 0;
+  int result;
+  int loaded;
+
+  result = snprintf(path, sizeof(path), "%sdiag-autorun.txt", main_path);
+  if(result < 0 || (size_t)result >= sizeof(path))
+    return 0;
+  FILE_OPEN(file, path, READ);
+  if(!FILE_CHECK_VALID(file))
+    return 0;
+  while(size < sizeof(text) &&
+        (result = FILE_READ(file, text + size, sizeof(text) - size)) > 0)
+    size += (size_t)result;
+  FILE_CLOSE(file);
+
+  if(result < 0)
+  {
+    main_autorun_report(AUTORUN_STATUS_IGNORED, AUTORUN_ERROR_READ, 0);
+    return 0;
+  }
+  if(!autorun_config_parse(text, size, GBA_RUSH_BUILD_ID, &main_autorun))
+  {
+    main_autorun_report(AUTORUN_STATUS_IGNORED, main_autorun.error,
+     main_autorun.error_line);
+    return 0;
+  }
+#ifdef ENABLE_DIAGNOSTIC_NET_INJECTION
+  /* Before any link starts, so every session of this run gets it. */
+  psp_adhoc_set_fault(main_autorun.net_profile);
+#endif /* ENABLE_DIAGNOSTIC_NET_INJECTION */
+  if(main_autorun.testpat)
+  {
+    main_autorun_testpat();
+    return 0;
+  }
+  if(main_autorun.rom[0] == '\0')
+  {
+    /* A file for this build with nothing to start. */
+    main_autorun_report(AUTORUN_STATUS_STARTED, AUTORUN_OK, 0);
+    return 0;
+  }
+
+  /* load_gamepak() reads the extension after the last '.'. A .sav that
+     will not read fails the ROM here, instead of the dialogs that wait for
+     a button nobody presses. */
+  dialogs_unattended = 1;
+  loaded = main_autorun_path(path, sizeof(path), main_autorun.rom) &&
+   strrchr(path, '.') != NULL && load_gamepak(path) > 0;
+  dialogs_unattended = 0;
+  if(!loaded)
+    return main_autorun_fail(AUTORUN_ERROR_ROM);
+  reset_gba();
+  if(main_autorun.trace[0] != '\0')
+  {
+    int replay = 0;
+
+    /* A .svs made with the other BIOS fails the trace here, instead of
+       showing a popup that waits for a button nobody presses. */
+    dialogs_unattended = 1;
+    if(main_autorun_path(path, sizeof(path), main_autorun.trace))
+      replay = gui_trace_replay_file(path);
+    dialogs_unattended = 0;
+    if(replay <= 0)
+      return main_autorun_fail(AUTORUN_ERROR_TRACE);
+  }
+  if(main_autorun.hash[0] != '\0')
+  {
+    AutorunError error = AUTORUN_OK;
+
+    /* The replay started without hashes: their array did not fit. */
+    if(input_diagnostic_trace_hashes() == NULL)
+      error = AUTORUN_ERROR_NO_HASH_MEMORY;
+    /* The replay would end before that frame and flip nothing. */
+    else if(main_autorun.perturb &&
+            main_autorun.perturb_frame > input_diagnostic_trace_duration())
+      error = AUTORUN_ERROR_PERTURB_PAST_TRACE;
+    if(error != AUTORUN_OK)
+    {
+      input_diagnostic_trace_cancel();
+      return main_autorun_fail(error);
+    }
+    if(main_autorun.perturb)
+      input_diagnostic_trace_hashes_perturb(main_autorun.perturb_frame);
+  }
+
+  main_autorun_running = main_autorun.frames != 0;
+  main_autorun_report(AUTORUN_STATUS_STARTED, AUTORUN_OK, 0);
+  return 1;
+}
+
+/* Called by update_gba once per emulated frame, at VBlank: after frames=N
+   frames from the ROM's start the run is done, hash= gets the replay's
+   state hashes (once, at the end of the run), and exit=1 quits. A replay
+   cancelled before then (a suspend does that) fails the run at once. */
+void main_autorun_frame(void)
+{
+  char path[MAX_PATH];
+  AutorunError error = AUTORUN_OK;
+  InputTraceState trace;
+
+  if(!main_autorun_running)
+    return;
+  /* Nobody presses a button during the run: keep Auto Sleep from
+     suspending the PSP, about once a second. */
+  if(main_autorun_frames % 60 == 0)
+    scePowerTick(PSP_POWER_TICK_ALL);
+
+  trace = input_diagnostic_trace_state();
+  if(main_autorun.trace[0] != '\0' && trace != INPUT_TRACE_REPLAYING &&
+     trace != INPUT_TRACE_FINISHED)
+    error = AUTORUN_ERROR_TRACE;
+  else if(++main_autorun_frames < main_autorun.frames)
+    return;
+  else if(main_autorun.hash[0] != '\0' &&
+          (!main_autorun_path(path, sizeof(path), main_autorun.hash) ||
+           !gui_trace_write_hashes(path)))
+    error = AUTORUN_ERROR_HASH;
+
+  main_autorun_running = 0;
+  main_autorun_report(error == AUTORUN_OK ? AUTORUN_STATUS_DONE :
+   AUTORUN_STATUS_FAILED, error, 0);
+  if(main_autorun.exit_when_done)
+    quit();
+}
+#endif
+
 /* Picks the ROM (a path argument, then roms/game.gba, then the browser or
    menu) and runs it in the dynarec, which never returns; else quits.
    tests/test_startup.py extracts this function by its exact signature. */
@@ -2074,6 +2376,13 @@ int user_main(int argc, char *argv[])
   gamepak_filename[0] = 0;
   gamepak_file_size = 0;
 
+#ifdef ENABLE_DIAGNOSTIC_AUTORUN
+  /* A diag-autorun.txt that loaded and reset its ROM skips the launch
+     orders below, the menu and the auto-state prompt. */
+  if (main_autorun_start())
+    prepared_by_menu = rom_loaded = 1;
+  else
+#endif
   /* Priority 1: launcher or file manager passed a ROM path */
   if (argc > 1)
   {

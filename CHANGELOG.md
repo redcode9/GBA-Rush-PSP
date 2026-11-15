@@ -76,6 +76,18 @@
   in `memory-hold.txt` beside the EBOOT. Beside each performance report it
   also saves the emulator's last 256 memory allocations and frees as
   `perf-<time>-alloc.txt`.
+- The diagnostic build can run a test with nobody at the console: a
+  `diag-autorun.txt` beside the EBOOT that names the build's id starts a
+  ROM, can replay an input trace for a number of frames and quit, and
+  writes the outcome to `diag-autorun.result` and to the runtime log. A
+  file written for another build is ignored. The same file can instead
+  show colour bars through every screen scale and filter, to photograph
+  the screen, or put the wireless link on a simulated bad network that
+  loses, delays and duplicates packets, which the runtime log records.
+- In the diagnostic build, replaying an input trace records a hash of the
+  emulated machine for every frame and saves them beside the trace as a
+  `.gbsh` file, so `tools/state_hash_diff.py` can show the first frame and
+  the part of the machine where two replays differ.
 - On GitHub, bug, game and link reports open as forms that ask for the
   version, the PSP model and firmware, the steps and the `logs/` folder, and
   warn not to attach ROMs, BIOS files or saves that are not your own.
@@ -127,6 +139,14 @@
   chip's size the next time the game saves: SRAM 32 or 64 KB, Flash 64 or
   128 KB, EEPROM 512 bytes or 8 KB. The file as it was is kept once, as
   `<rom>.sav.orig`.
+- In the diagnostic build, starting an input recording also saves
+  a savestate beside the trace in `traces/`, and replaying the trace loads
+  it first, so a recording replays from where it began even after the
+  console is restarted, without loading a state by hand. A trace whose
+  savestate is missing or has changed is refused. On games with a
+  real-time clock the replay warns that it may not match the recording.
+  Traces recorded by earlier versions still replay. A recording does not
+  start during a link session.
 - A stable release is published only after the hardware tests it requires
   have passed, with the EBOOT being released, on a PSP-1000 and on a second
   model, and after at least 7 days as a prerelease (3 days for a fix of

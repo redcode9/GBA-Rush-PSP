@@ -218,6 +218,10 @@ extern u16 vram_metadata [0x18000];
 extern u32 bios_read_protect;
 // 1 when bios.rom holds the built-in open BIOS (set once by load_bios).
 extern u32 bios_builtin;
+// While set (the diagnostic autorun), load_gamepak refuses a .sav that will
+// not read and load_state_silent a savestate made with the other BIOS,
+// without the dialogs that wait for a button.
+extern u32 dialogs_unattended;
 
 extern u32 iwram_control;
 
@@ -280,6 +284,10 @@ u32 read_backup(u32 address);
 CPU_ALERT_TYPE write_eeprom(u32 address, u32 value);
 CPU_ALERT_TYPE write_backup(u32 address, u32 value);
 CPU_ALERT_TYPE write_rtc(u32 address, u32 value);
+u32 memory_rtc_active(void);
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+const u8 *memory_backup_bytes(u32 *size);
+#endif
 
 s32 parse_config_line(char *current_line, char *current_variable, char *current_value);
 
