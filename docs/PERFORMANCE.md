@@ -190,11 +190,13 @@ same settings, BIOS and save state in both. Their reports carry the same
 `build-id`, so only the folder a report was saved in tells the builds
 apart.
 
-Before any run, list both ELFs with `psp-nm -n`: `update_gba` and the
-translation caches (`readonly_code_cache`, `writable_code_cache`) must sit
-at different addresses in the two builds. With `-flto` the build may place
-the padding after them; then the builds do not differ where it matters, so
-write that down instead of running the benchmarks.
+Before any run, list both ELFs with `psp-nm -n`. The build links the probe
+first and without `-flto`, so in the 3000-byte build `padding_probe_code`
+must sit below `update_gba` and `padding_probe_data` below the translation
+caches (`readonly_code_cache`, `writable_code_cache`), and those three must
+sit at different addresses in the two builds. If they do not, the probe is
+not ahead of the core: that is a build defect to fix in `source/Makefile`
+before any run, not a result.
 
 Then, on a PSP-1000 and on one slim, with the same two titles on both:
 

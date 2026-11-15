@@ -116,7 +116,10 @@ PROFILE ?= diagnostic
 ifneq ($(PROFILE),diagnostic)
 $(error PADDING_PROBE_BYTES asks for PROFILE=diagnostic, not PROFILE=$(PROFILE))
 endif
-MAINOBJS += padding_probe.o
+# Linked first and kept out of LTO, so its code and BSS come before the
+# whole core: the LTO output goes where the first LTO object was.
+MAINOBJS := padding_probe.o $(MAINOBJS)
+padding_probe.o: CFLAGS += -fno-lto
 CFLAGS += -DPADDING_PROBE_BYTES=$(PADDING_PROBE_BYTES)
 endif
 PROFILE ?= release
