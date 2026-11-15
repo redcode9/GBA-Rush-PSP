@@ -56,10 +56,11 @@ EVENTS = {
     23: "link-stream-metrics",
     24: "link-timeout",
     25: "link-benchmark",
-    26: "save-load",
-    27: "savestate-repair",
-    28: "save-write",
-    29: "save-link-copy",
+    26: "memory-stats",
+    27: "save-load",
+    28: "savestate-repair",
+    29: "save-write",
+    30: "save-link-copy",
 }
 FLUSH_REASONS = {
     1: "start",
@@ -87,6 +88,9 @@ ADHOC_PHASES = [
     "control-init", "create-group", "scan", "join-group", "group-wait",
     "peer-list", "socket", "send", "receive", "group-lost",
 ]
+# Counter records by kind; describe() spells out 11 (Exact renderer),
+# 12 (CPU core), 18 (requested and read-back CPU and bus clocks) and 19
+# (requested and measured Media Engine clock).
 LINK_COUNTERS = {
     0: "rtt-us/rtt-max-us/resends",
     1: "datagrams-sent/received/rejected",
@@ -109,6 +113,10 @@ EXACT_RENDERER = [
     "not-started", "media-engine", "cpu-no-module", "cpu-no-driver",
     "cpu-no-answer", "cpu-stopped", "cpu-fault", "cpu-too-slow",
     "cpu-no-memory",
+]
+# Where main.c measured the memory (MemStatsPoint in source/src/mem_stats.h).
+MEMORY_POINTS = [
+    "none", "boot", "rom-load", "link-start", "capture-start", "capture-stop",
 ]
 # save-load, from memory.c's load_backup(): the load's SaveStoreResult
 # (source/src/save_store.h), then SaveType and SaveTag
@@ -242,6 +250,20 @@ def describe(record: dict[str, Any]) -> str:
         )
     if event == "log-flush":
         return f"reason={FLUSH_REASONS.get(value0, value0)} main={value1} network={value2}"
+    if event == "memory-stats":
+        # Two records per measurement, values in KiB (mem_stats_encode).
+        # heap-free counts only free space newlib has already taken from the
+        # system; heap-largest is the largest block malloc still gives.
+        # kernel-total is sceKernelTotalFreeMemSize, kernel-largest
+        # sceKernelMaxFreeMemSize: the perf report's kernel-free-low is the
+        # lowest kernel-largest of a capture.
+        point = f"point={_name(MEMORY_POINTS, flags >> 1)}"
+        if flags & 1:
+            return (
+                f"{point} kernel-total={value0}KiB kernel-largest={value1}KiB "
+                f"rom-buffer={value2}KiB rom-pages={value2 // 32}"
+            )
+        return f"{point} image={value0}KiB heap-free={value1}KiB heap-largest={value2}KiB"
     if event == "save-load":
         return (
             f"result={_name(SAVE_RESULTS, flags)} file-size={value0} "
@@ -296,6 +318,23 @@ def describe(record: dict[str, Any]) -> str:
         return (
             f"cpu-core={_name(CPU_CORES, value0)} blocks-compiled={value1} "
             f"code-flushes={value2}"
+        )
+    if event == "link-counters" and flags == 18:
+        cpu, bus = _signed(value1), _signed(value2)
+        # The firmware reports whole MHz (333 reads back 333, its bus 166).
+        mismatch = abs(cpu - value0) > 1 or abs(bus - value0 // 2) > 1
+        return (
+            f"cpu-clock requested={value0}MHz cpu={cpu}MHz bus={bus}MHz"
+            + (" MISMATCH" if mismatch else "")
+        )
+    if event == "link-counters" and flags == 19:
+        # Measured only while the Media Engine draws (Exact renderer).
+        if not value2:
+            return f"me-clock requested={value0}MHz me=unmeasured"
+        return (
+            f"me-clock requested={value0}MHz me={value1}MHz "
+            f"over={value2 / 1000:.1f}s"
+            + (" MISMATCH" if abs(value1 - value0) > 1 else "")
         )
     if event == "link-counters":
         return f"{LINK_COUNTERS.get(flags, f'counters-{flags}')}={value0}/{value1}/{value2}"

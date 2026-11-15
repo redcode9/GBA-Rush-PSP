@@ -258,13 +258,132 @@ class RuntimeLogDecoderTests(unittest.TestCase):
                               "values": [1, 8116, 2]}),
             "cpu-core=new blocks-compiled=8116 code-flushes=2")
 
+    def test_describes_cpu_clock_records(self):
+        main_c = (Path(__file__).parents[1] / "source" / "src" /
+                  "main.c").read_text(encoding="utf-8")
+        # Requested, then CPU, then bus, as the decoder reads them.
+        self.assertRegex(
+            main_c,
+            r"cpu_ticks, 18,\s+mhz, "
+            r"\(u32\)scePowerGetCpuClockFrequencyInt\(\),\s+"
+            r"\(u32\)scePowerGetBusClockFrequencyInt\(\)\);")
+        cases = [
+            ([333, 333, 166], "requested=333MHz cpu=333MHz bus=166MHz"),
+            ([222, 222, 111], "requested=222MHz cpu=222MHz bus=111MHz"),
+            ([333, 332, 167], "requested=333MHz cpu=332MHz bus=167MHz"),
+            ([333, 331, 166],
+             "requested=333MHz cpu=331MHz bus=166MHz MISMATCH"),
+            ([333, 333, 164],
+             "requested=333MHz cpu=333MHz bus=164MHz MISMATCH"),
+            ([333, 222, 111],
+             "requested=333MHz cpu=222MHz bus=111MHz MISMATCH"),
+            ([333, 300, 166],
+             "requested=333MHz cpu=300MHz bus=166MHz MISMATCH"),
+            ([333, 333, 111],
+             "requested=333MHz cpu=333MHz bus=111MHz MISMATCH"),
+            ([333, 0x8002013A, 166],
+             "requested=333MHz cpu=-2147352262MHz bus=166MHz MISMATCH"),
+        ]
+        for values, expected in cases:
+            with self.subTest(values=values):
+                self.assertEqual(
+                    decoder.describe({"event": "link-counters", "flags": 18,
+                                      "values": values}),
+                    "cpu-clock " + expected)
+
+    def test_describes_me_clock_records(self):
+        main_c = (Path(__file__).parents[1] / "source" / "src" /
+                  "main.c").read_text(encoding="utf-8")
+        # Requested MHz, then 2 * counter ticks / us rounded, then ms.
+        self.assertRegex(
+            main_c,
+            r"cpu_ticks, 19,\s+main_clock_requested_mhz, "
+            r"\(u32\)\(\(2 \* ticks \+ us / 2\) / us\),\s+"
+            r"\(u32\)\(us / 1000\)\);")
+        cases = [
+            ([333, 333, 61234], "requested=333MHz me=333MHz over=61.2s"),
+            ([222, 222, 2000], "requested=222MHz me=222MHz over=2.0s"),
+            ([333, 332, 1000], "requested=333MHz me=332MHz over=1.0s"),
+            ([333, 334, 1000], "requested=333MHz me=334MHz over=1.0s"),
+            ([333, 331, 1000],
+             "requested=333MHz me=331MHz over=1.0s MISMATCH"),
+            ([333, 335, 1000],
+             "requested=333MHz me=335MHz over=1.0s MISMATCH"),
+            ([333, 222, 5000],
+             "requested=333MHz me=222MHz over=5.0s MISMATCH"),
+            # Under a millisecond is too short to trust.
+            ([333, 333, 0], "requested=333MHz me=unmeasured"),
+        ]
+        for values, expected in cases:
+            with self.subTest(values=values):
+                self.assertEqual(
+                    decoder.describe({"event": "link-counters", "flags": 19,
+                                      "values": values}),
+                    "me-clock " + expected)
+
+    def test_describes_memory_stats_records(self):
+        # flags = point << 1 | part; values in KiB.
+        cases = [
+            (2, [3072, 1024, 8192],
+             "point=boot image=3072KiB heap-free=1024KiB heap-largest=8192KiB"),
+            (3, [20480, 12288, 32768],
+             "point=boot kernel-total=20480KiB kernel-largest=12288KiB "
+             "rom-buffer=32768KiB rom-pages=1024"),
+            (11, [0, 0, 4096],
+             "point=capture-stop kernel-total=0KiB kernel-largest=0KiB "
+             "rom-buffer=4096KiB rom-pages=128"),
+            (14, [1, 2, 3],
+             "point=7 image=1KiB heap-free=2KiB heap-largest=3KiB"),
+        ]
+        for flags, values, expected in cases:
+            with self.subTest(flags=flags):
+                self.assertEqual(
+                    decoder.describe({"event": "memory-stats", "flags": flags,
+                                      "values": values}),
+                    expected)
+
+    def test_decodes_memory_stats_in_a_version_six_log(self):
+        record = struct.pack(
+            ">QIIHBBIII", 110, 7, 1, 26, 1, 5, 21504, 12288, 16384)
+        snapshot = decoder.parse_snapshot(fixture_v6(record))
+
+        self.assertEqual(snapshot["records"][0]["event"], "memory-stats")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            decoder.print_snapshot(snapshot)
+        self.assertIn(
+            "memory-stats            point=rom-load kernel-total=21504KiB "
+            "kernel-largest=12288KiB rom-buffer=16384KiB rom-pages=512\n",
+            output.getvalue())
+
+    # A bad merge of event types appended by two branches shows up here.
+    def test_event_names_match_the_c_enum(self):
+        header = (Path(__file__).parents[1] / "source" / "src" /
+                  "runtime_log.h").read_text()
+        body = header.split("typedef enum", 2)[2].split("} RuntimeLogEventType;")[0]
+        names = re.findall(r"^\s*RUNTIME_LOG_EVENT_(\w+)", body, re.M)
+        self.assertIn("RUNTIME_LOG_EVENT_SESSION_START = 1", body)
+        self.assertEqual(
+            decoder.EVENTS,
+            {index: name.lower().replace("_", "-")
+             for index, name in enumerate(names, 1)})
+
+    def test_memory_points_match_the_c_enum(self):
+        header = (Path(__file__).parents[1] / "source" / "src" /
+                  "mem_stats.h").read_text()
+        body = header.split("typedef enum", 1)[1].split("} MemStatsPoint;")[0]
+        names = re.findall(r"^\s*MEM_STATS_(\w+)", body, re.M)
+        self.assertIn("MEM_STATS_BOOT = 1", body)
+        self.assertEqual(
+            decoder.MEMORY_POINTS,
+            ["none"] + [name.lower().replace("_", "-") for name in names])
     def test_decodes_save_load(self):
         # A 128 KiB file for a 64 KiB Flash game, then one that will not
-        # read (event 26, flags = the load's result).
+        # read (event 27, flags = the load's result).
         snapshot = decoder.parse_snapshot(fixture_v6(
-            struct.pack(">QIIHBBIII", 110, 0, 1, 26, 1, 0,
+            struct.pack(">QIIHBBIII", 110, 0, 1, 27, 1, 0,
                         131072, 65536, 1 | 3 << 8 | 1 << 16),
-            struct.pack(">QIIHBBIII", 111, 0, 2, 26, 1, 2, 0, 0, 3),
+            struct.pack(">QIIHBBIII", 111, 0, 2, 27, 1, 2, 0, 0, 3),
         ))
         loaded, failed = snapshot["records"]
 
@@ -280,13 +399,13 @@ class RuntimeLogDecoderTests(unittest.TestCase):
 
     def test_decodes_save_write(self):
         # A Flash 128 KiB flush on a full Memory Stick, its retry that
-        # writes, and a result this decoder lacks (event 28).
+        # writes, and a result this decoder lacks (event 29).
         snapshot = decoder.parse_snapshot(fixture_v6(
-            struct.pack(">QIIHBBIII", 110, 0, 1, 28, 1, 3,
+            struct.pack(">QIIHBBIII", 110, 0, 1, 29, 1, 3,
                         41250, 131072, 1),
-            struct.pack(">QIIHBBIII", 111, 0, 2, 28, 1, 0,
+            struct.pack(">QIIHBBIII", 111, 0, 2, 29, 1, 0,
                         187003, 131072, 2),
-            struct.pack(">QIIHBBIII", 112, 0, 3, 28, 1, 9, 5, 512, 1),
+            struct.pack(">QIIHBBIII", 112, 0, 3, 29, 1, 9, 5, 512, 1),
         ))
         failed, written, unknown = snapshot["records"]
 
@@ -302,13 +421,13 @@ class RuntimeLogDecoderTests(unittest.TestCase):
 
     def test_decodes_save_link_copy(self):
         # The pre-link copy of a Flash 128 KiB save, one that failed and a
-        # result this decoder lacks (event 29).
+        # result this decoder lacks (event 30).
         snapshot = decoder.parse_snapshot(fixture_v6(
-            struct.pack(">QIIHBBIII", 120, 0, 1, 29, 1, 0,
+            struct.pack(">QIIHBBIII", 120, 0, 1, 30, 1, 0,
                         96500, 131072, 0),
-            struct.pack(">QIIHBBIII", 121, 0, 2, 29, 1, 2,
+            struct.pack(">QIIHBBIII", 121, 0, 2, 30, 1, 2,
                         1200, 32768, 0),
-            struct.pack(">QIIHBBIII", 122, 0, 3, 29, 1, 9, 5, 512, 0),
+            struct.pack(">QIIHBBIII", 122, 0, 3, 30, 1, 9, 5, 512, 0),
         ))
         copied, failed, unknown = snapshot["records"]
 
@@ -338,11 +457,11 @@ class RuntimeLogDecoderTests(unittest.TestCase):
     def test_decodes_savestate_repair(self):
         # A state with a bad Flash bank and EEPROM counter, then one whose
         # type went back to the one in use, plus a bit this decoder lacks
-        # (event 27).
+        # (event 28).
         snapshot = decoder.parse_snapshot(fixture_v6(
-            struct.pack(">QIIHBBIII", 110, 0, 1, 27, 1, 0,
+            struct.pack(">QIIHBBIII", 110, 0, 1, 28, 1, 0,
                         0x108, 1, 0),
-            struct.pack(">QIIHBBIII", 111, 0, 2, 27, 1, 0,
+            struct.pack(">QIIHBBIII", 111, 0, 2, 28, 1, 0,
                         0x201, 2, 0),
         ))
         flash, eeprom = snapshot["records"]
@@ -363,17 +482,6 @@ class RuntimeLogDecoderTests(unittest.TestCase):
             [(name.lower().replace("_", "-"), int(value, 16))
              for name, value in bits],
             [(name, 1 << bit) for bit, name in enumerate(decoder.SAVE_FIXES)])
-
-    # Events added at the end of the C enum keep the format version, so the
-    # decoder's table must follow the enum exactly.
-    def test_event_names_match_the_c_enum(self):
-        header = (Path(__file__).parents[1] / "source" / "src" /
-                  "runtime_log.h").read_text()
-        events = re.findall(r"^\s+RUNTIME_LOG_EVENT_([A-Z_]+)", header, re.M)
-
-        self.assertEqual(
-            [event.lower().replace("_", "-") for event in events],
-            [decoder.EVENTS[i] for i in range(1, len(decoder.EVENTS) + 1)])
 
     def test_link_counter_groups_decode_by_name(self):
         def counters(group):

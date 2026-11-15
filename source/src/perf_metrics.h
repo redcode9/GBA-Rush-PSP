@@ -21,11 +21,39 @@
 
 #include <stdint.h>
 
-/* Frame times in 250 us buckets (to 128 ms) and GE waits in 50 us buckets
-   (to 25.6 ms); longer samples land in the last bucket. */
+/* Frame and work times in 250 us buckets (to 128 ms) and GE waits in 50 us
+   buckets (to 25.6 ms); longer samples land in the last bucket. */
 #define PERF_METRICS_HISTOGRAM_BUCKETS 512U
 #define PERF_METRICS_FRAME_BUCKET_US 250U
 #define PERF_METRICS_GE_BUCKET_US 50U
+
+/* A GBA frame (280896 cycles at 16.78 MHz) lasts 16743 us: a frame whose
+   work, its frame time minus the VBlank, audio and GE waits recorded in
+   it, takes longer cannot keep full speed. A frame time over 1.5 times
+   that (25115 us) is a visible stutter. */
+#define PERF_METRICS_WORK_BUDGET_US 16743U
+#define PERF_METRICS_FRAME_OVER_BUDGET_US 25115U
+
+/* Phase timers: main.c times update_gba, update_scanline and the PSG
+   update (update_gbc_sound) in one frame out of 11 of a capture. 11 is
+   prime, so the sampled frames do not lock onto the 2- to 6-frame cycles
+   of games. A sampled frame longer than the frame histogram's range
+   (128 ms) held a menu, a save state or a stall: its phases are dropped. */
+#define PERF_METRICS_PHASE_STRIDE 11U
+#define PERF_METRICS_PHASE_MAX_FRAME_US \
+ (PERF_METRICS_HISTOGRAM_BUCKETS * PERF_METRICS_FRAME_BUCKET_US)
+/* Clock reads main.c makes back to back when a capture starts, to measure
+   the cost of one read. */
+#define PERF_METRICS_PROBE_CALIBRATION_READS 64U
+
+/* Preemptions of the emulation thread, from the PSP kernel's thread run
+   status, which main.c reads at two points of each frame end: before
+   synchronize() (the work ends) and after the flip (the waits end). A
+   frame's preemptions, thread and interrupt in both windows, fall in one
+   of 7 classes: 0, 1, 2, 3-4, 5-8, 9-16 and 17 or more. main.c times
+   PERF_METRICS_PREEMPT_CALIBRATION_CALLS reads when a capture starts. */
+#define PERF_METRICS_PREEMPT_CLASSES 7U
+#define PERF_METRICS_PREEMPT_CALIBRATION_CALLS 16U
 
 /* INVALIDATED: a reset, ROM change or suspend cut the capture short. */
 typedef enum
@@ -53,6 +81,22 @@ typedef enum
   PERF_METRICS_WAIT_PRESENT,
   PERF_METRICS_WAIT_AUDIO
 } PerfMetricsWaitSite;
+
+/* What a phase timer measured. UPDATE_GBA is the whole call; the scanline
+   and PSG phases and the frame's waits run inside it. */
+typedef enum
+{
+  PERF_METRICS_PHASE_UPDATE_GBA,
+  PERF_METRICS_PHASE_SCANLINE,
+  PERF_METRICS_PHASE_GBC_SOUND
+} PerfMetricsPhase;
+
+/* Where main.c reads the preemption counts. */
+typedef enum
+{
+  PERF_METRICS_PREEMPT_WORK_END,
+  PERF_METRICS_PREEMPT_WAIT_END
+} PerfMetricsPreemptPoint;
 
 typedef struct
 {
@@ -110,8 +154,66 @@ typedef struct
   uint64_t gamepak_read_errors;
   uint64_t gamepak_rom_seek_total_us;
   uint64_t gamepak_rom_read_total_us;
+  uint64_t frames_work_over_budget;
+  uint64_t frames_over_1_5x_budget;
+  /* Frames outside fast-forward that synchronize() did not pace with a
+     backpressure VBlank wait, as real time was already ahead. A frame that
+     a wait of the frame before (the present wait with vsync on, or the
+     audio sync) carried past the VBlank counts too, so compare late counts
+     only between captures with the same vsync setting. */
+  uint64_t frames_late;
+  /* Frames emulated with a lockstep link connected: forced frameskip and
+     a different emulator thread priority. */
+  uint64_t link_lockstep_frames;
+  /* Waits recorded since the last frame; each recorded frame clears them. */
+  uint64_t frame_wait_us;
+  int frame_waited_backpressure;
+  /* Phase timers. phase_frames counts the frames begun in the capture;
+     phase_sampling is set while the current frame is sampled, and
+     phase_recorded once perf_metrics_record_frame() gave its waits and
+     work. The phase_frame_ fields hold that frame until the next one
+     begins and adds them to the totals. */
+  uint32_t phase_frames;
+  int phase_sampling;
+  int phase_recorded;
+  uint64_t phase_frame_update_gba_us;
+  uint64_t phase_frame_scanline_us;
+  uint64_t phase_frame_gbc_sound_us;
+  uint64_t phase_frame_wait_us;
+  uint64_t phase_frame_reads;
+  uint32_t phase_frame_work_us;
+  uint64_t phase_sampled_frames;
+  /* update_gba's own time: without the scanline and PSG phases and the
+     frame's waits. */
+  uint64_t phase_update_gba_us;
+  uint64_t phase_scanline_us;
+  uint64_t phase_gbc_sound_us;
+  uint64_t phase_work_us;
+  /* Cost of one clock read, and the reads the phase timers made in the
+     sampled frames: their product is the time the timers added. */
+  uint32_t probe_read_ns;
+  uint64_t probe_reads;
+  /* Preemptions. preempt_unavailable: the kernel refused a read, so the
+     capture takes no more. preempt_stage is 1 after a wait end (the work
+     window is open) and 2 after the work end that follows it, whose
+     deltas preempt_frame_work_ holds; 0 otherwise. preempt_last_ holds the
+     counts of the last read. */
+  int preempt_unavailable;
+  int preempt_stage;
+  uint32_t preempt_last_thread;
+  uint32_t preempt_last_intr;
+  uint32_t preempt_frame_work_thread;
+  uint32_t preempt_frame_work_intr;
+  uint64_t preempt_work_thread;
+  uint64_t preempt_work_intr;
+  uint64_t preempt_wait_thread;
+  uint64_t preempt_wait_intr;
+  uint64_t preempt_max_per_frame;
+  uint64_t preempt_frames[PERF_METRICS_PREEMPT_CLASSES];
+  uint32_t preempt_call_ns;
   PerfMetricsHistogram frame_time;
   PerfMetricsHistogram ge_wait;
+  PerfMetricsHistogram work_time;
 } PerfMetrics;
 
 /* PerfMetrics with the histograms reduced to totals and percentiles. */
@@ -183,6 +285,31 @@ typedef struct
   uint64_t gamepak_read_errors;
   uint64_t gamepak_rom_seek_total_us;
   uint64_t gamepak_rom_read_total_us;
+  uint64_t work_time_samples;
+  uint64_t work_time_total_us;
+  uint32_t work_time_max_us;
+  uint32_t work_time_p50_us;
+  uint32_t work_time_p95_us;
+  uint32_t work_time_p99_us;
+  uint64_t frames_work_over_budget;
+  uint64_t frames_over_1_5x_budget;
+  uint64_t frames_late;
+  uint64_t link_lockstep_frames;
+  uint64_t phase_sampled_frames;
+  uint64_t phase_update_gba_us;
+  uint64_t phase_scanline_us;
+  uint64_t phase_gbc_sound_us;
+  uint64_t phase_work_us;
+  uint32_t probe_read_ns;
+  uint64_t probe_reads;
+  int preempt_available;
+  uint64_t preempt_work_thread;
+  uint64_t preempt_work_intr;
+  uint64_t preempt_wait_thread;
+  uint64_t preempt_wait_intr;
+  uint64_t preempt_max_per_frame;
+  uint64_t preempt_frames[PERF_METRICS_PREEMPT_CLASSES];
+  uint32_t preempt_call_ns;
 } PerfMetricsSnapshot;
 
 void perf_metrics_init(PerfMetrics *metrics);
@@ -229,6 +356,18 @@ void perf_metrics_record_gamepak_evict_scan(PerfMetrics *metrics,
 void perf_metrics_record_gamepak_rom_io(PerfMetrics *metrics,
  uint32_t seek_us, uint32_t read_us, uint32_t bytes_read,
  int read_error);
+void perf_metrics_record_link_lockstep_frame(PerfMetrics *metrics);
+int perf_metrics_phase_begin_frame(PerfMetrics *metrics);
+void perf_metrics_phase_add(PerfMetrics *metrics, PerfMetricsPhase phase,
+ uint32_t us);
+void perf_metrics_record_probe_calibration(PerfMetrics *metrics,
+ uint32_t elapsed_us, uint32_t reads);
+int perf_metrics_preempt_wanted(const PerfMetrics *metrics);
+void perf_metrics_preempt_sample(PerfMetrics *metrics,
+ PerfMetricsPreemptPoint point, uint32_t thread_count, uint32_t intr_count);
+void perf_metrics_preempt_unavailable(PerfMetrics *metrics);
+void perf_metrics_record_preempt_calibration(PerfMetrics *metrics,
+ uint32_t elapsed_us, uint32_t calls);
 void perf_metrics_snapshot(const PerfMetrics *metrics,
  PerfMetricsSnapshot *snapshot);
 

@@ -54,9 +54,47 @@
   its own icons and installs in `PSP/GAME/GBARushPSP-DIAG`, so it keeps its
   own settings, saves and logs and never touches the regular install. The
   regular build contains none of its diagnostic code.
+- The runtime log records the memory when GBA Rush PSP starts, each time a
+  game is loaded or reset, before a link session starts and when a
+  performance measurement starts and stops: the size of the program, the
+  free heap and its largest block, the free system memory and its largest
+  block, and the size of the ROM buffer. Performance reports give the lowest
+  free heap, largest heap block and largest system memory block measured
+  during the capture (`heap-free-low`, `heap-largest-low`,
+  `kernel-free-low`).
+- The diagnostic build can hold back memory from startup, to imitate a PSP
+  with less memory in an emulator: write the amount in KiB (at most 65536)
+  in `memory-hold.txt` beside the EBOOT. Beside each performance report it
+  also saves the emulator's last 256 memory allocations and frees as
+  `perf-<time>-alloc.txt`.
 - On GitHub, bug, game and link reports open as forms that ask for the
   version, the PSP model and firmware, the steps and the `logs/` folder, and
   warn not to attach ROMs, BIOS files or saves that are not your own.
+- `docs/PERFORMANCE.md` explains how to compare the speed of two builds and
+  holds a table of measured baselines for each PSP model and game, generated
+  by `scripts/perf-table.py` from the reports archived under `benchmarks/`.
+  No baselines are archived yet.
+- `scripts/compare-benchmarks.py --baseline-dir DIR --candidate-dir DIR`
+  compares folders of reports: the reports of each game, revision and PSP
+  model are compared as a group of their own, and the result shows PASS or
+  FAIL for every group. A group the baseline has but the candidate lacks is
+  reported as missing and fails the comparison.
+- Diagnostics > Unbound benchmark loads the current save state slot and
+  runs 3600 frames as fast as the PSP can: nothing waits for the VBlank,
+  VSync or the audio, and the game gets no input. The capture then stops by
+  itself, its report is saved and the game returns to its normal speed. A
+  link refuses the benchmark. The diagnostic build adds two rows that run it
+  with rendering or audio off, and replays the input trace it holds instead
+  of giving no input, ending the run with the trace.
+- Performance reports also record each frame's work time without the waits,
+  the frames that were late, over budget or run during a lockstep link, the
+  local time the capture started, the time of the main emulation phases on
+  one frame in 11, and how often the emulation thread was preempted while
+  working or waiting. `docs/PERFORMANCE.md` explains every key.
+- `scripts/compare-benchmarks.py --order-check` tells whether the runs of the
+  two builds alternated, `--strict` fails when they did not, and
+  `--claim 'throughput>=+3'` says whether a claim written before the runs
+  holds. `docs/PERFORMANCE.md` describes the measurement protocol they serve.
 
 ### Changed
 
@@ -69,6 +107,13 @@
   so it never overwrites the `<rom>_auto.svs` made with `gba_bios.bin`.
 - The `bios_rom_hack_39` and `bios_rom_hack_2C` options of `game_config.txt`
   apply only to `gba_bios.bin`.
+- The menu and the file browser run at the configured CPU clock (333 MHz by
+  default) instead of 222 MHz: after a ROM loads (at 333 MHz) or a link
+  session ends, the PSP returns to the configured clock instead of 222 MHz,
+  and it sets that clock again when it resumes from sleep. The runtime log
+  records the requested clock and the CPU and bus clocks the PSP reports each
+  time the clock is set and, when the Exact renderer draws on the Media
+  Engine, the Media Engine clock it measured under each requested clock.
 - A `.sav` whose size does not match its save chip is written back at the
   chip's size the next time the game saves: SRAM 32 or 64 KB, Flash 64 or
   128 KB, EEPROM 512 bytes or 8 KB. The file as it was is kept once, as
@@ -79,6 +124,25 @@
   lost data). Its release notes list what was validated, on which consoles,
   and its known limits; a build not yet tested on hardware is published as
   a prerelease.
+- A stable release that requires the `perf-baseline-5` hardware test is
+  published only when its PSP-1000 reports, archived under `benchmarks/`
+  with the build id of its release candidate, pass
+  `scripts/compare-benchmarks.py` against those of the newest earlier
+  release there for every game; a game without reports fails.
+- `scripts/compare-benchmarks.py` takes three or more reports per build, and
+  the two builds may have different counts. PASS and FAIL work as before; for
+  each metric it also shows the median, lowest and highest run of both builds
+  and says whether the runs show a clear difference or how many runs per
+  build would be needed to tell.
+- `scripts/compare-benchmarks.py` also fails a build whose frame-time p99
+  rises more than 5%, whose frame-time maximum is above 1.5 times the
+  baseline's in two or more runs, or, with reports that have the new keys,
+  whose work-time p95 rises more than 5% or whose frames over 1.5 times the
+  budget per minute rise by more than max(1, 20%). A frame-time p95 rise of
+  exactly 5%, and a throughput or fast-forward drop of exactly 2%, now pass.
+  It refuses reports captured during a lockstep link, unless `--allow-link`
+  is given and every run of both builds was in lockstep, and never compares
+  the unbound benchmark with a capture the player ran.
 
 ### Fixed
 

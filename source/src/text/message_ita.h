@@ -1081,6 +1081,22 @@
   "Rapporto salvato",
   // MSG_DIAGNOSTICS_REPORT_FAILED
   "Impossibile salvare il rapporto",
+  // MSG_DIAGNOSTICS_BENCH
+  "Benchmark senza limite",
+  // MSG_DIAGNOSTICS_HELP_BENCH
+  "Carica lo slot, 3600 frame senza attese, salva il rapporto",
+  // MSG_DIAGNOSTICS_BENCH_LINK
+  "Benchmark rifiutato: sessione link aperta",
+  // MSG_DIAGNOSTICS_BENCH_NO_STATE
+  "Benchmark rifiutato: nessuno stato valido nello slot attuale",
+  // MSG_DIAGNOSTICS_BENCH_RENDER_OFF
+  "Benchmark senza limite, video spento",
+  // MSG_DIAGNOSTICS_HELP_BENCH_RENDER_OFF
+  "Lo stesso benchmark, senza disegnare i frame",
+  // MSG_DIAGNOSTICS_BENCH_AUDIO_OFF
+  "Benchmark senza limite, audio spento",
+  // MSG_DIAGNOSTICS_HELP_BENCH_AUDIO_OFF
+  "Lo stesso benchmark, senza scrivere campioni audio",
   // MSG_UNAVAILABLE_CURRENT_STATE
   "Non disponibile nello stato attuale",
 

@@ -3846,7 +3846,7 @@ s32 load_gamepak(char *name)
     clear_cheats();
   }
 
-  set_cpu_clock(PSP_CLOCK_222);
+  set_cpu_clock(option_clock_speed);
   scePowerUnlock(0);
 
   // Asked only now: a dialog under the power lock would hold off standby.

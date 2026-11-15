@@ -29,6 +29,8 @@ covering_test()
     volume_icon) echo - ;;
     # Builds video.c, which includes common.h, as the old renderer.
     video_old_wrap) echo - ;;
+    # Unused filler for the padding experiment (docs/PERFORMANCE.md).
+    padding_probe) echo - ;;
     *) echo "$1" ;;
   esac
 }
