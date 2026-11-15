@@ -567,6 +567,14 @@
 
   // MSG_ERR_OPEN_GAMEPACK
   "ゲームファイルを開くことができませんでした.",
+  // MSG_SAVE_READ_RETRY
+  "セーブデータを読み込めません. 再試行する?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "セーブせずにプレイする? ファイルはそのままです.",
+  // MSG_SAVE_WRITE_FAILED
+  "セーブデータを書き込めませんでした.\nデータは保持され, 後で再試行します.",
+  // MSG_SAVE_WRITE_RETRY
+  "セーブデータを書き込めません. 再試行する?",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "コールバックスレッドを起動できませんでした.",
@@ -910,6 +918,9 @@
   // MSG_LINK_MENU_DISCONNECT
   "切断",
 
+  // MSG_LINK_MENU_RESTORE
+  "通信前のセーブに戻す",
+
   // MSG_LINK_MENU_HELP_STATUS
   "現在の通信状態",
 
@@ -921,6 +932,18 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "現在の通信を終了します",
+
+  // MSG_LINK_MENU_HELP_RESTORE
+  "通信の前にコピーしたセーブに戻します",
+
+  // MSG_LINK_RESTORE_CONFIRM
+  "%sに戻す? ゲームを再起動します",
+
+  // MSG_LINK_RESTORE_NONE
+  "通信前にコピーしたセーブはありません",
+
+  // MSG_LINK_RESTORE_FAILED
+  "セーブデータを復元できませんでした",
 
   // MSG_LINK_STATUS_NO_GAME
   "ゲームが読み込まれていません",
@@ -978,6 +1001,9 @@
 
   // MSG_LINK_REASON_ROM_CHANGE
   "ゲームが変更されました",
+
+  // MSG_LINK_REASON_SAVE_FAILED
+  "セーブデータを書き込めませんでした",
 
 
   // MSG_CATEGORY_CONTINUE

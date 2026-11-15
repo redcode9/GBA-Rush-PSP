@@ -567,6 +567,14 @@
 
   // MSG_ERR_OPEN_GAMEPACK
   "Impossibile aprire il file di gioco.",
+  // MSG_SAVE_READ_RETRY
+  "Il salvataggio non si legge. Riprovare?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "Giocare senza salvare? Il file resta com'e`.",
+  // MSG_SAVE_WRITE_FAILED
+  "Impossibile scrivere il salvataggio.\nIl gioco lo conserva e riprova tra poco.",
+  // MSG_SAVE_WRITE_RETRY
+  "Salvataggio non scritto: riprovare?",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "Impossibile avviare il thread di callback.",
@@ -910,6 +918,9 @@
   // MSG_LINK_MENU_DISCONNECT
   "Disconnetti",
 
+  // MSG_LINK_MENU_RESTORE
+  "Ripristina salvataggio pre-link",
+
   // MSG_LINK_MENU_HELP_STATUS
   "Stato attuale del cavo link",
 
@@ -921,6 +932,18 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "Chiudi la sessione link attuale",
+
+  // MSG_LINK_MENU_HELP_RESTORE
+  "Torna a un salvataggio di prima del link",
+
+  // MSG_LINK_RESTORE_CONFIRM
+  "Tornare al %s? Il gioco riparte.",
+
+  // MSG_LINK_RESTORE_NONE
+  "Nessun salvataggio copiato prima di un link.",
+
+  // MSG_LINK_RESTORE_FAILED
+  "Impossibile ripristinare il salvataggio.",
 
   // MSG_LINK_STATUS_NO_GAME
   "Nessun gioco caricato",
@@ -978,6 +1001,9 @@
 
   // MSG_LINK_REASON_ROM_CHANGE
   "Gioco cambiato",
+
+  // MSG_LINK_REASON_SAVE_FAILED
+  "Salvataggio non scritto",
 
   // MSG_CATEGORY_CONTINUE
   "Continua",

@@ -32,7 +32,7 @@ void video_resolution_small(void);
 void clear_screen(u32 color);
 void clear_texture(u16 color);
 
-u16 *copy_screen(void);
+void copy_screen(u16 *copy);
 void blit_to_screen(u16 *src, u16 w, u16 h, u16 dest_x, u16 dest_y);
 
 void print_string(const char *str, s16 x, u16 y, u16 fg_color, s16 bg_color);

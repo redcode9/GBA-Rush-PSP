@@ -27,6 +27,19 @@
   Where the Media Engine cannot be used, as on official firmware or in an
   emulator, Exact draws on the main processor and is slower than New. With
   Show FPS on, the counter ends in ME or CPU to tell which.
+- Before a link session starts, the game's save is written and a copy of it
+  is kept as `<rom>.sav.link1`; the two copies before it move to `.link2`
+  and `.link3`. If the save cannot be written or copied, the session does
+  not start and the Link menu says why.
+- Link > Restore pre-link save puts one of those copies back, chosen by its
+  date and time. The current save is kept as `<rom>.sav.bak`, and the game
+  restarts on the restored save. The item is not available during a
+  session.
+- The runtime log records how every `.sav` was read (its size, the save
+  chip chosen and whether they disagree), how long every save write took,
+  whether it worked and how many tries it needed, how long the save copy
+  made before a link session took and whether it worked, and which save
+  fields of a damaged savestate were repaired on load.
 - The Diagnostics page shows the version and the build id, an id of the
   exact source the EBOOT was built from, ending in `-dirty` when that source
   had uncommitted changes. Performance reports, runtime logs and the
@@ -101,6 +114,10 @@
   records the requested clock and the CPU and bus clocks the PSP reports each
   time the clock is set and, when the Exact renderer draws on the Media
   Engine, the Media Engine clock it measured under each requested clock.
+- A `.sav` whose size does not match its save chip is written back at the
+  chip's size the next time the game saves: SRAM 32 or 64 KB, Flash 64 or
+  128 KB, EEPROM 512 bytes or 8 KB. The file as it was is kept once, as
+  `<rom>.sav.orig`.
 - A stable release is published only after the hardware tests it requires
   have passed, with the EBOOT being released, on a PSP-1000 and on a second
   model, and after at least 7 days as a prerelease (3 days for a fix of
@@ -126,6 +143,40 @@
   It refuses reports captured during a lockstep link, unless `--allow-link`
   is given and every run of both builds was in lockstep, and never compares
   the unbound benchmark with a capture the player ran.
+
+### Fixed
+
+- A 64 KB `.sav` of an SRAM game is no longer written back as a 1-byte file
+  the first time the game saves. Saves already cut by earlier versions
+  cannot be recovered.
+- A `.sav` that exists but cannot be read is never written over. The
+  emulator asks whether to read it again or to play without saving; while
+  playing without saving, nothing is written to the file until another ROM
+  is loaded.
+- A `.sav` larger than 128 KB no longer overruns memory: its first 128 KB
+  are loaded.
+- The save type comes from the ROM's save library string, and the file size
+  no longer overrides it, so a `.sav` of another size, such as a 128 KB file
+  for a game with 64 KB Flash, loads with the chip the game expects.
+- A damaged savestate can no longer make the save memory read or write
+  outside its buffer.
+- Load State File on the running game's `<rom>_auto.svs` loads that state
+  instead of first overwriting it with the game in progress.
+- Putting the PSP to sleep while the resume question is open no longer
+  replaces the AUTO state.
+- Games with an 8 KB EEPROM that save before ever reading it no longer lose
+  the save.
+- A power cut while the `.sav` is being written no longer loses the save:
+  the previous one is kept as `<rom>.sav.bak` and restored at the next
+  start.
+- A save that cannot be written, for example on a full Memory Stick, is no
+  longer lost: the game keeps it in memory and tries again, the menu opens
+  once to say so, and before exiting, suspending or changing game the menu
+  asks whether to try again.
+- Saving a state no longer needs 512 KB of free memory: when memory runs
+  out, the state is saved without its preview picture instead of quitting.
+  A power cut while a state is being saved keeps the previous state, as a
+  `.svs.bak` file.
 
 ## 1.4.3 - 2026-11-02
 

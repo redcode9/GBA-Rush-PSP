@@ -24,6 +24,20 @@
  * banks of a 128 KiB Flash and the two halves of a 64 KiB SRAM, so a
  * partial or mirrored image shows up as the first offset that does not
  * match.
+ *
+ * save-eeprom8k_wfirst (BACKUP_WRITE_FIRST) first runs write_first,
+ * before anything reads the chip: it writes one block, the last of the
+ * signature's space (3Fh), with an 81-unit DMA as a game's first save
+ * does, then reads it back. With no .sav the emulator has to size the
+ * EEPROM from that write: one that takes it as 512 bytes reads the
+ * address as 6 bits, 000000b, writes block 0 and reads back a blank
+ * block. The case is PASS with 3Fh, or FAIL with the first 4 bytes read
+ * back (FFFFFFFFh: blank), or DEAD0000h when the chip never reports the
+ * write done. The ROM cannot tell a blank chip without reading it, so
+ * every boot writes the same bytes to that block rather than a whole
+ * generation, which would destroy what read_back checks; after the first
+ * boot the target runs as save-eeprom8k. Its signature, written later,
+ * takes blocks 0-12.
  */
 
 #include "result.h"
@@ -142,8 +156,55 @@ static int write_verify(u32 *detail)
   return bad ? RESULT_FAIL : RESULT_PASS;
 }
 
+#ifdef BACKUP_WRITE_FIRST
+/* -std=c99 has no _Static_assert. */
+#if BACKUP_KIND != BACKUP_EEPROM || BACKUP_SIZE != 0x2000
+#error "BACKUP_WRITE_FIRST is for the 8 KiB EEPROM"
+#endif
+
+#define WFIRST_OFFSET (RESULT_SPACE - EEPROM_BLOCK)
+#define WFIRST_NOT_DONE 0xDEAD0000u
+
+static int wfirst_status;
+static u32 wfirst_detail;
+
+/* Runs before result_run(), whose first step reads the chip. */
+static void write_first(void)
+{
+  static const u8 probe[EEPROM_BLOCK] =
+   { 'W', 'F', 'I', 'R', 'S', 'T', 0x5A, 0xA5 };
+  u8 back[EEPROM_BLOCK];
+  unsigned i;
+
+  wfirst_status = RESULT_FAIL;
+  if(!backup_write_unread(WFIRST_OFFSET, probe, sizeof(probe)))
+  {
+    wfirst_detail = WFIRST_NOT_DONE;
+    return;
+  }
+  backup_read(WFIRST_OFFSET, back, sizeof(back));
+  wfirst_detail = back[0] | (u32)back[1] << 8 | (u32)back[2] << 16 |
+   (u32)back[3] << 24;
+  for(i = 0; i < sizeof(back); i++)
+    if(back[i] != probe[i])
+      return;
+  wfirst_status = RESULT_PASS;
+  wfirst_detail = WFIRST_OFFSET / EEPROM_BLOCK;
+}
+
+/* What write_first found. */
+static int write_first_case(u32 *detail)
+{
+  *detail = wfirst_detail;
+  return wfirst_status;
+}
+#endif
+
 static const TestCase cases_save[] =
 {
+#ifdef BACKUP_WRITE_FIRST
+  { "write_first", write_first_case },
+#endif
 #if BACKUP_KIND == BACKUP_FLASH
   { "flash_id", flash_id },
 #endif
@@ -177,6 +238,9 @@ int main(void)
   u32 held = 0;
   u32 frames = 0;
 
+#ifdef BACKUP_WRITE_FIRST
+  write_first();
+#endif
   result_run(areas);
   show_generation(0);
   for(;;)

@@ -25,6 +25,7 @@
 #ifndef GUI_H
 #define GUI_H
 
+#include "save_store.h"
 
 extern char dir_roms[MAX_PATH];
 extern char dir_save[MAX_PATH];
@@ -38,6 +39,9 @@ s32 load_file(const char **wildcards, char *result, char *default_dir_name, u32 
 s32 load_game_config_file(void);
 s32 load_config_file(void);
 s32 save_config_file(void);
+
+/* The sceIo calls memory.c reads and writes the .sav with. */
+extern const SaveStoreIo gui_save_store_io;
 
 s32 save_theme_config(void);
 s32 load_theme_config(void);

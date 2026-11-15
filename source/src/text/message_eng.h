@@ -567,6 +567,14 @@
 
   // MSG_ERR_OPEN_GAMEPACK
   "Could not open the game file.",
+  // MSG_SAVE_READ_RETRY
+  "The save file cannot be read. Try again?",
+  // MSG_SAVE_PLAY_UNSAVED
+  "Play without saving? The file stays as it is.",
+  // MSG_SAVE_WRITE_FAILED
+  "The save file could not be written.\nThe game keeps it and tries again.",
+  // MSG_SAVE_WRITE_RETRY
+  "Save not written: try again?",
 
   // MSG_ERR_START_CALLBACK_THREAD
   "Could not start the callback thread.",
@@ -910,6 +918,9 @@
   // MSG_LINK_MENU_DISCONNECT
   "Disconnect",
 
+  // MSG_LINK_MENU_RESTORE
+  "Restore pre-link save",
+
   // MSG_LINK_MENU_HELP_STATUS
   "Current link cable state",
 
@@ -921,6 +932,18 @@
 
   // MSG_LINK_MENU_HELP_DISCONNECT
   "Close the current link session",
+
+  // MSG_LINK_MENU_HELP_RESTORE
+  "Put back a save copied before a link",
+
+  // MSG_LINK_RESTORE_CONFIRM
+  "Restore save of %s? Game restarts.",
+
+  // MSG_LINK_RESTORE_NONE
+  "No save was copied before a link session.",
+
+  // MSG_LINK_RESTORE_FAILED
+  "The save could not be restored.",
 
   // MSG_LINK_STATUS_NO_GAME
   "No game loaded",
@@ -978,6 +1001,9 @@
 
   // MSG_LINK_REASON_ROM_CHANGE
   "Game changed",
+
+  // MSG_LINK_REASON_SAVE_FAILED
+  "Save could not be written",
 
   // MSG_CATEGORY_CONTINUE
   "Continue",

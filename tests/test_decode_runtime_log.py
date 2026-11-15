@@ -89,19 +89,23 @@ def fixture_v3() -> bytes:
     return bytes(header) + payload
 
 
-def fixture_v6(build_id: bytes = b"0123456789ab-dirty",
-               record: bytes = struct.pack(
-                   ">QIIHBBIII", 110, 7, 1, 18, 1, 0, 2, 1, 0)) -> bytes:
-    """Version 6 log: the 96-byte header with a build id, one record."""
+def fixture_v6(*records: bytes,
+               build_id: bytes = b"0123456789ab-dirty") -> bytes:
+    """Version 6 log: the 96-byte header with a build id, then the given
+    main-ring records, or one log-flush record."""
+    payload = b"".join(records) or struct.pack(
+        ">QIIHBBIII", 110, 7, 1, 18, 1, 0, 2, 1, 0
+    )
     header = bytearray(96)
     struct.pack_into(
-        ">4sHHHHHHIIIIIIQQ", header, 0, b"GBRL", 6, 96, 32, 0, 1, 0,
-        0x12345678, 2, 1, 0x06060110, 333, 0x42505249, 100, 120,
+        ">4sHHHHHHIIIIIIQQ", header, 0, b"GBRL", 6, 96, 32, 0,
+        len(payload) // 32, 0, 0x12345678, 2, 1, 0x06060110, 333,
+        0x42505249, 100, 120,
     )
     header[56:56 + len(build_id)] = build_id
-    struct.pack_into(">I", header, 88, binascii.crc32(record) & 0xFFFFFFFF)
+    struct.pack_into(">I", header, 88, binascii.crc32(payload) & 0xFFFFFFFF)
     struct.pack_into(">I", header, 92, binascii.crc32(header[:92]) & 0xFFFFFFFF)
-    return bytes(header) + record
+    return bytes(header) + payload
 
 
 class RuntimeLogDecoderTests(unittest.TestCase):
@@ -157,7 +161,7 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         self.assertIn(" build=0123456789ab-dirty\n", output.getvalue())
 
     def test_build_id_may_fill_its_field(self):
-        snapshot = decoder.parse_snapshot(fixture_v6(b"B" * 24))
+        snapshot = decoder.parse_snapshot(fixture_v6(build_id=b"B" * 24))
 
         self.assertEqual(snapshot["build_id"], "B" * 24)
 
@@ -227,6 +231,14 @@ class RuntimeLogDecoderTests(unittest.TestCase):
             self.assertIn(f"LINK_CABLE_{name}", header)
         self.assertEqual(len(decoder.LINK_STATUS), 6)
         self.assertEqual(decoder.LINK_MODES, ["none", "lockstep", "pokemon"])
+        main = (Path(__file__).parents[1] / "source" / "src" /
+                "main.h").read_text()
+        ends = main[main.rindex("typedef enum", 0, main.index("} MainLinkEnd;")):
+                    main.index("} MainLinkEnd;")]
+        self.assertEqual(
+            decoder.LINK_ENDS,
+            [name.lower().replace("_", "-") for name in
+             re.findall(r"^\s+MAIN_LINK_END_([A-Z_]+)", ends, re.M)])
 
     def test_rom_open_names_the_cpu_core(self):
         header = (Path(__file__).parents[1] / "source" / "src" /
@@ -333,7 +345,7 @@ class RuntimeLogDecoderTests(unittest.TestCase):
     def test_decodes_memory_stats_in_a_version_six_log(self):
         record = struct.pack(
             ">QIIHBBIII", 110, 7, 1, 26, 1, 5, 21504, 12288, 16384)
-        snapshot = decoder.parse_snapshot(fixture_v6(record=record))
+        snapshot = decoder.parse_snapshot(fixture_v6(record))
 
         self.assertEqual(snapshot["records"][0]["event"], "memory-stats")
         output = io.StringIO()
@@ -365,6 +377,124 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         self.assertEqual(
             decoder.MEMORY_POINTS,
             ["none"] + [name.lower().replace("_", "-") for name in names])
+    def test_decodes_save_load(self):
+        # A 128 KiB file for a 64 KiB Flash game, then one that will not
+        # read (event 27, flags = the load's result).
+        snapshot = decoder.parse_snapshot(fixture_v6(
+            struct.pack(">QIIHBBIII", 110, 0, 1, 27, 1, 0,
+                        131072, 65536, 1 | 3 << 8 | 1 << 16),
+            struct.pack(">QIIHBBIII", 111, 0, 2, 27, 1, 2, 0, 0, 3),
+        ))
+        loaded, failed = snapshot["records"]
+
+        self.assertEqual(loaded["event"], "save-load")
+        self.assertEqual(
+            decoder.describe(loaded),
+            "result=ok file-size=131072 write-size=65536 type=flash "
+            "tag=flash64 mismatch=True")
+        self.assertEqual(
+            decoder.describe(failed),
+            "result=failed file-size=0 write-size=0 type=none tag=none "
+            "mismatch=False")
+
+    def test_decodes_save_write(self):
+        # A Flash 128 KiB flush on a full Memory Stick, its retry that
+        # writes, and a result this decoder lacks (event 29).
+        snapshot = decoder.parse_snapshot(fixture_v6(
+            struct.pack(">QIIHBBIII", 110, 0, 1, 29, 1, 3,
+                        41250, 131072, 1),
+            struct.pack(">QIIHBBIII", 111, 0, 2, 29, 1, 0,
+                        187003, 131072, 2),
+            struct.pack(">QIIHBBIII", 112, 0, 3, 29, 1, 9, 5, 512, 1),
+        ))
+        failed, written, unknown = snapshot["records"]
+
+        self.assertEqual(failed["event"], "save-write")
+        self.assertEqual(
+            decoder.describe(failed),
+            "result=write-failed duration-us=41250 bytes=131072 attempt=1")
+        self.assertEqual(
+            decoder.describe(written),
+            "result=ok duration-us=187003 bytes=131072 attempt=2")
+        self.assertEqual(decoder.describe(unknown),
+                         "result=9 duration-us=5 bytes=512 attempt=1")
+
+    def test_decodes_save_link_copy(self):
+        # The pre-link copy of a Flash 128 KiB save, one that failed and a
+        # result this decoder lacks (event 30).
+        snapshot = decoder.parse_snapshot(fixture_v6(
+            struct.pack(">QIIHBBIII", 120, 0, 1, 30, 1, 0,
+                        96500, 131072, 0),
+            struct.pack(">QIIHBBIII", 121, 0, 2, 30, 1, 2,
+                        1200, 32768, 0),
+            struct.pack(">QIIHBBIII", 122, 0, 3, 30, 1, 9, 5, 512, 0),
+        ))
+        copied, failed, unknown = snapshot["records"]
+
+        self.assertEqual(copied["event"], "save-link-copy")
+        self.assertEqual(decoder.describe(copied),
+                         "result=ok duration-us=96500 bytes=131072")
+        self.assertEqual(decoder.describe(failed),
+                         "result=failed duration-us=1200 bytes=32768")
+        self.assertEqual(decoder.describe(unknown),
+                         "result=9 duration-us=5 bytes=512")
+
+    def test_save_load_names_match_the_c_enums(self):
+        source = Path(__file__).parents[1] / "source" / "src"
+        store = (source / "save_store.h").read_text()
+        formats = (source / "save_format.h").read_text()
+
+        def names(prefix, text):
+            return [name.lower().replace("_", "-") for name in
+                    re.findall(rf"^\s+{prefix}([A-Z0-9_]+)", text, re.M)]
+
+        results = store[store.index("typedef enum"):
+                        store.index("} SaveStoreResult;")]
+        self.assertEqual(names("SAVE_STORE_", results), decoder.SAVE_RESULTS)
+        self.assertEqual(names("SAVE_TYPE_", formats), decoder.SAVE_TYPES)
+        self.assertEqual(names("SAVE_TAG_", formats), decoder.SAVE_TAGS)
+
+    def test_decodes_savestate_repair(self):
+        # A state with a bad Flash bank and EEPROM counter, then one whose
+        # type went back to the one in use, plus a bit this decoder lacks
+        # (event 28).
+        snapshot = decoder.parse_snapshot(fixture_v6(
+            struct.pack(">QIIHBBIII", 110, 0, 1, 28, 1, 0,
+                        0x108, 1, 0),
+            struct.pack(">QIIHBBIII", 111, 0, 2, 28, 1, 0,
+                        0x201, 2, 0),
+        ))
+        flash, eeprom = snapshot["records"]
+
+        self.assertEqual(flash["event"], "savestate-repair")
+        self.assertEqual(decoder.describe(flash),
+                         "fixed=flash-bank,eeprom-counter type=flash")
+        self.assertEqual(decoder.describe(eeprom),
+                         "fixed=type,0x200 type=eeprom")
+
+    def test_savestate_repair_names_match_the_c_bits(self):
+        formats = (Path(__file__).parents[1] / "source" / "src" /
+                   "save_format.h").read_text()
+        bits = re.findall(r"^#define SAVE_FIX_([A-Z_]+)\s+0x([0-9A-Fa-f]+)u",
+                          formats, re.M)
+
+        self.assertEqual(
+            [(name.lower().replace("_", "-"), int(value, 16))
+             for name, value in bits],
+            [(name, 1 << bit) for bit, name in enumerate(decoder.SAVE_FIXES)])
+
+    def test_link_counter_groups_decode_by_name(self):
+        def counters(group):
+            return decoder.describe({"event": "link-counters", "flags": group,
+                                     "values": [1, 2, 3]})
+
+        self.assertEqual(
+            counters(7), "lockstep-priority/priority-seen/change-result=1/2/3")
+        self.assertEqual(counters(8), "frames/frames-drawn/vblank-wait-us=1/2/3")
+        # Groups 11 and 12 have lines of their own (Exact renderer, CPU
+        # core); the next one is still unknown.
+        unknown = max([*decoder.LINK_COUNTERS, 12]) + 1
+        self.assertEqual(counters(unknown), f"counters-{unknown}=1/2/3")
 
     def test_exact_renderer_names_match_the_c_enum(self):
         header = (Path(__file__).parents[1] / "source" / "src" /

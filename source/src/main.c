@@ -840,7 +840,8 @@ static MemStats main_memory_sample(MemStatsPoint point)
 }
 
 /* Hosts or joins after stopping fast-forward and any earlier session.
-   0 if WLAN is off or the SIO or the network could not be started. */
+   0 if WLAN is off, the .sav could not be written and copied, or the SIO
+   or the network could not be started. */
 static int main_link_start(int host)
 {
   char game[4] = { 0, 0, 0, 0 };
@@ -866,6 +867,17 @@ static int main_link_start(int host)
    ((u32)(u8)game[2] << 8) | (u8)game[3], 0, 0);
   /* Before the network modules load. */
   main_memory_sample(MEM_STATS_LINK_START);
+
+  /* No session starts with a .sav write pending: write it, then keep it as
+     the newest pre-link copy. With no save, or with writes blocked ('play
+     without saving'), neither writes anything and the link starts. */
+  if(!update_backup_immediately() || !backup_push_link_copy())
+  {
+    gba_link_end = MAIN_LINK_END_SAVE_FAILED;
+    runtime_log_psp_main(RUNTIME_LOG_EVENT_LINK_ERROR, cpu_ticks,
+     (u8)MAIN_LINK_END_SAVE_FAILED, 0, 0, 0);
+    return 0;
+  }
 
   /* Pin the clock before the network starts; changing it later can
      disturb the WLAN. */
@@ -1328,8 +1340,12 @@ u32 update_gba(void)
           // Transition from vrefresh to vblank (lines 160-227)
           dispstat |= 0x01;
 
-          // The menu or a state load replaced the machine; drop this pass
-          if (update_input() != 0)
+          // The menu or a state load replaced the machine; drop this pass.
+          // A failed .sav write opens the menu, which shows its warning;
+          // not during a link session, which the warning would hold up.
+          if ((update_input() != 0) ||
+              (backup_write_warning && !main_link_active() &&
+               (menu() != 0)))
           {
             main_follow_cpu_core();
             continue;
@@ -2018,6 +2034,7 @@ static void setup_main(const char *eboot_path)
 #ifdef ENABLE_DIAGNOSTIC_HW_PROBE
   hw_probe_psp_run(main_path);
 #endif
+  backup_io = &gui_save_store_io;
   init_gamepak_buffer();
   main_memory_sample(MEM_STATS_BOOT);
 
@@ -2050,6 +2067,7 @@ int user_main(int argc, char *argv[])
   const char *file_ext[] = { ".zip", ".gba", ".bin", ".agb", ".gbz", NULL };
   u32 rom_loaded = 0;
   u32 prepared_by_menu = 0;
+  s32 load_result;
 
   setup_main((argc > 0 && argv[0] != NULL) ? argv[0] : NULL);
 
@@ -2059,10 +2077,14 @@ int user_main(int argc, char *argv[])
   /* Priority 1: launcher or file manager passed a ROM path */
   if (argc > 1)
   {
-    if (load_gamepak((char *)argv[1]) < 0)
+    load_result = load_gamepak((char *)argv[1]);
+    if (load_result < 0)
     {
-      clear_screen(COLOR32_BLACK);
-      error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_QUIT);
+      if (load_result != LOAD_GAMEPAK_CANCELLED)
+      {
+        clear_screen(COLOR32_BLACK);
+        error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_QUIT);
+      }
       quit();
     }
     /* Single-game bubble launch: do not update Recent ROMs */
@@ -2078,10 +2100,14 @@ int user_main(int argc, char *argv[])
 
     if (path_is_regular_file(load_filename))
     {
-      if (load_gamepak(load_filename) < 0)
+      load_result = load_gamepak(load_filename);
+      if (load_result < 0)
       {
-        clear_screen(COLOR32_BLACK);
-        error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+        if (load_result != LOAD_GAMEPAK_CANCELLED)
+        {
+          clear_screen(COLOR32_BLACK);
+          error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+        }
         prepared_by_menu = rom_loaded = menu() != 0;
       }
       else
@@ -2094,10 +2120,13 @@ int user_main(int argc, char *argv[])
     {
       prepared_by_menu = rom_loaded = menu() != 0;
     }
-    else if (load_gamepak(load_filename) < 0)
+    else if ((load_result = load_gamepak(load_filename)) < 0)
     {
-      clear_screen(COLOR32_BLACK);
-      error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+      if (load_result != LOAD_GAMEPAK_CANCELLED)
+      {
+        clear_screen(COLOR32_BLACK);
+        error_msg(MSG[MSG_ERR_LOAD_GAMEPACK], CONFIRMATION_CONT);
+      }
       prepared_by_menu = rom_loaded = menu() != 0;
     }
     else
@@ -2176,6 +2205,8 @@ void quit(void)
   main_fast_forward_stop();
   main_link_disconnect(MAIN_LINK_END_USER);
 
+  // One last try, never a dialog: HOME's exit callback waits only 2 s. The
+  // menu's Exit has already asked about a failed write.
   update_backup_immediately();
   save_config_file();
   {
@@ -2974,8 +3005,9 @@ void change_ext(char *src, char *buffer, const char *extension)
   }
 }
 
-/* Shows text in a popup until any button is pressed. confirm only adds
-   the continue or quit hint; callers do the quitting themselves. */
+/* Shows text in a popup until any button is pressed, keeping an open link
+   session alive meanwhile. confirm only adds the continue or quit hint;
+   callers do the quitting themselves. */
 void error_msg(const char *text, u8 confirm)
 {
   char text_buff[512];
@@ -3007,6 +3039,7 @@ void error_msg(const char *text, u8 confirm)
   while (gui_action == CURSOR_NONE)
   {
     gui_action = get_gui_input();
+    main_link_pump();
   }
 }
 
@@ -3148,7 +3181,7 @@ void *safe_malloc(size_t size)
 
 // main.c's savestate block: guest clock, LCD phase, IRQ entry delay and
 // timers. READ loads it from savestate_file; WRITE_MEM appends it to the
-// in-memory savestate at write_mem_ptr and ignores savestate_file.
+// savestate being written (savestate_write_mem) and ignores savestate_file.
 #define MAIN_SAVESTATE_BODY(type)                                             \
 {                                                                             \
   FILE_##type##_VARIABLE(savestate_file, cpu_ticks);                          \
