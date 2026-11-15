@@ -30,7 +30,9 @@
  *                    A build without an id ("unknown", a tarball build)
  *                    refuses every file.
  *   rom=<path>       the ROM to start; a path without ':' is relative to
- *                    the EBOOT folder. Not added to Recent ROMs.
+ *                    the EBOOT folder. Not added to Recent ROMs. A .sav of
+ *                    it that exists but will not read fails the ROM, with
+ *                    no prompt.
  *   trace=<path>     an input trace (.gbit) replayed from the first frame;
  *                    a version 2 trace loads the .svs of the same name
  *                    first. A replay cancelled before frames= runs out (a
