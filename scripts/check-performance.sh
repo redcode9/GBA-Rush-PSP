@@ -53,7 +53,7 @@ fi
 # costs no more than before. A story that adds a read on purpose updates
 # these counts: main.c went from 5 to 14 with the phase timers (7 lines)
 # and their calibration (2), then to 16 with the preemption calibration,
-# which runs once when a capture starts.
+# which runs once per capture.
 main_reads=$(grep -c sceKernelGetSystemTimeLow source/src/main.c || true)
 video_reads=$(grep -c sceKernelGetSystemTimeLow source/src/psp_video.c || true)
 if [ "$main_reads" != 16 ] || [ "$video_reads" != 9 ]
@@ -81,6 +81,36 @@ if ! awk '/^(static void main_perf_phase_frame|u32 update_gba)\(/ {
 then
   echo "update_gba reads the clock outside the phase sampling flag" \
     "(or it or main_perf_phase_frame is missing)" >&2
+  exit 1
+fi
+
+# The menu runs at 222 MHz, so a capture started there is calibrated when
+# the game resumes: main_perf_begin only sets the pending flag, the two
+# calibrations run only from main_perf_calibrate, which only
+# main_link_set_gameplay_active calls, and menu() restores
+# option_clock_speed before main_link_set_gameplay_active(1). A function
+# starts at a column-0 line with a ( and no ;.
+if ! awk '/^[a-z].*\([^;]*$/ {
+    fn = $0; sub(/\(.*/, "", fn); sub(/.*[ *]/, "", fn) }
+  /main_perf_calibrate_pending = 1;/ {
+    sets++; if (fn != "main_perf_begin") bad++ }
+  /main_perf_calibrate_(probe|preempt)\(\);/ {
+    reads++; if (fn != "main_perf_calibrate") bad++ }
+  /main_perf_calibrate\(\);/ {
+    calls++; if (fn != "main_link_set_gameplay_active") bad++ }
+  END { exit (sets != 1 || reads != 2 || calls != 1 || bad) }' \
+    source/src/main.c || \
+  ! awk '/^u32 menu\(void\)/ { inside = 1 }
+  inside && /set_cpu_clock\(option_clock_speed\)/ { clock = 1 }
+  inside && /main_link_set_gameplay_active\(1\)/ {
+    resumes++; if (!clock) bad++ }
+  inside && /^}/ { inside = 0 }
+  END { exit (resumes != 1 || bad) }' source/src/gui.c
+then
+  echo "The perf calibration may run at the menu's clock or not at all" \
+    "(main_perf_begin must set the pending flag, main_perf_calibrate run" \
+    "only from main_link_set_gameplay_active, and menu() restore" \
+    "option_clock_speed before main_link_set_gameplay_active(1))" >&2
   exit 1
 fi
 

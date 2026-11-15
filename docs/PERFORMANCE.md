@@ -71,7 +71,9 @@ for the time per frame:
   add up to less; the rest is the CPU core.
 - `probe-read-ns`: the cost of one clock read, from 64 reads in a row when
   the capture starts. `probe-reads`: the reads the timers made in the
-  sampled frames. Their product is the time the timers added.
+  sampled frames. Their product is the time the timers added. This
+  calibration runs when the menu closes on the game, at the game clock,
+  not at the menu's 222 MHz.
 
 The sampled frames count as frames but stay out of the frame-time and
 work-time percentiles and maximum. A sampled frame longer than 128 ms (a
@@ -104,7 +106,8 @@ a capture is not counted.
 - `preempt-frames-0` to `preempt-frames-17-plus`: the frames with 0, 1, 2,
   3-4, 5-8, 9-16 and 17 or more preemptions.
 - `preempt-call-ns`: the cost of one read, from 16 reads when the capture
-  starts. Each frame makes two, which count as work.
+  starts, also at the game clock. Each frame makes two, which count as
+  work.
 - `preempt-available=0`: the kernel refused a read (the call may be
   missing on some firmware or in PPSSPP), so the counts stopped there; the
   rest of the report is valid.

@@ -271,6 +271,10 @@ static u8 main_perf_bench_audio = 1;
 static u8 main_perf_bench_trace;
 #endif
 
+/* Set when a capture starts in the menu, which runs at 222 MHz: the clock
+   and preemption reads are priced once menu() restores the game clock. */
+static u8 main_perf_calibrate_pending;
+
 /* The first init_main flushes both translation caches; later ROM loads
    flush the read-only one and clear the RAM block metadata instead. */
 static u8 caches_inited = 0;
@@ -306,6 +310,7 @@ static void psp_sleep_loop(void);
 static void main_power_save_if_pending(void);
 static void main_power_reopen_gamepak(void);
 static void main_link_close(MainLinkEnd reason);
+static void main_perf_calibrate(void);
 
 /* The clock call under the NID newer firmware exports; setup_main picks
    which one to use. */
@@ -885,7 +890,9 @@ void main_link_pump(void)
 /* menu() reports leaving (0) and resuming (1) the game. Each change is
    logged, the runtime log is flushed when the menu opens, and the core
    profile of diagnostic builds skips the menu. Opening the menu ends a
-   running unbound benchmark, whose frames must run back to back. */
+   running unbound benchmark, whose frames must run back to back; resuming
+   calibrates a capture the menu started, at the game clock menu() has
+   restored by then. */
 void main_link_set_gameplay_active(int active)
 {
   u8 value = active != 0;
@@ -895,6 +902,8 @@ void main_link_set_gameplay_active(int active)
 #endif
   if(!value)
     main_perf_bench_cancel();
+  else if(main_perf_calibrate_pending)
+    main_perf_calibrate();
   if(gba_link_gameplay_active == value)
     return;
   gba_link_gameplay_active = value;
@@ -2382,6 +2391,18 @@ static void main_perf_calibrate_preempt(void)
    start, PERF_METRICS_PREEMPT_CALIBRATION_CALLS);
 }
 
+/* Prices both reads for a capture started in the menu, when the game
+   resumes: its time falls in the seed frame video_reset_frame_timing left
+   unrecorded. A capture stopped before then gets no calibration. */
+static void main_perf_calibrate(void)
+{
+  main_perf_calibrate_pending = 0;
+  if(!perf_monitor_active())
+    return;
+  main_perf_calibrate_probe();
+  main_perf_calibrate_preempt();
+}
+
 /* Frames the unbound benchmark runs: about a minute of GBA time. */
 #define MAIN_PERF_BENCH_FRAMES 3600U
 
@@ -2469,8 +2490,7 @@ static int main_perf_begin(u32 bench_frames)
   perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
   /* The first frame start of the new capture decides the sampling. */
   perf_phase_sampling = 0;
-  main_perf_calibrate_probe();
-  main_perf_calibrate_preempt();
+  main_perf_calibrate_pending = 1;
   video_reset_frame_timing();
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_start();
