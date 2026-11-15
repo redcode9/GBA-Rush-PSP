@@ -73,7 +73,7 @@ for the time per frame:
   the capture starts. `probe-reads`: the reads the timers made in the
   sampled frames. Their product is the time the timers added. This
   calibration runs when the menu closes on the game, at the game clock,
-  not at the menu's 222 MHz.
+  which the menu can still change.
 
 The sampled frames count as frames but stay out of the frame-time and
 work-time percentiles and maximum. A sampled frame longer than 128 ms (a

@@ -275,8 +275,9 @@ static u8 main_perf_bench_audio = 1;
 static u8 main_perf_bench_trace;
 #endif
 
-/* Set when a capture starts in the menu, which runs at 222 MHz: the clock
-   and preemption reads are priced once menu() restores the game clock. */
+/* Set when a capture starts in the menu, where the clock option can still
+   change: the clock and preemption reads are priced once menu() restores
+   the game clock. */
 static u8 main_perf_calibrate_pending;
 
 /* The first init_main flushes both translation caches; later ROM loads

@@ -84,9 +84,9 @@ then
   exit 1
 fi
 
-# The menu runs at 222 MHz, so a capture started there is calibrated when
-# the game resumes: main_perf_begin only sets the pending flag, the two
-# calibrations run only from main_perf_calibrate, which only
+# The clock option can change in the menu, so a capture started there is
+# calibrated when the game resumes: main_perf_begin only sets the pending
+# flag, the two calibrations run only from main_perf_calibrate, which only
 # main_link_set_gameplay_active calls, and menu() restores
 # option_clock_speed before main_link_set_gameplay_active(1). A function
 # starts at a column-0 line with a ( and no ;.
