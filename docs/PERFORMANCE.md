@@ -172,6 +172,9 @@ to back, so the return from the menu before its first frame is left out.
 Its `vsync=0`, `frameskip-type=2` (none) and `frameskip-value=0` are what
 it runs under, whatever the options say, and every one of its frames counts
 in `frames-late`, since none waits.
+Its `heap-free-low`, `heap-largest-low` and `kernel-free-low` come only
+from the memory measured when it starts: the largest-block probe
+allocates, so it never runs at the end of the benchmark's last frame.
 
 ## Padding experiment
 

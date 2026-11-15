@@ -77,8 +77,8 @@ typedef struct
      (mallinfo, not the unclaimed rest of the heap block), the largest block
      malloc still gives, and the largest kernel block outside the heap
      (sceKernelMaxFreeMemSize, the runtime log's kernel-largest), which the
-     network modules need. memory-low-water stays the lowest
-     sceKernelTotalFreeMemSize. */
+     network modules need. The unbound benchmark has its start measurement
+     only. memory-low-water stays the lowest sceKernelTotalFreeMemSize. */
   uint32_t heap_free_low;
   uint32_t heap_largest_low;
   uint32_t kernel_free_low;

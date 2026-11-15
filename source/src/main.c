@@ -1652,15 +1652,21 @@ static void synchronize(void)
   // set each frame, as the start cleared it. The counts stay at 0, so
   // pacing restarts from now once the bench ends. Before the last frame is
   // recorded, which stops the capture, the stop work of main_perf_stop
-  // runs: the end memory sample and the core profile's stop. Diagnostic
-  // builds set the bench's arms here each frame (render off: every frame
-  // skipped; audio off: no samples written) and drop the audio one at the
-  // first frame end after the bench, however it ended.
+  // runs: the end memory sample, the allocation trace and the core
+  // profile's stop. The largest-block probe never runs in update_gba
+  // (shortcut: the bench's heap-*-low keys come from its start sample
+  // only; take a stop sample after the bench if a run must show a leak).
+  // Diagnostic builds set the bench's arms here each frame (render off:
+  // every frame skipped; audio off: no samples written) and drop the audio
+  // one at the first frame end after the bench, however it ended.
   if(perf_monitor_bench_running())
   {
     if(perf_monitor_bench_frames_left() == 1)
     {
       perf_monitor_observe_memory_available(sceKernelTotalFreeMemSize());
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+      main_alloc_trace_take();
+#endif
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
       arm_gba_profile_stop();
 #endif
@@ -2679,6 +2685,9 @@ void main_perf_bench_cancel(void)
   if(!perf_monitor_bench_running())
     return;
 
+#ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
+  main_alloc_trace_take();
+#endif
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_stop();
