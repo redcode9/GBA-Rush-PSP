@@ -6186,6 +6186,8 @@ Il gruppo copre tre cose: come rilasciamo (gate, prerelease, manifest, sorgente)
 
 > **2026-11-04:** ENG-10.4: SOA-1.3 la estende (vedi «Riconciliazione con il nuovo core e il renderer»).
 
+> **2026-11-10:** ENG-10.3 ha la sua accettazione, ma la voce del Test «build con devkitARM in CI, con immagine fissata» non è coperta: `.github/workflows/check.yml` (ENG-2.5) non ha un job per `make test-roms` e le immagini di `tools/ci/Dockerfile` non hanno un compilatore ARM, quindi in CI le ROM di test non si costruiscono. Resta da aggiungere quel job, in un'immagine fissata per digest (il workflow è di `wip/release-and-ci`), oppure la decisione dell'utente che bastano il ramo `DEVKITARM` e le corse in mGBA registrate, la stessa domanda di SAV-2.6.
+
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|
 | consigliato | 1.6 (ENG-10.1 in 1.4.4; ENG-10.4 in 1.5) | 4,5 gg | SAV-2.6 (solo ENG-10.3) |
@@ -6533,6 +6535,8 @@ Il gruppo copre tre cose: come rilasciamo (gate, prerelease, manifest, sorgente)
 - **Licenza:** codice nuovo GPL-2.0-or-later.
 
 ### ENG-17 — Documentazione di ingegneria: mappa dei test, architettura, decisioni, debug
+
+> **2026-11-10:** `docs/DESIGN-DECISIONS.md` c'è già in main, dalla CMP-4.1, con la voce «Guest PC above 0FFFFFFFh»: ENG-17.3 la adotta, con un id ADR, invece di creare il file da capo.
 
 | Verdetto | Milestone | Stima totale | Dipende da |
 |---|---|---|---|

@@ -33,11 +33,37 @@ static void test_postflg_byte_does_not_halt(void)
   assert(halted);
 }
 
+/* Past 40003FFh nothing answers, though the 3FFh mirror would map
+   4FFF600h (where the mGBA suite prints) and 4FFF608h onto IE and IME,
+   and 4000400h, the first address past them, onto DISPCNT. 4800200h has
+   200h in its low 23 bits, so a guard on fewer than 24 bits would let it
+   reach IE. */
+static void test_io_past_registers(void)
+{
+  mem_write(0x04000000, 2, 0x0403);
+  mem_write(0x04000200, 2, 0x2001);
+  mem_write(0x04000208, 2, 1);
+  mem_write(0x04000400, 2, 0);
+  mem_write(0x04800200, 2, 0);
+  mem_write(0x04FFF600, 1, 0);
+  mem_write(0x04FFF600, 2, 0);
+  mem_write(0x04FFF608, 4, 0);
+  assert(io16(0x000) == 0x0403);
+  assert(io16(0x200) == 0x2001 && io16(0x208) == 1);
+  assert(mem_read(0x04000400, 2) == 0 && mem_read(0x04FFF600, 1) == 0);
+  assert(mem_read(0x04800200, 2) == 0);
+  assert(mem_read(0x04FFF600, 2) == 0 && mem_read(0x04FFF600, 4) == 0);
+  mem_write(0x04000000, 2, 0);
+  mem_write(0x04000200, 2, 0);
+  mem_write(0x04000208, 2, 0);
+}
+
 int main(void)
 {
   arm_core_init(&core, &bus);
   test_dma3_word_alignment();
   test_postflg_byte_does_not_halt();
+  test_io_past_registers();
   puts("rom_run tests passed");
   return 0;
 }
