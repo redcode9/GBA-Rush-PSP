@@ -220,8 +220,12 @@ The decision comes from each group's exact test, not from PASS or FAIL. The
 padding changes the speed when, on at least one model, a title's
 `throughput=` changes by more than 2% either way and its `throughput-runs=`
 verdict states the difference (`candidate higher` or `candidate lower`).
-Every group must say `order=alternated`. The result and the decision go
-here, with the addresses `psp-nm` showed, after the hardware session.
+The test is weaker than a single 5% test: compare-benchmarks picks the side
+from the medians after the runs, so a stated verdict means p <= 0.10
+two-sided for its group, and the rule reads four groups (two titles on two
+models). Every group must say `order=alternated`. The result and the
+decision go here, with the addresses `psp-nm` showed, after the hardware
+session.
 
 ## Baselines per model
 
