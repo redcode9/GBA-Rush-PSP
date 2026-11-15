@@ -89,7 +89,7 @@ static void stub_block_write_mem(SceUID f);
 GbaSio gba_sio;
 u32 idle_loop_targets, idle_loop_target_pc[MAX_IDLE_LOOPS];
 u32 smc_gate_targets, iwram_stack_optimize, bios_builtin;
-u32 savestate_bios_error_quiet;
+u32 dialogs_unattended;
 u32 sound_pause, oam_update, gbc_sound_update, reg[32];
 char dir_state[] = "states/";
 char main_path[] = "";
@@ -131,7 +131,7 @@ static s32 stub_read(void *buffer, size_t size) {
 # handler code in the built-in BIOS). A savestate records the BIOS kind in
 # the word before the link snapshot, and load_state_silent refuses one made
 # with the other BIOS: it closes the file unread and reports it after the
-# power lock is released, or not at all while savestate_bios_error_quiet is
+# power lock is released, or not at all while dialogs_unattended is
 # set. Zero padding (older savestates) means gba_bios.bin.
 # A savestate streams through the store in 16 KiB blocks and is refused,
 # the old file kept, when the module data reaches the BIOS word; any store
@@ -284,10 +284,10 @@ int main(void) {
   bios_builtin = 0; shown = NULL; closes = 0; blocks_read = 0;
   assert(load_state_silent("s.svs") == 0 && blocks_read == 0 && closes == 1);
   assert(shown == MSG[MSG_ERR_STATE_NEEDS_BUILTIN_BIOS] && !power_locked);
-  savestate_bios_error_quiet = 1; shown = NULL; closes = 0;
+  dialogs_unattended = 1; shown = NULL; closes = 0;
   assert(load_state_silent("s.svs") == 0 && blocks_read == 0 && closes == 1);
   assert(shown == NULL && !power_locked);
-  savestate_bios_error_quiet = 0;
+  dialogs_unattended = 0;
   bios_builtin = 1; shown = NULL; closes = 0;
   assert(load_state_silent("s.svs") == 1 && blocks_read == 1 && closes == 1);
   assert(shown == NULL && !power_locked);

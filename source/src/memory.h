@@ -218,9 +218,10 @@ extern u16 vram_metadata [0x18000];
 extern u32 bios_read_protect;
 // 1 when bios.rom holds the built-in open BIOS (set once by load_bios).
 extern u32 bios_builtin;
-// While set, load_state_silent refuses a savestate made with the other BIOS
-// without its popup, which waits for a button (the diagnostic autorun).
-extern u32 savestate_bios_error_quiet;
+// While set (the diagnostic autorun), load_gamepak refuses a .sav that will
+// not read and load_state_silent a savestate made with the other BIOS,
+// without the dialogs that wait for a button.
+extern u32 dialogs_unattended;
 
 extern u32 iwram_control;
 

@@ -271,6 +271,24 @@ static void test_refusing_both_prompts_cancels(void)
   assert(store.write_calls == 0);
 }
 
+/* With nobody to answer (the diagnostic autorun), the load is cancelled
+   the same way without a prompt. */
+static void test_unattended_load_cancels_without_prompts(void)
+{
+  fresh_store();
+  fake_store_seed(&store, 32 * KIB, 5);
+  store.fail_open = 1;
+
+  dialogs_unattended = 1;
+  assert(load("SRAM_V113", NULL, 0) == LOAD_GAMEPAK_CANCELLED);
+  dialogs_unattended = 0;
+  assert(host_stub_yesno_asked() == 0);
+  assert(gamepak_filename[0] == '\0' && gamepak_file_size == 0);
+  sram_write(0x10, 0x42);
+  update_backup_immediately();
+  assert(store.write_calls == 0);
+}
+
 /* 200 KiB for a 128 KiB Flash game: the first 128 KiB load (ASan catches
    any write past the buffer) and the file is written back at 128 KiB. */
 static void test_oversized_save_loads_a_prefix(void)
@@ -630,6 +648,7 @@ int main(void)
   test_retry_without_the_file_stays_blocked();
   test_cut_write_is_recovered_at_load();
   test_refusing_both_prompts_cancels();
+  test_unattended_load_cancels_without_prompts();
   test_oversized_save_loads_a_prefix();
   test_tag_beats_file_size();
   test_failed_write_stays_pending();

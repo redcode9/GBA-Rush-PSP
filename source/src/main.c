@@ -2230,6 +2230,7 @@ int main_autorun_start(void)
   SceUID file;
   size_t size = 0;
   int result;
+  int loaded;
 
   result = snprintf(path, sizeof(path), "%sdiag-autorun.txt", main_path);
   if(result < 0 || (size_t)result >= sizeof(path))
@@ -2269,9 +2270,14 @@ int main_autorun_start(void)
     return 0;
   }
 
-  /* load_gamepak() reads the extension after the last '.'. */
-  if(!main_autorun_path(path, sizeof(path), main_autorun.rom) ||
-     strrchr(path, '.') == NULL || load_gamepak(path) <= 0)
+  /* load_gamepak() reads the extension after the last '.'. A .sav that
+     will not read fails the ROM here, instead of the dialogs that wait for
+     a button nobody presses. */
+  dialogs_unattended = 1;
+  loaded = main_autorun_path(path, sizeof(path), main_autorun.rom) &&
+   strrchr(path, '.') != NULL && load_gamepak(path) > 0;
+  dialogs_unattended = 0;
+  if(!loaded)
     return main_autorun_fail(AUTORUN_ERROR_ROM);
   reset_gba();
   if(main_autorun.trace[0] != '\0')
@@ -2280,10 +2286,10 @@ int main_autorun_start(void)
 
     /* A .svs made with the other BIOS fails the trace here, instead of
        showing a popup that waits for a button nobody presses. */
-    savestate_bios_error_quiet = 1;
+    dialogs_unattended = 1;
     if(main_autorun_path(path, sizeof(path), main_autorun.trace))
       replay = gui_trace_replay_file(path);
-    savestate_bios_error_quiet = 0;
+    dialogs_unattended = 0;
     if(replay <= 0)
       return main_autorun_fail(AUTORUN_ERROR_TRACE);
   }

@@ -89,9 +89,10 @@ u16 vram_metadata [0x18000]; // Video RAM code metadata                192 KiB
 u32 bios_read_protect;
 // 1 when bios.rom holds the built-in open BIOS instead of gba_bios.bin.
 u32 bios_builtin;
-// Set while nobody is there to close the popup of a savestate made with the
-// other BIOS: load_state_silent then refuses it without one.
-u32 savestate_bios_error_quiet;
+// Set while nobody is there to press a button: load_gamepak refuses a .sav
+// that will not read, and load_state_silent a savestate made with the other
+// BIOS, without the dialogs that would wait for one.
+u32 dialogs_unattended;
 
 // Internal memory control register (0x4000800).
 u32 iwram_control;
@@ -3819,8 +3820,8 @@ static s32 load_gamepak_raw(char *name)
 // Loads a .gba/.agb/.bin or .zip/.gbz ROM, then its game_config.txt entry,
 // per-game settings, save type and .sav. A .sav that exists but does not
 // read can be read again, or the game played with saving blocked; refusing
-// both returns LOAD_GAMEPAK_CANCELLED. Returns the file size or a negative
-// value; the caller resets the GBA afterwards.
+// both, or dialogs_unattended, returns LOAD_GAMEPAK_CANCELLED. Returns the
+// file size or a negative value; the caller resets the GBA afterwards.
 s32 load_gamepak(char *name)
 {
   char *dot_position = strrchr(name, '.');
@@ -3923,13 +3924,14 @@ s32 load_gamepak(char *name)
 
     while (backup_result == SAVE_STORE_FAILED)
     {
-      if (yesno_dialog(MSG[MSG_SAVE_READ_RETRY]) == 0)
+      if (!dialogs_unattended && (yesno_dialog(MSG[MSG_SAVE_READ_RETRY]) == 0))
       {
         scePowerLock(0);
         backup_result = load_backup(backup_filename, tag, 1);
         scePowerUnlock(0);
       }
-      else if (yesno_dialog(MSG[MSG_SAVE_PLAY_UNSAVED]) == 0)
+      else if (!dialogs_unattended &&
+               (yesno_dialog(MSG[MSG_SAVE_PLAY_UNSAVED]) == 0))
         break;
       else
       {
@@ -4152,7 +4154,7 @@ u32 load_state(char *savestate_filename)
 
 // load_state() without the confirmation dialog. A savestate made with the
 // other BIOS is not loaded; the player is told which BIOS it needs, unless
-// savestate_bios_error_quiet is set.
+// dialogs_unattended is set.
 u32 load_state_silent(char *savestate_filename)
 {
   SceUID savestate_file;
@@ -4199,7 +4201,7 @@ u32 load_state_silent(char *savestate_filename)
     FILE_CLOSE(savestate_file);
 
   scePowerUnlock(0);
-  if (!bios_matches && !savestate_bios_error_quiet)
+  if (!bios_matches && !dialogs_unattended)
     show_savestate_bios_error();
   sound_pause = prev_sound_pause;
   return result;

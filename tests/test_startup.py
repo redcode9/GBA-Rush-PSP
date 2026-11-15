@@ -241,6 +241,7 @@ typedef int32_t s32;
 typedef uint32_t u32;
 typedef int SceUID;
 #define MAX_PATH 512
+#define LOAD_GAMEPAK_CANCELLED (-3)
 #define GBA_RUSH_BUILD_ID "abc123"
 #define GBA_SCREEN_WIDTH (240)
 #define GBA_SCREEN_HEIGHT (160)
@@ -289,20 +290,21 @@ void runtime_log_psp_main(RuntimeLogEventType type, uint32_t cycle,
 int runtime_log_psp_flush(RuntimeLogFlushReason reason) {
   assert(reason == RUNTIME_LOG_FLUSH_START); flushes++; return 1;
 }
+/* load_gamepak's .sav prompts and load_state_silent's popup for a .svs
+   made with the other BIOS are off while the ROM loads and the trace
+   starts: loaded_quiet and traced_quiet say whether they were. */
+u32 dialogs_unattended;
+static u32 loaded_quiet, traced_quiet;
 s32 load_gamepak(char *name) {
-  strcpy(loaded, name);
+  strcpy(loaded, name); loaded_quiet = dialogs_unattended;
   if(load_result > 0) { strcpy(gamepak_filename, name); gamepak_file_size = 1; }
   return load_result;
 }
 void reset_gba(void) { resets++; }
-/* load_state_silent's popup for a .svs made with the other BIOS is off
-   while the trace starts: traced_quiet says whether it was. */
-u32 savestate_bios_error_quiet;
-static u32 traced_quiet;
 /* A trace that starts is replaying until it finishes or is cancelled. */
 static InputTraceState trace_state;
 int gui_trace_replay_file(const char *name) {
-  strcpy(traced, name); traced_quiet = savestate_bios_error_quiet;
+  strcpy(traced, name); traced_quiet = dialogs_unattended;
   if(trace_result > 0) trace_state = INPUT_TRACE_REPLAYING;
   return trace_result;
 }
@@ -384,7 +386,8 @@ static void clear_test(void) {
   hashes_attached = hash_result = 1; cancels = perturbs = 0;
   perturb_frame = 0; trace_duration = 9; hashed[0] = '\0';
   result[0] = loaded[0] = traced[0] = gamepak_filename[0] = '\0';
-  gamepak_file_size = 1; traced_quiet = savestate_bios_error_quiet = 0;
+  gamepak_file_size = 1;
+  loaded_quiet = traced_quiet = dialogs_unattended = 0;
   trace_state = INPUT_TRACE_IDLE;
   main_autorun_running = main_autorun_frames = 0;
   main_testpat_length = 0; modes_shown = presents = flips = ticks = 0;
@@ -456,7 +459,7 @@ int main(void) {
   assert(start(HEAD "rom=roms/a.gba\ntrace=traces/t.gbit\nframes=3\nexit=1\n"));
   assert(strcmp(loaded, "ms0:/GAME/roms/a.gba") == 0 && resets == 1);
   assert(strcmp(traced, "ms0:/GAME/traces/t.gbit") == 0 && flushes == 0);
-  assert(traced_quiet == 1 && savestate_bios_error_quiet == 0);
+  assert(loaded_quiet == 1 && traced_quiet == 1 && dialogs_unattended == 0);
   expect(AUTORUN_STATUS_STARTED, "none", 0, 0);
   frames(2); assert(results == 1 && quits == 0);
   frames(1); assert(results == 2 && quits == 1);
@@ -489,6 +492,12 @@ int main(void) {
   expect(AUTORUN_STATUS_FAILED, "rom", 0, 0);
   clear_test(); load_result = -1;
   assert(start(HEAD "rom=b.gba\nframes=9\nexit=1\n") == 0 && quits == 1);
+  /* A .sav that will not read: load_gamepak refuses it without its
+     prompts, so the ROM fails and exit=1 quits. */
+  clear_test(); load_result = LOAD_GAMEPAK_CANCELLED;
+  assert(start(HEAD "rom=b.gba\nframes=9\nexit=1\n") == 0 && quits == 1);
+  assert(loaded_quiet == 1 && dialogs_unattended == 0 && resets == 0);
+  expect(AUTORUN_STATUS_FAILED, "rom", 0, 0);
 
   clear_test(); trace_result = 0;
   assert(start(HEAD "rom=b.gba\ntrace=t.gbit\n") == 0);
@@ -503,7 +512,7 @@ int main(void) {
      on, so the trace fails and exit=1 quits. */
   clear_test(); trace_result = 0;
   assert(start(HEAD "rom=b.gba\ntrace=t.gbit\nframes=9\nexit=1\n") == 0);
-  assert(traced_quiet == 1 && savestate_bios_error_quiet == 0 && quits == 1);
+  assert(traced_quiet == 1 && dialogs_unattended == 0 && quits == 1);
   expect(AUTORUN_STATUS_FAILED, "trace", 0, 0);
 
   /* hash= writes the replay's hashes once, when frames= runs out;
