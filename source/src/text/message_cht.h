@@ -630,7 +630,7 @@
   "無法載入遊戲檔案.",
 
   // MSG_ERR_ZIP_CORRUPT
-  "ZIP 檔案已損壞或不完整.",
+  "ZIP 檔案已損壞、不完整或不受支援.",
 
   // MSG_ERR_OPEN_GAMEPACK
   "無法開啟遊戲檔案.",

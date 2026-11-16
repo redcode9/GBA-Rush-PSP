@@ -3751,7 +3751,7 @@ u64 rom_load_opened_us;
 // Reads the whole ROM if it fits the buffer, in ROM_LOAD_CHUNK_SIZE reads
 // reported to rom_load_progress; otherwise reads only the header and keeps
 // the file open for load_gamepak_page(). Returns the file size, or -1 if
-// the file does not open or a read fails or ends early.
+// the file does not open, is empty or a read fails or ends early.
 static s32 load_gamepak_raw(char *name)
 {
   SceUID gamepak_file;
@@ -3762,6 +3762,13 @@ static s32 load_gamepak_raw(char *name)
   {
     u32 _gamepak_size = file_length(name);
     rom_load_opened_us = sceKernelGetSystemTimeWide();
+
+    // load_gamepak()'s callers take 0 as success.
+    if (_gamepak_size == 0)
+    {
+      FILE_CLOSE(gamepak_file);
+      return -1;
+    }
 
     // If it's a big file size keep it don't close it, we'll
     // probably want to load it later
@@ -3794,7 +3801,11 @@ static s32 load_gamepak_raw(char *name)
     else
     {
       // Read in just enough for the header
-      FILE_READ(gamepak_file, gamepak_rom, 0x100);
+      if (FILE_READ(gamepak_file, gamepak_rom, 0x100) != 0x100)
+      {
+        FILE_CLOSE(gamepak_file);
+        return -1;
+      }
 
       gamepak_file_large = gamepak_file;
 

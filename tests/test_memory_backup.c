@@ -8,7 +8,9 @@
  * Regressions it guards: a 64 KiB .sav of an SRAM game was written back as
  * one byte; a .sav that failed to read was replaced by a blank image on the
  * first flush; a .sav over 128 KiB overran the save buffer; a write that
- * failed was dropped as if it had been written.
+ * failed was dropped as if it had been written; an empty ROM file, or a
+ * large one whose header did not read, counted as loaded, so the previous
+ * game restarted.
  */
 #include <assert.h>
 #include <stdint.h>
@@ -21,6 +23,7 @@
 #include "fake_store_io.h"
 
 void host_stub_file_length(int length);
+void host_stub_rom_io(int read_limit, int seek_fails);
 void host_stub_yesno(const unsigned *answers, int count);
 int host_stub_yesno_asked(void);
 int host_stub_yesno_saw_rom(void);
@@ -287,6 +290,27 @@ static void test_unattended_load_cancels_without_prompts(void)
   sram_write(0x10, 0x42);
   update_backup_immediately();
   assert(store.write_calls == 0);
+}
+
+/* An empty ROM file fails to load: load_gamepak()'s callers take 0 as
+   success. */
+static void test_empty_rom_fails_to_load(void)
+{
+  fresh_store();
+  host_stub_file_length(0);
+  assert(load("SRAM_V113", NULL, 0) == -1);
+  host_stub_file_length(ROM_SIZE);
+}
+
+/* A ROM too big for the buffer fails to load when its header does not
+   read: the header would be the previous game's. Runs last, because the
+   ROM reads keep failing afterwards. */
+static void test_large_rom_without_header_fails_to_load(void)
+{
+  fresh_store();
+  host_stub_file_length((int)gamepak_ram_buffer_size + 1);
+  host_stub_rom_io(-1, 0);
+  assert(load("SRAM_V113", NULL, 0) == -1);
 }
 
 /* 200 KiB for a 128 KiB Flash game: the first 128 KiB load (ASan catches
@@ -649,6 +673,7 @@ int main(void)
   test_cut_write_is_recovered_at_load();
   test_refusing_both_prompts_cancels();
   test_unattended_load_cancels_without_prompts();
+  test_empty_rom_fails_to_load();
   test_oversized_save_loads_a_prefix();
   test_tag_beats_file_size();
   test_failed_write_stays_pending();
@@ -658,6 +683,7 @@ int main(void)
   test_push_link_copy_is_logged();
   test_restore_link_copy();
   test_failed_restore_asks_when_the_save_will_not_read();
+  test_large_rom_without_header_fails_to_load();
   puts("memory backup tests passed");
   return 0;
 }

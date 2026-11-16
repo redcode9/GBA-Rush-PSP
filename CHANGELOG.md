@@ -286,16 +286,20 @@
   longer reaches the game: like a button held as the menu closes, it counts
   only once it is released and pressed again.
 - A damaged or truncated `.zip` no longer hangs the loader or starts a broken
-  game: the ROM's size and CRC32 are checked, and the file browser says the
-  ZIP file is damaged or incomplete. An encrypted `.zip`, or one whose first
-  file is not a `.gba`, `.agb` or `.bin` ROM, gets the same message.
+  game: the ROM's size and CRC32 are checked, and Load game and Load state
+  from file in the menu say the ZIP file is damaged, incomplete or not
+  supported. An encrypted `.zip`, or one whose first file is not a `.gba`,
+  `.agb` or `.bin` ROM, gets the same message. A `.zip` picked in the
+  browser shown at startup, or passed by a launcher, still gets the generic
+  load error.
 - A `.zip` written in streaming mode, with its sizes after the data, now
   loads when its ROM is compressed (deflated) and those sizes are not in
   the ZIP64 format. Any other `.zip` written that way, such as one with an
-  uncompressed (stored) ROM, gets the damaged or incomplete message, like
-  an encrypted one.
+  uncompressed (stored) ROM, gets the same ZIP message as an encrypted one.
 - A `.gba` file that cannot be read in full now fails to load instead of
   starting the game from part of the ROM.
+- An empty `.gba`, `.agb` or `.bin` file now shows the load error instead
+  of restarting the game loaded before it, or a blank cartridge.
 - The emulator no longer shows an error at startup when `dir.ini` is
   missing: `dir.ini` is optional. Without it, ROMs are listed from the
   `roms/` folder next to `EBOOT.PBP` when that folder exists, otherwise from

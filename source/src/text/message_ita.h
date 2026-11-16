@@ -630,7 +630,7 @@
   "Impossibile caricare il file di gioco.",
 
   // MSG_ERR_ZIP_CORRUPT
-  "Il file ZIP è danneggiato o incompleto.",
+  "Il file ZIP è danneggiato, incompleto o non supportato.",
 
   // MSG_ERR_OPEN_GAMEPACK
   "Impossibile aprire il file di gioco.",
