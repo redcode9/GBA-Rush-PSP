@@ -303,17 +303,14 @@
   it no longer speeds up during link-cable waits. Opening the menu, loading
   a state or putting the PSP to sleep stops rapid fire; a button still held
   fires again after it is pressed again.
+- The messages shown after loading a cheat file are translated into every
+  menu language; the Japanese and Chinese menus showed them in English.
 
 ### Known issues
 
 - Settings saved by this version cannot be read by 1.4.x: going back to
   1.4.x resets every setting to its default, and 1.4.x overwrites the
   settings file when it exits.
-
-### Fixed
-
-- The messages shown after loading a cheat file are translated into every
-  menu language; the Japanese and Chinese menus showed them in English.
 
 ## 1.4.3 - 2026-11-02
 
