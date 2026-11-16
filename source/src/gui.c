@@ -3238,13 +3238,18 @@ static void savestate_thumbs_draw(u32 selected_slot)
 }
 
 
-/* Hotkey load of savestate_slot; load_state() asks for confirmation. */
+/* Hotkey load of savestate_slot; load_state() asks for confirmation. Keys
+   held as its prompt closes, the answer among them, reach the game only
+   once released, as after the menu. */
 u32 action_loadstate(void)
 {
   char savestate_filename[MAX_FILE];
+  u32 result;
 
   get_savestate_filename(savestate_slot, savestate_filename);
-  return load_state(savestate_filename);
+  result = load_state(savestate_filename);
+  input_hold_until_released(get_pad_input(0x0001FFFF));
+  return result;
 }
 
 /* The current screen for a state's preview, or NULL with the heap
@@ -3260,7 +3265,8 @@ static u16 *copy_state_preview(void)
 }
 
 /* Hotkey save to savestate_slot after a confirmation; the current screen is
-   stored in the state as its preview. */
+   stored in the state as its preview. Keys held as the prompt closes are
+   kept from the game as action_loadstate() keeps them. */
 u32 action_savestate(void)
 {
   char savestate_filename[MAX_FILE];
@@ -3273,6 +3279,7 @@ u32 action_savestate(void)
   result = save_state(savestate_filename, current_screen);
 
   free(current_screen);
+  input_hold_until_released(get_pad_input(0x0001FFFF));
   return result;
 }
 

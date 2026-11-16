@@ -738,6 +738,95 @@ void main_fast_forward_reset_game_settings(void) { fast_forward_resets++; }
 s32 load_game_config_file(void);
 '''
 
+# gui.c's hotkey save and load in place of STUBS' counters: get_pad_input
+# and input_hold_until_released come from input.c.
+PROMPT_STUBS = r'''
+#include <stdlib.h>
+#define MAX_FILE 512
+u32 savestate_slot;
+static void get_savestate_filename(u32 slot, char *name_buffer)
+{ (void)slot; name_buffer[0] = '\0'; }
+static u16 *copy_state_preview(void) { return NULL; }
+u32 load_state(char *savestate_filename);
+u32 save_state(char *savestate_filename, u16 *screen_capture);
+'''
+
+# The save and load chords' prompts are answered with a button still held
+# as they close (the stand-ins put it on the pad): the game gets it only
+# once it is let go and pressed again, as after the menu.
+PROMPT_SCENARIOS = r'''
+#define GBA_A 0x01
+#define GBA_B 0x02
+#define SEL PSP_CTRL_SELECT
+#define LT PSP_CTRL_LTRIGGER
+#define RT PSP_CTRL_RTRIGGER
+static u32 pad, answer;
+
+static int fake_peek(SceCtrlData *data, int count)
+{
+  memset(data, 0, sizeof(*data));
+  data->Buttons = pad;
+  data->Lx = 128;
+  data->Ly = 128;
+  return count;
+}
+
+u32 load_state(char *savestate_filename)
+{ (void)savestate_filename; loads++; pad = answer; return 1; }
+u32 save_state(char *savestate_filename, u16 *screen_capture)
+{ (void)savestate_filename; (void)screen_capture; saves++; pad = answer; return 0; }
+
+static u32 read_pad(u32 buttons)
+{
+  pad = buttons;
+  now_us += 16000;
+  return update_input();
+}
+
+static int game_has(u32 key)
+{
+  return (io_registers[REG_P1] & key) == 0;
+}
+
+/* chord fires the prompt, answered with button; key is its GBA key. */
+static void check_prompt(u32 chord, u32 result, u32 button, u32 key)
+{
+  int i;
+
+  answer = button;
+  read_pad(SEL);
+  assert(read_pad(SEL | chord) == result);
+  for(i = 0; i < 3; i++)
+  {
+    read_pad(button);
+    assert(!game_has(key));
+  }
+  read_pad(0);
+  read_pad(button);
+  assert(game_has(key));
+  read_pad(0);
+}
+
+int main(void)
+{
+  (void)__sceCtrlReadBufferPositive;
+  __sceCtrlPeekBufferPositive = fake_peek;
+  rebuild_fast_forward_button_mask();
+  option_shortcut[0] = 0x0410;
+  option_shortcut[1] = 0x0420;
+  option_shortcut[2] = 0x0C00;
+  rebuild_shortcut_chords();
+  read_pad(0);
+
+  check_prompt(LT, 0, PSP_CTRL_CROSS, GBA_B);
+  check_prompt(RT, 1, PSP_CTRL_CIRCLE, GBA_A);
+  assert(saves == 1 && loads == 1 && menus == 0);
+  assert(ff_presses == 0 && !ff_held);
+  puts("hotkey prompts passed");
+  return 0;
+}
+'''
+
 # 16:9 Auto, 100%, 150% GU, 2x integer, 16:9 Sharp and around again; the
 # other modes go to 16:9 Auto. Each step presents, names and saves the new mode, and
 # the newest name replaces a toast still queued.
@@ -878,6 +967,19 @@ class InputShortcutTests(unittest.TestCase):
     def test_update_input_runs_turbo_and_stick_model(self):
         source = STUBS + input_region() + TURBO_SCENARIOS
         build_and_run(source, "input_turbo")
+
+    def test_hotkey_prompt_keys_wait_for_release(self):
+        counters = ("/* load_state's result: 1 loaded, 0 refused or declined. */\n"
+                    "static u32 load_result = 1;\n"
+                    "u32 action_loadstate(void) { loads++; return load_result; }\n"
+                    "u32 action_savestate(void) { saves++; return 0; }\n")
+        self.assertIn(counters, STUBS)
+        source = STUBS.replace(counters, PROMPT_STUBS)
+        for signature in ("u32 action_loadstate(void)",
+                          "u32 action_savestate(void)"):
+            source += function("source/src/gui.c", signature)
+        build_and_run(source + input_region() + PROMPT_SCENARIOS,
+                      "hotkey_prompts")
 
     def test_video_cycle_steps_presents_names_and_saves(self):
         stubs = CYCLE_STUBS.replace("@SRC@", SRC).replace("@SCALED@",
