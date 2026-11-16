@@ -3,6 +3,7 @@ its settings and toasts, and the stick; and gui.c's video cycle, which a
 chord runs."""
 
 from pathlib import Path
+import re
 import unittest
 
 # Builds and runs a spliced C test with HOST_CC.
@@ -756,6 +757,12 @@ int main(void)
   {
     0, 0, 0, SEL, SEL | LT, 0, PSP_CTRL_HOME, 0, PSP_CTRL_SQUARE, 0
   };
+  /* The other hotkey paths on those frames; the hold fires on frame 9. */
+  static const u32 other_pads[FRAMES] =
+  {
+    SEL | PSP_CTRL_RTRIGGER, 0, PSP_CTRL_START | LT, 0, PSP_CTRL_UP, 0,
+    PSP_CTRL_DOWN, 0, PSP_CTRL_START | SEL, PSP_CTRL_START | SEL
+  };
   static const int links[FRAMES] = { 0, 2, 0, 0, 0, 0, 3, 0, 0, 0 };
   u16 seen[FRAMES];
   u32 hash = 0;
@@ -807,10 +814,32 @@ int main(void)
     assert(io_registers[REG_P1] == seen[i]);
   }
   assert(saves == 2 && menus == 2 && psp_fps_debug == 0);
+
+  /* And one with the FPS and video chords, the menu and save buttons and
+     the menu hold on those frames. */
+  option_shortcut[INPUT_CHORD_MENU] =
+   INPUT_CHORD_KEY_START | INPUT_CHORD_KEY_SELECT;
+  option_shortcut[INPUT_CHORD_FPS] = INPUT_CHORD_KEY_SELECT | INPUT_CHORD_KEY_R;
+  option_shortcut[INPUT_CHORD_VIDEO_CYCLE] =
+   INPUT_CHORD_KEY_START | INPUT_CHORD_KEY_L;
+  rebuild_shortcut_chords();
+  gamepad_config_map[8] = BUTTON_ID_MENU;
+  gamepad_config_map[6] = BUTTON_ID_SAVESTATE;
+  restart();
+  for(i = 0; i < FRAMES; i++)
+  {
+    if(i == 9)
+      now_us += 500000;
+    assert(frame(other_pads[i], 0) == 0);
+    assert(io_registers[REG_P1] == seen[i]);
+  }
+  assert(psp_fps_debug == 1 && video_cycles == 1);
+  assert(saves == 3 && menus == 4);
+
   /* A menu that changed the machine drops the pass: no frame step. */
   menu_return = 1;
   assert(frame(PSP_CTRL_HOME, 0) == 1);
-  assert(diagnostic_trace_frame == 1000 + 3 * FRAMES);
+  assert(diagnostic_trace_frame == 1000 + 4 * FRAMES);
   menu_return = 0;
   frame(0, 0);
   assert(diagnostic_trace.state == INPUT_TRACE_REPLAYING);
@@ -1115,8 +1144,15 @@ class InputShortcutTests(unittest.TestCase):
         link = function("source/src/main.c",
                         "static int main_link_service(IRQ_TYPE *irq_raised)")
         self.assertNotIn("input_diagnostic_trace", link)
-        self.assertNotIn("diagnostic_trace_frame++",
-                         function("source/src/input.c", "u32 update_input(void)"))
+        update_input = function("source/src/input.c", "u32 update_input(void)")
+        self.assertNotIn("diagnostic_trace_frame++", update_input)
+        # Before game_keys only a pass that update_gba drops may return; a
+        # hotkey whose frame runs (a declined load included) must reach the
+        # trace there.
+        returns = re.findall(r"\breturn\b[^;]*;",
+                             update_input[:update_input.index("game_keys:")])
+        self.assertTrue(returns)
+        self.assertLessEqual(set(returns), {"return menu_result;", "return 1;"})
         self.assertIn("input_diagnostic_trace_end_bench();",
                       function("source/src/main.c",
                                "void main_perf_bench_cancel(void)"))
