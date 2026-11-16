@@ -19,7 +19,7 @@
 
 ## 2.0
 
-- [ ] **ENG-8.1** — Iniettore diagnostico di eventi power e HOME · M, 1,5 gg · dipende da: ENG-6.2, ENG-2.2 · PSP: sì · **subito**: il codice di ENG-6.2 è in main (2ff83ab); le chiavi power di `autorun_config.c` le porta questa storia
+- [ ] **ENG-8.1** — Iniettore diagnostico di eventi power e HOME · M, 1,5 gg · dipende da: ENG-6.2, ENG-2.2 · PSP: sì · aspetta: ENG-6.2 (`wip/replay-oracle`)
 
 ## dopo gate
 
