@@ -277,9 +277,11 @@
   button still held never delays standby. A button held as the menu closes
   reaches neither the game nor the hotkeys until it is released.
 - A damaged or truncated `.zip` no longer hangs the loader or starts a broken
-  game: the ROM's size and CRC32 are checked, and the file browser says the
-  ZIP file is damaged or incomplete. An encrypted `.zip`, or one whose first
-  file is not a `.gba`, `.agb` or `.bin` ROM, gets the same message.
+  game: the ROM's size and CRC32 are checked, and Load game and Load state
+  from file in the menu say the ZIP file is damaged or incomplete. An
+  encrypted `.zip`, or one whose first file is not a `.gba`, `.agb` or `.bin`
+  ROM, gets the same message. A `.zip` picked in the browser shown at
+  startup, or passed by a launcher, still gets the generic load error.
 - A `.zip` written in streaming mode, with its sizes after the data, now
   loads when its ROM is compressed (deflated) and those sizes are not in
   the ZIP64 format. Any other `.zip` written that way, such as one with an
