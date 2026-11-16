@@ -10,7 +10,7 @@
 ## 1.6
 
 - [x] **ENG-3.1** — Modulo puro state_hash · S, 1 gg · dipende da: — · PSP: no · **subito**
-- [ ] **ENG-3.2** — Traccia v2 con stato iniziale compagno · M, 1,5 gg · dipende da: ENG-3.1 · PSP: sì · _codice pronto (9f890a5; da 8c41396 «Finish and save» sostituisce la coppia salvata solo quando `.gbit` e `.svs` nuovi sono completi), manca la prova su PSP_
+- [ ] **ENG-3.2** — Traccia v2 con stato iniziale compagno · M, 1,5 gg · dipende da: ENG-3.1 · PSP: sì · _codice pronto (9f890a5; da 8c41396 «Finish and save» sostituisce la coppia salvata solo quando `.gbit` e `.svs` nuovi sono completi), manca la prova su PSP; resta aperto: un caricamento di stato o una sessione link durante la registrazione la rendono non riproducibile (decisione: rifiutare o annullare)_
 - [ ] **ENG-3.3** — Cattura degli hash su PSP durante il replay · M, 1,5 gg · dipende da: ENG-3.1, ENG-3.2, ENG-2.2 · PSP: sì · _codice pronto (91bc1ef; da bcf3657 hash e frame della traccia avanzano una volta per frame emulato, anche con menu e scorciatoie, mai nelle attese del link), manca la prova su PSP, con la misura del costo per frame_
 - [x] **ENG-3.4** — Strumento di confronto e procedure di autoverifica e perturbazione · S, 1 gg · dipende da: ENG-3.1 · PSP: no
 - [ ] **ENG-3.5** — Corpus pubblico di replay e golden compatti · M, 2,25 gg · dipende da: ENG-3.3, ENG-3.4, ENG-10.3, SAV-2.6, CMP-1.1, CMP-3.1, CMP-11.1, CMP-12.1, UI-10.5 · PSP: sì · aspetta: UI-10.5 (`wip/ui-ge`)
