@@ -675,6 +675,119 @@ int main(void)
 '''
 
 
+# gui.c's turbo and shortcut glue with stand-ins: a game's .cfg (when
+# game_cfg is set) holds Toggle turbo B and SELECT+Down on the Video cycle,
+# and the rebuilds record the values they were handed.
+INPUT_CONFIG_STUBS = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include "@SRC@/config_model.c"
+#include "@SRC@/input_chord.h"
+typedef uint32_t u32;
+typedef int32_t s32;
+#define MAX_PATH 512
+#define FRAMESKIP_AUTO 0
+#define PSP_CLOCK_333 3
+u32 option_screen_scale, option_frameskip_type, option_frameskip_value;
+u32 option_clock_speed;
+static u32 global_screen_scale = 6;
+u32 option_turbo_speed[CONFIG_MODEL_TURBO_COUNT];
+u32 option_turbo_mode[CONFIG_MODEL_TURBO_COUNT];
+u32 option_shortcut[CONFIG_MODEL_SHORTCUT_COUNT];
+static ConfigModel global_input_config;
+static int game_loaded, game_cfg, turbo_rebuilds, chord_rebuilds;
+static u32 rebuilt_turbo_mode_b, rebuilt_video_chord;
+static void apply_input_config(const ConfigModel *model);
+void rebuild_fast_forward_button_mask(void)
+{ turbo_rebuilds++; rebuilt_turbo_mode_b = option_turbo_mode[1]; }
+void rebuild_shortcut_chords(void)
+{ chord_rebuilds++; rebuilt_video_chord = option_shortcut[INPUT_CHORD_VIDEO_CYCLE]; }
+static int menu_game_available(void) { return game_loaded; }
+void main_fast_forward_reset_game_settings(void) {}
+static int build_game_config_path(char *path) { path[0] = '\0'; return 1; }
+static s32 load_game_config_atomic(const char *path)
+{
+  ConfigModel model;
+
+  (void)path;
+  if(!game_cfg)
+    return -1;
+  config_model_defaults(&model);
+  model.turbo_mode[1] = 1;
+  model.shortcut[INPUT_CHORD_VIDEO_CYCLE] = 0x0440;
+  apply_input_config(&model);
+  return 0;
+}
+s32 load_game_config_file(void);
+'''
+
+# tempgba.cfg holds turbo A Toggle at 10/s and SELECT+Left on the Video
+# cycle. Only the Turbo page with no game loaded changes those values; a
+# game's own .cfg replaces the running ones, and a game with no .cfg starts
+# from tempgba.cfg's again.
+INPUT_CONFIG_SCENARIOS = r'''
+int main(void)
+{
+  ConfigModel global;
+
+  config_model_defaults(&global);
+  global.turbo_speed[0] = 2;
+  global.turbo_mode[0] = 1;
+  global.shortcut[INPUT_CHORD_VIDEO_CYCLE] = 0x0480;
+  global_input_config = global;
+  apply_input_config(&global);
+  assert(option_turbo_speed[0] == 2 && option_turbo_mode[0] == 1);
+  assert(turbo_rebuilds == 1 && chord_rebuilds == 1);
+  assert(rebuilt_video_chord == 0x0480);
+
+  /* The Turbo page before any game: tempgba.cfg takes the change. */
+  option_turbo_speed[1] = 1;
+  menu_turbo_changed();
+  assert(turbo_rebuilds == 2 && global_input_config.turbo_speed[1] == 1);
+
+  /* Game A has a .cfg: its values run, tempgba.cfg's stay. */
+  game_loaded = game_cfg = 1;
+  assert(load_game_config_file() == 0);
+  assert(option_turbo_mode[1] == 1 && rebuilt_turbo_mode_b == 1);
+  assert(option_shortcut[INPUT_CHORD_VIDEO_CYCLE] == 0x0440);
+  assert(rebuilt_video_chord == 0x0440 && option_turbo_speed[0] == 0);
+  assert(global_input_config.turbo_mode[1] == 0);
+
+  /* The Turbo page in game A changes only game A's settings. */
+  option_turbo_speed[2] = 2;
+  menu_turbo_changed();
+  assert(turbo_rebuilds == 4 && global_input_config.turbo_speed[2] == 0);
+
+  /* Game B has no .cfg: it starts from tempgba.cfg's values. */
+  game_cfg = 0;
+  assert(load_game_config_file() == -1);
+  assert(option_turbo_speed[0] == 2 && option_turbo_mode[0] == 1);
+  assert(option_turbo_speed[1] == 1 && option_turbo_mode[1] == 0);
+  assert(option_turbo_speed[2] == 0 && rebuilt_turbo_mode_b == 0);
+  assert(option_shortcut[INPUT_CHORD_VIDEO_CYCLE] == 0x0480);
+  assert(rebuilt_video_chord == 0x0480 && chord_rebuilds == 3);
+  assert(option_screen_scale == global_screen_scale);
+
+  /* What a game's .cfg stores is what runs. */
+  {
+    ConfigModel game;
+
+    memset(&game, 0xFF, sizeof(game));
+    capture_input_config(&game);
+    assert(game.turbo_speed[0] == 2 && game.turbo_mode[0] == 1);
+    assert(game.turbo_speed[1] == 1 && game.turbo_mode[3] == 0);
+    assert(game.shortcut[INPUT_CHORD_VIDEO_CYCLE] == 0x0480);
+    assert(game.shortcut[INPUT_CHORD_SAVESTATE] == 0x0410);
+    assert(game.gamepad[0] == 0xFFFFFFFFu);
+  }
+
+  puts("turbo and shortcut settings passed");
+  return 0;
+}
+'''
+
 # The real menu_cycle_video_mode() with the real toast ring, the SCALED_
 # values of main.h and the English mode names keyed by their MSG ids; the
 # stand-ins record the scale that video_apply_screen_scale and the per-game
@@ -735,6 +848,11 @@ static s32 load_game_config_atomic(const char *path)
   return 0;
 }
 void main_fast_forward_reset_game_settings(void) { fast_forward_resets++; }
+/* Turbo and shortcuts have their own test below. */
+#include "@SRC@/config_model.h"
+static ConfigModel global_input_config;
+static void apply_input_config(const ConfigModel *model)
+{ assert(model == &global_input_config); }
 s32 load_game_config_file(void);
 '''
 
@@ -1038,38 +1156,46 @@ class InputShortcutTests(unittest.TestCase):
                       function("source/src/main.c",
                                "static void psp_sleep_loop(void)"))
 
-    def test_settings_carry_the_shortcuts(self):
-        # gui.c's settings glue cannot be built on the host: both captures
-        # store the masks, and both applies load them before the chords.
-        for name in ("capture_global_config", "capture_game_config"):
-            body = function("source/src/gui.c",
-                            "static void %s(ConfigModel *model)" % name)
-            self.assertIn("model->shortcut[i] = option_shortcut[i];", body)
-        for name in ("apply_global_config", "apply_game_config"):
-            body = function("source/src/gui.c",
-                            "static void %s(const ConfigModel *model)" % name)
-            self.assertLess(body.index("option_shortcut[i] = model->shortcut[i];"),
-                            body.index("rebuild_shortcut_chords();"))
+    def test_game_turbo_and_shortcuts_stay_apart_from_global(self):
+        source = INPUT_CONFIG_STUBS.replace("@SRC@", SRC)
+        for signature in ("static void apply_input_config(const ConfigModel *model)",
+                          "static void capture_input_config(ConfigModel *model)",
+                          "static void menu_turbo_changed(void)",
+                          "s32 load_game_config_file(void)"):
+            source += function("source/src/gui.c", signature)
+        build_and_run(source + INPUT_CONFIG_SCENARIOS, "input_config")
 
-    def test_settings_carry_the_turbo(self):
-        # Per game and globally: both captures store the turbo speed and
-        # mode, and both applies load them before the turbo inputs are
-        # rebuilt from them.
-        speed = "model->turbo_speed[i] = option_turbo_speed[i];"
-        mode = "model->turbo_mode[i] = option_turbo_mode[i];"
-        for name in ("capture_global_config", "capture_game_config"):
-            body = function("source/src/gui.c",
-                            "static void %s(ConfigModel *model)" % name)
-            self.assertIn(speed, body)
-            self.assertIn(mode, body)
-        for name in ("apply_global_config", "apply_game_config"):
-            body = function("source/src/gui.c",
-                            "static void %s(const ConfigModel *model)" % name)
-            rebuild = body.index("rebuild_fast_forward_button_mask();")
-            self.assertLess(body.index("option_turbo_speed[i] = model->turbo_speed[i];"),
-                            rebuild)
-            self.assertLess(body.index("option_turbo_mode[i] = model->turbo_mode[i];"),
-                            rebuild)
+    def test_settings_carry_the_turbo_and_shortcuts(self):
+        # gui.c's settings glue cannot be built on the host: a game's .cfg
+        # stores and loads the running turbo and shortcuts, tempgba.cfg
+        # stores the global copy, which a global load sets, and the Turbo
+        # page and the menu with no game go through the spliced helpers.
+        gui = (ROOT / "source/src/gui.c").read_text()
+        self.assertIn("capture_input_config(model);",
+                      function("source/src/gui.c",
+                               "static void capture_game_config(ConfigModel *model)"))
+        self.assertIn("apply_input_config(model);",
+                      function("source/src/gui.c",
+                               "static void apply_game_config(const ConfigModel *model)"))
+        apply = function("source/src/gui.c",
+                         "static void apply_global_config(const ConfigModel *model)")
+        self.assertLess(apply.index("global_input_config = *model;"),
+                        apply.index("apply_input_config(model);"))
+        capture = function("source/src/gui.c",
+                           "static void capture_global_config(ConfigModel *model)")
+        for line in ("model->shortcut[i] = global_input_config.shortcut[i];",
+                     "model->turbo_speed[i] = global_input_config.turbo_speed[i];",
+                     "model->turbo_mode[i] = global_input_config.turbo_mode[i];"):
+            self.assertIn(line, capture)
+        self.assertNotIn("option_shortcut", capture)
+        self.assertNotIn("option_turbo", capture)
+        rows = [line for line in gui.splitlines() if "&option_turbo_" in line]
+        self.assertEqual(len(rows), 8)
+        for row in rows:
+            self.assertIn("STRING_SELECTION_OPTION(menu_turbo_changed, ", row)
+        none = gui[gui.index("  void gamepak_file_none(void)\n  {"):]
+        none = none[:none.index("\n  }\n")]
+        self.assertIn("apply_input_config(&global_input_config);", none)
 
 
 if __name__ == "__main__":

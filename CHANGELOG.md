@@ -34,15 +34,18 @@
   A+B+START+SELECT still resets the game; START and SELECT reach the game
   during the hold. A shortcut acts on the press that completes it, and the L
   or R that completes it is kept from the game while it stays held.
-  Shortcuts are saved with the settings and with each game's settings;
-  settings from 1.4.x start with these defaults. Single-button mappings work
-  as before.
+  Each game keeps its shortcuts with its own settings; a game without
+  settings of its own starts with the global ones, which no game's settings
+  replace. Settings from 1.4.x start with these defaults. Single-button
+  mappings work as before.
 - Controls > Turbo config sets, for each rapid-fire button (A, B, L and R),
   the speed (30, 15 or 10 presses per second) and the mode. Hold fires while
   the button is held; Toggle starts firing on one press and stops on the
-  next, with a "Turbo A: on" or "Turbo A: off" notice. The settings are
-  saved globally and with each game's settings. Settings from 1.4.x start at
-  30 presses per second in Hold mode, as before.
+  next, with a "Turbo A: on" or "Turbo A: off" notice. Each game keeps its
+  turbo settings with its own settings; a game without settings of its own
+  starts with the global ones, which Turbo config changes only while no game
+  is loaded. Settings from 1.4.x start at 30 presses per second in Hold mode,
+  as before.
 - A ROM folder with no games shows "No games found" and the folder to copy
   .gba or .zip files to, in the list and in the carousel; its subfolders
   stay listed.
