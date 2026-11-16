@@ -11,7 +11,7 @@
 ## 1.4.4
 
 - [x] **EXT-1.1** — Rilevamento sui DMA da 17 o 81 unità, con test host del protocollo · S, 1 gg · dipende da: — · PSP: no · **subito** · _CI verde su 214c50a (run 42803695637): test_eeprom sul vero memory.c passa in `make check` e sotto ASan e UBSan in `make test-sanitize`, e memory.c compila nei due profili PSP_
-- [ ] **EXT-1.2** — Caso "scrittura prima della lettura" nella ROM di test dei salvataggi · S, 0,5 gg · dipende da: SAV-2.6, EXT-1.1 · PSP: sì · _codice pronto (a58d9dc, 8f4729c) e prova `save-eeprom8k-wfirst` nel catalogo hardware (cc76d87, 4796757), mancano `make test-roms` con un compilatore ARM (build della ROM, core New e mGBA; la CI non lo esegue) e le prove su 1.4.2 e sul candidato, su due PSP_
+- [ ] **EXT-1.2** — Caso "scrittura prima della lettura" nella ROM di test dei salvataggi · S, 0,5 gg · dipende da: SAV-2.6, EXT-1.1 · PSP: sì · _codice pronto (a58d9dc, 8f4729c), che a ogni avvio scrive un solo blocco (3Fh) e non una generazione (testo del ticket corretto il 2026-11-16), e prova `save-eeprom8k-wfirst` nel catalogo hardware (cc76d87, 4796757), mancano `make test-roms` con un compilatore ARM (build della ROM, core New e mGBA; la CI non lo esegue) e le prove su 1.4.2 e sul candidato, su due PSP_
 - [x] **SAV-1.1** — Modulo puro save_format: tipo dal tag, taglia nativa, clamp · S, 0,5 gg · dipende da: — · PSP: no · **subito**
 - [x] **SAV-1.2** — Interfaccia SaveStoreIo (exists, read, write) e file system finto con guasti iniettabili · S, 0,5 gg · dipende da: — · PSP: no · **subito**
 - [x] **SAV-1.3** — save_store_load: assente, letto o illeggibile · S, 0,5 gg · dipende da: SAV-1.2 · PSP: no
