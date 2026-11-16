@@ -8,8 +8,9 @@ import tempfile
 import unittest
 import zlib
 
-# Extracts a C function from a source file (see tests/test_startup.py).
-from tests.test_startup import function
+# Extracts a C function from a source file and builds and runs a C test
+# (see tests/test_startup.py).
+from tests.test_startup import build_and_run, function
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -329,7 +330,213 @@ SLOT_FUNCTIONS = [
 ]
 
 
+# A memory card of named files behind the sceIo calls of the trace menu's
+# "Finish and save": each call can be made to fail, and a rename fails
+# when its target exists, as it may on the PSP. The trace files of the
+# ROM are "t" plus their extension.
+TRACE_SAVE_STUBS = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+typedef uint8_t u8;
+typedef int32_t s32;
+typedef int SceUID;
+typedef int SceMode;
+typedef unsigned int SceSize;
+#define MAX_PATH 64
+#define PSP_O_WRONLY 0x0002
+#define PSP_O_CREAT 0x0200
+#define PSP_O_TRUNC 0x0400
+#define FILE_WRITE(tag, buffer, size) sceIoWrite(tag, buffer, size)
+#define free(pointer) ((void)(pointer))
+enum { MSG_TRACE_SAVED, MSG_TRACE_FAILED };
+static const char *MSG[] = { "saved", "failed" };
+static char diagnostics_report_line[16];
+static struct { char name[MAX_PATH]; size_t size; int used; } card[8];
+static int finished, encoded, open_fails, write_fails, close_result;
+static int renames, rename_fails;
+static u8 buffer[32];
+
+static int find(const char *name)
+{
+  int i;
+
+  for(i = 0; i < 8; i++)
+    if(card[i].used && strcmp(card[i].name, name) == 0)
+      return i;
+  return -1;
+}
+
+static void put(const char *name, size_t size)
+{
+  int i = find(name);
+
+  if(i < 0)
+    for(i = 0; i < 8 && card[i].used; i++)
+      ;
+  assert(i < 8);
+  strcpy(card[i].name, name);
+  card[i].size = size;
+  card[i].used = 1;
+}
+
+/* Bytes in the file, or -1 when it is not on the card. */
+static long size_of(const char *name)
+{
+  int i = find(name);
+
+  return i < 0 ? -1 : (long)card[i].size;
+}
+
+static int menu_trace_path(char *path, size_t path_size,
+ int create_directory, const char *extension)
+{
+  (void)create_directory;
+  return snprintf(path, path_size, "t%s", extension) < (int)path_size;
+}
+static void *safe_malloc(size_t size)
+{ assert(size <= sizeof(buffer)); return buffer; }
+static int input_diagnostic_trace_finish_record(void) { return finished; }
+static size_t input_diagnostic_trace_max_encoded_size(void)
+{ return sizeof(buffer); }
+static int input_diagnostic_trace_encode(u8 *output, size_t size,
+ size_t *written)
+{
+  memset(output, 'T', size);
+  *written = 20;
+  return encoded;
+}
+static SceUID sceIoOpen(const char *path, int flags, SceMode mode)
+{
+  (void)mode;
+  if(open_fails)
+    return -1;
+  assert(flags == (PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC));
+  put(path, 0);
+  return find(path);
+}
+static int sceIoWrite(SceUID file, const void *data, SceSize size)
+{
+  (void)data;
+  if(write_fails)
+    return -1;
+  card[file].size += size;
+  return (int)size;
+}
+static int sceIoClose(SceUID file) { (void)file; return close_result; }
+static int sceIoRemove(const char *path)
+{
+  int i = find(path);
+
+  if(i < 0)
+    return -1;
+  card[i].used = 0;
+  return 0;
+}
+static int sceIoRename(const char *from, const char *to)
+{
+  int i = find(from);
+
+  if(++renames == rename_fails || i < 0 || find(to) >= 0)
+    return -1;
+  strcpy(card[i].name, to);
+  return 0;
+}
+'''
+
+# The saved pair is t.gbit (7 bytes) and t.svs (9); the recording's start
+# wrote t.new.svs (11), and its trace is 20 bytes.
+TRACE_SAVE_SCENARIOS = r'''
+static void reset(void)
+{
+  memset(card, 0, sizeof(card));
+  put("t.gbit", 7);
+  put("t.svs", 9);
+  put("t.new.svs", 11);
+  finished = encoded = 1;
+  open_fails = write_fails = close_result = renames = rename_fails = 0;
+}
+
+static void save(const char *line)
+{
+  menu_trace_finish_save();
+  assert(strcmp(diagnostics_report_line, line) == 0);
+}
+
+/* A failure before both new files are complete keeps the saved pair and
+   deletes the pending files. */
+static void saved_pair_kept(void)
+{
+  save("failed");
+  assert(size_of("t.gbit") == 7 && size_of("t.svs") == 9);
+  assert(size_of("t.new.svs") < 0 && size_of("t.new.gbit") < 0);
+}
+
+int main(void)
+{
+  reset();
+  save("saved");
+  assert(size_of("t.gbit") == 20 && size_of("t.svs") == 11);
+  assert(size_of("t.new.svs") < 0 && size_of("t.new.gbit") < 0);
+
+  reset();
+  finished = 0;
+  saved_pair_kept();
+  reset();
+  encoded = 0;
+  saved_pair_kept();
+  reset();
+  open_fails = 1;
+  saved_pair_kept();
+  reset();
+  write_fails = 1;
+  saved_pair_kept();
+  reset();
+  close_result = -1;
+  saved_pair_kept();
+
+  /* A failed rename leaves the new pair's rest under the pending names. */
+  reset();
+  rename_fails = 1;
+  save("failed");
+  assert(size_of("t.gbit") == 7);
+  assert(size_of("t.new.svs") == 11 && size_of("t.new.gbit") == 20);
+  reset();
+  rename_fails = 2;
+  save("failed");
+  assert(size_of("t.svs") == 11 && size_of("t.new.gbit") == 20);
+  assert(size_of("t.new.svs") < 0);
+
+  /* No saved pair yet: the first save puts the new one in place. */
+  reset();
+  sceIoRemove("t.gbit");
+  sceIoRemove("t.svs");
+  save("saved");
+  assert(size_of("t.gbit") == 20 && size_of("t.svs") == 11);
+  puts("trace save passed");
+  return 0;
+}
+'''
+
+TRACE_SAVE_FUNCTIONS = [
+    "static int menu_trace_write_all(SceUID file, const u8 *data, size_t size)",
+    "static void menu_trace_discard_pending(void)",
+    "static int menu_trace_replace(const char *pending, const char *extension)",
+    "static void menu_trace_finish_save(void)",
+]
+
+
 class SaveIoTests(unittest.TestCase):
+    def test_trace_save_keeps_the_saved_pair(self):
+        gui = (ROOT / "source/src/gui.c").read_text()
+        source = TRACE_SAVE_STUBS + "".join(
+            line + "\n" for line in gui.splitlines()
+            if line.startswith("#define MENU_TRACE_PENDING_"))
+        for signature in TRACE_SAVE_FUNCTIONS:
+            source += function("source/src/gui.c", signature) + "\n"
+        build_and_run(source + TRACE_SAVE_SCENARIOS, "trace_save")
+
     def test_main_menu_counts_slots_without_recovery(self):
         source = SLOT_STUBS
         for signature in SLOT_FUNCTIONS:

@@ -24,6 +24,12 @@ PROGRAM = """#include "build_profile.h"
 #if defined(GBA_RUSH_PROFILE_DIAGNOSTIC) != defined(ENABLE_DIAGNOSTIC_NET_INJECTION)
 #error "the network fault injection does not follow the profile"
 #endif
+#if defined(GBA_RUSH_PROFILE_DIAGNOSTIC) != defined(ENABLE_DIAGNOSTIC_MEMORY_TRACE)
+#error "the memory hold and allocation trace do not follow the profile"
+#endif
+#if defined(GBA_RUSH_PROFILE_DIAGNOSTIC) != defined(ENABLE_DIAGNOSTIC_BENCH_ARMS)
+#error "the benchmark arms do not follow the profile"
+#endif
 const char *profile_name = GBA_RUSH_PROFILE_NAME;
 """
 

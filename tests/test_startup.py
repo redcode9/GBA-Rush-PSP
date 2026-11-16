@@ -354,6 +354,41 @@ int main(void) {
 '''
 
 
+# The menu rereads the AUTO state once per write, and only once the suspend
+# that wrote it has resumed and the state folder opens again.
+REFRESH_STUBS = r'''
+#include <assert.h>
+#include <stdint.h>
+typedef uint32_t u32;
+typedef int SceUID;
+char dir_state[] = "ms0:/PSP/GAME/X/";
+static u32 auto_savestate_written;
+volatile u32 sleep_auto_saved;
+static int dopen_result, dopens, dcloses;
+SceUID sceIoDopen(const char *path) { (void)path; dopens++; return dopen_result; }
+int sceIoDclose(SceUID dir) { assert(dir == dopen_result); dcloses++; return 0; }
+'''
+
+REFRESH_SCENARIOS = r'''
+int main(void) {
+  dopen_result = 4;
+  assert(!auto_savestate_refresh_due() && dopens == 0);
+  /* Written by a suspend that has not resumed yet. */
+  auto_savestate_written = 1; sleep_auto_saved = 1;
+  assert(!auto_savestate_refresh_due() && dopens == 0 && auto_savestate_written);
+  /* Resumed, but the Memory Stick is not back. */
+  sleep_auto_saved = 0; dopen_result = -1;
+  assert(!auto_savestate_refresh_due() && dopens == 1 && dcloses == 0);
+  assert(auto_savestate_written);
+  /* Back: one refresh, the folder closed, then nothing until the next write. */
+  dopen_result = 4;
+  assert(auto_savestate_refresh_due() && dcloses == 1 && !auto_savestate_written);
+  assert(!auto_savestate_refresh_due() && dopens == 2);
+  return 0;
+}
+'''
+
+
 def autorun_block():
     """Return main.c's diagnostic autorun block, from its #ifdef to #endif."""
     text = (ROOT / "source/src/main.c").read_text()
@@ -853,6 +888,11 @@ class StartupTests(unittest.TestCase):
         source += function("source/src/main.c", "static void load_setting_cfg(void)")
         source += DIR_SCENARIOS
         build_and_run(source, "dir_defaults")
+
+    def test_auto_state_refresh_waits_for_resume(self):
+        source = REFRESH_STUBS + function("source/src/gui.c",
+                                             "static u32 auto_savestate_refresh_due(void)")
+        build_and_run(source + REFRESH_SCENARIOS, "auto_refresh")
 
     def test_diagnostic_autorun_glue(self):
         # main.c's autorun block with the real parser behind it.

@@ -608,7 +608,7 @@ static void test_restart_replay_for_bench(void)
   assert(trace.error == INPUT_TRACE_ERROR_CAPACITY);
 }
 
-/* update_input asks after each replayed frame whether it was the trace's
+/* input.c asks after each replayed frame whether it was the trace's
    last, and ends the bench with it: the end is signalled once, on frame
    start + duration, which still gets the trace's keys. Nothing else
    signals, a replay before it starts or after it ends included. */
@@ -648,6 +648,45 @@ static void test_replay_end_signalled_to_bench(void)
   assert(!input_trace_replay_last_frame(&replay, 105));
 }
 
+/* A cancelled benchmark stops its replay halfway: the physical keys come
+   back at once, no frame is the replay's last any more, and the trace is
+   kept, so the next benchmark replays it in full. Only a replay stops. */
+static void test_stop_replay_keeps_the_trace(void)
+{
+  uint8_t encoded[INPUT_TRACE_HEADER_SIZE + 8 * INPUT_TRACE_EVENT_SIZE];
+  uint8_t header[INPUT_TRACE_IDENTITY_SIZE];
+  InputTraceEvent events[8];
+  InputTrace trace;
+  size_t size = make_trace(encoded, sizeof(encoded));
+
+  memset(header, 0, sizeof(header));
+  memcpy(header + 0xAC, game_code, sizeof(game_code));
+  header[0xBC] = 1;
+  input_trace_init(&trace, events, 8);
+  assert(input_trace_begin_replay(&trace, encoded, size, game_code, 1, 500));
+  assert(input_trace_apply(&trace, 500, 0x3FF) == 0);
+  assert(input_trace_apply(&trace, 501, 0x3FF) == 1);
+  input_trace_stop_replay(&trace);
+  assert(trace.state == INPUT_TRACE_FINISHED);
+  assert(input_trace_apply(&trace, 502, 0x3FF) == 0x3FF);
+  assert(!input_trace_replay_last_frame(&trace, 505));
+  input_trace_stop_replay(&trace);
+  assert(trace.state == INPUT_TRACE_FINISHED);
+  assert(input_trace_restart_replay(&trace, header, 0x1000000U, 700) == 6);
+  check_bench_replay(&trace, 700);
+
+  input_trace_init(&trace, events, 8);
+  input_trace_stop_replay(&trace);
+  assert(trace.state == INPUT_TRACE_IDLE);
+  assert(input_trace_begin_record(&trace, 100, game_code, 1, 0));
+  input_trace_stop_replay(&trace);
+  assert(trace.state == INPUT_TRACE_RECORDING);
+  assert(input_trace_finish_record(&trace, 105));
+  input_trace_stop_replay(&trace);
+  assert(trace.state == INPUT_TRACE_READY);
+  input_trace_stop_replay(NULL);
+}
+
 /* Runs every recording, file and replay case; a failing assert aborts the
    run. */
 int main(void)
@@ -665,6 +704,7 @@ int main(void)
   test_companion_required();
   test_restart_replay_for_bench();
   test_replay_end_signalled_to_bench();
+  test_stop_replay_keeps_the_trace();
   puts("Input trace tests passed");
   return 0;
 }

@@ -443,6 +443,18 @@ then
   fail "Load State File can overwrite the AUTO state it is loading"
 fi
 
+# menu() rereads every slot on entry, so it drops the mark of an AUTO write
+# made in the game, but not one made at its .sav warning.
+if ! body '/^u32 menu(void)/,/^}/p' source/src/gui.c | awk '
+  /^  load_savestate_timestamps\(\);/ { loaded = 1 }
+  loaded && /^  auto_savestate_written = 0;/ { cleared = 1 }
+  /^  menu_backup_warning\(\);/ { warned = 1; if (!cleared) bad = 1 }
+  END { exit !(cleared && warned && !bad) }
+'
+then
+  fail "The menu rereads the AUTO state twice after a write in the game"
+fi
+
 # A suspend at the resume question writes the AUTO state unless no ROM
 # counts as loaded, so the name is blank while yesno_dialog is open and back
 # before the state loads.

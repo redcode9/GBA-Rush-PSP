@@ -425,6 +425,11 @@ int perf_report_format(char *output, size_t output_size,
      metadata->bench_trace_checksum);
   else
     perf_report_append(&writer, "bench-trace-checksum=\n");
+  if(metadata->has_bench_state_hash)
+    perf_report_append(&writer, "bench-state-hash=0x%08x\n",
+     metadata->bench_state_hash);
+  else
+    perf_report_append(&writer, "bench-state-hash=\n");
 
   if(writer.failed)
   {

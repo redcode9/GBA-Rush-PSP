@@ -54,7 +54,9 @@ rom_index = $(word 1,$(subst :, ,$(1)))
 .PHONY: all clean
 .SUFFIXES:
 
-all: $(foreach s,$(SECTIONS),$(OUT)/mgba-suite-$(call rom_name,$(s)).gba)
+# The suite first: without it the hint below runs before font.bmp is missed.
+all: $(SUITE_DIR)/src/main.c \
+ $(foreach s,$(SECTIONS),$(OUT)/mgba-suite-$(call rom_name,$(s)).gba)
 
 $(SUITE_DIR)/src/main.c:
 	@echo "no mGBA test suite in $(SUITE_DIR): sh scripts/setup-dev.sh test-roms" >&2

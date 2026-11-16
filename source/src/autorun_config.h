@@ -65,7 +65,14 @@
  *                    Every datagram the link sends or receives goes through
  *                    it, and the runtime log's network ring records the
  *                    profile, its seed and what it lost, delayed and
- *                    duplicated. Needs no other key.
+ *                    duplicated. Needs no other key. Outage windows count
+ *                    from the start of the ad-hoc session, when the host
+ *                    has opened its group or the joiner has found it: the
+ *                    single 0.4 s blackout of outage falls 3.0-3.4 s after
+ *                    that, while the two consoles are still pairing in the
+ *                    menu, so in a game transfer outage runs as adhoc
+ *                    does. For blackouts during play use dropouts, which
+ *                    repeats one of 0.25 s every 1.3 s.
  *
  * Not keys yet: the power events come with the code that uses them (the
  * power event injector). Until then such a key is unknown and refuses the

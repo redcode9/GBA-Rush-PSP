@@ -597,13 +597,6 @@
   // MSG_ERR_SET_DIR_2
   "The error occurred. It's set as the following directories:\n%s",
 
-  // png.c
-  // MSG_ERR_SS_PNG_0
-  "Could not allocate memory for PNG.",
-
-  // MSG_ERR_SS_PNG_1
-  "Could not enecode PNG image.",
-
   // memory.c
   // MSG_LOADING_ROM
   "Now Loading...",
@@ -637,7 +630,7 @@
   "Could not load the game file.",
 
   // MSG_ERR_ZIP_CORRUPT
-  "The ZIP file is damaged or incomplete.",
+  "The ZIP file is damaged, incomplete or not supported.",
 
   // MSG_ERR_OPEN_GAMEPACK
   "Could not open the game file.",
