@@ -3801,7 +3801,11 @@ static s32 load_gamepak_raw(char *name)
     else
     {
       // Read in just enough for the header
-      FILE_READ(gamepak_file, gamepak_rom, 0x100);
+      if (FILE_READ(gamepak_file, gamepak_rom, 0x100) != 0x100)
+      {
+        FILE_CLOSE(gamepak_file);
+        return -1;
+      }
 
       gamepak_file_large = gamepak_file;
 
