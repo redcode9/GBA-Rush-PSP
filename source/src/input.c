@@ -845,8 +845,8 @@ void init_input_kernel(void)
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 /* GUI side of the one diagnostic trace. These pass the trace's frame count
-   (input_diagnostic_trace_frame_end steps it) and the loaded ROM's header, which tags the trace with its game
-   code and revision. */
+   (input_diagnostic_trace_frame_end steps it) and the loaded ROM's header,
+   which tags the trace with its game code and revision. */
 int input_diagnostic_trace_begin_record(void)
 {
   return input_trace_begin_record_from_header(&diagnostic_trace,

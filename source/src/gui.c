@@ -3874,9 +3874,9 @@ static void menu_quit_action(void)
 static int menu_trace_resume;
 
 /* <main_path>traces/input-<game code>-r<version><extension> (".gbit",
-   ".svs" or MENU_TRACE_PENDING_STATE), named from the GBA cartridge header:
-   game code at 0xAC, software version at 0xBC; the header is 0xC0 bytes
-   long. */
+   ".svs" or a MENU_TRACE_PENDING_* name), named from the GBA cartridge
+   header: game code at 0xAC, software version at 0xBC; the header is 0xC0
+   bytes long. */
 static int menu_trace_path(char *path, size_t path_size, int create_directory,
  const char *extension)
 {
