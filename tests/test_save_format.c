@@ -223,6 +223,17 @@ static void test_sanitize_keeps_valid_states(void)
     assert(save_format_sanitize(&state, &before) == 0);
     assert(same_state(&state, &copy));
   }
+
+  /* A state saved before the game's first backup access. */
+  {
+    SaveState state = valid_state();
+    SaveState copy;
+
+    state.type = SAVE_TYPE_NONE;
+    copy = state;
+    assert(save_format_sanitize(&state, &before) == 0);
+    assert(same_state(&state, &copy));
+  }
 }
 
 /* Each field out of range is put back and reported in its own bit. */
@@ -231,26 +242,26 @@ static void test_sanitize_repairs_each_field(void)
   SaveState before = valid_state();
   SaveState state;
 
-  before.type = SAVE_TYPE_SRAM;
-  before.sram_size = 64 * KIB;
-  before.flash_size = 64 * KIB;
-  before.eeprom_size = 512;
+  /* Unlike the obvious defaults (SRAM, 64 KiB, 64 KiB Flash, 512 B), so
+     each repair shows it took the value in use before the load. */
+  before.type = SAVE_TYPE_FLASH;
+  before.sram_size = 32 * KIB;
 
   state = valid_state();
   state.type = 9;
   assert(save_format_sanitize(&state, &before) == SAVE_FIX_TYPE);
-  assert(state.type == SAVE_TYPE_SRAM);
+  assert(state.type == SAVE_TYPE_FLASH);
 
-  /* States saved by older builds hold sram_size 1 for a 64 KiB file. */
+  /* States saved by older builds hold sram_size 1. */
   state = valid_state();
   state.sram_size = 1;
   assert(save_format_sanitize(&state, &before) == SAVE_FIX_SRAM_SIZE);
-  assert(state.sram_size == 64 * KIB);
+  assert(state.sram_size == 32 * KIB);
 
   state = valid_state();
   state.flash_size = 0x30000;
   assert(save_format_sanitize(&state, &before) == SAVE_FIX_FLASH_SIZE);
-  assert(state.flash_size == 64 * KIB);
+  assert(state.flash_size == 128 * KIB);
 
   state = valid_state();
   state.flash_bank = 5;
@@ -262,7 +273,7 @@ static void test_sanitize_repairs_each_field(void)
   state.eeprom_counter = 0;
   state.eeprom_size = 0x4000;
   assert(save_format_sanitize(&state, &before) == SAVE_FIX_EEPROM_SIZE);
-  assert(state.eeprom_size == 512);
+  assert(state.eeprom_size == 8 * KIB);
 
   /* The address width matters only in an address phase. */
   state = valid_state();

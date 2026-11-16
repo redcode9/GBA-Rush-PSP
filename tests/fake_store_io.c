@@ -2,6 +2,7 @@
  * In-memory .sav file system for the save tests; see fake_store_io.h.
  */
 
+#include <assert.h>
 #include <string.h>
 
 #include "fake_store_io.h"
@@ -153,11 +154,13 @@ static int32_t fake_open_write(void *context, const char *path)
   *ref.size = 0;
   *ref.present = 1;
   store->open_file = slot;
+  store->took_nothing = 0;
   return slot;
 }
 
 /* Stores what fits before the device or the file is full: a short count,
-   then -1 as ENOSPC. short_write cuts every count short. */
+   then 0, as save_io_write gives on ENOSPC. short_write cuts every count
+   short. */
 static int fake_write(void *context, int32_t file, const uint8_t *data,
  size_t size)
 {
@@ -177,7 +180,13 @@ static int fake_write(void *context, int32_t file, const uint8_t *data,
   if(size > room)
     size = room;
   if(size == 0)
-    return -1;
+  {
+    /* A caller that writes again after a 0 would spin forever on a full
+       Memory Stick: fail the test instead of hanging it. */
+    assert(!store->took_nothing);
+    store->took_nothing = 1;
+    return 0;
+  }
   memcpy(ref.data + *ref.size, data, size);
   *ref.size += size;
   store->written += size;
