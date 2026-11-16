@@ -3141,7 +3141,8 @@ static u32 savestate_file_exists(u32 slot)
 
 /* Numbered slots 0-9 with a file, and whether the auto slot has one, for
    the Save and Load row of the main menu. Counted when the main menu is
-   entered, never per frame: each check is a file system stat. */
+   entered and after an AUTO state write, never per frame: each check is a
+   file system stat. */
 static u32 menu_status_slots;
 static u32 menu_status_auto;
 
@@ -3170,6 +3171,28 @@ static void menu_status_count_states(void)
 
 static u16 savestate_thumbs[SAVESTATE_SLOT_COUNT][SAVESTATE_THUMB_W * SAVESTATE_THUMB_H];
 static u8 savestate_thumb_state[SAVESTATE_SLOT_COUNT];
+
+/* Set by each AUTO state write. A suspend writes it from inside any menu
+   loop (get_gui_input serves power events), so menu() refreshes the AUTO
+   row, its thumbnail and the main menu status when it finds this set. */
+static u32 auto_savestate_written;
+
+/* Nonzero, once per AUTO write, when the menu can reread it: not before the
+   suspend that wrote it has resumed, and not before the Memory Stick is back
+   after resume. Until then the flag stays set for the next frame. */
+static u32 auto_savestate_refresh_due(void)
+{
+  SceUID dir;
+
+  if (!auto_savestate_written || sleep_auto_saved)
+    return 0;
+  dir = sceIoDopen(dir_state);
+  if (dir < 0)
+    return 0;
+  sceIoDclose(dir);
+  auto_savestate_written = 0;
+  return 1;
+}
 
 /* Reads the first unknown slot's 240x160 preview into scratch (one 76.8 KB
    read) and shrinks it into the slot's thumbnail. A missing or short file
@@ -3238,13 +3261,18 @@ static void savestate_thumbs_draw(u32 selected_slot)
 }
 
 
-/* Hotkey load of savestate_slot; load_state() asks for confirmation. */
+/* Hotkey load of savestate_slot; load_state() asks for confirmation. Keys
+   held as its prompt closes, the answer among them, reach the game only
+   once released, as after the menu. */
 u32 action_loadstate(void)
 {
   char savestate_filename[MAX_FILE];
+  u32 result;
 
   get_savestate_filename(savestate_slot, savestate_filename);
-  return load_state(savestate_filename);
+  result = load_state(savestate_filename);
+  input_hold_until_released(get_pad_input(0x0001FFFF));
+  return result;
 }
 
 /* The current screen for a state's preview, or NULL with the heap
@@ -3260,7 +3288,8 @@ static u16 *copy_state_preview(void)
 }
 
 /* Hotkey save to savestate_slot after a confirmation; the current screen is
-   stored in the state as its preview. */
+   stored in the state as its preview. Keys held as the prompt closes are
+   kept from the game as action_loadstate() keeps them. */
 u32 action_savestate(void)
 {
   char savestate_filename[MAX_FILE];
@@ -3273,6 +3302,7 @@ u32 action_savestate(void)
   result = save_state(savestate_filename, current_screen);
 
   free(current_screen);
+  input_hold_until_released(get_pad_input(0x0001FFFF));
   return result;
 }
 
@@ -3290,6 +3320,9 @@ static u32 action_savestate_slot(u32 slot)
   result = save_state_silent(savestate_filename, current_screen);
   free(current_screen);
   savestate_slot = old_slot;
+  /* Even a failed save may have changed the file. */
+  if (slot == AUTO_SAVESTATE_SLOT)
+    auto_savestate_written = 1;
   return result;
 }
 
@@ -3538,6 +3571,52 @@ static u32 global_screen_scale = SCALED_16X9_AUTO;
 static void menu_screen_scale_changed(void)
 {
   global_screen_scale = option_screen_scale;
+}
+
+/* The turbo and shortcut settings tempgba.cfg keeps (only those fields are
+   read). A game's own never replace them: tempgba.cfg loads them, a game
+   with no .cfg and the menu with no game start from them, and only the
+   Turbo page with no game loaded changes them. */
+static ConfigModel global_input_config;
+
+/* The turbo and shortcut settings from model, then the turbo inputs and
+   chords they feed. */
+static void apply_input_config(const ConfigModel *model)
+{
+  u32 i;
+
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    option_turbo_speed[i] = model->turbo_speed[i];
+    option_turbo_mode[i] = model->turbo_mode[i];
+  }
+  rebuild_fast_forward_button_mask();
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    option_shortcut[i] = model->shortcut[i];
+  rebuild_shortcut_chords();
+}
+
+/* Inverse of apply_input_config(). */
+static void capture_input_config(ConfigModel *model)
+{
+  u32 i;
+
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    model->shortcut[i] = option_shortcut[i];
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    model->turbo_speed[i] = option_turbo_speed[i];
+    model->turbo_mode[i] = option_turbo_mode[i];
+  }
+}
+
+/* A Turbo page row: the turbo inputs take the change, and with no game
+   loaded so do the global settings. */
+static void menu_turbo_changed(void)
+{
+  rebuild_fast_forward_button_mask();
+  if(!menu_game_available())
+    capture_input_config(&global_input_config);
 }
 
 static void menu_fast_forward_override_changed(void)
@@ -3859,11 +3938,14 @@ static void menu_quit_action(void)
 /* Bytes menu_trace_file_crc32() reads at a time. */
 #define MENU_TRACE_CRC_CHUNK 0x8000U
 
-/* A new recording's .svs. It replaces the trace's .svs only once the new
-   .gbit is written, so a cancelled or failed recording keeps the saved
-   pair. A reset or suspend while recording may leave it behind; the next
-   start overwrites it. */
+/* A new recording's .svs and, while it is saved, its .gbit. They replace
+   the saved pair only once both are complete on the card, so a cancelled
+   recording, or one whose files fail to write, keeps the saved pair. A
+   failed rename after that leaves the rest of the new pair under these
+   names. A reset or suspend while recording may leave the .svs behind; the
+   next start overwrites it. */
 #define MENU_TRACE_PENDING_STATE ".new.svs"
+#define MENU_TRACE_PENDING_TRACE ".new.gbit"
 
 /* Set when a trace start saved, or a replay loaded, the machine at this
    frame: menu() then reports a resume, as after a state load, so both
@@ -3871,9 +3953,9 @@ static void menu_quit_action(void)
 static int menu_trace_resume;
 
 /* <main_path>traces/input-<game code>-r<version><extension> (".gbit",
-   ".svs" or MENU_TRACE_PENDING_STATE), named from the GBA cartridge header:
-   game code at 0xAC, software version at 0xBC; the header is 0xC0 bytes
-   long. */
+   ".svs" or a MENU_TRACE_PENDING_* name), named from the GBA cartridge
+   header: game code at 0xAC, software version at 0xBC; the header is 0xC0
+   bytes long. */
 static int menu_trace_path(char *path, size_t path_size, int create_directory,
  const char *extension)
 {
@@ -4005,13 +4087,28 @@ static int menu_trace_read_all(SceUID file, u8 *data, size_t size)
     return 1;
 }
 
-/* Deletes the pending .svs of a recording that will not be saved. */
+/* Deletes the pending files of a recording that will not be saved. */
 static void menu_trace_discard_pending(void)
 {
     char path[MAX_PATH];
 
     if(menu_trace_path(path, sizeof(path), 0, MENU_TRACE_PENDING_STATE))
         sceIoRemove(path);
+    if(menu_trace_path(path, sizeof(path), 0, MENU_TRACE_PENDING_TRACE))
+        sceIoRemove(path);
+}
+
+/* Puts the pending file in place of the trace's file of this extension. */
+static int menu_trace_replace(const char *pending, const char *extension)
+{
+    char from[MAX_PATH];
+    char to[MAX_PATH];
+
+    if(!menu_trace_path(from, sizeof(from), 0, pending) ||
+       !menu_trace_path(to, sizeof(to), 0, extension))
+        return 0;
+    sceIoRemove(to);
+    return sceIoRename(from, to) >= 0;
 }
 
 static int menu_trace_start_available(void)
@@ -4084,17 +4181,18 @@ finish:
          "%s", MSG[message_id]);
 }
 
-/* Stop recording and save the trace to menu_trace_path(). Once the .gbit
-   is written the pending .svs replaces the old one; on a failure it is
-   deleted instead. The status row reports saved or failed. */
+/* Stop recording and save the trace to menu_trace_path(). The .gbit is
+   written under its pending name, then the pending pair replaces the
+   saved one, .svs first; a failure before that deletes the pending files
+   instead. The status row reports saved or failed. */
 static void menu_trace_finish_save(void)
 {
     u8 *encoded;
     size_t capacity;
     size_t written;
     char path[MAX_PATH];
-    char state_path[MAX_PATH];
     SceUID file;
+    int complete = 0;
     int success = 0;
 
     if(!input_diagnostic_trace_finish_record())
@@ -4103,36 +4201,27 @@ static void menu_trace_finish_save(void)
     capacity = input_diagnostic_trace_max_encoded_size();
     encoded = (u8 *)safe_malloc(capacity);
     if(!input_diagnostic_trace_encode(encoded, capacity, &written) ||
-       !menu_trace_path(path, sizeof(path), 1, ".gbit"))
+       !menu_trace_path(path, sizeof(path), 1, MENU_TRACE_PENDING_TRACE))
     {
         free(encoded);
         goto finish;
     }
 
-    FILE_OPEN(file, path, WRITE);
-    if(FILE_CHECK_VALID(file))
+    /* sceIoClose, not FILE_CLOSE: a failed close may have lost data. */
+    file = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+    if(file >= 0)
     {
-        success = menu_trace_write_all(file, encoded, written);
-        FILE_CLOSE(file);
-        if(!success)
-            sceIoRemove(path);
+        complete = menu_trace_write_all(file, encoded, written);
+        complete = sceIoClose(file) >= 0 && complete;
     }
     free(encoded);
 
-    if(success)
-    {
-        success = menu_trace_path(path, sizeof(path), 0,
-         MENU_TRACE_PENDING_STATE) &&
-         menu_trace_path(state_path, sizeof(state_path), 0, ".svs");
-        if(success)
-        {
-            sceIoRemove(state_path);
-            success = sceIoRename(path, state_path) >= 0;
-        }
-    }
+    success = complete &&
+     menu_trace_replace(MENU_TRACE_PENDING_STATE, ".svs") &&
+     menu_trace_replace(MENU_TRACE_PENDING_TRACE, ".gbit");
 
 finish:
-    if(!success)
+    if(!complete)
         menu_trace_discard_pending();
     snprintf(diagnostics_report_line, sizeof(diagnostics_report_line), "%s",
      MSG[success ? MSG_TRACE_SAVED : MSG_TRACE_FAILED]);
@@ -5603,6 +5692,8 @@ u32 menu(void)
     gamepak_filename[0] = 0;
     gamepak_file_size = 0;
     game_title[0] = 0;
+    /* The last game's turbo and shortcuts are not the global ones. */
+    apply_input_config(&global_input_config);
 
     first_load = 1;
 
@@ -6150,18 +6241,18 @@ u32 menu(void)
 
   MAKE_MENU(analog_config, NULL, NULL);
 
-  /* Speed and mode of turbo A, B, L and R; rebuild_fast_forward_button_mask
-     hands each change to the turbo inputs. */
+  /* Speed and mode of turbo A, B, L and R; menu_turbo_changed hands each
+     change to the turbo inputs. */
   MenuOptionType turbo_options[] =
   {
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_A_SPEED], turbo_speed_options, &option_turbo_speed[0], 3, MSG_PAD_MENU_HELP_0, 0, MSG_TURBO_A_SPEED),
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_A_MODE], turbo_mode_options, &option_turbo_mode[0], 2, MSG_PAD_MENU_HELP_0, 1, MSG_TURBO_A_MODE),
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_B_SPEED], turbo_speed_options, &option_turbo_speed[1], 3, MSG_PAD_MENU_HELP_0, 3, MSG_TURBO_B_SPEED),
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_B_MODE], turbo_mode_options, &option_turbo_mode[1], 2, MSG_PAD_MENU_HELP_0, 4, MSG_TURBO_B_MODE),
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_L_SPEED], turbo_speed_options, &option_turbo_speed[2], 3, MSG_PAD_MENU_HELP_0, 6, MSG_TURBO_L_SPEED),
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_L_MODE], turbo_mode_options, &option_turbo_mode[2], 2, MSG_PAD_MENU_HELP_0, 7, MSG_TURBO_L_MODE),
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_R_SPEED], turbo_speed_options, &option_turbo_speed[3], 3, MSG_PAD_MENU_HELP_0, 9, MSG_TURBO_R_SPEED),
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_R_MODE], turbo_mode_options, &option_turbo_mode[3], 2, MSG_PAD_MENU_HELP_0, 10, MSG_TURBO_R_MODE),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_A_SPEED], turbo_speed_options, &option_turbo_speed[0], 3, MSG_PAD_MENU_HELP_0, 0, MSG_TURBO_A_SPEED),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_A_MODE], turbo_mode_options, &option_turbo_mode[0], 2, MSG_PAD_MENU_HELP_0, 1, MSG_TURBO_A_MODE),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_B_SPEED], turbo_speed_options, &option_turbo_speed[1], 3, MSG_PAD_MENU_HELP_0, 3, MSG_TURBO_B_SPEED),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_B_MODE], turbo_mode_options, &option_turbo_mode[1], 2, MSG_PAD_MENU_HELP_0, 4, MSG_TURBO_B_MODE),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_L_SPEED], turbo_speed_options, &option_turbo_speed[2], 3, MSG_PAD_MENU_HELP_0, 6, MSG_TURBO_L_SPEED),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_L_MODE], turbo_mode_options, &option_turbo_mode[2], 2, MSG_PAD_MENU_HELP_0, 7, MSG_TURBO_L_MODE),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_R_SPEED], turbo_speed_options, &option_turbo_speed[3], 3, MSG_PAD_MENU_HELP_0, 9, MSG_TURBO_R_SPEED),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_R_MODE], turbo_mode_options, &option_turbo_mode[3], 2, MSG_PAD_MENU_HELP_0, 10, MSG_TURBO_R_MODE),
 
     ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_PAD_MENU_12], MSG_PAD_MENU_HELP_1, 12, MSG_PAD_MENU_12)
   };
@@ -6402,6 +6493,9 @@ u32 menu(void)
   screen_image_ptr = current_screen;
 
   load_savestate_timestamps();
+  /* Every row was just reread, and choose_menu(&main_menu) recounts below:
+     an AUTO write made in the game needs no second refresh. */
+  auto_savestate_written = 0;
 
   /* Close the streamed ROM file while the menu runs; the exit path
      sees GAMEPAK_FILE_MENU_CLOSED and reopens it (gamepak_file_reopen). */
@@ -6424,6 +6518,17 @@ u32 menu(void)
   /* One iteration per frame: draw the screen, then handle one input. */
   while (repeat)
   {
+    /* The AUTO state changed without leaving the menu: a suspend, or an
+       action that came back here after backing up to it. */
+    if (auto_savestate_refresh_due())
+    {
+      get_savestate_filename(AUTO_SAVESTATE_SLOT, filename_buffer);
+      get_savestate_info(filename_buffer, NULL, line_buffer);
+      sprintf(savestate_timestamps[AUTO_SAVESTATE_SLOT], "AUTO: %s", line_buffer);
+      savestate_thumb_state[AUTO_SAVESTATE_SLOT] = SAVESTATE_THUMB_UNKNOWN;
+      menu_status_count_states();
+    }
+
     /* Redraw the "no game" placeholder in the newly selected language. */
     if (first_load && preview_language != option_language)
     {
@@ -6836,10 +6941,6 @@ u32 menu(void)
                         if (savestate_file_exists(current_option->line_number))
                         {
                           action_savestate_slot(AUTO_SAVESTATE_SLOT);
-                          get_savestate_filename(AUTO_SAVESTATE_SLOT, filename_buffer);
-                          get_savestate_info(filename_buffer, NULL, line_buffer);
-                          sprintf(savestate_timestamps[AUTO_SAVESTATE_SLOT], "AUTO: %s", line_buffer);
-                          savestate_thumb_state[AUTO_SAVESTATE_SLOT] = SAVESTATE_THUMB_UNKNOWN;
                         }
                       }
                       if ((savestate_action != 0 ? menu_save_state() : menu_load_state()) != 0)
@@ -7331,8 +7432,9 @@ static int config_paths(char *primary, char *temporary, char *recovery)
   return result >= 0 && result < MAX_PATH;
 }
 
-/* Global settings <-> ConfigModel. The per-game fast forward override and
-   the scale the Video cycle shortcut picks are never stored globally. */
+/* Global settings <-> ConfigModel. The per-game fast forward override, the
+   scale the Video cycle shortcut picks and a game's turbo and shortcuts are
+   never stored globally. */
 static void capture_global_config(ConfigModel *model)
 {
   u32 i;
@@ -7371,11 +7473,11 @@ static void capture_global_config(ConfigModel *model)
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     model->gamepad[i] = gamepad_config_map[i];
   for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
-    model->shortcut[i] = option_shortcut[i];
+    model->shortcut[i] = global_input_config.shortcut[i];
   for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
   {
-    model->turbo_speed[i] = option_turbo_speed[i];
-    model->turbo_mode[i] = option_turbo_mode[i];
+    model->turbo_speed[i] = global_input_config.turbo_speed[i];
+    model->turbo_mode[i] = global_input_config.turbo_mode[i];
   }
 }
 
@@ -7427,15 +7529,8 @@ static void apply_global_config(const ConfigModel *model)
   /* Without HOME there must be a way into the menu: put it on Triangle. */
   if(!enable_home_menu && !has_menu_button)
     gamepad_config_map[0] = BUTTON_ID_MENU;
-  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
-  {
-    option_turbo_speed[i] = model->turbo_speed[i];
-    option_turbo_mode[i] = model->turbo_mode[i];
-  }
-  rebuild_fast_forward_button_mask();
-  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
-    option_shortcut[i] = model->shortcut[i];
-  rebuild_shortcut_chords();
+  global_input_config = *model;
+  apply_input_config(model);
   apply_theme(option_theme);
   main_fast_forward_reset_game_settings();
 }
@@ -7529,13 +7624,7 @@ static void capture_game_config(ConfigModel *model)
   model->fast_forward_audio = option_game_fast_forward_audio;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     model->gamepad[i] = gamepad_config_map[i];
-  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
-    model->shortcut[i] = option_shortcut[i];
-  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
-  {
-    model->turbo_speed[i] = option_turbo_speed[i];
-    model->turbo_mode[i] = option_turbo_mode[i];
-  }
+  capture_input_config(model);
 }
 
 /* Per-game counterpart of apply_global_config(). */
@@ -7565,15 +7654,7 @@ static void apply_game_config(const ConfigModel *model)
   }
   if(!enable_home_menu && !has_menu_button)
     gamepad_config_map[0] = BUTTON_ID_MENU;
-  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
-  {
-    option_turbo_speed[i] = model->turbo_speed[i];
-    option_turbo_mode[i] = model->turbo_mode[i];
-  }
-  rebuild_fast_forward_button_mask();
-  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
-    option_shortcut[i] = model->shortcut[i];
-  rebuild_shortcut_chords();
+  apply_input_config(model);
   main_fast_forward_apply_settings();
 }
 
@@ -7651,14 +7732,15 @@ s32 save_config_file(void)
   return return_value;
 }
 
-/* The Video cycle shortcut: 16:9 Auto, 100% GU, 150% GU, 16:9 Sharp and
-   back to 16:9 Auto, where any other mode also goes. The new presenter
-   takes the next frame, a toast names the mode and only the game's .cfg
-   keeps it: global_screen_scale stays as the Video menu left it. */
+/* The Video cycle shortcut: 16:9 Auto, 100% GU, 150% GU, 2x integer,
+   16:9 Sharp and back to 16:9 Auto, where any other mode also goes. The
+   new presenter takes the next frame, a toast names the mode and only the
+   game's .cfg keeps it: global_screen_scale stays as the Video menu left
+   it. */
 void menu_cycle_video_mode(void)
 {
   static const u8 cycle[] = { SCALED_16X9_AUTO, SCALED_NONE, SCALED_X15_GU,
-   SCALED_16X9_SHARP };
+   SCALED_INT2, SCALED_16X9_SHARP };
   u32 next = SCALED_16X9_AUTO;
   u32 i;
 
@@ -7700,6 +7782,7 @@ s32 load_game_config_file(void)
   option_frameskip_value = 9;
   option_clock_speed = PSP_CLOCK_333;
   main_fast_forward_reset_game_settings();
+  apply_input_config(&global_input_config);
   return -1;
 }
 

@@ -85,9 +85,10 @@ The optional desktop launcher has its own
 players get, unless given `PROFILE=diagnostic`. The diagnostic profile adds
 the features that `source/src/build_profile.h` switches on (today the input
 trace, Diagnostics > Pin a test toast, the Unbound benchmark rows with
-rendering off and with audio off, the `diag-autorun.txt` file that
-`source/src/autorun_config.h` describes, and the simulated network that its
-`net_profile=` key puts on the ad-hoc link; `DIAGNOSTIC_CORE_PROFILE=1` adds
+rendering off and with audio off (docs/PERFORMANCE.md), the
+`diag-autorun.txt` file that `source/src/autorun_config.h` describes, and the
+simulated network that its `net_profile=` key puts on the ad-hoc link;
+`DIAGNOSTIC_CORE_PROFILE=1` adds
 the New core's profile and `DIAGNOSTIC_HW_PROBE=1` the memory system probe),
 is titled
 "GBA Rush PSP [DIAG]" with its own icon, and is packaged as
@@ -264,11 +265,13 @@ with `trace=`, `hash=` (a new `.gbsh` path per run), `frames=` and `exit=1`;
 the perturbed run adds `perturb=N`. A replay started from the menu writes
 `traces/input-<game>-r<rev>.gbsh` the next time the menu opens. The unbound
 benchmark replays the trace from the machine as it is, not from its `.svs`,
-so it hashes nothing and drops the hashes of a replay it restarts.
+so it hashes no frames and drops the hashes of a replay it restarts; its
+report's `bench-state-hash` is one hash of the same regions without
+`audio`, taken after its last frame (`docs/PERFORMANCE.md`).
 
-Backup memory is hashed, but the trace's `.svs` does not restore it: copy
-the game's `.sav` right after saving the trace and put it back before each
-run. While a replay hashes, the audio thread asks for no PSG updates of its
+Backup memory is hashed, but neither the trace's `.svs` nor the
+benchmark's slot restores it: copy the game's `.sav` right after saving
+the trace and put it back before each run. While a replay hashes, the audio thread asks for no PSG updates of its
 own and the mixing splits only at emulated ticks. A PSG register write
 applies back to the last update, so an update at a host time would change
 the samples and SOUNDCNT_X's channel flags. The replay's sound may stutter.

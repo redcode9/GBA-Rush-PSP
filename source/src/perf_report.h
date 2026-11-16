@@ -26,7 +26,7 @@
 #define PERF_REPORT_VERSION 7U
 
 /* Worst-case report length in bytes, including the terminating NUL. */
-#define PERF_REPORT_CAPACITY 4821U
+#define PERF_REPORT_CAPACITY 4849U
 /* The longest build-id value written; a longer id is cut. */
 #define PERF_REPORT_BUILD_ID_MAX 23U
 
@@ -100,6 +100,11 @@ typedef struct
   /* bench-trace-checksum: the replayed trace's file checksum, written only
      with bench-input=trace. */
   uint32_t bench_trace_checksum;
+  /* bench-state-hash: one hash of the guest state after the last frame of
+     a benchmark that replayed a trace to its end, written only when
+     has_bench_state_hash is set. */
+  uint32_t has_bench_state_hash;
+  uint32_t bench_state_hash;
 } PerfReportMetadata;
 
 /* Returns the report length, or -1 (and an empty string) if it does not

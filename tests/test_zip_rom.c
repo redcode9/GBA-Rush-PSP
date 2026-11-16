@@ -231,6 +231,24 @@ static void test_valid_entries_load_byte_for_byte(void)
   expect_rom(len, SMALL_CHUNK, OUT_CAP);
 }
 
+/* A stored ROM smaller than one read, with more archive bytes after it (the
+   rest of rom stands in for the central directory): only its own bytes are
+   copied, and nothing past out_cap. */
+static void test_small_stored_entry_stops_at_its_size(void)
+{
+  uint32_t size = 0;
+  uint32_t len = build(0, 0, "game.gba", ROM_SIZE, DESC_NONE);
+
+  put32(archive + 14, (uint32_t)crc32(0L, rom, 1000u));
+  put32(archive + 18, 1000u);
+  put32(archive + 22, 1000u);
+  assert(load(len, SMALL_CHUNK, 1000u, NO_FAILURE, &size) == ZIP_ROM_OK);
+  assert(size == 1000u && memcmp(out, rom, 1000u) == 0);
+  size = 0;
+  assert(load(len, LARGE_CHUNK, 1000u, NO_FAILURE, &size) == ZIP_ROM_OK);
+  assert(size == 1000u && memcmp(out, rom, 1000u) == 0);
+}
+
 /* Flag bit 3: CRC and sizes come from the descriptor after the stream. */
 static void test_streamed_entries_use_the_descriptor(void)
 {
@@ -296,6 +314,22 @@ static void test_damaged_data_is_corrupt(void)
   assert(load_all(len, SMALL_CHUNK) == ZIP_ROM_CORRUPT);
 }
 
+/* Loads a stored entry whose extra field is extra bytes long: it ends inside
+   build()'s stored data, and the 1000 bytes after it are the entry. One
+   read holds the whole entry, since skipping the field reports no progress. */
+static int long_extra_entry(uint32_t extra)
+{
+  uint32_t size;
+  uint32_t len = build(0, 0, "game.gba", ROM_SIZE, DESC_NONE);
+
+  put32(archive + 14, (uint32_t)crc32(0L, archive + data_offset(8) -
+   EXTRA_SIZE + extra, 1000u));
+  put32(archive + 18, 1000u);
+  put32(archive + 22, 1000u);
+  put16(archive + 28, extra);
+  return load(len, LARGE_CHUNK, 1000u, NO_FAILURE, &size);
+}
+
 static void test_bad_headers_are_corrupt(void)
 {
   uint32_t len = build(0, 8, "game.gba", ROM_SIZE, DESC_NONE);
@@ -308,6 +342,11 @@ static void test_bad_headers_are_corrupt(void)
   build(0, 8, "game.gba", ROM_SIZE, DESC_NONE);
   put16(archive + 28, 0x8000u);
   assert(load_all(len, SMALL_CHUNK) == ZIP_ROM_CORRUPT);
+
+  /* A real extra field over the old loader's 0x7FFF bytes, before an intact
+     entry, is refused; one of 0x7FFF bytes loads. */
+  assert(long_extra_entry(0x8000u) == ZIP_ROM_CORRUPT);
+  assert(long_extra_entry(0x7FFFu) == ZIP_ROM_OK);
 }
 
 static void test_truncated_archives(void)
@@ -338,6 +377,8 @@ static void test_unsupported_entries(void)
 
   assert(load_all(len, SMALL_CHUNK) == ZIP_ROM_UNSUPPORTED);
   len = build(0, 12, "game.gba", ROM_SIZE, DESC_NONE);
+  assert(load_all(len, SMALL_CHUNK) == ZIP_ROM_UNSUPPORTED);
+  len = build(0, 6, "game.gba", ROM_SIZE, DESC_NONE);
   assert(load_all(len, SMALL_CHUNK) == ZIP_ROM_UNSUPPORTED);
   len = build(0, 8, "readme.txt", ROM_SIZE, DESC_NONE);
   assert(load_all(len, SMALL_CHUNK) == ZIP_ROM_UNSUPPORTED);
@@ -529,6 +570,7 @@ int main(void)
 {
   make_fixture();
   test_valid_entries_load_byte_for_byte();
+  test_small_stored_entry_stops_at_its_size();
   test_streamed_entries_use_the_descriptor();
   test_damaged_data_is_corrupt();
   test_bad_headers_are_corrupt();

@@ -542,10 +542,11 @@ Each test has four fields:
   "Memory system on the PSP" in `docs/DESIGN-DECISIONS.md`.
 - Steps: build with `make psp-build DIAGNOSTIC_HW_PROBE=1` (it implies
   `PROFILE=diagnostic`). With the clock option at 333, start the emulator 3
-  times on a PSP-1000 and 3 times on a slim. Each start rewrites
-  `hw-probe.txt` beside the EBOOT, so copy it after every start and check
-  that it reads `cpu-mhz=333` and `bus-mhz=166`. The 3 copies are the row's
-  evidence.
+  times on a PSP-1000, 3 times on a slim (PSP-2000 or PSP-3000) and, if
+  there is one, 3 times on a PSP Go: a PSP Go run adds its own row and does
+  not replace the slim's. Each start rewrites `hw-probe.txt` beside the
+  EBOOT, so copy it after every start and check that it reads
+  `cpu-mhz=333` and `bus-mhz=166`. The 3 copies are the row's evidence.
 
 ## Core
 

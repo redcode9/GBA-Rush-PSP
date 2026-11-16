@@ -3,6 +3,7 @@ its settings and toasts, and the stick; and gui.c's video cycle, which a
 chord runs."""
 
 from pathlib import Path
+import re
 import unittest
 
 # Builds and runs a spliced C test with HOST_CC.
@@ -59,7 +60,8 @@ typedef struct
 #define REG_IF 2
 #define CPU_HALT_STATE 0
 #define CPU_STOP 2
-static u16 io_registers[3];
+/* 0x400 bytes, as many as the replay's state hashes read. */
+static u16 io_registers[0x200];
 #define pIO_REG(offset) io_registers[offset]
 static u32 reg[1];
 u32 option_swap_confirm_buttons = 0;
@@ -76,12 +78,17 @@ int sceCtrlReadBufferPositive(SceCtrlData *data, int count)
 void main_power_service(void) {}
 void main_fast_forward_input(u32 pressed, u32 held)
 { ff_presses += pressed != 0; ff_held = held != 0; }
-u32 menu(void) { menus++; return 7; }
-u32 action_loadstate(void) { loads++; return 0; }
+/* 0 plays a plain resume, which changed no machine. */
+static u32 menu_return = 7;
+u32 menu(void) { menus++; return menu_return; }
+/* load_state's result: 1 loaded, 0 refused or declined. */
+static u32 load_result = 1;
+u32 action_loadstate(void) { loads++; return load_result; }
 u32 action_savestate(void) { saves++; return 0; }
 int bench_cancels;
 void main_perf_bench_cancel(void) { bench_cancels++; }
-int perf_monitor_bench_running(void) { return 0; }
+static int bench_running;
+int perf_monitor_bench_running(void) { return bench_running; }
 int video_cycles;
 void menu_cycle_video_mode(void) { video_cycles++; }
 static u32 toast_ids[8];
@@ -286,23 +293,44 @@ int main(void)
   assert(read_pad(SEL, 16) == 0 && saves == 1 && !game_has(GBA_UP));
   stick_y = 128;
   read_pad(0, 16);
+
+  /* A stick direction held as the menu closes stays away from the game
+     until it is let go, as a held button does. */
+  stick_y = 0;
+  input_hold_until_released(0);
+  for(i = 0; i < 3; i++)
+  {
+    read_pad(0, 16);
+    assert(!game_has(GBA_UP));
+  }
+  stick_y = 128;
+  read_pad(0, 16);
+  stick_y = 0;
+  read_pad(0, 16);
+  assert(game_has(GBA_UP));
+  stick_y = 128;
+  read_pad(0, 16);
   option_enable_analog = 0;
 
   /* The video cycle has no chord until one is set; SELECT+Left then
-     runs it once per press, and the game never gets that Left. */
+     runs it once per press, and the game never gets that Left. Like the
+     save and load chords, it ends a running benchmark. */
   set_shortcuts(0x0410, 0x0420, 0x0C00, 0, 0);
+  bench_cancels = 0;
   read_pad(SEL, 16);
   read_pad(SEL | PSP_CTRL_LEFT, 16);
-  assert(video_cycles == 0 && game_has(GBA_LEFT));
+  assert(video_cycles == 0 && game_has(GBA_LEFT) && bench_cancels == 0);
   read_pad(0, 16);
   option_shortcut[INPUT_CHORD_VIDEO_CYCLE] = 0x0480;
   rebuild_shortcut_chords();
   read_pad(SEL, 16);
   assert(read_pad(SEL | PSP_CTRL_LEFT, 16) == 0 && video_cycles == 1);
+  assert(bench_cancels == 1);
   read_pad(SEL | PSP_CTRL_LEFT, 16);
   assert(video_cycles == 1 && !game_has(GBA_LEFT));
   read_pad(SEL, 16);
   assert(read_pad(SEL | PSP_CTRL_LEFT, 16) == 0 && video_cycles == 2);
+  assert(bench_cancels == 2);
   read_pad(0, 16);
   assert(saves == 0 && loads == 0 && menus == 0);
 
@@ -324,6 +352,14 @@ int main(void)
   read_pad(SEL, 16);
   assert(read_pad(SEL | RT, 16) == 1 && loads == 1 && bench_cancels == 2);
   read_pad(0, 16);
+
+  /* A load refused or declined replaced nothing: the pass goes on, and
+     its prompt still ends the benchmark. */
+  load_result = 0;
+  read_pad(SEL, 16);
+  assert(read_pad(SEL | RT, 16) == 0 && loads == 2 && bench_cancels == 3);
+  read_pad(0, 16);
+  load_result = 1;
 
   /* Keys held as the menu closed are up for the chords too: SELECT still
      held from the menu completes no chord, and L reaches the game. */
@@ -525,6 +561,28 @@ int main(void)
   assert(menus == 3 && loads == 2 && saves == 0);
   assert(ff_presses == 0 && !ff_held);
 
+  /* A load refused or declined leaves turbo R running, by chord and by
+     button. */
+  load_result = 0;
+  for(j = 0; j < 2; j++)
+  {
+    int pulses = 0;
+
+    frame(0);
+    frame(TURBO_R);
+    assert(game_has(GBA_R));
+    assert((j == 0 ? load_chord() : press_triangle()) == 0);
+    for(i = 0; i < 4; i++)
+    {
+      frame(TURBO_R);
+      pulses += game_has(GBA_R);
+    }
+    assert(pulses == 2);
+    frame(0);
+  }
+  load_result = 1;
+  assert(loads == 4);
+
   /* Turbo L on the L of the SELECT+L save: the L hidden by the chord
      starts no train while it stays held. */
   gamepad_config_map[4] = BUTTON_ID_RAPIDFIRE_L;
@@ -621,6 +679,427 @@ int main(void)
 }
 '''
 
+# Diagnostic builds (ENABLE_DIAGNOSTIC_INPUT_TRACE): the real input trace
+# and state hash modules, and small stand-ins for the memory the replay
+# hashes. The audio hash counts its calls, which also mix sound.
+TRACE_STUBS = r'''
+#include "@SRC@/state_hash.c"
+#include "@SRC@/input_trace.c"
+#define GBA_RUSH_BUILD_ID "test"
+#define REG_CPSR 0
+#define CPU_MODE 0
+static u32 reg_mode[2][2];
+static u32 spsr[2];
+static u8 iwram[64];
+static u8 ewram[64];
+static u8 vram[64];
+static u8 oam_ram[16];
+static u16 palette_ram[16];
+static u8 backup_ram[16];
+u32 cpu_ticks;
+static int audio_takes, bench_ends;
+static const u8 *memory_backup_bytes(u32 *size)
+{ *size = sizeof(backup_ram); return backup_ram; }
+static void arm_gba_save_registers(void) {}
+static u32 sound_diagnostic_audio_take(u32 ticks)
+{ (void)ticks; audio_takes++; return 0x1234; }
+static void perf_monitor_bench_end_with_frame(void) { bench_ends++; }
+'''.replace("@SRC@", SRC)
+
+# A trace is recorded and replayed through update_input and the frame step
+# update_gba runs after its VBlank read, as on the PSP: every emulated frame
+# counts once, those of a save chord, the FPS key or a plain menu resume
+# included, and the reads of a link wait do not count.
+TRACE_SCENARIOS = r'''
+#define GBA_A 0x01
+#define GBA_SELECT 0x04
+#define GBA_RIGHT 0x10
+#define SEL PSP_CTRL_SELECT
+#define LT PSP_CTRL_LTRIGGER
+#define FRAMES 10
+static const u8 code[4] = { 'B', 'P', 'R', 'E' };
+static u8 header[0xC0];
+static u32 pad;
+static StateHashRecord records[FRAMES + 2];
+
+static int fake_peek(SceCtrlData *data, int count)
+{
+  memset(data, 0, sizeof(*data));
+  data->Buttons = pad;
+  data->Lx = 128;
+  data->Ly = 128;
+  return count;
+}
+
+/* One emulated frame as update_gba runs it: link_reads reads of a link
+   wait, the VBlank read, and the trace's frame step unless that read
+   dropped the pass. */
+static u32 frame(u32 buttons, int link_reads)
+{
+  u32 result;
+  int i;
+
+  pad = buttons;
+  for(i = 0; i < link_reads; i++)
+  {
+    now_us += 1000;
+    assert(update_input() == 0);
+  }
+  now_us += 16667;
+  result = update_input();
+  if(result == 0)
+    input_diagnostic_trace_frame_end();
+  return result;
+}
+
+static int game_has(u32 key)
+{
+  return (io_registers[REG_P1] & key) == 0;
+}
+
+static void restart(void)
+{
+  assert(input_trace_restart_replay(&diagnostic_trace, header, 0x1000000U,
+   diagnostic_trace_frame) == FRAMES + 1);
+}
+
+/* A benchmark that replays the trace to its end, the machine changing in
+   every frame, as update_gba runs it: the bench hash is taken at each
+   frame's end. Returns how many frames gave one, which must be the last. */
+static int bench(u32 *hash)
+{
+  int i;
+  int takes = 0;
+  int audio;
+
+  bench_running = 1;
+  restart();
+  for(i = 0; i <= FRAMES; i++)
+  {
+    ewram[0] = (u8)i;
+    assert(frame(0, i == 1 ? 2 : 0) == 0);
+    audio = audio_takes;
+    if(input_diagnostic_trace_take_bench_hash(hash))
+    {
+      assert(i == FRAMES);
+      takes++;
+    }
+    /* Hashing the end state mixes no sound. */
+    assert(audio_takes == audio);
+  }
+  bench_running = 0;
+  return takes;
+}
+
+int main(void)
+{
+  static const u32 pads[FRAMES] =
+  {
+    PSP_CTRL_RIGHT, PSP_CTRL_RIGHT, SEL, SEL | LT, PSP_CTRL_RIGHT,
+    PSP_CTRL_HOME, PSP_CTRL_CIRCLE, PSP_CTRL_SQUARE,
+    PSP_CTRL_CIRCLE | PSP_CTRL_RIGHT, 0
+  };
+  /* What the game had in each frame: a hotkey's frame keeps the keys. */
+  static const u32 keys[FRAMES] =
+  {
+    GBA_RIGHT, GBA_RIGHT, GBA_SELECT, GBA_SELECT, GBA_RIGHT, GBA_RIGHT,
+    GBA_A, GBA_A, GBA_A | GBA_RIGHT, 0
+  };
+  /* Hotkeys pressed during a replay, on the frames the trace changes. */
+  static const u32 replay_pads[FRAMES] =
+  {
+    0, 0, 0, SEL, SEL | LT, 0, PSP_CTRL_HOME, 0, PSP_CTRL_SQUARE, 0
+  };
+  /* The other hotkey paths on those frames; the hold fires on frame 9. */
+  static const u32 other_pads[FRAMES] =
+  {
+    SEL | PSP_CTRL_RTRIGGER, 0, PSP_CTRL_START | LT, 0, PSP_CTRL_UP, 0,
+    PSP_CTRL_DOWN, 0, PSP_CTRL_START | SEL, PSP_CTRL_START | SEL
+  };
+  /* The hotkeys whose frame must keep a held direction off the trace. */
+  static const u32 hotkeys[5] =
+  {
+    SEL | PSP_CTRL_RTRIGGER, PSP_CTRL_START | LT, PSP_CTRL_UP, PSP_CTRL_DOWN,
+    PSP_CTRL_START | SEL
+  };
+  static const int links[FRAMES] = { 0, 2, 0, 0, 0, 0, 3, 0, 0, 0 };
+  u16 seen[FRAMES];
+  u32 hash = 0;
+  u32 again = 0;
+  int i;
+
+  (void)__sceCtrlReadBufferPositive;
+  __sceCtrlPeekBufferPositive = fake_peek;
+  memcpy(header + 0xAC, code, sizeof(code));
+  header[0xBC] = 1;
+  rebuild_fast_forward_button_mask();
+  option_shortcut[INPUT_CHORD_SAVESTATE] = 0x0410;
+  rebuild_shortcut_chords();
+  menu_return = 0;
+  input_trace_init(&diagnostic_trace, diagnostic_trace_events,
+   DIAGNOSTIC_TRACE_EVENT_CAPACITY);
+  diagnostic_trace_frame = 1000;
+  update_input();
+
+  /* Recording: one frame step per emulated frame, whatever ran in it. */
+  assert(input_trace_begin_record(&diagnostic_trace, diagnostic_trace_frame,
+   code, 1, (u16)gba_keys_held));
+  for(i = 0; i < FRAMES; i++)
+  {
+    assert(frame(pads[i], links[i]) == 0);
+    seen[i] = io_registers[REG_P1];
+    assert((u32)seen[i] == ((~keys[i]) & 0x3FFu));
+  }
+  assert(saves == 1 && menus == 1 && psp_fps_debug == 1);
+  assert(loads == 0 && ff_presses == 0 && !ff_held);
+  assert(diagnostic_trace_frame == 1000 + FRAMES);
+  assert(input_trace_finish_record(&diagnostic_trace, diagnostic_trace_frame));
+
+  /* The replay gives the game the same keys in the same frames. */
+  restart();
+  for(i = 0; i < FRAMES; i++)
+  {
+    assert(frame(0, links[i]) == 0);
+    assert(io_registers[REG_P1] == seen[i]);
+  }
+  assert(diagnostic_trace_frame == 1000 + 2 * FRAMES);
+
+  /* So does one with a save chord, a menu visit and the FPS key on the
+     frames the trace changes the keys. */
+  restart();
+  for(i = 0; i < FRAMES; i++)
+  {
+    assert(frame(replay_pads[i], 0) == 0);
+    assert(io_registers[REG_P1] == seen[i]);
+  }
+  assert(saves == 2 && menus == 2 && psp_fps_debug == 0);
+
+  /* And one with the FPS and video chords, the menu and save buttons and
+     the menu hold on those frames. */
+  option_shortcut[INPUT_CHORD_MENU] =
+   INPUT_CHORD_KEY_START | INPUT_CHORD_KEY_SELECT;
+  option_shortcut[INPUT_CHORD_FPS] = INPUT_CHORD_KEY_SELECT | INPUT_CHORD_KEY_R;
+  option_shortcut[INPUT_CHORD_VIDEO_CYCLE] =
+   INPUT_CHORD_KEY_START | INPUT_CHORD_KEY_L;
+  rebuild_shortcut_chords();
+  gamepad_config_map[8] = BUTTON_ID_MENU;
+  gamepad_config_map[6] = BUTTON_ID_SAVESTATE;
+  restart();
+  for(i = 0; i < FRAMES; i++)
+  {
+    if(i == 9)
+      now_us += 500000;
+    assert(frame(other_pads[i], 0) == 0);
+    assert(io_registers[REG_P1] == seen[i]);
+  }
+  assert(psp_fps_debug == 1 && video_cycles == 1);
+  assert(saves == 3 && menus == 4);
+
+  /* A menu that changed the machine drops the pass: no frame step. */
+  menu_return = 1;
+  assert(frame(PSP_CTRL_HOME, 0) == 1);
+  assert(diagnostic_trace_frame == 1000 + 4 * FRAMES);
+  menu_return = 0;
+  frame(0, 0);
+  assert(diagnostic_trace.state == INPUT_TRACE_REPLAYING);
+  frame(0, 0);
+  assert(diagnostic_trace.state == INPUT_TRACE_FINISHED);
+
+  /* With the trace over the pad reaches the game, and the frame of the FPS
+     and video chords, the menu and save buttons and the menu hold keeps
+     a held direction, as in the release build. */
+  for(i = 0; i < 5; i++)
+  {
+    frame(PSP_CTRL_RIGHT, 0);
+    assert(game_has(GBA_RIGHT));
+    if(i == 4)
+    {
+      frame(PSP_CTRL_RIGHT | hotkeys[i], 0);
+      now_us += 500000;
+    }
+    assert(frame(PSP_CTRL_RIGHT | hotkeys[i], 0) == 0);
+    assert(game_has(GBA_RIGHT));
+    frame(0, 0);
+  }
+  assert(psp_fps_debug == 0 && video_cycles == 2);
+  assert(saves == 4 && menus == 7);
+
+  /* A benchmark that replays the trace ends with its last frame, and once
+     that frame is timed it hashes the guest state: the regions of the
+     replay's last record but the audio. With the replay's own hashes on,
+     there is one record per emulated frame and none for link reads. */
+  assert(state_hash_log_init(&diagnostic_hashes, records, FRAMES + 2,
+   diagnostic_hash_names, "test", code, 1, diagnostic_trace_frame));
+  bench_ends = 0;
+  assert(bench(&hash) == 1 && bench_ends == 1);
+  assert(diagnostic_hashes.count == FRAMES + 1);
+  assert(hash == state_hash_words(STATE_HASH_FNV_BASIS,
+   records[FRAMES].hash, STATE_HASH_AUDIO * sizeof(records[0].hash[0])));
+  assert(!input_diagnostic_trace_take_bench_hash(&again));
+  diagnostic_hashes.records = NULL;
+
+  /* The same run ends in the same state; another state, another hash. */
+  frame(0, 0);
+  assert(bench(&again) == 1 && again == hash);
+  frame(0, 0);
+  vram[3] ^= 0x40;
+  assert(bench(&again) == 1 && again != hash);
+  frame(0, 0);
+
+  /* A replay outside a benchmark neither ends one nor hashes. */
+  restart();
+  for(i = 0; i <= FRAMES; i++)
+  {
+    frame(0, 0);
+    assert(!input_diagnostic_trace_take_bench_hash(&again));
+  }
+  assert(bench_ends == 3);
+
+  /* A cancelled benchmark stops the replay: the pad reaches the game
+     again, and no end state is hashed, even after the last frame. */
+  bench_running = 1;
+  restart();
+  frame(0, 0);
+  input_diagnostic_trace_end_bench();
+  bench_running = 0;
+  assert(diagnostic_trace.state == INPUT_TRACE_FINISHED);
+  frame(PSP_CTRL_CIRCLE, 0);
+  assert(game_has(GBA_A));
+  bench_running = 1;
+  restart();
+  for(i = 0; i <= FRAMES; i++)
+    frame(0, 0);
+  input_diagnostic_trace_end_bench();
+  assert(!input_diagnostic_trace_take_bench_hash(&again));
+  bench_running = 0;
+
+  /* Nor when a suspend cancels the trace after the last frame. */
+  bench_running = 1;
+  restart();
+  for(i = 0; i <= FRAMES; i++)
+    frame(0, 0);
+  input_trace_cancel(&diagnostic_trace);
+  assert(!input_diagnostic_trace_take_bench_hash(&again));
+  bench_running = 0;
+
+  puts("input trace frame steps passed");
+  return 0;
+}
+'''
+
+
+# gui.c's turbo and shortcut glue with stand-ins: a game's .cfg (when
+# game_cfg is set) holds Toggle turbo B and SELECT+Down on the Video cycle,
+# and the rebuilds record the values they were handed.
+INPUT_CONFIG_STUBS = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include "@SRC@/config_model.c"
+#include "@SRC@/input_chord.h"
+typedef uint32_t u32;
+typedef int32_t s32;
+#define MAX_PATH 512
+#define FRAMESKIP_AUTO 0
+#define PSP_CLOCK_333 3
+u32 option_screen_scale, option_frameskip_type, option_frameskip_value;
+u32 option_clock_speed;
+static u32 global_screen_scale = 6;
+u32 option_turbo_speed[CONFIG_MODEL_TURBO_COUNT];
+u32 option_turbo_mode[CONFIG_MODEL_TURBO_COUNT];
+u32 option_shortcut[CONFIG_MODEL_SHORTCUT_COUNT];
+static ConfigModel global_input_config;
+static int game_loaded, game_cfg, turbo_rebuilds, chord_rebuilds;
+static u32 rebuilt_turbo_mode_b, rebuilt_video_chord;
+static void apply_input_config(const ConfigModel *model);
+void rebuild_fast_forward_button_mask(void)
+{ turbo_rebuilds++; rebuilt_turbo_mode_b = option_turbo_mode[1]; }
+void rebuild_shortcut_chords(void)
+{ chord_rebuilds++; rebuilt_video_chord = option_shortcut[INPUT_CHORD_VIDEO_CYCLE]; }
+static int menu_game_available(void) { return game_loaded; }
+void main_fast_forward_reset_game_settings(void) {}
+static int build_game_config_path(char *path) { path[0] = '\0'; return 1; }
+static s32 load_game_config_atomic(const char *path)
+{
+  ConfigModel model;
+
+  (void)path;
+  if(!game_cfg)
+    return -1;
+  config_model_defaults(&model);
+  model.turbo_mode[1] = 1;
+  model.shortcut[INPUT_CHORD_VIDEO_CYCLE] = 0x0440;
+  apply_input_config(&model);
+  return 0;
+}
+s32 load_game_config_file(void);
+'''
+
+# tempgba.cfg holds turbo A Toggle at 10/s and SELECT+Left on the Video
+# cycle. Only the Turbo page with no game loaded changes those values; a
+# game's own .cfg replaces the running ones, and a game with no .cfg starts
+# from tempgba.cfg's again.
+INPUT_CONFIG_SCENARIOS = r'''
+int main(void)
+{
+  ConfigModel global;
+
+  config_model_defaults(&global);
+  global.turbo_speed[0] = 2;
+  global.turbo_mode[0] = 1;
+  global.shortcut[INPUT_CHORD_VIDEO_CYCLE] = 0x0480;
+  global_input_config = global;
+  apply_input_config(&global);
+  assert(option_turbo_speed[0] == 2 && option_turbo_mode[0] == 1);
+  assert(turbo_rebuilds == 1 && chord_rebuilds == 1);
+  assert(rebuilt_video_chord == 0x0480);
+
+  /* The Turbo page before any game: tempgba.cfg takes the change. */
+  option_turbo_speed[1] = 1;
+  menu_turbo_changed();
+  assert(turbo_rebuilds == 2 && global_input_config.turbo_speed[1] == 1);
+
+  /* Game A has a .cfg: its values run, tempgba.cfg's stay. */
+  game_loaded = game_cfg = 1;
+  assert(load_game_config_file() == 0);
+  assert(option_turbo_mode[1] == 1 && rebuilt_turbo_mode_b == 1);
+  assert(option_shortcut[INPUT_CHORD_VIDEO_CYCLE] == 0x0440);
+  assert(rebuilt_video_chord == 0x0440 && option_turbo_speed[0] == 0);
+  assert(global_input_config.turbo_mode[1] == 0);
+
+  /* The Turbo page in game A changes only game A's settings. */
+  option_turbo_speed[2] = 2;
+  menu_turbo_changed();
+  assert(turbo_rebuilds == 4 && global_input_config.turbo_speed[2] == 0);
+
+  /* Game B has no .cfg: it starts from tempgba.cfg's values. */
+  game_cfg = 0;
+  assert(load_game_config_file() == -1);
+  assert(option_turbo_speed[0] == 2 && option_turbo_mode[0] == 1);
+  assert(option_turbo_speed[1] == 1 && option_turbo_mode[1] == 0);
+  assert(option_turbo_speed[2] == 0 && rebuilt_turbo_mode_b == 0);
+  assert(option_shortcut[INPUT_CHORD_VIDEO_CYCLE] == 0x0480);
+  assert(rebuilt_video_chord == 0x0480 && chord_rebuilds == 3);
+  assert(option_screen_scale == global_screen_scale);
+
+  /* What a game's .cfg stores is what runs. */
+  {
+    ConfigModel game;
+
+    memset(&game, 0xFF, sizeof(game));
+    capture_input_config(&game);
+    assert(game.turbo_speed[0] == 2 && game.turbo_mode[0] == 1);
+    assert(game.turbo_speed[1] == 1 && game.turbo_mode[3] == 0);
+    assert(game.shortcut[INPUT_CHORD_VIDEO_CYCLE] == 0x0480);
+    assert(game.shortcut[INPUT_CHORD_SAVESTATE] == 0x0410);
+    assert(game.gamepad[0] == 0xFFFFFFFFu);
+  }
+
+  puts("turbo and shortcut settings passed");
+  return 0;
+}
+'''
 
 # The real menu_cycle_video_mode() with the real toast ring, the SCALED_
 # values of main.h and the English mode names keyed by their MSG ids; the
@@ -648,7 +1127,8 @@ static const char *messages[MSG_END] =
   [MSG_SCN_SCALED_USER] = "USER GU",
   [MSG_SCN_SCALED_16X9_GU] = "16:9 GU",
   [MSG_SCN_SCALED_16X9_SHARP] = "16:9 Sharp",
-  [MSG_SCN_SCALED_16X9_AUTO] = "16:9 Auto"
+  [MSG_SCN_SCALED_16X9_AUTO] = "16:9 Auto",
+  [MSG_SCN_SCALED_INT2] = "2x integer (crop)"
 };
 #define MSG messages
 u32 option_screen_scale = SCALED_16X9_AUTO;
@@ -681,11 +1161,105 @@ static s32 load_game_config_atomic(const char *path)
   return 0;
 }
 void main_fast_forward_reset_game_settings(void) { fast_forward_resets++; }
+/* Turbo and shortcuts have their own test below. */
+#include "@SRC@/config_model.h"
+static ConfigModel global_input_config;
+static void apply_input_config(const ConfigModel *model)
+{ assert(model == &global_input_config); }
 s32 load_game_config_file(void);
 '''
 
-# 16:9 Auto, 100%, 150% GU, 16:9 Sharp and around again; the other modes
-# go to 16:9 Auto. Each step presents, names and saves the new mode, and
+# gui.c's hotkey save and load in place of STUBS' counters: get_pad_input
+# and input_hold_until_released come from input.c.
+PROMPT_STUBS = r'''
+#include <stdlib.h>
+#define MAX_FILE 512
+u32 savestate_slot;
+static void get_savestate_filename(u32 slot, char *name_buffer)
+{ (void)slot; name_buffer[0] = '\0'; }
+static u16 *copy_state_preview(void) { return NULL; }
+u32 load_state(char *savestate_filename);
+u32 save_state(char *savestate_filename, u16 *screen_capture);
+'''
+
+# The save and load chords' prompts are answered with a button still held
+# as they close (the stand-ins put it on the pad): the game gets it only
+# once it is let go and pressed again, as after the menu.
+PROMPT_SCENARIOS = r'''
+#define GBA_A 0x01
+#define GBA_B 0x02
+#define SEL PSP_CTRL_SELECT
+#define LT PSP_CTRL_LTRIGGER
+#define RT PSP_CTRL_RTRIGGER
+static u32 pad, answer;
+
+static int fake_peek(SceCtrlData *data, int count)
+{
+  memset(data, 0, sizeof(*data));
+  data->Buttons = pad;
+  data->Lx = 128;
+  data->Ly = 128;
+  return count;
+}
+
+u32 load_state(char *savestate_filename)
+{ (void)savestate_filename; loads++; pad = answer; return 1; }
+u32 save_state(char *savestate_filename, u16 *screen_capture)
+{ (void)savestate_filename; (void)screen_capture; saves++; pad = answer; return 0; }
+
+static u32 read_pad(u32 buttons)
+{
+  pad = buttons;
+  now_us += 16000;
+  return update_input();
+}
+
+static int game_has(u32 key)
+{
+  return (io_registers[REG_P1] & key) == 0;
+}
+
+/* chord fires the prompt, answered with button; key is its GBA key. */
+static void check_prompt(u32 chord, u32 result, u32 button, u32 key)
+{
+  int i;
+
+  answer = button;
+  read_pad(SEL);
+  assert(read_pad(SEL | chord) == result);
+  for(i = 0; i < 3; i++)
+  {
+    read_pad(button);
+    assert(!game_has(key));
+  }
+  read_pad(0);
+  read_pad(button);
+  assert(game_has(key));
+  read_pad(0);
+}
+
+int main(void)
+{
+  (void)__sceCtrlReadBufferPositive;
+  __sceCtrlPeekBufferPositive = fake_peek;
+  rebuild_fast_forward_button_mask();
+  option_shortcut[0] = 0x0410;
+  option_shortcut[1] = 0x0420;
+  option_shortcut[2] = 0x0C00;
+  rebuild_shortcut_chords();
+  read_pad(0);
+
+  check_prompt(LT, 0, PSP_CTRL_CROSS, GBA_B);
+  check_prompt(RT, 1, PSP_CTRL_CIRCLE, GBA_A);
+  assert(saves == 1 && loads == 1 && menus == 0);
+  assert(ff_presses == 0 && !ff_held);
+  puts("hotkey prompts passed");
+  return 0;
+}
+'''
+
+# 16:9 Auto, 100%, 150% GU, 2x integer, 16:9 Sharp and around again; the
+# other modes go to 16:9 Auto. Each step presents, names and saves the new mode, and
 # the newest name replaces a toast still queued.
 CYCLE_SCENARIOS = r'''
 static void check_step(u32 scale, const char *name, int step)
@@ -709,11 +1283,13 @@ int main(void)
   menu_cycle_video_mode();
   check_step(SCALED_X15_GU, "150% GU", 2);
   menu_cycle_video_mode();
-  check_step(SCALED_16X9_SHARP, "16:9 Sharp", 3);
+  check_step(SCALED_INT2, "2x integer (crop)", 3);
   menu_cycle_video_mode();
-  check_step(SCALED_16X9_AUTO, "16:9 Auto", 4);
+  check_step(SCALED_16X9_SHARP, "16:9 Sharp", 4);
   menu_cycle_video_mode();
-  check_step(SCALED_NONE, "100% GU", 5);
+  check_step(SCALED_16X9_AUTO, "16:9 Auto", 5);
+  menu_cycle_video_mode();
+  check_step(SCALED_NONE, "100% GU", 6);
   now_us += 3000000u;
   assert(toast_current(now_us) == NULL);
 
@@ -721,20 +1297,20 @@ int main(void)
   {
     option_screen_scale = others[i];
     menu_cycle_video_mode();
-    check_step(SCALED_16X9_AUTO, "16:9 Auto", 6 + i);
+    check_step(SCALED_16X9_AUTO, "16:9 Auto", 7 + i);
   }
 
   /* Only the game keeps the cycled scale: a game with no .cfg starts at
      the global one, which only the Video menu sets. */
   menu_cycle_video_mode();
-  check_step(SCALED_NONE, "100% GU", 9);
+  check_step(SCALED_NONE, "100% GU", 10);
   assert(global_screen_scale == SCALED_16X9_AUTO);
   assert(load_game_config_file() == -1 && fast_forward_resets == 1);
   assert(option_screen_scale == SCALED_16X9_AUTO);
   option_screen_scale = SCALED_16X9_SHARP;
   menu_screen_scale_changed();
   menu_cycle_video_mode();
-  check_step(SCALED_16X9_AUTO, "16:9 Auto", 10);
+  check_step(SCALED_16X9_AUTO, "16:9 Auto", 11);
   assert(global_screen_scale == SCALED_16X9_SHARP);
   assert(load_game_config_file() == -1);
   assert(option_screen_scale == SCALED_16X9_SHARP);
@@ -814,6 +1390,13 @@ def input_region():
     return text[start:text.index("/* Startup controller setup")]
 
 
+def trace_globals():
+    """input.c's input trace and replay hash state, at the top of the file."""
+    text = (ROOT / "source/src/input.c").read_text()
+    start = text.index('#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE\n#include "input_trace.h"')
+    return text[start:text.index("#endif", start) + len("#endif\n")]
+
+
 class InputShortcutTests(unittest.TestCase):
     def test_update_input_runs_shortcut_chords(self):
         source = STUBS + input_region() + SCENARIOS
@@ -822,6 +1405,58 @@ class InputShortcutTests(unittest.TestCase):
     def test_update_input_runs_turbo_and_stick_model(self):
         source = STUBS + input_region() + TURBO_SCENARIOS
         build_and_run(source, "input_turbo")
+
+    def test_input_trace_steps_once_per_emulated_frame(self):
+        source = (STUBS + TRACE_STUBS + trace_globals() + input_region() +
+                  function("source/src/input.c",
+                           "void input_diagnostic_trace_end_bench(void)") +
+                  TRACE_SCENARIOS)
+        build_and_run(source, "input_trace_frames",
+                      ["-I", SRC, "-DENABLE_DIAGNOSTIC_INPUT_TRACE"])
+
+    def test_update_gba_steps_the_trace_and_hashes_the_bench_end(self):
+        # main.c cannot be built on the host: the frame step runs once per
+        # VBlank after update_input, before the autorun saves its hashes,
+        # never in link waits; the bench's end hash after the frame is
+        # timed; a cancelled bench stops its replay.
+        update = function("source/src/main.c", "u32 update_gba(void)")
+        step = "input_diagnostic_trace_frame_end();"
+        self.assertEqual(update.count(step), 1)
+        self.assertLess(update.index("update_input() != 0"),
+                        update.index(step))
+        self.assertLess(update.index(step),
+                        update.index("main_autorun_frame();"))
+        self.assertEqual(update.count("input_diagnostic_trace_take_bench_hash("), 1)
+        self.assertLess(update.index("video_adaptive_frame_complete("),
+                        update.index("input_diagnostic_trace_take_bench_hash("))
+        link = function("source/src/main.c",
+                        "static int main_link_service(IRQ_TYPE *irq_raised)")
+        self.assertNotIn("input_diagnostic_trace", link)
+        update_input = function("source/src/input.c", "u32 update_input(void)")
+        self.assertNotIn("diagnostic_trace_frame++", update_input)
+        # Before game_keys only a pass that update_gba drops may return; a
+        # hotkey whose frame runs (a declined load included) must reach the
+        # trace there.
+        returns = re.findall(r"\breturn\b[^;]*;",
+                             update_input[:update_input.index("game_keys:")])
+        self.assertTrue(returns)
+        self.assertLessEqual(set(returns), {"return menu_result;", "return 1;"})
+        self.assertIn("input_diagnostic_trace_end_bench();",
+                      function("source/src/main.c",
+                               "void main_perf_bench_cancel(void)"))
+
+    def test_hotkey_prompt_keys_wait_for_release(self):
+        counters = ("/* load_state's result: 1 loaded, 0 refused or declined. */\n"
+                    "static u32 load_result = 1;\n"
+                    "u32 action_loadstate(void) { loads++; return load_result; }\n"
+                    "u32 action_savestate(void) { saves++; return 0; }\n")
+        self.assertIn(counters, STUBS)
+        source = STUBS.replace(counters, PROMPT_STUBS)
+        for signature in ("u32 action_loadstate(void)",
+                          "u32 action_savestate(void)"):
+            source += function("source/src/gui.c", signature)
+        build_and_run(source + input_region() + PROMPT_SCENARIOS,
+                      "hotkey_prompts")
 
     def test_video_cycle_steps_presents_names_and_saves(self):
         stubs = CYCLE_STUBS.replace("@SRC@", SRC).replace("@SCALED@",
@@ -880,38 +1515,46 @@ class InputShortcutTests(unittest.TestCase):
                       function("source/src/main.c",
                                "static void psp_sleep_loop(void)"))
 
-    def test_settings_carry_the_shortcuts(self):
-        # gui.c's settings glue cannot be built on the host: both captures
-        # store the masks, and both applies load them before the chords.
-        for name in ("capture_global_config", "capture_game_config"):
-            body = function("source/src/gui.c",
-                            "static void %s(ConfigModel *model)" % name)
-            self.assertIn("model->shortcut[i] = option_shortcut[i];", body)
-        for name in ("apply_global_config", "apply_game_config"):
-            body = function("source/src/gui.c",
-                            "static void %s(const ConfigModel *model)" % name)
-            self.assertLess(body.index("option_shortcut[i] = model->shortcut[i];"),
-                            body.index("rebuild_shortcut_chords();"))
+    def test_game_turbo_and_shortcuts_stay_apart_from_global(self):
+        source = INPUT_CONFIG_STUBS.replace("@SRC@", SRC)
+        for signature in ("static void apply_input_config(const ConfigModel *model)",
+                          "static void capture_input_config(ConfigModel *model)",
+                          "static void menu_turbo_changed(void)",
+                          "s32 load_game_config_file(void)"):
+            source += function("source/src/gui.c", signature)
+        build_and_run(source + INPUT_CONFIG_SCENARIOS, "input_config")
 
-    def test_settings_carry_the_turbo(self):
-        # Per game and globally: both captures store the turbo speed and
-        # mode, and both applies load them before the turbo inputs are
-        # rebuilt from them.
-        speed = "model->turbo_speed[i] = option_turbo_speed[i];"
-        mode = "model->turbo_mode[i] = option_turbo_mode[i];"
-        for name in ("capture_global_config", "capture_game_config"):
-            body = function("source/src/gui.c",
-                            "static void %s(ConfigModel *model)" % name)
-            self.assertIn(speed, body)
-            self.assertIn(mode, body)
-        for name in ("apply_global_config", "apply_game_config"):
-            body = function("source/src/gui.c",
-                            "static void %s(const ConfigModel *model)" % name)
-            rebuild = body.index("rebuild_fast_forward_button_mask();")
-            self.assertLess(body.index("option_turbo_speed[i] = model->turbo_speed[i];"),
-                            rebuild)
-            self.assertLess(body.index("option_turbo_mode[i] = model->turbo_mode[i];"),
-                            rebuild)
+    def test_settings_carry_the_turbo_and_shortcuts(self):
+        # gui.c's settings glue cannot be built on the host: a game's .cfg
+        # stores and loads the running turbo and shortcuts, tempgba.cfg
+        # stores the global copy, which a global load sets, and the Turbo
+        # page and the menu with no game go through the spliced helpers.
+        gui = (ROOT / "source/src/gui.c").read_text()
+        self.assertIn("capture_input_config(model);",
+                      function("source/src/gui.c",
+                               "static void capture_game_config(ConfigModel *model)"))
+        self.assertIn("apply_input_config(model);",
+                      function("source/src/gui.c",
+                               "static void apply_game_config(const ConfigModel *model)"))
+        apply = function("source/src/gui.c",
+                         "static void apply_global_config(const ConfigModel *model)")
+        self.assertLess(apply.index("global_input_config = *model;"),
+                        apply.index("apply_input_config(model);"))
+        capture = function("source/src/gui.c",
+                           "static void capture_global_config(ConfigModel *model)")
+        for line in ("model->shortcut[i] = global_input_config.shortcut[i];",
+                     "model->turbo_speed[i] = global_input_config.turbo_speed[i];",
+                     "model->turbo_mode[i] = global_input_config.turbo_mode[i];"):
+            self.assertIn(line, capture)
+        self.assertNotIn("option_shortcut", capture)
+        self.assertNotIn("option_turbo", capture)
+        rows = [line for line in gui.splitlines() if "&option_turbo_" in line]
+        self.assertEqual(len(rows), 8)
+        for row in rows:
+            self.assertIn("STRING_SELECTION_OPTION(menu_turbo_changed, ", row)
+        none = gui[gui.index("  void gamepak_file_none(void)\n  {"):]
+        none = none[:none.index("\n  }\n")]
+        self.assertIn("apply_input_config(&global_input_config);", none)
 
 
 if __name__ == "__main__":
