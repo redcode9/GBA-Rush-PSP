@@ -4,9 +4,10 @@ How GBA Rush PSP speed is measured, and the baselines measured so far.
 
 ## Comparing two builds
 
-On the PSP, use Diagnostics > Start measurement, play a repeatable section,
-stop and save the report. Capture at least three reports per build with the
-same ROM, save or save state, renderer, clock and settings, then compare:
+On the PSP, use Diagnostics > Start recording, play a repeatable section,
+then Stop recording and Save report. Capture at least three reports per
+build with the same ROM, save or save state, renderer, clock and settings,
+then compare:
 
 ```sh
 python3 scripts/compare-benchmarks.py \

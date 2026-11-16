@@ -509,7 +509,7 @@ Each test has four fields:
 - Pass: `scripts/compare-benchmarks.py` reports no failure for any of the
   5 games on either model.
 - Steps: for each of 5 games, take 3 measurements with Diagnostics > Start
-  measurement on the previous release and 3 on the candidate, alternating
+  recording on the previous release and 3 on the candidate, alternating
   the two builds, with the same save or state, renderer, clocks and
   settings. Compare each game's two sets of reports with
   `scripts/compare-benchmarks.py`.
