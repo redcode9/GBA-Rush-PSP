@@ -3,7 +3,7 @@
 - **Branch:** `features/state-of-the-art-development/wip/save-store`, staccato da `features/state-of-the-art-development/main`.
 - **Ticket:** EXT-1, SAV-1, SAV-2 (tranne SAV-2.6), SAV-3, SAV-5 (26 storie, circa 21 gg).
 - **File principali:** backup in `source/src/memory.c`, `save_store.c` e `save_format.c` (nuovi), avvisi in `gui.c`.
-- **Dipende da:** nessuna attesa su altri branch: SAV-2.6 è in main (b5cffbf), ENG-1.1 ed ENG-1.2 (`wip/release-and-ci`) sono in main 8ace097, unito qui da 89769bd.
+- **Dipende da:** nessuna attesa su altri branch: SAV-2.6 è in main (dbab178), ENG-1.1 ed ENG-1.2 (`wip/release-and-ci`) sono in main 8ace097, unito qui da 89769bd.
 - **Nota:** Primo lavoro della 1.4.4, che per la decisione (l) resta una tappa interna di lavoro: il rilascio è la 1.5.0. `features/save-read-fixes` (SAV-1 e SAV-2.8) è unito qui da 5dde920.
 - **Regole:** quelle di «Branch di lavoro dell'epica» in `docs/BACKLOG.md`. Il testo completo di ogni ticket (cosa, file, test, accettazione, licenza) è in `docs/BACKLOG.md` sotto il suo ID. Si spunta un ticket quando la sua accettazione è verificata; questo file si cancella nella PR che chiude il branch.
 - **Legenda:** «subito» = nessuna dipendenza, si può iniziare oggi; «aspetta» = dipendenze in altri branch, si parte quando sono in main.
