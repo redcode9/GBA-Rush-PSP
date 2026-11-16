@@ -119,9 +119,11 @@ a capture is not counted.
 Diagnostics > Unbound benchmark loads the current save state slot as the
 slot menu does (a numbered slot backs up the progress it replaces to the
 auto slot first, and the load asks before replacing the game), then runs
-3600 frames as fast as the PSP can: every frame is drawn, nothing waits
-for the VBlank, VSync is off, and the sound is mixed but dropped, so the
-emulation never waits for audio. The game gets no input. The capture then
+3600 frames as fast as the PSP can: every frame is drawn (with Exact on
+the Media Engine, a frame the Media Engine has not finished in time shows
+the previous one again and counts as late), nothing waits for the VBlank,
+VSync is off, and the sound is mixed but dropped, so the emulation never
+waits for audio. The game gets no input. The capture then
 stops by itself and its report is saved to `benchmarks/`; the Diagnostics
 status row shows its name, and the game returns to its normal speed. A
 link refuses the benchmark. Opening the menu, a load or save state hotkey,
