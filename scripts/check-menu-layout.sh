@@ -79,7 +79,7 @@ status_body=$(awk '
 ' source/src/gui.c)
 if [ -z "$status_body" ] ||
    printf '%s\n' "$status_body" |
-    grep -qE 'sceIo|savestate_file_exists|get_savestate_info' ||
+    grep -qE 'sceIo|savestate_file_(exists|stat)|get_savestate_info' ||
    ! printf '%s\n' "$status_body" | grep -q 'menu_layout_status_columns' ||
    ! grep -q 'menu_draw_main_status(display_option->display_msg' \
     source/src/gui.c; then
