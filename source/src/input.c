@@ -241,6 +241,9 @@ u32 button_repeat_timestamp;
 /* Buttons still held when the menu closed; update_input hides each one from
    the game and the hotkeys until it is released. */
 static u32 menu_held_buttons = 0;
+/* Set as the menu closes: the stick directions update_input reads next are
+   held as well, read as it reads them. */
+static u32 menu_hold_stick = 0;
 
 /* Tilt cartridges read 12-bit values; 0x800 is level. */
 u32 enable_tilt_sensor = 0;
@@ -290,10 +293,12 @@ u32 get_pad_input(u32 mask)
 }
 
 /* Hides buttons (the keys held as the menu closes) from update_input until
-   each is released, so closing the menu never waits for the keys to go up. */
+   each is released, so closing the menu never waits for the keys to go up.
+   Stick directions held on update_input's next read count as held too. */
 void input_hold_until_released(u32 buttons)
 {
   menu_held_buttons = buttons;
+  menu_hold_stick = 1;
 }
 
 
@@ -587,6 +592,12 @@ u32 update_input(void)
 
   // A key held since the menu closed counts as up until it is released,
   // for chords and turbo too
+  if (menu_hold_stick != 0)
+  {
+    menu_held_buttons |= buttons & (PSP_CTRL_ANALOG_UP | PSP_CTRL_ANALOG_DOWN |
+     PSP_CTRL_ANALOG_LEFT | PSP_CTRL_ANALOG_RIGHT);
+    menu_hold_stick = 0;
+  }
   menu_held_buttons &= buttons;
   buttons &= ~menu_held_buttons;
 

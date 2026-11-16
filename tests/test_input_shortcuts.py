@@ -288,6 +288,23 @@ int main(void)
   assert(read_pad(SEL, 16) == 0 && saves == 1 && !game_has(GBA_UP));
   stick_y = 128;
   read_pad(0, 16);
+
+  /* A stick direction held as the menu closes stays away from the game
+     until it is let go, as a held button does. */
+  stick_y = 0;
+  input_hold_until_released(0);
+  for(i = 0; i < 3; i++)
+  {
+    read_pad(0, 16);
+    assert(!game_has(GBA_UP));
+  }
+  stick_y = 128;
+  read_pad(0, 16);
+  stick_y = 0;
+  read_pad(0, 16);
+  assert(game_has(GBA_UP));
+  stick_y = 128;
+  read_pad(0, 16);
   option_enable_analog = 0;
 
   /* The video cycle has no chord until one is set; SELECT+Left then

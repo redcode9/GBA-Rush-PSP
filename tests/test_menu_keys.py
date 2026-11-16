@@ -55,7 +55,7 @@ static int fake_peek(SceCtrlData *pad_data, int count)
 static int (*__sceCtrlPeekBufferPositive)(SceCtrlData *pad_data, int count) =
  fake_peek;
 u32 last_buttons;
-static u32 menu_held_buttons;
+static u32 menu_held_buttons, menu_hold_stick;
 static u32 fast_forward_button_mask;
 u32 gba_keys_held;
 u32 tilt_sensorX, tilt_sensorY, enable_tilt_sensor;
