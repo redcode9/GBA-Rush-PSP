@@ -29,8 +29,8 @@
  * from cycle 0, count-up and overflow IRQs; DMA3 immediate transfers; the
  * save chip the ROM's ID string names (SRAM without one), with SRAM
  * growing to 64 KiB on a write above 32 KiB as GBA Rush does, and EEPROM
- * to 8 KiB on any request with a 14-bit address (GBA Rush only on a read
- * request); Flash with GBATEK's commands and the IDs GBA Rush reports
+ * to 8 KiB on any request with a 14-bit address (17 or 81 units), as GBA
+ * Rush does; Flash with GBATEK's commands and the IDs GBA Rush reports
  * (Panasonic 64 KiB, Sanyo 128 KiB), writes only clearing bits. The .sav
  * file gets the chip as GBA Rush would have last saved it: as it stood
  * once 10 frames had passed without a write, so stopping in the middle of
