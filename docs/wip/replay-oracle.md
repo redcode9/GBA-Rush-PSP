@@ -4,6 +4,7 @@
 - **Ticket:** ENG-3, ENG-4, ENG-6, ENG-7, ENG-11, ENG-13 (25 storie, circa 42 gg).
 - **File principali:** `state_hash.c` (nuovo), tracce di input, script PPSSPP.
 - **Dipende da:** `wip/dev-environment` (SOA-1.4) e `wip/test-roms`: il codice di tutti e due è in main, ma SOA-1.4 e i ticket di `wip/test-roms` che servono a ENG-3.5 (SAV-2.6, CMP-3.1, CMP-11.1, CMP-12.1) sono ancora aperti.
+- **Integrazione con `wip/ui-foundation`:** in `update_input` (`source/src/input.c`) i due `return hotkey_load_state();` di ui-foundation (scorciatoia e tasto Load state) diventano `if (hotkey_load_state() != 0) return 1; new_key = gba_keys_held; goto game_keys;`, così un caricamento rifiutato o annullato fa avanzare la traccia di un frame come le altre scorciatoie; nel conflitto di `tests/test_input_shortcuts.py` restano l'asserzione `4 * FRAMES` di `TRACE_SCENARIOS` e lo stub `menu_return`. Altrimenti `test_update_gba_steps_the_trace_and_hashes_the_bench_end` fallisce.
 - **Regole:** quelle di «Branch di lavoro dell'epica» in `docs/BACKLOG.md`. Il testo completo di ogni ticket (cosa, file, test, accettazione, licenza) è in `docs/BACKLOG.md` sotto il suo ID. Si spunta un ticket quando la sua accettazione è verificata; questo file si cancella nella PR che chiude il branch.
 - **Legenda:** «subito» = nessuna dipendenza, si può iniziare oggi; «aspetta» = dipendenze in altri branch, si parte quando sono in main.
 
