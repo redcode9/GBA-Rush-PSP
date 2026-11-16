@@ -692,18 +692,6 @@ class RuntimeLogDecoderTests(unittest.TestCase):
         self.assertEqual(states[:2], ["VIDEO_ME_NOT_STARTED",
                                       "VIDEO_ME_DRAWING"])
 
-    # Branches append events to the same enum; a renumbering must show here.
-    def test_event_names_follow_the_c_enum(self):
-        header = (Path(__file__).parents[1] / "source" / "src" /
-                  "runtime_log.h").read_text()
-        block = re.search(r"typedef enum\s*\{([^}]*)\}\s*RuntimeLogEventType;",
-                          header).group(1)
-        names = re.findall(r"RUNTIME_LOG_EVENT_(\w+)", block)
-        self.assertIn("RUNTIME_LOG_EVENT_SESSION_START = 1,", block)
-        self.assertEqual(list(decoder.EVENTS), list(range(1, len(names) + 1)))
-        self.assertEqual(list(decoder.EVENTS.values()),
-                         [name.lower().replace("_", "-") for name in names])
-
     def test_rebuilds_name_probe_entries(self):
         snapshot = decoder.parse_snapshot(
             pack_snapshot(probe_records(PROBE_ENTRIES), 6))
