@@ -18,6 +18,8 @@ hotfix-data: yes
 known-limit: A .sav that an earlier release already cut to 1 byte has lost its data; 1.4.4 cannot bring it back.
 known-limit: With a 1.4.1 or 1.4.2 PSP joining, a host on 1.4.3 or later may give Mario Kart: Super Circuit a wrong word when a race starts. This comes from reading the code and has not been measured yet.
 
-# No link file has changed since 1.4.3 (git diff --stat 1.4.3 HEAD), so there
-# is no link: line yet. The gate asks for one once a link file changes; a line
-# written now would answer for changes nobody has looked at.
+# Decision (l): no 1.4.4 ships, and these lines move to 1.5.0.txt. Of the
+# link files only source/src/psp_adhoc.c has changed since 1.4.3: it includes
+# build_profile.h and adds code under ENABLE_DIAGNOSTIC_NET_INJECTION. So the
+# gate asks for a link: line; 1.5.0.txt declares it once someone has
+# reviewed that change.
