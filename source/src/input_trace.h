@@ -12,7 +12,7 @@
 /*
  * Diagnostic input traces: records the GBA keys per frame as a list of
  * changes and replays them for repeatable test runs. Only built with
- * ENABLE_DIAGNOSTIC_INPUT_TRACE; input.c drives it from update_input.
+ * ENABLE_DIAGNOSTIC_INPUT_TRACE; input.c drives it once per emulated frame.
  */
 
 #ifndef INPUT_TRACE_H

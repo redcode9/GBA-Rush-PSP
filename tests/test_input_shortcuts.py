@@ -59,7 +59,8 @@ typedef struct
 #define REG_IF 2
 #define CPU_HALT_STATE 0
 #define CPU_STOP 2
-static u16 io_registers[3];
+/* 0x400 bytes, as many as the replay's state hashes read. */
+static u16 io_registers[0x200];
 #define pIO_REG(offset) io_registers[offset]
 static u32 reg[1];
 u32 option_swap_confirm_buttons = 0;
@@ -76,12 +77,15 @@ int sceCtrlReadBufferPositive(SceCtrlData *data, int count)
 void main_power_service(void) {}
 void main_fast_forward_input(u32 pressed, u32 held)
 { ff_presses += pressed != 0; ff_held = held != 0; }
-u32 menu(void) { menus++; return 7; }
+/* 0 plays a plain resume, which changed no machine. */
+static u32 menu_return = 7;
+u32 menu(void) { menus++; return menu_return; }
 u32 action_loadstate(void) { loads++; return 0; }
 u32 action_savestate(void) { saves++; return 0; }
 int bench_cancels;
 void main_perf_bench_cancel(void) { bench_cancels++; }
-int perf_monitor_bench_running(void) { return 0; }
+static int bench_running;
+int perf_monitor_bench_running(void) { return bench_running; }
 int video_cycles;
 void menu_cycle_video_mode(void) { video_cycles++; }
 static u32 toast_ids[8];
@@ -621,6 +625,238 @@ int main(void)
 }
 '''
 
+# Diagnostic builds (ENABLE_DIAGNOSTIC_INPUT_TRACE): the real input trace
+# and state hash modules, and small stand-ins for the memory the replay
+# hashes. The audio hash counts its calls, which also mix sound.
+TRACE_STUBS = r'''
+#include "@SRC@/state_hash.c"
+#include "@SRC@/input_trace.c"
+#define GBA_RUSH_BUILD_ID "test"
+#define REG_CPSR 0
+#define CPU_MODE 0
+static u32 reg_mode[2][2];
+static u32 spsr[2];
+static u8 iwram[64];
+static u8 ewram[64];
+static u8 vram[64];
+static u8 oam_ram[16];
+static u16 palette_ram[16];
+static u8 backup_ram[16];
+u32 cpu_ticks;
+static int audio_takes, bench_ends;
+static const u8 *memory_backup_bytes(u32 *size)
+{ *size = sizeof(backup_ram); return backup_ram; }
+static void arm_gba_save_registers(void) {}
+static u32 sound_diagnostic_audio_take(u32 ticks)
+{ (void)ticks; audio_takes++; return 0x1234; }
+static void perf_monitor_bench_end_with_frame(void) { bench_ends++; }
+'''.replace("@SRC@", SRC)
+
+# A trace is recorded and replayed through update_input and the frame step
+# update_gba runs after its VBlank read, as on the PSP: every emulated frame
+# counts once, those of a save chord, the FPS key or a plain menu resume
+# included, and the reads of a link wait do not count.
+TRACE_SCENARIOS = r'''
+#define GBA_A 0x01
+#define GBA_SELECT 0x04
+#define GBA_RIGHT 0x10
+#define SEL PSP_CTRL_SELECT
+#define LT PSP_CTRL_LTRIGGER
+#define FRAMES 10
+static const u8 code[4] = { 'B', 'P', 'R', 'E' };
+static u8 header[0xC0];
+static u32 pad;
+static StateHashRecord records[FRAMES + 2];
+
+static int fake_peek(SceCtrlData *data, int count)
+{
+  memset(data, 0, sizeof(*data));
+  data->Buttons = pad;
+  data->Lx = 128;
+  data->Ly = 128;
+  return count;
+}
+
+/* One emulated frame as update_gba runs it: link_reads reads of a link
+   wait, the VBlank read, and the trace's frame step unless that read
+   dropped the pass. */
+static u32 frame(u32 buttons, int link_reads)
+{
+  u32 result;
+  int i;
+
+  pad = buttons;
+  for(i = 0; i < link_reads; i++)
+  {
+    now_us += 1000;
+    assert(update_input() == 0);
+  }
+  now_us += 16667;
+  result = update_input();
+  if(result == 0)
+    input_diagnostic_trace_frame_end();
+  return result;
+}
+
+static void restart(void)
+{
+  assert(input_trace_restart_replay(&diagnostic_trace, header, 0x1000000U,
+   diagnostic_trace_frame) == FRAMES + 1);
+}
+
+/* A benchmark that replays the trace to its end, the machine changing in
+   every frame, as update_gba runs it: the bench hash is taken at each
+   frame's end. Returns how many frames gave one, which must be the last. */
+static int bench(u32 *hash)
+{
+  int i;
+  int takes = 0;
+  int audio;
+
+  bench_running = 1;
+  restart();
+  for(i = 0; i <= FRAMES; i++)
+  {
+    ewram[0] = (u8)i;
+    assert(frame(0, i == 1 ? 2 : 0) == 0);
+    audio = audio_takes;
+    if(input_diagnostic_trace_take_bench_hash(hash))
+    {
+      assert(i == FRAMES);
+      takes++;
+    }
+    /* Hashing the end state mixes no sound. */
+    assert(audio_takes == audio);
+  }
+  bench_running = 0;
+  return takes;
+}
+
+int main(void)
+{
+  static const u32 pads[FRAMES] =
+  {
+    PSP_CTRL_RIGHT, PSP_CTRL_RIGHT, SEL, SEL | LT, PSP_CTRL_RIGHT,
+    PSP_CTRL_HOME, PSP_CTRL_CIRCLE, PSP_CTRL_SQUARE,
+    PSP_CTRL_CIRCLE | PSP_CTRL_RIGHT, 0
+  };
+  /* What the game had in each frame: a hotkey's frame keeps the keys. */
+  static const u32 keys[FRAMES] =
+  {
+    GBA_RIGHT, GBA_RIGHT, GBA_SELECT, GBA_SELECT, GBA_RIGHT, GBA_RIGHT,
+    GBA_A, GBA_A, GBA_A | GBA_RIGHT, 0
+  };
+  /* Hotkeys pressed during a replay, on the frames the trace changes. */
+  static const u32 replay_pads[FRAMES] =
+  {
+    0, 0, 0, SEL, SEL | LT, 0, PSP_CTRL_HOME, 0, PSP_CTRL_SQUARE, 0
+  };
+  static const int links[FRAMES] = { 0, 2, 0, 0, 0, 0, 3, 0, 0, 0 };
+  u16 seen[FRAMES];
+  u32 hash = 0;
+  u32 again = 0;
+  int i;
+
+  (void)__sceCtrlReadBufferPositive;
+  __sceCtrlPeekBufferPositive = fake_peek;
+  memcpy(header + 0xAC, code, sizeof(code));
+  header[0xBC] = 1;
+  rebuild_fast_forward_button_mask();
+  option_shortcut[INPUT_CHORD_SAVESTATE] = 0x0410;
+  rebuild_shortcut_chords();
+  menu_return = 0;
+  input_trace_init(&diagnostic_trace, diagnostic_trace_events,
+   DIAGNOSTIC_TRACE_EVENT_CAPACITY);
+  diagnostic_trace_frame = 1000;
+  update_input();
+
+  /* Recording: one frame step per emulated frame, whatever ran in it. */
+  assert(input_trace_begin_record(&diagnostic_trace, diagnostic_trace_frame,
+   code, 1, (u16)gba_keys_held));
+  for(i = 0; i < FRAMES; i++)
+  {
+    assert(frame(pads[i], links[i]) == 0);
+    seen[i] = io_registers[REG_P1];
+    assert((u32)seen[i] == ((~keys[i]) & 0x3FFu));
+  }
+  assert(saves == 1 && menus == 1 && psp_fps_debug == 1);
+  assert(loads == 0 && ff_presses == 0 && !ff_held);
+  assert(diagnostic_trace_frame == 1000 + FRAMES);
+  assert(input_trace_finish_record(&diagnostic_trace, diagnostic_trace_frame));
+
+  /* The replay gives the game the same keys in the same frames. */
+  restart();
+  for(i = 0; i < FRAMES; i++)
+  {
+    assert(frame(0, links[i]) == 0);
+    assert(io_registers[REG_P1] == seen[i]);
+  }
+  assert(diagnostic_trace_frame == 1000 + 2 * FRAMES);
+
+  /* So does one with a save chord, a menu visit and the FPS key on the
+     frames the trace changes the keys. */
+  restart();
+  for(i = 0; i < FRAMES; i++)
+  {
+    assert(frame(replay_pads[i], 0) == 0);
+    assert(io_registers[REG_P1] == seen[i]);
+  }
+  assert(saves == 2 && menus == 2 && psp_fps_debug == 0);
+  /* A menu that changed the machine drops the pass: no frame step. */
+  menu_return = 1;
+  assert(frame(PSP_CTRL_HOME, 0) == 1);
+  assert(diagnostic_trace_frame == 1000 + 3 * FRAMES);
+  menu_return = 0;
+  frame(0, 0);
+  assert(diagnostic_trace.state == INPUT_TRACE_REPLAYING);
+  frame(0, 0);
+  assert(diagnostic_trace.state == INPUT_TRACE_FINISHED);
+
+  /* A benchmark that replays the trace ends with its last frame, and once
+     that frame is timed it hashes the guest state: the regions of the
+     replay's last record but the audio. With the replay's own hashes on,
+     there is one record per emulated frame and none for link reads. */
+  assert(state_hash_log_init(&diagnostic_hashes, records, FRAMES + 2,
+   diagnostic_hash_names, "test", code, 1, diagnostic_trace_frame));
+  bench_ends = 0;
+  assert(bench(&hash) == 1 && bench_ends == 1);
+  assert(diagnostic_hashes.count == FRAMES + 1);
+  assert(hash == state_hash_words(STATE_HASH_FNV_BASIS,
+   records[FRAMES].hash, STATE_HASH_AUDIO * sizeof(records[0].hash[0])));
+  assert(!input_diagnostic_trace_take_bench_hash(&again));
+  diagnostic_hashes.records = NULL;
+
+  /* The same run ends in the same state; another state, another hash. */
+  frame(0, 0);
+  assert(bench(&again) == 1 && again == hash);
+  frame(0, 0);
+  vram[3] ^= 0x40;
+  assert(bench(&again) == 1 && again != hash);
+  frame(0, 0);
+
+  /* A replay outside a benchmark neither ends one nor hashes. */
+  restart();
+  for(i = 0; i <= FRAMES; i++)
+  {
+    frame(0, 0);
+    assert(!input_diagnostic_trace_take_bench_hash(&again));
+  }
+  assert(bench_ends == 3);
+
+  /* Nor when a suspend cancels the trace after the last frame. */
+  bench_running = 1;
+  restart();
+  for(i = 0; i <= FRAMES; i++)
+    frame(0, 0);
+  input_trace_cancel(&diagnostic_trace);
+  assert(!input_diagnostic_trace_take_bench_hash(&again));
+  bench_running = 0;
+
+  puts("input trace frame steps passed");
+  return 0;
+}
+'''
+
 
 # The real menu_cycle_video_mode() with the real toast ring, the SCALED_
 # values of main.h and the English mode names keyed by their MSG ids; the
@@ -814,6 +1050,13 @@ def input_region():
     return text[start:text.index("/* Startup controller setup")]
 
 
+def trace_globals():
+    """input.c's input trace and replay hash state, at the top of the file."""
+    text = (ROOT / "source/src/input.c").read_text()
+    start = text.index('#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE\n#include "input_trace.h"')
+    return text[start:text.index("#endif", start) + len("#endif\n")]
+
+
 class InputShortcutTests(unittest.TestCase):
     def test_update_input_runs_shortcut_chords(self):
         source = STUBS + input_region() + SCENARIOS
@@ -822,6 +1065,33 @@ class InputShortcutTests(unittest.TestCase):
     def test_update_input_runs_turbo_and_stick_model(self):
         source = STUBS + input_region() + TURBO_SCENARIOS
         build_and_run(source, "input_turbo")
+
+    def test_input_trace_steps_once_per_emulated_frame(self):
+        source = (STUBS + TRACE_STUBS + trace_globals() + input_region() +
+                  TRACE_SCENARIOS)
+        build_and_run(source, "input_trace_frames",
+                      ["-I", SRC, "-DENABLE_DIAGNOSTIC_INPUT_TRACE"])
+
+    def test_update_gba_steps_the_trace_and_hashes_the_bench_end(self):
+        # main.c cannot be built on the host: the frame step runs once per
+        # VBlank after update_input, before the autorun saves its hashes,
+        # never in link waits; the bench's end hash after the frame is
+        # timed.
+        update = function("source/src/main.c", "u32 update_gba(void)")
+        step = "input_diagnostic_trace_frame_end();"
+        self.assertEqual(update.count(step), 1)
+        self.assertLess(update.index("update_input() != 0"),
+                        update.index(step))
+        self.assertLess(update.index(step),
+                        update.index("main_autorun_frame();"))
+        self.assertEqual(update.count("input_diagnostic_trace_take_bench_hash("), 1)
+        self.assertLess(update.index("video_adaptive_frame_complete("),
+                        update.index("input_diagnostic_trace_take_bench_hash("))
+        link = function("source/src/main.c",
+                        "static int main_link_service(IRQ_TYPE *irq_raised)")
+        self.assertNotIn("input_diagnostic_trace", link)
+        self.assertNotIn("diagnostic_trace_frame++",
+                         function("source/src/input.c", "u32 update_input(void)"))
 
     def test_video_cycle_steps_presents_names_and_saves(self):
         stubs = CYCLE_STUBS.replace("@SRC@", SRC).replace("@SCALED@",

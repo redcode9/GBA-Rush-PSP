@@ -47,6 +47,9 @@ static const char *const diagnostic_hash_names[STATE_HASH_REGION_COUNT] =
 static StateHashLog diagnostic_hashes;
 static u32 diagnostic_perturb;
 static u32 diagnostic_perturb_frame;
+/* Set at the last frame of a benchmark that replays the trace, until
+   input_diagnostic_trace_take_bench_hash runs at that frame's end. */
+static u32 diagnostic_bench_hash_due;
 #endif
 
 extern u32 option_swap_confirm_buttons;
@@ -458,30 +461,20 @@ void input_turbo_stop(void)
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 extern u32 cpu_ticks;
 
-/* Hashes the machine of this replayed frame into the next record: what a
+/* Hashes the machine into log's next record, as this frame: what a
    savestate stores, except reg[] past REG_CPSR other than CPU_MODE and
    CPU_HALT_STATE. Those are unused slots, the stubs' scratch (REG_SAVE..3,
    GP_SAVE, REG_TMP: host addresses), the dynarec's CHANGED_PC_STATUS and
    EXECUTE_CYCLES, and the DMA open-bus latch CPU_DMA_HACK/CPU_DMA_LAST,
-   left out until a hardware self-check shows them deterministic. */
-static void input_diagnostic_trace_hash_frame(void)
+   left out until a hardware self-check shows them deterministic. audio is
+   the hash of the frame's samples. 0 when the log is full. */
+static int input_diagnostic_trace_capture(StateHashLog *log, u32 audio)
 {
   u32 backup_size;
   const u8 *backup = memory_backup_bytes(&backup_size);
-  u32 audio;
-
-  /* The perturbation run's flipped bit. It goes straight into the array,
-     past the dynarec's code checks: enough for the hashes to see it. */
-  if(diagnostic_perturb &&
-     diagnostic_trace_frame - diagnostic_hashes.start_frame ==
-     diagnostic_perturb_frame)
-    iwram[0] ^= 1;
 
   /* The New core keeps its registers in its own state until asked. */
   arm_gba_save_registers();
-  /* Up to this VBlank's tick; update_gba's own VBlank update, at the same
-     tick, then mixes nothing. */
-  audio = sound_diagnostic_audio_take(cpu_ticks);
   {
     const StateHashSpan spans[] =
     {
@@ -501,9 +494,71 @@ static void input_diagnostic_trace_hash_frame(void)
       { &audio, sizeof(audio), STATE_HASH_AUDIO }
     };
 
-    state_hash_capture(&diagnostic_hashes, diagnostic_trace_frame, spans,
+    return state_hash_capture(log, diagnostic_trace_frame, spans,
      sizeof(spans) / sizeof(spans[0]));
   }
+}
+
+/* Hashes the machine of this replayed frame into the replay's next
+   record. */
+static void input_diagnostic_trace_hash_frame(void)
+{
+  /* The perturbation run's flipped bit. It goes straight into the array,
+     past the dynarec's code checks: enough for the hashes to see it. */
+  if(diagnostic_perturb &&
+     diagnostic_trace_frame - diagnostic_hashes.start_frame ==
+     diagnostic_perturb_frame)
+    iwram[0] ^= 1;
+
+  /* Up to this VBlank's tick; update_gba's own VBlank update, at the same
+     tick, then mixes nothing. */
+  input_diagnostic_trace_capture(&diagnostic_hashes,
+   sound_diagnostic_audio_take(cpu_ticks));
+}
+
+/* update_gba calls this once per emulated frame, after the VBlank read of
+   update_input, which link waits call too: the replay's hash of the frame,
+   the end of a benchmark that replays the trace, and the frame count the
+   trace records and replays by. A pass the menu or a state load dropped
+   runs no frame and does not call it. */
+void input_diagnostic_trace_frame_end(void)
+{
+  /* Until the replay passes its last frame and turns FINISHED. */
+  if(diagnostic_hashes.records != NULL &&
+     diagnostic_trace.state == INPUT_TRACE_REPLAYING)
+    input_diagnostic_trace_hash_frame();
+  // A benchmark that replays the trace ends with the trace's last frame
+  if(input_trace_replay_last_frame(&diagnostic_trace, diagnostic_trace_frame)
+     && perf_monitor_bench_running())
+  {
+    perf_monitor_bench_end_with_frame();
+    diagnostic_bench_hash_due = 1;
+  }
+  diagnostic_trace_frame++;
+}
+
+/* update_gba calls this at every frame end. Once the benchmark that
+   replays the trace has timed its last frame, it returns 1 and one hash
+   of the guest state, the replay's regions without the audio (the last),
+   which a benchmark does not hash; it hashes nothing on other frames, nor
+   when the bench or the trace was cancelled. */
+int input_diagnostic_trace_take_bench_hash(u32 *hash)
+{
+  StateHashRecord record;
+  StateHashLog log;
+
+  if(!diagnostic_bench_hash_due)
+    return 0;
+  diagnostic_bench_hash_due = 0;
+  if(diagnostic_trace.state != INPUT_TRACE_REPLAYING ||
+     !state_hash_log_init(&log, &record, 1, diagnostic_hash_names,
+      GBA_RUSH_BUILD_ID, diagnostic_trace.game_code,
+      diagnostic_trace.rom_revision, diagnostic_trace_frame) ||
+     !input_diagnostic_trace_capture(&log, 0))
+    return 0;
+  *hash = state_hash_words(STATE_HASH_FNV_BASIS, record.hash,
+   STATE_HASH_AUDIO * sizeof(record.hash[0]));
+  return 1;
 }
 #endif
 
@@ -521,6 +576,7 @@ u32 update_input(void)
   uint32_t hidden_inputs;
   uint32_t turbo_flips;
   u32 button_id = 0;
+  u32 menu_result;
   u32 i;
   u32 new_key = 0;
   u32 stick = 0;
@@ -608,7 +664,11 @@ u32 update_input(void)
   if ((enable_home_menu != 0) && ((non_repeat_buttons & PSP_CTRL_HOME) != 0))
   {
     input_turbo_stop();
-    return menu();
+    menu_result = menu();
+    if (menu_result != 0)
+      return menu_result;
+    new_key = gba_keys_held;
+    goto game_keys;
   }
 
   // Same effects as the BUTTON_ID_ mappings below
@@ -616,7 +676,8 @@ u32 update_input(void)
   {
     main_perf_bench_cancel();
     action_savestate();
-    return 0;
+    new_key = gba_keys_held;
+    goto game_keys;
   }
 
   if ((shortcut_actions & (1u << INPUT_CHORD_LOADSTATE)) != 0)
@@ -631,19 +692,25 @@ u32 update_input(void)
   if ((shortcut_actions & (1u << INPUT_CHORD_MENU)) != 0)
   {
     input_turbo_stop();
-    return menu();
+    menu_result = menu();
+    if (menu_result != 0)
+      return menu_result;
+    new_key = gba_keys_held;
+    goto game_keys;
   }
 
   if ((shortcut_actions & (1u << INPUT_CHORD_FPS)) != 0)
   {
     psp_fps_debug ^= 1;
-    return 0;
+    new_key = gba_keys_held;
+    goto game_keys;
   }
 
   if ((shortcut_actions & (1u << INPUT_CHORD_VIDEO_CYCLE)) != 0)
   {
     menu_cycle_video_mode();
-    return 0;
+    new_key = gba_keys_held;
+    goto game_keys;
   }
 
   for (i = 0; i < 16; i++)
@@ -654,7 +721,11 @@ u32 update_input(void)
       {
         case BUTTON_ID_MENU:
           input_turbo_stop();
-          return menu();
+          menu_result = menu();
+          if (menu_result != 0)
+            return menu_result;
+          new_key = gba_keys_held;
+          goto game_keys;
 
         case BUTTON_ID_LOADSTATE:
           input_turbo_stop();
@@ -665,14 +736,16 @@ u32 update_input(void)
         case BUTTON_ID_SAVESTATE:
           main_perf_bench_cancel();
           action_savestate();
-          return 0;
+          new_key = gba_keys_held;
+          goto game_keys;
 
         case BUTTON_ID_FASTFORWARD:
           break;
 
         case BUTTON_ID_FPS:
           psp_fps_debug ^= 1;
-          return 0;
+          new_key = gba_keys_held;
+          goto game_keys;
       }
     }
 
@@ -704,17 +777,12 @@ u32 update_input(void)
        MSG_TURBO_OFF, "ABLR"[gamepad_config_map[i] - BUTTON_ID_RAPIDFIRE_A]);
   }
 
+  // A hotkey or a menu that changed no machine keeps the game's keys, but
+  // its frame still runs: the input trace records or replays it too
+game_keys:
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
   new_key = input_trace_apply(&diagnostic_trace, diagnostic_trace_frame,
    (u16)new_key);
-  /* Until the replay passes its last frame and turns FINISHED. */
-  if(diagnostic_hashes.records != NULL &&
-     diagnostic_trace.state == INPUT_TRACE_REPLAYING)
-    input_diagnostic_trace_hash_frame();
-  // A benchmark that replays the trace ends with the trace's last frame
-  if (input_trace_replay_last_frame(&diagnostic_trace, diagnostic_trace_frame))
-    perf_monitor_bench_end_with_frame();
-  diagnostic_trace_frame++;
 #endif
 
   // The unbound benchmark runs the loaded slot with the tilt sensor centred
@@ -776,8 +844,8 @@ void init_input_kernel(void)
 }
 
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
-/* GUI side of the one diagnostic trace. These pass update_input's frame
-   count and the loaded ROM's header, which tags the trace with its game
+/* GUI side of the one diagnostic trace. These pass the trace's frame count
+   (input_diagnostic_trace_frame_end steps it) and the loaded ROM's header, which tags the trace with its game
    code and revision. */
 int input_diagnostic_trace_begin_record(void)
 {

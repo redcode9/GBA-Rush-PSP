@@ -151,7 +151,9 @@
   itself, its report is saved and the game returns to its normal speed. A
   link refuses the benchmark. The diagnostic build adds two rows that run it
   with rendering or audio off, and replays the input trace it holds instead
-  of giving no input, ending the run with the trace.
+  of giving no input, ending the run with the trace; the report then holds
+  a hash of the game's state at the end, which two runs of the same trace
+  must share.
 - Performance reports also record each frame's work time without the waits,
   the frames that were late, over budget or run during a lockstep link, the
   local time the capture started, the time of the main emulation phases on

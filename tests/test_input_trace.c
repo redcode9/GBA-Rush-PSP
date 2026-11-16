@@ -608,7 +608,7 @@ static void test_restart_replay_for_bench(void)
   assert(trace.error == INPUT_TRACE_ERROR_CAPACITY);
 }
 
-/* update_input asks after each replayed frame whether it was the trace's
+/* input.c asks after each replayed frame whether it was the trace's
    last, and ends the bench with it: the end is signalled once, on frame
    start + duration, which still gets the trace's keys. Nothing else
    signals, a replay before it starts or after it ends included. */

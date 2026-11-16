@@ -263,7 +263,9 @@ with `trace=`, `hash=` (a new `.gbsh` path per run), `frames=` and `exit=1`;
 the perturbed run adds `perturb=N`. A replay started from the menu writes
 `traces/input-<game>-r<rev>.gbsh` the next time the menu opens. The unbound
 benchmark replays the trace from the machine as it is, not from its `.svs`,
-so it hashes nothing and drops the hashes of a replay it restarts.
+so it hashes no frames and drops the hashes of a replay it restarts; its
+report's `bench-state-hash` is one hash of the same regions without
+`audio`, taken after its last frame (`docs/PERFORMANCE.md`).
 
 Backup memory is hashed, but the trace's `.svs` does not restore it: copy
 the game's `.sav` right after saving the trace and put it back before each

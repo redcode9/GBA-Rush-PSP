@@ -277,6 +277,11 @@ static u8 main_perf_bench_audio = 1;
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
 /* Set when the unbound benchmark starts replaying the held input trace. */
 static u8 main_perf_bench_trace;
+/* The guest state hash after that benchmark's last frame, for its report:
+   set once the bench reaches the trace's end, cleared by every capture
+   start. */
+static u8 main_perf_bench_hashed;
+static u32 main_perf_bench_state_hash;
 #endif
 #ifdef ENABLE_DIAGNOSTIC_AUTORUN
 /* Set while a diagnostic autorun's frames= limit is counting. */
@@ -1364,6 +1369,12 @@ u32 update_gba(void)
             main_follow_cpu_core();
             continue;
           }
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+          /* Once per emulated frame: update_input also runs in link waits,
+             and a menu or hotkey read still runs its frame. Before the
+             autorun, which may save the replay's hashes. */
+          input_diagnostic_trace_frame_end();
+#endif
 #ifdef ENABLE_DIAGNOSTIC_AUTORUN
           /* Here, not in update_input: link waits call that too. */
           main_autorun_frame();
@@ -1432,6 +1443,13 @@ u32 update_gba(void)
 
           video_adaptive_frame_complete(draw_this_frame == 0, 0);
           main_perf_preempt_sample(PERF_METRICS_PREEMPT_WAIT_END);
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+          // A trace benchmark's end state, hashed once its last frame is
+          // timed, so the hash adds nothing to the bench's time
+          if (input_diagnostic_trace_take_bench_hash(
+               &main_perf_bench_state_hash))
+            main_perf_bench_hashed = 1;
+#endif
 
           vcount = 0;
           video_dispatch_frame_begin();
@@ -3051,6 +3069,9 @@ static int main_perf_begin(u32 bench_frames)
 #endif
   }
   perf_monitor_set_identity(&identity);
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  main_perf_bench_hashed = 0;
+#endif
 #ifdef ENABLE_DIAGNOSTIC_MEMORY_TRACE
   main_alloc_trace_count = 0;
 #endif
@@ -3089,8 +3110,8 @@ int main_perf_bench_start(u32 render, u32 audio)
 #endif
 #ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
   /* A held input trace replays from the bench's first frame instead of no
-     input. Its length bounds the bench, and update_input ends the bench
-     with the trace's last frame. */
+     input. Its length bounds the bench, and the trace's frame step ends
+     the bench with the trace's last frame. */
   frames = input_diagnostic_trace_begin_bench();
   main_perf_bench_trace = frames != 0;
   if(!main_perf_bench_trace)
@@ -3314,6 +3335,10 @@ int main_perf_write_report(char *output_path, size_t output_path_size)
   metadata.bench_audio = identity.bench_audio;
   metadata.bench_input = identity.bench_input;
   metadata.bench_trace_checksum = identity.bench_trace_checksum;
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  metadata.has_bench_state_hash = main_perf_bench_hashed;
+  metadata.bench_state_hash = main_perf_bench_state_hash;
+#endif
   metadata.duration_us = perf_monitor_duration_us();
 
   report_length = perf_report_format(report, sizeof(report), &metadata,
