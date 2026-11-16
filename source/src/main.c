@@ -1430,16 +1430,18 @@ u32 update_gba(void)
           u32 draw_this_frame = skip_next_frame ^ 0x01;
 
           main_perf_preempt_sample(PERF_METRICS_PREEMPT_WORK_END);
+          // A late Media Engine frame is presented again here, under the
+          // overlays synchronize() draws, as an on-time one is at V-Blank
+          if (draw_this_frame != 0)
+            video_present_finish();
+
           synchronize();
           synchronize_sound();
 
           __draw_volume_status(draw_this_frame);
 
           if (draw_this_frame != 0)
-          {
-            video_present_finish();
             flip_screen(perf_monitor_bench_running() ? 0 : option_psp_vsync);
-          }
 
           video_adaptive_frame_complete(draw_this_frame == 0, 0);
           main_perf_preempt_sample(PERF_METRICS_PREEMPT_WAIT_END);

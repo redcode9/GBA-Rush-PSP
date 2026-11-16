@@ -597,13 +597,6 @@
   // MSG_ERR_SET_DIR_2
   "The error occurred. It's set as the following directories:\n%s",
 
-  // png.c
-  // MSG_ERR_SS_PNG_0
-  "Could not allocate memory for PNG.",
-
-  // MSG_ERR_SS_PNG_1
-  "Could not enecode PNG image.",
-
   // memory.c
   // MSG_LOADING_ROM
   "Now Loading...",

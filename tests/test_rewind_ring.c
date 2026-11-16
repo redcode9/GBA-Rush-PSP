@@ -21,6 +21,7 @@
 #define SNAPSHOTS 500u
 #define BIG_RING_WORDS 80000u
 #define HUGE_WORDS 70000u
+#define EWRAM_WORDS 65536u
 #define GUARD_WORDS 4u
 #define GUARD_VALUE 0xDEADBEEFu
 
@@ -38,6 +39,7 @@ static RewindStamp stamps[SNAPSHOTS + 1];
 static uint32_t big_ring[BIG_RING_WORDS];
 static uint32_t huge_live[HUGE_WORDS];
 static uint32_t huge_ref[HUGE_WORDS];
+static const uint8_t clear_map[EWRAM_WORDS / REWIND_PAGE_WORDS / 8];
 
 static uint32_t rng_state = 0x2545F491u;
 
@@ -644,6 +646,20 @@ static void test_worst_case_within_bound(void)
   assert(rewind_ring_step_back(&ring, &huge, 1, &out) == REWIND_ERR_STATE);
   assert(rewind_ring_step_forward(&ring, &huge, 1, &out) ==
    REWIND_ERR_STATE);
+
+  /* An unchanged run of exactly one token plus one word, the size of
+     EWRAM, with and without a page map. */
+  for(phase = 0; phase < 2; phase++)
+  {
+    memcpy(huge_ref, huge_live, sizeof(huge_ref));
+    huge.words = EWRAM_WORDS;
+    huge.page_map = phase ? clear_map : NULL;
+    rewind_ring_init(&ring, big_ring, BIG_RING_WORDS, &stamp);
+    assert(rewind_ring_capture(&ring, &huge, 1, &stamp) == REWIND_OK);
+    assert(ring.used == 7 + 2);
+    assert(rewind_ring_step_back(&ring, &huge, 1, &out) == REWIND_OK);
+    assert(memcmp(huge_ref, huge_live, sizeof(huge_ref)) == 0);
+  }
 }
 
 /* The model of the random test: states 0..count, oldest first, in a

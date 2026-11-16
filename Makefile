@@ -25,7 +25,9 @@ HOST_CC ?= cc
 PYTHON ?= python3
 HOST_BUILD_DIR ?= build/host
 HOST_SANITIZE_DIR ?= build/sanitize
-HOST_SANITIZE_FLAGS ?= -fsanitize=address,undefined -fno-omit-frame-pointer
+# Without -fno-sanitize-recover a UBSan report leaves the exit status at 0.
+HOST_SANITIZE_FLAGS ?= -fsanitize=address,undefined \
+ -fno-sanitize-recover=undefined -fno-omit-frame-pointer
 # SDK headers for the tests that compile PSP sources (memory.c and
 # psp_video.c) on the host.
 PSP_SDK_INCLUDE ?= $(shell psp-config --pspsdk-path 2>/dev/null)/include
@@ -262,7 +264,8 @@ test: $(HOST_TESTS) test-tools
 # test_input_shortcuts and test_ui_golden also compile functions cut out
 # of main.c, gui.c, input.c, memory.c and psp_video.c with HOST_CC;
 # test_check_scripts and
-# test_check_names run their scripts on scratch Git trees.
+# test_check_names run their scripts on scratch Git trees;
+# test_sanitize_flags builds a program with HOST_SANITIZE_FLAGS.
 test-tools:
 	$(PYTHON) -m unittest tests/test_compare_benchmarks.py \
 	 tests/test_perf_table.py \
@@ -278,7 +281,7 @@ test-tools:
 	 tests/test_hardware_session.py \
 	 tests/test_release_gate.py \
 	 tests/test_check_names.py \
-	 tests/test_prove_regression.py \
+	 tests/test_prove_regression.py tests/test_sanitize_flags.py \
 	 tests/test_upstream_review.py \
 	 tests/test_decode_test_rom.py tests/test_gen_shift_table.py \
 	 tests/test_make_bios_vectors.py tests/test_install_test_build.py \

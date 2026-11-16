@@ -123,8 +123,8 @@ emulation never waits for audio. The game gets no input. The capture then
 stops by itself and its report is saved to `benchmarks/`; the Diagnostics
 status row shows its name, and the game returns to its normal speed. A
 link refuses the benchmark. Opening the menu, a load or save state hotkey,
-a reset, a ROM change or a suspend before the end mark the report
-interrupted.
+the Video cycle shortcut, a reset, a ROM change or a suspend before the end
+mark the report interrupted.
 
 - `bench-mode`: `unbound` for the benchmark, `paced` for a capture the
   player runs.
@@ -168,9 +168,8 @@ value, `bench-state-hash`, which costs the run no time. Two trace
 benchmarks of the same build, trace and slot, each started with the same
 `.sav` (save memory is hashed, and a slot does not restore it) on a
 cartridge without a clock, must end with the same value; a different one
-means the emulation did not repeat itself. A benchmark that the menu or a
-load or save state hotkey interrupts stops replaying the trace, and the
-game gets the pad again.
+means the emulation did not repeat itself. An interrupted benchmark stops
+replaying the trace, and the game gets the pad again.
 
 compare-benchmarks requires the same `bench-*` values in every run, and
 reads a report without them (from an older build) as paced, so a benchmark
