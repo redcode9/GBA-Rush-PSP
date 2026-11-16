@@ -3141,7 +3141,8 @@ static u32 savestate_file_exists(u32 slot)
 
 /* Numbered slots 0-9 with a file, and whether the auto slot has one, for
    the Save and Load row of the main menu. Counted when the main menu is
-   entered, never per frame: each check is a file system stat. */
+   entered and after an AUTO state write, never per frame: each check is a
+   file system stat. */
 static u32 menu_status_slots;
 static u32 menu_status_auto;
 
@@ -3175,6 +3176,23 @@ static u8 savestate_thumb_state[SAVESTATE_SLOT_COUNT];
    loop (get_gui_input serves power events), so menu() refreshes the AUTO
    row, its thumbnail and the main menu status when it finds this set. */
 static u32 auto_savestate_written;
+
+/* Nonzero, once per AUTO write, when the menu can reread it: not before the
+   suspend that wrote it has resumed, and not before the Memory Stick is back
+   after resume. Until then the flag stays set for the next frame. */
+static u32 auto_savestate_refresh_due(void)
+{
+  SceUID dir;
+
+  if (!auto_savestate_written || sleep_auto_saved)
+    return 0;
+  dir = sceIoDopen(dir_state);
+  if (dir < 0)
+    return 0;
+  sceIoDclose(dir);
+  auto_savestate_written = 0;
+  return 1;
+}
 
 /* Reads the first unknown slot's 240x160 preview into scratch (one 76.8 KB
    read) and shrinks it into the slot's thumbnail. A missing or short file
@@ -6410,6 +6428,9 @@ u32 menu(void)
   screen_image_ptr = current_screen;
 
   load_savestate_timestamps();
+  /* Every row was just reread, and choose_menu(&main_menu) recounts below:
+     an AUTO write made in the game needs no second refresh. */
+  auto_savestate_written = 0;
 
   /* Close the streamed ROM file while the menu runs; the exit path
      sees GAMEPAK_FILE_MENU_CLOSED and reopens it (gamepak_file_reopen). */
@@ -6434,9 +6455,8 @@ u32 menu(void)
   {
     /* The AUTO state changed without leaving the menu: a suspend, or an
        action that came back here after backing up to it. */
-    if (auto_savestate_written)
+    if (auto_savestate_refresh_due())
     {
-      auto_savestate_written = 0;
       get_savestate_filename(AUTO_SAVESTATE_SLOT, filename_buffer);
       get_savestate_info(filename_buffer, NULL, line_buffer);
       sprintf(savestate_timestamps[AUTO_SAVESTATE_SLOT], "AUTO: %s", line_buffer);
