@@ -116,8 +116,8 @@ cannot be read. Try again?". Yes reads it again. No asks "Play without
 saving? The file stays as it is.": yes starts the game and writes nothing to
 the `.sav` until another game is loaded, and no goes back to the game list
 (at startup it opens the menu, and a game started from a launcher closes the
-emulator instead). While you play without saving, no pre-link copy is made or restored. The file
-itself is never written over.
+emulator instead). While you play without saving, no pre-link copy is made
+or restored. The file itself is never written over.
 
 ## Restoring a file by hand
 
