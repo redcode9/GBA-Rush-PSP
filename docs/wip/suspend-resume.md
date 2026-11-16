@@ -3,7 +3,7 @@
 - **Branch:** `features/state-of-the-art-development/wip/suspend-resume`, staccato da `features/state-of-the-art-development/main`.
 - **Ticket:** ENG-8, SAV-7, SAV-8 (11 storie, circa 12 gg).
 - **File principali:** callback di alimentazione in `source/src/main.c`, power lifecycle.
-- **Dipende da:** `wip/save-store` (SAV-2.3, SAV-2.5, SAV-3.2), `wip/replay-oracle` (ENG-6.2, ENG-6.3, ENG-7.3). SAV-2.6 (`wip/test-roms`) ed ENG-2.2 (`wip/release-and-ci`) sono già in main.
+- **Dipende da:** `wip/replay-oracle` (ENG-6.3, ENG-7.3). Il codice di SAV-2.3, SAV-2.5, SAV-3.2 (`wip/save-store`), ENG-6.2 (`wip/replay-oracle`), SAV-2.6 (`wip/test-roms`) ed ENG-2.2 (`wip/release-and-ci`) è già in main.
 - **Regole:** quelle di «Branch di lavoro dell'epica» in `docs/BACKLOG.md`. Il testo completo di ogni ticket (cosa, file, test, accettazione, licenza) è in `docs/BACKLOG.md` sotto il suo ID. Si spunta un ticket quando la sua accettazione è verificata; questo file si cancella nella PR che chiude il branch.
 - **Legenda:** «subito» = nessuna dipendenza, si può iniziare oggi; «aspetta» = dipendenze in altri branch, si parte quando sono in main.
 
@@ -19,7 +19,7 @@
 
 ## 2.0
 
-- [ ] **ENG-8.1** — Iniettore diagnostico di eventi power e HOME · M, 1,5 gg · dipende da: ENG-6.2, ENG-2.2 · PSP: sì · aspetta: ENG-6.2 (`wip/replay-oracle`)
+- [ ] **ENG-8.1** — Iniettore diagnostico di eventi power e HOME · M, 1,5 gg · dipende da: ENG-6.2, ENG-2.2 · PSP: sì · **subito**: il codice di ENG-6.2 è in main (2ff83ab); le chiavi power di `autorun_config` arrivano con questa storia
 
 ## dopo gate
 

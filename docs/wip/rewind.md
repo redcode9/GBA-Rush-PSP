@@ -10,10 +10,10 @@
 ## 2.0
 
 - [x] **GIO-1.1** — Modulo puro rewind_ring: delta XOR all'indietro, RLE degli zeri, anello, regola di atterraggio · M, 3,5 gg · dipende da: — · PSP: no · **subito** · _codice e test pronti (5bb8b56); throughput del codec sull'host, solo come informazione e senza alcuna affermazione sul PSP: tra 0,04 e 0,08 ms per cattura delle sei aree (387 KiB) più 4 KiB di stato piccolo con 0-1000 parole cambiate, circa 0,2 ms con 10.000, sola cattura senza le scritture della sonda (x86-64, clang -O2, migliore di 5 esecuzioni); CI verde su 4d90cf0 (run 42724103420): make check e make test-sanitize_
-- [ ] **GIO-1.2** — Snapshot e ripristino in memoria, salvataggio protetto · M, 3 gg · dipende da: GIO-1.1, F-007, ENG-3.1, ENG-3.3 · PSP: sì · aspetta: F-007 (`wip/savestate-v2`), ENG-3.1 (`wip/replay-oracle`), ENG-3.3 (`wip/replay-oracle`)
+- [ ] **GIO-1.2** — Snapshot e ripristino in memoria, salvataggio protetto · M, 3 gg · dipende da: GIO-1.1, F-007, ENG-3.1, ENG-3.3 · PSP: sì · aspetta: F-007 (`wip/savestate-v2`), ENG-3.3 (`wip/replay-oracle`, codice in main 91bc1ef, manca la prova su PSP)
 - [ ] **GIO-1.3** — Cattura a fine frame nel margine misurato · M, 3 gg · dipende da: GIO-1.2, F-025, F-027 · PSP: sì · aspetta: F-025 (`wip/perf-method`), F-027 (`wip/platform`)
 - [ ] **GIO-1.4** — Comando Riavvolgi, indicatore e opzioni in cinque lingue · L, 5 gg · dipende da: GIO-1.3, F-045, LNK-3.2 · PSP: sì · aspetta: F-045 (`wip/ui-foundation`), LNK-3.2 (`wip/link-diagnostics`)
-- [ ] **GIO-1.5** — Misure sul campo e soglia d'uscita · M, 2 gg · dipende da: GIO-1.4, F-024, ENG-3.1, ENG-3.3, ENG-1.6 · PSP: sì · aspetta: F-024 (`wip/perf-method`), ENG-3.1 (`wip/replay-oracle`), ENG-3.3 (`wip/replay-oracle`)
+- [ ] **GIO-1.5** — Misure sul campo e soglia d'uscita · M, 2 gg · dipende da: GIO-1.4, F-024, ENG-3.1, ENG-3.3, ENG-1.6 · PSP: sì · aspetta: F-024 (`wip/perf-method`), ENG-3.3 (`wip/replay-oracle`, codice in main 91bc1ef, manca la prova su PSP)
 - [ ] **GIO-1.7** — Eventi di sessione: stato caricato, reset, link, sleep, uscita · M, 2,5 gg · dipende da: GIO-1.4, SAV-7.5, ENG-1.6, F-029 solo se l'anello sta nella partizione volatile · PSP: sì · aspetta: SAV-7.5 (`wip/suspend-resume`), F-029 (`wip/platform`) solo con l'anello nella partizione volatile
 
 ## dopo gate

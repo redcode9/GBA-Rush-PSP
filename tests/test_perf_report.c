@@ -155,7 +155,8 @@ static void test_golden_report(void)
    "bench-render=1\n"
    "bench-audio=1\n"
    "bench-input=none\n"
-   "bench-trace-checksum=\n";
+   "bench-trace-checksum=\n"
+   "bench-state-hash=\n";
   PerfReportMetadata metadata;
   PerfMetricsSnapshot metrics;
   char report[PERF_REPORT_CAPACITY];
@@ -436,6 +437,8 @@ static void test_worst_case_capacity(void)
   metadata.bench_audio = UINT32_MAX;
   metadata.bench_input = PERF_REPORT_BENCH_INPUT_TRACE;
   metadata.bench_trace_checksum = UINT32_MAX;
+  metadata.has_bench_state_hash = 1;
+  metadata.bench_state_hash = UINT32_MAX;
 
   memset(&metrics, 0, sizeof(metrics));
   metrics.state = PERF_METRICS_INVALIDATED;
@@ -731,13 +734,16 @@ static void test_bench_arm_keys(void)
   assert(strstr(report, "\nbench-render=1\nbench-audio=0\n") != NULL);
 }
 
-/* A benchmark that replays a diagnostic input trace says so and ends the
-   report with the trace's checksum in eight hex digits; any other capture
-   leaves that checksum empty, whatever the field holds. */
+/* A benchmark that replays a diagnostic input trace says so, with the
+   trace's checksum in eight hex digits and, once it ran to the trace's
+   end, the hash of the state it ended in; any other capture leaves the
+   checksum empty, whatever the field holds, and the hash is empty until
+   it is set. */
 static void test_bench_trace_keys(void)
 {
   static const char trace_tail[] =
-   "\nbench-input=trace\nbench-trace-checksum=0x0badf00d\n";
+   "\nbench-input=trace\nbench-trace-checksum=0x0badf00d\n"
+   "bench-state-hash=0x00c0ffee\n";
   PerfReportMetadata metadata;
   PerfMetricsSnapshot metrics;
   char report[PERF_REPORT_CAPACITY];
@@ -752,10 +758,22 @@ static void test_bench_trace_keys(void)
   metadata.bench_audio = 1;
   metadata.bench_input = PERF_REPORT_BENCH_INPUT_TRACE;
   metadata.bench_trace_checksum = 0x0BADF00DU;
+  metadata.has_bench_state_hash = 1;
+  metadata.bench_state_hash = 0x00C0FFEEU;
   length = perf_report_format(report, sizeof(report), &metadata, &metrics);
   assert(length > (int)sizeof(trace_tail));
   assert(strcmp(report + length - (sizeof(trace_tail) - 1U),
    trace_tail) == 0);
+
+  metadata.bench_state_hash = 0;
+  assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
+  assert(strstr(report, "\nbench-state-hash=0x00000000\n") != NULL);
+  /* An interrupted trace benchmark has no end state. */
+  metadata.has_bench_state_hash = 0;
+  metadata.bench_state_hash = 0x00C0FFEEU;
+  assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);
+  assert(strstr(report, "\nbench-trace-checksum=0x0badf00d\n"
+   "bench-state-hash=\n") != NULL);
 
   metadata.bench_trace_checksum = 0;
   assert(perf_report_format(report, sizeof(report), &metadata, &metrics) > 0);

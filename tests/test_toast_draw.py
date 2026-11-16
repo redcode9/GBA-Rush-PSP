@@ -112,6 +112,19 @@ class ToastDrawTests(unittest.TestCase):
         self.assertIn("toast_current(sceKernelGetSystemTimeLow())", presented)
         self.assertIn("toast_clear();", function("source/src/main.c", "void reset_gba(void)"))
 
+    def test_late_frame_presented_under_the_overlays(self):
+        # update_gba() cannot be built on the host either: at the frame end
+        # a late Media Engine frame's present must come before the toast,
+        # FPS and volume overlays, or it covers them, and the flip after.
+        body = function("source/src/main.c", "u32 update_gba(void)")
+        end = body[body.index("u32 draw_this_frame = skip_next_frame ^ 0x01;"):]
+        self.assertEqual(end.count("video_present_finish();"), 1)
+        present = end.index("video_present_finish();")
+        self.assertLess(present, end.index("synchronize();"))
+        self.assertLess(present, end.index("__draw_volume_status(draw_this_frame);"))
+        self.assertLess(end.index("__draw_volume_status(draw_this_frame);"),
+                        end.index("flip_screen("))
+
 
 if __name__ == "__main__":
     unittest.main()

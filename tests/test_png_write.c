@@ -1116,7 +1116,7 @@ static void check_short_buffers(void)
 {
   size_t full = 0;
   size_t written;
-  size_t sizes[12];
+  size_t sizes[13];
   unsigned i, k;
 
   assert(png_write_rgba5551(frame, FRAME_WIDTH, FRAME_HEIGHT, FRAME_STRIDE,
@@ -1134,8 +1134,11 @@ static void check_short_buffers(void)
   sizes[8] = full - 12;
   sizes[9] = full - 1;
   sizes[10] = full > 8300 ? 8300 : full - 2;
-  sizes[11] = full;
-  for(k = 0; k < 12; k++)
+  /* 24 bytes after IHDR and PLTE: the largest room png_idat_open refuses. */
+  sizes[11] = (memcmp(png + 37, "PLTE", 4) == 0 ? 45 + read32(png + 33) : 33)
+   + 24;
+  sizes[12] = full;
+  for(k = 0; k < 13; k++)
   {
     int result;
 
@@ -1146,7 +1149,7 @@ static void check_short_buffers(void)
     arena_reset();
     for(i = 0; i < GUARD_BYTES; i++)
       assert(png[sizes[k] + i] == GUARD_VALUE);
-    if(k < 11)
+    if(k < 12)
     {
       assert(result == PNG_WRITE_ERR_SPACE);
       assert(written == 0);

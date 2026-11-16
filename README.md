@@ -102,8 +102,9 @@ after does nothing.
 
 Shortcuts act on the press that completes them, with no added delay, so a
 longer sequence stops there: SELECT, then L, then R saves as soon as L is
-pressed. They are kept with the settings and in each game's settings. The
-single-button mappings in the controls menu work as before.
+pressed. Each game keeps them in its own settings, and a game without
+settings of its own uses the global ones. The single-button mappings in the
+controls menu work as before.
 
 ## Fast-forward
 
