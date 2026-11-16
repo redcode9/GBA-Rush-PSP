@@ -312,17 +312,18 @@
   it no longer speeds up during link-cable waits. Opening the menu, loading
   a state or putting the PSP to sleep stops rapid fire; a button still held
   fires again after it is pressed again.
+- The messages shown after loading a cheat file are translated into every
+  menu language; the Japanese and Chinese menus showed them in English.
+- The AUTO row of the Save and Load page shows the time of an AUTO state
+  saved while the menu stays open, for example when the PSP sleeps from the
+  menu or a ROM load is cancelled; it used to show the previous time until
+  the AUTO row was selected again or the menu was reopened.
 
 ### Known issues
 
 - Settings saved by this version cannot be read by 1.4.x: going back to
   1.4.x resets every setting to its default, and 1.4.x overwrites the
   settings file when it exits.
-
-### Fixed
-
-- The messages shown after loading a cheat file are translated into every
-  menu language; the Japanese and Chinese menus showed them in English.
 
 ## 1.4.3 - 2026-11-02
 

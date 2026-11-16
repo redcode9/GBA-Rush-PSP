@@ -3872,7 +3872,7 @@ Il gruppo copre primo avvio e pacchetto, notifiche, scorciatoie e input, screens
 - **Accettazione:** Ogni cambio video è visibile prima di tornare al gioco
 
 #### UI-10.3 — Miniature degli slot · M, 2 gg · dipende da: — · PSP: sì
-- **Cosa:** Il menu Salva/Carica mostra una striscia di 11 miniature 60x40, ottenute riducendo l'anteprima 240x160 di ogni .svs. Si leggono una per frame mentre la pagina è aperta e restano in un buffer statico (11 × 4,8 KB).
+- **Cosa:** Il menu Salva/Carica mostra 11 miniature 60x40 in una griglia 4x3 dentro il riquadro dell'anteprima 240x160, ottenute riducendo l'anteprima 240x160 di ogni .svs. Si leggono una per frame mentre la pagina è aperta e restano in un buffer statico (11 × 4,8 KB).
 - **File:** `source/src/gui.c` (menu degli stati; get_savestate_info gui.c:2910-2951), `source/src/art_filter.c` (nuovo, puro: riduzione a box, condivisa con UI-13), `source/src/art_filter.h` (nuovo), `tests/test_art_filter.c` (nuovo), Makefile, `CHANGELOG.md`
 - **Test:** tests/test_art_filter.c: riduzione 240x160 → 60x40 corretta su pattern noti, nessuna lettura fuori dal buffer; make test-sanitize; Hardware: apertura della pagina senza blocchi percepibili su PSP-1000
 - **Accettazione:** Le 11 miniature compaiono entro 1 s su PSP-1000 senza bloccare la navigazione
@@ -3913,12 +3913,12 @@ Il gruppo copre primo avvio e pacchetto, notifiche, scorciatoie e input, screens
 **Rischi:**
 - La scheda di risveglio non deve fare I/O né rientrare in main_power_service in modo ricorsivo.
 - Un nuovo standby mentre la scheda è aperta deve riportare la scheda, non il gioco.
-- Le 11 stat all'apertura del menu costano poco, ma vanno fatte una volta sola.
+- Le 11 stat costano poco, ma mai a ogni frame: si rifanno solo all'ingresso nel menu principale e dopo una scrittura dello stato AUTO.
 
 #### UI-11.1 — Stato live sulle righe principali · S, 1 gg · dipende da: — · PSP: sì
-- **Cosa:** Calcolato una volta all'apertura del menu: Salva/Carica mostra 'N/10 + AUTO' (savestate_file_exists, gui.c:2990-2999); Gioco mostra 'N trucchi attivi' (cheats[].cheat_active, cheats.h:39-46); Collegamento mostra 'collegato: <codice>' o 'in attesa' (stessa logica di gui.c:5029-5036). Il testo sta a destra ed è tagliato con gli helper limitati.
+- **Cosa:** Salva/Carica mostra 'N/10 + AUTO' (savestate_file_exists, gui.c:2990-2999), contati a ogni ingresso nel menu principale, anche al ritorno da un sottomenu, e dopo ogni scrittura dello stato AUTO, mai a ogni frame; Gioco mostra 'N trucchi attivi' (cheats[].cheat_active, cheats.h:39-46); Collegamento mostra 'collegato: <codice>' o 'in attesa' (stessa logica di gui.c:5029-5036); questi due si leggono dalla RAM a ogni disegno. Il testo sta a destra ed è tagliato con gli helper limitati.
 - **File:** `source/src/gui.c` (main_options gui.c:5360-5373), `source/src/message.h`, `source/src/text/message_*.h` (le 5 tabelle), `CHANGELOG.md`
-- **Test:** scripts/check-messages.sh; scripts/check-menu-layout.sh (ordine invariato); Hardware: righe nelle 5 lingue senza sovrapposizioni
+- **Test:** scripts/check-messages.sh; scripts/check-menu-layout.sh (ordine invariato); Hardware: righe nelle 5 lingue senza sovrapposizioni; sospendere con l'interruttore dalla pagina Salva/Carica e controllare subito al risveglio riga AUTO, miniatura e conteggio
 - **Accettazione:** Le tre righe mostrano lo stato corretto; L'ordine delle categorie non cambia
 - **Licenza:** codice nuovo GPL-2.0-or-later.
 
