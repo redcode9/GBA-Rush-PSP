@@ -85,8 +85,10 @@ The optional desktop launcher has its own
 players get, unless given `PROFILE=diagnostic`. The diagnostic profile adds
 the features that `source/src/build_profile.h` switches on (today the input
 trace, Diagnostics > Pin a test toast, the `diag-autorun.txt` file that
-`source/src/autorun_config.h` describes, and the simulated network that its
-`net_profile=` key puts on the ad-hoc link; `DIAGNOSTIC_CORE_PROFILE=1` adds
+`source/src/autorun_config.h` describes, the simulated network that its
+`net_profile=` key puts on the ad-hoc link, and the rendering-off and
+audio-off arms of Diagnostics > Unbound benchmark (docs/PERFORMANCE.md);
+`DIAGNOSTIC_CORE_PROFILE=1` adds
 the New core's profile and `DIAGNOSTIC_HW_PROBE=1` the memory system probe),
 is titled
 "GBA Rush PSP [DIAG]" with its own icon, and is packaged as
