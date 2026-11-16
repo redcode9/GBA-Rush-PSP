@@ -597,13 +597,6 @@
   // MSG_ERR_SET_DIR_2
   "エラーが発生しました. 以下のディレクトリに設定されています:\n%s",
 
-  // png.c
-  // MSG_ERR_SS_PNG_0
-  "PNG用にメモリを割り当てることができませんでした.",
-
-  // MSG_ERR_SS_PNG_1
-  "PNG画像をエンコードできませんでした.",
-
   // memory.c
   // MSG_LOADING_ROM
   "読み込み中...",

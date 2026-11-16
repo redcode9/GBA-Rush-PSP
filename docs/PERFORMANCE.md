@@ -123,8 +123,8 @@ emulation never waits for audio. The game gets no input. The capture then
 stops by itself and its report is saved to `benchmarks/`; the Diagnostics
 status row shows its name, and the game returns to its normal speed. A
 link refuses the benchmark. Opening the menu, a load or save state hotkey,
-a reset, a ROM change or a suspend before the end mark the report
-interrupted.
+the Video cycle shortcut, a reset, a ROM change or a suspend before the end
+mark the report interrupted.
 
 - `bench-mode`: `unbound` for the benchmark, `paced` for a capture the
   player runs.
@@ -135,6 +135,9 @@ interrupted.
   the benchmark replays an input trace.
 - `bench-trace-checksum`: with `bench-input=trace`, the checksum field of
   the trace's file as `0x` and eight hex digits; empty otherwise.
+- `bench-state-hash`: with `bench-input=trace`, once the run reached the
+  trace's end, one hash of the game's state after its last frame, as `0x`
+  and eight hex digits; empty otherwise, an interrupted run included.
 
 Diagnostic builds add two arms of the same run below it. Unbound
 benchmark, rendering off skips every frame as frameskip does: no line is
@@ -157,15 +160,22 @@ run ends with the trace's last frame instead of after 3600 frames.
 `bench-frames` is then the trace's length in frames, which bounds the run,
 and the report says `bench-input=trace` with the trace's checksum. With no
 trace held, or one that does not match the ROM, the benchmark runs
-without input as above. Do not press the FPS display hotkey during a trace
-benchmark: that frame skips the trace, so its keys reach the game one frame
-late and the run no longer ends in the same state.
+without input as above. Once the last frame is timed, the run hashes the
+game's state as a replay's state hashes do (`CONTRIBUTING.md`, "Replay
+state hashes"): CPU registers, IWRAM, EWRAM, VRAM, OAM, palette, I/O
+registers and save memory, without the sound samples, folded into one
+value, `bench-state-hash`, which costs the run no time. Two trace
+benchmarks of the same build, trace and slot, each started with the same
+`.sav` (save memory is hashed, and a slot does not restore it) on a
+cartridge without a clock, must end with the same value; a different one
+means the emulation did not repeat itself. An interrupted benchmark stops
+replaying the trace, and the game gets the pad again.
 
 compare-benchmarks requires the same `bench-*` values in every run, and
 reads a report without them (from an older build) as paced, so a benchmark
 never compares with a paced capture. It does not read
-`bench-trace-checksum`: check by hand that two trace benchmarks replayed
-the same trace.
+`bench-trace-checksum` or `bench-state-hash`: check by hand that two trace
+benchmarks replayed the same trace and ended in the same state.
 
 A benchmark's `duration-us` is the sum of its frame times, which run back
 to back, so the return from the menu before its first frame is left out.

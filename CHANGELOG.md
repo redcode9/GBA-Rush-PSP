@@ -34,15 +34,18 @@
   A+B+START+SELECT still resets the game; START and SELECT reach the game
   during the hold. A shortcut acts on the press that completes it, and the L
   or R that completes it is kept from the game while it stays held.
-  Shortcuts are saved with the settings and with each game's settings;
-  settings from 1.4.x start with these defaults. Single-button mappings work
-  as before.
+  Each game keeps its shortcuts with its own settings; a game without
+  settings of its own starts with the global ones, which no game's settings
+  replace. Settings from 1.4.x start with these defaults. Single-button
+  mappings work as before.
 - Controls > Turbo config sets, for each rapid-fire button (A, B, L and R),
   the speed (30, 15 or 10 presses per second) and the mode. Hold fires while
   the button is held; Toggle starts firing on one press and stops on the
-  next, with a "Turbo A: on" or "Turbo A: off" notice. The settings are
-  saved globally and with each game's settings. Settings from 1.4.x start at
-  30 presses per second in Hold mode, as before.
+  next, with a "Turbo A: on" or "Turbo A: off" notice. Each game keeps its
+  turbo settings with its own settings; a game without settings of its own
+  starts with the global ones, which Turbo config changes only while no game
+  is loaded. Settings from 1.4.x start at 30 presses per second in Hold mode,
+  as before.
 - A ROM folder with no games shows "No games found" and the folder to copy
   .gba or .zip files to, in the list and in the carousel; its subfolders
   stay listed.
@@ -151,7 +154,9 @@
   itself, its report is saved and the game returns to its normal speed. A
   link refuses the benchmark. The diagnostic build adds two rows that run it
   with rendering or audio off, and replays the input trace it holds instead
-  of giving no input, ending the run with the trace.
+  of giving no input, ending the run with the trace; the report then holds
+  a hash of the game's state at the end, which two runs of the same trace
+  from the same save state slot and save file must share.
 - Performance reports also record each frame's work time without the waits,
   the frames that were late, over budget or run during a lockstep link, the
   local time the capture started, the time of the main emulation phases on
@@ -274,8 +279,12 @@
   within 2 seconds, the game resumes with its sound and ROM. The runtime log
   records what the PSP reports at each power event.
 - Closing the menu no longer waits for every button to be released, so a
-  button still held never delays standby. A button held as the menu closes
-  reaches neither the game nor the hotkeys until it is released.
+  button still held never delays standby. A button held as the menu closes,
+  or a stick direction with the analog stick on, reaches neither the game
+  nor the hotkeys until it is released.
+- The button that answers the save or load state hotkey's question no
+  longer reaches the game: like a button held as the menu closes, it counts
+  only once it is released and pressed again.
 - A damaged or truncated `.zip` no longer hangs the loader or starts a broken
   game: the ROM's size and CRC32 are checked, and Load game and Load state
   from file in the menu say the ZIP file is damaged, incomplete or not
@@ -307,17 +316,18 @@
   it no longer speeds up during link-cable waits. Opening the menu, loading
   a state or putting the PSP to sleep stops rapid fire; a button still held
   fires again after it is pressed again.
+- The messages shown after loading a cheat file are translated into every
+  menu language; the Japanese and Chinese menus showed them in English.
+- The AUTO row of the Save and Load page shows the time of an AUTO state
+  saved while the menu stays open, for example when the PSP sleeps from the
+  menu or a ROM load is cancelled; it used to show the previous time until
+  the AUTO row was selected again or the menu was reopened.
 
 ### Known issues
 
 - Settings saved by this version cannot be read by 1.4.x: going back to
   1.4.x resets every setting to its default, and 1.4.x overwrites the
   settings file when it exits.
-
-### Fixed
-
-- The messages shown after loading a cheat file are translated into every
-  menu language; the Japanese and Chinese menus showed them in English.
 
 ## 1.4.3 - 2026-11-02
 
