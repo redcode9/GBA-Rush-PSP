@@ -84,7 +84,8 @@ The optional desktop launcher has its own
 `psp-build`, `package` and `artifact-smoke` use the release profile, the EBOOT
 players get, unless given `PROFILE=diagnostic`. The diagnostic profile adds
 the features that `source/src/build_profile.h` switches on (today the input
-trace, Diagnostics > Pin a test toast, the `diag-autorun.txt` file that
+trace, Diagnostics > Pin a test toast, the Unbound benchmark rows with
+rendering off and with audio off, the `diag-autorun.txt` file that
 `source/src/autorun_config.h` describes, and the simulated network that its
 `net_profile=` key puts on the ad-hoc link; `DIAGNOSTIC_CORE_PROFILE=1` adds
 the New core's profile and `DIAGNOSTIC_HW_PROBE=1` the memory system probe),
