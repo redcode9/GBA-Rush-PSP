@@ -268,15 +268,83 @@ FUNCTIONS = [
     "const SaveStoreIo gui_save_store_io =",
 ]
 
+# The main menu's slot count, with a counting stat and recovery. Slot 3
+# and the auto slot (10) have a state.
+SLOT_STUBS = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include "save_store.h"
+typedef uint32_t u32;
+typedef struct { int st_mode; } SceIoStat;
+#define MAX_FILE 256
+#define MAX_PATH 512
+#define AUTO_SAVESTATE_SLOT 10
+static const SaveStoreIo *backup_io;
+static char dir_state[] = "ms0:/s/";
+static char gamepak_filename[] = "game.gba";
+static int stats, recovers;
+static u32 menu_status_slots;
+static u32 menu_status_auto;
+static void get_savestate_filename(u32 slot, char *name)
+{
+  sprintf(name, "game_%d.svs", (int)slot);
+}
+SaveStoreResult save_store_recover(const SaveStoreIo *io, const char *dir,
+ const char *name)
+{
+  (void)io; (void)dir; (void)name;
+  recovers++;
+  return SAVE_STORE_OK;
+}
+static int sceIoGetstat(const char *path, SceIoStat *stat)
+{
+  (void)stat;
+  stats++;
+  return strcmp(path, "ms0:/s/game_3.svs") == 0 ||
+   strcmp(path, "ms0:/s/game_10.svs") == 0 ? 0 : -1;
+}
+'''
+
+SLOT_SCENARIOS = r'''
+int main(void)
+{
+  menu_status_count_states();
+  assert(menu_status_slots == 1 && menu_status_auto == 1);
+  /* One stat per slot: recovery would cost about ten calls per empty slot
+     each time the main menu opens. */
+  assert(stats == 11 && recovers == 0);
+  stats = 0;
+  assert(savestate_file_exists(3) && stats == 1 && recovers == 1);
+  assert(!savestate_file_exists(4) && stats == 2 && recovers == 2);
+  return 0;
+}
+'''
+
+SLOT_FUNCTIONS = [
+    "static u32 savestate_file_stat(u32 slot)",
+    "static u32 savestate_file_exists(u32 slot)",
+    "static void menu_status_count_states(void)",
+]
+
 
 class SaveIoTests(unittest.TestCase):
+    def test_main_menu_counts_slots_without_recovery(self):
+        source = SLOT_STUBS
+        for signature in SLOT_FUNCTIONS:
+            source += function("source/src/gui.c", signature) + "\n"
+        self.build_and_run(source + SLOT_SCENARIOS)
+
     def test_production_sceio_binding(self):
         # The real gui.c functions and table, between the stubs and scenarios.
         source = (f"#define FILE_SIZE {FILE_SIZE}\n"
                   f"#define EXPECTED_CRC 0x{zlib.crc32(CONTENT):08X}u\n" + STUBS)
         for signature in FUNCTIONS:
             source += function("source/src/gui.c", signature) + "\n"
-        source += ";\n" + SCENARIOS
+        self.build_and_run(source + ";\n" + SCENARIOS)
+
+    def build_and_run(self, source):
         with tempfile.TemporaryDirectory(prefix="gbarush-save-io-") as directory:
             path = Path(directory)
             (path / "save_io.c").write_text(source)

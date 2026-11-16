@@ -3123,25 +3123,36 @@ void auto_savestate_sleep(void)
     action_savestate_slot(AUTO_SAVESTATE_SLOT);
 }
 
-/* Nonzero if the slot's .svs is in dir_state; the slot menu backs up to the
-   auto slot only when there is a state to load. A save cut between the
-   store's two renames left only a .bak and .tmp: recovered first, as the
-   load will. */
-static u32 savestate_file_exists(u32 slot)
+/* Nonzero if the slot's .svs is in dir_state: one stat, no recovery. */
+static u32 savestate_file_stat(u32 slot)
 {
     char savestate_filename[MAX_FILE];
     char savestate_path[MAX_PATH];
     SceIoStat stat;
 
     get_savestate_filename(slot, savestate_filename);
-    save_store_recover(backup_io, dir_state, savestate_filename);
     snprintf(savestate_path, sizeof(savestate_path), "%s%s", dir_state, savestate_filename);
     return (sceIoGetstat(savestate_path, &stat) >= 0);
 }
 
+/* savestate_file_stat() after recovery; the slot menu backs up to the auto
+   slot only when there is a state to load. A save cut between the store's
+   two renames left only a .bak and .tmp: recovered first, as the load
+   will. */
+static u32 savestate_file_exists(u32 slot)
+{
+    char savestate_filename[MAX_FILE];
+
+    get_savestate_filename(slot, savestate_filename);
+    save_store_recover(backup_io, dir_state, savestate_filename);
+    return savestate_file_stat(slot);
+}
+
 /* Numbered slots 0-9 with a file, and whether the auto slot has one, for
    the Save and Load row of the main menu. Counted when the main menu is
-   entered, never per frame: each check is a file system stat. */
+   entered, never per frame, with one stat per slot: recovery would cost
+   about ten sceIo calls per empty slot, so a save cut mid-write counts as
+   empty here until a load recovers it. */
 static u32 menu_status_slots;
 static u32 menu_status_auto;
 
@@ -3155,8 +3166,8 @@ static void menu_status_count_states(void)
     return;
 
   for (slot = 0; slot < AUTO_SAVESTATE_SLOT; slot++)
-    menu_status_slots += savestate_file_exists(slot);
-  menu_status_auto = savestate_file_exists(AUTO_SAVESTATE_SLOT);
+    menu_status_slots += savestate_file_stat(slot);
+  menu_status_auto = savestate_file_stat(AUTO_SAVESTATE_SLOT);
 }
 
 /* Save and Load page thumbnails: each slot's .svs preview shrunk to 60x40.
