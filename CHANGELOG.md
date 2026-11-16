@@ -277,8 +277,12 @@
   within 2 seconds, the game resumes with its sound and ROM. The runtime log
   records what the PSP reports at each power event.
 - Closing the menu no longer waits for every button to be released, so a
-  button still held never delays standby. A button held as the menu closes
-  reaches neither the game nor the hotkeys until it is released.
+  button still held never delays standby. A button held as the menu closes,
+  or a stick direction with the analog stick on, reaches neither the game
+  nor the hotkeys until it is released.
+- The button that answers the save or load state hotkey's question no
+  longer reaches the game: like a button held as the menu closes, it counts
+  only once it is released and pressed again.
 - A damaged or truncated `.zip` no longer hangs the loader or starts a broken
   game: the ROM's size and CRC32 are checked, and the file browser says the
   ZIP file is damaged or incomplete. An encrypted `.zip`, or one whose first
