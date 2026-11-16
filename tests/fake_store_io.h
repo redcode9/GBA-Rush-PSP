@@ -61,7 +61,7 @@ typedef struct
   size_t short_write;   /* if nonzero, a write takes at most this many
                            bytes */
   size_t space;         /* if nonzero, the device is full once this many
-                           bytes are written: ENOSPC */
+                           bytes are written: ENOSPC, a write of 0 */
   int cut_after;        /* if nonzero, the power goes off after this many
                            calls of any operation: later calls fail and
                            change nothing, what was done stays */
@@ -81,6 +81,7 @@ typedef struct
   size_t written;       /* bytes the writes accepted */
   size_t last_capacity; /* capacity passed to the last read */
   int32_t open_file;    /* the handle open_write gave, or -1 */
+  int took_nothing;     /* the open file's last write took no byte */
 } FakeStore;
 
 /* Empties the store, clears the switches and counters, and points io at
