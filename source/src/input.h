@@ -123,6 +123,7 @@ int input_diagnostic_trace_begin_replay(const u8 *encoded,
 int input_diagnostic_trace_check_state(u32 state_crc32, u32 state_size);
 u32 input_diagnostic_trace_version(void);
 u32 input_diagnostic_trace_begin_bench(void);
+void input_diagnostic_trace_end_bench(void);
 void input_diagnostic_trace_frame_end(void);
 int input_diagnostic_trace_take_bench_hash(u32 *hash);
 u32 input_diagnostic_trace_checksum(void);

@@ -3121,7 +3121,8 @@ int main_perf_bench_start(u32 render, u32 audio)
 }
 
 /* Ends a running unbound benchmark as unusable: the menu or a state hotkey
-   would put its time in one of the frames. */
+   would put its time in one of the frames. A trace it replays stops with
+   it, so the pad works again. */
 void main_perf_bench_cancel(void)
 {
   if(!perf_monitor_bench_running())
@@ -3133,6 +3134,10 @@ void main_perf_bench_cancel(void)
   perf_monitor_invalidate(sceKernelGetSystemTimeWide());
 #ifdef ENABLE_DIAGNOSTIC_CORE_PROFILE
   arm_gba_profile_stop();
+#endif
+#ifdef ENABLE_DIAGNOSTIC_INPUT_TRACE
+  if(main_perf_bench_trace)
+    input_diagnostic_trace_end_bench();
 #endif
 }
 

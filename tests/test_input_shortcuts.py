@@ -698,6 +698,11 @@ static u32 frame(u32 buttons, int link_reads)
   return result;
 }
 
+static int game_has(u32 key)
+{
+  return (io_registers[REG_P1] & key) == 0;
+}
+
 static void restart(void)
 {
   assert(input_trace_restart_replay(&diagnostic_trace, header, 0x1000000U,
@@ -842,6 +847,24 @@ int main(void)
     assert(!input_diagnostic_trace_take_bench_hash(&again));
   }
   assert(bench_ends == 3);
+
+  /* A cancelled benchmark stops the replay: the pad reaches the game
+     again, and no end state is hashed, even after the last frame. */
+  bench_running = 1;
+  restart();
+  frame(0, 0);
+  input_diagnostic_trace_end_bench();
+  bench_running = 0;
+  assert(diagnostic_trace.state == INPUT_TRACE_FINISHED);
+  frame(PSP_CTRL_CIRCLE, 0);
+  assert(game_has(GBA_A));
+  bench_running = 1;
+  restart();
+  for(i = 0; i <= FRAMES; i++)
+    frame(0, 0);
+  input_diagnostic_trace_end_bench();
+  assert(!input_diagnostic_trace_take_bench_hash(&again));
+  bench_running = 0;
 
   /* Nor when a suspend cancels the trace after the last frame. */
   bench_running = 1;
@@ -1068,6 +1091,8 @@ class InputShortcutTests(unittest.TestCase):
 
     def test_input_trace_steps_once_per_emulated_frame(self):
         source = (STUBS + TRACE_STUBS + trace_globals() + input_region() +
+                  function("source/src/input.c",
+                           "void input_diagnostic_trace_end_bench(void)") +
                   TRACE_SCENARIOS)
         build_and_run(source, "input_trace_frames",
                       ["-I", SRC, "-DENABLE_DIAGNOSTIC_INPUT_TRACE"])
@@ -1076,7 +1101,7 @@ class InputShortcutTests(unittest.TestCase):
         # main.c cannot be built on the host: the frame step runs once per
         # VBlank after update_input, before the autorun saves its hashes,
         # never in link waits; the bench's end hash after the frame is
-        # timed.
+        # timed; a cancelled bench stops its replay.
         update = function("source/src/main.c", "u32 update_gba(void)")
         step = "input_diagnostic_trace_frame_end();"
         self.assertEqual(update.count(step), 1)
@@ -1092,6 +1117,9 @@ class InputShortcutTests(unittest.TestCase):
         self.assertNotIn("input_diagnostic_trace", link)
         self.assertNotIn("diagnostic_trace_frame++",
                          function("source/src/input.c", "u32 update_input(void)"))
+        self.assertIn("input_diagnostic_trace_end_bench();",
+                      function("source/src/main.c",
+                               "void main_perf_bench_cancel(void)"))
 
     def test_video_cycle_steps_presents_names_and_saves(self):
         stubs = CYCLE_STUBS.replace("@SRC@", SRC).replace("@SCALED@",

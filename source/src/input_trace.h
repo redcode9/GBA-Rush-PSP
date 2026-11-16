@@ -131,6 +131,9 @@ int input_trace_begin_replay_from_header(InputTrace *trace,
 uint32_t input_trace_restart_replay(InputTrace *trace,
  const uint8_t header[INPUT_TRACE_IDENTITY_SIZE], uint32_t file_size,
  uint32_t start_frame);
+/* Ends a replay before its last frame, as if it had passed it: FINISHED,
+   the trace kept for another replay. Any other state stays as it is. */
+void input_trace_stop_replay(InputTrace *trace);
 /* Called once per frame: records physical_keys while recording, returns the
    replayed keys while replaying, and physical_keys otherwise. A replay
    turns INPUT_TRACE_FINISHED once frame passes start_frame +

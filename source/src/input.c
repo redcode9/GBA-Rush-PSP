@@ -908,6 +908,13 @@ u32 input_diagnostic_trace_begin_bench(void)
    gamepak_file_size, diagnostic_trace_frame);
 }
 
+/* A cancelled benchmark stops replaying the trace, so the pad works again;
+   the trace stays held for the next one, as after a finished replay. */
+void input_diagnostic_trace_end_bench(void)
+{
+  input_trace_stop_replay(&diagnostic_trace);
+}
+
 /* The checksum field of the held trace's file, for the benchmark report. */
 u32 input_diagnostic_trace_checksum(void)
 {
