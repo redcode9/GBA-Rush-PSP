@@ -252,9 +252,9 @@ in `source/`: the corresponding source ZIP,
 
 ### Performance comparison
 
-On PSP, use **Diagnostics > Start measurement**, play a repeatable section,
-stop measurement and save the report. Collect three reports per build, then
-run:
+On PSP, use **Diagnostics > Start recording**, play a repeatable section,
+then **Stop recording** and **Save report**. Collect three reports per
+build, then run:
 
 ```sh
 python3 scripts/compare-benchmarks.py \

@@ -4,9 +4,10 @@ How GBA Rush PSP speed is measured, and the baselines measured so far.
 
 ## Comparing two builds
 
-On the PSP, use Diagnostics > Start measurement, play a repeatable section,
-stop and save the report. Capture at least three reports per build with the
-same ROM, save or save state, renderer, clock and settings, then compare:
+On the PSP, use Diagnostics > Start recording, play a repeatable section,
+then Stop recording and Save report. Capture at least three reports per
+build with the same ROM, save or save state, renderer, clock and settings,
+then compare:
 
 ```sh
 python3 scripts/compare-benchmarks.py \
@@ -62,8 +63,9 @@ for the time per frame:
 
 - `phase-main-update-gba-us`: update_gba's own time (scheduler, input,
   presenting the frame, DMA), without the two phases below and without the
-  waits the work time leaves out (the VBlank waits and the GE wait). During
-  a lockstep link it also holds the link waits.
+  waits the work time leaves out (the VBlank waits, the sound sync's wait
+  for the audio thread and the GE wait). During a lockstep link it also
+  holds the link waits.
 - `phase-main-scanline-us`: update_scanline.
 - `phase-main-gbc-sound-us`: the PSG channels (update_gbc_sound). Direct
   sound, hundreds of calls a frame, is not timed.
@@ -117,9 +119,11 @@ a capture is not counted.
 Diagnostics > Unbound benchmark loads the current save state slot as the
 slot menu does (a numbered slot backs up the progress it replaces to the
 auto slot first, and the load asks before replacing the game), then runs
-3600 frames as fast as the PSP can: every frame is drawn, nothing waits
-for the VBlank, VSync is off, and the sound is mixed but dropped, so the
-emulation never waits for audio. The game gets no input. The capture then
+3600 frames as fast as the PSP can: every frame is drawn (with Exact on
+the Media Engine, a frame the Media Engine has not finished in time shows
+the previous one again and counts as late), nothing waits for the VBlank,
+VSync is off, and the sound is mixed but dropped, so the emulation never
+waits for audio. The game gets no input. The capture then
 stops by itself and its report is saved to `benchmarks/`; the Diagnostics
 status row shows its name, and the game returns to its normal speed. A
 link refuses the benchmark. Opening the menu, a load or save state hotkey,

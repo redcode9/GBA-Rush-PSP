@@ -14,9 +14,10 @@ benchmarks/<model>/<game-code>-r<revision>/<version>/<run>.txt
 - `<game-code>-r<revision>` is the report's `game-code` and `rom-revision`,
   for example `BPRE-r0`.
 - `<version>` is the report's `version`, for example `1.4.3`.
-- `<run>.txt` is a report saved from Diagnostics > Start measurement,
-  unchanged. Every run in one directory must share the settings
-  `scripts/compare-benchmarks.py` checks (`MATCH_FIELDS`).
+- `<run>.txt` is a report saved with Diagnostics > Start recording, Stop
+  recording and Save report, unchanged. Every run in one directory must
+  share the settings `scripts/compare-benchmarks.py` checks
+  (`MATCH_FIELDS`).
 
 Rules:
 

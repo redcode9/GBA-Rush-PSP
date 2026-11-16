@@ -656,6 +656,11 @@ def format_result(result):
 # The report fields that make a group (title x model) in directory mode.
 GROUP_FIELDS = ("psp-model", "game-code", "rom-revision")
 
+# The files beside the reports that are no report: notes, the -core.txt
+# profiles of a DIAGNOSTIC_CORE_PROFILE build and the -alloc.txt traces
+# every diagnostic build writes.
+NOT_REPORTS = (".md", "-core.txt", "-alloc.txt")
+
 
 def group_name(key):
     """A group's name as the output prints it, such as 0/BPRE-r0."""
@@ -665,8 +670,7 @@ def group_name(key):
 def collect_groups(*directories):
     """The reports anywhere under the directories, keyed by GROUP_FIELDS.
 
-    Every file but the .md notes and the -core.txt profiles of a
-    DIAGNOSTIC_CORE_PROFILE build must be a stopped .txt report, every
+    Every file but NOT_REPORTS must be a stopped .txt report, every
     directory must hold at least one, and the runs of one group must all
     come from the same version.
     """
@@ -675,7 +679,7 @@ def collect_groups(*directories):
     for directory in map(pathlib.Path, directories):
         count = 0
         for path in sorted(directory.rglob("*")):
-            if not path.is_file() or path.name.endswith((".md", "-core.txt")):
+            if not path.is_file() or path.name.endswith(NOT_REPORTS):
                 continue
             name = path.as_posix()
             if path.suffix != ".txt":
