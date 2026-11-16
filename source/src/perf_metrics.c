@@ -396,7 +396,8 @@ void perf_metrics_observe_memory_available(PerfMetrics *metrics,
 }
 
 /* Adds one VBlank wait to the count and total of its site and to the waits
-   of the current frame; an unknown site is ignored. */
+   of the current frame; the audio drain, no VBlank wait, goes only to the
+   frame's waits, and an unknown site is ignored. */
 void perf_metrics_record_wait(PerfMetrics *metrics,
  PerfMetricsWaitSite site, uint32_t wait_us)
 {
@@ -420,6 +421,10 @@ void perf_metrics_record_wait(PerfMetrics *metrics,
       count = &metrics->vblank_audio_count;
       total = &metrics->vblank_audio_total_us;
       break;
+    case PERF_METRICS_WAIT_AUDIO_DRAIN:
+      metrics->frame_wait_us = perf_metrics_saturating_add(
+       metrics->frame_wait_us, wait_us);
+      return;
     default:
       return;
   }

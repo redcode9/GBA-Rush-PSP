@@ -803,10 +803,15 @@ class BenchmarkComparisonTests(unittest.TestCase):
                                             baseline)[0], 2)
             self.assertIn("group 1/BPRE-r0: at least 3 reports", errors.getvalue())
 
-            # The core profile a DIAGNOSTIC_CORE_PROFILE build writes next
-            # to each report is not a report.
+            # The core profile a DIAGNOSTIC_CORE_PROFILE build and the
+            # allocation trace a diagnostic build write next to each
+            # report are no reports.
             (pathlib.Path(baseline) / "BPRE-r0" / "1.4.3" /
              "run-0-core.txt").write_text("profile\n")
+            (pathlib.Path(baseline) / "BPRE-r0" / "1.4.3" /
+             "run-0-alloc.txt").write_text(
+                "alloc-trace entries=1 thread=emulator memory-hold-kib=0 "
+                "held-kib=0\nmalloc 64 caller=0x08804000 at=0x09000000\n")
             self.assertEqual(len(MODULE.collect_groups(baseline)[
                 ("1", "BPRE", "0")]), 3)
 

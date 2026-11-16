@@ -124,9 +124,10 @@ def summarize(reports):
 def collect(root):
     """The summarized groups of the archive, keyed (model, game, version).
 
-    Every file but the .md notes must be a .txt report three directories
-    down, and a group's reports must match the model, game and version
-    directories they are in.
+    Every file but the .md notes and the diagnostic files that
+    compare-benchmarks skips too (NOT_REPORTS) must be a .txt report
+    three directories down, and a group's reports must match the model,
+    game and version directories they are in.
     """
     root = pathlib.Path(root)
     if not root.is_dir():
@@ -135,7 +136,7 @@ def collect(root):
                    for path in root.rglob("*") if path.is_file())
     groups = {}
     for name, path in files:
-        if name.endswith(".md"):
+        if name.endswith(compare_benchmarks.NOT_REPORTS):
             continue
         parts = name.split("/")
         if len(parts) != 4 or not name.endswith(".txt"):

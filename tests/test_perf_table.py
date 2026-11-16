@@ -186,10 +186,13 @@ class PerfTableTests(unittest.TestCase):
                     MODULE.collect(archive(pathlib.Path(root), runs))
 
     def test_empty_archive(self):
-        # benchmarks/README.md allows .md notes anywhere in the archive.
+        # benchmarks/README.md allows .md notes anywhere in the archive;
+        # the files a diagnostic build writes beside a report are skipped
+        # as compare-benchmarks skips them.
         notes = self.directory / "psp-1000" / "BPRE-r0" / "1.4.3"
         notes.mkdir(parents=True)
-        for path in (self.directory / "README.md", notes / "notes.md"):
+        for path in (self.directory / "README.md", notes / "notes.md",
+                     notes / "run-1-core.txt", notes / "run-1-alloc.txt"):
             path.write_text("notes", encoding="utf-8")
 
         self.assertEqual(MODULE.render(MODULE.collect(self.directory)),

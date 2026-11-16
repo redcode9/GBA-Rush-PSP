@@ -68,11 +68,11 @@
 - Before a link session starts, the game's save is written and a copy of it
   is kept as `<rom>.sav.link1`; the two copies before it move to `.link2`
   and `.link3`. If the save cannot be written or copied, the session does
-  not start and the Link menu says why.
-- Link > Restore pre-link save puts one of those copies back, chosen by its
-  date and time. The current save is kept as `<rom>.sav.bak`, and the game
-  restarts on the restored save. The item is not available during a
-  session.
+  not start and the Link Cable menu says why.
+- Link Cable > Restore pre-link save puts one of those copies back, chosen
+  by its date and time. The current save is kept as `<rom>.sav.bak`, and
+  the game restarts on the restored save. The item is not available during
+  a session.
 - The runtime log records how every `.sav` was read (its size, the save
   chip chosen and whether they disagree), how long every save write took,
   whether it worked and how many tries it needed, how long the save copy

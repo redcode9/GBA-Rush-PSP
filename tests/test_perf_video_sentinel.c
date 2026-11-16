@@ -108,7 +108,7 @@ int main(void)
    "C frame_time_total_us==50000");
   perf_monitor_stop(50000);
 
-  /* D: Diagnostics > Start measurement runs with the menu open, so the
+  /* D: Diagnostics > Start recording runs with the menu open, so the
    * backdrop's presents must stay out of the capture. */
   video_power_resume(); /* picks blit_gu: option_screen_scale is 0 */
   begin_session();

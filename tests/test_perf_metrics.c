@@ -332,6 +332,28 @@ static void test_work_time_subtracts_waits(void)
   assert(result.frame_time_total_us == 26700);
 }
 
+/* The sound sync's sleep until the audio thread takes a block leaves the
+   frame's work time like a wait, but it is no VBlank wait: no site counts
+   it, and the frame still counts as late. */
+static void test_audio_drain_leaves_work_only(void)
+{
+  PerfMetrics metrics;
+  PerfMetricsSnapshot result;
+
+  perf_metrics_init(&metrics);
+  assert(perf_metrics_start(&metrics));
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_AUDIO, 500);
+  perf_metrics_record_wait(&metrics, PERF_METRICS_WAIT_AUDIO_DRAIN, 8000);
+  perf_metrics_record_frame(&metrics, 16700, 200, 0, 0);
+  result = snapshot(&metrics);
+  assert(result.work_time_total_us == 16700 - 500 - 8000 - 200);
+  assert(result.vblank_audio_count == 1);
+  assert(result.vblank_audio_total_us == 500);
+  assert(result.vblank_backpressure_count == 0);
+  assert(result.vblank_present_count == 0);
+  assert(result.frames_late == 1);
+}
+
 /* Work percentiles come from the work histogram in 250 us buckets: 18
    frames of 8100 us work, one of 12100 and one of 20000 give p50 8250,
    p95 12250 and p99 20000, while the frame-time p95 is 16750. */
@@ -1050,6 +1072,7 @@ int main(void)
   test_saturating_counters();
   test_wait_and_frame_probes();
   test_work_time_subtracts_waits();
+  test_audio_drain_leaves_work_only();
   test_work_time_percentiles();
   test_work_time_clamps_at_zero();
   test_waits_reset_each_frame();
