@@ -165,10 +165,12 @@ game's state as a replay's state hashes do (`CONTRIBUTING.md`, "Replay
 state hashes"): CPU registers, IWRAM, EWRAM, VRAM, OAM, palette, I/O
 registers and save memory, without the sound samples, folded into one
 value, `bench-state-hash`, which costs the run no time. Two trace
-benchmarks of the same build, trace and slot must end with the same
-value; a different one means the emulation did not repeat itself. A
-benchmark the menu or a hotkey interrupts stops replaying the trace, and
-the game gets the pad again.
+benchmarks of the same build, trace and slot, each started with the same
+`.sav` (save memory is hashed, and a slot does not restore it) on a
+cartridge without a clock, must end with the same value; a different one
+means the emulation did not repeat itself. A benchmark that the menu or a
+load or save state hotkey interrupts stops replaying the trace, and the
+game gets the pad again.
 
 compare-benchmarks requires the same `bench-*` values in every run, and
 reads a report without them (from an older build) as paced, so a benchmark
