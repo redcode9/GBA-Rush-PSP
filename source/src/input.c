@@ -640,8 +640,10 @@ u32 update_input(void)
     return 0;
   }
 
+  // A new presenter and a .cfg write would land in a benchmark's frames
   if ((shortcut_actions & (1u << INPUT_CHORD_VIDEO_CYCLE)) != 0)
   {
+    main_perf_bench_cancel();
     menu_cycle_video_mode();
     return 0;
   }

@@ -289,20 +289,24 @@ int main(void)
   option_enable_analog = 0;
 
   /* The video cycle has no chord until one is set; SELECT+Left then
-     runs it once per press, and the game never gets that Left. */
+     runs it once per press, and the game never gets that Left. Like the
+     save and load chords, it ends a running benchmark. */
   set_shortcuts(0x0410, 0x0420, 0x0C00, 0, 0);
+  bench_cancels = 0;
   read_pad(SEL, 16);
   read_pad(SEL | PSP_CTRL_LEFT, 16);
-  assert(video_cycles == 0 && game_has(GBA_LEFT));
+  assert(video_cycles == 0 && game_has(GBA_LEFT) && bench_cancels == 0);
   read_pad(0, 16);
   option_shortcut[INPUT_CHORD_VIDEO_CYCLE] = 0x0480;
   rebuild_shortcut_chords();
   read_pad(SEL, 16);
   assert(read_pad(SEL | PSP_CTRL_LEFT, 16) == 0 && video_cycles == 1);
+  assert(bench_cancels == 1);
   read_pad(SEL | PSP_CTRL_LEFT, 16);
   assert(video_cycles == 1 && !game_has(GBA_LEFT));
   read_pad(SEL, 16);
   assert(read_pad(SEL | PSP_CTRL_LEFT, 16) == 0 && video_cycles == 2);
+  assert(bench_cancels == 2);
   read_pad(0, 16);
   assert(saves == 0 && loads == 0 && menus == 0);
 
