@@ -74,12 +74,15 @@ typedef struct
 } PerfMetricsHistogram;
 
 /* Where the emulator thread waited for the PSP VBlank: frame pacing in
-   synchronize(), before presenting a frame, or in the sound sync. */
+   synchronize(), before presenting a frame, or in the sound sync. The
+   last site is no VBlank wait: the sound sync sleeping until the audio
+   thread takes a block, which only leaves the frame's work time. */
 typedef enum
 {
   PERF_METRICS_WAIT_BACKPRESSURE,
   PERF_METRICS_WAIT_PRESENT,
-  PERF_METRICS_WAIT_AUDIO
+  PERF_METRICS_WAIT_AUDIO,
+  PERF_METRICS_WAIT_AUDIO_DRAIN
 } PerfMetricsWaitSite;
 
 /* What a phase timer measured. UPDATE_GBA is the whole call; the scanline

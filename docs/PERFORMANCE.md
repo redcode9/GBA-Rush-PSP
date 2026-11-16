@@ -62,8 +62,9 @@ for the time per frame:
 
 - `phase-main-update-gba-us`: update_gba's own time (scheduler, input,
   presenting the frame, DMA), without the two phases below and without the
-  waits the work time leaves out (the VBlank waits and the GE wait). During
-  a lockstep link it also holds the link waits.
+  waits the work time leaves out (the VBlank waits, the sound sync's wait
+  for the audio thread and the GE wait). During a lockstep link it also
+  holds the link waits.
 - `phase-main-scanline-us`: update_scanline.
 - `phase-main-gbc-sound-us`: the PSG channels (update_gbc_sound). Direct
   sound, hundreds of calls a frame, is not timed.

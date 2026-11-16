@@ -1098,6 +1098,7 @@ void synchronize_sound(void)
   u64 started;
   u32 factor;
   u32 limit;
+  int drained = 0;
 
   __builtin_allegrex_sync();
   if(sound_perf_underrun_pending)
@@ -1153,8 +1154,13 @@ void synchronize_sound(void)
           perf_monitor_record_audio_recovery();
           break;
         }
+        drained = 1;
         sceKernelDelayThread(100);
       }
+      // The loop slept until the audio thread took a block: not work time.
+      if(drained && perf_monitor_active())
+        perf_monitor_record_wait(PERF_METRICS_WAIT_AUDIO_DRAIN,
+         (u32)(sceKernelGetSystemTimeWide() - started));
     }
   }
 }
