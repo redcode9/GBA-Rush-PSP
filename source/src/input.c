@@ -507,6 +507,18 @@ static void input_diagnostic_trace_hash_frame(void)
 }
 #endif
 
+/* A load state hotkey; its prompt ends a running benchmark. Nonzero, with
+   turbo stopped, only when a state loaded: one refused (link session, other
+   BIOS) or declined replaced nothing, so update_gba goes on with its pass. */
+static u32 hotkey_load_state(void)
+{
+  main_perf_bench_cancel();
+  if (action_loadstate() == 0)
+    return 0;
+  input_turbo_stop();
+  return 1;
+}
+
 /* Called at every GBA V-blank and during link waits. Returns nonzero when
    the menu or a state load changed the machine and update_gba must not
    continue its pass. */
@@ -620,12 +632,7 @@ u32 update_input(void)
   }
 
   if ((shortcut_actions & (1u << INPUT_CHORD_LOADSTATE)) != 0)
-  {
-    input_turbo_stop();
-    main_perf_bench_cancel();
-    action_loadstate();
-    return 1;
-  }
+    return hotkey_load_state();
 
   // No hold ever closes the game: the menu hold only opens the menu
   if ((shortcut_actions & (1u << INPUT_CHORD_MENU)) != 0)
@@ -659,10 +666,7 @@ u32 update_input(void)
           return menu();
 
         case BUTTON_ID_LOADSTATE:
-          input_turbo_stop();
-          main_perf_bench_cancel();
-          action_loadstate();
-          return 1;
+          return hotkey_load_state();
 
         case BUTTON_ID_SAVESTATE:
           main_perf_bench_cancel();

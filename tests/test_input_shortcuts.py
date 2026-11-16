@@ -77,7 +77,9 @@ void main_power_service(void) {}
 void main_fast_forward_input(u32 pressed, u32 held)
 { ff_presses += pressed != 0; ff_held = held != 0; }
 u32 menu(void) { menus++; return 7; }
-u32 action_loadstate(void) { loads++; return 0; }
+/* load_state's result: 1 loaded, 0 refused or declined. */
+static u32 load_result = 1;
+u32 action_loadstate(void) { loads++; return load_result; }
 u32 action_savestate(void) { saves++; return 0; }
 int bench_cancels;
 void main_perf_bench_cancel(void) { bench_cancels++; }
@@ -329,6 +331,14 @@ int main(void)
   assert(read_pad(SEL | RT, 16) == 1 && loads == 1 && bench_cancels == 2);
   read_pad(0, 16);
 
+  /* A load refused or declined replaced nothing: the pass goes on, and
+     its prompt still ends the benchmark. */
+  load_result = 0;
+  read_pad(SEL, 16);
+  assert(read_pad(SEL | RT, 16) == 0 && loads == 2 && bench_cancels == 3);
+  read_pad(0, 16);
+  load_result = 1;
+
   /* Keys held as the menu closed are up for the chords too: SELECT still
      held from the menu completes no chord, and L reaches the game. */
   input_hold_until_released(SEL);
@@ -528,6 +538,28 @@ int main(void)
   check_stop(sleep_stop, 0);
   assert(menus == 3 && loads == 2 && saves == 0);
   assert(ff_presses == 0 && !ff_held);
+
+  /* A load refused or declined leaves turbo R running, by chord and by
+     button. */
+  load_result = 0;
+  for(j = 0; j < 2; j++)
+  {
+    int pulses = 0;
+
+    frame(0);
+    frame(TURBO_R);
+    assert(game_has(GBA_R));
+    assert((j == 0 ? load_chord() : press_triangle()) == 0);
+    for(i = 0; i < 4; i++)
+    {
+      frame(TURBO_R);
+      pulses += game_has(GBA_R);
+    }
+    assert(pulses == 2);
+    frame(0);
+  }
+  load_result = 1;
+  assert(loads == 4);
 
   /* Turbo L on the L of the SELECT+L save: the L hidden by the chord
      starts no train while it stays held. */

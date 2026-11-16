@@ -136,6 +136,8 @@ class MenuKeysTests(unittest.TestCase):
                            "static u32 buttons_to_inputs(u32 buttons)")
         source += function("source/src/input.c", "void input_turbo_stop(void)")
         source += function("source/src/input.c",
+                           "static u32 hotkey_load_state(void)")
+        source += function("source/src/input.c",
                            "void input_hold_until_released(u32 buttons)")
         source += function("source/src/input.c", "u32 update_input(void)")
         source += SCENARIOS
