@@ -597,13 +597,6 @@
   // MSG_ERR_SET_DIR_2
   "Si è verificato un errore. E' impostato sulle seguenti cartelle:\n%s",
 
-  // png.c
-  // MSG_ERR_SS_PNG_0
-  "Impossibile allocare memoria per il file PNG",
-
-  // MSG_ERR_SS_PNG_1
-  "Impossibile codificare l'immagine PNG.",
-
   // memory.c
   // MSG_LOADING_ROM
   "In Caricamento...",

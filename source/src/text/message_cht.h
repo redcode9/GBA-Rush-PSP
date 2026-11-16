@@ -597,13 +597,6 @@
   // MSG_ERR_SET_DIR_2
   "發生錯誤. 它設定為以下目錄:\n%s",
 
-  // png.c
-  // MSG_ERR_SS_PNG_0
-  "無法為 PNG 分配記憶體.",
-
-  // MSG_ERR_SS_PNG_1
-  "無法編碼 PNG 圖片.",
-
   // memory.c
   // MSG_LOADING_ROM
   "正在載入中...",

@@ -241,6 +241,9 @@ u32 button_repeat_timestamp;
 /* Buttons still held when the menu closed; update_input hides each one from
    the game and the hotkeys until it is released. */
 static u32 menu_held_buttons = 0;
+/* Set as the menu closes: the stick directions update_input reads next are
+   held as well, read as it reads them. */
+static u32 menu_hold_stick = 0;
 
 /* Tilt cartridges read 12-bit values; 0x800 is level. */
 u32 enable_tilt_sensor = 0;
@@ -290,10 +293,12 @@ u32 get_pad_input(u32 mask)
 }
 
 /* Hides buttons (the keys held as the menu closes) from update_input until
-   each is released, so closing the menu never waits for the keys to go up. */
+   each is released, so closing the menu never waits for the keys to go up.
+   Stick directions held on update_input's next read count as held too. */
 void input_hold_until_released(u32 buttons)
 {
   menu_held_buttons = buttons;
+  menu_hold_stick = 1;
 }
 
 
@@ -507,6 +512,18 @@ static void input_diagnostic_trace_hash_frame(void)
 }
 #endif
 
+/* A load state hotkey; its prompt ends a running benchmark. Nonzero, with
+   turbo stopped, only when a state loaded: one refused (link session, other
+   BIOS) or declined replaced nothing, so update_gba goes on with its pass. */
+static u32 hotkey_load_state(void)
+{
+  main_perf_bench_cancel();
+  if (action_loadstate() == 0)
+    return 0;
+  input_turbo_stop();
+  return 1;
+}
+
 /* Called at every GBA V-blank and during link waits. Returns nonzero when
    the menu or a state load changed the machine and update_gba must not
    continue its pass. */
@@ -575,6 +592,12 @@ u32 update_input(void)
 
   // A key held since the menu closed counts as up until it is released,
   // for chords and turbo too
+  if (menu_hold_stick != 0)
+  {
+    menu_held_buttons |= buttons & (PSP_CTRL_ANALOG_UP | PSP_CTRL_ANALOG_DOWN |
+     PSP_CTRL_ANALOG_LEFT | PSP_CTRL_ANALOG_RIGHT);
+    menu_hold_stick = 0;
+  }
   menu_held_buttons &= buttons;
   buttons &= ~menu_held_buttons;
 
@@ -620,12 +643,7 @@ u32 update_input(void)
   }
 
   if ((shortcut_actions & (1u << INPUT_CHORD_LOADSTATE)) != 0)
-  {
-    input_turbo_stop();
-    main_perf_bench_cancel();
-    action_loadstate();
-    return 1;
-  }
+    return hotkey_load_state();
 
   // No hold ever closes the game: the menu hold only opens the menu
   if ((shortcut_actions & (1u << INPUT_CHORD_MENU)) != 0)
@@ -640,8 +658,10 @@ u32 update_input(void)
     return 0;
   }
 
+  // A new presenter and a .cfg write would land in a benchmark's frames
   if ((shortcut_actions & (1u << INPUT_CHORD_VIDEO_CYCLE)) != 0)
   {
+    main_perf_bench_cancel();
     menu_cycle_video_mode();
     return 0;
   }
@@ -657,10 +677,7 @@ u32 update_input(void)
           return menu();
 
         case BUTTON_ID_LOADSTATE:
-          input_turbo_stop();
-          main_perf_bench_cancel();
-          action_loadstate();
-          return 1;
+          return hotkey_load_state();
 
         case BUTTON_ID_SAVESTATE:
           main_perf_bench_cancel();

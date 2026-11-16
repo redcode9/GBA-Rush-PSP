@@ -3238,13 +3238,18 @@ static void savestate_thumbs_draw(u32 selected_slot)
 }
 
 
-/* Hotkey load of savestate_slot; load_state() asks for confirmation. */
+/* Hotkey load of savestate_slot; load_state() asks for confirmation. Keys
+   held as its prompt closes, the answer among them, reach the game only
+   once released, as after the menu. */
 u32 action_loadstate(void)
 {
   char savestate_filename[MAX_FILE];
+  u32 result;
 
   get_savestate_filename(savestate_slot, savestate_filename);
-  return load_state(savestate_filename);
+  result = load_state(savestate_filename);
+  input_hold_until_released(get_pad_input(0x0001FFFF));
+  return result;
 }
 
 /* The current screen for a state's preview, or NULL with the heap
@@ -3260,7 +3265,8 @@ static u16 *copy_state_preview(void)
 }
 
 /* Hotkey save to savestate_slot after a confirmation; the current screen is
-   stored in the state as its preview. */
+   stored in the state as its preview. Keys held as the prompt closes are
+   kept from the game as action_loadstate() keeps them. */
 u32 action_savestate(void)
 {
   char savestate_filename[MAX_FILE];
@@ -3273,6 +3279,7 @@ u32 action_savestate(void)
   result = save_state(savestate_filename, current_screen);
 
   free(current_screen);
+  input_hold_until_released(get_pad_input(0x0001FFFF));
   return result;
 }
 
@@ -3538,6 +3545,52 @@ static u32 global_screen_scale = SCALED_16X9_AUTO;
 static void menu_screen_scale_changed(void)
 {
   global_screen_scale = option_screen_scale;
+}
+
+/* The turbo and shortcut settings tempgba.cfg keeps (only those fields are
+   read). A game's own never replace them: tempgba.cfg loads them, a game
+   with no .cfg and the menu with no game start from them, and only the
+   Turbo page with no game loaded changes them. */
+static ConfigModel global_input_config;
+
+/* The turbo and shortcut settings from model, then the turbo inputs and
+   chords they feed. */
+static void apply_input_config(const ConfigModel *model)
+{
+  u32 i;
+
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    option_turbo_speed[i] = model->turbo_speed[i];
+    option_turbo_mode[i] = model->turbo_mode[i];
+  }
+  rebuild_fast_forward_button_mask();
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    option_shortcut[i] = model->shortcut[i];
+  rebuild_shortcut_chords();
+}
+
+/* Inverse of apply_input_config(). */
+static void capture_input_config(ConfigModel *model)
+{
+  u32 i;
+
+  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
+    model->shortcut[i] = option_shortcut[i];
+  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
+  {
+    model->turbo_speed[i] = option_turbo_speed[i];
+    model->turbo_mode[i] = option_turbo_mode[i];
+  }
+}
+
+/* A Turbo page row: the turbo inputs take the change, and with no game
+   loaded so do the global settings. */
+static void menu_turbo_changed(void)
+{
+  rebuild_fast_forward_button_mask();
+  if(!menu_game_available())
+    capture_input_config(&global_input_config);
 }
 
 static void menu_fast_forward_override_changed(void)
@@ -5603,6 +5656,8 @@ u32 menu(void)
     gamepak_filename[0] = 0;
     gamepak_file_size = 0;
     game_title[0] = 0;
+    /* The last game's turbo and shortcuts are not the global ones. */
+    apply_input_config(&global_input_config);
 
     first_load = 1;
 
@@ -6150,18 +6205,18 @@ u32 menu(void)
 
   MAKE_MENU(analog_config, NULL, NULL);
 
-  /* Speed and mode of turbo A, B, L and R; rebuild_fast_forward_button_mask
-     hands each change to the turbo inputs. */
+  /* Speed and mode of turbo A, B, L and R; menu_turbo_changed hands each
+     change to the turbo inputs. */
   MenuOptionType turbo_options[] =
   {
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_A_SPEED], turbo_speed_options, &option_turbo_speed[0], 3, MSG_PAD_MENU_HELP_0, 0, MSG_TURBO_A_SPEED),
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_A_MODE], turbo_mode_options, &option_turbo_mode[0], 2, MSG_PAD_MENU_HELP_0, 1, MSG_TURBO_A_MODE),
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_B_SPEED], turbo_speed_options, &option_turbo_speed[1], 3, MSG_PAD_MENU_HELP_0, 3, MSG_TURBO_B_SPEED),
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_B_MODE], turbo_mode_options, &option_turbo_mode[1], 2, MSG_PAD_MENU_HELP_0, 4, MSG_TURBO_B_MODE),
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_L_SPEED], turbo_speed_options, &option_turbo_speed[2], 3, MSG_PAD_MENU_HELP_0, 6, MSG_TURBO_L_SPEED),
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_L_MODE], turbo_mode_options, &option_turbo_mode[2], 2, MSG_PAD_MENU_HELP_0, 7, MSG_TURBO_L_MODE),
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_R_SPEED], turbo_speed_options, &option_turbo_speed[3], 3, MSG_PAD_MENU_HELP_0, 9, MSG_TURBO_R_SPEED),
-    STRING_SELECTION_OPTION(rebuild_fast_forward_button_mask, MSG[MSG_TURBO_R_MODE], turbo_mode_options, &option_turbo_mode[3], 2, MSG_PAD_MENU_HELP_0, 10, MSG_TURBO_R_MODE),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_A_SPEED], turbo_speed_options, &option_turbo_speed[0], 3, MSG_PAD_MENU_HELP_0, 0, MSG_TURBO_A_SPEED),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_A_MODE], turbo_mode_options, &option_turbo_mode[0], 2, MSG_PAD_MENU_HELP_0, 1, MSG_TURBO_A_MODE),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_B_SPEED], turbo_speed_options, &option_turbo_speed[1], 3, MSG_PAD_MENU_HELP_0, 3, MSG_TURBO_B_SPEED),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_B_MODE], turbo_mode_options, &option_turbo_mode[1], 2, MSG_PAD_MENU_HELP_0, 4, MSG_TURBO_B_MODE),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_L_SPEED], turbo_speed_options, &option_turbo_speed[2], 3, MSG_PAD_MENU_HELP_0, 6, MSG_TURBO_L_SPEED),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_L_MODE], turbo_mode_options, &option_turbo_mode[2], 2, MSG_PAD_MENU_HELP_0, 7, MSG_TURBO_L_MODE),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_R_SPEED], turbo_speed_options, &option_turbo_speed[3], 3, MSG_PAD_MENU_HELP_0, 9, MSG_TURBO_R_SPEED),
+    STRING_SELECTION_OPTION(menu_turbo_changed, MSG[MSG_TURBO_R_MODE], turbo_mode_options, &option_turbo_mode[3], 2, MSG_PAD_MENU_HELP_0, 10, MSG_TURBO_R_MODE),
 
     ACTION_SUBMENU_OPTION(NULL, NULL, MSG[MSG_PAD_MENU_12], MSG_PAD_MENU_HELP_1, 12, MSG_PAD_MENU_12)
   };
@@ -7331,8 +7386,9 @@ static int config_paths(char *primary, char *temporary, char *recovery)
   return result >= 0 && result < MAX_PATH;
 }
 
-/* Global settings <-> ConfigModel. The per-game fast forward override and
-   the scale the Video cycle shortcut picks are never stored globally. */
+/* Global settings <-> ConfigModel. The per-game fast forward override, the
+   scale the Video cycle shortcut picks and a game's turbo and shortcuts are
+   never stored globally. */
 static void capture_global_config(ConfigModel *model)
 {
   u32 i;
@@ -7371,11 +7427,11 @@ static void capture_global_config(ConfigModel *model)
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     model->gamepad[i] = gamepad_config_map[i];
   for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
-    model->shortcut[i] = option_shortcut[i];
+    model->shortcut[i] = global_input_config.shortcut[i];
   for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
   {
-    model->turbo_speed[i] = option_turbo_speed[i];
-    model->turbo_mode[i] = option_turbo_mode[i];
+    model->turbo_speed[i] = global_input_config.turbo_speed[i];
+    model->turbo_mode[i] = global_input_config.turbo_mode[i];
   }
 }
 
@@ -7427,15 +7483,8 @@ static void apply_global_config(const ConfigModel *model)
   /* Without HOME there must be a way into the menu: put it on Triangle. */
   if(!enable_home_menu && !has_menu_button)
     gamepad_config_map[0] = BUTTON_ID_MENU;
-  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
-  {
-    option_turbo_speed[i] = model->turbo_speed[i];
-    option_turbo_mode[i] = model->turbo_mode[i];
-  }
-  rebuild_fast_forward_button_mask();
-  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
-    option_shortcut[i] = model->shortcut[i];
-  rebuild_shortcut_chords();
+  global_input_config = *model;
+  apply_input_config(model);
   apply_theme(option_theme);
   main_fast_forward_reset_game_settings();
 }
@@ -7529,13 +7578,7 @@ static void capture_game_config(ConfigModel *model)
   model->fast_forward_audio = option_game_fast_forward_audio;
   for(i = 0; i < CONFIG_MODEL_GAMEPAD_COUNT; i++)
     model->gamepad[i] = gamepad_config_map[i];
-  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
-    model->shortcut[i] = option_shortcut[i];
-  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
-  {
-    model->turbo_speed[i] = option_turbo_speed[i];
-    model->turbo_mode[i] = option_turbo_mode[i];
-  }
+  capture_input_config(model);
 }
 
 /* Per-game counterpart of apply_global_config(). */
@@ -7565,15 +7608,7 @@ static void apply_game_config(const ConfigModel *model)
   }
   if(!enable_home_menu && !has_menu_button)
     gamepad_config_map[0] = BUTTON_ID_MENU;
-  for(i = 0; i < CONFIG_MODEL_TURBO_COUNT; i++)
-  {
-    option_turbo_speed[i] = model->turbo_speed[i];
-    option_turbo_mode[i] = model->turbo_mode[i];
-  }
-  rebuild_fast_forward_button_mask();
-  for(i = 0; i < CONFIG_MODEL_SHORTCUT_COUNT; i++)
-    option_shortcut[i] = model->shortcut[i];
-  rebuild_shortcut_chords();
+  apply_input_config(model);
   main_fast_forward_apply_settings();
 }
 
@@ -7651,14 +7686,15 @@ s32 save_config_file(void)
   return return_value;
 }
 
-/* The Video cycle shortcut: 16:9 Auto, 100% GU, 150% GU, 16:9 Sharp and
-   back to 16:9 Auto, where any other mode also goes. The new presenter
-   takes the next frame, a toast names the mode and only the game's .cfg
-   keeps it: global_screen_scale stays as the Video menu left it. */
+/* The Video cycle shortcut: 16:9 Auto, 100% GU, 150% GU, 2x integer,
+   16:9 Sharp and back to 16:9 Auto, where any other mode also goes. The
+   new presenter takes the next frame, a toast names the mode and only the
+   game's .cfg keeps it: global_screen_scale stays as the Video menu left
+   it. */
 void menu_cycle_video_mode(void)
 {
   static const u8 cycle[] = { SCALED_16X9_AUTO, SCALED_NONE, SCALED_X15_GU,
-   SCALED_16X9_SHARP };
+   SCALED_INT2, SCALED_16X9_SHARP };
   u32 next = SCALED_16X9_AUTO;
   u32 i;
 
@@ -7700,6 +7736,7 @@ s32 load_game_config_file(void)
   option_frameskip_value = 9;
   option_clock_speed = PSP_CLOCK_333;
   main_fast_forward_reset_game_settings();
+  apply_input_config(&global_input_config);
   return -1;
 }
 

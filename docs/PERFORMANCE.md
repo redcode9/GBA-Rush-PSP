@@ -123,8 +123,8 @@ emulation never waits for audio. The game gets no input. The capture then
 stops by itself and its report is saved to `benchmarks/`; the Diagnostics
 status row shows its name, and the game returns to its normal speed. A
 link refuses the benchmark. Opening the menu, a load or save state hotkey,
-a reset, a ROM change or a suspend before the end mark the report
-interrupted.
+the Video cycle shortcut, a reset, a ROM change or a suspend before the end
+mark the report interrupted.
 
 - `bench-mode`: `unbound` for the benchmark, `paced` for a capture the
   player runs.

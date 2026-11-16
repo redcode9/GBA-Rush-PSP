@@ -34,15 +34,18 @@
   A+B+START+SELECT still resets the game; START and SELECT reach the game
   during the hold. A shortcut acts on the press that completes it, and the L
   or R that completes it is kept from the game while it stays held.
-  Shortcuts are saved with the settings and with each game's settings;
-  settings from 1.4.x start with these defaults. Single-button mappings work
-  as before.
+  Each game keeps its shortcuts with its own settings; a game without
+  settings of its own starts with the global ones, which no game's settings
+  replace. Settings from 1.4.x start with these defaults. Single-button
+  mappings work as before.
 - Controls > Turbo config sets, for each rapid-fire button (A, B, L and R),
   the speed (30, 15 or 10 presses per second) and the mode. Hold fires while
   the button is held; Toggle starts firing on one press and stops on the
-  next, with a "Turbo A: on" or "Turbo A: off" notice. The settings are
-  saved globally and with each game's settings. Settings from 1.4.x start at
-  30 presses per second in Hold mode, as before.
+  next, with a "Turbo A: on" or "Turbo A: off" notice. Each game keeps its
+  turbo settings with its own settings; a game without settings of its own
+  starts with the global ones, which Turbo config changes only while no game
+  is loaded. Settings from 1.4.x start at 30 presses per second in Hold mode,
+  as before.
 - A ROM folder with no games shows "No games found" and the folder to copy
   .gba or .zip files to, in the list and in the carousel; its subfolders
   stay listed.
@@ -274,8 +277,12 @@
   within 2 seconds, the game resumes with its sound and ROM. The runtime log
   records what the PSP reports at each power event.
 - Closing the menu no longer waits for every button to be released, so a
-  button still held never delays standby. A button held as the menu closes
-  reaches neither the game nor the hotkeys until it is released.
+  button still held never delays standby. A button held as the menu closes,
+  or a stick direction with the analog stick on, reaches neither the game
+  nor the hotkeys until it is released.
+- The button that answers the save or load state hotkey's question no
+  longer reaches the game: like a button held as the menu closes, it counts
+  only once it is released and pressed again.
 - A damaged or truncated `.zip` no longer hangs the loader or starts a broken
   game: the ROM's size and CRC32 are checked, and the file browser says the
   ZIP file is damaged or incomplete. An encrypted `.zip`, or one whose first
