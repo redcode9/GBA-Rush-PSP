@@ -648,7 +648,8 @@ static const char *messages[MSG_END] =
   [MSG_SCN_SCALED_USER] = "USER GU",
   [MSG_SCN_SCALED_16X9_GU] = "16:9 GU",
   [MSG_SCN_SCALED_16X9_SHARP] = "16:9 Sharp",
-  [MSG_SCN_SCALED_16X9_AUTO] = "16:9 Auto"
+  [MSG_SCN_SCALED_16X9_AUTO] = "16:9 Auto",
+  [MSG_SCN_SCALED_INT2] = "2x integer (crop)"
 };
 #define MSG messages
 u32 option_screen_scale = SCALED_16X9_AUTO;
@@ -684,8 +685,8 @@ void main_fast_forward_reset_game_settings(void) { fast_forward_resets++; }
 s32 load_game_config_file(void);
 '''
 
-# 16:9 Auto, 100%, 150% GU, 16:9 Sharp and around again; the other modes
-# go to 16:9 Auto. Each step presents, names and saves the new mode, and
+# 16:9 Auto, 100%, 150% GU, 2x integer, 16:9 Sharp and around again; the
+# other modes go to 16:9 Auto. Each step presents, names and saves the new mode, and
 # the newest name replaces a toast still queued.
 CYCLE_SCENARIOS = r'''
 static void check_step(u32 scale, const char *name, int step)
@@ -709,11 +710,13 @@ int main(void)
   menu_cycle_video_mode();
   check_step(SCALED_X15_GU, "150% GU", 2);
   menu_cycle_video_mode();
-  check_step(SCALED_16X9_SHARP, "16:9 Sharp", 3);
+  check_step(SCALED_INT2, "2x integer (crop)", 3);
   menu_cycle_video_mode();
-  check_step(SCALED_16X9_AUTO, "16:9 Auto", 4);
+  check_step(SCALED_16X9_SHARP, "16:9 Sharp", 4);
   menu_cycle_video_mode();
-  check_step(SCALED_NONE, "100% GU", 5);
+  check_step(SCALED_16X9_AUTO, "16:9 Auto", 5);
+  menu_cycle_video_mode();
+  check_step(SCALED_NONE, "100% GU", 6);
   now_us += 3000000u;
   assert(toast_current(now_us) == NULL);
 
@@ -721,20 +724,20 @@ int main(void)
   {
     option_screen_scale = others[i];
     menu_cycle_video_mode();
-    check_step(SCALED_16X9_AUTO, "16:9 Auto", 6 + i);
+    check_step(SCALED_16X9_AUTO, "16:9 Auto", 7 + i);
   }
 
   /* Only the game keeps the cycled scale: a game with no .cfg starts at
      the global one, which only the Video menu sets. */
   menu_cycle_video_mode();
-  check_step(SCALED_NONE, "100% GU", 9);
+  check_step(SCALED_NONE, "100% GU", 10);
   assert(global_screen_scale == SCALED_16X9_AUTO);
   assert(load_game_config_file() == -1 && fast_forward_resets == 1);
   assert(option_screen_scale == SCALED_16X9_AUTO);
   option_screen_scale = SCALED_16X9_SHARP;
   menu_screen_scale_changed();
   menu_cycle_video_mode();
-  check_step(SCALED_16X9_AUTO, "16:9 Auto", 10);
+  check_step(SCALED_16X9_AUTO, "16:9 Auto", 11);
   assert(global_screen_scale == SCALED_16X9_SHARP);
   assert(load_game_config_file() == -1);
   assert(option_screen_scale == SCALED_16X9_SHARP);

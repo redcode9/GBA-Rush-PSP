@@ -7651,14 +7651,15 @@ s32 save_config_file(void)
   return return_value;
 }
 
-/* The Video cycle shortcut: 16:9 Auto, 100% GU, 150% GU, 16:9 Sharp and
-   back to 16:9 Auto, where any other mode also goes. The new presenter
-   takes the next frame, a toast names the mode and only the game's .cfg
-   keeps it: global_screen_scale stays as the Video menu left it. */
+/* The Video cycle shortcut: 16:9 Auto, 100% GU, 150% GU, 2x integer,
+   16:9 Sharp and back to 16:9 Auto, where any other mode also goes. The
+   new presenter takes the next frame, a toast names the mode and only the
+   game's .cfg keeps it: global_screen_scale stays as the Video menu left
+   it. */
 void menu_cycle_video_mode(void)
 {
   static const u8 cycle[] = { SCALED_16X9_AUTO, SCALED_NONE, SCALED_X15_GU,
-   SCALED_16X9_SHARP };
+   SCALED_INT2, SCALED_16X9_SHARP };
   u32 next = SCALED_16X9_AUTO;
   u32 i;
 
