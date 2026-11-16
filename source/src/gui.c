@@ -3171,6 +3171,11 @@ static void menu_status_count_states(void)
 static u16 savestate_thumbs[SAVESTATE_SLOT_COUNT][SAVESTATE_THUMB_W * SAVESTATE_THUMB_H];
 static u8 savestate_thumb_state[SAVESTATE_SLOT_COUNT];
 
+/* Set by each AUTO state write. A suspend writes it from inside any menu
+   loop (get_gui_input serves power events), so menu() refreshes the AUTO
+   row, its thumbnail and the main menu status when it finds this set. */
+static u32 auto_savestate_written;
+
 /* Reads the first unknown slot's 240x160 preview into scratch (one 76.8 KB
    read) and shrinks it into the slot's thumbnail. A missing or short file
    leaves the slot empty. */
@@ -3290,6 +3295,9 @@ static u32 action_savestate_slot(u32 slot)
   result = save_state_silent(savestate_filename, current_screen);
   free(current_screen);
   savestate_slot = old_slot;
+  /* Even a failed save may have changed the file. */
+  if (slot == AUTO_SAVESTATE_SLOT)
+    auto_savestate_written = 1;
   return result;
 }
 
@@ -6424,6 +6432,18 @@ u32 menu(void)
   /* One iteration per frame: draw the screen, then handle one input. */
   while (repeat)
   {
+    /* The AUTO state changed without leaving the menu: a suspend, or an
+       action that came back here after backing up to it. */
+    if (auto_savestate_written)
+    {
+      auto_savestate_written = 0;
+      get_savestate_filename(AUTO_SAVESTATE_SLOT, filename_buffer);
+      get_savestate_info(filename_buffer, NULL, line_buffer);
+      sprintf(savestate_timestamps[AUTO_SAVESTATE_SLOT], "AUTO: %s", line_buffer);
+      savestate_thumb_state[AUTO_SAVESTATE_SLOT] = SAVESTATE_THUMB_UNKNOWN;
+      menu_status_count_states();
+    }
+
     /* Redraw the "no game" placeholder in the newly selected language. */
     if (first_load && preview_language != option_language)
     {
@@ -6836,10 +6856,6 @@ u32 menu(void)
                         if (savestate_file_exists(current_option->line_number))
                         {
                           action_savestate_slot(AUTO_SAVESTATE_SLOT);
-                          get_savestate_filename(AUTO_SAVESTATE_SLOT, filename_buffer);
-                          get_savestate_info(filename_buffer, NULL, line_buffer);
-                          sprintf(savestate_timestamps[AUTO_SAVESTATE_SLOT], "AUTO: %s", line_buffer);
-                          savestate_thumb_state[AUTO_SAVESTATE_SLOT] = SAVESTATE_THUMB_UNKNOWN;
                         }
                       }
                       if ((savestate_action != 0 ? menu_save_state() : menu_load_state()) != 0)
