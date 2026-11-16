@@ -307,8 +307,8 @@
   menu language; the Japanese and Chinese menus showed them in English.
 - The AUTO row of the Save and Load page shows the time of an AUTO state
   saved while the menu stays open, for example when the PSP sleeps from the
-  menu or a ROM load is cancelled; it used to keep the previous time until
-  the menu was closed.
+  menu or a ROM load is cancelled; it used to show the previous time until
+  the AUTO row was selected again or the menu was reopened.
 
 ### Known issues
 
