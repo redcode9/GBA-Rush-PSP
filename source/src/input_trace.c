@@ -481,6 +481,12 @@ uint32_t input_trace_restart_replay(InputTrace *trace,
    trace->duration_frames + 1U : UINT32_MAX;
 }
 
+void input_trace_stop_replay(InputTrace *trace)
+{
+  if(trace != NULL && trace->state == INPUT_TRACE_REPLAYING)
+    trace->state = INPUT_TRACE_FINISHED;
+}
+
 uint16_t input_trace_apply(InputTrace *trace, uint32_t frame,
  uint16_t physical_keys)
 {

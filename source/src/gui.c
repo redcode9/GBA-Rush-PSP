@@ -3912,11 +3912,14 @@ static void menu_quit_action(void)
 /* Bytes menu_trace_file_crc32() reads at a time. */
 #define MENU_TRACE_CRC_CHUNK 0x8000U
 
-/* A new recording's .svs. It replaces the trace's .svs only once the new
-   .gbit is written, so a cancelled or failed recording keeps the saved
-   pair. A reset or suspend while recording may leave it behind; the next
-   start overwrites it. */
+/* A new recording's .svs and, while it is saved, its .gbit. They replace
+   the saved pair only once both are complete on the card, so a cancelled
+   recording, or one whose files fail to write, keeps the saved pair. A
+   failed rename after that leaves the rest of the new pair under these
+   names. A reset or suspend while recording may leave the .svs behind; the
+   next start overwrites it. */
 #define MENU_TRACE_PENDING_STATE ".new.svs"
+#define MENU_TRACE_PENDING_TRACE ".new.gbit"
 
 /* Set when a trace start saved, or a replay loaded, the machine at this
    frame: menu() then reports a resume, as after a state load, so both
@@ -3924,9 +3927,9 @@ static void menu_quit_action(void)
 static int menu_trace_resume;
 
 /* <main_path>traces/input-<game code>-r<version><extension> (".gbit",
-   ".svs" or MENU_TRACE_PENDING_STATE), named from the GBA cartridge header:
-   game code at 0xAC, software version at 0xBC; the header is 0xC0 bytes
-   long. */
+   ".svs" or a MENU_TRACE_PENDING_* name), named from the GBA cartridge
+   header: game code at 0xAC, software version at 0xBC; the header is 0xC0
+   bytes long. */
 static int menu_trace_path(char *path, size_t path_size, int create_directory,
  const char *extension)
 {
@@ -4058,13 +4061,28 @@ static int menu_trace_read_all(SceUID file, u8 *data, size_t size)
     return 1;
 }
 
-/* Deletes the pending .svs of a recording that will not be saved. */
+/* Deletes the pending files of a recording that will not be saved. */
 static void menu_trace_discard_pending(void)
 {
     char path[MAX_PATH];
 
     if(menu_trace_path(path, sizeof(path), 0, MENU_TRACE_PENDING_STATE))
         sceIoRemove(path);
+    if(menu_trace_path(path, sizeof(path), 0, MENU_TRACE_PENDING_TRACE))
+        sceIoRemove(path);
+}
+
+/* Puts the pending file in place of the trace's file of this extension. */
+static int menu_trace_replace(const char *pending, const char *extension)
+{
+    char from[MAX_PATH];
+    char to[MAX_PATH];
+
+    if(!menu_trace_path(from, sizeof(from), 0, pending) ||
+       !menu_trace_path(to, sizeof(to), 0, extension))
+        return 0;
+    sceIoRemove(to);
+    return sceIoRename(from, to) >= 0;
 }
 
 static int menu_trace_start_available(void)
@@ -4137,17 +4155,18 @@ finish:
          "%s", MSG[message_id]);
 }
 
-/* Stop recording and save the trace to menu_trace_path(). Once the .gbit
-   is written the pending .svs replaces the old one; on a failure it is
-   deleted instead. The status row reports saved or failed. */
+/* Stop recording and save the trace to menu_trace_path(). The .gbit is
+   written under its pending name, then the pending pair replaces the
+   saved one, .svs first; a failure before that deletes the pending files
+   instead. The status row reports saved or failed. */
 static void menu_trace_finish_save(void)
 {
     u8 *encoded;
     size_t capacity;
     size_t written;
     char path[MAX_PATH];
-    char state_path[MAX_PATH];
     SceUID file;
+    int complete = 0;
     int success = 0;
 
     if(!input_diagnostic_trace_finish_record())
@@ -4156,36 +4175,27 @@ static void menu_trace_finish_save(void)
     capacity = input_diagnostic_trace_max_encoded_size();
     encoded = (u8 *)safe_malloc(capacity);
     if(!input_diagnostic_trace_encode(encoded, capacity, &written) ||
-       !menu_trace_path(path, sizeof(path), 1, ".gbit"))
+       !menu_trace_path(path, sizeof(path), 1, MENU_TRACE_PENDING_TRACE))
     {
         free(encoded);
         goto finish;
     }
 
-    FILE_OPEN(file, path, WRITE);
-    if(FILE_CHECK_VALID(file))
+    /* sceIoClose, not FILE_CLOSE: a failed close may have lost data. */
+    file = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+    if(file >= 0)
     {
-        success = menu_trace_write_all(file, encoded, written);
-        FILE_CLOSE(file);
-        if(!success)
-            sceIoRemove(path);
+        complete = menu_trace_write_all(file, encoded, written);
+        complete = sceIoClose(file) >= 0 && complete;
     }
     free(encoded);
 
-    if(success)
-    {
-        success = menu_trace_path(path, sizeof(path), 0,
-         MENU_TRACE_PENDING_STATE) &&
-         menu_trace_path(state_path, sizeof(state_path), 0, ".svs");
-        if(success)
-        {
-            sceIoRemove(state_path);
-            success = sceIoRename(path, state_path) >= 0;
-        }
-    }
+    success = complete &&
+     menu_trace_replace(MENU_TRACE_PENDING_STATE, ".svs") &&
+     menu_trace_replace(MENU_TRACE_PENDING_TRACE, ".gbit");
 
 finish:
-    if(!success)
+    if(!complete)
         menu_trace_discard_pending();
     snprintf(diagnostics_report_line, sizeof(diagnostics_report_line), "%s",
      MSG[success ? MSG_TRACE_SAVED : MSG_TRACE_FAILED]);
