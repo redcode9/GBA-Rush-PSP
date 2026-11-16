@@ -287,6 +287,8 @@
   an encrypted one.
 - A `.gba` file that cannot be read in full now fails to load instead of
   starting the game from part of the ROM.
+- An empty `.gba`, `.agb` or `.bin` file now shows the load error instead
+  of restarting the game loaded before it, or a blank cartridge.
 - The emulator no longer shows an error at startup when `dir.ini` is
   missing: `dir.ini` is optional. Without it, ROMs are listed from the
   `roms/` folder next to `EBOOT.PBP` when that folder exists, otherwise from

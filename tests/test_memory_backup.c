@@ -289,6 +289,16 @@ static void test_unattended_load_cancels_without_prompts(void)
   assert(store.write_calls == 0);
 }
 
+/* An empty ROM file fails to load: load_gamepak()'s callers take 0 as
+   success. */
+static void test_empty_rom_fails_to_load(void)
+{
+  fresh_store();
+  host_stub_file_length(0);
+  assert(load("SRAM_V113", NULL, 0) == -1);
+  host_stub_file_length(ROM_SIZE);
+}
+
 /* 200 KiB for a 128 KiB Flash game: the first 128 KiB load (ASan catches
    any write past the buffer) and the file is written back at 128 KiB. */
 static void test_oversized_save_loads_a_prefix(void)
@@ -649,6 +659,7 @@ int main(void)
   test_cut_write_is_recovered_at_load();
   test_refusing_both_prompts_cancels();
   test_unattended_load_cancels_without_prompts();
+  test_empty_rom_fails_to_load();
   test_oversized_save_loads_a_prefix();
   test_tag_beats_file_size();
   test_failed_write_stays_pending();
