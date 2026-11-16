@@ -763,6 +763,12 @@ int main(void)
     SEL | PSP_CTRL_RTRIGGER, 0, PSP_CTRL_START | LT, 0, PSP_CTRL_UP, 0,
     PSP_CTRL_DOWN, 0, PSP_CTRL_START | SEL, PSP_CTRL_START | SEL
   };
+  /* The hotkeys whose frame must keep a held direction off the trace. */
+  static const u32 hotkeys[5] =
+  {
+    SEL | PSP_CTRL_RTRIGGER, PSP_CTRL_START | LT, PSP_CTRL_UP, PSP_CTRL_DOWN,
+    PSP_CTRL_START | SEL
+  };
   static const int links[FRAMES] = { 0, 2, 0, 0, 0, 0, 3, 0, 0, 0 };
   u16 seen[FRAMES];
   u32 hash = 0;
@@ -845,6 +851,25 @@ int main(void)
   assert(diagnostic_trace.state == INPUT_TRACE_REPLAYING);
   frame(0, 0);
   assert(diagnostic_trace.state == INPUT_TRACE_FINISHED);
+
+  /* With the trace over the pad reaches the game, and the frame of the FPS
+     and video chords, the menu and save buttons and the menu hold keeps
+     a held direction, as in the release build. */
+  for(i = 0; i < 5; i++)
+  {
+    frame(PSP_CTRL_RIGHT, 0);
+    assert(game_has(GBA_RIGHT));
+    if(i == 4)
+    {
+      frame(PSP_CTRL_RIGHT | hotkeys[i], 0);
+      now_us += 500000;
+    }
+    assert(frame(PSP_CTRL_RIGHT | hotkeys[i], 0) == 0);
+    assert(game_has(GBA_RIGHT));
+    frame(0, 0);
+  }
+  assert(psp_fps_debug == 0 && video_cycles == 2);
+  assert(saves == 4 && menus == 7);
 
   /* A benchmark that replays the trace ends with its last frame, and once
      that frame is timed it hashes the guest state: the regions of the
