@@ -3,15 +3,15 @@
 - **Branch:** `features/state-of-the-art-development/wip/replay-oracle`, staccato da `features/state-of-the-art-development/main`.
 - **Ticket:** ENG-3, ENG-4, ENG-6, ENG-7, ENG-11, ENG-13 (25 storie, circa 42 gg).
 - **File principali:** `state_hash.c` (nuovo), tracce di input, script PPSSPP.
-- **Dipende da:** `wip/dev-environment` (SOA-1.4) e `wip/test-roms`, tutti e due già in main.
+- **Dipende da:** `wip/dev-environment` (SOA-1.4) e `wip/test-roms`: il codice di tutti e due è in main, ma SOA-1.4 e i ticket di `wip/test-roms` che servono a ENG-3.5 (SAV-2.6, CMP-3.1, CMP-11.1, CMP-12.1) sono ancora aperti.
 - **Regole:** quelle di «Branch di lavoro dell'epica» in `docs/BACKLOG.md`. Il testo completo di ogni ticket (cosa, file, test, accettazione, licenza) è in `docs/BACKLOG.md` sotto il suo ID. Si spunta un ticket quando la sua accettazione è verificata; questo file si cancella nella PR che chiude il branch.
 - **Legenda:** «subito» = nessuna dipendenza, si può iniziare oggi; «aspetta» = dipendenze in altri branch, si parte quando sono in main.
 
 ## 1.6
 
 - [x] **ENG-3.1** — Modulo puro state_hash · S, 1 gg · dipende da: — · PSP: no · **subito**
-- [ ] **ENG-3.2** — Traccia v2 con stato iniziale compagno · M, 1,5 gg · dipende da: ENG-3.1 · PSP: sì · _codice pronto (9f890a5), manca la prova su PSP_
-- [ ] **ENG-3.3** — Cattura degli hash su PSP durante il replay · M, 1,5 gg · dipende da: ENG-3.1, ENG-3.2, ENG-2.2 · PSP: sì · _codice pronto (91bc1ef), manca la prova su PSP, con la misura del costo per frame_
+- [ ] **ENG-3.2** — Traccia v2 con stato iniziale compagno · M, 1,5 gg · dipende da: ENG-3.1 · PSP: sì · _codice pronto (9f890a5; da 8c41396 «Finish and save» sostituisce la coppia salvata solo quando `.gbit` e `.svs` nuovi sono completi), manca la prova su PSP_
+- [ ] **ENG-3.3** — Cattura degli hash su PSP durante il replay · M, 1,5 gg · dipende da: ENG-3.1, ENG-3.2, ENG-2.2 · PSP: sì · _codice pronto (91bc1ef; da bcf3657 hash e frame della traccia avanzano una volta per frame emulato, anche con menu e scorciatoie, mai nelle attese del link), manca la prova su PSP, con la misura del costo per frame_
 - [x] **ENG-3.4** — Strumento di confronto e procedure di autoverifica e perturbazione · S, 1 gg · dipende da: ENG-3.1 · PSP: no
 - [ ] **ENG-3.5** — Corpus pubblico di replay e golden compatti · M, 2,25 gg · dipende da: ENG-3.3, ENG-3.4, ENG-10.3, SAV-2.6, CMP-1.1, CMP-3.1, CMP-11.1, CMP-12.1, UI-10.5 · PSP: sì · aspetta: UI-10.5 (`wip/ui-ge`)
 - [ ] **ENG-3.6** — Registrazione e replay anche nelle build release · S, 1 gg · dipende da: ENG-3.2, F-027 · PSP: sì · aspetta: F-027 (PRF-4.2, le misure su hardware; PRF-4.1 è in main, cf5ef4f)
@@ -31,7 +31,7 @@
 - [ ] **ENG-4.1** — Modulo puro input_script · M, 2 gg · dipende da: ENG-3.4 · PSP: no
 - [ ] **ENG-4.2** — Integrazione su PSP nel profilo diagnostico · M, 1,5 gg · dipende da: ENG-4.1, ENG-3.3, ENG-6.2 · PSP: sì
 - [ ] **ENG-4.3** — Tabelle di indirizzi verificate · M, 1,5 gg · dipende da: ENG-4.2 · PSP: sì
-- [ ] **ENG-6.3** — Suite e2e: avvio, salvataggi, soak · M, 2,5 gg · dipende da: ENG-6.1, ENG-6.2, SAV-2.6, F-002 · PSP: no · **subito**: F-002 (SAV-1) è in main (ef98f28)
+- [ ] **ENG-6.3** — Suite e2e: avvio, salvataggi, soak · M, 2,5 gg · dipende da: ENG-6.1, ENG-6.2, SAV-2.6, F-002 · PSP: no · _dopo il gate: parte se riesce lo spike ENG-6.1 (questo branch); il codice di ENG-6.2 (2ff83ab), di SAV-2.6 (b5cffbf) e di F-002 (SAV-1, ef98f28) è in main_
 - [ ] **ENG-6.4** — Golden video del framebuffer del core · M, 2 gg · dipende da: ENG-6.3, ENG-3.5 · PSP: no
 - [ ] **ENG-6.5** — Pattern di colori GE per ogni scala e filtro · S, 1 gg · dipende da: ENG-6.1, ENG-6.6 · PSP: no
 - [ ] **ENG-11.1** — Passaggio via USB solo diagnostico · L, 3,25 gg · dipende da: ENG-2.2, ENG-6.2, ENG-3.3 · PSP: sì
