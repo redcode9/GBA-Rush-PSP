@@ -6771,7 +6771,7 @@ Il gruppo raccoglie quello che le altre sezioni avevano lasciato fuori: tre dife
   - uno zip scritto in streaming (bit 3) da uno script Python di prova.
 - **Accettazione:**
   - Lo zip valido si gioca come prima, e il tempo di caricamento cresce al massimo del 10%.
-  - Lo zip corrotto e quello troncato mostrano il messaggio e tornano al browser senza blocchi.
+  - Lo zip corrotto e quello troncato mostrano il messaggio e tornano senza blocchi al menu da «Carica gioco» (come in 1.4.3) o alla lista da «Carica salvataggio da file».
   - Lo zip in streaming si carica.
   - Nel CHANGELOG c'è una voce Fixed.
 - **Licenza:** `zip.c` conserva intestazione e autori (Exophase, SiberianSTAR, takka; GPL-2.0-or-later).
