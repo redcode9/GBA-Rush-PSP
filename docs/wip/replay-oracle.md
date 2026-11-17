@@ -4,7 +4,6 @@
 - **Ticket:** ENG-3, ENG-4, ENG-6, ENG-7, ENG-11, ENG-13 (25 storie, circa 42 gg).
 - **File principali:** `state_hash.c` (nuovo), tracce di input, script PPSSPP.
 - **Dipende da:** `wip/dev-environment` (SOA-1.4) e `wip/test-roms`: il codice di tutti e due è in main, ma SOA-1.4 e i ticket di `wip/test-roms` che servono a ENG-3.5 (SAV-2.6, CMP-3.1, CMP-11.1, CMP-12.1) sono ancora aperti.
-- **Integrazione con `wip/ui-foundation`:** in `update_input` (`source/src/input.c`) i due `return hotkey_load_state();` di ui-foundation (scorciatoia e tasto Load state) diventano `if (hotkey_load_state() != 0) return 1; new_key = gba_keys_held; goto game_keys;`, così un caricamento rifiutato o annullato fa avanzare la traccia di un frame come le altre scorciatoie; nel conflitto di `tests/test_input_shortcuts.py` restano l'asserzione `4 * FRAMES` di `TRACE_SCENARIOS` e lo stub `menu_return`. Altrimenti `test_update_gba_steps_the_trace_and_hashes_the_bench_end` fallisce.
 - **Regole:** quelle di «Branch di lavoro dell'epica» in `docs/BACKLOG.md`. Il testo completo di ogni ticket (cosa, file, test, accettazione, licenza) è in `docs/BACKLOG.md` sotto il suo ID. Si spunta un ticket quando la sua accettazione è verificata; questo file si cancella nella PR che chiude il branch.
 - **Legenda:** «subito» = nessuna dipendenza, si può iniziare oggi; «aspetta» = dipendenze in altri branch, si parte quando sono in main.
 
@@ -32,7 +31,7 @@
 - [ ] **ENG-4.1** — Modulo puro input_script · M, 2 gg · dipende da: ENG-3.4 · PSP: no
 - [ ] **ENG-4.2** — Integrazione su PSP nel profilo diagnostico · M, 1,5 gg · dipende da: ENG-4.1, ENG-3.3, ENG-6.2 · PSP: sì
 - [ ] **ENG-4.3** — Tabelle di indirizzi verificate · M, 1,5 gg · dipende da: ENG-4.2 · PSP: sì
-- [ ] **ENG-6.3** — Suite e2e: avvio, salvataggi, soak · M, 2,5 gg · dipende da: ENG-6.1, ENG-6.2, SAV-2.6, F-002 · PSP: no · _dopo il gate: parte se riesce lo spike ENG-6.1 (questo branch); il codice di ENG-6.2 (2ff83ab), di SAV-2.6 (b5cffbf) e di F-002 (SAV-1, ef98f28) è in main_
+- [ ] **ENG-6.3** — Suite e2e: avvio, salvataggi, soak · M, 2,5 gg · dipende da: ENG-6.1, ENG-6.2, SAV-2.6, F-002 · PSP: no · _dopo il gate: parte se riesce lo spike ENG-6.1 (questo branch); il codice di ENG-6.2 (2ff83ab), di SAV-2.6 (dbab178) e di F-002 (SAV-1, ef98f28) è in main_
 - [ ] **ENG-6.4** — Golden video del framebuffer del core · M, 2 gg · dipende da: ENG-6.3, ENG-3.5 · PSP: no
 - [ ] **ENG-6.5** — Pattern di colori GE per ogni scala e filtro · S, 1 gg · dipende da: ENG-6.1, ENG-6.6 · PSP: no
 - [ ] **ENG-11.1** — Passaggio via USB solo diagnostico · L, 3,25 gg · dipende da: ENG-2.2, ENG-6.2, ENG-3.3 · PSP: sì
